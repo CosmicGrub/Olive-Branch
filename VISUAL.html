@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Throughline — Visual Representation v0.2.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ---------------------------------------------------------------
+   Palette derived from the literal colours of a child's day.
+   These are the same tokens the product's Day Ribbon component uses.
+   --------------------------------------------------------------- */
+:root{
+  --night:#12172B;   /* asleep      */
+  --dawn:#E8A66B;    /* wake        */
+  --school:#2F6FB0;  /* school      */
+  --day:#6BA8DE;     /* after school*/
+  --dusk:#8B6BB1;    /* wind down   */
+  --overlap:#2F9E7E; /* both free   */
+  --busy:#9AA6BA;    /* unavailable */
+
+  --surface:#FAFBFD;
+  --panel:#FFFFFF;
+  --ink:#131722;
+  --ink-2:#4A5468;
+  --ink-3:#78829A;
+  --rule:#DDE3ED;
+
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --sans:"IBM Plex Sans",system-ui,sans-serif;
+  --display:"Fraunces",Georgia,serif;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--surface);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.6;
+  padding:0 24px 96px;
+}
+.wrap{max-width:1080px;margin:0 auto}
+
+:focus-visible{outline:2px solid var(--overlap);outline-offset:3px;border-radius:2px}
+
+/* ---------- masthead ---------- */
+.masthead{border-bottom:1px solid var(--rule);padding:48px 0 20px;margin-bottom:40px}
+.masthead h1{
+  font-family:var(--display);
+  font-variation-settings:"SOFT" 0,"WONK" 1,"opsz" 100;
+  font-weight:600;font-size:clamp(38px,6vw,60px);
+  line-height:1.02;letter-spacing:-.02em;margin:0 0 10px;
+}
+.masthead .sub{font-family:var(--mono);font-size:12px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-3)}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.tag{font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+  border:1px solid var(--rule);border-radius:2px;padding:4px 9px;color:var(--ink-2);
+  background:var(--panel)}
+.tag strong{color:var(--ink);font-weight:600}
+
+/* ---------- hero: the day ribbon ---------- */
+.hero{background:var(--panel);border:1px solid var(--rule);border-radius:3px;
+  padding:28px 26px 22px;margin-bottom:14px}
+.hero h2{font-family:var(--display);font-variation-settings:"WONK" 1;
+  font-weight:500;font-size:26px;margin:0 0 4px;letter-spacing:-.01em}
+.hero .lede{color:var(--ink-2);font-size:14px;margin:0 0 26px;max-width:62ch}
+
+.track{margin-bottom:16px}
+.track-head{display:flex;justify-content:space-between;align-items:baseline;
+  margin-bottom:6px;gap:12px;flex-wrap:wrap}
+.who{font-family:var(--mono);font-size:12px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-2)}
+.who b{color:var(--ink);font-weight:600}
+.clock{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--ink)}
+.clock .zn{color:var(--ink-3);font-weight:400;margin-left:4px}
+.state{font-size:13px;color:var(--ink-2)}
+
+.bar{position:relative;height:30px;border-radius:2px;overflow:hidden;
+  display:flex;background:var(--rule)}
+.seg{height:100%;position:relative}
+.seg[data-label]:hover::after{
+  content:attr(data-label);position:absolute;left:50%;top:-26px;
+  transform:translateX(-50%);background:var(--ink);color:#fff;
+  font-family:var(--mono);font-size:10px;padding:3px 7px;border-radius:2px;
+  white-space:nowrap;z-index:4}
+
+.axis{display:flex;margin-top:5px;font-family:var(--mono);
+  font-size:10px;color:var(--ink-3)}
+.axis span{flex:1;text-align:left}
+
+.overlay{position:relative;height:44px;margin-top:2px}
+.overlap-band{position:absolute;top:0;height:26px;border-radius:2px;
+  background:color-mix(in srgb,var(--overlap) 22%,transparent);
+  border:1px solid var(--overlap);
+  display:flex;align-items:center;justify-content:center}
+.overlap-band span{font-family:var(--mono);font-size:10px;font-weight:600;
+  color:#1B6B54;letter-spacing:.03em;white-space:nowrap;padding:0 6px}
+
+.nowline{position:absolute;top:-4px;bottom:0;width:2px;background:var(--ink);z-index:3}
+.nowline::before{content:"";position:absolute;top:-4px;left:-3px;
+  width:8px;height:8px;border-radius:50%;background:var(--ink)}
+.nowline::after{content:"NOW";position:absolute;top:-20px;left:-11px;
+  font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.08em}
+
+.rail{position:relative}
+
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:22px;
+  padding-top:16px;border-top:1px solid var(--rule)}
+.legend div{display:flex;align-items:center;gap:6px;
+  font-family:var(--mono);font-size:10.5px;color:var(--ink-2);letter-spacing:.03em}
+.sw{width:11px;height:11px;border-radius:2px;flex:none}
+
+.callout{font-size:13.5px;color:var(--ink-2);margin:0 0 44px;
+  padding-left:14px;border-left:2px solid var(--overlap);max-width:74ch}
+
+/* ---------- numbered panels ---------- */
+.panel{margin-bottom:52px}
+.panel-head{display:flex;gap:14px;align-items:baseline;
+  border-bottom:1px solid var(--rule);padding-bottom:10px;margin-bottom:22px}
+.num{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--ink-3);
+  letter-spacing:.06em;flex:none;padding-top:3px}
+.panel-head h3{font-family:var(--display);font-variation-settings:"WONK" 1;
+  font-weight:500;font-size:23px;margin:0;letter-spacing:-.01em;flex:1}
+.ver{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);
+  border:1px solid var(--rule);padding:3px 7px;border-radius:2px;flex:none}
+.panel > p{color:var(--ink-2);font-size:14px;max-width:74ch;margin:0 0 20px}
+
+/* ---------- stack diagram ---------- */
+.stack{border:1px solid var(--rule);border-radius:3px;overflow:hidden;
+  background:var(--panel)}
+.layer{padding:13px 18px;border-bottom:1px solid var(--rule);
+  display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+.layer:last-child{border-bottom:none}
+.layer-k{font-family:var(--mono);font-size:11px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-3);width:132px;flex:none}
+.layer-v{font-size:13.5px;color:var(--ink);flex:1;min-width:220px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.chip{font-family:var(--mono);font-size:11px;background:var(--surface);
+  border:1px solid var(--rule);border-radius:2px;padding:3px 8px;color:var(--ink-2)}
+
+/* ---------- pipeline ---------- */
+.pipe{background:var(--panel);border:1px solid var(--rule);border-radius:3px;
+  padding:24px 20px}
+.pipe svg{width:100%;height:auto;display:block}
+.pipe text{font-family:var(--mono);fill:var(--ink)}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse;background:var(--panel);
+  border:1px solid var(--rule);border-radius:3px;font-size:13.5px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--rule);
+  vertical-align:top}
+tr:last-child td{border-bottom:none}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:500;background:var(--surface)}
+td code{font-family:var(--mono);font-size:12.5px;background:var(--surface);
+  padding:1px 5px;border-radius:2px;color:var(--ink)}
+.tbl-wrap{overflow-x:auto}
+
+/* ---------- phase timeline ---------- */
+.phases{display:grid;gap:2px;grid-template-columns:repeat(auto-fit,minmax(178px,1fr))}
+.phase{background:var(--panel);border:1px solid var(--rule);padding:16px 15px}
+.phase .p-n{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  color:var(--ink-3);margin-bottom:8px}
+.phase h4{font-size:14px;margin:0 0 9px;font-weight:600}
+.phase ul{margin:0;padding-left:15px;font-size:12.5px;color:var(--ink-2)}
+.phase li{margin-bottom:4px}
+.phase.now{border-color:var(--overlap);border-width:2px}
+.phase.now .p-n{color:var(--overlap);font-weight:600}
+
+footer{border-top:1px solid var(--rule);padding-top:20px;margin-top:20px;
+  font-family:var(--mono);font-size:11px;color:var(--ink-3);
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:640px){
+  body{padding:0 16px 64px}
+  .layer-k{width:100%}
+  .hero{padding:20px 16px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="sub">Visual Representation · canonical</div>
+  <h1>Throughline</h1>
+  <p class="sub">Keeping a parent present across distance — United States</p>
+  <div class="meta">
+    <span class="tag">version <strong>0.39.1</strong></span>
+    <span class="tag">amended <strong>2026-08-01</strong></span>
+    <span class="tag">scope <strong>US only</strong></span>
+    <span class="tag">companions <strong>MASTERFILE · CHANGELOG · MARKUP</strong></span>
+  </div>
+</header>
+
+<!-- ============ HERO: THE DAY RIBBON ============ -->
+<section class="hero" aria-labelledby="ribbon-h">
+  <h2 id="ribbon-h">The Day Ribbon</h2>
+  <p class="lede">The signature component, running live. A parent in Austin and a
+  child in Charlotte, one hour apart. Nobody does arithmetic — the overlap is
+  simply visible.</p>
+
+  <div class="track">
+    <div class="track-head">
+      <div class="who"><b>Maya</b> · Charlotte NC · America/New_York</div>
+      <div><span class="clock" id="c-child">—<span class="zn" id="z-child"></span></span></div>
+    </div>
+    <div class="rail">
+      <div class="bar" id="bar-child"></div>
+      <div class="nowline" id="now-child" hidden></div>
+    </div>
+    <div class="axis" id="axis"></div>
+    <div class="state" id="s-child" style="margin-top:6px"></div>
+  </div>
+
+  <div class="track" style="margin-top:26px">
+    <div class="track-head">
+      <div class="who"><b>Dad</b> · Austin TX · America/Chicago</div>
+      <div><span class="clock" id="c-parent">—<span class="zn" id="z-parent"></span></span></div>
+    </div>
+    <div class="rail">
+      <div class="bar" id="bar-parent"></div>
+      <div class="nowline" id="now-parent" hidden></div>
+    </div>
+    <div class="overlay" id="ov"></div>
+  </div>
+
+  <div class="legend">
+    <div><span class="sw" style="background:var(--night)"></span>asleep · unreachable</div>
+    <div><span class="sw" style="background:var(--dawn)"></span>wake / before school</div>
+    <div><span class="sw" style="background:var(--school)"></span>school · unreachable</div>
+    <div><span class="sw" style="background:var(--day)"></span>after school · free</div>
+    <div><span class="sw" style="background:var(--dusk)"></span>dinner / wind down</div>
+    <div><span class="sw" style="background:var(--busy)"></span>parent unavailable</div>
+    <div><span class="sw" style="background:var(--overlap)"></span>both free</div>
+  </div>
+</section>
+
+<p class="callout">Both tracks are drawn in <strong>the child's local time</strong>.
+That is the doctrine: child-local is canonical, everything else is a rendering.
+The bands are day-parts, not clock hours — so <code>bedtime</code> stays 8:30 PM
+through both daylight-saving transitions and through a summer move to Texas.</p>
+
+<!-- ============ 01 SYSTEM MAP ============ -->
+<section class="panel">
+  <div class="panel-head">
+    <div class="num">01</div>
+    <h3>System map</h3>
+    <div class="ver">0.1.0</div>
+  </div>
+  <p>The core architectural bet: video, games, and homework are not three
+  features. They are activity modules riding one synchronized session runtime.
+  Recording, moderation, logging, and retention are implemented once.</p>
+
+  <div class="stack">
+    <div class="layer">
+      <div class="layer-k">Clients</div>
+      <div class="layer-v">Flutter — one codebase, phased by platform
+        <div class="chips"><span class="chip">Android · P0</span><span class="chip">Windows · P0</span><span class="chip">iOS · P4</span><span class="chip">Web · P4</span></div>
+      </div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Session runtime</div>
+      <div class="layer-v">Media · State · Presence — one bus, many modules
+        <div class="chips"><span class="chip">homework</span><span class="chip">turn-based game</span><span class="chip">realtime co-op</span><span class="chip">canvas</span><span class="chip">storybook</span></div>
+      </div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Services</div>
+      <div class="layer-v">
+        <div class="chips"><span class="chip">identity + auth</span><span class="chip">family graph</span><span class="chip">time engine</span><span class="chip">session runtime</span><span class="chip">delivery engine</span><span class="chip">compliance + audit</span></div>
+      </div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Media</div>
+      <div class="layer-v">LiveKit — cloud first, self-host when residency demands</div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Storage</div>
+      <div class="layer-v">PostgreSQL with row-level security · Redis · S3-compatible with short-TTL signed URLs</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 ASYNC ENGINE ============ -->
+<section class="panel">
+  <div class="panel-head">
+    <div class="num">02</div>
+    <h3>Async delivery engine</h3>
+    <div class="ver">0.2.0</div>
+  </div>
+  <p>An intent carries a <em>policy</em>, not a timestamp. <code>scheduled_at</code>
+  is a cache that goes stale whenever the child travels, a bedtime shifts, or
+  daylight saving flips — so it is rematerialized on every dependency change plus
+  a nightly sweep.</p>
+
+  <div class="pipe">
+    <svg viewBox="0 0 940 240" role="img" aria-label="Pipeline: intent to materializer to queue to gate to delivery, with invalidation feedback">
+      <defs>
+        <marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <path d="M0,0 L9,4.5 L0,9 z" fill="#4A5468"/>
+        </marker>
+      </defs>
+
+      <g font-size="11">
+        <rect x="6"   y="62" width="150" height="58" rx="3" fill="#FFF" stroke="#DDE3ED"/>
+        <text x="81" y="85"  text-anchor="middle" font-weight="600">INTENT</text>
+        <text x="81" y="102" text-anchor="middle" font-size="9.5" fill="#78829A">policy + target</text>
+
+        <rect x="200" y="62" width="150" height="58" rx="3" fill="#FFF" stroke="#2F6FB0" stroke-width="1.5"/>
+        <text x="275" y="85"  text-anchor="middle" font-weight="600">MATERIALIZER</text>
+        <text x="275" y="102" text-anchor="middle" font-size="9.5" fill="#78829A">zone + day-part → UTC</text>
+
+        <rect x="394" y="62" width="150" height="58" rx="3" fill="#FFF" stroke="#DDE3ED"/>
+        <text x="469" y="85"  text-anchor="middle" font-weight="600">QUEUE</text>
+        <text x="469" y="102" text-anchor="middle" font-size="9.5" fill="#78829A">pending · scheduled_at</text>
+
+        <rect x="588" y="62" width="150" height="58" rx="3" fill="#FFF" stroke="#2F9E7E" stroke-width="1.5"/>
+        <text x="663" y="85"  text-anchor="middle" font-weight="600">GATE</text>
+        <text x="663" y="102" text-anchor="middle" font-size="9.5" fill="#78829A">reachable? defer</text>
+
+        <rect x="782" y="62" width="150" height="58" rx="3" fill="#FFF" stroke="#DDE3ED"/>
+        <text x="857" y="85"  text-anchor="middle" font-weight="600">DELIVER</text>
+        <text x="857" y="102" text-anchor="middle" font-size="9.5" fill="#78829A">+ receipt, child-local</text>
+      </g>
+
+      <g stroke="#4A5468" stroke-width="1.2" marker-end="url(#ar)" fill="none">
+        <path d="M158,91 L196,91"/>
+        <path d="M352,91 L390,91"/>
+        <path d="M546,91 L584,91"/>
+        <path d="M740,91 L778,91"/>
+      </g>
+
+      <g font-size="9.5" fill="#78829A" font-family="IBM Plex Mono">
+        <text x="275" y="176" text-anchor="middle" font-size="10" fill="#2F6FB0" font-weight="600">REMATERIALIZE ON</text>
+        <text x="275" y="193" text-anchor="middle">child_tz_interval · day_part · custody_schedule</text>
+        <text x="275" y="207" text-anchor="middle">calendar_event · dst.transition · nightly sweep</text>
+      </g>
+      <path d="M275,160 L275,124" stroke="#2F6FB0" stroke-width="1.2" fill="none" marker-end="url(#ar)" stroke-dasharray="4 3"/>
+
+      <path d="M663,124 L663,146 L469,146 L469,124" stroke="#2F9E7E" stroke-width="1.2" fill="none" marker-end="url(#ar)" stroke-dasharray="4 3"/>
+      <text x="566" y="141" text-anchor="middle" font-size="9.5" fill="#2F9E7E" font-family="IBM Plex Mono">defer → next reachable window</text>
+
+      <g font-size="9.5" font-family="IBM Plex Mono" fill="#4A5468">
+        <text x="81" y="30" text-anchor="middle" font-size="10" font-weight="600" fill="#131722">POLICIES</text>
+        <text x="81" y="45" text-anchor="middle">at_daypart · on_local_date · when_reachable</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<!-- ============ 03 TIME RESOLUTION ============ -->
+<section class="panel">
+  <div class="panel-head">
+    <div class="num">03</div>
+    <h3>Time resolution</h3>
+    <div class="ver">0.2.0</div>
+  </div>
+  <p>Four frames, never conflated. Conflating order-time with child-local is the
+  failure that ends up before a judge; conflating actor-local with child-local is
+  the failure that wakes a sleeping seven-year-old.</p>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Frame</th><th>Owner</th><th>Governs</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Child-local</strong></td><td>residence at that instant</td><td>delivery · day-parts · streaks · “sleeps until”</td></tr>
+      <tr><td>Actor-local</td><td>each parent or trusted adult</td><td>their quiet hours · their compose UI</td></tr>
+      <tr><td>Order-time</td><td>the custody decree</td><td>exchanges · holiday windows — <code>order_tz</code> explicit</td></tr>
+      <tr><td>Instant</td><td>system</td><td>storage · ordering · audit</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p style="margin-top:24px">Golden tests that must exist before Phase 0 ships:</p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Fixture</th><th>Catches</th></tr></thead>
+    <tbody>
+      <tr><td><code>2026-03-08</code> spring forward</td><td>nonexistent local time — 2:30 AM does not occur</td></tr>
+      <tr><td><code>2026-11-01</code> fall back</td><td>ambiguous local time — 1:30 AM occurs twice</td></tr>
+      <tr><td>Chicago ↔ Phoenix</td><td>gap shifts 1 h → 2 h; offset must be per-instant</td></tr>
+      <tr><td>El Paso family</td><td>Texas is Central <em>except</em> two counties — never infer zone from state</td></tr>
+      <tr><td>Summer TX ↔ NC handoff</td><td>zone flips at the exchange event, not at midnight</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 04 DATA MODEL ============ -->
+<section class="panel">
+  <div class="panel-head">
+    <div class="num">04</div>
+    <h3>Data model — child as root</h3>
+    <div class="ver">0.1.0 · 0.2.0</div>
+  </div>
+  <p>Modelling <code>account → family → children</code> breaks the instant parents
+  separate, remarry, or a protective order lands. The child is the root entity and
+  guardianship is an edge carrying its own scope, validity window, and court
+  reference.</p>
+
+  <div class="stack">
+    <div class="layer">
+      <div class="layer-k">Root</div>
+      <div class="layer-v"><code>child</code> — display name, birth date, home_tz fallback, privacy_tier</div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Edges</div>
+      <div class="layer-v"><code>guardianship</code> — role, scope jsonb, supervised, order_ref, validity range
+        <div class="chips"><span class="chip">guardian</span><span class="chip">trusted_adult</span><span class="chip">supervised</span><span class="chip">restricted</span></div>
+      </div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Temporal</div>
+      <div class="layer-v"><code>child_tz_interval</code> — non-overlapping timeline, GiST exclusion constraint<br>
+        <code>day_part</code> — wall-clock <code>time</code>, per household, per season</div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Async</div>
+      <div class="layer-v"><code>delivery_intent</code> — policy, targets, materialized cache, <code>expires_at NOT NULL</code></div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Custody</div>
+      <div class="layer-v"><code>custody_order.order_tz</code> — “Friday 6:00 PM” is meaningless without it; never default to the server zone</div>
+    </div>
+    <div class="layer">
+      <div class="layer-k">Lists</div>
+      <div class="layer-v"><code>child_list_item</code> — wants and needs strictly separated; <code>claimed_by</code> never surfaced to the child</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 05 PHASES ============ -->
+<section class="panel">
+  <div class="panel-head">
+    <div class="num">05</div>
+    <h3>Phases</h3>
+    <div class="ver">refreshed 0.39.1 · was stale since 0.2.0</div>
+  </div>
+  <p><strong>This panel had not been touched since v0.2.0</strong> while the spec moved to
+  v0.39.1 — 60+ packages, 2,413 assertions. What follows is honest about what
+  actually shipped, not a redraw of every diagram in this document (those above
+  are architecture-level and remain substantially accurate; for the current
+  screen-by-screen truth, see <code>MARKUP.html</code>, which is generated
+  from the same demo manifest that gates every release).</p>
+
+  <div class="phases">
+    <div class="phase">
+      <div class="p-n">PHASE 0 · COMPLETE</div>
+      <h4>Vertical slice</h4>
+      <ul>
+        <li>Family graph + roles</li>
+        <li>Session runtime + child lock (logic complete; native OS bridge drafted,
+          unverified — no device toolchain in this environment)</li>
+        <li>1:1 audio / video, with a quality ladder under the rung ladder</li>
+        <li>Time engine — 24 golden assertions incl. both DST pathologies</li>
+        <li>Async delivery engine — exactly-once under real concurrency</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="p-n">PHASE 1 · COMPLETE</div>
+      <h4>Presence at the desk</h4>
+      <ul>
+        <li>Homework capture + real OCR, quality-gated before recognition runs</li>
+        <li>Shared annotation canvas</li>
+        <li>Child-view calendar, birthdays, the Day Ribbon</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="p-n">PHASE 2 · COMPLETE</div>
+      <h4>Play &amp; provision</h4>
+      <ul>
+        <li>Ten games, several playable live during a call</li>
+        <li>Reachable-hour turn clocks; the maturation ladder (21 rungs)</li>
+        <li>Wants / needs lists, structurally separate</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <div class="p-n">PHASE 3 · COMPLETE</div>
+      <h4>The paid tier</h4>
+      <ul>
+        <li>Custody schedule engine</li>
+        <li>Tamper-evident ledger (SHA-256 hash chain)</li>
+        <li>Court-export archive, chunked under a transfer ceiling</li>
+      </ul>
+    </div>
+    <div class="phase now">
+      <div class="p-n">PHASE 4 · IN PROGRESS</div>
+      <h4>Reach</h4>
+      <ul>
+        <li>Trusted-adult role — shipped (scoped guardianship edge)</li>
+        <li>Realtime co-op during calls — shipped for several games</li>
+        <li><strong>iOS — not built.</strong> Dart client passes strict analysis and
+          14 widget tests, but only Android/Windows kiosk bridges are drafted;
+          no iOS Guided Access bridge exists yet</li>
+        <li><strong>Native kiosk bridges — drafted, unverified.</strong> Real
+          device/emulator compilation needs a toolchain this environment
+          doesn't have</li>
+      </ul>
+    </div>
+  </div>
+
+  <p style="margin-top:20px;font-size:12.5px;color:var(--ink-3)">
+  Two real open decisions block further Phase 4/2 work: §16.2 #6 (self-host vs.
+  LiveKit Cloud) and §16.2 #8 (curriculum standards source). See CHANGELOG for
+  the full decision log.</p>
+</section>
+
+<footer>
+  <div>THROUGHLINE · VISUAL · v0.39.1</div>
+  <div>amend in place — never duplicate</div>
+</footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var CHILD_TZ="America/New_York", PARENT_TZ="America/Chicago";
+  var START=6, END=24, SPAN=END-START;               // 18-hour window, child-local
+
+  // Day-parts in CHILD local wall clock.
+  var childParts=[
+    [6,   6.5,  "--night",  "asleep"],
+    [6.5, 7,    "--dawn",   "wake"],
+    [7,   8,    "--dawn",   "before school"],
+    [8,   15,   "--school", "school · unreachable"],
+    [15,  17.5, "--day",    "after school"],
+    [17.5,18.5, "--day",    "free"],
+    [18.5,19.5, "--dusk",   "dinner"],
+    [19.5,20.5, "--dusk",   "wind down"],
+    [20.5,21,   "--dusk",   "bedtime"],
+    [21,  24,   "--night",  "asleep · unreachable"]
+  ];
+  // Parent availability, in PARENT local wall clock.
+  var parentParts=[
+    [6,  7,  "--night", "asleep"],
+    [7,  9,  "--dawn",  "morning"],
+    [9,  17, "--busy",  "work · unavailable"],
+    [17, 22, "--day",   "free"],
+    [22, 24, "--night", "asleep"]
+  ];
+
+  // Offset, computed live — never hardcoded, never inferred from state.
+  function offsetHours(tz, d){
+    try{
+      var s=new Intl.DateTimeFormat("en-US",{timeZone:tz,timeZoneName:"longOffset"})
+              .formatToParts(d).find(function(p){return p.type==="timeZoneName";}).value;
+      var m=/GMT([+-])(\d{2}):(\d{2})/.exec(s);
+      if(m) return (m[1]==="-"?-1:1)*(parseInt(m[2],10)+parseInt(m[3],10)/60);
+    }catch(e){/* fall through */}
+    // Fallback: round-trip a formatted local time back through Date.UTC.
+    var p=new Intl.DateTimeFormat("en-US",{timeZone:tz,year:"numeric",month:"2-digit",
+      day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})
+      .formatToParts(d).reduce(function(a,x){a[x.type]=x.value;return a;},{});
+    var asUTC=Date.UTC(+p.year,+p.month-1,+p.day,(+p.hour)%24,+p.minute,+p.second);
+    return Math.round((asUTC-d.getTime())/60000)/60;
+  }
+  function localParts(tz,d){
+    var f=new Intl.DateTimeFormat("en-US",{timeZone:tz,hour:"2-digit",minute:"2-digit",
+      hour12:true,timeZoneName:"short"}).formatToParts(d);
+    var o={};f.forEach(function(p){o[p.type]=p.value;});
+    return o;
+  }
+  function localDecimal(tz,d){
+    var f=new Intl.DateTimeFormat("en-US",{timeZone:tz,hour:"2-digit",minute:"2-digit",
+      hour12:false}).formatToParts(d);
+    var h=0,mi=0;f.forEach(function(p){if(p.type==="hour")h=+p.value;if(p.type==="minute")mi=+p.value;});
+    return (h%24)+mi/60;
+  }
+  function pct(h){ return ((h-START)/SPAN)*100; }
+
+  function paint(el,parts,shift){
+    el.innerHTML="";
+    parts.forEach(function(p){
+      var a=p[0]+shift, b=p[1]+shift;
+      if(b<=START||a>=END) return;
+      a=Math.max(a,START); b=Math.min(b,END);
+      var d=document.createElement("div");
+      d.className="seg";
+      d.style.width=((b-a)/SPAN*100)+"%";
+      d.style.background="var("+p[2]+")";
+      d.setAttribute("data-label",p[3]);
+      el.appendChild(d);
+    });
+  }
+
+  function axis(){
+    var el=document.getElementById("axis"); el.innerHTML="";
+    for(var h=START;h<END;h+=3){
+      var s=document.createElement("span");
+      var hr=h%12===0?12:h%12;
+      s.textContent=hr+(h<12?"a":"p");
+      el.appendChild(s);
+    }
+  }
+
+  function overlapBand(toChild){
+    // Both free: child free/dinner 17.5–20.5 child-local
+    //          ∩ parent free 17–22 parent-local, converted onto the child axis.
+    var lo=Math.max(17.5, 17+toChild), hi=Math.min(20.5, 22+toChild);
+    var ov=document.getElementById("ov"); ov.innerHTML="";
+    if(hi<=lo) return;
+    var b=document.createElement("div");
+    b.className="overlap-band";
+    b.style.left=pct(lo)+"%";
+    b.style.width=((hi-lo)/SPAN*100)+"%";
+    function fmt(h){var hr=Math.floor(h),mn=Math.round((h-hr)*60);
+      var ap=hr<12?"AM":"PM",d=hr%12===0?12:hr%12;
+      return d+":"+(mn<10?"0":"")+mn+" "+ap;}
+    b.innerHTML="<span>both free · "+fmt(lo)+"–"+fmt(hi)+" her time</span>";
+    ov.appendChild(b);
+  }
+
+  function tick(){
+    var now=new Date();
+    // Hours to ADD to a parent-local hour to place it on the child-local axis.
+    // Austin (UTC-5 CDT) → Charlotte (UTC-4 EDT) = +1. Computed, never assumed.
+    var toChild=offsetHours(CHILD_TZ,now)-offsetHours(PARENT_TZ,now);
+
+    paint(document.getElementById("bar-child"),  childParts,  0);
+    paint(document.getElementById("bar-parent"), parentParts, toChild);
+    overlapBand(toChild);
+
+    var pc=localParts(CHILD_TZ,now), pp=localParts(PARENT_TZ,now);
+    document.getElementById("c-child").innerHTML=
+      pc.hour+":"+pc.minute+" "+pc.dayPeriod+'<span class="zn">'+pc.timeZoneName+"</span>";
+    document.getElementById("c-parent").innerHTML=
+      pp.hour+":"+pp.minute+" "+pp.dayPeriod+'<span class="zn">'+pp.timeZoneName+"</span>";
+
+    var ch=localDecimal(CHILD_TZ,now);
+    var cur=childParts.find(function(p){return ch>=p[0]&&ch<p[1];});
+    document.getElementById("s-child").textContent=
+      cur ? "Maya is "+(cur[3].indexOf("unreachable")>-1?cur[3].replace(" · unreachable","")+" — notifications held":cur[3]) : "";
+
+    [["now-child",ch],["now-parent",ch]].forEach(function(pair){
+      var n=document.getElementById(pair[0]);
+      if(pair[1]>=START&&pair[1]<END){ n.hidden=false; n.style.left=pct(pair[1])+"%"; }
+      else n.hidden=true;
+    });
+  }
+
+  axis(); tick(); setInterval(tick,30000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+name: verify
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: olive }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PSQL_CMD: psql postgresql://postgres:postgres@localhost:5432/olive
+      PGBIN: /usr/lib/postgresql/16/bin
+      PORT: '5432'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      # The Dart client is analysed and its widget invariants executed.
+      # verify.sh treats a missing toolchain as a gap, not a skip.
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.24.5', channel: stable }
+      - run: flutter pub get
+        working-directory: scaffold/client
+      # tesseract is a REAL dependency of the homework suite, not a nicety —
+      # the OCR assertions shell out to it.
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client tesseract-ocr
+      # livekit-server is a real dependency of the live suite, not optional.
+      # verify.sh treats a missing binary as a gap, not a skip.
+      - name: fetch livekit-server
+        run: |
+          curl -sL -o /tmp/lk.tar.gz \
+            https://github.com/livekit/livekit/releases/download/v1.8.0/livekit_1.8.0_linux_amd64.tar.gz
+          tar xzf /tmp/lk.tar.gz -C /tmp
+          printf 'port: 7880\nrtc:\n  tcp_port: 7881\n  port_range_start: 50000\n  port_range_end: 50020\n  use_external_ip: false\nkeys:\n  devkey: devsecret_at_least_32_chars_long_xx\nlogging:\n  level: warn\n' > /tmp/lk.yaml
+      - run: npm ci || npm install
+        working-directory: scaffold
+
+      # M1-M4. Runs twice: the second run must be a clean no-op, which is the
+      # idempotency property under test rather than an assumption.
+      - run: node tools/migrate.mjs
+        working-directory: scaffold
+      - run: node tools/migrate.mjs | grep -q 'up to date'
+        working-directory: scaffold
+
+      # Computes its own totals, gates on MARKUP correspondence, and fails if
+      # any suite reports zero assertions.
+      - run: bash tools/verify.sh
+        working-directory: scaffold
+
+      # A monitoring view nobody queries is a comment.
+      - run: node tools/healthcheck.mjs
+        working-directory: scaffold

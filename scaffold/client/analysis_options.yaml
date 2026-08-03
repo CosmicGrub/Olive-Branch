@@ -1,0 +1,25 @@
+# Strict. This project's whole record says an unchecked assumption becomes a
+# defect, so the analyzer is configured to refuse rather than warn.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    missing_required_param: error
+    missing_return: error
+    todo: warning
+    unused_import: error
+    unused_local_variable: error
+    dead_code: error
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_dynamic_calls
+    - prefer_const_constructors
+    - prefer_final_locals
+    - unawaited_futures
+    - use_super_parameters
