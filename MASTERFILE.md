@@ -9,8 +9,8 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.37.0 |
-| **Last amended** | 2026-07-27 |
+| **Version** | 0.42.0 |
+| **Last amended** | 2026-08-01 |
 | **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **Remaining gap: the native kiosk modules.** §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
@@ -1517,6 +1517,12 @@ POST   /v1/rituals
    her time."* Tap to schedule. **This single component replaces all timezone
    arithmetic.** Signature element.
 
+   **Amended v0.39.0** — each segment also carries a static glyph (🌅 wake,
+   ☀️ school/free, 🌇 dinner, 🌆 wind-down, 🌙 bedtime/asleep), declared next to
+   the friendly label in the same table (`phase3.ts`) rather than a second
+   lookup, so the two cannot drift apart. Static, never pulsing — §8.13 still
+   bans anything that moves on its own to draw the eye.
+
 #### §8.2.3 **Never make a parent do math.** Every child-related time renders child-local
    with actor-local as subscript: *"arrives 8:30 PM her time (7:30 PM yours)."*
 
@@ -1962,6 +1968,58 @@ enrollment. Documented in the security policy required by §10.1.
 | Auth | Passkeys / WebAuthn (parents); device-bound token + PIN (children) | Children should not need email addresses |
 | Push | FCM + APNs with **CallKit / Android full-screen intent** | A call from Dad arriving as a silent notification is a broken product |
 
+> **§16.2 #6, settled v0.40.0.** Stay on LiveKit Cloud. Self-hosting is
+> revisited only when either trigger fires — not on a vague "when residency
+> demands," which was never a real trigger:
+>
+> - **Usage threshold:** 500 concurrently active families, or
+> - **Compliance trigger:** any institutional or court-mandated deployment that
+>   explicitly requires data-residency guarantees a managed cloud cannot make.
+>
+> **Why Cloud, not self-host, right now.** A self-hosted SFU/TURN cluster is a
+> real, ongoing operational burden — on-call, patching, NAT-traversal edge
+> cases — for a small team building a product where "the call didn't connect"
+> is close to the worst possible failure. A well-run managed service's uptime
+> in year one is very likely better than a small team's own cluster, not worse.
+> Cost inverts at scale, but at today's scale the fixed cost of self-hosting is
+> the harder problem to justify.
+>
+> **The real cost of staying on Cloud is COPPA sub-processor disclosure** — the
+> amended COPPA Rule (§10.1, in effect since April 2026) requires disclosing
+> LiveKit as a third-party recipient of a minor's live video, with a proper
+> DPA. That is the one genuine functional cost of this choice, and it is
+> solvable with paperwork rather than infrastructure.
+
+---
+
+## §11.5 The school layer — no system integration
+
+**Written v0.40.0, closing a reference gap that predated it.** `school.ts` had
+carried this section number in its own header comment since v0.3.0 without the
+section ever being written here — a small declaration-without-implementation
+gap, the same category this project's own audits exist to catch, just one that
+had gone unnoticed until settling §16.2 #8 required leaning on it directly.
+
+**The decision: Olive does not integrate with school systems.** No SIS
+connector, no gradebook sync, no attendance feed. Three reasons, the third
+deciding it:
+
+1. **There is no standard.** Thousands of districts, half a dozen incompatible
+   platforms — an integration built for one is a rewrite for the next.
+2. **It is FERPA-adjacent**, and a consumer app touching an education record
+   takes on an obligation it is poorly placed to carry.
+3. **A gradebook feed would put a child's marks in front of a parent she did
+   not choose to tell.** That inverts §9.1's entire posture — homework help is
+   something she brings, not something served to him.
+
+What IS built is the small, honest version: dates a parent types in (§9's
+school-event calendar entries), and a shared place for the paper that comes
+home in a bag. Nothing here reads or writes any external education record.
+
+This is also the precedent §16.2 #8 (curriculum-standard tagging, §19) leans on
+directly — grade-level tagging of a homework problem is the same risk in
+different clothes.
+
 ---
 
 ## §12 Roadmap
@@ -2101,9 +2159,7 @@ two-word form may fare better; that is a trademark attorney's call, not ours.
 | 1 | **Product name.** "Olive Branch" is a codename; needs USPTO and app-store collision clearance. | Launch |
 | 4 | Ping limit of 3/day — right number, and should it vary by age? | Phase 1 |
 | 5 | Preservation default: opt-in per artifact, or standing-rule-on? Interacts with §10.1 retention posture. | Phase 1 |
-| 6 | Self-host vs LiveKit Cloud migration timing. | Phase 2 |
 | 7 | Supervised-visitation go-to-market: direct, or via existing providers? | Phase 3 |
-| 8 | Curriculum standards source: Common Core vs state-by-state tagging. | Phase 2 |
 | 9 | Majority age by state, and a child who turns 18 mid-custody-order. | Phase 4 |
 | 11 | Does the therapist role see the contact ladder only, or session metadata too? | Phase 3 |
 
@@ -2290,6 +2346,20 @@ Recorded so these are not re-litigated from scratch, and not silently dropped.
 | Item | Status | Revisit |
 |---|---|---|
 | **Foster and kinship placement** | **Removed from §16.2 at the owner's direction — not needed yet. Scaffolded only** at `scaffold/packages/kinship/src/DEFERRED.md`, which records why it is hard (the state is a party, which breaks the §10.2 consent model and puts P7 against a statutory duty of care), what already exists to build on, and three preconditions before any work starts. | Unscheduled |
+| **Child-initiated affection signal** (§16.2 #12 — "send a hug," raised evaluating a Gemini-drafted alternate build). **Declined outright at the owner's direction, not deferred.** The come-back signal's "he requests, she acts" asymmetry (§5.27) does not extend to a child-initiated push; five open questions were raised (spam/pressure on the receiver, `pending_asks` ceiling interaction, sender symmetry, voice-memo retention treatment, and whether showcase/letters already cover the need) and the owner declined the feature rather than resolve them. No scaffold exists and none is planned. | **Not planned** — do not re-propose absent new owner direction |
+| **Curriculum-standard tagging** (§16.2 #8 — Common Core vs. state-by-state).
+**Declined outright, not deferred, v0.40.0.** `school.ts` (§11.5) had already
+settled a closely related question: no SIS/gradebook integration, because a
+gradebook feed would put a child's marks in front of a parent she did not
+choose to tell — the exact inversion of §9.1's "homework help is something she
+brings, not something served to him." Standard-tagging a homework problem by
+grade level is the same risk wearing different clothes, at real ongoing
+maintenance cost either way (Common Core has state holdouts; fifty-state
+tagging is fifty taxonomies to track). The hint engine's value is precisely
+that it works on any problem without knowing what grade or standard it
+belongs to. If targeted help is wanted later, the safer version is a
+per-session parent-typed tag with no persistent record — not a standard
+taxonomy. | **Not planned** — do not re-propose absent new owner direction |
 | Therapist role scope definition | Role landed; visibility scope open — §16 #11 | Phase 3 |
 | Child device reality — no-install web path, household-device mode, offline playback | Deferred to §8.5 stub | Phase 2 |
 | Dispute tiebreak beyond propose/accept/decline | Routes to coordinator seat; escalation ladder undefined | Phase 3 |
@@ -2432,6 +2502,52 @@ Standing rules adopted as a result, all now in force:
 4. **Flutter shell** — child and guardian, two screens each, against real APIs.
 5. **LiveKit server + push**, last, because a call that cannot ring is a demo
    problem rather than an architecture problem.
+
+---
+
+## §8.5.0 The entry gate — which side is this?
+
+**New v0.41.0.** Raised as an idea to make onboarding "all-inclusive and
+comprehensive" — one unified modal that reads an age and decides whether the
+device becomes the child's kiosk or the guardian's full app. **Evaluated and
+rejected in that exact form**, then rebuilt into something that keeps the
+underlying goal.
+
+**Why the original form doesn't ship.** `AgeStep` (§8.5, below) already exists
+to guard against precisely this failure mode one layer down: *"a six-year-old
+who taps '10' ... must not thereby unlock a privacy tier."* Routing FULL
+GUARDIAN AUTHORITY off a self-reported, unverified age is the same mistake at
+a far higher stakes level — court exports, the other guardian's private
+handoff notes, financial data, message-deletion authority, the child's own
+emergency card, all reachable by whoever types the larger number. It would
+also have quietly narrowed §21's continuous 2–17 maturation ladder down to
+"child mode ends at 10," which is not what §21 says and not something this
+proposal was trying to change.
+
+**What ships instead: a role question, not an age gate.** Two buttons — *"my
+child's device"* or *"the grown-up's device."* Nothing about this screen
+grants anything:
+
+- Choosing **child** routes, unchanged, into the existing first-run flow
+  below (`begin()`, ages 2–17, still feeding §21).
+- Choosing **grown-up** routes to the real account path — passkey/WebAuthn
+  (§11) — and every guardian capability afterward is still gated exactly as
+  it always was, by `family-graph/authorize.ts`'s `can()`, which reads real
+  edges and has never heard of this screen. The test suite proves this
+  directly rather than merely asserting it: it calls the real authorizer
+  with a guardian-role tap and zero edges, and confirms denial.
+
+**Suggestion, never authority.** A device that already has a child's birth
+date on record (because a guardian set one up here before) pre-highlights the
+child button. Absence of a birth date suggests nothing — it never defaults
+toward guardian, since defaulting toward the higher-authority side on missing
+information would be the same mistake wearing a different shape.
+
+**One more clarification this raised:** the child side is not a one-way
+"receiver." She already sends homework photos, drawings, showcase items, and
+letters *to* the guardian side today (§9.1, §9.10, §9.12.4, §9). Nothing about
+this gate changes that; it was worth naming so the "transmitter/receiver"
+framing doesn't quietly become the mental model going forward.
 
 ---
 
@@ -2884,6 +3000,15 @@ OS window or the in-app pane, on any hardware and firmware combination.
 
 ## §5.27 The come-back signal
 
+**Bolstered v0.42.0 — §5.27.9 reachable-hours deferral.** Previously, a
+signal blocked by silent hours or a blocked window was simply dropped, and
+because §5.27.6 already (correctly) shows the sender nothing, a dropped
+signal was indistinguishable from one that arrived and was ignored. It is now
+deferred to the next reachable window instead — capped at one, never a
+queue — the same graceful-degradation philosophy as the quality ladder
+(§5.28) and a live game's async fallback. See §8.15 for the pattern this now
+fits into.
+
 **He requests. She acts.**
 
 No data flows back, no control channel exists, and the child performs every action
@@ -3014,6 +3139,39 @@ is shipped and what is next, so the roadmap stays honest.
 
 ---
 
+## §8.8.5 Read-aloud for pre-readers
+
+**New v0.39.0.** §8.8b's baseline `spoken` form covers the sixteen come-back-signal
+applications — it guarantees a *signal* is never sight-gated. It does not cover
+general navigation: a five-year-old still cannot tell what "My weeks" says on an
+ordinary screen. Raised evaluating a Gemini-drafted alternate build, which put a
+plain 🔊 button on every screen. The button was the right idea; this is the
+safety-checked version.
+
+**On-device only, always** — the same posture already settled for captions
+(§8.8.1). A child's voice browsing her own calendar never leaves the device for a
+cloud text-to-speech API.
+
+**Reads the accessibility label, not a second copy of it.** `speakableText()`
+sources the same string a screen reader already gets (§8.8.4's `LABELS`) wherever
+one exists, falling back to visible text only where no label has been written yet.
+Two hand-maintained strings for the same control is a drift bug waiting to happen;
+this makes drift structurally impossible for anything with a label.
+
+**Never autonomous.** Speech that starts itself, rather than in response to a tap,
+is §8.13's slot-machine mechanic wearing a voice. `admitSpeech('autonomous')` is
+refused unconditionally.
+
+**Default-on below age 8**, opt-in above it — mirrors the birthday-hint fade
+already used elsewhere (`HINT_FADES_AT_AGE`): a scaffolding aid that quietly stops
+being necessary, rather than a setting a child has to go find and switch off.
+
+**Ephemeral, never logged.** This is not §8.8.1's caption pipeline; nothing here
+is retained, transcribed, or treated as call media.
+
+
+---
+
 ## §8.13 Motion
 
 Everything on the child's side was static. A five-year-old reads a static
@@ -3113,12 +3271,34 @@ Nothing loops outside the ambient set. Nothing ever auto-plays.
 `celebrate()` returns `play: false` from the second occurrence onward, and P2
 exists because habits trained into children are hard to untrain.
 
+### 8.13.8 The touch chime
+
+**New v0.39.0.** Raised evaluating a Gemini-drafted alternate build, which fired
+a Web Audio "pop" on every touch. The idea is cheap (§8.14: a synthesized
+oscillator is negligible against the capability budget) and good; it needed the
+same discipline every other sound in this section already has.
+
+A chime is **consequence motion wearing sound instead of pixels** — not a fifth
+category. It inherits §8.13.1–§8.13.6 wholesale: it fires only after something
+she did, never autonomously; it is silent wherever the surface is `still`
+(bedtime, homework, journal, emergency card — exactly the list a wiggle is
+banned from); and it never loops. `chimeAllowed()` composes a one-tap mute
+setting with the same surface-quietness table motion already reads, so a
+household that needs silence — a classroom, a shared bedroom — gets it
+regardless of surface.
+
 
 ---
 
-## §5.27 Stream stability · §8.14 The capability budget
+## §5.28 Stream stability · §8.14 The capability budget
 
-### 5.27 The quality ladder sits under the rung ladder
+**Renumbered v0.39.1.** Previously double-booked at §5.27, which the come-back
+signal (above) already owns — every prose reference to "§5.27" in this document
+(P11, §16.2 #12) means the come-back signal, so this section was the intruder.
+Moved here rather than the other way around, since the come-back signal's
+number is load-bearing in more places.
+
+### 5.28 The quality ladder sits under the rung ladder
 
 `LADDER` already said HD → SD → audio-only → banked. What it lacked was
 **hysteresis** — and without it, a wobbling connection flickers between rungs
@@ -3199,6 +3379,61 @@ Every expensive feature declares a cost; the voice outranks everything; ceilings
 exist for the modules that need them; **no ceiling is a bare magic number**; and
 the quality ladder is asymmetric. H1 and H5 were both shown to fail when their
 guard was removed.
+
+
+---
+
+## §8.15 The sync/async pairing pattern
+
+**New v0.42.0**, formalising a pattern that already existed piecemeal across
+the product before this section had a name. Raised as a direct request: make
+sure every activity has both a synchronous and asynchronous form where one
+makes sense, and that both account for the family's time difference — the
+same governing philosophy already proven in two other places in this spec:
+
+- **The quality ladder** (§5.28) — a call never fails outright. It steps down
+  720p → 360p → 180p → audio-only, one rung at a time, and the voice —
+  priority 100 in §8.14's capability budget, the single highest of any
+  feature in the product — is never a candidate for shedding.
+- **A live game's fallback** (`live.ts`) — *"the call drops on a train; the
+  game becomes turn-based and waits, rather than vanishing."*
+
+**The rule, stated once so every activity can be checked against it:**
+
+> **An activity that has a live form must also have a form that survives the
+> live form failing or simply not being available right now** — a dropped
+> call, a school day on one side and a workday on the other, a timezone eight
+> hours apart. The asynchronous form is not a lesser fallback; it is the
+> reason the synchronous form is safe to build at all, the same way §5.28's
+> quality ladder is what makes video worth offering in the first place.
+
+### 8.15.1 The pairing table
+
+| Activity | Synchronous | Asynchronous | Time-difference handling |
+|---|---|---|---|
+| The call itself | Live video/audio | Message banking (§8.2) + async video messages | Send-time guard (§6.4): "next bedtime" ≠ "the night of June 1st" |
+| Games | `live.ts` — 10 titles, explicitly *"a spine for the call"* | `games.ts`/`games2`/`games3` — ~10 turn-based titles | Turn clocks tick in **reachable hours, not wall hours** (§4.7) |
+| Homework | The pane (§5.26) + shared annotation canvas, live help during a call | Photo capture + the "hint, don't solve" tutor engine | Delivery engine's day-part policies |
+| Reading | Shared reading (v0.33.0) — one book, two screens, his voice | Storyteller — self-serve, bookmarkable, resumable | — |
+| Drawing | **New v0.42.0** — the shared annotation canvas, reused, live, per-actor undo | The doodle desk (§9.12.4) — solo, no timer, no completion state | — |
+| The come-back signal | Sent live, delivered immediately if reachable | **New v0.42.0** — deferred to the next reachable window, capped at one, never a queue (§5.27.9) | Silent-hours + day-part window already existed; the deferral is what's new |
+| Showcase asks (§9.10.7) | Answered live during a call | The 3-slot pending queue, oldest silently displaced | **New v0.42.0** — `askAgeInReachableHours()` weights an ask's age by the asker's actual reachable hours, not wall-clock hours, mirroring §4.7 |
+
+### 8.15.2 What this section does NOT change
+
+No existing behavior was altered to build this. Every synchronous/asynchronous
+form in the table above that predates v0.42.0 works exactly as it did — this
+section names and audits an existing pattern and fills two identified gaps
+(live drawing, showcase reachable-hours), rather than rebuilding anything.
+
+### 8.15.3 The audit
+
+`auditPairing()`-style checks are the responsibility of each module's own
+test suite rather than a single central registry — the same way §8.13's
+motion rules and §8.8b's accessibility forms are each enforced where they are
+declared, not through one god-module. What this section provides is the one
+place a future addition gets checked against: **does this activity need a
+synchronous and asynchronous form, and if so, do both already exist?**
 
 
 ---
@@ -3324,6 +3559,14 @@ on a phone. *Requesting* it must work there even if reviewing it does not.
 ---
 
 ## §9.10 The showcase — "show me"
+
+**Amended v0.42.0 (§8.15).** Pending asks (§9.10.7) were capped at three but
+aged in wall-clock time — an ask made at his 11pm during her school day was
+treated as exactly as "old" as one made during her free time, so the ceiling
+could silently displace a fresh ask nobody had a reasonable chance to see yet.
+`askAgeInReachableHours()` weights an ask's age by the asker's actual
+reachable hours instead, mirroring §4.7's `turnExpired` for games. Additive —
+`askForShow()`'s existing FIFO displacement is unchanged.
 
 ### 9.10.1 The observation this is built on
 
@@ -3652,6 +3895,31 @@ How many are **left** is a goal, not a score. The distinction matters: a goal is
 the shape of the puzzle, a score compares her to somebody. Escalation is manual —
 the product never raises the difficulty on her behalf.
 
+### 9.12.4 The doodle desk
+
+**New v0.39.0.** Raised evaluating a Gemini-drafted alternate build's "Art &
+Doodle Desk." §9.12.1's colouring engine is deliberately constrained — tap a
+region, it fills, no brush, no staying inside lines — which is right for a
+pre-drawn picture and wrong for a child who wants to draw her own thing. That is
+a genuinely separate mode, not a replacement: free strokes on a blank canvas plus
+six fixed stamps (heart, star, smiley, rainbow, sun, moon).
+
+It inherits every rule this section already enforces without exception. A blank
+page has no finish line, so unlike numbered colouring there is nothing for a
+"finished" state to mean — the child view is a standing invitation ("Draw
+anything you want" → "Keep going, or send it when you like"), never a count,
+never a completion percentage. Undo is the same free, unlimited, exact-history
+pattern as everywhere else in §9.2. A finished drawing is preservable the moment
+it has anything on it at all, and is preserved like any other artifact she makes.
+
+**Live pairing added v0.42.0 (§8.15).** The doodle desk had no synchronous
+counterpart — a gap the sync/async pairing audit found. Rather than build a new
+live-drawing engine, the live form reuses the existing shared annotation canvas
+(`annotation/canvas.ts`) outright: its per-actor undo scoping already solves the
+one hard problem a live shared doodle would otherwise reintroduce (a parent's
+undo must never erase the child's stroke). The pairing is a naming and a demo
+surface, not new logic.
+
 ---
 
 ## §9.11.6 The library, and the book
@@ -3914,6 +4182,47 @@ preserved artifact — the same rule as a story (§9.11.2), for the same reason:
 asking again is the only honest measure a child gives you. Thirteen banned fields
 keep a grade, a level or a "mastery" score out of it, because this is the feature
 where that temptation is strongest.
+
+
+---
+
+## §9.15 The capture button
+
+**New v0.39.0.** Raised at the owner's suggestion: a dedicated in-app photo and
+screenshot control, auto-uploading into the app's own storage rather than the
+device's shared camera roll.
+
+**Why this needs its own button rather than "just use the OS screenshot."** A
+device is shared — a sibling, a step-parent, anyone who picks it up unlocked can
+open the general gallery app and find whatever landed there. §9.1's homework
+capture and §5.26.7's pane still-frame already settled this exact posture for
+their own narrow cases; this generalises it into a standing feature rather than
+re-arguing the same constraint a third time somewhere else.
+
+**Two kinds, deliberately not merged — they carry different risk:**
+
+- **Camera capture** — a photo of the physical world (her homework, a drawing on
+  paper, something she wants to show). Reuses §9.1's quality gate *wholesale*:
+  `MIN_EDGE_PX` / `MIN_SHARPNESS` / `MAX_SKEW_DEG`, the exact same measured
+  thresholds, because a blurred photo is a blurred photo whether it is headed for
+  OCR or a keepsake. A photo that fails the gate is asked to be retaken rather
+  than uploaded unreadable.
+- **Screenshot capture** — of the app's own surface. Already digital, no
+  blur or skew possible, but a different risk: it could capture a parent's live
+  video mid-call, which would make it call media inheriting §8.8.1's retention
+  rules — a complication this feature does not take on. So screenshot capture is
+  **scoped off the call surface entirely** (`live_call`, `call_video`,
+  `pane_video`) rather than solved here. A screenshot mid-call is refused, not
+  silently taken.
+
+**The one guarantee the feature exists for:** `neverToDeviceGallery` and
+`autoUploadsToAppStorage`, declared as named invariants the same way §8.8.1
+declares `onDevice: true` for captions — an intention with a name can be
+asserted; a mere intention cannot.
+
+**No count shown to her.** Same discipline as §9.12's quiet activities — "Saved
+to your gallery" on success, "Let's try that again" on a failed gate, and nothing
+that tallies how many she has taken.
 
 
 ---

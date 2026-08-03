@@ -4,6 +4,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildPush, auditPush, sendGuard, FORBIDDEN_DATA_KEYS,
   ROOM_EMPTY_TIMEOUT_SEC, ROOM_MAX_PARTICIPANTS, revokeLiveAccess, endSession,
@@ -107,7 +108,7 @@ const REF = 'r_' + 'a'.repeat(20);
 // I · CLIENT CONTRACT — the Dart is uncompiled, so check what can be checked
 // ===========================================================================
 {
-  const dartDir = new URL('../../../client/lib/', import.meta.url).pathname;
+  const dartDir = fileURLToPath(new URL('../../../client/lib/', import.meta.url));
   const dart = readdirSync(dartDir).filter(f => f.endsWith('.dart'));
   check('I contract', 'client source present', dart.length >= 4, 'true');
 
@@ -131,7 +132,7 @@ const REF = 'r_' + 'a'.repeat(20);
 
   // Every unique path must be a route the API could plausibly serve: reject any
   // client path with no server counterpart in §7 of the MASTERFILE.
-  const mf = readFileSync(new URL('../../../../MASTERFILE.md', import.meta.url).pathname,
+  const mf = readFileSync(fileURLToPath(new URL('../../../../MASTERFILE.md', import.meta.url)),
     'utf8');
   const unspecified = [...new Set(paths)].filter(p => {
     const stem = p.replace('/v1/children/:childId', '').replace('/v1/', '') || 'me';
@@ -171,7 +172,7 @@ const REF = 'r_' + 'a'.repeat(20);
 // J · NATIVE BRIDGE CONTRACT — three languages, none of them compiled here
 // ===========================================================================
 {
-  const root = new URL('../../../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
   const kt  = readFileSync(root + 'native/android/KioskBridge.kt', 'utf8');
   const cs  = readFileSync(root + 'native/windows/AssignedAccessBridge.cs', 'utf8');
   const dart = readFileSync(root + 'client/lib/kiosk_channel.dart', 'utf8');

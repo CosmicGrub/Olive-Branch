@@ -9,7 +9,9 @@ import { APPLICATIONS, application, admitApplication, MAY_SEND, canSend,
   inSilentHours, deliver, expire, dismiss, act, transitionComplete,
   muteForAnHour, muteVisibleToSender, CHILD_MUTE_HOURS,
   SIGNALS_ARE_NEVER_PRESERVED, SIGNALS_IN_COURT_EXPORT, SIGNALS_IN_ARCHIVE,
-  escapeHatch, firstRunLesson } from '../src/signal.mjs';
+  escapeHatch, firstRunLesson, MAX_DEFERRED_SIGNALS, deferSignal,
+  DEFERRAL_STALE_AFTER_SECONDS, redeliverIfReachable,
+  DEFERRAL_INVISIBLE_TO_SENDER, SIGNAL_SYNC_ASYNC_PAIRING } from '../src/signal.mjs';
 import { FORMS, form, byReadiness, baselineForms, shippedForms, MIN_CHANNELS,
   channelsCovered, perceivable, baselineIsPerceivable, promote, rollout,
   addForm, presentSignal, auditPresentation } from '../../a11y/src/matrix.mjs';
@@ -275,6 +277,63 @@ const pend=(k,o={})=>({kind:k,fromUserId:'dad',senderIsPresent:false,inCall:fals
     auditPresentation({requiresSight:true}).ok, 'false');
   check('EW present','enabling nothing still works',
     presentSignal([]).perceivable, 'true');
+}
+
+// EX · §5.27.9 REACHABLE-HOURS DEFERRAL
+{
+  const nowSec=Math.floor(Date.parse(T)/1000);
+
+  // Silent hours: blocked, then deferred, then redelivered once reachable.
+  const blockedSilent=deliver(ctx({localHour:22}),pend('come_back'));
+  check('EX defer','still blocked in silent hours', blockedSilent.reason, 'silent_hours');
+  const deferredSilent=deferSignal(pend('come_back'),blockedSilent.reason,T);
+  check('EX defer','recorded, not dropped', deferredSilent.pending.kind, 'come_back');
+  check('EX defer','with the reason it was blocked for', deferredSilent.reason, 'silent_hours');
+  const redeliveredSilent=redeliverIfReachable(deferredSilent,nowSec+60);
+  check('EX defer','redelivered once she is reachable', redeliveredSilent.ok, 'true');
+  check('EX defer','carrying the original signal', redeliveredSilent.pending.kind, 'come_back');
+
+  // A blocked window defers the same way.
+  const blockedWindow=deliver(ctx({windowBlocked:true}),pend('nearly_there'));
+  check('EX defer','a blocked window is also deferred, not dropped',
+    blockedWindow.reason, 'blocked_window');
+  const deferredWindow=deferSignal(pend('nearly_there'),blockedWindow.reason,T);
+  const redeliveredWindow=redeliverIfReachable(deferredWindow,nowSec+10);
+  check('EX defer','and redelivers once the window clears', redeliveredWindow.ok, 'true');
+
+  // Capped at one — a second deferral replaces, never queues.
+  check('EX defer','capped at one, never a queue', MAX_DEFERRED_SIGNALS, 1);
+  let slot=deferSignal(pend('come_back'),'silent_hours',T);
+  slot=deferSignal(pend('your_turn'),'blocked_window',T);
+  check('EX defer','a second deferral REPLACES the first', slot.pending.kind, 'your_turn');
+  check('EX defer','with the newer reason, not the older one', slot.reason, 'blocked_window');
+
+  // Stale after DEFERRAL_STALE_AFTER_SECONDS.
+  check('EX defer',`stale after ${DEFERRAL_STALE_AFTER_SECONDS}s`,
+    DEFERRAL_STALE_AFTER_SECONDS, 3600);
+  const stillFresh=redeliverIfReachable(deferredSilent,nowSec+DEFERRAL_STALE_AFTER_SECONDS);
+  check('EX defer','still redeliverable exactly at the boundary', stillFresh.ok, 'true');
+  const goneStale=redeliverIfReachable(deferredSilent,
+    nowSec+DEFERRAL_STALE_AFTER_SECONDS+1);
+  check('EX defer','a stale deferral refuses redelivery', goneStale.ok, 'false');
+  check('EX defer','naming why', goneStale.reason, 'stale');
+
+  // Invisible to the sender — same as ignored, same as dropped.
+  check('EX defer','a deferral is not a delivery receipt',
+    DEFERRAL_INVISIBLE_TO_SENDER, 'true');
+  check('EX defer','its shape never leaks into the sender view',
+    auditSenderView(deferredSilent).ok, 'true');
+  check('EX defer','not even when it is nested inside other state',
+    auditSenderView({state:{deferred:deferredSilent}}).ok, 'true');
+  check('EX defer','no forbidden key sneaks in under a new name',
+    auditSenderView(deferredSilent).ok===false
+      ? auditSenderView(deferredSilent).leaks.join(',') : 'none', 'none');
+
+  // Named for §8.15's sync/async pairing table.
+  check('EX defer','names the synchronous form',
+    typeof SIGNAL_SYNC_ASYNC_PAIRING.sync, 'string');
+  check('EX defer','and the asynchronous form',
+    typeof SIGNAL_SYNC_ASYNC_PAIRING.async, 'string');
 }
 
 let g='';

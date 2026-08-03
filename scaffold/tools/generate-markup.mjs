@@ -18,8 +18,9 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPO = join(ROOT, '..');
 const PSQL = process.env.PSQL_CMD;   // e.g. "psql -h /tmp -p 5433 -d v7"
 const DB_OK = Boolean(PSQL);

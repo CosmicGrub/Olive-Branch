@@ -520,15 +520,15 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
 </script>
 <script type="application/json" id="tl-manifest">
 {
-  "version": "0.37.0",
-  "spec": "0.37.0",
+  "version": "0.42.0",
+  "spec": "0.42.0",
   "nodeOnly": [
     { "module": "api/api", "dep": "node:http" },
     { "module": "auth/auth", "dep": "node:crypto" },
     { "module": "session-runtime/rooms", "dep": "node:crypto" },
     { "module": "storage/storage", "dep": "node:crypto" }
   ],
-  "assertions": 2327,
+  "assertions": 2603,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -557,7 +557,9 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     "availability": "availability", "deletion": "deletion", "siblings": "siblings",
     "teachMe": "teachme",
     "gallery": "gallery", "briefing": "briefing", "careNote": "carenote",
-    "closingRitual": "closing", "sharedReading": "reading", "busyFork": "busy"
+    "closingRitual": "closing", "sharedReading": "reading", "busyFork": "busy",
+    "welcome": "welcome", "guardianSetup": "guardianSetup",
+    "doodle": "doodle", "snapshot": "snapshot"
   },
   "notDemoed": {
     "invitation": "Onboarding flow — the demo starts from an established family, so there is no invitation to accept.",
@@ -669,7 +671,9 @@ S.myday = function(){
     + st.map(function(s){
       var style = s.current ? ' style="background:color-mix(in srgb,var(--school) 10%,transparent)"'
         : s.next ? ' style="border-left:3px solid var(--overlap)"' : '';
-      return '<div class="row"'+style+'><div class="chk'+(s.current?'':'')+'"></div><div class="g">'
+      return '<div class="row"'+style+'><div class="chk" style="border:none;'
+        + 'display:flex;align-items:center;justify-content:center;font-size:14px">'
+        + esc(s.icon)+'</div><div class="g">'
         + (s.current?'<strong>'+esc(s.label)+'</strong>':esc(s.label))
         + '<br><span class="t">'+esc(s.startsLocal)+(s.current?' — you are here':(s.next?' · next':''))+'</span></div></div>';
     }).join('');
@@ -1344,6 +1348,36 @@ S.expiry = function(){
 };
 
 
+S.welcome = function(){
+  var v = T.entryView();
+  var childOn = v.suggestedWithRecord === 'child';
+  return '<div class="ob" style="justify-content:center;text-align:center">'
+    + '<div style="font-size:40px;margin-bottom:10px">🫒</div>'
+    + '<div class="obq">Who\'s using this?</div>'
+    + '<div class="obs">A role question, not an age check — this only decides '
+    + 'which screens come next.</div>'
+    + '<div style="margin-top:20px;display:flex;flex-direction:column;gap:10px">'
+    + '<button class="'+(childOn?'cta':'btn sec')+'" data-entry="child">This is my child\'s device</button>'
+    + '<button class="'+(childOn?'btn sec':'cta')+'" data-entry="grownup">This is the grown-up\'s device</button>'
+    + '</div>'
+    + '<div style="margin-top:16px;font-size:11px;color:var(--ink-3)">'
+    + 'Choosing "grown-up" does not itself grant anything — it only opens account '
+    + 'setup. Every real capability still passes through the family graph, exactly '
+    + 'as before.</div></div>';
+};
+
+S.guardianSetup = function(){
+  return '<div class="ob" style="justify-content:center;text-align:center">'
+    + '<div style="font-size:40px;margin-bottom:10px">🔐</div>'
+    + '<div class="obq">Grown-up account</div>'
+    + '<div class="obs">Passkey/WebAuthn sign-in and the real family-graph '
+    + 'consent flow continue here.</div>'
+    + wip('guardian_setup')
+    + '<div style="margin-top:16px"><button class="cta" data-go="guardianHome">'
+    + 'Continue as if signed in</button>'
+    + '<button class="btn sec" data-go="welcome" style="margin-top:8px">Back</button></div></div>';
+};
+
 S.onboarding = function(){
   var v = T.obView();
   if(v.step==='name'){
@@ -1575,6 +1609,70 @@ S.colouring = function(){
     + (v.artifact?'<div class="gwin">Finished. Dad can see it.</div>':'')
     + '<div class="gnote">In numbers mode a different colour still fills. '
     + 'A purple giraffe is allowed.</div></div>';
+};
+
+S.doodle = function(){
+  var v = T.dooView();
+  var sw = v.colours.map(function(hex){
+    return '<b data-doopick="'+hex+'"'+(v.hex===hex?' class="on"':'')
+      + ' style="background:'+hex+'"></b>'; }).join('');
+  var stamps = v.stamps.map(function(s){
+    return '<button data-doostamp="'+s.kind+'" style="font-size:18px;padding:6px 10px">'
+      + s.glyph + '</button>'; }).join('');
+  var marks = v.state.marks.map(function(m){
+    if (m.kind==='stamp'){
+      var g = (v.stamps.filter(function(s){return s.kind===m.mark.stamp;})[0]||{}).glyph||'';
+      return '<span style="position:absolute;left:'+(m.mark.x*100).toFixed(1)+'%;top:'
+        + (m.mark.y*100).toFixed(1)+'%;font-size:22px;transform:translate(-50%,-50%)">'+g+'</span>';
+    }
+    var p = m.stroke.points[0];
+    return '<i style="position:absolute;left:'+(p[0]*100).toFixed(1)+'%;top:'
+      + (p[1]*100).toFixed(1)+'%;width:12px;height:12px;border-radius:50%;'
+      + 'background:'+m.stroke.color+';transform:translate(-50%,-50%);display:block"></i>';
+  }).join('');
+  return '<div class="pad" style="padding-top:10px">'
+    + '<div style="font-family:var(--display);font-weight:600;font-size:17px">Draw</div>'
+    + '<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">'
+    + esc(v.child.line)+'</div>'
+    + '<div class="pal8">'+sw+'</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px">'+stamps+'</div>'
+    + '<div data-doocanvas="1" style="position:relative;width:100%;aspect-ratio:1.3;'
+    + 'border:1px solid var(--rule);border-radius:10px;background:#fff;overflow:hidden;'
+    + 'cursor:crosshair">'+marks+'</div>'
+    + '<div class="gfoot" style="margin-top:9px">'
+    + '<button data-dooundo="1">Undo</button>'
+    + '<button data-doonew="1">Start again</button></div>'
+    + (v.artifact?'<div class="gwin">Saved. Dad can see it.</div>':'')
+    + '<div class="gnote">Tap the canvas to draw a mark, or tap a stamp. Nothing '
+    + 'here is scored, timed, or has a finish line.</div></div>';
+};
+
+S.snapshot = function(){
+  var cam = T.snapshotCamera(window.__snapPreset||'good');
+  var shot = T.snapshotScreenshot(window.__snapSurface||'childHome');
+  return '<div class="pad" style="padding-top:10px">'
+    + '<div style="font-family:var(--display);font-weight:600;font-size:17px">Photo</div>'
+    + '<div style="font-size:12px;color:var(--ink-2);margin-bottom:10px">'
+    + 'Saves straight into her gallery here — never the device\'s shared photo app.</div>'
+    + '<div class="seclbl">camera</div>'
+    + '<div class="gfoot">'
+    + '<button data-camtake="good">Good photo</button>'
+    + '<button data-camtake="blurry">Blurry</button>'
+    + '<button data-camtake="skewed">Skewed 9°</button>'
+    + '<button data-camtake="tiny">Too small</button></div>'
+    + (cam.result.ok
+        ? '<div class="blk ok"><div class="k">saved</div><p>'+esc(cam.result.message)+'</p></div>'
+        : '<div class="blk"><div class="k">let\'s try that again</div><p>'+esc(cam.result.advice)+'</p></div>')
+    + '<div class="seclbl" style="margin-top:6px">screenshot</div>'
+    + '<div class="gfoot">'
+    + '<button data-screenshot="childHome">Ordinary screen</button>'
+    + '<button data-screenshot="live_call">During a video call</button>'
+    + '<button data-screenshot="pane_video">Shared-canvas call</button></div>'
+    + (shot.result.ok
+        ? '<div class="blk ok"><div class="k">saved</div><p>'+esc(shot.result.message)+'</p></div>'
+        : '<div class="blk"><div class="k">refused</div><p>'+esc(shot.result.advice)+'</p></div>')
+    + '<div class="pad" style="padding-top:10px"><div style="font-size:11.5px;color:var(--ink-3);line-height:1.5">'
+    + 'Never to the device gallery. Always auto-uploaded to Olive\'s own storage.</div></div>';
 };
 
 S.findthing = function(){
@@ -2762,6 +2860,42 @@ colouring: function(){ var v=T.colView();
   + real('child view — no percentage, no completion bar', v.child)
   + real('auditActivity()', v.audit)); },
 
+doodle: function(){ var v=T.dooView();
+  return P_engine('The doodle desk — §9.12.4 (+ §8.15 live pairing, v0.42.0)',
+  '<p>Free strokes plus six fixed stamps on a blank canvas — a genuinely separate '
+  + 'mode from tap-to-fill colouring (previous screen), right for a child who wants '
+  + 'to draw her own thing rather than fill in a picture someone else drew. A blank '
+  + 'page has no finish line, so the child view below is a standing invitation, '
+  + 'never a count or a percentage.</p>'
+  + '<p><strong>Live pairing, added v0.42.0.</strong> The async form here is this '
+  + 'file\'s own <code>DoodleState</code>; the synchronous, paired form reuses the '
+  + 'shared annotation canvas (<code>annotation/canvas.ts</code>) outright rather '
+  + 'than a second engine — its per-actor undo scoping already guarantees a '
+  + 'parent\'s undo can never erase the child\'s stroke. <code>DOODLE_PAIRING</code> '
+  + 'and <code>LIVE_DOODLE_REUSES_SHARED_CANVAS</code> are a naming and a demo '
+  + 'surface, not new logic, which is why one screen documents both forms rather '
+  + 'than building a second live-only one.</p>'
+  + real('child view — no score, no timer, no completion', v.child)
+  + real('DOODLE_PAIRING', v.pairing)
+  + real('auditActivity()', v.audit)); },
+
+snapshot: function(){ var cam=T.snapshotCamera(window.__snapPreset||'good'),
+    shot=T.snapshotScreenshot(window.__snapSurface||'childHome'), pol=T.snapshotPolicy();
+  return P_engine('The capture button — §9.15',
+  '<p>A dedicated in-app photo/screenshot control, auto-uploading into the app\'s '
+  + 'own storage rather than the device\'s shared camera roll — a device is shared, '
+  + 'and anyone who picks it up unlocked can open the general gallery app and find '
+  + 'whatever landed there.</p>'
+  + '<p><strong>Camera capture</strong> reuses §9.1\'s quality gate wholesale — the '
+  + 'exact same measured thresholds, because a blurred photo is a blurred photo '
+  + 'whether it\'s headed for OCR or a keepsake. <strong>Screenshot capture</strong> '
+  + 'is scoped off the call surface entirely ('+pol.scopedOffSurfaces.join(', ')+') '
+  + 'rather than solved here — a screenshot mid-call would catch a parent\'s face '
+  + 'without him knowing, and that is call media with its own retention question.</p>'
+  + real('named invariants this feature exists for', pol)
+  + real('captureCameraPhoto()', cam)
+  + real('captureScreenshot()', shot)); },
+
 findthing: function(){ var v=T.findView();
   return P_engine('Find the thing',
   '<p>A where\'s-Wally, except <strong>the parent chooses what is hidden.</strong> '
@@ -3525,6 +3659,37 @@ paletteParent: function(){ var v=T.palView();
   + real('applyColour() on a ribbon band', v.refused)
   + real('coloursForYearBook()', v.yearBook)); },
 
+welcome: function(){ var v=T.entryView(), p=T.entryProof();
+  return P_engine('The entry gate — §8.5.0',
+  '<p>Raised as a request for one shared onboarding modal that reads a typed age '
+  + 'and routes to either the child kiosk or the guardian app. Evaluated and '
+  + 'rejected in that exact form: a six-year-old who taps a bigger number must not '
+  + 'thereby unlock a privacy tier, and routing full guardian authority off a '
+  + 'self-reported age is the same mistake at far higher stakes — court exports, '
+  + 'the other guardian\'s private notes, message-deletion authority, all reachable '
+  + 'by whoever types the larger number.</p>'
+  + '<p><strong>So this screen decides only which screens come next.</strong> '
+  + 'Choosing "grown-up" routes to real account setup (passkey/WebAuthn, §11) — it '
+  + 'grants nothing by itself. Every guardian capability is still gated by '
+  + '<code>authorize.ts</code>\'s <code>can()</code>, which reads real edges and '
+  + 'knows nothing about this screen.</p>'
+  + '<p><strong>Suggestion never becomes authority.</strong> A device that already '
+  + 'has a child\'s birth date on file suggests the child button — absence '
+  + 'suggests nothing, never guardian.</p>'
+  + real('suggestEntryRole() — a record suggests "child"; absence suggests nothing', v)
+  + real('can(\'expense.view\', edges:[], role:\'guardian\') — proved, not asserted', p)); },
+
+guardianSetup: function(){
+  return P_engine('Grown-up account setup — honest stub',
+  '<p>Where passkey/WebAuthn sign-in and the real family-graph invitation/consent '
+  + 'flow continue. Not fully built in this demo — shown honestly as a stub rather '
+  + 'than faked, the same way the native kiosk bridges are documented as drafted '
+  + 'and unverified rather than glossed over.</p>'
+  + '<p>The important property is what does <em>not</em> happen here: tapping '
+  + '"grown-up" on the welcome screen did not, by itself, grant anything. Whatever '
+  + 'account gets created here still has to earn a real guardianship edge before '
+  + '<code>can()</code> allows anything.</p>'); },
+
 onboarding: function(){ var v=T.obView();
   return P_engine('The child\'s first run',
   '<p>Three steps: she spells her name, taps her age, and is <em>told</em> who she '
@@ -3799,9 +3964,10 @@ video: function(){ return P_engine('Live video',
 // ---------------------------------------------------------------- routing --
 var SCREENS = [
   ['First run', [
+    ['welcome','Welcome — which side?'],
     ['onboarding','Onboarding'],['palette','Pick a colour'],
     ['paletteDaily','Today\'s colour'],['paletteParent','What Dad sees'],
-    ['birthday','Her birthday'],
+    ['birthday','Her birthday'],['guardianSetup','Grown-up account setup'],
   ]],
   ['Child shell', [
     ['childHome','Home'],['inbox','Messages'],['homework','Homework'],['list','My list'],
@@ -3817,7 +3983,8 @@ var SCREENS = [
     ['playChess','Chess'],
     ['playChain','I went to the market'],['playKim','What\'s missing?'],
     ['playHunt','Scavenger hunt'],
-    ['colouring','Colouring book'],['findthing','Find the thing'],
+    ['colouring','Colouring book'],['doodle','Doodle desk'],['snapshot','Photo'],
+    ['findthing','Find the thing'],
     ['spotdiff','Spot the difference'],['handicap','Handicap engine'],
   ]],
   ['Keeping things', [
@@ -3969,7 +4136,9 @@ document.addEventListener('click', function(e){
     + '[data-closenext],[data-closeskip],[data-readturn],[data-readswap],'
     + '[data-handoff],[data-busy],[data-ladderage],[data-quietage],[data-lseal],'
     + '[data-lopen],[data-bankstart],[data-bankadd],[data-availpub],[data-delage],'
-    + '[data-sibclose],[data-sibreset],[data-teachadd],[data-teachagain]');
+    + '[data-sibclose],[data-sibreset],[data-teachadd],[data-teachagain],'
+    + '[data-entry],[data-doopick],[data-doostamp],[data-doocanvas],[data-dooundo],'
+    + '[data-doonew],[data-camtake],[data-screenshot]');
   if(!t) return;
   try{
     var D = t.dataset;
@@ -4123,6 +4292,15 @@ document.addEventListener('click', function(e){
       return go(cur); }
     if(D.gundo!==undefined){ T.gUndo(D.gundo); return go(cur); }
     if(D.gh!==undefined){ var g2=D.gh.split(':'); T.gHandicap(g2[0],g2[1]); return go(cur); }
+    if(D.entry!==undefined){ var ec=T.chooseEntry(D.entry); var rt=T.routeFromEntry(ec.role);
+      return go(rt==='child_kiosk'?'onboarding':'guardianSetup'); }
+    if(D.doopick!==undefined){ T.dooPick(D.doopick); return go('doodle'); }
+    if(D.doostamp!==undefined){ T.dooStamp(D.doostamp); return go('doodle'); }
+    if(D.doocanvas!==undefined){ T.dooStroke(); return go('doodle'); }
+    if(D.dooundo!==undefined){ T.dooUndo(); return go('doodle'); }
+    if(D.doonew!==undefined){ T.dooNew(); return go('doodle'); }
+    if(D.camtake!==undefined){ window.__snapPreset=D.camtake; return go('snapshot'); }
+    if(D.screenshot!==undefined){ window.__snapSurface=D.screenshot; return go('snapshot'); }
     if(t.dataset.go) go(t.dataset.go);
     else if(t.dataset.hw){ window.__hwPreset=t.dataset.hw; go('homework'); }
     else if(t.dataset.hint){ window.__hint=t.dataset.hint; window.__hwPreset='good'; go('homework'); }

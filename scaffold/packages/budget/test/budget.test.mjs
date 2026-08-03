@@ -1,5 +1,5 @@
 /**
- * Stream stability and the capability budget. MASTERFILE §5.27, §8.14.
+ * Stream stability and the capability budget. MASTERFILE §5.28, §8.14.
  */
 import { QUALITIES, stepQualityDown, stepQualityUp, atFloor, atCeiling,
   DROP_AFTER_MS, RESTORE_AFTER_MS, newStream, evaluate, RESTORE_IS_SLOWER,

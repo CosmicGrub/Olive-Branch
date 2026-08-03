@@ -44,6 +44,7 @@ for spec in \
   "auth+storage+api|packages/api/test/stack.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "homework + real OCR|packages/homework/test/homework.test.mjs" \
+  "capture button + screenshot scope|packages/homework/test/snapshot.test.mjs" \
   "custody schedule|packages/custody/test/custody.test.mjs" \
   "phase 1-2 features|packages/agency/test/phase12.test.mjs" \
   "phase 3 court + archive|packages/ledger/test/phase3.test.mjs" \
@@ -61,6 +62,7 @@ for spec in \
   "motion|packages/motion/test/motion.test.mjs" \
   "stream + budget|packages/budget/test/budget.test.mjs" \
   "signal + a11y matrix|packages/signal/test/signal.test.mjs" \
+  "a11y read-aloud|packages/a11y/test/a11y.test.mjs" \
   "maturation ladder|packages/maturation/test/maturation.test.mjs" \
   "games|packages/games/test/games.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"

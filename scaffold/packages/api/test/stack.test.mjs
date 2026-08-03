@@ -376,9 +376,12 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
   check('F api', 'over a real socket → 200', res.status, 200);
   check('F api', 'no-store on child data', res.headers.get('cache-control'), 'no-store');
   check('F api', 'nosniff set', res.headers.get('x-content-type-options'), 'nosniff');
+  await res.arrayBuffer(); // drain the body — an unconsumed stream keeps the socket
+                           // pending, which trips a Windows libuv assertion on exit
   const unauth = await fetch(`http://127.0.0.1:${srv.port}/v1/children/${CHILD_A}/journal`,
     { headers: { authorization: `Bearer ${dadTok}` } });
   check('F api', 'P7 blocked over a real socket', unauth.status, 403);
+  await unauth.arrayBuffer();
   await srv.close();
 }
 
@@ -390,4 +393,8 @@ for (const r of rows) {
     (r.ok ? '' : `\n         expected ${r.e}, got ${r.a}`));
 }
 console.log(`\n${'-'.repeat(56)}\n${pass} passed, ${fail} failed\n`);
-process.exit(fail === 0 ? 0 : 1);
+// setImmediate, not a bare process.exit: this file is the only suite that opens
+// a real socket (api.listen), and exiting synchronously right after srv.close()
+// races libuv's own async handle teardown on Windows (UV_HANDLE_CLOSING abort).
+// Letting one event-loop turn pass first gives that teardown time to finish.
+setImmediate(() => process.exit(fail === 0 ? 0 : 1));

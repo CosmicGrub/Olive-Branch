@@ -355,3 +355,57 @@ export function auditQuietConsistency(): { ok: boolean; conflicts: string[] } {
   }
   return { ok: conflicts.length === 0, conflicts };
 }
+
+// ==================================================== §8.13.8 the touch chime
+/**
+ * New v0.39.0. Raised evaluating a Gemini-drafted alternate build, which fired
+ * a Web Audio "pop" on every touch. The idea is cheap and good; it needed the
+ * same discipline every other sound in this section already has.
+ *
+ * A chime is consequence motion wearing sound instead of pixels — not a fifth
+ * category. It inherits §8.13.1-§8.13.6 wholesale: it fires only after
+ * something she did, never autonomously; it is silent wherever the surface is
+ * still (bedtime, homework, journal, emergency card — exactly the list a
+ * wiggle is banned from); and it never loops.
+ */
+export type ChimeRefusal = MotionRefusal | 'muted' | 'surface_quiet';
+
+export interface ChimeRequest {
+  kind: MotionKind;
+  surface: string;
+  muted: boolean;
+  reducedMotionOn: boolean;
+}
+
+/**
+ * A chime is always consequence-triggered by definition. A caller that tries
+ * to request an autonomous one is refused the same way admitMotion refuses
+ * any other autonomous motion — this never gets a chime-specific carve-out.
+ */
+export function admitChime(
+  r: ChimeRequest,
+): { ok: true } | { ok: false; reason: ChimeRefusal; note: string } {
+  const motion = admitMotion({ kind: r.kind, surface: r.surface, durationMs: 0 });
+  if (!motion.ok) return motion;
+  if (r.muted) {
+    return { ok: false, reason: 'muted',
+      note: 'The one-tap mute setting silences every chime, regardless of surface.' };
+  }
+  if (effectiveQuietness(r.surface, r.reducedMotionOn) === 'still') {
+    return { ok: false, reason: 'surface_quiet',
+      note: 'A chime is silent everywhere a wiggle is banned — bedtime, '
+          + 'homework, the journal, the emergency card.' };
+  }
+  return { ok: true };
+}
+
+/**
+ * The one-tap mute setting composes with the same surface-quietness table
+ * motion already reads — a household that needs silence gets it regardless of
+ * surface. No "loop" parameter exists: a chime is a one-shot by construction.
+ */
+export function chimeAllowed(
+  surface: string, muted: boolean, reducedMotionOn: boolean,
+): boolean {
+  return admitChime({ kind: 'consequence', surface, muted, reducedMotionOn }).ok;
+}

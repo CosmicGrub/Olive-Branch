@@ -5,13 +5,15 @@
  * build step for the reader.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import * as esbuild from 'esbuild';
 
-execFileSync('npx', ['esbuild', 'demo/src/bridge.ts', '--bundle', '--format=iife',
-  '--global-name=TL', '--platform=browser', '--outfile=/tmp/bridge.js',
-  '--log-level=error', '--minify'], { stdio: 'inherit' });
+const built = esbuild.buildSync({
+  entryPoints: ['demo/src/bridge.ts'], bundle: true, format: 'iife',
+  globalName: 'TL', platform: 'browser', write: false,
+  logLevel: 'error', minify: true,
+});
 
-const bridge = readFileSync('/tmp/bridge.js', 'utf8');
+const bridge = built.outputFiles[0].text;
 const shell = readFileSync('demo/shell.html', 'utf8');
 const out = shell.replace('/*__BRIDGE__*/', () => bridge);
 writeFileSync('../DEMO.html', out);

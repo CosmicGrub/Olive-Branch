@@ -257,6 +257,27 @@ const chainOf=(n)=>{let c=[];for(let i=0;i<n;i++)
   check('R strip','a midnight-wrapping part is handled',
     scheduleStrip(parts,'23:30').find(s=>s.current).kind, 'asleep');
 
+  // §8.2.2 (v0.39.0) — a static day-part icon lives in the same table as the
+  // friendly label, so the two cannot drift apart.
+  check('R strip','wake carries the sun-rising glyph',
+    strip.find(s=>s.kind==='wake').icon, '🌅');
+  check('R strip','school carries the sun glyph',
+    strip.find(s=>s.kind==='school').icon, '☀️');
+  check('R strip','asleep carries the moon glyph',
+    strip.find(s=>s.kind==='asleep').icon, '🌙');
+  check('R strip','icon and label are declared for the same day-part',
+    strip.every(s=>typeof s.icon==='string'&&s.icon.length>0&&typeof s.label==='string'&&s.label.length>0),
+    'true');
+  check('R strip','icons are deterministic across repeated calls',
+    JSON.stringify(scheduleStrip(parts,'09:30').map(s=>s.icon)),
+    JSON.stringify(scheduleStrip(parts,'09:30').map(s=>s.icon)));
+  check('R strip','an unrecognised day-part still gets a static fallback icon',
+    scheduleStrip([...parts,{kind:'mystery',startsLocal:'19:00',endsLocal:'20:00',reachable:true}],'19:30')
+      .find(s=>s.kind==='mystery').icon,
+    '•');
+  check('R strip','no segment carries an animation/pulse flag on its icon',
+    strip.every(s=>!('animated' in s)&&!('pulsing' in s)&&!('pulse' in s)), 'true');
+
   const sms=buildSms('message_waiting','+15550100');
   check('R sms','audit passes an approved template', auditSms(sms).ok, 'true');
   check('R sms','body names nobody', /Dad|Mom|Maya/.test(sms.body), 'false');

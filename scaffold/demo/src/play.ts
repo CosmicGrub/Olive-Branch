@@ -529,7 +529,9 @@ import { generate as storyFromSeed, freshStory, reread, forReadingAloud, auditSt
 import { newColouring, fill, undoFill, colouringChildView, colouringArtifact,
   buildFindScene, tapFind, findHint, FIND_LEVELS, buildSpotScene, tapSpot,
   spotRemaining, spotComplete, spotChildView, nextDifficulty, SPOT_LEVELS,
-  auditActivity } from '../../packages/activities/src/activities.ts';
+  auditActivity, DOODLE_STAMPS, newDoodle, stroke, addStamp, undoDoodle,
+  doodleChildView, doodleArtifact, LIVE_DOODLE_REUSES_SHARED_CANVAS, DOODLE_PAIRING,
+  type DoodleStamp } from '../../packages/activities/src/activities.ts';
 import { bookmark, resume, saveBookmark, clearBookmark, star, unstar,
   recordRead, isStarred, libraryChildView, compileBook, bookAsText,
   auditLibraryChildView } from '../../packages/storyteller/src/library.ts';
@@ -585,6 +587,7 @@ import * as Lock from '../../packages/child-lock/src/lock.ts';
 import * as Pipeline from '../../packages/messaging/src/pipeline.ts';
 import * as Push from '../../packages/transport/src/push.ts';
 import * as Capture from '../../packages/homework/src/capture.ts';
+import * as Snapshot from '../../packages/homework/src/snapshot.ts';
 import * as Schedule from '../../packages/custody/src/schedule.ts';
 import * as Canvas from '../../packages/annotation/src/canvas.ts';
 import * as Care from '../../packages/care/src/care.ts';
@@ -646,7 +649,7 @@ import * as Matrix from '../../packages/a11y/src/matrix.ts';
 // ---------------------------------------------------------- §8.13 motion ---
 import * as Motion from '../../packages/motion/src/motion.ts';
 
-// ------------------------------------ §5.27 stream · §8.14 the budget ------
+// ------------------------------------ §5.28 stream · §8.14 the budget ------
 import * as Stream from '../../packages/live/src/stream.ts';
 import * as Budget from '../../packages/budget/src/budget.ts';
 
@@ -1636,6 +1639,51 @@ export function spotView(): Any {
 export function spotTap(x: number, y: number): Any {
   const r = tapSpot(S.spot, x, y); S.spot = r.scene; return spotView();
 }
+
+// ------------------------------------------------------------------- doodle --
+/** §9.12.4 — free strokes plus six fixed stamps, alongside colouring rather
+ *  than replacing it. This is a browser demo, not a real canvas renderer, so
+ *  a "stroke" is simulated as one recorded point per tap rather than a drag
+ *  path; each tap places the next point in a fixed pseudo-scatter so the demo
+ *  needs no real pointer geometry (jsdom has none) to show marks accumulating. */
+const DOODLE_STAMP_GLYPH: Record<DoodleStamp, string> =
+  { heart: '❤️', star: '⭐', smiley: '😊', rainbow: '🌈', sun: '☀️', moon: '🌙' };
+const DOODLE_COLOURS = ['#2F6FB0', '#E85D5D', '#2F9E7E', '#E8A66B', '#8B6BB1', '#1D2B1F'];
+
+export function dooStart(): Any {
+  S.doo = newDoodle(); S.dooHex = DOODLE_COLOURS[0]; S.dooN = 0; return dooView();
+}
+export function dooView(): Any {
+  if (!S.doo) return dooStart();
+  return { state: S.doo, hex: S.dooHex,
+    stamps: DOODLE_STAMPS.map(k => ({ kind: k, glyph: DOODLE_STAMP_GLYPH[k] })),
+    colours: DOODLE_COLOURS,
+    child: doodleChildView(S.doo),
+    artifact: doodleArtifact(S.doo),
+    audit: auditActivity(doodleChildView(S.doo)),
+    pairing: DOODLE_PAIRING,
+    liveReusesSharedCanvas: LIVE_DOODLE_REUSES_SHARED_CANVAS };
+}
+export function dooPick(hex: string): Any { S.dooHex = hex; return dooView(); }
+const dooNextSpot = (): [number, number] => {
+  const n = S.dooN = (S.dooN ?? 0) + 1;
+  return [(n * 0.37) % 1, (n * 0.61) % 1];
+};
+/** A tap on the blank canvas — one point per tap, not a dragged path. */
+export function dooStroke(): Any {
+  const [x, y] = dooNextSpot();
+  const r = stroke(S.doo, 'k' + S.dooN, [[x, y]], S.dooHex, 3);
+  if (r.ok) S.doo = r.state;
+  return dooView();
+}
+export function dooStamp(kind: string): Any {
+  const [x, y] = dooNextSpot();
+  const r = addStamp(S.doo, 'k' + S.dooN, kind as DoodleStamp, x, y);
+  if (r.ok) S.doo = r.state;
+  return dooView();
+}
+export function dooUndo(): Any { S.doo = undoDoodle(S.doo); return dooView(); }
+export function dooNew(): Any { return dooStart(); }
 
 S.favs = []; S.marks = [];
 export function libStar(): Any {

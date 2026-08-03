@@ -1,5 +1,5 @@
 /**
- * MASTERFILE §5.27 — stream stability.
+ * MASTERFILE §5.28 — stream stability.
  *
  * The rung ladder (§5.23.2) already says HD → SD → audio-only → banked. What it
  * does not have is **hysteresis**, and without it a wobbling connection will
@@ -15,7 +15,7 @@
  * all.
  */
 
-// ============================================== §5.27.1 the quality ladder ==
+// ============================================== §5.28.1 the quality ladder ==
 /**
  * Three video qualities, all of them still video. By the time the rung ladder
  * drops to `audio_only`, three steps have already been tried — which is the
@@ -38,7 +38,7 @@ export function stepQualityUp(q: Quality): Quality {
 export const atFloor = (q: Quality) => q === 180;
 export const atCeiling = (q: Quality) => q === 720;
 
-// ================================================== §5.27.2 the hysteresis ==
+// ================================================== §5.28.2 the hysteresis ==
 /**
  * **Quick to shed, slow to restore.** Deliberately asymmetric.
  *
@@ -113,7 +113,7 @@ export function evaluate(s: StreamState, t: Tick): {
 export const RESTORE_IS_SLOWER = RESTORE_AFTER_MS > DROP_AFTER_MS;
 export const ASYMMETRY_RATIO = RESTORE_AFTER_MS / DROP_AFTER_MS;
 
-// ============================================ §5.27.3 what she is told ======
+// ============================================ §5.28.3 what she is told ======
 /**
  * Once. Not a banner that lingers, and **never a connection meter** — a
  * five-year-old watching a signal indicator is a five-year-old not watching her
@@ -157,7 +157,7 @@ export function auditNotice(n: StreamNotice | null): { ok: true } | { ok: false;
   return found.length ? { ok: false, found } : { ok: true };
 }
 
-// ============================================ §5.27.4 what the sender sees ==
+// ============================================ §5.28.4 what the sender sees ==
 /**
  * He gets more detail than she does, because he can act on it — moving nearer a
  * router is a thing an adult can do. It is still not a meter.

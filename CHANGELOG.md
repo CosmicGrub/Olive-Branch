@@ -16,10 +16,269 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Rejected
+- **§16.2 #12 — child-initiated affection signal ("send a hug"), rejected at the
+  owner's direction.** Raised while evaluating a Gemini-drafted alternate build
+  for compatible additions; the owner reviewed the five open questions (spam
+  pressure on the receiving parent, interaction with the `pending_asks` ceiling,
+  sender symmetry, voice-memo retention treatment, and whether showcase/letters
+  already cover the need) and declined the feature outright rather than resolve
+  them. **Unlike §16.2 #10 (foster/kinship, deferred — not needed *yet*), this is
+  not a deferral.** The owner does not want this in the product. Recorded in
+  §19 as considered-and-declined rather than removed silently, per standing
+  practice — but with no revisit date and no scaffold, since there is nothing
+  here worth keeping a foothold in. Should not be re-proposed absent new
+  direction from the owner.
+
 Phase 2 decisions: §16.2 #6 (self-host vs Cloud) and #8 (curriculum standards).
 The native kiosk modules. §21.9 D — whether "becomes a parent" reuses the account.
 
 ---
+
+## [0.42.0] — 2026-08-03 — the sync/async pairing pattern, formalised
+
+Requested: make sure every activity has a synchronous and asynchronous form
+where one makes sense, accounting for the family's time difference, and
+complementing the system that keeps the voice alive when video degrades
+(clarified as the quality ladder, §5.28, not the come-back signal — a naming
+mix-up worth recording since both are now cross-referenced from the same new
+section).
+
+### Added
+- **§8.15 — the sync/async pairing pattern**, naming and tabulating a
+  philosophy that already existed piecemeal: the quality ladder (§5.28) never
+  fails outright, a live game degrades to turn-based play rather than
+  vanishing, and turn clocks already tick in reachable hours, not wall hours
+  (§4.7). This section is the one place a future addition gets checked
+  against: does this activity need both forms, and do both already exist?
+  Includes the full pairing table across the call, games, homework, reading,
+  drawing, the come-back signal, and showcase asks.
+- **§5.27.9 — reachable-hours deferral for the come-back signal.** A
+  non-safety-critical signal blocked by silent hours or a blocked window is
+  now deferred to the next reachable window (capped at one, staleness at one
+  hour) instead of silently dropped — closing a real gap, since §5.27.6
+  already (correctly) shows the sender nothing, which made a dropped signal
+  indistinguishable from one that arrived and was ignored.
+- **§9.12.4 amendment — a live pairing for the doodle desk.** Reuses the
+  existing shared annotation canvas (`annotation/canvas.ts`) rather than
+  building new logic — its per-actor undo scoping already solves the one hard
+  problem a live shared doodle would otherwise reintroduce.
+- **§9.10 amendment — reachable-hours-aware showcase asks.** `askForShow()`'s
+  three-slot FIFO ceiling is unchanged; `askAgeInReachableHours()` is
+  additive, letting a caller weight an ask's age by the asker's actual
+  reachable hours instead of wall-clock time, mirroring §4.7.
+- **`exchange.ts` gained test coverage for the first time** — `askForShow`,
+  `answerAsk`, and `MAX_PENDING_ASKS` had zero prior assertions; 8 new
+  assertions close that gap alongside the 4 for the new reachable-hours
+  function.
+
+### Verified
+- `signal.test.mjs`: 122 passed, 0 failed (11 new).
+- `activities.test.mjs`: 131 passed, 0 failed (3 new).
+- `showcase.test.mjs`: 72 passed, 0 failed (12 new, 8 of which close a
+  pre-existing coverage gap unrelated to this increment).
+
+## [0.41.0] — 2026-08-03 — the entry gate
+
+Raised as a request to make onboarding "all-inclusive," specifically: one
+shared onboarding modal that reads a typed age and routes the device to
+either the child kiosk or the full guardian app (proposed cutoffs: under 10 →
+child, 23+ → guardian). **Evaluated and rejected in that exact form** before
+any doc was touched, per the project's own standing practice of not sketching
+an unsettled design into inertia. Rebuilt into something that keeps the
+underlying goal — one unified, less-friction onboarding — without the
+security regression.
+
+### Added
+- **§8.5.0 — the entry gate.** A role question ("my child's device" / "the
+  grown-up's device"), not an age gate. `chooseEntry()`, `suggestEntryRole()`,
+  `routeFromEntry()`, and the named invariant `ENTRY_CHOICE_GRANTS_NO_AUTHORITY`
+  in `onboarding.ts`. Choosing "grown-up" routes to real account setup
+  (passkey/WebAuthn, §11) and grants nothing by itself — every guardian
+  capability is still gated by `family-graph/authorize.ts`'s `can()`, reading
+  real edges, exactly as before. **Proved, not just asserted**: the test suite
+  calls the real authorizer with a guardian-role tap and zero edges and
+  confirms it's denied (`no_edge`) — a genuine cross-package integration test,
+  not a same-file assertion.
+- Demo: two new screens, `welcome` (the role choice) and `guardianSetup` (an
+  honest stub for the real account flow, documented as not-yet-built the same
+  way the native kiosk bridges are, rather than faked).
+
+### Rejected
+- **Age-gated single onboarding**, in the form originally proposed. Would have
+  let anyone holding the device grant themselves full guardian authority by
+  typing a number ≥23 — no verification, no consent, no edge. Would also have
+  quietly narrowed §21's continuous 2–17 maturation ladder down to "child mode
+  ends at 10," which §21 does not say and this proposal was not trying to
+  change. Not recorded in §19 (no lasting shape to preserve) — the reasoning
+  lives in §8.5.0 directly since that's where anyone extending onboarding will
+  actually look.
+
+### Clarified
+- **The child side is not a one-way "transmitter → receiver."** She already
+  sends homework photos, drawings, showcase items, and letters to the
+  guardian side (§9.1, §9.10, §9.12.4, §9). Named explicitly in §8.5.0 so this
+  framing doesn't quietly become the mental model for future work.
+
+## [0.40.0] — 2026-08-01 — two open decisions resolved
+
+### Settled
+- **§16.2 #6 — self-host vs. LiveKit Cloud.** Stay on Cloud. Revisits only at a
+  concrete trigger, not "when residency demands" left undefined forever: 500
+  concurrently active families, or any institutional/court-mandated deployment
+  explicitly requiring residency guarantees a managed cloud can't make. The
+  real cost of staying on Cloud is COPPA sub-processor disclosure (§10.1) for
+  LiveKit as a third-party recipient of a minor's live video — solvable with a
+  DPA, not infrastructure. Recorded in §11 alongside the tech-stack table.
+
+### Rejected
+- **§16.2 #8 — curriculum-standard tagging, declined outright, not deferred.**
+  `school.ts` (§11.5) had already settled the closely related SIS/gradebook
+  question, for a reason that applies here too: a gradebook-style signal would
+  put a child's academic standing in front of a parent she didn't choose to
+  tell, inverting §9.1's "homework help is something she brings." Neither
+  Common Core (state holdouts) nor fifty-state tagging (fifty taxonomies) was
+  chosen — the feature itself is declined. The hint engine's value is that it
+  works on any problem without knowing what grade or standard it belongs to.
+  Recorded in §19 as considered-and-declined, same pattern as §16.2 #12.
+
+§16.2 is down to six open items, none of them blocking near-term build work.
+
+### Fixed
+- **§11.5 written — closing a phantom reference.** `school.ts` had cited
+  "MASTERFILE §11.5" in its own header comment since v0.3.0, but that section
+  was never actually written here — a small declaration-without-implementation
+  gap, caught only because settling §16.2 #8 required leaning on it directly.
+  Now a real section: no SIS/gradebook integration, and the three reasons why,
+  matching what the code already documented.
+
+## [0.39.1] — 2026-08-01 — §5.27 renumbered
+
+### Fixed
+- **§5.27 was double-booked** — the MASTERFILE heading assigned it to both "The
+  come-back signal" and "Stream stability · the capability budget," a defect
+  flagged in 0.39.0's own changelog entry but not yet corrected. Every prose
+  reference to "§5.27" elsewhere in the document (P11, §16.2 #12) means the
+  come-back signal, so that section keeps the number; **stream stability moves
+  to §5.28**, along with its four internal subsections (§5.27.1–4 → §5.28.1–4)
+  and the matching comments in `stream.ts`. No behavior changes — this is a
+  numbering fix only, verified by rerunning the pane and budget suites
+  unchanged at 83 and 87 passed.
+- **VISUAL.html refreshed** — stuck at v0.2.0 while the rest of the canonical
+  set moved to v0.39.x. Panels 01–04 (system map, delivery engine, time
+  resolution, data model) remain architecture-level and substantially accurate
+  as written; panel 05 (Phases) was the stale one and is rewritten honestly —
+  Phases 0–3 marked complete, Phase 4 marked in progress with iOS and the
+  native kiosk bridges called out explicitly as not yet built rather than
+  glossed over. Not a full redraw: MARKUP.html remains the source of
+  screen-by-screen truth, generated from the same manifest that gates every
+  release, and VISUAL now says so.
+
+## [0.39.0] — 2026-08-01 — four additions evaluated against a Gemini-drafted alternate build
+
+Chris built an alternate version of this product with Gemini, prompted from our
+own predecessor files, and asked for the good parts to be integrated. Most of
+what it proposed was already shipped under different names (TTS is §8.8b's
+baseline `spoken` form; oversized touch targets are §8.4's 48dp floor; the
+shuffled PIN pad is §8.3; three of its "co-op games" are already three of the
+ten live games). Four items were genuinely additive. One ("send a hug") was
+raised, evaluated, and rejected outright at the owner's direction — see
+`[Unreleased] → Rejected` above, §16.2 #12.
+
+### Added
+- **§8.8.5 — read-aloud for pre-readers.** A 🔊 control that speaks whatever a
+  screen reader would already announce (`speakableText()` sources §8.8.4's
+  `LABELS` directly, so the two strings cannot drift apart), on-device only
+  (mirrors §8.8.1's caption posture), default-on below age 8, never autonomous —
+  the audio equivalent of §8.13's motion ban. Ephemeral; not the caption
+  pipeline, nothing here is retained or logged.
+- **§8.13.8 — the touch chime.** Web Audio confirmation sounds, but treated as
+  consequence motion wearing sound rather than a fifth motion category — it
+  inherits every existing §8.13 rule wholesale. Silent on every `still` surface
+  (bedtime, homework, journal, emergency card), never autonomous, never loops,
+  composes with a one-tap mute setting independent of reduced-motion.
+- **§9.12.4 — the doodle desk.** Free strokes plus six stamps (heart, star,
+  smiley, rainbow, sun, moon) alongside — not replacing — the existing
+  tap-to-fill colouring engine. Same unlimited-undo pattern as everywhere else
+  in §9.2; no score, timer, or completion state, because a blank canvas has no
+  finish line for one to mean anything against.
+- **§8.2.2 amendment — day-part icons.** A static sun/moon/dusk glyph per
+  segment of the Day Ribbon, declared in the same table as the friendly label
+  (`phase3.ts`) rather than a second lookup, so the two cannot drift apart.
+  Static, never pulsing — §8.13's autonomous-motion ban has no icon exception.
+- **§9.15 — the capture button**, raised separately at the owner's suggestion
+  once the Gemini review was underway. A dedicated in-app photo/screenshot
+  control that auto-uploads to the app's own storage and never touches the
+  device's shared camera roll. Camera capture reuses §9.1's quality gate
+  wholesale; screenshot capture is scoped off the call surface entirely
+  (`live_call`, `call_video`, `pane_video`), so a parent's face can never be
+  captured mid-call without him knowing.
+
+### Fixed
+- **A quadruple-backslash escaping bug** in the doodle screen's engine-room
+  copy (`build\\\\'s` instead of `build\'s`) broke the demo's bundled JS at
+  runtime. Invisible to `npm run build` (which only compiles the TypeScript
+  engines, not the shell's inline strings) and caught only by
+  `drive.test.mjs` throwing a `SyntaxError` on load — recorded because it is a
+  category of bug the build step cannot see by construction.
+- **A duplicated read-aloud import** across two locations in `demo/src/play.ts`
+  (one from wiring it into the activities section, one from the "nine
+  modules E2 named" block) would have been a duplicate-identifier build
+  failure. Removed the redundant one; the freed slot became the capture
+  module's import, which is also what satisfies E2 for it.
+- **A naming collision**: the new capture-button demo screen was first named
+  `capture`, colliding with a pre-existing MARKUP screen slug already named
+  `capture` (mapped to the message-banking screen). Renamed the new screen to
+  `snapshot` throughout — the demo screen function, its P_engine explainer, the
+  nav index entry, and both dispatcher targets — before the collision could
+  silently misroute either screen.
+- **An accidental deletion of the `data-obcol` onboarding-colour handler**,
+  caught mid-edit when a `str_replace` anchor included it in the region being
+  replaced. Restored before it shipped as a silent regression.
+
+## [0.38.0] — 2026-08-01 — the fourth canonical document, actually canonical
+
+### Fixed
+- **Homework OCR fixtures now exist as code.** The K-series OCR probes shelled
+  out to `/tmp/hw_clean.png`, `hw_blur.png`, `hw_skew.png` — images generated
+  ad-hoc in one session and never committed. On any fresh environment the clean
+  probe failed and, worse, the blur and skew probes passed **vacuously**: a
+  missing file OCRs to nothing, and nothing satisfies "recovers nothing." A
+  fixture that does not exist proves nothing. `packages/homework/test/`
+  `make-fixtures.sh` is now the committed, deterministic generator; the suite
+  regenerates all three images every run and asserts they exist before OCR.
+  +1 assertion (30 → 31 in the homework suite).
+- **The transport suite ran zero assertions when verify was invoked from the
+  wrong directory level.** The repo root is `scaffold/`; the canonical documents
+  live one level above it, and `transport.test.mjs` resolves `MASTERFILE.md`
+  through that parent. Not a code change — recorded so the layout is never
+  "corrected" flat again.
+- **Duplicate version number.** 0.36.0 was cut twice (the come-back signal, then
+  motion). The motion entry is renumbered **0.36.1** in place. Screens citing it
+  in MARKUP cite 0.36.1.
+
+### Added
+- **MARKUP.html reconstructed — and the gap that required it, recorded.** The
+  standing rule declares four canonical documents. An audit of the Drive folder
+  "THROUGHLINE — Canonical" found MASTERFILE, CHANGELOG and VISUAL present and
+  **MARKUP never uploaded at all**: the fourth canonical document existed only
+  in an ephemeral container and died with it. A declaration is not an
+  implementation — this time the declaration was ours, about our own process.
+  MARKUP.html is rebuilt at this version from the two places its structure
+  provably survived: the demo manifest (D3 forces an exact mirror of the screen
+  list — all 68 slugs recovered) and this changelog (per-screen `data-since`
+  attributions are derived from the entries that shipped each surface, and are
+  marked best-effort where the record is coarse). C1–C7 enforce it from here.
+
+### Known
+- **§5.27 is double-booked**: the MASTERFILE heading assigns it to the come-back
+  signal, while `live/stream.ts` claims it for stream stability. Recorded, not
+  silently renumbered — resolving it amends the MASTERFILE and the module
+  headers together in a future increment.
+- **VISUAL.html lags at the 0.3.0 era.** The Drive copy predates the visual-era
+  rebuild and there is no newer local copy. Restored locally from Drive so the
+  file exists; a catch-up pass to current is queued as its own increment rather
+  than half-done here.
 
 ## [0.37.0] — 2026-07-27 — stream stability and the capability budget
 
@@ -152,7 +411,7 @@ G3, G4 and G6 were each shown to fail when their guard was removed.
 
 ---
 
-## [0.36.0] — 2026-07-27 — motion
+## [0.36.1] — 2026-07-27 — motion
 
 **2,240 assertions, all green.** The demo now has **real gestures** — a swipeable
 rail with momentum and rubber-band, a scrobbler, and a rotary dial. Before this it

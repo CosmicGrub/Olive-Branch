@@ -5,7 +5,9 @@
 import { newColouring, fill, undoFill, colouringChildView, colouringArtifact,
   buildFindScene, tapFind, findHint, FIND_LEVELS,
   buildSpotScene, tapSpot, spotRemaining, spotComplete, spotChildView,
-  nextDifficulty, SPOT_LEVELS, auditActivity, ACTIVITY_FORBIDDEN }
+  nextDifficulty, SPOT_LEVELS, auditActivity, ACTIVITY_FORBIDDEN,
+  DOODLE_STAMPS, newDoodle, stroke, addStamp, undoDoodle, doodleChildView,
+  doodleArtifact, LIVE_DOODLE_REUSES_SHARED_CANVAS, DOODLE_PAIRING }
   from '../src/activities.mjs';
 import { bookmark, resume, saveBookmark, clearBookmark, star, unstar,
   recordRead, isStarred, libraryChildView, compileBook, bookAsText,
@@ -154,6 +156,88 @@ const DRAWING={id:'d1',title:'A very tall giraffe',about:'He needs colouring in.
     nextDifficulty(nextDifficulty(nextDifficulty(nextDifficulty('gentle')))), 'fiendish');
   check('CB spot','the forbidden list covers timers and accuracy alike',
     ACTIVITY_FORBIDDEN.includes('timeLeft')&&ACTIVITY_FORBIDDEN.includes('accuracy'), 'true');
+}
+
+// CG · DOODLE DESK — free strokes and six fixed stamps, no finish line
+{
+  let s=newDoodle();
+  check('CG doodle','starts blank', s.marks.length, 0);
+  check('CG doodle','a blank page invites her to draw',
+    doodleChildView(s).line, 'Draw anything you want.');
+
+  const r1=stroke(s,'k1',[[0.1,0.1],[0.2,0.2],[0.3,0.1]],'#F2B705',6);
+  check('CG doodle','a free stroke is recorded', r1.ok, 'true');
+  s=r1.state;
+  check('CG doodle','it lands on the canvas', s.marks.length, 1);
+  check('CG doodle','as a stroke, not a stamp', s.marks[0].kind, 'stroke');
+  check('CG doodle','with her exact points kept, not simplified',
+    JSON.stringify(s.marks[0].stroke.points),
+    JSON.stringify([[0.1,0.1],[0.2,0.2],[0.3,0.1]]));
+  check('CG doodle','an empty stroke — no points — is refused',
+    stroke(s,'k2',[],'#000000',6).reason, 'empty');
+
+  for (const st of DOODLE_STAMPS) {
+    const placed=addStamp(s,`stamp-${st}`,st,0.5,0.5,1);
+    check('CG doodle',`the ${st} stamp can be placed`, placed.ok, 'true');
+    s=placed.state;
+  }
+  check('CG doodle','all six fixed stamps exist', DOODLE_STAMPS.length, 6);
+  check('CG doodle','one stroke plus six stamps are all on the canvas', s.marks.length, 7);
+  check('CG doodle','a stamp outside the fixed six is refused',
+    addStamp(s,'x','glitter',0.5,0.5).reason, 'not_a_stamp');
+
+  // Undo — free, unlimited, exact history, same pattern as everywhere in §9.2.
+  const before=s;
+  const afterOneUndo=undoDoodle(s);
+  check('CG doodle','undo removes exactly the last mark',
+    afterOneUndo.marks.length, before.marks.length-1);
+  check('CG doodle','and restores the exact prior state, not an approximation',
+    JSON.stringify(afterOneUndo.marks), JSON.stringify(before.marks.slice(0,-1)));
+
+  let emptied=s;
+  for (let i=0;i<20;i++) emptied=undoDoodle(emptied);
+  check('CG doodle','unlimited undo empties the canvas and then stops safely',
+    emptied.marks.length, 0);
+  check('CG doodle','undo on a blank canvas is a no-op, not an error',
+    undoDoodle(newDoodle()).marks.length, 0);
+
+  check('CG doodle','a doodle with anything on it at all is preservable',
+    doodleArtifact(r1.state).preserved, 'true');
+  check('CG doodle','a single stamp with nothing else is preservable too',
+    doodleArtifact(addStamp(newDoodle(),'m1','heart',0.5,0.5).state).preserved, 'true');
+  check('CG doodle','a blank canvas is not preserved', doodleArtifact(newDoodle()), 'null');
+
+  check('CG doodle','a doodle in progress invites her to keep going or send it',
+    doodleChildView(s).line, 'Keep going, or send it when you like.');
+
+  // §9.12 preamble — nothing here has a timer, a score, or a wrong answer.
+  check('CG doodle','no forbidden field reaches the child view',
+    auditActivity(doodleChildView(s)).ok, 'true');
+  check('CG doodle','audit would catch a completion percentage if one ever leaked in',
+    auditActivity({...doodleChildView(s), percentComplete:50}).ok, 'false');
+  check('CG doodle','no forbidden field reaches the artifact either',
+    auditActivity(doodleArtifact(r1.state)).ok, 'true');
+  check('CG doodle','there is no "finished" concept — a blank page has no finish line',
+    'finished' in doodleChildView(s), 'false');
+  check('CG doodle','and no count of marks is shown to her',
+    'coloured' in doodleChildView(s) || 'count' in doodleChildView(s), 'false');
+}
+
+// CH · DOODLE — LIVE PAIRING (§8.15, v0.42.0)
+{
+  check('CH pairing','the live form reuses the shared canvas, not a new engine',
+    LIVE_DOODLE_REUSES_SHARED_CANVAS, 'true');
+  check('CH pairing','the async form is named the doodle desk',
+    DOODLE_PAIRING.async.form, 'doodle desk');
+  check('CH pairing','and it is solo', DOODLE_PAIRING.async.mode, 'solo');
+  check('CH pairing','with no timer, score, or completion concept',
+    DOODLE_PAIRING.async.hasTimerScoreOrCompletion, 'false');
+  check('CH pairing','the sync form is named live doodle',
+    DOODLE_PAIRING.sync.form, 'live doodle');
+  check('CH pairing','and it points at the shared annotation canvas, not a new one',
+    /annotation\/canvas/.test(DOODLE_PAIRING.sync.engine), 'true');
+  check('CH pairing',"its undo is per-actor, so a parent cannot erase the child's stroke",
+    /per-actor/.test(DOODLE_PAIRING.sync.undoScoping), 'true');
 }
 
 // CC · BOOKMARKS — reopen exactly where they stopped

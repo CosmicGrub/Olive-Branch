@@ -41,8 +41,9 @@
  * Usage: node tools/check-markup.mjs [--total N]
  */
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-const REPO = new URL('../../', import.meta.url).pathname;
+const REPO = fileURLToPath(new URL('../../', import.meta.url));
 const R = (f) => readFileSync(REPO + f, 'utf8');
 const MK = R('MARKUP.html');
 const CL = R('CHANGELOG.md');

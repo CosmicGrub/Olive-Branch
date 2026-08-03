@@ -6,6 +6,8 @@ import { MATRIX, matrixForAge, childInitiated,
   promptsFor, GENERIC_PROMPTS, addToCollection, collectionChildView,
   auditShowcase, newShow, replyToShow, showsForYearBook,
   auditFraming, BANNED_FRAMINGS, INTEREST_FORBIDDEN_USES } from '../src/showcase.mjs';
+import { MAX_PENDING_ASKS, askForShow, answerAsk, asksChildView,
+  askAgeInReachableHours, DEFAULT_REACHABLE_HOURS_PER_DAY } from '../src/exchange.mjs';
 
 let pass=0,fail=0;const rows=[];
 const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
@@ -186,6 +188,92 @@ const horses={id:'i3',label:'horses',singular:'horse',addedBy:'B',
   check('AY framing','the banned list is substantial', BANNED_FRAMINGS.length>=15, 'true');
   check('AY framing','no generic prompt trips the guard',
     Object.values(GENERIC_PROMPTS).flat().every(p=>auditFraming(p).ok), 'true');
+}
+
+// AZ · ASKFORSHOW — the three-slot FIFO cap
+{
+  const mk=(id,askedAt)=>({id,fromUserId:'B',fromLabel:'Daddy',prompt:`prompt ${id}`,askedAt});
+  let pending=[];
+  let r=askForShow(pending,mk('a1',ago(4)));
+  check('AZ askForShow','the first ask is never displaced', r.displaced, 'null');
+  pending=r.asks;
+  r=askForShow(pending,mk('a2',ago(3))); pending=r.asks;
+  r=askForShow(pending,mk('a3',ago(2))); pending=r.asks;
+  check('AZ askForShow',`a third ask fills the cap at ${MAX_PENDING_ASKS}`, pending.length, MAX_PENDING_ASKS);
+  check('AZ askForShow','nothing displaced yet', r.displaced, 'null');
+
+  r=askForShow(pending,mk('a4',ago(1)));
+  check('AZ askForShow','a fourth push displaces the oldest silently', r.displaced.id, 'a1');
+  check('AZ askForShow','the list stays capped at three', r.asks.length, MAX_PENDING_ASKS);
+  check('AZ askForShow','the survivors are the three most recent, oldest first',
+    r.asks.map(a=>a.id).join(','), 'a2,a3,a4');
+  check('AZ askForShow','the newest ask is present', r.asks.some(a=>a.id==='a4'), 'true');
+  check('AZ askForShow','the displaced ask is gone from the list',
+    r.asks.some(a=>a.id==='a1'), 'false');
+
+  // Already-answered asks are open no longer — they should never count toward
+  // the cap, so a full house of ANSWERED asks does not displace anything.
+  const answered=[mk('b1',ago(9)),mk('b2',ago(8)),mk('b3',ago(7))]
+    .map(a=>({...a,answeredWithShowId:'some-show'}));
+  const r2=askForShow(answered,mk('b4',ago(1)));
+  check('AZ askForShow','answered asks do not count toward the cap',
+    r2.displaced, 'null');
+  check('AZ askForShow','and askForShow only ever tracks the OPEN asks going forward',
+    r2.asks.map(a=>a.id).join(','), 'b4');
+}
+
+// BA · ANSWERASK
+{
+  const mk=(id,askedAt)=>({id,fromUserId:'B',fromLabel:'Daddy',prompt:`prompt ${id}`,askedAt,answeredWithShowId:null});
+  const pending=[mk('x1',ago(2)),mk('x2',ago(1))];
+  const answered=answerAsk(pending,'x1','show-99');
+  check('BA answerAsk','the matching ask is answered',
+    answered.find(a=>a.id==='x1').answeredWithShowId, 'show-99');
+  check('BA answerAsk','the other ask is untouched',
+    answered.find(a=>a.id==='x2').answeredWithShowId, 'null');
+  check('BA answerAsk','the input array is not mutated',
+    pending.find(a=>a.id==='x1').answeredWithShowId, 'null');
+  check('BA answerAsk','an answered ask drops out of the child view',
+    asksChildView(answered).length, 1);
+  check('BA answerAsk','an unknown askId is a no-op',
+    answerAsk(pending,'nope','show-1').every(a=>a.answeredWithShowId===null), 'true');
+}
+
+// BB · ASKAGEINREACHABLEHOURS — the v0.42.0 amendment (§9.10.7, §8.15)
+{
+  check('BB reachable age',`the default mirrors phase3's turn budget of 8`,
+    DEFAULT_REACHABLE_HOURS_PER_DAY, 8);
+
+  const mk=(id,askedAt)=>({id,fromUserId:'B',fromLabel:'Daddy',prompt:'p',askedAt,answeredWithShowId:null});
+
+  // Ask A: made 30 wall-clock hours ago, right before a long school-and-sleep
+  // stretch — she has had almost no REACHABLE exposure to it since.
+  const askA=mk('ra',ago(30/24));
+  // Ask B: made only 6 wall-clock hours ago, during her free time — nearly
+  // all of that time has actually been reachable.
+  const askB=mk('rb',ago(6/24));
+
+  const wallHoursA=(Date.parse(NOW)-Date.parse(askA.askedAt))/3600000;
+  const wallHoursB=(Date.parse(NOW)-Date.parse(askB.askedAt))/3600000;
+  check('BB reachable age','sanity — wall clock alone puts A (30h) older than B (6h)',
+    wallHoursA>wallHoursB, 'true');
+
+  const reachableA=askAgeInReachableHours(askA,NOW,2);   // 2 reachable h/day
+  const reachableB=askAgeInReachableHours(askB,NOW,20);  // 20 reachable h/day
+  check('BB reachable age','A ages to far less than its 30 wall-clock hours',
+    reachableA, 2.5);
+  check('BB reachable age','B ages close to its 6 wall-clock hours',
+    reachableB, 5);
+  check('BB reachable age','reachable-hours weighting REORDERS which ask looks oldest — '
+    +'B now outranks A despite being wall-clock younger',
+    reachableB>reachableA, 'true');
+
+  check('BB reachable age','an ask with no elapsed time has zero age',
+    askAgeInReachableHours(mk('rc',NOW),NOW,DEFAULT_REACHABLE_HOURS_PER_DAY), 0);
+  check('BB reachable age','an askedAt after now clamps to zero, never negative',
+    askAgeInReachableHours(mk('rd',ago(-2)),NOW,DEFAULT_REACHABLE_HOURS_PER_DAY), 0);
+  check('BB reachable age','a full reachable day (24h/day) matches wall-clock hours exactly',
+    askAgeInReachableHours(mk('re',ago(3)),NOW,24), 72);
 }
 
 let g='';

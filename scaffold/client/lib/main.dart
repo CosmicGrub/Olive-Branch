@@ -1,4 +1,4 @@
-// OLIVE BRANCH — child shell entry point. DEMO WIRING.
+// OLIVE BRANCH — child shell entry point. UNVERIFIED (no Flutter toolchain). DEMO WIRING.
 //
 // This is a preview build: it renders the real ChildHome widget (lib/child_home.dart,
 // MARKUP screen 01, §8.1) with placeholder data, so the actual child-facing screen

@@ -4,7 +4,10 @@
 import { acceptName, renameSelf, MAX_NAME_LENGTH,
   acceptAge, ageFrom, effectiveAge, MIN_AGE, MAX_AGE,
   whoStep, toggleWho, begin, advance, goBack, greeting, outcome,
-  auditOnboardingCopy, ONBOARDING_FORBIDDEN } from '../src/onboarding.mjs';
+  auditOnboardingCopy, ONBOARDING_FORBIDDEN,
+  chooseEntry, suggestEntryRole, routeFromEntry,
+  ENTRY_CHOICE_GRANTS_NO_AUTHORITY } from '../src/onboarding.mjs';
+import { can } from '../../family-graph/src/authorize.mjs';
 
 let pass=0,fail=0;const rows=[];
 const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
@@ -157,6 +160,48 @@ const pending={userId:'x',label:'Mama',joined:false};
   check('BD copy','no line the module itself produces trips the guard',
     [whoStep([dad]).line, whoStep([dad,mum]).line, whoStep([pending]).line,
      greeting(begin())].every(l=>auditOnboardingCopy(l).ok), 'true');
+}
+
+// BE · THE ENTRY GATE — §8.5.0, a role question, not an age gate
+{
+  check('BE gate','a device with a child birth date on record suggests "child"',
+    suggestEntryRole(true), 'child');
+  check('BE gate','a device with no birth date suggests neither',
+    suggestEntryRole(false), 'null');
+  check('BE gate','absence of a birth date never defaults toward grownup',
+    suggestEntryRole(false) === 'grownup', 'false');
+
+  check('BE gate','choosing "my child\'s device" records child',
+    chooseEntry('child').role, 'child');
+  check('BE gate','choosing "the grown-up\'s device" records grownup',
+    chooseEntry('grownup').role, 'grownup');
+
+  check('BE gate','child routes, unchanged, into the existing kiosk/begin() flow',
+    routeFromEntry('child'), 'child_kiosk');
+  check('BE gate','grownup routes to real account setup, not straight into the app',
+    routeFromEntry('grownup'), 'grownup_account_setup');
+  check('BE gate','the two routes are distinct',
+    routeFromEntry('child') !== routeFromEntry('grownup'), 'true');
+
+  check('BE gate','choosing child does not disturb the existing first-run flow',
+    begin().step, 'name');
+
+  check('BE gate','the named invariant is asserted, not just documented',
+    ENTRY_CHOICE_GRANTS_NO_AUTHORITY, 'true');
+
+  // The proof that matters, run against the REAL authorizer rather than a
+  // same-file stub: a tap of "the grown-up's device" is a routing decision,
+  // not a credential. Feed it, with zero family-graph edges, into the actual
+  // can() from family-graph/authorize.ts and confirm it is denied exactly as
+  // any stranger would be — this screen has never heard of an edge, and
+  // cannot manufacture one.
+  const tapped = chooseEntry('grownup');
+  routeFromEntry(tapped.role);
+  const decision = can('settings', [], 'olive-child-1', NOW, tapped.role);
+  check('BE gate','the real authorizer denies a guardian-role tap with zero edges',
+    decision.allow, 'false');
+  check('BE gate','and the reason is exactly no_edge — only real edges grant anything',
+    decision.allow ? undefined : decision.reason, 'no_edge');
 }
 
 let g='';

@@ -10,6 +10,7 @@
  * where the temptation is strongest — a colouring book with a completion
  * percentage is a worksheet.
  */
+import { type ActorKind, type Stroke } from '../../annotation/src/canvas.ts';
 
 export type Side = 'A' | 'B';
 
@@ -277,6 +278,124 @@ export function nextDifficulty(d: SpotDifficulty): SpotDifficulty {
   const order: SpotDifficulty[] = ['gentle','normal','tricky','fiendish'];
   return order[Math.min(order.indexOf(d) + 1, order.length - 1)];
 }
+
+// ================================================================== doodle ===
+/**
+ * §9.12.4 — new v0.39.0. §9.12.1's colouring engine is deliberately constrained
+ * — tap a region, it fills, no brush, no staying inside lines — which is right
+ * for a pre-drawn picture and wrong for a child who wants to draw her own
+ * thing. This is a genuinely separate mode, not a replacement: free strokes on
+ * a blank canvas, plus six fixed stamps. Everything else in this section still
+ * applies without exception.
+ */
+export type DoodleStamp = 'heart' | 'star' | 'smiley' | 'rainbow' | 'sun' | 'moon';
+
+/** The whole stamp set. Fixed — not configurable, not extendable per drawing. */
+export const DOODLE_STAMPS: DoodleStamp[] =
+  ['heart', 'star', 'smiley', 'rainbow', 'sun', 'moon'];
+
+export interface DoodleStroke {
+  id: string;
+  points: [number, number][];
+  color: string;
+  widthPx: number;
+}
+
+export interface DoodleStampMark {
+  id: string;
+  stamp: DoodleStamp;
+  x: number;
+  y: number;
+  scale: number;
+}
+
+export type DoodleMark =
+  | { kind: 'stroke'; stroke: DoodleStroke }
+  | { kind: 'stamp'; mark: DoodleStampMark };
+
+/**
+ * `marks` is the entire state AND the entire history — every stroke and every
+ * stamp is appended, never mutated, so undo is exact: pop the last one off.
+ */
+export interface DoodleState {
+  marks: DoodleMark[];
+}
+
+export function newDoodle(): DoodleState {
+  return { marks: [] };
+}
+
+/** A free stroke. No brush size limit, no staying inside lines — there are no lines. */
+export function stroke(
+  s: DoodleState, id: string, points: [number, number][], color: string, widthPx: number,
+): { ok: true; state: DoodleState } | { ok: false; reason: 'empty' } {
+  if (!points.length) return { ok: false, reason: 'empty' };
+  return { ok: true,
+    state: { marks: [...s.marks, { kind: 'stroke', stroke: { id, points, color, widthPx } }] } };
+}
+
+/** One of the six fixed stamps. Nothing else is a stamp. */
+export function addStamp(
+  s: DoodleState, id: string, stamp: DoodleStamp, x: number, y: number, scale = 1,
+): { ok: true; state: DoodleState } | { ok: false; reason: 'not_a_stamp' } {
+  if (!DOODLE_STAMPS.includes(stamp)) return { ok: false, reason: 'not_a_stamp' };
+  return { ok: true,
+    state: { marks: [...s.marks, { kind: 'stamp', mark: { id, stamp, x, y, scale } }] } };
+}
+
+/** Free and unlimited, the same exact-history pattern as everywhere else in §9.2. */
+export function undoDoodle(s: DoodleState): DoodleState {
+  if (!s.marks.length) return s;
+  return { marks: s.marks.slice(0, -1) };
+}
+
+/**
+ * A blank page has no finish line, so unlike numbered colouring there is
+ * nothing for a "finished" state to mean. The child view is a standing
+ * invitation — never a count, never a completion percentage.
+ */
+export interface DoodleChildView { line: string }
+
+export function doodleChildView(s: DoodleState): DoodleChildView {
+  return { line: s.marks.length === 0
+    ? 'Draw anything you want.'
+    : 'Keep going, or send it when you like.' };
+}
+
+/** §9.8.1 — preservable the moment it has anything on it at all. */
+export function doodleArtifact(s: DoodleState, title = 'Her doodle'):
+  { title: string; preserved: true } | null {
+  return s.marks.length > 0 ? { title, preserved: true } : null;
+}
+
+/**
+ * Live pairing, added v0.42.0 (§8.15). The doodle desk had no synchronous
+ * counterpart — a gap the sync/async pairing audit found. Rather than build a
+ * new live-drawing engine, the live form reuses the shared annotation canvas
+ * (annotation/canvas.ts) outright: its per-actor undo scoping already solves
+ * the one hard problem a live shared doodle would otherwise reintroduce — a
+ * parent's undo must never erase the child's stroke. What follows is a naming
+ * and a demo surface, not new logic.
+ */
+export const LIVE_DOODLE_REUSES_SHARED_CANVAS = true;
+
+export type LiveDoodleStroke = Stroke;
+export type LiveDoodleActor = ActorKind;
+
+export const DOODLE_PAIRING = {
+  async: {
+    form: 'doodle desk',
+    mode: 'solo',
+    engine: 'activities.ts DoodleState (this file)',
+    hasTimerScoreOrCompletion: false,
+  },
+  sync: {
+    form: 'live doodle',
+    mode: 'paired',
+    engine: 'annotation/canvas.ts Canvas — reused outright, not reimplemented',
+    undoScoping: "per-actor, via Canvas.undo — a parent cannot erase the child's stroke",
+  },
+} as const;
 
 // ================================================================ the guard =
 /** Nothing in these three may carry a score, a timer, or a wrong answer. */

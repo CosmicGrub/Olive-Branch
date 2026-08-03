@@ -85,15 +85,34 @@ export interface DayPartLite {
   kind: string; startsLocal: string; endsLocal: string; reachable: boolean;
 }
 export interface StripSegment {
-  kind: string; label: string; startsLocal: string; endsLocal: string;
+  kind: string; label: string; icon: string; startsLocal: string; endsLocal: string;
   current: boolean; next: boolean;
 }
 
-const FRIENDLY: Record<string, string> = {
-  wake: 'wake up', before_school: 'get ready', school: 'school',
-  after_school: 'home time', activity: 'activity', dinner: 'dinner',
-  wind_down: 'quiet time', bedtime: 'bedtime', asleep: 'sleep', free: 'free time',
+interface DayPartMeta { label: string; glyph: string }
+
+/**
+ * §8.2.2 (v0.39.0) — label and glyph live in the same row so the Day Ribbon's
+ * text and icon can never drift apart into contradicting each other; there is
+ * no second lookup to fall out of sync with this one.
+ *
+ * The glyph is static. No pulse, no spin, no "breathing" scale — §8.13's
+ * autonomous-motion ban gets no icon exception here.
+ */
+const DAY_PART_META: Record<string, DayPartMeta> = {
+  wake: { label: 'wake up', glyph: '🌅' },
+  before_school: { label: 'get ready', glyph: '☀️' },
+  school: { label: 'school', glyph: '☀️' },
+  after_school: { label: 'home time', glyph: '☀️' },
+  activity: { label: 'activity', glyph: '☀️' },
+  dinner: { label: 'dinner', glyph: '🌆' },
+  wind_down: { label: 'quiet time', glyph: '🌆' },
+  bedtime: { label: 'bedtime', glyph: '🌙' },
+  asleep: { label: 'sleep', glyph: '🌙' },
+  free: { label: 'free time', glyph: '☀️' },
 };
+
+const FALLBACK_GLYPH = '•';
 
 /**
  * §8.4 — the architecture is already a visual-schedule tool. Day-parts, ordered,
@@ -106,13 +125,17 @@ export function scheduleStrip(parts: DayPartLite[], nowLocal: string): StripSegm
     p.startsLocal <= p.endsLocal
       ? nowLocal >= p.startsLocal && nowLocal < p.endsLocal
       : nowLocal >= p.startsLocal || nowLocal < p.endsLocal);
-  return sorted.map((p, i) => ({
-    kind: p.kind,
-    label: FRIENDLY[p.kind] ?? p.kind.replace(/_/g, ' '),
-    startsLocal: p.startsLocal, endsLocal: p.endsLocal,
-    current: i === curIdx,
-    next: curIdx !== -1 && i === (curIdx + 1) % sorted.length,
-  }));
+  return sorted.map((p, i) => {
+    const meta = DAY_PART_META[p.kind];
+    return {
+      kind: p.kind,
+      label: meta?.label ?? p.kind.replace(/_/g, ' '),
+      icon: meta?.glyph ?? FALLBACK_GLYPH,
+      startsLocal: p.startsLocal, endsLocal: p.endsLocal,
+      current: i === curIdx,
+      next: curIdx !== -1 && i === (curIdx + 1) % sorted.length,
+    };
+  });
 }
 
 // ================================================================= SMS bridge

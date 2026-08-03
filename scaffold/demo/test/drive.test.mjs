@@ -9,6 +9,7 @@
  */
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /**
  * The colouring book's tappable regions are SVG <path> elements, and SVGElement
@@ -24,7 +25,7 @@ function clickEl(el) {
 }
 
 
-const html = readFileSync(new URL('../../../DEMO.html', import.meta.url).pathname, 'utf8');
+const html = readFileSync(fileURLToPath(new URL('../../../DEMO.html', import.meta.url)), 'utf8');
 
 let pass = 0, fail = 0; const rows = [];
 const check = (n, fn) => {

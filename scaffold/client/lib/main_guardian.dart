@@ -1,4 +1,4 @@
-// OLIVE BRANCH — guardian shell entry point. DEMO WIRING.
+// OLIVE BRANCH — guardian shell entry point. UNVERIFIED (no Flutter toolchain). DEMO WIRING.
 //
 // Companion to lib/main.dart (the child build). This is a preview build: it
 // renders the real GuardianHome widget (lib/guardian_home.dart, MARKUP screen 05,

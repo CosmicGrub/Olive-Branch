@@ -13,6 +13,81 @@
 
 export type Side = 'A' | 'B';
 
+// ================================================================= the gate =
+/**
+ * MASTERFILE §8.5.0 — the entry gate. New in v0.41.0.
+ *
+ * Raised as an idea to make onboarding "all-inclusive and comprehensive": one
+ * unified modal that reads an age and decides whether the device becomes the
+ * child's kiosk or the guardian's full app. Evaluated and rejected in that
+ * exact form, then rebuilt into something that keeps the underlying goal.
+ *
+ * AgeStep (§8.5, below) already exists to guard against precisely this
+ * failure mode one layer down — a six-year-old who taps 10 must not thereby
+ * unlock a privacy tier. Routing FULL GUARDIAN AUTHORITY off a self-reported,
+ * unverified age is the same mistake at a far higher stakes level.
+ *
+ * What ships instead is a role question, not an age gate: two buttons, "my
+ * child's device" or "the grown-up's device." Nothing on this screen grants
+ * anything.
+ *   - Choosing child routes, unchanged, into the existing first-run flow —
+ *     begin(), ages 2-17, still feeding §21.
+ *   - Choosing grown-up routes to the real account path — passkey/WebAuthn
+ *     (§11) — and every guardian capability afterward is still gated exactly
+ *     as it always was, by family-graph/authorize.ts's can(), which reads
+ *     real edges and has never heard of this screen.
+ *
+ * A device that already has a child's birth date on record (because a
+ * guardian set one up here before) pre-highlights the child button. Absence
+ * of a birth date suggests nothing — it never defaults toward guardian.
+ *
+ * One more thing this screen is not: the child side is not a one-way
+ * "receiver." She already sends homework photos, drawings, showcase items,
+ * and letters to the guardian side today.
+ */
+export type EntryRole = 'child' | 'grownup';
+
+export interface EntryChoice {
+  role: EntryRole;
+}
+
+/** Records the tap. See ENTRY_CHOICE_GRANTS_NO_AUTHORITY — that is all it does. */
+export function chooseEntry(role: EntryRole): EntryChoice {
+  return { role };
+}
+
+/**
+ * A suggestion, never an authority. A birth date already on record for this
+ * device pre-highlights "child." Its absence suggests nothing — it must
+ * never default toward "grownup," so there is no value this can return that
+ * reads as steering an unknown device to the guardian side.
+ */
+export function suggestEntryRole(hasChildBirthDateOnRecord: boolean): EntryRole | null {
+  return hasChildBirthDateOnRecord ? 'child' : null;
+}
+
+export type EntryRoute = 'child_kiosk' | 'grownup_account_setup';
+
+/**
+ * Pure routing, nothing else. "child" leads to the existing begin() flow,
+ * unchanged. "grownup" leads to the real account path (passkey/WebAuthn,
+ * §11) — every guardian capability past that point is still gated exactly as
+ * it always was, by family-graph/authorize.ts's can(), which reads real
+ * edges and has never heard of this screen.
+ */
+export function routeFromEntry(role: EntryRole): EntryRoute {
+  return role === 'child' ? 'child_kiosk' : 'grownup_account_setup';
+}
+
+/**
+ * The invariant this whole screen rests on. Tapping "the grown-up's device"
+ * is a routing decision, not a credential — it grants precisely nothing.
+ * Real authority is only ever granted by family-graph edges, checked by
+ * can(). The test suite proves this directly: it calls the real authorizer
+ * with a guardian-role tap and zero edges, and confirms denial.
+ */
+export const ENTRY_CHOICE_GRANTS_NO_AUTHORITY = true;
+
 // ================================================================= the name =
 export interface NameStep {
   /** Exactly what she typed. Not corrected, not title-cased, not validated. */

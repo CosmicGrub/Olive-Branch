@@ -376,3 +376,57 @@ export function firstRunLesson(): FirstRunLesson {
     copy: 'This is what it looks like when Dad wants you. Give it a tap.',
     requiresTap: true };
 }
+
+// ======================================= §5.27.9 reachable-hours deferral ===
+/**
+ * Bolstered v0.42.0. A signal blocked by silent hours or a blocked window used
+ * to be simply dropped — and because §5.27.6 already shows the sender nothing,
+ * a dropped signal was indistinguishable from one that arrived and was ignored.
+ * It is now deferred to the next reachable window instead — capped at one,
+ * never a queue — the same graceful-degradation philosophy as the quality
+ * ladder (§5.28) and a live game's async fallback.
+ */
+export type DeferReason = Extract<DeliverError, 'silent_hours' | 'blocked_window'>;
+
+export interface DeferredSignal {
+  pending: Pending;
+  reason: DeferReason;
+  deferredAt: number;
+}
+
+/** One at a time, exactly as §5.27.7's live Pending. A second replaces the first. */
+export const MAX_DEFERRED_SIGNALS = 1;
+
+/** Records a blocked signal instead of dropping it. Replaces whatever was deferred before. */
+export function deferSignal(
+  pending: Pending, reason: DeferReason, now: string,
+): DeferredSignal {
+  return { pending, reason, deferredAt: Math.floor(Date.parse(now) / 1000) };
+}
+
+export const DEFERRAL_STALE_AFTER_SECONDS = 3600;
+
+export type RedeliverError = 'stale';
+
+/** Redelivers once she is reachable again — unless the window has already passed. */
+export function redeliverIfReachable(
+  deferred: DeferredSignal, nowSeconds: number,
+): { ok: true; pending: Pending } | { ok: false; reason: RedeliverError } {
+  if (nowSeconds - deferred.deferredAt > DEFERRAL_STALE_AFTER_SECONDS) {
+    return { ok: false, reason: 'stale' };
+  }
+  return { ok: true, pending: deferred.pending };
+}
+
+/**
+ * A deferral is not a delivery receipt. §5.27.6 holds exactly as before: the
+ * sender must never be able to tell "deferred" apart from "ignored" apart from
+ * "dropped" — see auditSenderView/SENDER_FORBIDDEN, which this never touches.
+ */
+export const DEFERRAL_INVISIBLE_TO_SENDER = true;
+
+/** For §8.15's pairing table: this signal's synchronous and asynchronous forms. */
+export const SIGNAL_SYNC_ASYNC_PAIRING = {
+  sync: 'immediate delivery when reachable',
+  async: 'deferred redelivery, capped at one, stale after 1 hour',
+};

@@ -4,8 +4,29 @@
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 import { gateImage, guardHint, forbiddenFor,
   MIN_EDGE_PX, MAX_SKEW_DEG, MIN_SHARPNESS } from '../src/capture.mjs';
+
+const resolveCmd=(candidates)=>{
+  for(const c of candidates){
+    try{execFileSync(c,['--version'],{stdio:'ignore'});return c;}catch{}
+  }
+  return candidates[0];
+};
+const BASH=resolveCmd([process.env.HW_BASH,'bash',
+  'C:\\Program Files\\Git\\bin\\bash.exe',
+  'C:\\Program Files\\Git\\usr\\bin\\bash.exe'].filter(Boolean));
+const TESSERACT=resolveCmd([process.env.HW_TESSERACT,'tesseract',
+  'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
+  'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe'].filter(Boolean));
+
+const FIXTURE_DIR=tmpdir();
+const fixture=(name)=>join(FIXTURE_DIR,name);
+const MAKE_FIXTURES=fileURLToPath(new URL('./make-fixtures.sh',import.meta.url));
 
 let pass=0, fail=0; const rows=[];
 const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
@@ -39,21 +60,26 @@ const stats=(o={})=>({widthPx:1200,heightPx:800,sharpness:400,clipping:0.05,
 
 // K · REAL OCR — tesseract against generated worksheets
 {
+  execFileSync(BASH,[MAKE_FIXTURES,FIXTURE_DIR],{stdio:'ignore'});
+  for(const f of ['hw_clean.png','hw_blur.png','hw_skew.png']){
+    assert.ok(existsSync(fixture(f)), `fixture not generated: ${fixture(f)}`);
+  }
+
   const ocr=(f)=>existsSync(f)
-    ? execFileSync('tesseract',[f,'stdout'],{encoding:'utf8',stdio:['ignore','pipe','ignore']})
+    ? execFileSync(TESSERACT,[f,'stdout'],{encoding:'utf8',stdio:['ignore','pipe','ignore']})
     : '';
   const tokens=(t)=>['2/3','1/5','3/8','1/2'].filter(x=>t.includes(x)).length;
 
-  const clean=ocr('/tmp/hw_clean.png');
+  const clean=ocr(fixture('hw_clean.png'));
   check('K ocr','tesseract is present and ran', clean.length>0, 'true');
   check('K ocr','clean sheet recovers all fraction tokens', tokens(clean), 4);
   check('K ocr','clean sheet recovers the integer problem', clean.includes('27'), 'true');
 
-  const blur=ocr('/tmp/hw_blur.png');
+  const blur=ocr(fixture('hw_blur.png'));
   check('K ocr','blurred sheet recovers nothing — the gate is load-bearing',
     tokens(blur), 0);
 
-  const skew=ocr('/tmp/hw_skew.png');
+  const skew=ocr(fixture('hw_skew.png'));
   check('K ocr','8deg skew degrades badly, as measured', tokens(skew)<3, 'true');
   check('K ocr','gate rejects the blurred case pre-OCR',
     gateImage(stats({sharpness:15})).ok, 'false');

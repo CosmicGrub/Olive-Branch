@@ -59,6 +59,27 @@ export const ASK_FORBIDDEN = [
   'age', 'ignored', 'streak',
 ] as const;
 
+/**
+ * Amended v0.42.0 (§8.15). The cap above ages every ask in WALL-CLOCK time —
+ * an ask made at his 11pm, which lands square in the middle of her school
+ * day, was counted exactly as "old" as one made during her free time. That
+ * let the cap silently displace a fresh ask nobody had a reasonable chance
+ * to see yet, purely because the clock kept running while she couldn't look.
+ *
+ * Mirrors §4.7's `turnExpired`: reachable hours, not wall hours, are what an
+ * ask should age by. Additive — `askForShow`'s FIFO displacement above is
+ * unchanged; this is a second, honester number a caller may weigh it by.
+ */
+export const DEFAULT_REACHABLE_HOURS_PER_DAY = 8;
+
+export function askAgeInReachableHours(
+  ask: Ask, now: string, reachableHoursPerDay: number,
+): number {
+  const wallHoursElapsed = (Date.parse(now) - Date.parse(ask.askedAt)) / 3_600_000;
+  if (wallHoursElapsed <= 0) return 0;
+  return wallHoursElapsed * (reachableHoursPerDay / 24);
+}
+
 // ==================================== §9.10.8 reply in kind ================
 /**
  * The matrix already says *reply in kind, not in words*. Nothing enforced it, and

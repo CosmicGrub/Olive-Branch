@@ -32,6 +32,11 @@ import { CATALOGUE, forAge, newGame as newG, play as playG, setHandicap,
   handicapBanner, takeBack, childView as gameChildView, auditChildView,
   shouldOfferHandicap, handicapOffer, storyArtifact } from '../../packages/games/src/games.ts';
 import { buildPush, auditPush } from '../../packages/transport/src/push.ts';
+import { chooseEntry, suggestEntryRole, routeFromEntry, ENTRY_CHOICE_GRANTS_NO_AUTHORITY }
+  from '../../packages/onboarding/src/onboarding.ts';
+export { chooseEntry, suggestEntryRole, routeFromEntry, ENTRY_CHOICE_GRANTS_NO_AUTHORITY };
+import { captureCameraPhoto, captureScreenshot, SCREENSHOT_SCOPED_OFF_SURFACES,
+  neverToDeviceGallery, autoUploadsToAppStorage } from '../../packages/homework/src/snapshot.ts';
 
 const NYC = 'America/New_York', CHI = 'America/Chicago';
 const ALL = [0, 1, 2, 3, 4, 5, 6];
@@ -115,6 +120,27 @@ export function childState() {
     dinner: 'Maya is at dinner', wind_down: 'Maya is winding down',
     bedtime: 'Maya is going to bed', free: 'Maya is free right now' } as any)[k]
     ?? `Maya is ${k}`;
+}
+
+// ------------------------------------------------------------------ entry gate
+/**
+ * §8.5.0 — the role question. A device that already has Maya's birth date on
+ * record (the demo family already does) pre-highlights "child"; its absence
+ * would suggest nothing, never "grownup".
+ */
+export function entryView() {
+  return { suggestedWithRecord: suggestEntryRole(true),
+           suggestedWithoutRecord: suggestEntryRole(false) };
+}
+
+/**
+ * Proves ENTRY_CHOICE_GRANTS_NO_AUTHORITY directly rather than just asserting
+ * it: the REAL authorizer, called with a guardian-role tap and ZERO edges,
+ * still denies.
+ */
+export function entryProof() {
+  return { grantsNoAuthority: ENTRY_CHOICE_GRANTS_NO_AUTHORITY,
+           deniedWithZeroEdges: can('expense.view', [], 'maya', new Date(), 'guardian') };
 }
 
 // ------------------------------------------------------------------ ribbon
@@ -220,6 +246,29 @@ export function homeworkGate(preset: 'good' | 'blurry' | 'skewed' | 'tiny') {
 export function tutorHint(text: string, problem: string) {
   const forbidden = forbiddenFor(problem);
   return { forbidden, verdict: guardHint(text, { text: problem, forbiddenAnswers: forbidden }) };
+}
+
+// ------------------------------------------------------------------ snapshot
+/** Same measured thresholds §9.1's homework gate uses — a blurred photo is a
+ *  blurred photo whether it's headed for OCR or a keepsake. */
+export function snapshotCamera(preset: 'good' | 'blurry' | 'skewed' | 'tiny') {
+  const base = { widthPx: 1200, heightPx: 800, sharpness: 400, clipping: 0.05, skewDegrees: 0 };
+  const s = preset === 'blurry' ? { ...base, sharpness: 20 }
+          : preset === 'skewed' ? { ...base, skewDegrees: 9 }
+          : preset === 'tiny' ? { ...base, widthPx: 200, heightPx: 200 }
+          : base;
+  return { input: s, result: captureCameraPhoto(s) };
+}
+
+/** Refused entirely on the call surface; never solved, only refused. */
+export function snapshotScreenshot(currentSurface: string) {
+  return { surface: currentSurface, result: captureScreenshot(currentSurface) };
+}
+
+/** The named invariants this whole feature exists for. */
+export function snapshotPolicy() {
+  return { neverToDeviceGallery, autoUploadsToAppStorage,
+           scopedOffSurfaces: [...SCREENSHOT_SCOPED_OFF_SURFACES] };
 }
 
 // ------------------------------------------------------------------ care
@@ -476,6 +525,14 @@ export function streakDemo(outcomes: string[]) {
 
 /** Everything not yet built. Surfaced honestly rather than faked. */
 export const UNDER_CONSTRUCTION: Record<string, string> = {
+  guardian_setup: 'Real account setup — passkey/WebAuthn sign-in and the real '
+       + 'family-graph invitation/consent flow (§11) — is not built in this demo. '
+       + 'Shown honestly as a stub rather than faked, the same way the native '
+       + 'kiosk bridges are documented as drafted and unverified rather than '
+       + 'glossed over. The important property is what does NOT happen here: '
+       + 'tapping "grown-up" on the welcome screen granted nothing by itself — '
+       + 'whatever account gets created here still has to earn a real '
+       + 'guardianship edge before can() allows anything.',
   video: 'Live video needs a LiveKit server and a real device camera. Token '
        + 'minting and room lifecycle ARE verified against a running server '
        + '(21 assertions) — the media stream is not wired into this demo.',

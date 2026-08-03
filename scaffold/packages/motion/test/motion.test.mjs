@@ -10,7 +10,7 @@ import { AUTONOMOUS_IS_NEVER_ALLOWED, MAX_CONSEQUENCE_MS, AMBIENT_SURFACES,
   STILL_MEANS_CROSSFADE_NOT_CUT, CROSSFADE_MS, MAX_CONCURRENT_MOTIONS,
   admitConcurrent, AUTOPLAY_ALLOWED, CELEBRATION_REPEATS, celebrate,
   auditMotion, MOTION_FORBIDDEN, SURFACE_MOTION, motionFor,
-  auditSurfaces, auditQuietConsistency } from '../src/motion.mjs';
+  auditSurfaces, auditQuietConsistency, admitChime, chimeAllowed } from '../src/motion.mjs';
 
 let pass=0,fail=0;const rows=[];
 const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
@@ -183,6 +183,61 @@ const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
   check('EU surfaces','time is horizontal everywhere',
     motionFor('calendar').gestures.includes('swipe_h'), 'true');
   check('EU surfaces','an unknown surface has no plan', motionFor('nope'), 'null');
+}
+
+// EV · THE TOUCH CHIME — v0.39.0, a consequence wearing sound
+{
+  check('EV chime','bedtime is silent', chimeAllowed('bedtime',false,false), 'false');
+  check('EV chime','homework is silent', chimeAllowed('homework',false,false), 'false');
+  check('EV chime','the journal is silent', chimeAllowed('journal',false,false), 'false');
+  check('EV chime','the emergency card is silent',
+    chimeAllowed('emergency_card',false,false), 'false');
+
+  check('EV chime','muted silences an ordinary surface',
+    chimeAllowed('games_picker',true,false), 'false');
+  check('EV chime','muted silences it even under reduced motion',
+    chimeAllowed('games_picker',true,true), 'false');
+  check('EV chime','muted silences it even on a still surface',
+    chimeAllowed('bedtime',true,false), 'false');
+
+  check('EV chime','an ordinary full surface chimes when unmuted',
+    chimeAllowed('games_picker',false,false), 'true');
+  check('EV chime','the storyteller chimes when unmuted',
+    chimeAllowed('storyteller',false,false), 'true');
+
+  // Composition with §8.8 — reduced motion alone never STILLS a chime; only
+  // an already-still surface does, exactly as effectiveQuietness composes it.
+  check('EV chime','reduced motion alone does not silence an ordinary surface',
+    chimeAllowed('games_picker',false,true), 'true');
+  check('EV chime','a still surface stays silent under reduced motion too',
+    chimeAllowed('bedtime',false,true), 'false');
+  check('EV chime','this matches effectiveQuietness composing the two',
+    effectiveQuietness('games_picker',true)!=='still'
+      && chimeAllowed('games_picker',false,true), 'true');
+
+  // It never depends on autonomy — chimes are consequence-triggered by
+  // definition, and a caller requesting an autonomous one is refused exactly
+  // as admitMotion refuses any other autonomous motion.
+  check('EV chime','an autonomous chime request is refused',
+    admitChime({kind:'autonomous',surface:'games_picker',muted:false,
+      reducedMotionOn:false}).reason, 'autonomous');
+  check('EV chime','with the same slot-machine note as admitMotion',
+    /slot machine/.test(admitChime({kind:'autonomous',surface:'x',muted:false,
+      reducedMotionOn:false}).note), 'true');
+  check('EV chime','a normal consequence-triggered chime is admitted',
+    admitChime({kind:'consequence',surface:'games_picker',muted:false,
+      reducedMotionOn:false}).ok, 'true');
+  check('EV chime','a muted request is refused for that reason specifically',
+    admitChime({kind:'consequence',surface:'games_picker',muted:true,
+      reducedMotionOn:false}).reason, 'muted');
+  check('EV chime','a still-surface request is refused for that reason specifically',
+    admitChime({kind:'consequence',surface:'bedtime',muted:false,
+      reducedMotionOn:false}).reason, 'surface_quiet');
+
+  // No "loop" parameter exists — a chime is a one-shot by construction.
+  check('EV chime','a chime request carries no loop field',
+    Object.keys({kind:'consequence',surface:'x',muted:false,reducedMotionOn:false})
+      .includes('loop'), 'false');
 }
 
 let g='';

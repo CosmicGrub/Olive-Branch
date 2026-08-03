@@ -107,3 +107,59 @@ export const LABELS: Record<string, string> = {
   hide_work: 'Put this picture away',
   find_target: 'Tap the thing you are looking for',
 };
+
+/**
+ * §8.8.5 — read-aloud for pre-readers. New v0.39.0.
+ *
+ * §8.8b's baseline spoken form covers the sixteen come-back-signal
+ * applications. It does not cover general navigation: a five-year-old still
+ * cannot tell what "My weeks" says on an ordinary screen.
+ *
+ * On-device only, always — the same posture already settled for captions
+ * (§8.8.1). A child's voice browsing her own calendar never leaves the device
+ * for a cloud text-to-speech API. And unlike §8.8.1's caption pipeline,
+ * nothing here is retained, transcribed, or treated as call media.
+ */
+export const READ_ALOUD_ON_DEVICE_ONLY = true;
+export const READ_ALOUD_NEVER_LOGGED = true;
+
+/**
+ * Reads the accessibility label, not a second copy of it — the same string a
+ * screen reader already gets (§8.8.4's LABELS) wherever one exists, falling
+ * back to visible text only where no label has been written yet. Two
+ * hand-maintained strings for the same control is a drift bug waiting to
+ * happen; this makes drift structurally impossible for anything with a label.
+ */
+export function speakableText(controlId: string, visibleText: string): string {
+  return LABELS[controlId] ?? visibleText;
+}
+
+export type SpeechTrigger = 'tap' | 'autonomous';
+export type SpeechRefusal = 'autonomous';
+
+/**
+ * Never autonomous. Speech that starts itself, rather than in response to a
+ * tap, is §8.13's slot-machine mechanic wearing a voice.
+ */
+export function admitSpeech(
+  trigger: SpeechTrigger,
+): { ok: true } | { ok: false; reason: SpeechRefusal; note: string } {
+  if (trigger === 'autonomous') {
+    return { ok: false, reason: 'autonomous',
+      note: 'Speech that starts itself, rather than in response to a tap, is '
+          + '§8.13\'s slot-machine mechanic wearing a voice.' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Default-on below age 8, opt-in above it — mirrors the birthday-hint fade
+ * already used at §8.5.2's HINT_FADES_AT_AGE: a scaffolding aid that quietly
+ * stops being necessary, rather than a setting a child has to go find and
+ * switch off.
+ */
+export const READ_ALOUD_DEFAULT_BELOW_AGE = 8;
+
+export function readAloudDefaultOn(age: number | null): boolean {
+  return age === null || age < READ_ALOUD_DEFAULT_BELOW_AGE;
+}
