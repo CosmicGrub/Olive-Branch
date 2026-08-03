@@ -66,11 +66,27 @@ class _Ribbon extends StatelessWidget {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label.toUpperCase(), style: const TextStyle(fontSize: 9, letterSpacing: 0.7)),
       const SizedBox(height: 4),
+      // Explicit-width Positioned segments, NOT Row+Expanded/flex: on this engine
+      // build (Flutter 3.44.8 stable, Impeller/Vulkan), Expanded children inside a
+      // Row silently paint nothing -- no exception, no layout error, confirmed by
+      // bisection (fixed-width Container siblings in the same Row render fine;
+      // swapping only the width source to Expanded/flex reproduces the blank
+      // ribbon). Root cause is upstream of this widget, so the fix routes around
+      // Expanded entirely rather than trying to unblock it.
+      //
+      // As a side benefit this uses `startFraction` (previously computed but
+      // discarded -- Expanded flex only ever consumed widthFraction), so gaps
+      // between non-contiguous bands now render as gaps instead of being folded
+      // into the neighbouring band's width.
       ClipRRect(borderRadius: BorderRadius.circular(2),
-        child: SizedBox(height: height, child: Row(
-          children: bands.map((b) => Expanded(
-            flex: (b.widthFraction * 1000).round(),
-            child: Tooltip(message: b.label, child: ColoredBox(color: b.color)),
-          )).toList()))),
+        child: SizedBox(height: height, width: double.infinity,
+          child: LayoutBuilder(builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            return Stack(children: [for (final b in bands) Positioned(
+              left: w * b.startFraction, width: w * b.widthFraction,
+              top: 0, bottom: 0,
+              child: Tooltip(message: b.label, child: ColoredBox(color: b.color)),
+            )]);
+          }))),
     ]));
 }
