@@ -8,6 +8,7 @@
 //   - No settings affordance exists at any depth. (§8.1)
 import 'package:flutter/material.dart';
 import 'pin_gate.dart';
+import 'wants_needs.dart';
 
 /// Honest acknowledgment for a feature this preview build doesn't implement
 /// yet, rather than a silent no-op — the same "recorded, not glossed over"
@@ -45,11 +46,13 @@ class ChildHome extends StatelessWidget {
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10,
           mainAxisExtent: 108),
-        children: const [
-          _Tile(icon: Icons.edit, label: 'Homework'),
-          _Tile(icon: Icons.extension, label: 'Play together'),
-          _Tile(icon: Icons.star_border, label: 'My list'),
-          _Tile(icon: Icons.mail_outline, label: 'Messages'),
+        children: [
+          const _Tile(icon: Icons.edit, label: 'Homework'),
+          const _Tile(icon: Icons.extension, label: 'Play together'),
+          _Tile(icon: Icons.star_border, label: 'My list',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const WantsNeedsScreen()))),
+          const _Tile(icon: Icons.mail_outline, label: 'Messages'),
         ]),
       const SizedBox(height: 12),
       _Sleeps(sleepsUntilHandover),
@@ -102,12 +105,15 @@ class _PresenceCard extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.icon, required this.label});
+  const _Tile({required this.icon, required this.label, this.onTap});
   final IconData icon;
   final String label;
+  // Defaults to the honest not-built-yet acknowledgment; tiles with a real
+  // destination (e.g. "My list" -> WantsNeedsScreen) override it.
+  final void Function(BuildContext context)? onTap;
   @override
   Widget build(BuildContext context) => InkWell(
-    onTap: () => _notBuiltYet(context, label),
+    onTap: () => (onTap ?? (c) => _notBuiltYet(c, label))(context),
     child: Container(constraints: const BoxConstraints(minHeight: 64),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),

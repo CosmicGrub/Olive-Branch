@@ -1,9 +1,24 @@
-// OLIVE BRANCH — guardian shell, home. UNVERIFIED (no Flutter toolchain). §8.2.
+// OLIVE BRANCH — guardian shell, home. UNVERIFIED (no Flutter toolchain in
+// tools/verify.sh's automated pipeline). §8.2.
 //
 // Renders MARKUP screen 05. The dual clock is persistent and the CHILD's time is
 // dominant; the parent never performs a timezone calculation (§8.2.3). All times
 // arrive pre-rendered from /now and /ribbon so the client does no zone maths.
+//
+// Action grid below mirrors child_home.dart's tile pattern — parity of
+// structure, not just of read-only status. Three tiles are real, genuinely
+// functional screens (§9.5 message banking, §9.6.3 emergency card, P8
+// handover notes); the rest are honest not-built-yet stubs, same posture
+// child_home.dart already takes for its own unbuilt tiles.
 import 'package:flutter/material.dart';
+import 'emergency_card.dart';
+import 'handover_notes.dart';
+import 'message_banking.dart';
+
+void _notBuiltYet(BuildContext context, String what) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('$what — not built yet.'), duration: const Duration(seconds: 2)));
+}
 
 class RibbonBand {
   const RibbonBand(this.startFraction, this.widthFraction, this.color, this.label);
@@ -25,8 +40,7 @@ class GuardianHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    body: SafeArea(child: ListView(children: [
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -51,8 +65,51 @@ class GuardianHome extends StatelessWidget {
         if (overlapLabel != null) Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           child: Text(overlapLabel!, style: const TextStyle(fontSize: 11))),
+        const SizedBox(height: 20),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GridView(shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10,
+              mainAxisExtent: 108),
+            children: [
+              _GTile(icon: Icons.schedule_send, label: 'Message banking',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const MessageBankingScreen()))),
+              _GTile(icon: Icons.medical_information, label: 'Emergency card',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const EmergencyCardScreen()))),
+              _GTile(icon: Icons.receipt_long, label: 'Handover notes',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const HandoverNotesScreen()))),
+              _GTile(icon: Icons.swap_horiz, label: 'Exchange',
+                onTap: () => _notBuiltYet(context, 'Exchange')),
+              _GTile(icon: Icons.account_balance_wallet, label: 'Expenses',
+                onTap: () => _notBuiltYet(context, 'Expenses')),
+              _GTile(icon: Icons.event_available, label: 'Availability',
+                onTap: () => _notBuiltYet(context, 'Availability')),
+            ])),
+        const SizedBox(height: 16),
       ])),
   );
+}
+
+class _GTile extends StatelessWidget {
+  const _GTile({required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: Container(constraints: const BoxConstraints(minHeight: 64),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
+        color: Theme.of(context).colorScheme.primaryContainer),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 28), const Spacer(),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      ])));
 }
 
 class _Ribbon extends StatelessWidget {

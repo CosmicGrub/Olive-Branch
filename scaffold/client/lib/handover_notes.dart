@@ -1,0 +1,123 @@
+// OLIVE BRANCH — parent-to-parent handover log. MASTERFILE P8, §21.7.
+//
+// P8: "Deletion or editing of parent<->parent log entries [is prohibited].
+// Court-tier integrity (§12 Phase 3). A log with an unsend button is not
+// evidence." This log is not the child's to clear — it's the parents', and
+// that makes it append-only regardless of who's annoyed by what's in it.
+//
+// So this State object exposes exactly one mutation: add. There is no
+// _deleteEntry, no _editEntry, no long-press menu, no Dismissible, no
+// delete/edit IconButton — not hidden, not disabled, just absent. "This will
+// be the hardest button anyone builds here. If it is not real, §2.10 is
+// decoration." (§21.7)
+import 'package:flutter/material.dart';
+
+class _HandoverEntry {
+  const _HandoverEntry({required this.author, required this.when, required this.text});
+  final String author, when, text;
+}
+
+class HandoverNotesScreen extends StatefulWidget {
+  const HandoverNotesScreen({super.key});
+  @override
+  State<HandoverNotesScreen> createState() => _HandoverNotesScreenState();
+}
+
+class _HandoverNotesScreenState extends State<HandoverNotesScreen> {
+  final List<_HandoverEntry> _entries = <_HandoverEntry>[
+    const _HandoverEntry(author: 'Sarah', when: 'Jul 28, 4:12 PM',
+      text: "Running about 15 minutes late for pickup today — meeting overran. "
+            "She's got her coat and backpack ready by the door."),
+    const _HandoverEntry(author: 'You', when: 'Jul 28, 4:20 PM',
+      text: "No problem, we'll wait inside where it's warm."),
+    const _HandoverEntry(author: 'Sarah', when: 'Jul 30, 7:45 AM',
+      text: "Picture day is Thursday — she needs the collared shirt, "
+            "it's already in her backpack."),
+    const _HandoverEntry(author: 'You', when: 'Aug 1, 8:02 AM',
+      text: 'Packed her lunch peanut-free today since her class went nut-free this term.'),
+  ];
+
+  final TextEditingController _controller = TextEditingController();
+
+  void _addEntry() {
+    final String text = _controller.text.trim();
+    if (text.isEmpty) return;
+    setState(() {
+      _entries.add(_HandoverEntry(author: 'You', when: _nowLabel(), text: text));
+      _controller.clear();
+    });
+  }
+
+  // Simple demo-precision timestamp — no intl dependency for a preview build.
+  String _nowLabel() {
+    const List<String> months = <String>['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final DateTime now = DateTime.now();
+    final int hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
+    final String minute = now.minute.toString().padLeft(2, '0');
+    final String ampm = now.hour >= 12 ? 'PM' : 'AM';
+    return '${months[now.month - 1]} ${now.day}, $hour12:$minute $ampm';
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_HandoverEntry> newestFirst = _entries.reversed.toList();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Handover notes')),
+      body: SafeArea(child: Column(children: [
+        Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Text(
+            "Entries here can't be edited or removed — this log is admissible if it's ever needed.",
+            style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        Expanded(child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+          itemCount: newestFirst.length,
+          itemBuilder: (context, i) => _EntryTile(newestFirst[i]),
+        )),
+        const Divider(height: 1),
+        Padding(padding: const EdgeInsets.all(12),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Expanded(child: TextField(controller: _controller,
+              decoration: const InputDecoration(
+                hintText: 'Add a note for the other parent…',
+                border: OutlineInputBorder()),
+              minLines: 1, maxLines: 4,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _addEntry())),
+            const SizedBox(width: 8),
+            FilledButton(onPressed: _addEntry, child: const Text('Add note')),
+          ])),
+      ])),
+    );
+  }
+}
+
+class _EntryTile extends StatelessWidget {
+  const _EntryTile(this.entry);
+  final _HandoverEntry entry;
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> rows = <Widget>[
+      Row(children: <Widget>[
+        Text(entry.author, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+        const SizedBox(width: 8),
+        Text(entry.when, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+      ]),
+      const SizedBox(height: 6),
+      Text(entry.text, style: const TextStyle(fontSize: 14)),
+    ];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
+      ),
+    );
+  }
+}

@@ -39,32 +39,41 @@ class EntryGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('Welcome', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 8),
-        const Text("Which side is this?",
-          style: TextStyle(fontSize: 15, color: Colors.black54)),
-        const SizedBox(height: 32),
-        _RoleButton(
-          icon: Icons.child_care,
-          label: "My child's device",
-          onTap: () => _go(context, childDestination),
-        ),
-        const SizedBox(height: 14),
-        _RoleButton(
-          icon: Icons.person,
-          label: "The grown-up's device",
-          onTap: () => _go(context, grownupDestination),
-        ),
-        const SizedBox(height: 20),
-        // Neither choice grants anything by itself — real guardian
-        // capability is still gated by the family-graph authorizer.
-        const Text('Choosing a side here unlocks nothing by itself.',
-          style: TextStyle(fontSize: 11, color: Colors.black38)),
-      ]))),
+    // LayoutBuilder + SingleChildScrollView + a min-height ConstrainedBox,
+    // not a bare centered Column: on the Fold5's unfolded (short, wide)
+    // viewport the fixed-height content overflowed the bottom by 21px —
+    // confirmed on the physical device, not caught by any test surface size
+    // used so far. This still centers when there's room and scrolls instead
+    // of overflowing when there isn't, on any device shape.
+    body: SafeArea(child: LayoutBuilder(builder: (context, constraints) =>
+      SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Welcome', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 8),
+            const Text("Which side is this?",
+              style: TextStyle(fontSize: 15, color: Colors.black54)),
+            const SizedBox(height: 32),
+            _RoleButton(
+              icon: Icons.child_care,
+              label: "My child's device",
+              onTap: () => _go(context, childDestination),
+            ),
+            const SizedBox(height: 14),
+            _RoleButton(
+              icon: Icons.person,
+              label: "The grown-up's device",
+              onTap: () => _go(context, grownupDestination),
+            ),
+            const SizedBox(height: 20),
+            // Neither choice grants anything by itself — real guardian
+            // capability is still gated by the family-graph authorizer.
+            const Text('Choosing a side here unlocks nothing by itself.',
+              style: TextStyle(fontSize: 11, color: Colors.black38)),
+          ]))))),
   );
 }
 
