@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   jitsi_meet_flutter_sdk: ^13.1.0
+  http: ^1.2.2
 
 # See third_party/PATCH.md. Compile-time-only fix for a hardcoded
 # compileSdkVersion 34 in the published package's own android/build.gradle,
