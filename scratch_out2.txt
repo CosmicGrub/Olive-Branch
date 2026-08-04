@@ -1,0 +1,33 @@
+<h2>§05b The come-back signal, bolstered v0.42.0</h2>
+<div class="note"><strong>§5.27.9 reachable-hours deferral.</strong> A non-safety-critical signal
+blocked by silent hours or a blocked window is now deferred to the next
+reachable window — capped at one, stale after an hour — instead of silently
+dropped. Mirrors the same graceful-degradation philosophy as the quality ladder
+(§5.28) and a live game's async fallback. The sender still sees nothing — a
+deferral is not a delivery receipt.</div>
+
+<h2>§06 Cannot be drawn yet</h2>
+<p>Screens blocked by open decisions in §16.2. They are not sketched, because a
+sketch of an unsettled decision becomes the decision by inertia.</p>
+<div class="note"><strong>Two rows resolved in v0.40.0.</strong> Deployment/residency
+disclosure was blocked on §16.2 #6 (self-host vs. Cloud) — now settled: stay on
+Cloud, revisit at a concrete usage or compliance trigger (§11). The disclosure
+screen itself is not yet drawn — the decision is settled, the screen is simply
+not yet built — queued for a future increment. Homework curriculum alignment
+was blocked on §16.2 #8 — now declined outright (§19); this screen will not be
+built at all, for the same reason `school.ts` already declined SIS integration.</div>
+<table><tr><th>Blocked surface</th><th>Waiting on</th></tr>
+<tr><td>Therapist / counselor role surfaces</td><td>§16.2 #11 — therapist scope</td></tr>
+</table>
+
+<h2>§07 Changelog correspondence</h2>
+<p>Every version, and what it did to this document. Visual era begins at 0.8.0.</p>
+<table><tr><th>version</th><th>date</th><th>entry</th></tr>
+<tr><td>0.43.0</td><td>2026-08-04</td><td>the native kiosk bridge, for real</td></tr>
+<tr><td>0.42.0</td><td>2026-08-03</td><td>the sync/async pairing pattern, formalised</td></tr>
+<tr><td>0.41.0</td><td>2026-08-03</td><td>the entry gate</td></tr>
+<tr><td>0.40.0</td><td>2026-08-01</td><td>two open decisions resolved</td></tr>
+<tr><td>0.39.1</td><td>2026-08-01</td><td>§5.27 renumbered</td></tr>
+<tr><td>0.39.0</td><td>2026-08-01</td><td>four additions evaluated against a Gemini-drafted alternate build</td></tr>
+<tr><td>0.38.0</td><td>2026-08-01</td><td>the fourth canonical document, actually canonical</td></tr>
+<tr><td>0.37.0</td><td>2026-07-27</td><td>stream stability and

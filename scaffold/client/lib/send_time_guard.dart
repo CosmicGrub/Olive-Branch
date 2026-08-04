@@ -1,0 +1,228 @@
+// OLIVE BRANCH — guardian shell, send-time guard. UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline — manually built and run
+// via `flutter analyze` / `flutter test` this session). Renders MARKUP
+// screen "sendguard". MASTERFILE §6.4, §8.2.3, §8.2.7.
+//
+// Two related but distinct guards, both ported from the reference
+// implementation rather than re-derived:
+//
+//  1. The notification gate (packages/delivery-engine/src/gate.ts,
+//     MASTERFILE §6.4) — blocks arrivals during asleep/school and tells the
+//     SENDER, live, before he sends into the wrong hour.
+//  2. The anchor distinction (MASTERFILE §6.4's own framing, restated in the
+//     §03 MARKUP row): "next bedtime" and "the night of June 1st" are
+//     different promises. Only a daypart-relative anchor may drift when her
+//     schedule changes; a specific calendar date never does.
+//
+// §8.2.3 applies throughout: her time is dominant, his is never shown as
+// arithmetic against it (no "+1", no raw offset, no UTC).
+import 'package:flutter/material.dart';
+
+// ===================================== §6.4 the notification gate (ported) ==
+class DayPart {
+  const DayPart(this.name, this.startHour, this.endHour, this.reachable);
+  final String name;
+  final int startHour; // inclusive, her local hour, 0-23
+  final int endHour; // exclusive; may wrap past midnight
+  final bool reachable;
+
+  bool contains(int hour) =>
+    startHour <= endHour ? (hour >= startHour && hour < endHour)
+                          : (hour >= startHour || hour < endHour);
+}
+
+/// A small, honest demo schedule — not a live custody/day-part backend
+/// (none exists yet; see delivery-engine/src/gate.ts for the real thing).
+const demoDayParts = [
+  DayPart('asleep', 20, 7, false),
+  DayPart('school', 8, 15, false),
+  DayPart('free time', 15, 20, true),
+];
+
+DayPart currentDayPart(int hour) =>
+  demoDayParts.firstWhere((p) => p.contains(hour), orElse: () => demoDayParts.last);
+
+class GuardPrompt {
+  const GuardPrompt({
+    required this.localTimeLabel,
+    required this.zoneAbbr,
+    required this.reachable,
+    required this.dayPartName,
+    this.deferLabel,
+  });
+  final String localTimeLabel;
+  final String zoneAbbr;
+  final bool reachable;
+  final String dayPartName;
+  /// Her local time the message would land instead, if blocked. Never a raw
+  /// offset from the actor's own clock.
+  final String? deferLabel;
+}
+
+/// MASTERFILE §6.4, sender side — "called live as the parent composes."
+GuardPrompt recipientContext(int localHour, String localTimeLabel, String zoneAbbr) {
+  final part = currentDayPart(localHour);
+  return GuardPrompt(
+    localTimeLabel: localTimeLabel,
+    zoneAbbr: zoneAbbr,
+    reachable: part.reachable,
+    dayPartName: part.name,
+    deferLabel: part.reachable ? null : '7:00 AM her time',
+  );
+}
+
+// ============================================ the anchor distinction ========
+enum SendAnchor { nextBedtime, specificDate }
+
+/// What the guardian is promising by picking an anchor. Only `nextBedtime`
+/// may resolve differently after a schedule change — that asymmetry is the
+/// entire point of offering both, so it is asserted, not just described.
+class AnchorPreview {
+  const AnchorPreview(this.label, this.movesWithSchedule);
+  final String label;
+  final bool movesWithSchedule;
+}
+
+AnchorPreview resolveAnchor(SendAnchor anchor, {
+  required String currentBedtimeLabel,
+  required String specificDateLabel,
+}) => switch (anchor) {
+  SendAnchor.nextBedtime => AnchorPreview(
+      'Arrives at her next bedtime — right now that means $currentBedtimeLabel her time. '
+      'If her evening shifts, this moves with it.',
+      true),
+  // Deliberately independent of currentBedtimeLabel: a calendar date is a
+  // fixed promise regardless of what bedtime becomes between now and then.
+  SendAnchor.specificDate => AnchorPreview(
+      'Arrives the night of $specificDateLabel, whatever else changes between now and then.',
+      false),
+};
+
+// ==================================================== the guardian-facing UI
+/// MARKUP screen "sendguard". A message composer that demonstrates both
+/// guards live rather than just describing them.
+class SendTimeGuardScreen extends StatefulWidget {
+  const SendTimeGuardScreen({super.key, this.childName = 'Ivy'});
+  final String childName;
+
+  @override
+  State<SendTimeGuardScreen> createState() => _SendTimeGuardScreenState();
+}
+
+class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
+  final _controller = TextEditingController();
+  int _localHour = 22; // 10:40 PM — the MASTERFILE §6.4 example, verbatim.
+  String? _confirmation;
+
+  SendAnchor _anchor = SendAnchor.nextBedtime;
+  String _bedtimeLabel = '8:30 PM';
+  bool _scheduleShifted = false;
+
+  static const _demoHours = <int, String>{
+    22: '10:40 PM',
+    9: '9:15 AM',
+    17: '5:30 PM',
+  };
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _shiftSchedule() => setState(() {
+    _scheduleShifted = !_scheduleShifted;
+    _bedtimeLabel = _scheduleShifted ? '8:00 PM' : '8:30 PM';
+  });
+
+  void _sendNow() => setState(() => _confirmation = 'Sent — landing with ${widget.childName} now.');
+
+  void _deferSend(String label) =>
+    setState(() => _confirmation = 'Set to deliver at $label.');
+
+  @override
+  Widget build(BuildContext context) {
+    final prompt = recipientContext(_localHour, _demoHours[_localHour]!, 'her time');
+    final anchorPreview = resolveAnchor(_anchor,
+      currentBedtimeLabel: _bedtimeLabel, specificDateLabel: 'June 1st');
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Message to ${widget.childName}')),
+      body: SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(controller: _controller, maxLines: 3,
+            decoration: const InputDecoration(border: OutlineInputBorder(),
+              hintText: 'Type a message…')),
+          const SizedBox(height: 18),
+
+          // --- guard 1: the notification gate --------------------------
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: prompt.reachable
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(14)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // HER frame first, always — §8.2.3.
+              Text("It's ${prompt.localTimeLabel} for ${widget.childName}"
+                  '${prompt.reachable ? '' : ' — she is ${prompt.dayPartName}.'}',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              if (prompt.reachable)
+                SizedBox(width: double.infinity, height: 48,
+                  child: FilledButton(onPressed: _sendNow, child: const Text('Send now')))
+              else
+                Wrap(spacing: 10, runSpacing: 10, children: [
+                  SizedBox(height: 48, child: OutlinedButton(
+                    onPressed: _sendNow, child: const Text('Send now anyway'))),
+                  SizedBox(height: 48, child: FilledButton(
+                    onPressed: () => _deferSend(prompt.deferLabel!),
+                    child: Text('Deliver at ${prompt.deferLabel}'))),
+                ]),
+              if (_confirmation != null) Padding(padding: const EdgeInsets.only(top: 10),
+                child: Text(_confirmation!, style: const TextStyle(fontSize: 12.5))),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 6, children: [
+            for (final h in _demoHours.entries)
+              ChoiceChip(label: Text(h.value), selected: _localHour == h.key,
+                onSelected: (_) => setState(() { _localHour = h.key; _confirmation = null; })),
+          ])),
+
+          const SizedBox(height: 28),
+          const Divider(),
+          const SizedBox(height: 10),
+          Text('When should this arrive?',
+            style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          const Text('"Next bedtime" and "the night of June 1st" are different promises — '
+              'only the first moves if her routine does.',
+            style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+          const SizedBox(height: 12),
+          SegmentedButton<SendAnchor>(
+            segments: const [
+              ButtonSegment(value: SendAnchor.nextBedtime, label: Text('Next bedtime')),
+              ButtonSegment(value: SendAnchor.specificDate, label: Text('The night of June 1st')),
+            ],
+            selected: {_anchor},
+            onSelectionChanged: (s) => setState(() => _anchor = s.first),
+          ),
+          const SizedBox(height: 12),
+          Container(padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12)),
+            child: Text(anchorPreview.label, style: const TextStyle(fontSize: 13.5))),
+          const SizedBox(height: 10),
+          TextButton.icon(onPressed: _shiftSchedule,
+            icon: const Icon(Icons.schedule_outlined, size: 18),
+            label: Text(_scheduleShifted
+              ? 'Undo: put her bedtime back to 8:30 PM'
+              : 'Preview: her bedtime moves 30 minutes earlier this week')),
+        ]),
+      )),
+    );
+  }
+}

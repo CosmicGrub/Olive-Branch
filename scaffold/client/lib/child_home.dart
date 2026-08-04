@@ -10,7 +10,18 @@
 // real — see kiosk_shell.dart, which wraps this widget from entry_gate.dart
 // rather than living inside it. ChildHome itself stays lock-agnostic.
 import 'package:flutter/material.dart';
+import 'calendar_day_logic.dart';
 import 'call_screen.dart';
+import 'child_more.dart';
+import 'game_logic.dart';
+import 'game_picker.dart';
+import 'game_story.dart';
+import 'games_hub.dart';
+import 'homework_screen.dart';
+import 'inbox_screen.dart';
+import 'my_day.dart';
+import 'showcase_screen.dart';
+import 'storyteller_screen.dart';
 import 'wants_needs.dart';
 
 /// Honest acknowledgment for a feature this preview build doesn't implement
@@ -32,7 +43,17 @@ class ChildHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+    // SingleChildScrollView + Column, NOT ListView: a sliver-backed list only
+    // realizes children near the viewport, silently dropping ones scrolled
+    // below the fold from the widget/element tree entirely — the exact bug
+    // several of the parallel groups independently hit and documented (e.g.
+    // message_banking.dart, letters_screen.dart). This wiring pass's own grid
+    // expansion (adding tiles for every newly-wired screen) pushed the
+    // "sleeps until" counter below the default test viewport and made it
+    // invisible to `find.text`, which is what surfaced this for real rather
+    // than by inspection — same discovery path those groups describe.
+    body: SafeArea(child: SingleChildScrollView(padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 12),
       if (presence != null) _PresenceCard(presence!, childName: childName),
@@ -50,16 +71,49 @@ class ChildHome extends StatelessWidget {
           crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10,
           mainAxisExtent: 108),
         children: [
-          const _Tile(icon: Icons.edit, label: 'Homework'),
-          const _Tile(icon: Icons.extension, label: 'Play together'),
+          _Tile(icon: Icons.edit, label: 'Homework',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => HomeworkScreen(childName: childName)))),
+          _Tile(icon: Icons.extension, label: 'Play together',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => GamePickerScreen(
+                childName: childName,
+                onPlay: (playContext, kind) {
+                  if (kind == GameKind.story) {
+                    Navigator.of(playContext).push(MaterialPageRoute<void>(
+                      builder: (_) => GameStoryScreen(childName: childName)));
+                  } else {
+                    _notBuiltYet(playContext, 'That game');
+                  }
+                },
+              )))),
+          _Tile(icon: Icons.casino_outlined, label: 'More games',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => GamesHubScreen(childName: childName)))),
           _Tile(icon: Icons.star_border, label: 'My list',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => const WantsNeedsScreen()))),
-          const _Tile(icon: Icons.mail_outline, label: 'Messages'),
+          _Tile(icon: Icons.mail_outline, label: 'Messages',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => InboxScreen(
+                childName: childName, messages: List<InboxMessage>.of(demoInboxMessages))))),
+          _Tile(icon: Icons.wb_sunny_outlined, label: 'My day',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => MyDayScreen(
+                childName: childName, parts: demoDayParts, nowLocal: hhmmNow())))),
+          _Tile(icon: Icons.auto_stories_outlined, label: 'Storyteller',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => StorytellerScreen(childName: childName)))),
+          _Tile(icon: Icons.photo_camera_outlined, label: 'Show & tell',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => ShowcaseScreen(childName: childName)))),
+          _Tile(icon: Icons.more_horiz, label: 'More for you',
+            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => ChildMoreScreen(childName: childName)))),
         ]),
       const SizedBox(height: 12),
       _Sleeps(sleepsUntilHandover),
-    ])),
+    ]))),
   );
 }
 

@@ -54,6 +54,113 @@ line went stale for three versions before being caught here.)
 
 ---
 
+## [0.44.0] — 2026-08-04 — fourteen groups, one navigation graph
+
+Fourteen parallel build groups had each shipped their assigned client screens
+in isolation — onboarding, games, storyteller, journal/letters, calendar,
+guardian ops, live-call extras, showcase, archive/export, and the maturation
+ladder — landing 75 new files in `client/lib/` with zero existing files
+touched, per every group's own report. Correct in isolation, and exactly the
+gap the v0.30.0 standing rule ("everything shipped renders in the demo") was
+written to catch on the web side: **62 of the batch's 72 MARKUP screens had no
+path to them from either home screen in the actual Flutter client.**
+`GamePickerScreen`, `HomeworkScreen`, `InboxScreen` existed and compiled; a
+family opening the app could not reach them.
+
+### Added
+- **`client/lib/hub_widgets.dart`** — `HubTile`/`HubSection`, the shared
+  list-tile chrome the three new hub screens below are built on, so they read
+  as one system rather than three groups' worth of ad hoc layouts.
+- **`client/lib/games_hub.dart` — `GamesHubScreen`.** `game_picker.dart`'s own
+  catalogue only ever renders cards for its four ported `GameKind` values
+  (tic-tac-toe, dots & boxes, memory, story); the concrete boards other
+  groups built (checkers, chess, battleship, word search, Kim's game, word
+  chain, scavenger hunt, find the thing) had no picker of their own. This is
+  the second door — reached from ChildHome's new "More games" tile —
+  alongside `GamePickerScreen`, not a replacement for it.
+- **`client/lib/child_more.dart` / `guardian_more.dart`** — "More for you" /
+  "More" hubs holding every remaining child- and guardian-facing screen that
+  doesn't warrant its own top-level tile (journal, letters, weeks, the
+  ladder, teach-me, the quiet corner, doodle desk, colouring, the shared
+  gallery, the story library, shared reading, and, on the guardian side, the
+  expiry digest, court export, year book, gallery, show-me, closing ritual,
+  call security, live-degrade demo, busy-fork demo, kiosk advisory, invite-a-
+  co-parent, guardian setup, her colour, the ladder's guardian view,
+  siblings, deletion, and storyteller safety) — so neither home screen's grid
+  had to grow past what a real dashboard, or a young child, can scan.
+- **`client/lib/onboarding_flow.dart` — `OnboardingFlowScreen`.** The
+  onboarding group's own report noted every first-run screen it built is
+  "fully self-contained via constructor callbacks, so it can be sequenced
+  ... without any code changes" — this is that sequencing glue (name → age →
+  who → colour → birthday month → day → marked), reached from
+  ChildMoreScreen's "Redo the welcome tour" since no real first-run detector
+  exists yet to trigger it automatically.
+- **`client/lib/shared_gallery.dart`** — the single `AppGallery` instance
+  `snapshot_button.dart`'s own wiring note asked for ("one instance app-wide
+  ... so saves accumulate in one place"), constructed once and shared by
+  `AppGalleryScreen`'s new entry point.
+- **`child_home.dart`**: `Homework` → `HomeworkScreen`; `Play together` →
+  `GamePickerScreen` (wired for its `story` kind to the real
+  `GameStoryScreen`, honest not-built-yet for the rest of its own
+  catalogue); `Messages` → `InboxScreen`; four new tiles (`More games`, `My
+  day`, `Storyteller`, `Show & tell`, `More for you`).
+- **`guardian_home.dart`**: the `Exchange` and `Expenses` stub tiles now
+  route to `ExchangeScreen`/`ExpensesScreen`; four new tiles (`Send-time
+  guard`, `Meds & care`, `Morning briefing`, `Care note`, `More`).
+- **62 of the 72 MARKUP screens marked `data-amended="0.44.0"`** in
+  `MARKUP.html` — every slug this pass gave a real navigation path to, found
+  by grepping each new file's own "Renders MARKUP screen '…'" header comment
+  against every `data-screen` in the document rather than trusting either
+  side's naming.
+
+### Fixed
+- **`child_home.dart` and `guardian_home.dart`'s outer `ListView` silently
+  dropped content below the fold from the element tree**, not just from
+  view — the same sliver-virtualization defect several of the fourteen
+  groups independently hit and fixed in their own files this batch
+  (`message_banking.dart`, `letters_screen.dart`, and others, per their
+  reports). Invisible until this pass's own grid expansion pushed
+  `child_home.dart`'s "sleeps until" counter past the default test viewport
+  and `invariants_test.dart` caught it for real, not by inspection. Both
+  files now use `SingleChildScrollView` + `Column`, matching the convention
+  the affected groups already established.
+- **`widget_test.dart`'s stub-tile test still tapped `Exchange`**, which this
+  pass gave a real screen — repointed at `Availability`, the one guardian
+  tile with no implementing screen anywhere in the batch (confirmed by the
+  same MARKUP-header grep above: nothing renders that slug).
+- Naming/argument mismatches surfaced while wiring, all fixed at the call
+  site rather than in the fourteen groups' own files: none found — every
+  constructor signature in the eleven agent reports matched the actual
+  source exactly on inspection.
+
+### Verified
+- `flutter analyze` (client): clean — 2 pre-existing `prefer_initializing_formals`
+  info lints in `game_chess.dart`, already noted and accepted in that group's
+  own report.
+- `flutter test` (client): **874 passed, 0 failed**, run once as one suite
+  against the fully-wired app rather than per-group — the fourteen groups
+  each verified their own files in isolation and reported different partial
+  totals (828–861 passed) with a handful of cross-group collisions they
+  correctly attributed to concurrent editing, not to their own work; this is
+  the first run of the whole client suite together. Includes 7 new parity
+  tests added to `widget_test.dart` for the tiles this pass wired.
+
+### Out of scope, on purpose
+- **`availability`** — MARKUP's own guardian-surface slug, "when he can
+  actually be reached, honestly rendered." No file in this 70-file batch
+  renders it under any name (verified by header grep, not assumption); the
+  guardian tile stays an honest not-built-yet stub rather than being pointed
+  at `sendguard` or `busyFork`, which are real but answer a different
+  question.
+- **`SnapshotButton` embedded on every play/create surface.** The button
+  itself needs a `currentSurface` id and the shared `AppGallery`; wiring it
+  onto `doodle_desk.dart`/`colouring_screen.dart` would mean editing those
+  groups' own files rather than adding new ones, which this pass avoided by
+  policy. `AppGalleryScreen` (the gallery it saves into) is reachable from
+  `ChildMoreScreen` today; the button itself is a follow-up.
+
+---
+
 ## [0.43.0] — 2026-08-04 — the native kiosk bridge, for real
 
 Picked up as the standing gap named identically by MASTERFILE §20.2b, this

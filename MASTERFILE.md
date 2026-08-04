@@ -9,9 +9,9 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.43.0 |
+| **Version** | 0.44.0 |
 | **Last amended** | 2026-08-04 |
-| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The native kiosk bridge is built on Android** (§5.20, §8.3, §20.2b); Windows Assigned Access and iOS Guided Access remain contract-only/Ph.4. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. |
+| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The native kiosk bridge is built on Android** (§5.20, §8.3, §20.2b); Windows Assigned Access and iOS Guided Access remain contract-only/Ph.4. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is now complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
 | **Companion docs** | `OLIVE BRANCH_CHANGELOG.md`, `OLIVE BRANCH_VISUAL.html`, `OLIVE BRANCH_MARKUP.html` |
@@ -109,6 +109,17 @@ node-only with the dependency that makes it so.** Enforced by E1–E7 in
 `check-markup.mjs`; each has been shown to fail when its guard is removed. The
 Engine Room screen renders every wired engine by calling it live, so the values
 shown are computed at page load rather than written by hand.
+
+**The same rule found the same gap on the Flutter client, v0.44.0.** Fourteen
+parallel build groups each shipped their assigned client screens — 75 new
+files in `client/lib/`, each `flutter analyze`/`flutter test` clean in
+isolation — but 62 of the batch's 72 MARKUP screens had no path to them from
+either `ChildHome` or `GuardianHome`: correct code with no navigation route is
+the client-side twin of an engine with no demo bridge. Closed by a single
+navigation-wiring pass (`child_home.dart`, `guardian_home.dart`, and three new
+hub screens — `games_hub.dart`, `child_more.dart`, `guardian_more.dart`) that
+touched no other group's file. `availability` is the one screen this did not
+close, because nothing in the batch renders it under any name.
 
 **Standing directive (§21).** The product is intended to **grow up with the
 child**, and the handover at 18 is the last of many transitions rather than the
@@ -2454,7 +2465,7 @@ This list matters more than the one above.
 | API layer | **`packages/api`** — router with three structural invariants (A1 mandatory declared action, A2 context only from the principal, A3 `childId` from the path only), verified over a real socket. |
 | Object storage + reaper | **`packages/storage`** — port, adapter, key-bound signed URLs, and a reaper that deletes **blob before row**. Migration 0004 adds `reap_tombstone` and `retention_breach`. |
 | Push / call ringing | **`packages/transport`** — content-free payloads with an allowlist audit, VoIP push and full-screen intent for calls. |
-| Client shell | **`client/lib`** — four Dart files. See the caveat below. |
+| Client shell | **`client/lib`** — grew from four Dart files to 95 (75 new from this round) across fourteen parallel build groups (onboarding, games, storyteller, journal/letters, calendar, guardian ops, live-call extras, showcase, archive/export, the maturation ladder) plus the entry gate, kiosk lock, and call screen already there. **CLOSED v0.44.0**: every one of those screens is now reachable from `ChildHome`/`GuardianHome`, not just compiled — the "20.2b still missing" row directly below is what remains unclosed on the client. |
 
 ### 20.2b Still missing
 
@@ -4459,6 +4470,6 @@ Still open:
 
 ---
 
-*End of MASTERFILE v0.43.0. Amend in place. Bump version. Log in CHANGELOG.
+*End of MASTERFILE v0.44.0. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*

@@ -6,6 +6,8 @@
 // the per-widget behavioral checks, §8.1/§8.2/§8.3).
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:olive_client/exchange_screen.dart';
+import 'package:olive_client/expenses_screen.dart';
 import 'package:olive_client/main.dart';
 
 void main() {
@@ -99,13 +101,69 @@ void main() {
     expect(find.text('Try again'), findsOneWidget);
   });
 
+  // Exchange and Expenses used to be this suite's stub-feedback example, but
+  // this wiring pass gave both real destinations — see the parity tests
+  // below. Availability is the one guardian tile with no implementing
+  // screen anywhere in this batch (verified by grepping every new file's own
+  // "Renders MARKUP screen" comment for the 'availability' slug), so it is
+  // the honest remaining stub this test now exercises.
   testWidgets('GuardianHome stub tiles show honest not-built-yet feedback',
       (WidgetTester tester) async {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Exchange'));
+    await tester.tap(find.text('Availability'));
     await tester.pump();
     expect(find.textContaining('not built yet'), findsOneWidget);
+  });
+
+  testWidgets('GuardianHome Exchange tile reaches the real screen',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("The grown-up's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Exchange'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExchangeScreen), findsOneWidget);
+  });
+
+  testWidgets('GuardianHome Expenses tile reaches the real screen',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("The grown-up's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Expenses'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExpensesScreen), findsOneWidget);
+  });
+
+  testWidgets("ChildHome's Homework tile reaches the real screen",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Homework'));
+    await tester.pumpAndSettle();
+    expect(find.text('Take a photo'), findsOneWidget);
+  });
+
+  testWidgets("ChildHome's Play together tile reaches the game picker",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play together'));
+    await tester.pumpAndSettle();
+    expect(find.text('Games'), findsOneWidget);
+  });
+
+  testWidgets("ChildHome's Messages tile reaches the real inbox",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Messages'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Dad'), findsWidgets);
   });
 }

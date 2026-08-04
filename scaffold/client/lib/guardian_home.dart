@@ -12,9 +12,16 @@
 // child_home.dart already takes for its own unbuilt tiles.
 import 'package:flutter/material.dart';
 import 'call_screen.dart';
+import 'care_note.dart';
 import 'emergency_card.dart';
+import 'exchange_screen.dart';
+import 'expenses_screen.dart';
+import 'guardian_more.dart';
 import 'handover_notes.dart';
+import 'meds_care.dart';
 import 'message_banking.dart';
+import 'morning_briefing.dart';
+import 'send_time_guard.dart';
 
 void _notBuiltYet(BuildContext context, String what) {
   ScaffoldMessenger.of(context).showSnackBar(
@@ -41,7 +48,12 @@ class GuardianHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(child: ListView(children: [
+    // SingleChildScrollView + Column, NOT ListView: see child_home.dart's own
+    // comment on the same fix — a sliver-backed list drops children scrolled
+    // below the fold from the element tree, and this wiring pass's grid
+    // expansion (six new guardian tiles) pushed real content well past the
+    // default test viewport.
+    body: SafeArea(child: SingleChildScrollView(child: Column(children: [
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -90,14 +102,35 @@ class GuardianHome extends StatelessWidget {
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const HandoverNotesScreen()))),
               _GTile(icon: Icons.swap_horiz, label: 'Exchange',
-                onTap: () => _notBuiltYet(context, 'Exchange')),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => ExchangeScreen(childName: childName)))),
               _GTile(icon: Icons.account_balance_wallet, label: 'Expenses',
-                onTap: () => _notBuiltYet(context, 'Expenses')),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => ExpensesScreen(childName: childName)))),
+              // No screen among this batch renders MARKUP's 'availability'
+              // slug (verified by grepping every new file's own "Renders
+              // MARKUP screen" comment) — stays an honest stub rather than
+              // being pointed at something that only looks related.
               _GTile(icon: Icons.event_available, label: 'Availability',
                 onTap: () => _notBuiltYet(context, 'Availability')),
+              _GTile(icon: Icons.schedule, label: 'Send-time guard',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => SendTimeGuardScreen(childName: childName)))),
+              _GTile(icon: Icons.medical_services_outlined, label: 'Meds & care',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => MedsCareScreen(childName: childName)))),
+              _GTile(icon: Icons.wb_twilight, label: 'Morning briefing',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const MorningBriefingScreen()))),
+              _GTile(icon: Icons.favorite_border, label: 'Care note',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => CareNoteScreen(childName: childName)))),
+              _GTile(icon: Icons.more_horiz, label: 'More',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => GuardianMoreScreen(childName: childName)))),
             ])),
         const SizedBox(height: 16),
-      ])),
+      ]))),
   );
 }
 
