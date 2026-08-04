@@ -1,30 +1,38 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+// Boot + navigation smoke tests for the unified app. Previously two separate
+// entry points (main.dart / main_guardian.dart) built into two APKs sharing
+// one applicationId — this file now proves both halves are genuinely
+// reachable through the single real entry gate a family would see, not just
+// that each widget renders in isolation (see test/invariants_test.dart for
+// the per-widget behavioral checks, §8.1/§8.2/§8.3).
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:olive_client/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('boots to the entry gate, not directly to either home',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    expect(find.text('Welcome'), findsOneWidget);
+    expect(find.text("My child's device"), findsOneWidget);
+    expect(find.text("The grown-up's device"), findsOneWidget);
+    expect(find.text('Hi Ivy'), findsNothing);
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets("choosing the child's device reaches ChildHome",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    expect(find.text('Hi Ivy'), findsOneWidget);
+    expect(find.text('Homework'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  testWidgets("choosing the grown-up's device reaches GuardianHome",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("The grown-up's device"));
+    await tester.pumpAndSettle();
+    expect(find.text('Ivy'), findsOneWidget);
+    expect(find.text('Winding down for bed'), findsOneWidget);
   });
 }
