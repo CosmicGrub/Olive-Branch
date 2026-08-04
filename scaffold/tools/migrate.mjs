@@ -28,20 +28,75 @@ import { join } from 'node:path';
 
 const DIR = process.env.MIGRATIONS_DIR ?? 'db/migrations';
 const PSQL = process.env.PSQL_CMD;
-if (!PSQL) { console.error('PSQL_CMD required'); process.exit(2); }
-
-const sh = (sql, opts = {}) => {
-  const [cmd, ...args] = PSQL.split(' ');
-  return execFileSync(cmd, [...args, '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1',
-    ...(opts.file ? ['-f', opts.file] : ['-c', sql])], { encoding: 'utf8' });
-};
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!PSQL && !DATABASE_URL) {
+  console.error('PSQL_CMD or DATABASE_URL required');
+  process.exit(2);
+}
 
 const sha = (s) => createHash('sha256').update(s).digest('hex');
+
+// Two backends, same M1-M4 guarantees either way, same return shape (a plain
+// string, one line per row -- the only query this file ever runs against a
+// result set is a single delimiter-joined column, so nothing downstream needs
+// to know which backend produced it):
+//
+//  - PSQL_CMD shells out to a native `psql` binary. What verify.sh has always
+//    used, untouched.
+//  - DATABASE_URL uses `pg` directly. Added because a native psql binary is
+//    not always present (e.g. developing against a Postgres running in
+//    Docker, with no client tools installed on the host) -- a hard
+//    dependency on a client binary being present on the runner is itself a
+//    portability gap, not just a local inconvenience.
+let execSql;   // (text) => Promise<string>   -- newline-joined rows, psql -t -A shape
+let execFile;  // (path) => Promise<void>     -- runs a whole file as one transaction (M4)
+// `pg.Client` holds an open TCP connection, which keeps the event loop alive
+// indefinitely -- `process.exit()` does not wait for async work, so an
+// 'exit' handler calling `client.end()` never actually completes before the
+// process tears down. Every exit point below awaits this explicitly instead.
+let closeDb = async () => {};
+
+if (DATABASE_URL) {
+  const { Client } = await import('pg');
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  closeDb = async () => { await client.end().catch(() => {}); };
+
+  execSql = async (text) => {
+    const res = await client.query(text);
+    return (res.rows ?? []).map((row) => Object.values(row)[0]).join('\n');
+  };
+  execFile = async (path) => {
+    const body = readFileSync(path, 'utf8');
+    await client.query('BEGIN');
+    try {
+      await client.query(body);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    }
+  };
+} else {
+  execSql = async (text) => {
+    const [cmd, ...args] = PSQL.split(' ');
+    return execFileSync(cmd, [...args, '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', text],
+      { encoding: 'utf8' });
+  };
+  execFile = async (path) => {
+    const [cmd, ...args] = PSQL.split(' ');
+    // -1 wraps the whole file in a single transaction (M4). Files that
+    // additionally manage their own BEGIN/COMMIT are compatible: the outer
+    // block becomes a no-op.
+    execFileSync(cmd, [...args, '-q', '-1', '-v', 'ON_ERROR_STOP=1', '-f', path],
+      { encoding: 'utf8' });
+  };
+}
 
 // `IF NOT EXISTS` emits a NOTICE on every subsequent run, which makes clean
 // output noisy and trains readers to ignore warnings. Suppress it for this
 // statement only.
-sh(`SET LOCAL client_min_messages = warning;
+await execSql(`SET LOCAL client_min_messages = warning;
     CREATE TABLE IF NOT EXISTS schema_migration (
       filename    text PRIMARY KEY,
       checksum    text NOT NULL,
@@ -49,12 +104,12 @@ sh(`SET LOCAL client_min_messages = warning;
       duration_ms integer
     );`);
 
+const appliedRaw = await execSql(`SELECT filename || '' || checksum FROM schema_migration;`);
 const applied = new Map(
-  sh(`SELECT filename || '\u0001' || checksum FROM schema_migration;`)
-    .trim().split('\n').filter(Boolean).map(l => l.split('\u0001')));
+  appliedRaw.trim().split('\n').filter(Boolean).map((l) => l.split('')));
 
 const files = readdirSync(DIR).filter(f => f.endsWith('.sql')).sort();
-if (!files.length) { console.error(`no migrations in ${DIR}`); process.exit(2); }
+if (!files.length) { console.error(`no migrations in ${DIR}`); await closeDb(); process.exit(2); }
 
 // M3 — verify every already-applied file still matches what was applied.
 const tampered = [];
@@ -67,7 +122,7 @@ if (tampered.length) {
     tampered.map(f => `  ${f}`).join('\n') +
     `\nThe database and the repository disagree about the schema. Write a new ` +
     `migration; never edit an applied one.`);
-  process.exit(1);
+  await closeDb(); process.exit(1);
 }
 
 // Orphan check runs FIRST: an applied migration missing from the repo is a
@@ -78,7 +133,7 @@ if (orphans.length) {
   console.error(`REFUSING: applied migrations missing from ${DIR}:\n` +
     orphans.map(f => `  ${f}`).join('\n') +
     `\nThe database contains schema this repository cannot describe.`);
-  process.exit(1);
+  await closeDb(); process.exit(1);
 }
 
 // M1 — no gaps.
@@ -94,31 +149,28 @@ const gap = firstPendingIdx === -1
 if (gap.length) {
   console.error(`REFUSING: out-of-order state. These are applied but sit after ` +
     `an unapplied migration:\n${gap.map(f => `  ${f}`).join('\n')}`);
-  process.exit(1);
+  await closeDb(); process.exit(1);
 }
 
 if (!pending.length) {
   console.log(`up to date — ${files.length} migration(s) applied`);
-  process.exit(0);
+  await closeDb(); process.exit(0);
 }
 
 for (const f of pending) {
   const body = readFileSync(join(DIR, f), 'utf8');
   const t0 = Date.now();
-  // M4 — psql -1 wraps the file in a single transaction. Files that manage
-  // their own BEGIN/COMMIT are compatible: the outer block becomes a no-op.
-  const [cmd, ...args] = PSQL.split(' ');
   try {
-    execFileSync(cmd, [...args, '-q', '-v', 'ON_ERROR_STOP=1', '-f', join(DIR, f)],
-      { encoding: 'utf8' });
+    await execFile(join(DIR, f));
   } catch (e) {
     console.error(`FAILED: ${f}\n${e.stderr || e.message}`);
     console.error('Schema left at the last successfully applied migration.');
-    process.exit(1);
+    await closeDb(); process.exit(1);
   }
   const ms = Date.now() - t0;
-  sh(`INSERT INTO schema_migration (filename, checksum, duration_ms)
+  await execSql(`INSERT INTO schema_migration (filename, checksum, duration_ms)
       VALUES ('${f}', '${sha(body)}', ${ms});`);
   console.log(`applied ${f} (${ms}ms)`);
 }
 console.log(`done — ${pending.length} applied, ${files.length} total`);
+await closeDb();

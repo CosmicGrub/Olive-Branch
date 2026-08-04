@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+// OLIVE BRANCH — dev seed data. Local development only, matches the demo
+// constants already hardcoded in scaffold/client/lib/main.dart (childName:
+// 'Ivy', ParentPresence('Dad', ...)) so the real backend and the Flutter
+// client's existing placeholder data describe the same family.
+import pg from 'pg';
+
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
+
+export const IVY = 'aaaaaaaa-0000-4000-8000-000000000001';
+export const DAD = 'aaaaaaaa-0000-4000-8000-000000000002';
+
+const client = new pg.Client({ connectionString: DATABASE_URL });
+await client.connect();
+await client.query('BEGIN');
+
+await client.query(
+  `INSERT INTO app_user (id, display_name, home_tz) VALUES ($1, 'Dad', 'America/Chicago')
+   ON CONFLICT (id) DO NOTHING`, [DAD]);
+await client.query(
+  `INSERT INTO child (id, display_name, birth_date, home_tz)
+   VALUES ($1, 'Ivy', '2016-04-02', 'America/New_York')
+   ON CONFLICT (id) DO NOTHING`, [IVY]);
+await client.query(
+  `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+   VALUES ($1, $2, 'guardian', '{"calls":true,"message":true,"calendar.view":true}',
+           tstzrange(now() - interval '1 year', null))
+   ON CONFLICT (child_id, user_id) DO NOTHING`, [IVY, DAD]);
+await client.query(
+  `INSERT INTO child_tz_interval (child_id, tz, valid, source)
+   VALUES ($1, 'America/New_York', tstzrange(now() - interval '1 year', null), 'manual')
+   ON CONFLICT DO NOTHING`, [IVY]);
+const artifact = await client.query(
+  `INSERT INTO media_artifact (id, child_id, author_id, kind, storage_key, captured_at, captured_tz, expires_at)
+   VALUES (gen_random_uuid(), $1, $2, 'video_msg', 'dev/goodnight-1.mp4', now() - interval '2 hours',
+           'America/Chicago', now() + interval '88 days')
+   RETURNING id`, [IVY, DAD]);
+await client.query(
+  `INSERT INTO delivery_intent
+     (id, child_id, sender_id, payload_kind, payload_ref, policy, state, materialized_at, expires_at)
+   VALUES (gen_random_uuid(), $1, $2, 'video_msg', $3, 'immediate', 'delivered',
+           now() - interval '1 hour', now() + interval '88 days')`,
+  [IVY, DAD, artifact.rows[0].id]);
+
+await client.query('COMMIT');
+console.log(`seeded: child ${IVY} (Ivy), guardian ${DAD} (Dad), one delivered message`);
+await client.end();
