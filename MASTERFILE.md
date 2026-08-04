@@ -9,9 +9,9 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.42.0 |
-| **Last amended** | 2026-08-01 |
-| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **Remaining gap: the native kiosk modules.** §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. |
+| **Version** | 0.43.0 |
+| **Last amended** | 2026-08-04 |
+| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The native kiosk bridge is built on Android** (§5.20, §8.3, §20.2b); Windows Assigned Access and iOS Guided Access remain contract-only/Ph.4. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
 | **Companion docs** | `OLIVE BRANCH_CHANGELOG.md`, `OLIVE BRANCH_VISUAL.html`, `OLIVE BRANCH_MARKUP.html` |
@@ -2462,7 +2462,7 @@ This list matters more than the one above.
 |---|---|
 | ~~A compiled client~~ | **CLOSED v0.15.0.** Flutter 3.24.5 / Dart 3.5.4. `flutter analyze` clean under strict casts, strict inference and strict raw types; 14 widget tests execute inside `verify.sh`. A missing toolchain is treated as a gap, not a skip. |
 | ~~A live LiveKit server~~ | **CLOSED v0.12.0.** livekit-server 1.8.0 runs inside `verify.sh` via `tools/with-livekit.sh`. 21 assertions against the real server, including the I2 proof that a join token is refused for every admin call. |
-| **Native kiosk bridge** | `startLockTask`, Assigned Access, Guided Access unwritten. The §5.20 state machine is driven by synthetic events only. |
+| ~~Native kiosk bridge (Android)~~ | **CLOSED v0.43.0.** `startLockTask` wired end to end: `client/android/.../KioskBridge.kt` (real, in the actual Gradle module — the old `native/android/` copy was a never-compiled reference), `client/lib/lock_controller.dart` (a port of the §5.20 state machine), `client/lib/kiosk_shell.dart` (the wiring). The §5.20 state machine is driven by real lock-task/lifecycle events on a real device, not only synthetic ones. **Assigned Access and Guided Access remain unwritten** — Windows has no Flutter platform target scaffolded yet, and iOS is Ph.4 per §8.3's own table. |
 | **OCR** | Homework capture specified, not built. |
 | **CI, migration runner, observability** | `npm run verify` exists and computes its own totals, but nothing runs it on a schedule. `orphan_risk` and `retention_breach` are views with no alerting. |
 
@@ -4459,6 +4459,6 @@ Still open:
 
 ---
 
-*End of MASTERFILE v0.37.0. Amend in place. Bump version. Log in CHANGELOG.
+*End of MASTERFILE v0.43.0. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*

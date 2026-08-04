@@ -48,8 +48,106 @@ Silent deletion is a process failure.
   here worth keeping a foothold in. Should not be re-proposed absent new
   direction from the owner.
 
-Phase 2 decisions: §16.2 #6 (self-host vs Cloud) and #8 (curriculum standards).
-The native kiosk modules. §21.9 D — whether "becomes a parent" reuses the account.
+Phase 2 decisions: §16.2 #6 Step 2 (self-hosting Jitsi). §21.9 D — whether
+"becomes a parent" reuses the account. (§16.2 #8 was resolved in 0.40.0 — this
+line went stale for three versions before being caught here.)
+
+---
+
+## [0.43.0] — 2026-08-04 — the native kiosk bridge, for real
+
+Picked up as the standing gap named identically by MASTERFILE §20.2b, this
+file's own `[Unreleased]` section, and the code's own comments in `main.dart`
+("no kiosk lock... NOT kiosk-locked: standard Android navigation still
+works"). Built on top of what the other active line of work had already
+landed rather than redoing it — `kiosk_channel.dart` (the Dart platform
+channel) and `pin_gate.dart` (the shuffled keypad) were already complete and
+correct, just never wired to anything.
+
+### Added
+- **`client/android/.../KioskBridge.kt` — real, not reference.** The
+  `native/android/KioskBridge.kt` copy (wrong package, "never compiled, never
+  run on a device") is retired; the real implementation now lives in the
+  actual Gradle module and is registered from `MainActivity.kt`
+  (`configureFlutterEngine`), which was previously a bare `FlutterActivity`
+  subclass with zero overrides.
+- **`client/lib/lock_controller.dart`** — a 1:1 semantic port of
+  `packages/child-lock/src/lock.ts` to Dart (same function names, same
+  ordering, same constants), so the two stay auditable side by side the same
+  way the cross-language channel contract already is.
+- **`client/lib/kiosk_shell.dart`** — the missing wiring. Owns a
+  `LockController`, engages the native lock on entry, and renders exactly one
+  of ChildHome / PinGate / a locked-out surface through `canRender()`'s
+  deny-by-default gate. Replaces `child_home.dart`'s labeled dev-preview PIN
+  button with the real trigger.
+- **`packages/child-lock/test/lock.test.mjs`** (47 assertions) — the TS state
+  machine had zero tests since it was written at v0.7.0; an orphaned package
+  despite being logic-complete. Wired into `verify.sh` and `package.json`.
+- **`client/test/lock_controller_test.dart`** (17 assertions) mirrors the same
+  coverage against the Dart port. `client/test/invariants_test.dart` gained a
+  `KioskShell` group (5 assertions) exercising the actual widget: a
+  `lockTaskExited` event lands on the PIN gate and never the child surface, a
+  correct PIN after a defeat recovers, five wrong PINs lock out without ever
+  fabricating error copy.
+- **An Android toolchain gate in `verify.sh`.** There was no native-Android
+  check in the automated suite at all before this — only Dart analyze/test
+  touched `client/`. Runs `:app:compileDebugKotlin` when an SDK is present;
+  logs the same "MISSING TOOLCHAIN — not a skip, a gap" pattern as the
+  existing Dart/LiveKit gates otherwise.
+
+### Fixed
+- **A real bug caught by the new gate before this even shipped**: the first
+  version of `MainActivity.kt` registered a `BroadcastReceiver` for
+  `Intent.ACTION_LOCK_TASK_ENTERING`/`_EXITING`, names that do not exist in
+  the public SDK (compileSdk 36 — "Unresolved reference"). Replaced with a
+  mechanism built entirely on APIs already proven to compile
+  (`ActivityManager.getLockTaskModeState()`, the same call `currentMode()`
+  already used): poll the mode at `onStop()`/`onResume()` and diff against
+  the last-observed value. Exactly the standing-rule-5 failure mode this
+  project keeps finding — a declaration (the reference copy's channel
+  contract) that had never actually been exercised.
+- **`KioskBridge.register()`'s `events` parameter was accepted but never
+  wired to a stream handler** in the original reference copy — a declaration
+  without an implementation, invisible only because that copy was never
+  compiled. Fixed in the real module.
+- **The stale "*End of MASTERFILE v0.37.0*" closing line**, five versions
+  behind the header's own `0.42.0` — the header advanced with every
+  increment from 0.38.0 on; the footer didn't.
+- **`transport.test.mjs`'s native-bridge contract check** pointed at the now-
+  retired `native/android/KioskBridge.kt`; repointed at the real module path,
+  and its "every native file marked UNVERIFIED" assertion split in two —
+  Windows must still say so (genuinely untouched), Android must now say it
+  does **not** (genuinely built, wired, and manually verified on a real
+  device this session).
+
+### Verified
+- `lock.test.mjs`: 47 passed, 0 failed (new).
+- `transport.test.mjs`: 58 passed, 0 failed (3 new J-bridge assertions).
+- Dart: `flutter analyze` clean; `flutter test`: 76 passed, 0 failed (was 54).
+- Manually built and installed on the same physical Android device used for
+  the previous session's screenshot audit: `startLockTask()` pins the app for
+  real, Home/Recents is suppressed, exiting lands on the PIN gate rather than
+  any guardian surface, the demo PIN recovers it, five wrong attempts cool
+  down, break-glass recovers without granting escalation.
+
+### Out of scope, on purpose
+- **Windows Assigned Access** (`native/windows/AssignedAccessBridge.cs`) — no
+  `windows/` Flutter platform target is scaffolded yet; left as the
+  contract-only stub it already was.
+- **iOS Guided Access** — MASTERFILE §8.3's own table marks this **Ph.4**,
+  deliberately future work, not a gap to close now.
+- **Real backend PIN verification** — `auth.ts`'s `verifyPin` is designed to
+  run behind a live API against a server-held, RLS-protected
+  `pin_credential` table; no backend is deployed for this client to call yet.
+  `KioskShell` takes an injected `verifyPin` callback; the demo build supplies
+  a fixed code rather than pretending to reach a server that isn't there —
+  same posture as §8.5.0's `guardianSetup` stub.
+- **Guardian escalation** (`escalate()`, PIN + biometric →
+  `guardian_escalation`) is ported to `lock_controller.dart` and unit-tested,
+  but not wired to any UI: there is no "guardian settings reachable from the
+  child's device" screen anywhere in this app yet to escalate into. Wiring it
+  to nothing would be exactly the declaration-without-implementation failure
+  mode standing rule 4 warns against.
 
 ---
 

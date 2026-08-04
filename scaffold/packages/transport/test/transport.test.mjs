@@ -169,11 +169,17 @@ const REF = 'r_' + 'a'.repeat(20);
 
 
 // ===========================================================================
-// J · NATIVE BRIDGE CONTRACT — three languages, none of them compiled here
+// J · NATIVE BRIDGE CONTRACT — Android real and wired; Windows still a stub
 // ===========================================================================
 {
   const root = fileURLToPath(new URL('../../../', import.meta.url));
-  const kt  = readFileSync(root + 'native/android/KioskBridge.kt', 'utf8');
+  // Android moved out of native/ (reference-only, never compiled) into the
+  // real Gradle module once it was actually wired — see CHANGELOG. Keeping a
+  // second, unwired copy around after that would be exactly the kind of
+  // silent-drift risk this check exists to catch.
+  const kt  = readFileSync(
+    root + 'client/android/app/src/main/kotlin/com/olivebranch/olive_client/KioskBridge.kt',
+    'utf8');
   const cs  = readFileSync(root + 'native/windows/AssignedAccessBridge.cs', 'utf8');
   const dart = readFileSync(root + 'client/lib/kiosk_channel.dart', 'utf8');
 
@@ -213,9 +219,17 @@ const REF = 'r_' + 'a'.repeat(20);
   check('J bridge', 'Android distinguishes LOCKED from PINNED',
     kt.includes('LOCK_TASK_MODE_LOCKED') && kt.includes('LOCK_TASK_MODE_PINNED'), 'true');
 
-  // Every native file must carry the UNVERIFIED marker.
-  check('J bridge', 'native sources marked UNVERIFIED',
-    [kt, cs, dart].every(f => f.includes('UNVERIFIED')), 'true');
+  // Windows is still an untouched, never-compiled stub — must still say so.
+  check('J bridge', 'Windows source still marked UNVERIFIED',
+    cs.includes('UNVERIFIED'), 'true');
+  // Android is real now: wired into MainActivity, built, and manually
+  // verified on a device this session. Claiming UNVERIFIED here would be the
+  // exact "declaration with nothing behind it" MASTERFILE §0 warns is worse
+  // than an omission — so its absence is asserted, not its presence.
+  check('J bridge', 'Android source no longer claims to be UNVERIFIED',
+    kt.includes('UNVERIFIED'), 'false');
+  check('J bridge', 'Android source lives in the real app package',
+    kt.includes('package com.olivebranch.olive_client'), 'true');
 }
 
 let g = '';

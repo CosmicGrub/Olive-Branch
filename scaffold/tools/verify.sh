@@ -64,7 +64,8 @@ for spec in \
   "signal + a11y matrix|packages/signal/test/signal.test.mjs" \
   "a11y read-aloud|packages/a11y/test/a11y.test.mjs" \
   "maturation ladder|packages/maturation/test/maturation.test.mjs" \
-  "games|packages/games/test/games.test.mjs" ; do
+  "games|packages/games/test/games.test.mjs" \
+  "child lock state machine|packages/child-lock/test/lock.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
@@ -98,6 +99,27 @@ if [ -x "${FLUTTER_BIN:-/tmp/flutter/bin/flutter}" ]; then
 else
   # Not a skip. The toolchain is a declared dependency of this suite.
   echo "  dart widget invariants     MISSING TOOLCHAIN — not a skip, a gap"
+  PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
+echo "── Android native (kiosk bridge, §5.20) ─────────────────────────"
+# The Dart block above only compiles/tests Dart — it cannot catch a native
+# Kotlin error (KioskBridge.kt, MainActivity.kt), which was true even before
+# this file was real: there was previously no Android-toolchain check here at
+# all. Same "gap, not skip" posture as the Dart and LiveKit gates.
+ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+GRADLEW="client/android/gradlew"
+if [ -n "$ANDROID_SDK" ] && [ -d "$ANDROID_SDK" ] && [ -x "$GRADLEW" ]; then
+  if (cd client/android && ./gradlew -q :app:compileDebugKotlin >/tmp/gradle.out 2>&1); then
+    echo "  android kotlin compile      clean"
+  else
+    tail -15 /tmp/gradle.out | sed 's/^/  /'
+    echo "  ANDROID KOTLIN COMPILE FAILED"; PROBLEMS=$((PROBLEMS+1))
+  fi
+else
+  # Not a skip. The SDK is a declared dependency of this suite.
+  echo "  android kotlin compile      MISSING TOOLCHAIN — not a skip, a gap"
   PROBLEMS=$((PROBLEMS+1))
 fi
 

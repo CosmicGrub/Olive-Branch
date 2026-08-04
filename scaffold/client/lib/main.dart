@@ -1,15 +1,19 @@
 // OLIVE BRANCH — unified entry point. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run this
-// session, see HANDOFF notes, but verify.sh itself still can't find it).
+// tools/verify.sh's automated pipeline).
 //
 // This is a preview build: it renders the real EntryGate (lib/entry_gate.dart,
 // §8.5.0), ChildHome (lib/child_home.dart, MARKUP screen 01, §8.1), and
 // GuardianHome (lib/guardian_home.dart, MARKUP screen 05, §8.2) widgets with
 // placeholder data, so both actual app-facing screens can be seen on a real
 // device from a single install. There is no backend behind it yet — no live
-// /now or /ribbon calls (see lib/api_client.dart) — and no kiosk lock (§5.20's
-// native bridge is unwritten, see MASTERFILE §20.2). It is NOT kiosk-locked:
-// standard Android navigation (Home/Recents/Back) still works.
+// /now or /ribbon calls (see lib/api_client.dart).
+//
+// The child side IS now kiosk-locked (§5.20, kiosk_shell.dart) — entering it
+// calls startLockTask() for real on Android. `_demoVerifyGuardianPin` is a
+// placeholder for the real PIN check: no backend exists yet to check a real
+// guardian PIN against (auth.ts's scrypt hash is deliberately server-only),
+// so this demo build accepts one fixed code instead of pretending to reach a
+// server that isn't there.
 //
 // Formerly two separate builds (this file plus main_guardian.dart, built via
 // `flutter build apk --target=lib/main_guardian.dart`) sharing one
@@ -20,10 +24,17 @@ import 'package:flutter/material.dart';
 import 'child_home.dart';
 import 'entry_gate.dart';
 import 'guardian_home.dart';
+import 'kiosk_shell.dart';
 
 void main() {
   runApp(const OliveDemo());
 }
+
+/// Demo-only stand-in for a real backend PIN check (see api_client.dart /
+/// auth.ts). Not the shuffled-keypad UI's concern — PinGate never sees the
+/// correct code, only whatever the child/guardian typed.
+const _demoGuardianPin = '1273';
+Future<bool> _demoVerifyGuardianPin(String pin) async => pin == _demoGuardianPin;
 
 class OliveDemo extends StatelessWidget {
   const OliveDemo({super.key});
@@ -36,7 +47,10 @@ class OliveDemo extends StatelessWidget {
       useMaterial3: true,
     ),
     home: const EntryGate(
-      childDestination: childHomeDemo,
+      childDestination: KioskShell(
+        verifyPin: _demoVerifyGuardianPin,
+        child: childHomeDemo,
+      ),
       grownupDestination: guardianHomeDemo,
     ),
   );

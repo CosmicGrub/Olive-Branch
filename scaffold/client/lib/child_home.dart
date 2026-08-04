@@ -1,14 +1,16 @@
 // OLIVE BRANCH — child shell, home. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run this
-// session, see HANDOFF notes, but verify.sh itself still can't find it). §8.1.
+// tools/verify.sh's automated pipeline). §8.1.
 //
 // Renders MARKUP screen 01. Three invariants the widget tree must preserve:
 //   - Availability is stated in HER frame; his time is the aside. (§4.1)
 //   - Countdown is in sleeps, computed on her local day boundary. (§8.2.5)
 //   - No settings affordance exists at any depth. (§8.1)
+//
+// The kiosk lock (§5.20) that used to be a dev-preview-only stub here is now
+// real — see kiosk_shell.dart, which wraps this widget from entry_gate.dart
+// rather than living inside it. ChildHome itself stays lock-agnostic.
 import 'package:flutter/material.dart';
 import 'call_screen.dart';
-import 'pin_gate.dart';
 import 'wants_needs.dart';
 
 /// Honest acknowledgment for a feature this preview build doesn't implement
@@ -57,23 +59,6 @@ class ChildHome extends StatelessWidget {
         ]),
       const SizedBox(height: 12),
       _Sleeps(sleepsUntilHandover),
-      const SizedBox(height: 24),
-      // Kiosk lock (§5.20) isn't implemented in this build — the native
-      // bridge (see kiosk_channel.dart, MASTERFILE §20.2) has never been
-      // compiled, so there is no real "kiosk defeat" event to trigger this
-      // from. Reachable here only as a clearly-labeled dev preview so the
-      // widget itself can be seen and exercised on a real device.
-      Center(child: TextButton(
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => PinGate(digits: 4, onComplete: (code) {
-            Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('PIN entered — dev preview only.')));
-          }),
-        )),
-        child: const Text('Preview: PIN gate (dev only)',
-          style: TextStyle(fontSize: 11, color: Colors.black45)),
-      )),
     ])),
   );
 }

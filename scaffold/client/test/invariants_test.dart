@@ -4,13 +4,33 @@
 // the widget tree that a child actually sees. Until v0.15.0 the Dart was
 // contract-checked only — its endpoint strings and channel constants were
 // verified, which is not the same as verifying what renders.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/child_home.dart';
 import 'package:olive_client/guardian_home.dart';
+import 'package:olive_client/kiosk_channel.dart';
+import 'package:olive_client/kiosk_shell.dart';
 import 'package:olive_client/pin_gate.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
+
+/// KioskChannel's methods are regular (non-final) instance methods, so this
+/// overrides them rather than touching a real platform channel — there is no
+/// native handler under `flutter test`, on purpose (see kiosk_shell.dart's
+/// `_engage()` for the same reasoning on the production path).
+class _FakeKioskChannel extends KioskChannel {
+  final _controller = StreamController<String>.broadcast();
+  String startMode = 'pinned';
+
+  void emit(String event) => _controller.add(event);
+
+  @override
+  Future<String> start() async => startMode;
+
+  @override
+  Stream<String> events() => _controller.stream;
+}
 
 void main() {
   group('child shell — §8.1', () {
@@ -162,6 +182,84 @@ void main() {
       expect(find.textContaining('failed'), findsNothing);
       expect(find.textContaining('Incorrect'), findsNothing);
       expect(find.text('Welcome back'), findsOneWidget);
+    });
+  });
+
+  group('kiosk shell — §5.20', () {
+    const child = Text('the unlocked child home');
+
+    Widget shellWith(_FakeKioskChannel ch, {String pin = '1234'}) => wrap(KioskShell(
+          channel: ch,
+          verifyPin: (String p) async => p == pin,
+          child: child,
+        ));
+
+    testWidgets('shows the unlocked child surface by default', (t) async {
+      await t.pumpWidget(shellWith(_FakeKioskChannel()));
+      await t.pumpAndSettle();
+      expect(find.byWidget(child), findsOneWidget);
+      expect(find.byType(PinGate), findsNothing);
+    });
+
+    testWidgets('a lockTaskExited event lands on the PIN gate, never the child surface',
+        (t) async {
+      final ch = _FakeKioskChannel();
+      await t.pumpWidget(shellWith(ch));
+      await t.pumpAndSettle();
+      ch.emit(KioskChannel.eExited);
+      await t.pumpAndSettle();
+      expect(find.byType(PinGate), findsOneWidget);
+      expect(find.byWidget(child), findsNothing);
+    });
+
+    testWidgets('a backgrounded event also lands on the PIN gate', (t) async {
+      final ch = _FakeKioskChannel();
+      await t.pumpWidget(shellWith(ch));
+      await t.pumpAndSettle();
+      ch.emit(KioskChannel.eBackground);
+      await t.pumpAndSettle();
+      expect(find.byType(PinGate), findsOneWidget);
+    });
+
+    testWidgets('the correct PIN after a defeat returns to the child surface',
+        (t) async {
+      final ch = _FakeKioskChannel();
+      await t.pumpWidget(shellWith(ch, pin: '5193'));
+      await t.pumpAndSettle();
+      ch.emit(KioskChannel.eExited);
+      await t.pumpAndSettle();
+      for (final d in ['5', '1', '9', '3']) {
+        await t.tap(find.text(d));
+        await t.pump();
+      }
+      await t.pumpAndSettle();
+      expect(find.byWidget(child), findsOneWidget);
+    });
+
+    testWidgets('five wrong PINs lock out — never fabricates an error string',
+        (t) async {
+      final ch = _FakeKioskChannel();
+      await t.pumpWidget(shellWith(ch, pin: '9999'));
+      await t.pumpAndSettle();
+      ch.emit(KioskChannel.eExited);
+      await t.pumpAndSettle();
+      for (var attempt = 0; attempt < 5; attempt++) {
+        final keys = t
+            .widgetList<Text>(find.descendant(
+                of: find.byType(TextButton), matching: find.byType(Text)))
+            .map((w) => w.data!)
+            .toList();
+        for (final d in keys.take(4)) {
+          await t.tap(find.text(d).first);
+          await t.pump();
+        }
+        await t.pumpAndSettle();
+      }
+      expect(find.byType(PinGate), findsNothing,
+          reason: 'locked_out is a distinct surface from pin_gate');
+      expect(find.textContaining('error'), findsNothing);
+      expect(find.textContaining('Incorrect'), findsNothing);
+      expect(find.text("I'm the grown-up"), findsOneWidget);
     });
   });
 }
