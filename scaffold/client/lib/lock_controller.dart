@@ -1,4 +1,5 @@
-// OLIVE BRANCH — child lock state machine. MASTERFILE §5.20, §8.3.
+// OLIVE BRANCH — child lock state machine. UNVERIFIED (no Flutter toolchain
+// in tools/verify.sh's automated pipeline). MASTERFILE §5.20, §8.3.
 //
 // A 1:1 semantic port of packages/child-lock/src/lock.ts, kept deliberately
 // close to the TS original (same function names, same shapes, same ordering)

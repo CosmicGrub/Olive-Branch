@@ -70,10 +70,9 @@ packages:
   jitsi_meet_flutter_sdk:
     dependency: "direct main"
     description:
-      name: jitsi_meet_flutter_sdk
-      sha256: cc4cfcfcf8313be99f26a6bc7760be61216d82c91b9d2ce91d0f689b8a7074af
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/jitsi_meet_flutter_sdk_patched"
+      relative: true
+    source: path
     version: "13.1.0"
   leak_tracker:
     dependency: transitive
@@ -218,4 +217,4 @@ packages:
     version: "15.2.0"
 sdks:
   dart: ">=3.10.0-0 <4.0.0"
-  flutter: ">=3.38.0"
+  flutter: ">=3.18.0-18.0.pre.54"
