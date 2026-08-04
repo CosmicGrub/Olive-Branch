@@ -1,4 +1,5 @@
-// OLIVE BRANCH — child shell, wants & needs list. MASTERFILE P4. Renders
+// OLIVE BRANCH — child shell, wants & needs list. UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline). MASTERFILE P4. Renders
 // MARKUP screen 'list'.
 //
 // P4 (prohibition): no price field, no buy button, no affiliate link, no

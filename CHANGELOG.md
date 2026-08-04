@@ -16,6 +16,24 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Reversed
+- **§16.2 #6 — call/video infrastructure, reversed at the owner's direction.**
+  v0.40.0 settled on staying on LiveKit Cloud (see the callout above the tech
+  stack table in MASTERFILE.md). That is now superseded: Olive moves to
+  **Jitsi Meet + Jitsi Videobridge** as the basis for all calls, video calls,
+  screen-sharing, and streaming. Staged in two steps — Step 1 (in progress)
+  proves the calling UX against Jitsi's public `meet.jit.si` server via the
+  official `jitsi_meet_flutter_sdk`; Step 2 (not started) self-hosts the full
+  stack (Prosody, Jicofo, Jitsi Videobridge). `scaffold/client/pubspec.yaml`
+  dropped `livekit_client` for `jitsi_meet_flutter_sdk`;
+  `scaffold/tools/local-call-server.mjs` (LiveKit token minting) was replaced
+  by `scaffold/tools/local-call-room-server.mjs` (Jitsi room-name
+  coordination only — no JWT to mint against a public server).
+  `packages/session-runtime/src/rooms.ts` is untouched; its I1/I4-preserving
+  `createSession`/`mintToken` are reused as-is, just without forwarding the
+  LiveKit-shaped `grant` to the client. Left in place rather than deleted per
+  standing practice, so the reversal is visible rather than gradual.
+
 ### Rejected
 - **§16.2 #12 — child-initiated affection signal ("send a hug"), rejected at the
   owner's direction.** Raised while evaluating a Gemini-drafted alternate build

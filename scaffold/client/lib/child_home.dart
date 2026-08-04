@@ -7,6 +7,7 @@
 //   - Countdown is in sleeps, computed on her local day boundary. (§8.2.5)
 //   - No settings affordance exists at any depth. (§8.1)
 import 'package:flutter/material.dart';
+import 'call_screen.dart';
 import 'pin_gate.dart';
 import 'wants_needs.dart';
 
@@ -32,7 +33,7 @@ class ChildHome extends StatelessWidget {
     body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
       Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 12),
-      if (presence != null) _PresenceCard(presence!),
+      if (presence != null) _PresenceCard(presence!, childName: childName),
       const SizedBox(height: 12),
       // 64dp minimum targets for pre-readers (§8.4), but a FIXED tile height.
       //
@@ -83,8 +84,9 @@ class ParentPresence {
 }
 
 class _PresenceCard extends StatelessWidget {
-  const _PresenceCard(this.p);
+  const _PresenceCard(this.p, {required this.childName});
   final ParentPresence p;
+  final String childName;
   @override
   Widget build(BuildContext context) => Card(child: Padding(
     padding: const EdgeInsets.all(14),
@@ -98,7 +100,8 @@ class _PresenceCard extends StatelessWidget {
       const SizedBox(height: 10),
       SizedBox(width: double.infinity, height: 48,
         child: FilledButton(
-          onPressed: () => _notBuiltYet(context, 'Calling ${p.name}'),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
           child: Text('Call ${p.name}'))),
     ]),
   ));

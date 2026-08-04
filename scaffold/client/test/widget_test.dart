@@ -72,6 +72,33 @@ void main() {
       (WidgetTester tester) => expectGuardianTileReaches(
         tester, 'Handover notes', "can't be edited or removed"));
 
+  // CallScreen's initState kicks off a real (async) fetch to the room-
+  // coordination server via dart:io HttpClient. flutter_test stubs every
+  // HttpClient to return 400 rather than touching the network — so in this
+  // suite the fetch really runs and really fails, landing on CallScreen's
+  // real error branch. That still proves the button reaches real, executing
+  // CallScreen code, not a stub; the network-reachable path is proven
+  // separately by the on-device suite (see HANDOFF notes).
+  testWidgets("ChildHome's Call button reaches the real CallScreen",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Call Dad'));
+    await tester.pumpAndSettle();
+    expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets("GuardianHome's Call button reaches the real CallScreen",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("The grown-up's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Call Ivy'));
+    await tester.pumpAndSettle();
+    expect(find.text('Try again'), findsOneWidget);
+  });
+
   testWidgets('GuardianHome stub tiles show honest not-built-yet feedback',
       (WidgetTester tester) async {
     await tester.pumpWidget(const OliveDemo());

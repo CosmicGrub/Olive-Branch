@@ -11,6 +11,7 @@
 // handover notes); the rest are honest not-built-yet stubs, same posture
 // child_home.dart already takes for its own unbuilt tiles.
 import 'package:flutter/material.dart';
+import 'call_screen.dart';
 import 'emergency_card.dart';
 import 'handover_notes.dart';
 import 'message_banking.dart';
@@ -58,6 +59,12 @@ class GuardianHome extends StatelessWidget {
             Text('you · $actorLocalTime', style: const TextStyle(fontSize: 11)),
             const SizedBox(height: 5),
             Text(childStateSentence, style: const TextStyle(fontSize: 12.5)),
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, height: 48,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const CallScreen(who: 'dad', displayName: 'Dad'))),
+                child: Text('Call $childName'))),
           ])),
         _Ribbon(label: "$childName's day", bands: childBands, height: 20),
         const SizedBox(height: 8),

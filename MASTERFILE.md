@@ -1988,7 +1988,43 @@ enrollment. Documented in the security policy required by §10.1.
 > amended COPPA Rule (§10.1, in effect since April 2026) requires disclosing
 > LiveKit as a third-party recipient of a minor's live video, with a proper
 > DPA. That is the one genuine functional cost of this choice, and it is
-> solvable with paperwork rather than infrastructure.
+> solvable with proper paperwork rather than infrastructure.
+
+> **§16.2 #6, REVERSED, unreleased (post-v0.42.0).** The above is superseded.
+> Olive moves off LiveKit onto **Jitsi Meet + Jitsi Videobridge** as the core
+> basis for all calls, video calls, screen-sharing, and streaming — at the
+> owner's direction, not because LiveKit failed technically. The v0.40.0
+> reasoning above (managed-service uptime beats a small team's own cluster at
+> today's scale) is not what changed; the *choice of vendor* did, and the
+> operational-burden tradeoff it describes now applies to Jitsi Videobridge
+> instead of LiveKit's SFU. This entry is left in place rather than deleted so
+> the reversal is visible rather than gradual, matching the standing practice
+> §21.7 established for exactly this situation.
+>
+> **Current state, staged in two steps, deliberately:**
+>
+> - **Step 1 (in progress).** Prove the calling UX end to end against Jitsi's
+>   public `meet.jit.si` server via the official `jitsi_meet_flutter_sdk`, so
+>   the client integration is validated on real hardware before any
+>   self-hosting work starts. No SFU is self-hosted yet at this step — calls
+>   run on Jitsi's shared public infrastructure, which is **not** an
+>   acceptable posture for a real family's call metadata or media long-term.
+> - **Step 2 (not started).** Self-host the full stack — Prosody, Jicofo, and
+>   Jitsi Videobridge, most likely via `docker-jitsi-meet` — so the same
+>   COPPA sub-processor and data-residency reasoning above applies to a
+>   server Olive operates, not a third party's.
+>
+> **What this reopens.** The COPPA sub-processor disclosure above must name
+> whichever party is running the videobridge at each step (a public
+> `meet.jit.si` deployment operated by 8x8/Jitsi during Step 1; nobody, once
+> Step 2 lands). `packages/session-runtime/src/rooms.ts`'s
+> `Grant`/`deriveGrant`/`mintToken` are LiveKit-grant-shaped and are **not**
+> deleted — I1 (room name never guessable) and I4 (authorization gate) still
+> hold and are reused as-is by `scaffold/tools/local-call-room-server.mjs`;
+> only the LiveKit-specific `Grant`/JWT shape stops being the thing consumed
+> at the end of the pipe. Whether Jitsi's own JWT auth (`mod_auth_token` via
+> Prosody) replaces that shape, or whether room-name secrecy alone remains the
+> security boundary, is undecided and blocks Step 2.
 
 ---
 
@@ -2147,6 +2183,7 @@ certified export covers the genuine single-hearing case. Sustained litigation us
 | 1 | **The name.** Two names, deliberately: **Olive** to a child, **Olive Branch** to an adult. | v0.23.0 | §16.3 |
 | 4 | **Ping limit scales with age, then stops existing.** 3/day to 7, 5 to 9, 8 to 12, **none from 13**. | v0.23.0 | §9.9, `PING_BANDS` |
 | 5 | **Preservation is a standing rule, not an election** — anything a parent sends is kept. Everything else surfaces in a 14-day expiry digest, guardian-only, one tap to keep. | v0.23.0 | §10.1b, `expiringSoon()` |
+| 6 | **Call/video/streaming infrastructure.** LiveKit Cloud (v0.40.0) → **REVERSED**, Jitsi Meet + Jitsi Videobridge, self-hosted once Step 2 lands. | v0.40.0, reversed unreleased | §16.2 callout above the tech-stack table |
 
 Still needing clearance: **the name requires USPTO and app-store collision
 searches before launch.** "Olive" is a contested mark in software and the

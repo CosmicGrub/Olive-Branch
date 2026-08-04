@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+/**
+ * LOCAL DEV/TEST ONLY — not the real production API (packages/api/src/api.ts).
+ *
+ * Under the Jitsi pivot (MASTERFILE §16.2 #6, reversed — see the note added
+ * there), calls run on Jitsi Meet + Jitsi Videobridge rather than LiveKit.
+ * For now that means the public meet.jit.si server: no self-hosted SFU, so
+ * there is no token/JWT to mint. The one thing two devices still need to
+ * agree on is *which room* — and that still has to satisfy I1 (a room name
+ * must never be derived from a child id, user id, or anything else an
+ * attacker can guess) and I4 (only an authorized principal may learn it).
+ *
+ * This script reuses createSession/mintToken from packages/session-runtime
+ * verbatim for exactly that: createSession() calls the same tested
+ * newRoomName()/roomNameLeaks() I1 guard as any other session, and
+ * mintToken() runs the same real can('call', ...) I4 authorization gate.
+ * We just don't forward the LiveKit-shaped `grant` field to the client —
+ * Jitsi's public server doesn't consume it — only `room` and `identity`.
+ *
+ * Two fixed identities for local two-device testing: a guardian ("dad") and
+ * a child ("ivy"), sharing one session/room.
+ *   node tools/local-call-room-server.mjs
+ *
+ * GET /room?who=dad|ivy -> { room, serverURL, identity, displayName }
+ */
+import { createServer } from 'node:http';
+import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
+
+const HTTP_PORT = 8787;
+const JITSI_SERVER_URL = 'https://meet.jit.si';
+
+const CHILD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const DAD_ID = '11111111-1111-1111-1111-111111111111';
+const IVY_ID = CHILD_ID;
+
+// A real edge — the same shape family-graph/authorize.ts's can() reads for
+// any other route. Without this, mintToken's I4 check refuses the guardian.
+const DAD_EDGE = { childId: CHILD_ID, userId: DAD_ID, role: 'guardian', scope: {},
+  observerOnly: false, restricted: false, validFrom: '2020-01-01T00:00:00Z',
+  validTo: null, expiresAt: null, closedAt: null, ladderStep: null };
+
+// One shared session for the life of this process — enough for local
+// testing; the real product mints a fresh session per call per §5.19.
+const session = createSession({ childId: CHILD_ID, kind: 'call', createdBy: DAD_ID,
+  authorizedUserIds: [DAD_ID, IVY_ID], ladderStep: 'open' });
+console.log(`Session room: ${session.roomName}`);
+
+const server = createServer((req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname !== '/room') { res.writeHead(404); return res.end('not found'); }
+
+  const who = url.searchParams.get('who');
+  const principal = who === 'dad'
+    ? { userId: DAD_ID, observerOnly: false, isChild: false, roleName: 'guardian' }
+    : who === 'ivy'
+    ? { userId: IVY_ID, observerOnly: false, isChild: true }
+    : null;
+  if (!principal) { res.writeHead(400); return res.end('who must be dad or ivy'); }
+
+  const edges = who === 'dad' ? [DAD_EDGE] : [];
+  const minted = mintToken(session, principal, edges, new Date());
+  if (!minted.ok) {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ error: minted.reason }));
+  }
+
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({
+    room: minted.token.room,
+    serverURL: JITSI_SERVER_URL,
+    identity: minted.token.identity,
+    displayName: who === 'dad' ? 'Dad' : 'Ivy',
+  }));
+});
+
+server.listen(HTTP_PORT, '0.0.0.0', () =>
+  console.log(`Local room-coordination server on 0.0.0.0:${HTTP_PORT}`));

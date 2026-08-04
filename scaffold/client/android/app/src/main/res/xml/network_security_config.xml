@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LOCAL DEV/TEST ONLY. scaffold/tools/local-call-room-server.mjs serves
+     plain HTTP from the dev machine's LAN address so two physical devices
+     can agree on a Jitsi room name (see call_screen.dart). Android blocks
+     cleartext traffic by default from API 28+; this scopes the exception to
+     that one address instead of allowing cleartext everywhere. Remove once
+     the room-coordination endpoint moves behind the real HTTPS API. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.1.78</domain>
+    </domain-config>
+</network-security-config>
