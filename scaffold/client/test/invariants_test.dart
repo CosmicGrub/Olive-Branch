@@ -86,6 +86,21 @@ void main() {
       final Size button = t.getSize(find.byType(FilledButton).first);
       expect(button.height, greaterThanOrEqualTo(48.0));
     });
+
+    testWidgets('unread count reaches the Messages tile as a badge, not '
+        'silently dropped', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 2)));
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('a zero unread count shows no badge', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0)));
+      expect(find.text('0'), findsNothing);
+    });
   });
 
   group('guardian shell — §8.2', () {
@@ -126,6 +141,65 @@ void main() {
         childBands: bands, actorBands: bands)));
       expect(find.text('Maya is just home from school'), findsOneWidget);
     });
+  });
+
+  group('responsive layout — phone, Fold5 (cover + main), and desktop-scale '
+      'PC widths', () {
+    // MASTERFILE's own mandated minimum widths for this app: the Fold5's
+    // cover screen (344 CSS px, the narrowest supported width) and its
+    // unfolded main screen (~673x841, nearly square) -- plus a standard
+    // phone width and a desktop-scale width now that Windows is a real
+    // target (short-and-wide, unlike a tall phone). Same
+    // `tester.view.physicalSize` idiom story_library_test.dart and
+    // shared_reading_test.dart already use.
+    const Map<String, Size> widths = <String, Size>{
+      'Fold5 cover (344)': Size(344, 882),
+      'Fold5 main (~673x841)': Size(673, 841),
+      'phone (390)': Size(390, 844),
+      'desktop-scale PC (1100)': Size(1100, 750),
+    };
+
+    Future<void> useWidth(WidgetTester t, Size size) async {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+    }
+
+    for (final MapEntry<String, Size> entry in widths.entries) {
+      testWidgets('ChildHome renders without overflow at ${entry.key}',
+          (t) async {
+        await useWidth(t, entry.value);
+        await t.pumpWidget(wrap(const ChildHome(
+          childName: 'Maya',
+          presence: ParentPresence('Dad', '8:41 PM', '9:30'),
+          sleepsUntilHandover: 3, unreadCount: 2)));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('GuardianHome renders without overflow at ${entry.key}',
+          (t) async {
+        await useWidth(t, entry.value);
+        const List<RibbonBand> bands = <RibbonBand>[
+          RibbonBand(0, 0.5, Colors.blue, 'school'),
+          RibbonBand(0.5, 0.5, Colors.green, 'home time'),
+        ];
+        // Longest guardian tile labels ('Message banking', 'Send-time
+        // guard', 'Morning briefing') plus a non-null overlapLabel — this
+        // is the exact combination that overflowed by 4px at the Fold5
+        // cover width before guardian_home.dart's grid grew a
+        // LayoutBuilder breakpoint.
+        await t.pumpWidget(wrap(const GuardianHome(
+          childName: 'Maya', childLocalTime: '4:12 PM', childZoneAbbr: 'EDT',
+          actorLocalTime: '3:12 PM CDT',
+          childStateSentence: 'Maya is just home from school',
+          childBands: bands, actorBands: bands,
+          overlapLabel: 'both free 4:00-5:00 PM')));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
   });
 
   group('PIN gate — §8.3', () {

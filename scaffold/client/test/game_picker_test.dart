@@ -104,5 +104,24 @@ void main() {
       await t.pumpAndSettle();
       expect(t.takeException(), isNull);
     });
+
+    testWidgets('renders at a standard phone width (~390 CSS px) without overflow', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8)));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a tablet/desktop width (~1100 CSS px) without overflow', (t) async {
+      // Short-and-wide, unlike a tall phone — now that Windows is a real
+      // target, three columns must lay out at this width too (§0's note on
+      // the crease gutter is Fold5-specific; a desktop has no crease).
+      await t.binding.setSurfaceSize(const Size(1100, 800));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8)));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    });
   });
 }

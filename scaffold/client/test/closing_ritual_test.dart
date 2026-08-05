@@ -133,4 +133,44 @@ void main() {
       expect(find.byIcon(Icons.settings_outlined), findsNothing);
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('walks every beat without overflow at ${entry.key}', (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        await t.pumpWidget(wrap(const ClosingRitualScreen(childName: 'Ivy', callerName: 'Dad')));
+        expect(t.takeException(), isNull);
+
+        await t.enterText(find.byType(TextField), 'my wobbly tooth');
+        await t.tap(find.text('Next'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+
+        await t.tap(find.text('Okay'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+
+        // The goodbye beat's Wrap of six chip-like buttons is the widest
+        // single row of content on this screen — the one most likely to
+        // misbehave at the Fold5 cover's 344px.
+        await t.tap(find.text('Catch you later, alligator'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
 }

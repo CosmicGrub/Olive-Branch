@@ -271,16 +271,25 @@ class _DemoSizeToggle extends StatelessWidget {
   final ValueChanged<bool> onChanged;
 
   @override
-  Widget build(BuildContext context) => Row(children: <Widget>[
-        Text('PREVIEW COLLECTION (demo data)',
-            style: TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.4,
-                color: Theme.of(context).colorScheme.outline)),
-        const Spacer(),
-        ChoiceChip(label: const Text('Small'), selected: !fullDemo, onSelected: (_) => onChanged(false)),
-        const SizedBox(width: 6),
-        ChoiceChip(label: const Text('Full (2,200+)'), selected: fullDemo, onSelected: (_) => onChanged(true)),
-      ]);
+  Widget build(BuildContext context) => Wrap(
+        // Wrap, not Row+Spacer: at the Fold5 cover width (344px) the label's
+        // natural width plus both chips overflowed a Row by 348px — even
+        // after the label alone was made flexible, the two chips ALONE still
+        // didn't fit the available ~312px (still 42px over), so this needs a
+        // real second line on narrow screens, not just a shrinking label.
+        // Wrap never overflows: it drops to a second line instead.
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text('PREVIEW COLLECTION (demo data)',
+              style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.4,
+                  color: Theme.of(context).colorScheme.outline)),
+          ChoiceChip(label: const Text('Small'), selected: !fullDemo, onSelected: (_) => onChanged(false)),
+          ChoiceChip(label: const Text('Full (2,200+)'), selected: fullDemo, onSelected: (_) => onChanged(true)),
+        ],
+      );
 }
 
 class _EraSelector extends StatelessWidget {

@@ -101,4 +101,37 @@ void main() {
       expect(find.text('Pick what you are showing'), findsOneWidget);
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('renders the ask cards and the capture sheet without overflow '
+          'at ${entry.key}', (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        await t.pumpWidget(wrap(const ShowcaseScreen(childName: 'Ivy')));
+        expect(t.takeException(), isNull);
+
+        // The capture sheet's Wrap of six artifact tiles plus its own
+        // bottom-inset padding is the most layout-heavy surface this screen
+        // owns — open it at every width.
+        await t.tap(find.text('Look what happened!'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+        expect(find.text('Pick what you are showing'), findsOneWidget);
+      });
+    }
+  });
 }

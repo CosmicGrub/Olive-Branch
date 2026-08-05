@@ -117,10 +117,20 @@ if [ -n "$ANDROID_SDK" ] && [ -d "$ANDROID_SDK" ] && [ -x "$GRADLEW" ]; then
     tail -15 /tmp/gradle.out | sed 's/^/  /'
     echo "  ANDROID KOTLIN COMPILE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
+  # Galaxy Watch6 Classic companion (§21.5) — a separate Gradle module, native
+  # Wear Compose rather than Flutter (see client/android/wear/build.gradle.kts
+  # for why). Same gate, same posture: a real compile check, not a skip.
+  if (cd client/android && ./gradlew -q :wear:assembleDebug >/tmp/gradle-wear.out 2>&1); then
+    echo "  wear os compile             clean"
+  else
+    tail -15 /tmp/gradle-wear.out | sed 's/^/  /'
+    echo "  WEAR OS COMPILE FAILED"; PROBLEMS=$((PROBLEMS+1))
+  fi
 else
   # Not a skip. The SDK is a declared dependency of this suite.
   echo "  android kotlin compile      MISSING TOOLCHAIN — not a skip, a gap"
-  PROBLEMS=$((PROBLEMS+1))
+  echo "  wear os compile             MISSING TOOLCHAIN — not a skip, a gap"
+  PROBLEMS=$((PROBLEMS+2))
 fi
 
 echo ""

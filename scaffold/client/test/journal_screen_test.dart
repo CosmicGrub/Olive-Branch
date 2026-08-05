@@ -102,6 +102,50 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(48.0));
     });
 
+    group('responsive — no overflow at any required viewport width', () {
+      // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and
+      // a short-and-wide tablet/desktop width — MASTERFILE's own mandated
+      // minimums, plus the desktop-scale width now that Windows is a real
+      // target. A couple of longer entries are seeded so wrapping text is
+      // actually exercised, not just short demo copy.
+      Widget buildScreen() => wrap(JournalScreen(childName: 'Ivy', initialEntries: [
+        JournalEntry(id: 'j1', childId: 'demo-child',
+          body: 'A longer entry with quite a lot of text in it, enough that it '
+                'might wrap across several lines and stress the layout on a '
+                'narrow screen.',
+          createdAt: DateTime(2026, 1, 1)),
+        JournalEntry(id: 'j2', childId: 'demo-child', body: 'A short one.',
+          createdAt: DateTime(2026, 1, 2)),
+      ]));
+
+      Future<void> pumpAt(WidgetTester t, Size size) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(buildScreen());
+        await t.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (t) async {
+        await pumpAt(t, const Size(344, 900));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (t) async {
+        await pumpAt(t, const Size(673, 841));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (t) async {
+        await pumpAt(t, const Size(390, 844));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (t) async {
+        await pumpAt(t, const Size(1100, 800));
+        expect(t.takeException(), isNull);
+      });
+    });
+
     testWidgets('seeded entries constructed for someone else never render', (t) async {
       // Defense in depth: even if a caller mis-wires initialEntries with a
       // foreign childId, the P7 port above must keep it off her screen.

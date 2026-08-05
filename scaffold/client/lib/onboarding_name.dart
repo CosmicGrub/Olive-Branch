@@ -86,10 +86,25 @@ class _ObNameScreenState extends State<ObNameScreen> {
           builder: (context, value, _) => AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
             transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
-            child: Text(
-              value.text.trim().isEmpty ? '👋' : value.text.trim(),
+            // A near-maxNameLength (24 char) single "word" at this fontSize is
+            // wider than any of the four required viewports, including the
+            // Fold5 cover screen (344 CSS px). Text has no width to wrap
+            // against inside a Column, so unconstrained it renders as several
+            // giant lines rather than one legible one. SizedBox + FittedBox
+            // bounds the box and shrinks the glyph to fit instead — short
+            // names still render at full, unscaled size.
+            child: SizedBox(
               key: ValueKey(value.text),
-              style: TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: scheme.primary),
+              width: double.infinity,
+              height: 56,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value.text.trim().isEmpty ? '👋' : value.text.trim(),
+                  maxLines: 1,
+                  style: TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: scheme.primary),
+                ),
+              ),
             ),
           ),
         ),

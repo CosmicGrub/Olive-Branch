@@ -314,5 +314,33 @@ void main() {
       expect(btnSize.height, greaterThanOrEqualTo(48));
       await t.pumpAndSettle(); // let the simulated grown-up's move finish before teardown
     });
+
+    group('responsive audit — Fold5, phone, and tablet/desktop widths', () {
+      // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+      // unfolded main screens), plus a standard phone width and a
+      // short-and-wide desktop/tablet width now that Windows is a real
+      // target. Covers both the setup screen and the started board — the
+      // latter is load-bearing: "Take that back" + "Change setup" together
+      // used to overflow the Fold5 cover width by 199px and the phone
+      // width by 153px (a bare Row with no Expanded/Flexible), independent
+      // of handicap or parent name. Fixed by switching that row to a Wrap.
+      for (final MapEntry<String, Size> entry in const <String, Size>{
+        'Fold5 cover (344 CSS px)': Size(344, 882),
+        'Fold5 unfolded main (~673 CSS px)': Size(673, 841),
+        'a standard phone (~390 CSS px)': Size(390, 844),
+        'a tablet/desktop (~1100 CSS px)': Size(1100, 800),
+      }.entries) {
+        testWidgets('renders without overflow at ${entry.key}', (t) async {
+          await t.binding.setSurfaceSize(entry.value);
+          addTearDown(() => t.binding.setSurfaceSize(null));
+          await t.pumpWidget(wrap(const GameChess(botThinkDelay: Duration(days: 1))));
+          await t.pump();
+          expect(t.takeException(), isNull);
+          await t.tap(find.text('Start game'));
+          await t.pump();
+          expect(t.takeException(), isNull);
+        });
+      }
+    });
   });
 }

@@ -66,4 +66,43 @@ void main() {
       expect(find.byIcon(Icons.settings), findsNothing);
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires. This screen
+    // is exactly where a real Windows/Assigned Access target matters most —
+    // it is the only file in this batch whose copy names Windows directly.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('every platform advisory renders without overflow at ${entry.key}',
+          (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        for (final mode in lock.LockMode.values) {
+          await t.pumpWidget(wrap(LockAdvisoryScreen(initialMode: mode)));
+          expect(t.takeException(), isNull, reason: 'mode=${mode.name}');
+        }
+
+        // Also drive the live platform-picker interaction — the Wrap of
+        // ChoiceChips is the widest single row of content on this screen.
+        await t.pumpWidget(wrap(const LockAdvisoryScreen(initialMode: lock.LockMode.pinned)));
+        final assignedChip = find.text('Windows, Assigned Access');
+        await t.ensureVisible(assignedChip);
+        await t.pumpAndSettle();
+        await t.tap(assignedChip);
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
 }

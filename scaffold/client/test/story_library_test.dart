@@ -17,6 +17,23 @@ Future<void> useNarrowSurface(WidgetTester tester) async {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 void main() {
   group('empty shelf', () {
     testWidgets('an honest empty state, not a blank screen', (tester) async {
@@ -72,16 +89,15 @@ void main() {
       expect(tileSize.width, greaterThanOrEqualTo(48.0));
     });
 
-    testWidgets('renders without overflow on the Fold5 cover-screen width (344px)',
-        (tester) async {
-      tester.view.physicalSize = const Size(344, 820);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(wrap(StoryLibraryScreen.demo(childName: 'Ivy')));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-    });
+    for (final size in kResponsiveSizes) {
+      testWidgets('renders without overflow at ${size.width.toInt()}x${size.height.toInt()}',
+          (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(StoryLibraryScreen.demo(childName: 'Ivy')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('search shelf — over 300, §9.11.6 / §8.14', () {
@@ -130,5 +146,15 @@ void main() {
       expect(find.textContaining('asked for this'), findsNothing);
       expect(find.textContaining('%'), findsNothing);
     });
+
+    for (final size in kResponsiveSizes) {
+      testWidgets('renders without overflow at ${size.width.toInt()}x${size.height.toInt()}',
+          (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(StoryLibraryScreen.demoLarge(childName: 'Ivy')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }

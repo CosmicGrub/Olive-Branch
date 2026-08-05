@@ -17,6 +17,23 @@ Future<void> _tapShutterAndSettle(WidgetTester t) async {
   await t.pumpAndSettle();
 }
 
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 void main() {
   testWidgets('before capture, shows the photo prompt and no problems yet', (t) async {
     await t.pumpWidget(wrap(const HomeworkScreen()));
@@ -120,5 +137,36 @@ void main() {
       // bare id — this guards against a future regression to one.
       expect(const HomeworkScreen(childName: 'Ivy').childName, 'Ivy');
     });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      final String label = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('before capture renders without overflow at $label', (t) async {
+        await useSurface(t, size);
+        await t.pumpWidget(wrap(const HomeworkScreen()));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('after capture, with a hint revealed, renders without overflow at $label',
+          (t) async {
+        await useSurface(t, size);
+        await t.pumpWidget(wrap(const HomeworkScreen()));
+        await t.tap(find.byKey(const Key('takePhotoButton')));
+        await t.pumpAndSettle();
+        await _tapShutterAndSettle(t); // blurred
+        await t.tap(find.byKey(const Key('retakeTryAgain')));
+        await t.pumpAndSettle();
+        await _tapShutterAndSettle(t); // skewed
+        await t.tap(find.byKey(const Key('retakeTryAgain')));
+        await t.pumpAndSettle();
+        await _tapShutterAndSettle(t); // passes
+        await t.tap(find.text('Get a hint').first);
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
   });
 }

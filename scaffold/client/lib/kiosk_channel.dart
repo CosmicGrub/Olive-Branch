@@ -1,7 +1,7 @@
 // OLIVE BRANCH — kiosk platform channel. UNVERIFIED (no Flutter toolchain). §5.20.
 //
-// Mirrors native/android/KioskBridge.kt and native/windows/AssignedAccessBridge.cs.
-// The constants below are contract-checked against both native files.
+// Mirrors android/app/.../KioskBridge.kt and windows/runner/kiosk_bridge.{h,cpp}.
+// The constants below are contract-checked against both native implementations.
 import 'package:flutter/services.dart';
 
 class KioskChannel {

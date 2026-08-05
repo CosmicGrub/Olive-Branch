@@ -151,12 +151,20 @@ class _MetaRow extends StatelessWidget {
   const _MetaRow({required this.meta});
   final BookMeta meta;
   @override
-  Widget build(BuildContext context) => Row(children: [
-    _MetaStat(label: 'stories', value: '${meta.storyCount}'),
-    const SizedBox(width: 18),
-    _MetaStat(label: 'words', value: '${meta.wordCount}'),
-    const SizedBox(width: 18),
-    _MetaStat(label: 'printed pages, about', value: '${meta.estimatedPages}'),
+  // Each stat used to be an unconstrained Column in a plain Row, so Text
+  // never wrapped and the row overflowed on anything narrower than ~400px —
+  // caught rendering on the Fold5 cover-screen width (344px) and even a
+  // standard phone width (390px), where the longest label ("printed pages,
+  // about") pushed the row 51-97px past the edge. Wrapping each stat in
+  // Expanded gives its Column a bounded width, so the label wraps onto a
+  // second line instead of overflowing; flex: 2 on the last one reflects it
+  // actually needing more room for that longer label.
+  Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Expanded(child: _MetaStat(label: 'stories', value: '${meta.storyCount}')),
+    const SizedBox(width: 12),
+    Expanded(child: _MetaStat(label: 'words', value: '${meta.wordCount}')),
+    const SizedBox(width: 12),
+    Expanded(flex: 2, child: _MetaStat(label: 'printed pages, about', value: '${meta.estimatedPages}')),
   ]);
 }
 

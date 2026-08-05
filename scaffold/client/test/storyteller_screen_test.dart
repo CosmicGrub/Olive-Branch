@@ -25,6 +25,23 @@ Future<void> askForAStory(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 void main() {
   group('storyteller — §9.11, §8.1', () {
     testWidgets('opens on the ask card, named for her', (tester) async {
@@ -192,6 +209,25 @@ void main() {
       expect(find.textContaining('error'), findsNothing);
       expect(find.textContaining('failed'), findsNothing);
     });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      final String label = '${size.width.toInt()}x${size.height.toInt()}';
+      testWidgets('the ask card renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('the reading card renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+        await askForAStory(tester);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('storyteller safety — §15, P1', () {

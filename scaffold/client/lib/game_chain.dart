@@ -358,8 +358,13 @@ class _TurnBanner extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.front_hand_outlined, size: 18, color: scheme.onTertiaryContainer),
         const SizedBox(width: 8),
-        Text("$name's turn $verb",
-          style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onTertiaryContainer)),
+        // Flexible + ellipsis, not a bare Text: on the Fold5 cover screen
+        // (344 CSS px) the pill is squeezed narrow enough that "$name's turn
+        // to add something" no longer fits on one line, and this must
+        // shrink rather than overflow the RenderFlex.
+        Flexible(child: Text("$name's turn $verb",
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onTertiaryContainer))),
       ]),
     );
   }

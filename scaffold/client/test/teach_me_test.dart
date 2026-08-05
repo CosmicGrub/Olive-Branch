@@ -133,5 +133,43 @@ void main() {
       expect(find.byIcon(Icons.settings), findsNothing);
       expect(find.byIcon(Icons.settings_outlined), findsNothing);
     });
+
+    group('responsive — no overflow at any required viewport width', () {
+      // childAge 9 renders the full compose form (seed chips + medium chips)
+      // plus a taught lesson with "asked again" copy showing — the busiest
+      // layout this screen has.
+      Widget buildScreen() => wrap(TeachMeScreen(childName: 'Maya', childAge: 9, parentName: 'Dad',
+        initialLessons: [
+          Lesson(id: 'l1', fromUserId: 'demo-child', title: 'How to whistle with two fingers',
+            medium: TeachMedium.demonstrate, taughtAt: DateTime(2026, 1, 1), askedAgain: 1),
+        ]));
+
+      Future<void> pumpAt(WidgetTester t, Size size) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(buildScreen());
+        await t.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (t) async {
+        await pumpAt(t, const Size(344, 900));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (t) async {
+        await pumpAt(t, const Size(673, 841));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (t) async {
+        await pumpAt(t, const Size(390, 844));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (t) async {
+        await pumpAt(t, const Size(1100, 800));
+        expect(t.takeException(), isNull);
+      });
+    });
   });
 }
