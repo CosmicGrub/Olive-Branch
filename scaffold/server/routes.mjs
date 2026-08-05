@@ -16,12 +16,20 @@ import { DateTime } from 'luxon';
 export function registerRoutes(api) {
   api.register({
     method: 'GET', path: '/v1/me', action: null,
-    handler: async (c) => ({ body: {
-      userId: c.principal.userId,
-      childId: c.principal.childId,
-      roleName: c.principal.roleName,
-      escalated: c.principal.escalated,
-    } }),
+    handler: async (c, q) => {
+      // Her own name, not an id (§8.1) -- resolved for real here so a live
+      // client never has to hardcode "Ivy" the way the demo build does.
+      const displayName = c.principal.roleName === 'child'
+        ? (await q(`SELECT display_name FROM child WHERE id = $1`, [c.principal.childId]))[0]?.display_name
+        : (await q(`SELECT display_name FROM app_user WHERE id = $1`, [c.principal.userId]))[0]?.display_name;
+      return { body: {
+        userId: c.principal.userId,
+        childId: c.principal.childId,
+        roleName: c.principal.roleName,
+        escalated: c.principal.escalated,
+        displayName: displayName ?? null,
+      } };
+    },
   });
 
   api.register({
