@@ -22,9 +22,18 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 
-/// LOCAL DEV/TEST ONLY — the dev machine's LAN address for
-/// tools/local-call-room-server.mjs. Not a production endpoint.
-const devRoomServerBase = 'http://192.168.1.78:8787';
+/// LOCAL DEV/TEST ONLY — tools/local-call-room-server.mjs. Not a production
+/// endpoint.
+///
+/// Loopback rather than a LAN IP, on purpose: a hardcoded LAN address (the
+/// previous value here, 192.168.1.78) goes stale the moment the dev
+/// machine's network changes, and silently breaks two-device testing with
+/// no clue why. `127.0.0.1` on the *device* reaches the dev machine's
+/// `local-call-room-server.mjs` over `adb reverse tcp:8787 tcp:8787`, run
+/// once per physical device before installing — see that script's own
+/// header. This works over USB regardless of whether the phones and the
+/// dev machine share a WiFi network at all.
+const devRoomServerBase = 'http://127.0.0.1:8787';
 
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key, required this.who, required this.displayName});
