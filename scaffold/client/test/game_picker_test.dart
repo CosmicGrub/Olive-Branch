@@ -89,6 +89,15 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(48.0));
     });
 
+    testWidgets('cards use the canonical 14dp action-tile radius, matching child_home/guardian_home',
+        (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8)));
+      await t.pumpAndSettle();
+      final container = t.widget<Container>(find.byType(Container).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect(decoration.borderRadius, BorderRadius.circular(14));
+    });
+
     testWidgets('renders on the Fold5 cover-screen width (344 CSS px) without overflow', (t) async {
       await t.binding.setSurfaceSize(const Size(344, 882));
       addTearDown(() => t.binding.setSurfaceSize(null));
