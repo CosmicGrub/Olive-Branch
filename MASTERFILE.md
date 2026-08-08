@@ -9,8 +9,8 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.46.0 |
-| **Last amended** | 2026-08-07 |
+| **Version** | 0.46.2 |
+| **Last amended** | 2026-08-08 |
 | **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call had two independent bugs, verified live on two physical devices; one is now fixed in code (v0.46.1), not yet re-verified live** (§16.2 #6 callout, §20.2b) — the child-side kiosk-lock/Activity conflict has an implemented, compiled, `flutter analyze`/`flutter test`-clean fix pending a live device re-run; the public Jitsi server's moderator lobby has Step 2 (self-hosting) staged and container-verified as of v0.46.2 — `scaffold/tools/jitsi-selfhost/` — but not yet device-verified: the stack's self-signed cert blocks both a browser and, unfixed, would block the Flutter SDK on a real device. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |

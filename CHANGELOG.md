@@ -55,90 +55,6 @@ line went stale for three versions before being caught here.)
 
 ---
 
-## [0.46.1] — 2026-08-08 — the kiosk-lock half of §16.2 #6 fixed, not yet re-verified live
-
-v0.46.0 drove §16.2 #6 Step 1 end to end on two physical devices and found
-two independent bugs. This increment fixes one of them — the child-side
-kiosk-lock/Activity conflict — and evaluates the three options v0.46.0's
-callout left open. The other bug (the public server's moderator lobby) is
-untouched, still gated on Step 2.
-
-### Fixed
-- **Kiosk lock-task vs. the Jitsi call Activity (§16.2 #6, §5.20).**
-  `jitsi_meet_flutter_sdk` launches calls in `WrapperJitsiMeetActivity`
-  (`singleTask`), which Android's `ActivityTaskManager` opens in a new task
-  regardless of shared package identity — exactly what screen-pinning
-  refuses mid-lock, logging `Attempted Lock Task Mode violation` and leaving
-  `call_screen.dart`'s "Joining…" spinner waiting forever on a callback from
-  an Activity that never started.
-  - **Device-Owner lock-task allowlisting — ruled out.** Both real test
-    devices already carry ordinary Google/system accounts;
-    `dpm set-device-owner` refuses on a device with any existing account
-    short of a factory reset. Not viable for an already-provisioned family
-    phone, which is this app's actual deployment shape.
-  - **Embedding the call without a second Activity — deferred.** Jitsi's
-    Android SDK is React-Native-based with no fragment/embedded-view entry
-    point today; a Flutter `PlatformView` bridge into it is real future
-    work, not a same-session change.
-  - **Implemented: a lock-task handoff**, not a plain unpin/re-pin. A naive
-    exit-and-re-enter was checked against `WrapperJitsiMeetActivity`'s own
-    `singleTask` semantics and found to leave the *entire call*, not just
-    the transition, unpinned — the call Activity opens in a separate task
-    that re-pinning the original Activity never reaches. Instead:
-    `client/lib/kiosk_channel.dart` gets `beginCallHandoff()`;
-    `KioskBridge.kt`'s new `beginCallHandoff` method unpins `MainActivity`
-    and flags the coming `onStop()` as an intentional handoff rather than a
-    kiosk defeat; the already-patched
-    `client/third_party/jitsi_meet_flutter_sdk_patched/.../WrapperJitsiMeetActivity.kt`
-    self-pins for the call's duration and reports its own mid-call defeat
-    (Back+Recents during the call) back through the same `lockTaskExited`
-    event path an ordinary defeat already uses — calling capability adds no
-    new, undetected escape route. The app module and the Jitsi plugin
-    module have no compile-time reference path between them (a library
-    can't depend on the app consuming it), so the two sides coordinate
-    through a SharedPreferences flag and a `LocalBroadcastManager` action,
-    string-mirrored across files the same way the MethodChannel/EventChannel
-    names already are.
-  - Surfaced one real build gap along the way: `androidx.localbroadcastmanager`
-    was reachable from `WrapperJitsiMeetActivity.kt`'s own module (a
-    transitive dependency of `org.jitsi:jitsi-meet-sdk`) but not from the
-    app module — Flutter wires plugin modules in as `implementation`, which
-    doesn't expose a dependency's own transitive deps to the consumer.
-    `compileDebugKotlin` failed with `Unresolved reference
-    'localbroadcastmanager'` until `android/app/build.gradle.kts` declared
-    it explicitly.
-
-### Verified
-- `flutter analyze`: clean. `flutter test`: all 1239 tests pass, including
-  3 new ones in `test/kiosk_channel_test.dart` covering `beginCallHandoff`'s
-  method-channel contract and its `MissingPluginException` degradation.
-- `node packages/transport/test/transport.test.mjs`: 66 passed, 0 failed —
-  the Android-source-no-longer-UNVERIFIED assertion still holds against the
-  new `KioskBridge.kt` code.
-- Full Gradle/Kotlin build succeeds across both the app module and the
-  patched Jitsi plugin module (`flutter build apk --debug`).
-- Reinstalled on the real Fold5 from v0.46.0's session: the OS's own "App is
-  pinned" dialog appeared and `dumpsys activity activities` reported
-  `mLockTaskModeState=PINNED`, confirming screen-pinning still engages
-  correctly under the changed `MainActivity.kt`.
-
-### NOT verified — and why this entry says so rather than claiming otherwise
-Whether `WrapperJitsiMeetActivity` actually launches under the handoff
-without the violation, and whether the pin visibly survives the Activity
-swap, was **not** confirmed live this session. A concurrent session was
-mid-edit on this same repo (§16.2 #6 Step 2 self-hosting work) and, per
-logcat (`PackageManager: installation completed for package:
-com.olivebranch.olive_client`), reinstalled the app on the same physical
-Fold5 mid-test, killing the run before the call attempt completed. This
-failure mode produces no crash and no visible error under `flutter test` —
-a green CI run would look identical whether the fix works or not — so it is
-recorded here as unverified rather than assumed working from the code path
-alone. See `client/docs/MANUAL_VERIFY_call_lock_task.md` for the exact
-procedure to finish this once the devices are free, and update that file's
-own Provenance section with the real outcome when it's run.
-
----
-
 ## [0.46.2] — 2026-08-08 — §16.2 #6 Step 2 staged and container-verified
 
 The other bug from v0.46.0's callout — the public server's moderator lobby —
@@ -228,6 +144,90 @@ also not done: this session has no attached Android hardware, and the
 cert-trust gap above would block it even if it did. Tracked in
 `scaffold/tools/jitsi-selfhost/README.md`'s status note, and in the §16.2
 #6 callout and §20.2b in MASTERFILE.md.
+
+---
+
+## [0.46.1] — 2026-08-08 — the kiosk-lock half of §16.2 #6 fixed, not yet re-verified live
+
+v0.46.0 drove §16.2 #6 Step 1 end to end on two physical devices and found
+two independent bugs. This increment fixes one of them — the child-side
+kiosk-lock/Activity conflict — and evaluates the three options v0.46.0's
+callout left open. The other bug (the public server's moderator lobby) is
+untouched, still gated on Step 2.
+
+### Fixed
+- **Kiosk lock-task vs. the Jitsi call Activity (§16.2 #6, §5.20).**
+  `jitsi_meet_flutter_sdk` launches calls in `WrapperJitsiMeetActivity`
+  (`singleTask`), which Android's `ActivityTaskManager` opens in a new task
+  regardless of shared package identity — exactly what screen-pinning
+  refuses mid-lock, logging `Attempted Lock Task Mode violation` and leaving
+  `call_screen.dart`'s "Joining…" spinner waiting forever on a callback from
+  an Activity that never started.
+  - **Device-Owner lock-task allowlisting — ruled out.** Both real test
+    devices already carry ordinary Google/system accounts;
+    `dpm set-device-owner` refuses on a device with any existing account
+    short of a factory reset. Not viable for an already-provisioned family
+    phone, which is this app's actual deployment shape.
+  - **Embedding the call without a second Activity — deferred.** Jitsi's
+    Android SDK is React-Native-based with no fragment/embedded-view entry
+    point today; a Flutter `PlatformView` bridge into it is real future
+    work, not a same-session change.
+  - **Implemented: a lock-task handoff**, not a plain unpin/re-pin. A naive
+    exit-and-re-enter was checked against `WrapperJitsiMeetActivity`'s own
+    `singleTask` semantics and found to leave the *entire call*, not just
+    the transition, unpinned — the call Activity opens in a separate task
+    that re-pinning the original Activity never reaches. Instead:
+    `client/lib/kiosk_channel.dart` gets `beginCallHandoff()`;
+    `KioskBridge.kt`'s new `beginCallHandoff` method unpins `MainActivity`
+    and flags the coming `onStop()` as an intentional handoff rather than a
+    kiosk defeat; the already-patched
+    `client/third_party/jitsi_meet_flutter_sdk_patched/.../WrapperJitsiMeetActivity.kt`
+    self-pins for the call's duration and reports its own mid-call defeat
+    (Back+Recents during the call) back through the same `lockTaskExited`
+    event path an ordinary defeat already uses — calling capability adds no
+    new, undetected escape route. The app module and the Jitsi plugin
+    module have no compile-time reference path between them (a library
+    can't depend on the app consuming it), so the two sides coordinate
+    through a SharedPreferences flag and a `LocalBroadcastManager` action,
+    string-mirrored across files the same way the MethodChannel/EventChannel
+    names already are.
+  - Surfaced one real build gap along the way: `androidx.localbroadcastmanager`
+    was reachable from `WrapperJitsiMeetActivity.kt`'s own module (a
+    transitive dependency of `org.jitsi:jitsi-meet-sdk`) but not from the
+    app module — Flutter wires plugin modules in as `implementation`, which
+    doesn't expose a dependency's own transitive deps to the consumer.
+    `compileDebugKotlin` failed with `Unresolved reference
+    'localbroadcastmanager'` until `android/app/build.gradle.kts` declared
+    it explicitly.
+
+### Verified
+- `flutter analyze`: clean. `flutter test`: all 1239 tests pass, including
+  3 new ones in `test/kiosk_channel_test.dart` covering `beginCallHandoff`'s
+  method-channel contract and its `MissingPluginException` degradation.
+- `node packages/transport/test/transport.test.mjs`: 66 passed, 0 failed —
+  the Android-source-no-longer-UNVERIFIED assertion still holds against the
+  new `KioskBridge.kt` code.
+- Full Gradle/Kotlin build succeeds across both the app module and the
+  patched Jitsi plugin module (`flutter build apk --debug`).
+- Reinstalled on the real Fold5 from v0.46.0's session: the OS's own "App is
+  pinned" dialog appeared and `dumpsys activity activities` reported
+  `mLockTaskModeState=PINNED`, confirming screen-pinning still engages
+  correctly under the changed `MainActivity.kt`.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+Whether `WrapperJitsiMeetActivity` actually launches under the handoff
+without the violation, and whether the pin visibly survives the Activity
+swap, was **not** confirmed live this session. A concurrent session was
+mid-edit on this same repo (§16.2 #6 Step 2 self-hosting work) and, per
+logcat (`PackageManager: installation completed for package:
+com.olivebranch.olive_client`), reinstalled the app on the same physical
+Fold5 mid-test, killing the run before the call attempt completed. This
+failure mode produces no crash and no visible error under `flutter test` —
+a green CI run would look identical whether the fix works or not — so it is
+recorded here as unverified rather than assumed working from the code path
+alone. See `client/docs/MANUAL_VERIFY_call_lock_task.md` for the exact
+procedure to finish this once the devices are free, and update that file's
+own Provenance section with the real outcome when it's run.
 
 ---
 
