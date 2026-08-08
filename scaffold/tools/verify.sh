@@ -17,6 +17,14 @@ set -u
 PGBIN=${PGBIN:-/usr/lib/postgresql/16/bin}
 PORT=${PORT:-5433}
 DB=${DB:-verify_run}
+# TCP connections (see the -h localhost fix below) hit Postgres's default
+# host-auth method, which needs a password even for a throwaway dev/CI
+# database -- unlike the Unix-socket path this replaced, which used peer/trust
+# auth and never needed one. Matches the same "postgres" password both this
+# session's local olive-postgres container and .github/workflows/verify.yml's
+# own `POSTGRES_PASSWORD: postgres` already use; override for any setup that
+# picks a different one.
+export PGPASSWORD=${PGPASSWORD:-postgres}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
