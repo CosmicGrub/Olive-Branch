@@ -91,16 +91,24 @@ record "demo drive (19 screens)" "${p:-0}" "${f:-0}"
 
 echo ""
 echo "── Dart client ────────────────────────────────────────────────"
-if [ -x "${FLUTTER_BIN:-/tmp/flutter/bin/flutter}" ]; then
+# /tmp/flutter is only a guess for a locally-installed toolchain. CI's own
+# flutter-action installs it under FLUTTER_ROOT (e.g.
+# /opt/hostedtoolcache/flutter/...) and never sets FLUTTER_BIN at all, so the
+# old default silently reported MISSING TOOLCHAIN even with a real, working
+# Flutter install sitting right there under a different path -- never caught
+# because, like everything else in this section, this workflow never actually
+# ran until it was moved to the true repo root.
+FLUTTER_BIN="${FLUTTER_BIN:-${FLUTTER_ROOT:-/tmp/flutter}/bin/flutter}"
+if [ -x "$FLUTTER_BIN" ]; then
   export FLUTTER_ROOT="${FLUTTER_ROOT:-/tmp/flutter}"
-  (cd client && "${FLUTTER_BIN:-/tmp/flutter/bin/flutter}" analyze >/tmp/da.out 2>&1)
+  (cd client && "$FLUTTER_BIN" analyze >/tmp/da.out 2>&1)
   if grep -q "No issues found" /tmp/da.out; then
     echo "  dart analyze                clean"
   else
     grep -E "error|warning" /tmp/da.out | head -5 | sed 's/^/  /'
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
-  out=$(cd client && "${FLUTTER_BIN:-/tmp/flutter/bin/flutter}" test --reporter compact 2>&1)
+  out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
   p=$(printf '%s' "$out" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
   f=$(printf '%s' "$out" | grep -oE '\-[0-9]+' | tail -1 | tr -d '-')
   record "dart widget invariants" "${p:-0}" "${f:-0}"
