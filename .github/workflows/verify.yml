@@ -27,8 +27,13 @@ jobs:
       - run: flutter pub get
         working-directory: scaffold/client
       # tesseract is a REAL dependency of the homework suite, not a nicety —
-      # the OCR assertions shell out to it.
-      - run: sudo apt-get update && sudo apt-get install -y postgresql-client tesseract-ocr
+      # the OCR assertions shell out to it. imagemagick is a real dependency
+      # too: make-fixtures.sh shells out to `magick`/`convert` to generate the
+      # OCR test images fresh every run (nothing here is a committed binary) —
+      # without it the suite silently reports 0 assertions instead of failing
+      # loudly, which is exactly the false-green this project's own verify.sh
+      # header says it was written to stop happening.
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client tesseract-ocr imagemagick
       # livekit-server is a real dependency of the live suite, not optional.
       # verify.sh treats a missing binary as a gap, not a skip.
       - name: fetch livekit-server
