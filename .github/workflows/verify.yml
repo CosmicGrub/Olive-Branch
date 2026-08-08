@@ -22,8 +22,18 @@ jobs:
         with: { node-version: '22' }
       # The Dart client is analysed and its widget invariants executed.
       # verify.sh treats a missing toolchain as a gap, not a skip.
+      #
+      # 3.24.5 (this pin's original value) predates Color.withValues()/
+      # toARGB32() -- Flutter framework APIs this codebase actually uses
+      # (birthday_marked.dart, capture_gate.dart, colour_pick.dart,
+      # colouring_screen.dart), not just a pubspec SDK-constraint mismatch.
+      # `flutter analyze` failed outright and 52 widget tests failed as a
+      # result -- never caught before because this workflow never actually
+      # ran until it was moved to the true repo root. Pinned to 3.44.8,
+      # the exact version this whole project has actually been built and
+      # verified against locally all session.
       - uses: subosito/flutter-action@v2
-        with: { flutter-version: '3.24.5', channel: stable }
+        with: { flutter-version: '3.44.8', channel: stable }
       - run: flutter pub get
         working-directory: scaffold/client
       # tesseract is a REAL dependency of the homework suite, not a nicety —
