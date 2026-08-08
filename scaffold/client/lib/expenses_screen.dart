@@ -170,11 +170,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         _SectionLabel('Needs your answer (${pending.length})'),
         const SizedBox(height: 8),
         if (pending.isEmpty)
+          // 40/12 matches the house "nothing pending" empty-state idiom used
+          // throughout (journal_screen.dart, letters_screen.dart,
+          // teach_me.dart, weeks_screen.dart, inbox_screen.dart, etc.) — was
+          // 32/8, an unintentional one-off from before that idiom settled.
           Padding(padding: const EdgeInsets.symmetric(vertical: 24),
             child: Column(children: [
-              Icon(Icons.mark_email_read_outlined, size: 32,
+              Icon(Icons.mark_email_read_outlined, size: 40,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Text('Nothing waiting.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ]))

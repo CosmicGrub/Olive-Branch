@@ -535,8 +535,14 @@ class _StarredChip extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.star_rounded, size: 16, color: Colors.amber.shade700),
           const SizedBox(width: 4),
-          Text(title, style: Theme.of(context).textTheme.labelLarge
-            ?.copyWith(fontWeight: FontWeight.w600)),
+          // Flexible + ellipsis, not a bare Text: shapeTitles has entries up
+          // to 24 characters ("The Thing That Was Lost"), which can overflow
+          // this Row by a few px on the Fold5 cover width once the Wrap this
+          // chip sits in bounds its available width — caught by
+          // storyteller_screen_test.dart's random-title flake.
+          Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelLarge
+              ?.copyWith(fontWeight: FontWeight.w600))),
         ]),
       ),
     ),

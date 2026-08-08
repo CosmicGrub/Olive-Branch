@@ -103,6 +103,12 @@ void main() {
       }
       expect(find.text('All clear.'), findsOneWidget);
       expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+
+      // 40, matching the house "nothing pending" empty-state idiom used
+      // throughout (journal_screen.dart, letters_screen.dart, teach_me.dart,
+      // weeks_screen.dart, inbox_screen.dart, etc.), not a one-off size.
+      final Icon icon = t.widget(find.byIcon(Icons.check_circle_outline));
+      expect(icon.size, 40.0);
     });
 
     testWidgets('the "keep forever" button meets the 48dp minimum tap target',

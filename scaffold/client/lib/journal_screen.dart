@@ -191,10 +191,14 @@ class _PrivacyBanner extends StatelessWidget {
   final ColorScheme scheme;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
+    // 12, matching the compact inline info-banner role used everywhere else
+    // this shape appears (expenses_screen.dart, meds_care.dart,
+    // morning_briefing.dart, care_note.dart, guardian_setup.dart) — this
+    // banner previously used 16, a leftover from before the radius sweep.
+    padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
       color: scheme.secondaryContainer,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
     ),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Icon(Icons.shield_outlined, color: scheme.onSecondaryContainer),

@@ -204,8 +204,12 @@ class _LettersScreenState extends State<LettersScreen> {
       body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(16)),
+          // 12, matching the compact inline info-banner role used elsewhere
+          // (expenses_screen.dart, meds_care.dart, morning_briefing.dart,
+          // care_note.dart, guardian_setup.dart) — was 16, a leftover from
+          // before the radius sweep.
+          Container(padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.mail_lock_outlined, color: scheme.onSecondaryContainer),
               const SizedBox(width: 8),

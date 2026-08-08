@@ -187,5 +187,18 @@ void main() {
         expect(t.takeException(), isNull);
       });
     });
+
+    testWidgets('intro banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.emoji_objects_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
+    });
   });
 }

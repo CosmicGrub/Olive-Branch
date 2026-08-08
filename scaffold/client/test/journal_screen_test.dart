@@ -158,6 +158,19 @@ void main() {
       });
     });
 
+    testWidgets('privacy banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.shield_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
+    });
+
     testWidgets('seeded entries constructed for someone else never render', (t) async {
       // Defense in depth: even if a caller mis-wires initialEntries with a
       // foreign childId, the P7 port above must keep it off her screen.

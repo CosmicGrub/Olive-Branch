@@ -93,8 +93,12 @@ class QuietingScreen extends StatelessWidget {
       body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(16)),
+          // 12, matching the compact inline info-banner role used elsewhere
+          // (expenses_screen.dart, meds_care.dart, morning_briefing.dart,
+          // care_note.dart, guardian_setup.dart) — was 16, a leftover from
+          // before the radius sweep.
+          Container(padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.spa_outlined, color: scheme.onSecondaryContainer),
               const SizedBox(width: 8),
@@ -161,8 +165,15 @@ class _QuietingTile extends StatelessWidget {
         Text(item.childLabel, style: Theme.of(context).textTheme.bodyMedium
           ?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
+        // onSurfaceVariant pairs with the neutral faded background;
+        // onPrimaryContainer pairs with primaryContainer — matching
+        // exchange_screen.dart's _HandoffCard / year_book.dart precedent for
+        // on-container caption text, rather than the mismatched pairing this
+        // had before.
         Text(item.childWhy, style: Theme.of(context).textTheme.bodySmall
-          ?.copyWith(color: scheme.onSurfaceVariant)),
+          ?.copyWith(color: faded
+            ? scheme.onSurfaceVariant
+            : scheme.onPrimaryContainer.withValues(alpha: 0.7))),
       ]),
     );
   }

@@ -154,11 +154,15 @@ class _ExpiryDigestScreenState extends State<ExpiryDigestScreen> {
           AnimatedSize(duration: const Duration(milliseconds: 200),
             child: _ExpiringTile(artifact: a, onKeep: () => _keep(a.artifactId))),
         if (digest.items.isEmpty)
+          // 40/12 matches the house "nothing pending" empty-state idiom used
+          // throughout (journal_screen.dart, letters_screen.dart,
+          // teach_me.dart, weeks_screen.dart, inbox_screen.dart, etc.) — was
+          // 32/8, an unintentional one-off from before that idiom settled.
           Padding(padding: const EdgeInsets.symmetric(vertical: 24),
             child: Column(children: [
-              Icon(Icons.check_circle_outline, size: 32,
+              Icon(Icons.check_circle_outline, size: 40,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Text('All clear.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ])),

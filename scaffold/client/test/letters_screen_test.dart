@@ -203,5 +203,18 @@ void main() {
       expect(find.textContaining("haven't"), findsNothing);
       expect(find.textContaining('streak'), findsNothing);
     });
+
+    testWidgets('privacy banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const LettersScreen(childName: 'Maya', currentAge: 11)));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.mail_lock_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
+    });
   });
 }

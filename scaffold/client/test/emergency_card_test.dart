@@ -106,4 +106,22 @@ void main() {
     expect(find.byType(AnimatedOpacity), findsNothing);
     expect(find.byType(AnimatedPositioned), findsNothing);
   });
+
+  testWidgets('allergy card uses theme error roles, not raw red literals — '
+      'so it stays legible in dark theme', (tester) async {
+    await pump(tester);
+    final BuildContext context = tester.element(find.text('ALLERGIES'));
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+
+    final Card card = tester.widget(find.byKey(const Key('allergyCard')));
+    expect(card.color, scheme.errorContainer);
+    final RoundedRectangleBorder shape = card.shape! as RoundedRectangleBorder;
+    expect(shape.side.color, scheme.error);
+
+    final Icon warningIcon = tester.widget(find.byIcon(Icons.warning_rounded));
+    expect(warningIcon.color, scheme.error);
+
+    final Text allergiesLabel = tester.widget(find.text('ALLERGIES'));
+    expect(allergiesLabel.style!.color, scheme.onErrorContainer);
+  });
 }
