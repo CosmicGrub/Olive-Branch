@@ -85,6 +85,14 @@ void main() {
     expect(find.textContaining("don't have"), findsOneWidget);
   });
 
+  testWidgets('the honest fallback carries a real icon, not a bare line of text', (tester) async {
+    final incomplete = beginPicker(null, 7);
+    await tester.pumpWidget(MaterialApp(home: BirthdayMarkedScreen(
+      childId: 'child1', childName: 'Ivy', picker: incomplete, colourId: null,
+      onDone: () {}, now: fixedNow)));
+    expect(find.byIcon(Icons.cake_outlined), findsOneWidget);
+  });
+
   testWidgets('no settings affordance exists on this screen', (tester) async {
     await pump(tester);
     expect(find.byIcon(Icons.settings), findsNothing);

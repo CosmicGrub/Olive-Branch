@@ -56,7 +56,7 @@ class ChildOnboardingScaffold extends StatelessWidget {
               constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Center(child: Container(width: 44, height: 5,
-                  margin: const EdgeInsets.only(bottom: 22),
+                  margin: const EdgeInsets.only(bottom: 24),
                   decoration: BoxDecoration(
                     color: (accent ?? scheme.primary).withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(3)))),
@@ -64,18 +64,24 @@ class ChildOnboardingScaffold extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w800)),
                 if (subtitle != null) ...[
                   const SizedBox(height: 8),
-                  Text(subtitle!, style: TextStyle(fontSize: 15.5, color: scheme.onSurfaceVariant)),
+                  Text(subtitle!, style: Theme.of(context).textTheme.bodyLarge
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
                 ],
-                const SizedBox(height: 26),
+                const SizedBox(height: 24),
                 body,
                 if (showContinueButton) ...[
                   const SizedBox(height: 28),
                   SizedBox(height: 56, child: FilledButton(
                     onPressed: continueEnabled ? onContinue : null,
                     style: FilledButton.styleFrom(shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18))),
+                      borderRadius: BorderRadius.circular(16))),
                     child: Text(continueLabel,
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)))),
+                      // Deliberately not a textTheme role: FilledButton relies on
+                      // no explicit color here so its own disabled-state styling
+                      // (dimmed foreground) still applies. A themed TextStyle's
+                      // baked-in onSurface color (Typography.material2021) would
+                      // override that and make a disabled button look active.
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
                 ],
                 if (onSkip != null) ...[
                   const SizedBox(height: 8),
@@ -117,10 +123,11 @@ class TapChoice extends StatelessWidget {
         child: ConstrainedBox(
           constraints: BoxConstraints(minWidth: minSide, minHeight: minSide),
           child: Center(child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Opacity(opacity: dim ? 0.45 : 1, child: Text(label,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
                 color: selected ? scheme.onPrimary : scheme.onSurface))))),
         ),
       ),

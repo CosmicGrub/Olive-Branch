@@ -59,6 +59,17 @@ void main() {
     expect(swatchTiles, findsNWidgets(12));
   });
 
+  testWidgets('each swatch ripple clips to a circle, matching the circular swatch beneath it',
+      (tester) async {
+    await pump(tester, (_) {});
+    final swatchTiles = find.descendant(
+      of: find.byType(GridView), matching: find.byType(InkWell));
+    for (final element in swatchTiles.evaluate()) {
+      final inkWell = element.widget as InkWell;
+      expect(inkWell.customBorder, isA<CircleBorder>());
+    }
+  });
+
   testWidgets('picking a swatch and continuing reports its id', (tester) async {
     String? got;
     await pump(tester, (id) => got = id);

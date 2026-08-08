@@ -50,7 +50,7 @@ class _ObNameScreenState extends State<ObNameScreen> {
       onSkip: () => _finish(''),
       body: Column(children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           decoration: BoxDecoration(
             color: scheme.surface,
             borderRadius: BorderRadius.circular(20),
@@ -63,7 +63,8 @@ class _ObNameScreenState extends State<ObNameScreen> {
               maxLength: maxNameLength,
               textCapitalization: TextCapitalization.words,
               onSubmitted: _finish,
-              style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+              style: Theme.of(context).textTheme.headlineMedium
+                ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.5),
               decoration: const InputDecoration(
                 border: InputBorder.none,
                 counterText: '',
@@ -78,7 +79,7 @@ class _ObNameScreenState extends State<ObNameScreen> {
             ),
           ]),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 16),
         // Every letter she types lands here too, big and warm — a consequence
         // of her own typing (§8.13.1), never an animation that runs on its own.
         ValueListenableBuilder<TextEditingValue>(

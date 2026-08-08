@@ -52,8 +52,8 @@ class _ObWhoScreenState extends State<ObWhoScreen> {
             ]),
         },
         if (_notYetJoined.isNotEmpty) ...[
-          const SizedBox(height: 22),
-          Wrap(spacing: 10, runSpacing: 10, children: [
+          const SizedBox(height: 24),
+          Wrap(spacing: 12, runSpacing: 12, children: [
             for (final g in _notYetJoined) TapChoice(
               key: ValueKey('pending_${g.userId}'),
               label: g.label,
@@ -76,13 +76,14 @@ class _SingleGrownup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(child: Container(
-    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
     decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(24)),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       CircleAvatar(radius: 34, backgroundColor: scheme.primary,
         child: Icon(Icons.favorite_rounded, color: scheme.onPrimary, size: 30)),
       const SizedBox(height: 12),
-      Text(grownup.label, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+      Text(grownup.label, style: Theme.of(context).textTheme.titleLarge
+        ?.copyWith(fontWeight: FontWeight.w800)),
     ]),
   ));
 }
@@ -93,11 +94,12 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(child: Padding(
-    padding: const EdgeInsets.symmetric(vertical: 30),
+    padding: const EdgeInsets.symmetric(vertical: 32),
     child: Column(children: [
       Icon(Icons.hourglass_top_rounded, size: 40, color: scheme.onSurfaceVariant),
-      const SizedBox(height: 10),
-      Text('Nobody is here yet.', style: TextStyle(fontSize: 16, color: scheme.onSurfaceVariant)),
+      const SizedBox(height: 8),
+      Text('Nobody is here yet.', style: Theme.of(context).textTheme.bodyLarge
+        ?.copyWith(color: scheme.onSurfaceVariant)),
     ]),
   ));
 }

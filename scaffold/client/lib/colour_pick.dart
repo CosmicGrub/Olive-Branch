@@ -38,13 +38,13 @@ class _ColourPickScreenState extends State<ColourPickScreen> {
       onSkip: () => widget.onContinue(null),
       body: Column(children: [
         if (chosen != null) _LivePreview(childName: widget.childName, swatch: chosen),
-        if (chosen != null) const SizedBox(height: 22),
+        if (chosen != null) const SizedBox(height: 24),
         GridView.count(
           crossAxisCount: 4,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
           childAspectRatio: 1,
           children: [for (final s in palette) _SwatchTile(
             swatch: s,
@@ -70,7 +70,10 @@ class _SwatchTile extends StatelessWidget {
     label: swatch.label,
     child: InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      // A CircleBorder, not a borderRadius — the child below renders as a
+      // true circle (shape: BoxShape.circle), so the ink splash should clip
+      // to that same circular boundary rather than a rounded-rect approximation.
+      customBorder: const CircleBorder(),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
@@ -100,32 +103,34 @@ class _LivePreview extends StatelessWidget {
     // palette_logic.dart's port of the same guard.
     final outcome = applyColour(swatch.id, const ['avatar_ring', 'accent_stripe']);
     final placements = outcome.ok ? outcome.placements : const <String>[];
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Row(children: [
         if (placements.contains('avatar_ring'))
           CircleAvatar(radius: 26, backgroundColor: swatch.color, child: CircleAvatar(
-            radius: 22, backgroundColor: Theme.of(context).colorScheme.surface,
+            radius: 22, backgroundColor: scheme.surface,
             child: Text(childName.isEmpty ? '?' : childName.substring(0, 1).toUpperCase(),
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: swatch.ink))))
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: swatch.ink))))
         else
           CircleAvatar(radius: 26, child: Text(childName.isEmpty ? '?' : childName.substring(0, 1))),
-        const SizedBox(width: 14),
+        const SizedBox(width: 16),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(childName.isEmpty ? 'You' : childName,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           if (placements.contains('accent_stripe'))
             Container(height: 4, width: 64, decoration: BoxDecoration(
               color: swatch.color, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 4),
           Text('${swatch.label[0].toUpperCase()}${swatch.label.substring(1)}',
-            style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
         ])),
       ]),
     );
