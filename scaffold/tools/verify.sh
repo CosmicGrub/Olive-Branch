@@ -148,16 +148,26 @@ fi
 
 echo ""
 echo "── Database suites ────────────────────────────────────────────"
-PSQL="$PGBIN/psql -h /tmp -p $PORT -U postgres"
+# -h localhost, not /tmp: a Unix socket in /tmp only exists for a Postgres
+# started natively via pg_ctl on this same host. Every environment that
+# actually runs this script points at a Postgres reached over TCP instead --
+# the Docker container this session's local dev uses (olive-postgres), and
+# CI's own postgres: service container (see .github/workflows/verify.yml) --
+# neither of which puts a socket file on the runner's/host's filesystem.
+# -h /tmp silently looked for a socket that was never going to exist, so this
+# ABORT was unreachable-by-design until the CI workflow file was corrected to
+# actually run (it lived at the wrong path, non-functional, until now) -- the
+# very first real CI run is what surfaced it.
+PSQL="$PGBIN/psql -h localhost -p $PORT -U postgres"
 if ! $PSQL -c 'select 1' >/dev/null 2>&1; then
   echo "  ABORT: Postgres unreachable on port $PORT. Not a skip — a failure."
   exit 2
 fi
 # These previously omitted -U and failed silently, leaving every suite to run
 # against the previous run's data. Redirecting stderr hid it completely.
-$PGBIN/dropdb   -h /tmp -p "$PORT" -U postgres --if-exists "$DB" \
+$PGBIN/dropdb   -h localhost -p "$PORT" -U postgres --if-exists "$DB" \
   || { echo "  ABORT: cannot drop $DB"; exit 2; }
-$PGBIN/createdb -h /tmp -p "$PORT" -U postgres "$DB" \
+$PGBIN/createdb -h localhost -p "$PORT" -U postgres "$DB" \
   || { echo "  ABORT: cannot create $DB"; exit 2; }
 # Applied through the runner, so ordering, checksums, and idempotency are
 # exercised on every verification rather than only when someone remembers.
