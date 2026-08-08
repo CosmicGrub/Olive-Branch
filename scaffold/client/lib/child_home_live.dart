@@ -150,14 +150,17 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         return Scaffold(body: Center(child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.cloud_off, size: 40, color: Colors.black38),
+            Icon(Icons.cloud_off, size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
-            const Text("Couldn't reach the server",
-              style: TextStyle(fontWeight: FontWeight.w600)),
+            Text("Couldn't reach the server",
+              style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(_errorMessage,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, color: Colors.black45)),
+              style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 16),
             FilledButton(onPressed: _load, child: const Text('Try again')),
           ]),
@@ -170,7 +173,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             child: Text(
               'Live: name and message count are real, fetched from the server '
               'just now.',
-              style: TextStyle(fontSize: 11,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onTertiaryContainer))),
           Expanded(child: ChildHome(
             childName: _childName,

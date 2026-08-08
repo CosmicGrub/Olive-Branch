@@ -42,6 +42,17 @@ void main() {
       final Size size = t.getSize(find.byType(InkWell));
       expect(size.height, greaterThanOrEqualTo(56.0));
     });
+
+    testWidgets('subtitle uses the themed secondary color, not a hardcoded '
+        'value (design-token audit finding #1)', (t) async {
+      await t.pumpWidget(wrap(HubTile(
+        icon: Icons.star, title: 'Title', subtitle: 'Sub', onTap: () {})));
+      final BuildContext context = t.element(find.text('Title'));
+      final Color onSurfaceVariant =
+          Theme.of(context).colorScheme.onSurfaceVariant;
+      final Text subtitle = t.widget(find.text('Sub'));
+      expect(subtitle.style!.color, onSurfaceVariant);
+    });
   });
 
   group('responsive layout — phone, Fold5 (cover + main), and desktop-scale '

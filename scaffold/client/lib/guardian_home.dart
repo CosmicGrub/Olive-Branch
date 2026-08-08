@@ -58,20 +58,25 @@ class GuardianHome extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic, children: [
-                Text(childName, style: const TextStyle(
-                  fontSize: 17, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 7),
-                Text(childLocalTime, style: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w600,
-                  fontFeatures: [FontFeature.tabularFigures()])),
+                Text(childName, style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(width: 4),
-                Text(childZoneAbbr, style: const TextStyle(fontSize: 10)),
+                // The CHILD's clock is dominant — same titleMedium weight as
+                // her name, well above the actor line below (§8.2.3).
+                Text(childLocalTime, style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+                const SizedBox(width: 4),
+                Text(childZoneAbbr, style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ]),
             // Actor time is subordinate, always.
-            Text('you · $actorLocalTime', style: const TextStyle(fontSize: 11)),
-            const SizedBox(height: 5),
-            Text(childStateSentence, style: const TextStyle(fontSize: 12.5)),
-            const SizedBox(height: 10),
+            Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 4),
+            Text(childStateSentence, style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 12),
             SizedBox(width: double.infinity, height: 48,
               child: FilledButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -82,8 +87,9 @@ class GuardianHome extends StatelessWidget {
         const SizedBox(height: 8),
         _Ribbon(label: 'you', bands: actorBands, height: 13),
         if (overlapLabel != null) Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-          child: Text(overlapLabel!, style: const TextStyle(fontSize: 11))),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Text(overlapLabel!, style: Theme.of(context).textTheme.labelSmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
           // LayoutBuilder-driven breakpoint, not a single fixed extent: at the
@@ -159,7 +165,8 @@ class _GTile extends StatelessWidget {
         color: Theme.of(context).colorScheme.primaryContainer),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(icon, size: 28), const Spacer(),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(label, style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(fontWeight: FontWeight.w600)),
       ])));
 }
 
@@ -172,7 +179,8 @@ class _Ribbon extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label.toUpperCase(), style: const TextStyle(fontSize: 9, letterSpacing: 0.7)),
+      Text(label.toUpperCase(), style: Theme.of(context).textTheme.labelSmall
+        ?.copyWith(letterSpacing: 0.7, color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 4),
       // Explicit-width Positioned segments, NOT Row+Expanded/flex: on this engine
       // build (Flutter 3.44.8 stable, Impeller/Vulkan), Expanded children inside a
