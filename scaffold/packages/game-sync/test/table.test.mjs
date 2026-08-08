@@ -329,7 +329,11 @@ const siblingLink = (o = {}) => ({
   check('T3 relay', 'relay carries the move contents', r1.ok && JSON.stringify([r1.relay.from, r1.relay.to]),
     JSON.stringify([[5, 0], [4, 1]]));
 
-  // A continuation (multi-jump chain) keeps the same seat's turn.
+  // seat 1's OWN first move of its freshly-received turn claims
+  // continues=true (a real chain's first hop — this module cannot tell
+  // this apart from a lie about a single ordinary move; see
+  // applyIncomingMove's own doc comment on why that residual gap is
+  // architectural, not something this test suite can close).
   const r2 = applyIncomingMove(r1.table, 1, { type: 'move', from: [2, 3], to: [3, 4], continues: true }, NOW_MS);
   check('T6 turn', 'continues=true keeps the same seat on turn', r2.ok && r2.table.turnSeat, '1');
 
@@ -340,6 +344,54 @@ const siblingLink = (o = {}) => ({
   const seat0TriesAgain = applyIncomingMove(afterContinuation, 0, move, NOW_MS);
   check('ATTACK out-of-turn', 'seat 0 cannot move mid seat-1 continuation',
     seat0TriesAgain.ok === false && seat0TriesAgain.reason, 'out_of_turn');
+
+  // ---------------------------------------------------------------------
+  // ATTACK (network-play security review, "Finding A") — a peer keeps
+  // claiming continues:true to hold the turn past its own first,
+  // structurally-unverifiable hop. Turn 2+ of any claimed chain MUST move
+  // the same token that just landed; a spatially-inconsistent "chain" is
+  // now caught and attributed to the seat that is actually lying, instead
+  // of surfacing two messages later as a false out_of_turn against the
+  // honest peer.
+  // ---------------------------------------------------------------------
+  {
+    // seat 1 is genuinely still on turn from r2's continues:true hop,
+    // which landed at [3, 4]. A real hop 2 must move FROM [3, 4].
+    const fakeChain = applyIncomingMove(
+      r2.table, 1, { type: 'move', from: [6, 6], to: [5, 5], continues: true }, NOW_MS);
+    check('ATTACK fake chain', "hop 2 not moving the piece that just landed is refused",
+      fakeChain.ok === false && fakeChain.reason, 'invalid_continuation');
+    check('ATTACK fake chain', 'table state is unaffected by the rejected hop',
+      fakeChain.table.turnSeat, '1');
+
+    // The genuine next hop (from == the previous hop's to) is still fine —
+    // this is exactly what a real multi-jump chain looks like on the wire.
+    const realChain = applyIncomingMove(
+      r2.table, 1, { type: 'move', from: [3, 4], to: [4, 5], continues: false }, NOW_MS);
+    check('T6 turn', 'a hop that DOES move the just-landed piece is accepted', realChain.ok, 'true');
+    check('T6 turn', 'and the turn passes once that real chain ends', realChain.table.turnSeat, '0');
+
+    // A chain-ending hop (continues:false) is held to the same spatial
+    // rule as a continuing one — the piece finishing the chain must still
+    // be the one that just landed, not an unrelated piece the seat picks
+    // to end its turn "early" on.
+    const fakeFinish = applyIncomingMove(
+      r2.table, 1, { type: 'move', from: [0, 0], to: [1, 1], continues: false }, NOW_MS);
+    check('ATTACK fake chain', 'a chain-ending hop from the wrong piece is also refused',
+      fakeFinish.ok === false && fakeFinish.reason, 'invalid_continuation');
+
+    // The very FIRST move of the entire table cannot claim continues:true
+    // as a "continuation" of hop 2+ logic (there is nothing to chain from)
+    // — but note this is a DIFFERENT, weaker property than "the claim is
+    // truthful": a fresh turn's first move legitimately CAN claim
+    // continues:true (that is how a real chain starts), and this module
+    // has no way to tell that apart from a lie about an ordinary move.
+    // Confirmed here only so the boundary is explicit and tested, not
+    // silently assumed.
+    const freshFirstMoveLie = applyIncomingMove(t0, 0, { ...move, continues: true }, NOW_MS);
+    check('T6 turn', "a fresh turn's first move may claim continues:true (unverifiable by design)",
+      freshFirstMoveLie.ok, 'true');
+  }
 
   // ---- table not active yet (only one seat joined) ----
   const half = createTable({ game: 'checkers', principals: [adult(DAD), child(CHILD_A)], now: NOW_MS });
@@ -400,12 +452,17 @@ const siblingLink = (o = {}) => ({
   check('T6 rate limit', 'the bucket refills over time rather than staying jammed forever',
     afterOneSecond.ok, 'true');
 
-  // End-to-end: applyIncomingMove itself enforces the cap per seat.
+  // End-to-end: applyIncomingMove itself enforces the cap per seat. Each
+  // hop's `from` must equal the previous hop's `to` (a real chain, per the
+  // invalid_continuation check above) so this loop exercises the rate
+  // limiter itself rather than tripping the chain-consistency check first.
   let table3 = openActive(NOW_MS);
   let lastResult;
+  let cells = [[5, 0], [4, 1]];
   for (let i = 0; i < RATE_CAPACITY + 3; i++) {
+    const [from, to] = i % 2 === 0 ? cells : [cells[1], cells[0]];
     lastResult = applyIncomingMove(table3, table3.turnSeat,
-      { type: 'move', from: [5, 0], to: [4, 1], continues: true }, NOW_MS);
+      { type: 'move', from, to, continues: true }, NOW_MS);
     table3 = lastResult.table;
   }
   check('T6 rate limit', 'applyIncomingMove itself starts refusing once the seat exceeds its burst cap',

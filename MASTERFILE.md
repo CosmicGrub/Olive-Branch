@@ -1434,9 +1434,12 @@ POST   /v1/game-tables                  open a table: { game, partnerChildId | p
                                          guardian↔child via can('call', ...) — the same gate
                                          session-runtime uses for real-time contact; child↔child
                                          via sibling_link.contact_allowed (§5.14) — never a
-                                         traversal through a guardian's own edge
+                                         traversal through a guardian's own edge. Per-principal
+                                         rate-limited (429 rate_limited) — separate, stricter
+                                         bucket than the in-game move limiter below
 POST   /v1/game-tables/:tableId/join    the other seat independently re-authorized (fresh
-                                         edge/sibling_link check) and issued its own token
+                                         edge/sibling_link check) and issued its own token.
+                                         Same per-principal rate limit as create
 WSS    /v1/game-tables/:tableId/socket  ?token=<short-lived, single-use join token>. The server
                                          relays a move ONLY to the other seat at this exact
                                          table — never a broadcast, never a third connection —

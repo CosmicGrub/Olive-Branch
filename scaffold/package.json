@@ -8,7 +8,7 @@
     "test:delivery": "npm run build && node packages/delivery-engine/test/delivery.test.mjs",
     "test:graph": "npm run build && node packages/family-graph/test/graph.test.mjs",
     "test:session": "npm run build && node packages/session-runtime/test/session.test.mjs",
-    "test": "npm run test:golden && npm run test:delivery && npm run test:graph && npm run test:session && npm run test:messaging && npm run test:stack && npm run test:transport && npm run test:homework && npm run test:snapshot && npm run test:custody && npm run test:phase12 && npm run test:phase3 && npm run test:demo && npm run test:games && npm run test:games2 && npm run test:games2 && npm run test:games3 && npm run test:live && npm run test:showcase && npm run test:onboarding && npm run test:palette && npm run test:calendar && npm run test:story && npm run test:activities && npm run test:gaps && npm run test:maturation && npm run test:devices && npm run test:postures && npm run test:call && npm run test:pane && npm run test:signal && npm run test:motion && npm run test:budget && npm run test:a11y && npm run test:lock && npm run test:game-sync",
+    "test": "npm run test:golden && npm run test:delivery && npm run test:graph && npm run test:session && npm run test:messaging && npm run test:stack && npm run test:transport && npm run test:homework && npm run test:snapshot && npm run test:custody && npm run test:phase12 && npm run test:phase3 && npm run test:demo && npm run test:games && npm run test:games2 && npm run test:games2 && npm run test:games3 && npm run test:live && npm run test:showcase && npm run test:onboarding && npm run test:palette && npm run test:calendar && npm run test:story && npm run test:activities && npm run test:gaps && npm run test:maturation && npm run test:devices && npm run test:postures && npm run test:call && npm run test:pane && npm run test:signal && npm run test:motion && npm run test:budget && npm run test:a11y && npm run test:lock && npm run test:game-sync && npm run test:game-tables",
     "markup": "node tools/generate-markup.mjs > INVENTORY.md",
     "test:messaging": "npm run build && node packages/messaging/test/pipeline.test.mjs",
     "verify": "bash tools/verify.sh",
@@ -46,7 +46,8 @@
     "test:budget": "npm run build && node packages/budget/test/budget.test.mjs",
     "test:lock": "npm run build && node packages/child-lock/test/lock.test.mjs",
     "test:db": "npm run build && node packages/db/test/pool.test.mjs",
-    "test:game-sync": "npm run build && node packages/game-sync/test/table.test.mjs"
+    "test:game-sync": "npm run build && node packages/game-sync/test/table.test.mjs",
+    "test:game-tables": "npm run build && node server/test/game_tables.test.mjs"
   },
   "dependencies": {
     "chess.js": "^1.4.0",

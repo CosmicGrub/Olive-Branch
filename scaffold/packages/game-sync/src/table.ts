@@ -343,6 +343,21 @@ export interface TableState {
   readonly closedReason?: TableClosedReason;
   /** T6 — whose turn it is, by seat only. Seat 0 moves first. */
   readonly turnSeat: Seat;
+  /**
+   * T6 hardening — the seat and destination cell of the last ACCEPTED move,
+   * or null before any move has happened. Used only to check that a claimed
+   * continuation (`continues: true`) is at least spatially chained to that
+   * seat's own immediately-previous move (`from` must equal that move's
+   * `to`) — never to judge whether the move is a LEGAL checkers capture.
+   * That distinction matters: this module still knows nothing about
+   * checkers rules (T6's own charter), but "the same piece keeps moving"
+   * is a structural property of ANY turn-based game's continuation
+   * mechanic, not a game-specific rule, and it is exactly what closes the
+   * gap where a peer could claim `continues: true` on an unrelated fresh
+   * move to keep server-side turn-tracking pinned to itself indefinitely —
+   * see `applyIncomingMove`'s own doc comment.
+   */
+  readonly lastMove: { readonly seat: Seat; readonly to: readonly [number, number] } | null;
 }
 
 /** Hard ceiling on how long an active table may live at all (T7). */
@@ -377,6 +392,7 @@ export function createTable(input: {
     joinDeadline: input.now + ttl * 1000,
     status: 'pending',
     turnSeat: 0,
+    lastMove: null,
   };
 }
 
@@ -448,17 +464,48 @@ export function isPastMaxLifetime(table: TableState, now: number): boolean {
   return now > table.createdAt + TABLE_MAX_LIFETIME_SECONDS * 1000;
 }
 
-export type MoveDenyReason = 'table_not_active' | 'out_of_turn' | 'rate_limited';
+export type MoveDenyReason =
+  | 'table_not_active' | 'out_of_turn' | 'rate_limited' | 'invalid_continuation';
 
 export type ApplyMoveResult =
   | { ok: true; table: TableState; relay: ServerMoveMessage }
   | { ok: false; reason: MoveDenyReason; table: TableState };
 
+const cellEquals = (a: readonly [number, number], b: readonly [number, number]): boolean =>
+  a[0] === b[0] && a[1] === b[1];
+
 /**
  * T6 — the only game-agnostic thing the server ever checks about a move:
- * is the table live, is it this seat's turn, and is this seat under its
- * rate cap. Legality of the move ITSELF is never evaluated here — that is
- * the receiving client's job, using the game's own pure engine.
+ * is the table live, is it this seat's turn, is a claimed continuation at
+ * least spatially chained to this seat's own last move, and is this seat
+ * under its rate cap. Legality of the move ITSELF is never evaluated here
+ * — that is the receiving client's job, using the game's own pure engine.
+ *
+ * SECURITY — the `continues` chain check exists because `turnSeat` is
+ * advanced purely from the CLIENT'S OWN unverified `continues` claim: a
+ * peer that keeps declaring `continues: true` can keep the server's
+ * bookkeeping pointed at itself for as long as it likes, even though both
+ * clients' own pure game engines would independently agree the turn
+ * already passed. The peer being lied to then submits its own,
+ * genuinely-legitimate next move; with nothing checking the claim, the
+ * SERVER would refuse that honest move as `out_of_turn` and the transport
+ * layer would close *that innocent peer's* own connection, misattributing
+ * the protocol violation (see this repo's own network-play security
+ * review, "Finding A").
+ *
+ * This module still cannot tell a genuine capture from a lie about a
+ * single, freshly-handed-off move — that needs the game's own rules,
+ * which this module deliberately does not have (T6's charter). What IS
+ * game-agnostically checkable is turn 2-and-beyond of a claimed chain: if
+ * `table.turnSeat` still names this seat only because ITS OWN previous
+ * move claimed `continues: true` (i.e. `lastMove.seat === seat` — the
+ * only way two consecutive accepted moves share a seat at all), then this
+ * move MUST be moving the same token that just landed
+ * (`lastMove.to == msg.from`). A lie that tries to extend a chain past
+ * its first, unverifiable hop — the only way to keep stalling the other
+ * seat for more than a single turn — is rejected outright as
+ * `invalid_continuation` and correctly attributed to the seat that sent
+ * it (not the peer, which is never involved in this check at all).
  */
 export function applyIncomingMove(
   table: TableState,
@@ -469,6 +516,15 @@ export function applyIncomingMove(
   if (table.status !== 'active') return { ok: false, reason: 'table_not_active', table };
   if (seat !== table.turnSeat) return { ok: false, reason: 'out_of_turn', table };
 
+  // lastMove.seat === seat is only possible when OUR OWN previous move
+  // claimed continues:true (that is the only way turnSeat did not rotate
+  // to the other seat in between) — i.e. this move is necessarily hop 2+
+  // of a chain, never a fresh hand-off. See the doc comment above.
+  const last = table.lastMove;
+  if (last && last.seat === seat && !cellEquals(last.to, msg.from)) {
+    return { ok: false, reason: 'invalid_continuation', table };
+  }
+
   const { ok, bucket } = takeRateToken(table.seats[seat].rate, now);
   const seats: [SeatState, SeatState] = [table.seats[0], table.seats[1]];
   seats[seat] = { ...seats[seat], rate: bucket };
@@ -477,7 +533,9 @@ export function applyIncomingMove(
   }
 
   const nextTurn: Seat = msg.continues ? seat : (seat === 0 ? 1 : 0);
-  const nextTable: TableState = { ...table, seats, turnSeat: nextTurn };
+  const nextTable: TableState = {
+    ...table, seats, turnSeat: nextTurn, lastMove: { seat, to: msg.to },
+  };
   return {
     ok: true,
     table: nextTable,

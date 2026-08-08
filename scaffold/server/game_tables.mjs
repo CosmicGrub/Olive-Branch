@@ -25,9 +25,48 @@ import {
   canOpenTable, createTable, redeemJoin, onSeatDisconnected,
   isExpiredUnjoined, isPastMaxLifetime, applyIncomingMove, parseClientMessage,
   messageTooLarge, mintJoinToken, readJoinToken, TABLE_TOKEN_TTL_SECONDS,
+  MAX_MESSAGE_BYTES,
 } from '../packages/game-sync/src/table.mjs';
 
 const SUPPORTED_GAMES = new Set(['checkers']);
+
+/**
+ * MEDIUM finding fix (protocol/safety review) — `POST /v1/game-tables` and
+ * `.../join` had zero throttling: any authenticated principal could loop-call
+ * either, each call doing a real DB round trip (edgesFor/siblingLinkFor) and
+ * (for create) inserting into the in-process `tables` Map that otherwise only
+ * drains on a 30s sweep. table.ts's own RATE_CAPACITY/RATE_REFILL_PER_SECOND
+ * govern in-GAME moves (a few per second is normal there) and are
+ * deliberately NOT reused here — opening or joining a table is a comparatively
+ * expensive, DB-touching action a real user does rarely, so this bucket is
+ * far stricter. Kept as a tiny local token bucket (not table.ts's
+ * takeRateToken, which hardcodes the move-rate constants) so tuning one never
+ * silently retunes the other.
+ */
+export const TABLE_HTTP_RATE_CAPACITY = 5;
+export const TABLE_HTTP_RATE_REFILL_PER_SECOND = 1 / 15; // ~4/minute sustained after the burst
+
+function principalRateKey(p) {
+  return p.kind === 'adult' ? `adult:${p.userId}` : `child:${p.childId}`;
+}
+
+/** Pure token-bucket step — same shape as table.ts's takeRateToken, own constants. */
+export function takeHttpRateToken(bucket, now) {
+  const elapsedSec = Math.max(0, (now - bucket.lastMs) / 1000);
+  const refilled = Math.min(
+    TABLE_HTTP_RATE_CAPACITY, bucket.tokens + elapsedSec * TABLE_HTTP_RATE_REFILL_PER_SECOND);
+  if (refilled < 1) return { ok: false, bucket: { tokens: refilled, lastMs: now } };
+  return { ok: true, bucket: { tokens: refilled - 1, lastMs: now } };
+}
+
+/** Checks and consumes one token from `buckets` for `principal`, creating a fresh bucket on first use. */
+function checkHttpRateLimit(buckets, principal, now) {
+  const key = principalRateKey(principal);
+  const bucket = buckets.get(key) ?? { tokens: TABLE_HTTP_RATE_CAPACITY, lastMs: now };
+  const { ok, bucket: next } = takeHttpRateToken(bucket, now);
+  buckets.set(key, next);
+  return ok;
+}
 
 /**
  * Derives the table-token signing key from the server's SESSION_SECRET via
@@ -64,6 +103,8 @@ function samePrincipal(a, b) {
  * here adds a second path around it.
  */
 export function registerGameTableRoutes(api, { secret, tables, now = () => Date.now() }) {
+  const httpRateBuckets = new Map();
+
   api.register({
     method: 'POST', path: '/v1/game-tables', action: null,
     handler: async (c) => {
@@ -82,6 +123,13 @@ export function registerGameTableRoutes(api, { secret, tables, now = () => Date.
 
       const principal = c.principal;
       const caller = principalFromSession(principal);
+
+      // MEDIUM finding fix — checked before any DB round trip, so a caller
+      // over their cap never even reaches edgesFor/siblingLinkFor.
+      if (!checkHttpRateLimit(httpRateBuckets, caller, now())) {
+        return { status: 429, body: { error: 'rate_limited' } };
+      }
+
       let partner; let ctx = {};
 
       if (caller.kind === 'child') {
@@ -138,6 +186,13 @@ export function registerGameTableRoutes(api, { secret, tables, now = () => Date.
       }
 
       const caller = principalFromSession(c.principal);
+
+      // MEDIUM finding fix — same per-principal cap as table creation,
+      // checked before any DB round trip.
+      if (!checkHttpRateLimit(httpRateBuckets, caller, now())) {
+        return { status: 429, body: { error: 'rate_limited' } };
+      }
+
       const seatIndex = entry.state.seats.findIndex((s) => samePrincipal(s.principal, caller));
       if (seatIndex === -1) return { status: 403, body: { error: 'not_a_participant' } };
       const seat = seatIndex;
@@ -171,6 +226,78 @@ export function registerGameTableRoutes(api, { secret, tables, now = () => Date.
 const WS_PATH_RE = /^\/v1\/game-tables\/([^/]+)\/socket$/;
 
 /**
+ * CRITICAL + HIGH finding fix (protocol/safety review), extracted so the
+ * whole upgrade-time auth sequence is independently unit-testable with a
+ * fake `wss`/`socket` rather than needing a real, precisely-timed TCP race
+ * (see server/test/game_tables.test.mjs). Returns without ever throwing:
+ * every failure path destroys the socket and returns, exactly like the
+ * inline version this replaces.
+ *
+ * `wssLike` needs only `.handleUpgrade(req, socket, head, cb)`, matching
+ * `WebSocketServer`'s real signature.
+ */
+export function handleTableUpgrade({ tables, secret, now, wssLike, tableId, req, socket, head }) {
+  const entry = tables.get(tableId);
+  if (!entry) { socket.destroy(); return; }
+
+  const url = new URL(req.url, 'http://x');
+  const token = url.searchParams.get('token') ?? '';
+  const decoded = readJoinToken(secret, token, now());
+  if (!decoded.ok) { socket.destroy(); return; }
+  const joined = redeemJoin(entry.state, decoded, now());
+  if (!joined.ok) { socket.destroy(); return; }
+  entry.state = joined.table;
+
+  // HIGH finding fix (TOCTOU) — redeemJoin above already committed this
+  // seat as consumed+connected, deliberately synchronously and atomically
+  // (see redeemJoin's own doc comment: that is what makes single-use
+  // replay-proof even under a near-simultaneous second redemption attempt
+  // — there is no `await` between the check and the mutation for a second
+  // caller to race into). But committing that state does NOT guarantee the
+  // WebSocket handshake below actually completes: `wssLike.handleUpgrade`'s
+  // callback only fires once the 101 response has gone out over a socket
+  // that is still readable/writable at that moment (see ws's own
+  // `completeUpgrade`, which silently destroys and never calls back if the
+  // socket already isn't) — and there is a real window, e.g. an ordinary
+  // mobile-network hiccup, or a client that aborts right after sending the
+  // upgrade request, where the raw socket closes/errors before that
+  // callback ever fires. Left unguarded, that leaves this seat permanently
+  // marked "connected" with no socket ever stored, and — if this was the
+  // second seat — the WHOLE TABLE flips to 'active' with a null socket in
+  // it forever: the other, already-connected peer's moves then silently
+  // vanish into safeSend's null no-op, and nothing calls endTable() until
+  // the 1-hour max-lifetime sweep. Rolling back through the exact same
+  // onSeatDisconnected() path an ordinary post-connect drop already uses
+  // turns that into an immediate, clean `table_closed` for the other peer
+  // instead of up to an hour of a silently stuck game.
+  let handshakeSettled = false;
+  const rollbackIfHandshakeNeverLands = () => {
+    if (handshakeSettled) return;
+    handshakeSettled = true;
+    const cur = tables.get(tableId);
+    if (!cur) return;
+    cur.state = onSeatDisconnected(cur.state, decoded.seat, now());
+    const otherSeat = decoded.seat === 0 ? 1 : 0;
+    const peer = cur.sockets[otherSeat];
+    if (peer && peer.readyState === peer.OPEN) {
+      peer.send(JSON.stringify({ type: 'table_closed', reason: 'peer_join_failed' }));
+      peer.close(1000, 'peer_join_failed');
+    }
+    tables.delete(tableId);
+  };
+  socket.once('close', rollbackIfHandshakeNeverLands);
+  socket.once('error', rollbackIfHandshakeNeverLands);
+
+  wssLike.handleUpgrade(req, socket, head, (ws) => {
+    handshakeSettled = true;
+    socket.removeListener('close', rollbackIfHandshakeNeverLands);
+    socket.removeListener('error', rollbackIfHandshakeNeverLands);
+    entry.sockets[decoded.seat] = ws;
+    wssLike.emit('connection', ws, { tableId, seat: decoded.seat });
+  });
+}
+
+/**
  * Attaches the WebSocket relay to an existing `http.Server` via its
  * `upgrade` event (Node's own mechanism — no second listener, no second
  * port). Authenticates each socket via the short-lived table token BEFORE
@@ -179,29 +306,47 @@ const WS_PATH_RE = /^\/v1\/game-tables\/([^/]+)\/socket$/;
  * never broadcasts to any connection but the other seat at the same table.
  */
 export function attachGameSocketServer(httpServer, { secret, tables, now = () => Date.now() }) {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    // HIGH finding fix — ws's own default maxPayload is 100 MiB, two orders
+    // of magnitude past MAX_MESSAGE_BYTES: without this, a single WS frame
+    // forces ws to fully buffer up to that much data BEFORE the app-level
+    // messageTooLarge() check (below, in the 'message' handler) ever gets a
+    // chance to reject it. Capped here, at the transport layer, to a small
+    // multiple of MAX_MESSAGE_BYTES so ordinary JSON framing overhead never
+    // trips it but a grossly oversized frame is refused before ws finishes
+    // buffering it, not after.
+    // perMessageDeflate is already `false` by default in the installed ws
+    // version (confirmed by reading node_modules/ws/lib/websocket-server.js
+    // — this codebase's `ws` never defaults it to enabled), so the
+    // "compression-bomb" framing of this finding does not apply as
+    // described. Set explicitly anyway, purely as defense in depth against
+    // a future ws upgrade changing that default, and to make the intent
+    // here explicit rather than implicit.
+    maxPayload: MAX_MESSAGE_BYTES * 4,
+    perMessageDeflate: false,
+  });
 
   httpServer.on('upgrade', (req, socket, head) => {
     let pathname;
     try { pathname = new URL(req.url, 'http://x').pathname; } catch { socket.destroy(); return; }
     const m = WS_PATH_RE.exec(pathname);
     if (!m) { socket.destroy(); return; }
-    const tableId = decodeURIComponent(m[1]);
-    const url = new URL(req.url, 'http://x');
-    const token = url.searchParams.get('token') ?? '';
 
-    const entry = tables.get(tableId);
-    if (!entry) { socket.destroy(); return; }
-    const decoded = readJoinToken(secret, token, now());
-    if (!decoded.ok) { socket.destroy(); return; }
-    const joined = redeemJoin(entry.state, decoded, now());
-    if (!joined.ok) { socket.destroy(); return; }
-    entry.state = joined.table;
+    // CRITICAL finding fix — decodeURIComponent throws URIError on a
+    // malformed percent-escape (e.g. a lone "%") and this ran UNGUARDED,
+    // before any token check, directly inside this shared http.Server's
+    // 'upgrade' listener (every route in the app — /v1/me, dev-login,
+    // everything — shares this one server). With no process-wide
+    // uncaughtException handler anywhere in this codebase, one anonymous,
+    // unauthenticated request with a malformed table-id segment (e.g.
+    // `GET /v1/game-tables/%/socket` with an Upgrade header) threw here and
+    // crashed the entire process for every family, not just game tables.
+    let tableId;
+    try { tableId = decodeURIComponent(m[1]); }
+    catch { socket.destroy(); return; }
 
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      entry.sockets[decoded.seat] = ws;
-      wss.emit('connection', ws, { tableId, seat: decoded.seat });
-    });
+    handleTableUpgrade({ tables, secret, now, wssLike: wss, tableId, req, socket, head });
   });
 
   wss.on('connection', (ws, { tableId, seat }) => {

@@ -127,6 +127,124 @@ Silent deletion is a process failure.
     checkers-specific constant, called out in its own comment as the seam
     to generalize).
 
+### Fixed
+- **Secure network play — remediation of two independent adversarial security
+  reviews of the feature above.** Both reviews were re-verified line-by-line
+  against the actual code (not trusted blindly) before anything was changed;
+  each finding below is real and independently reproduced, and each fix
+  ships with a new regression test proving the specific attack scenario now
+  fails/is rejected. Findings the reviews raised that turned out to be
+  already-handled or overstated are recorded under Rejected below, with the
+  code cited.
+  - **CRITICAL — unauthenticated single-request process crash
+    (`server/game_tables.mjs`'s `upgrade` handler).** `decodeURIComponent()`
+    on the table-id path segment ran unguarded, before any token check, on
+    the SAME shared `http.Server` every route in the app depends on. A
+    malformed percent-escape (e.g. `GET /v1/game-tables/%/socket` with an
+    `Upgrade` header) throws `URIError` there uncaught — reproduced live: it
+    kills the whole Node process, no `uncaughtException` handler exists
+    anywhere in this codebase, and every family's connection goes down, not
+    just game tables. Fixed with a `try/catch` matching the pattern already
+    used one line above for `new URL(...)`.
+  - **HIGH — `ws`'s 100 MiB default `maxPayload` applied to this relay,**
+    two orders of magnitude past the documented 1KB `MAX_MESSAGE_BYTES`
+    cap — the app-level size check only ever ran *after* `ws` had already
+    buffered a frame up to that ceiling. Now capped explicitly at
+    `MAX_MESSAGE_BYTES * 4` (`WebSocketServer`'s own `maxPayload` option),
+    verified to reject an oversized frame at the transport layer, before
+    the app's own `'message'` handler ever runs, with a normal ≤1KB move
+    unaffected. `perMessageDeflate` is also now set explicitly to `false`
+    for defense in depth against a future `ws` upgrade changing that
+    default (see Rejected below — it was already `false` here).
+  - **HIGH — TOCTOU in join-token redemption could leave a table stuck for
+    up to an hour with a leaked socket.** `redeemJoin()` committed a seat as
+    consumed+connected synchronously (correctly — that atomicity is what
+    makes single-use replay-proof), but `wss.handleUpgrade()`'s completion
+    callback is asynchronous and does not always fire (an ordinary
+    mid-handshake network drop, or a client that aborts right after the
+    upgrade request). Left unguarded, that could flip a table to `active`
+    with a null socket in it forever, silently swallowing the other,
+    already-connected peer's moves. Fixed by registering a `close`/`error`
+    rollback on the raw socket before calling `handleUpgrade`, cleared once
+    the handshake actually completes; the upgrade-auth sequence was
+    extracted into an exported, independently unit-testable function
+    (`handleTableUpgrade`) so this is verified deterministically rather
+    than by racing real sockets.
+  - **MEDIUM — no rate limit on `POST /v1/game-tables` / `.../join`.** Any
+    authenticated principal could loop-call either, each call doing a real
+    DB round trip and (for create) growing the in-process `tables` Map with
+    no cap. Added a per-principal token bucket (5 burst, refilling
+    afterward) local to `game_tables.mjs`, deliberately separate from
+    `table.ts`'s own in-game move-rate constants — opening/joining a table
+    is a comparatively expensive, rare action, not a fast in-game move.
+  - **LOW/MEDIUM — turn-continuation was a fully client-trusted claim**
+    (`packages/game-sync/src/table.ts`'s `applyIncomingMove`): a peer could
+    claim `continues: true` to hold the server's turn-tracking on itself,
+    causing the HONEST peer's own next, genuinely-legitimate move to be
+    refused as `out_of_turn` and that innocent peer's own connection closed
+    — the server misattributing the violation. `table.ts` now records the
+    seat and destination of the last accepted move and requires any move
+    made because the SAME seat retained the turn (turn 2+ of a claimed
+    chain — the only way that can happen at all is the seat's own previous
+    move claiming `continues: true`) to move the same token that just
+    landed, rejected as `invalid_continuation` and attributed to the seat
+    that actually sent it. This closes the "extend a chain past its first
+    hop" version of the attack; a single lie on an otherwise fresh,
+    just-handed-off turn is architecturally unverifiable without the server
+    knowing checkers' own rules, which `table.ts` deliberately does not
+    (T6) — documented as a residual, narrow, non-authorization-crossing gap
+    rather than papered over.
+  - **Also added:** `server/test/game_tables.test.mjs` (25 assertions) —
+    this file, the actual HTTP+WebSocket wiring layer where every finding
+    above lived, had zero automated coverage before this pass (both reviews
+    flagged this independently). Uses a real `http.Server`, a real `ws`
+    client, and raw TCP sockets for the lowest-level cases — not mocks of
+    the transport itself — plus one real end-to-end happy-path test
+    (create → join → connect both seats → relay → disconnect) closing that
+    gap on its own, independent of any single finding.
+  - **Rejected / not actionable as described:**
+    - *"`perMessageDeflate` defaults to enabled, enabling a compression-bomb
+      DoS."* Checked against the installed `ws` 8.21.3 source
+      (`node_modules/ws/lib/websocket-server.js`): `perMessageDeflate`
+      defaults to `false`, not `true`, in this version. The 100 MiB
+      `maxPayload` claim in the same finding was correct and is fixed above;
+      the compression-amplification framing was not.
+    - *Join token carried in the WS URL's query string, plaintext payload.*
+      Real design smell (query strings end up in proxy/access logs), but the
+      standard fix (moving it to a `Sec-WebSocket-Protocol` subprotocol
+      value) touches both ends of the protocol and this codebase's test
+      seams deliberately mock out the real `WebSocketChannel`/`dart:io`
+      transport on the client (`connect:`/`wsConnectForTesting`
+      constructor parameters) precisely so unit tests don't depend on it —
+      meaning a subtly wrong renegotiation could regress silently past every
+      automated test that exists for this feature. Left unfixed rather than
+      shipped unverified; flagged as needing the same real-device
+      verification this feature's own Verified section still lacks.
+    - *No TLS enforcement on the client's configurable base URL.* Confirmed
+      real (`initialBaseUrl = 'http://10.0.2.2:8080'`, free-text field, no
+      scheme check), but this mirrors the whole demo server's own
+      documented, pre-existing convention of deferring TLS to a front door
+      in front of plain HTTP/WS — not an architecture choice this feature
+      introduced or could fix in isolation without changing that convention
+      app-wide.
+
+### Verified
+- `npm run test:game-sync` 86/0 (80 pre-existing + 6 new, covering the
+  turn-continuation fix). `npm run test:game-tables` (new) 25/0. `npm run
+  test:transport` 58/0, unaffected. `npm run test:stack` 94/0 (its own
+  assertions all pass; the pre-existing, unrelated Windows libuv
+  `UV_HANDLE_CLOSING` teardown crash noted in this project's own history
+  still aborts the process afterward, blocking the aggregate `npm test`
+  chain from reaching later suites on this OS — not something this pass
+  introduced or could fix without touching unrelated infrastructure).
+  `flutter analyze` clean. The five networked-checkers-relevant Dart test
+  files individually: 42/0. Full existing `flutter test` suite: 907/0 (no
+  regression — this pass touched no Dart source). Two CRITICAL/HIGH fixes
+  (the crash, the `maxPayload`/close-reason distinction) additionally
+  reproduced against the pre-fix code and confirmed to actually fail there,
+  so the new tests are known to detect the specific bugs, not just pass
+  vacuously.
+
 ### Reversed
 - **§16.2 #6 — call/video infrastructure, reversed at the owner's direction.**
   v0.40.0 settled on staying on LiveKit Cloud (see the callout above the tech
