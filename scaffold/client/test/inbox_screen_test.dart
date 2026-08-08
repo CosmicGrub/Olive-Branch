@@ -79,6 +79,7 @@ void main() {
         (tester) async {
       await tester.pumpWidget(wrap(const InboxScreen(childName: 'Ivy', messages: <InboxMessage>[])));
       expect(find.textContaining('Nothing here yet'), findsOneWidget);
+      expect(find.byIcon(Icons.inbox_outlined), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

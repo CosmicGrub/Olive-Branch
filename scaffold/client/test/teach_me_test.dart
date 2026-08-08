@@ -75,6 +75,22 @@ void main() {
       expect(find.text('Nothing taught yet — pick an idea above whenever you feel like it.'), findsNothing);
     });
 
+    testWidgets('the empty taught-list state carries its own icon, distinct from the banner',
+        (t) async {
+      await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
+      // One emoji_objects_outlined (the banner) and one distinct lightbulb for
+      // the empty state — never the same glyph twice on one screen.
+      expect(find.byIcon(Icons.emoji_objects_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.lightbulb_outline), findsOneWidget);
+
+      await t.enterText(find.byType(TextField), 'A card trick');
+      await t.pump();
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.tap(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.pump();
+      expect(find.byIcon(Icons.lightbulb_outline), findsNothing);
+    });
+
     testWidgets('tapping a seed idea fills the text field', (t) async {
       await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
       await t.tap(find.text('A card trick'));

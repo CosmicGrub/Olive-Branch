@@ -63,6 +63,18 @@ void main() {
       expect(find.text('Nothing written yet. Whenever you feel like it.'), findsOneWidget);
     });
 
+    testWidgets('the empty state carries a calm icon, and it clears once she writes',
+        (t) async {
+      await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
+      expect(find.byIcon(Icons.edit_note_outlined), findsOneWidget);
+
+      await t.enterText(find.byType(TextField), 'Today was a good day.');
+      await t.pump();
+      await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await t.pump();
+      expect(find.byIcon(Icons.edit_note_outlined), findsNothing);
+    });
+
     testWidgets('multiple entries all persist, most recent first', (t) async {
       await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
       await t.enterText(find.byType(TextField), 'First entry');

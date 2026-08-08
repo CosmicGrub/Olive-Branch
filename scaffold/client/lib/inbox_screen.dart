@@ -104,15 +104,21 @@ class _InboxScreenState extends State<InboxScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
       body: SafeArea(child: _messages.isEmpty
-        ? const Center(child: Padding(padding: EdgeInsets.all(24),
-            child: Text('Nothing here yet.', style: TextStyle(fontSize: 15))))
+        ? Center(child: Padding(padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.inbox_outlined, size: 40,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text('Nothing here yet.', style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ])))
         : ListView(padding: const EdgeInsets.all(16), children: <Widget>[
             Text(unread == 0
               ? 'Hi ${widget.childName}, all caught up'
               : "Hi ${widget.childName}, you've got $unread new "
                 '${unread == 1 ? 'message' : 'messages'}',
               style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             for (final InboxMessage m in _messages) _InboxTile(message: m, onTap: () => _open(m)),
           ])),
     );
@@ -128,15 +134,15 @@ class _InboxTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             color: message.watched ? scheme.surface : scheme.primaryContainer,
             border: message.watched ? Border.all(color: scheme.outlineVariant) : null,
           ),
@@ -148,10 +154,10 @@ class _InboxTile extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
               Text('${message.senderName} sent a video',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 2),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
               Text(message.watched ? 'Watched · ${message.deliveredAtLabel}' : 'New — tap to watch',
-                style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             ])),
             if (!message.watched)
               Container(width: 10, height: 10,

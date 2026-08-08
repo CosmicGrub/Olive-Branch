@@ -201,28 +201,29 @@ class _TeachMeScreenState extends State<TeachMeScreen> {
       body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.all(14),
+          Container(padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(16)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.emoji_objects_outlined, color: scheme.onSecondaryContainer),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(child: Text(
                 who.childTeaches
                   ? 'Your turn to be the teacher. Show ${widget.parentName} something you know '
                     "from this week — there's nothing to get right or wrong, just you teaching."
                   : "You'll get to teach ${widget.parentName} things too, starting around when "
                     "you're six. For now, they're the one teaching.",
-                style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer))),
+                style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSecondaryContainer))),
             ])),
           if (who.childTeaches) ...[
-            const SizedBox(height: 18),
-            Card(child: Padding(padding: const EdgeInsets.all(14),
+            const SizedBox(height: 16),
+            Card(child: Padding(padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Need an idea?', style: TextStyle(
-                  fontWeight: FontWeight.w700, fontSize: 15, color: scheme.primary)),
-                const SizedBox(height: 10),
+                Text('Need an idea?', style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
+                const SizedBox(height: 12),
                 Wrap(spacing: 8, runSpacing: 8, children: [for (final seed in lessonSeeds.take(8))
-                  ActionChip(label: Text(seed, style: const TextStyle(fontSize: 12.5)),
+                  ActionChip(label: Text(seed, style: Theme.of(context).textTheme.labelMedium),
                     onPressed: () => _pickSeed(seed)),
                 ]),
                 const SizedBox(height: 16),
@@ -230,8 +231,9 @@ class _TeachMeScreenState extends State<TeachMeScreen> {
                   decoration: const InputDecoration(
                     hintText: 'What do you want to teach them?',
                     border: OutlineInputBorder())),
-                const SizedBox(height: 14),
-                const Text('How will you teach it?', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 16),
+                Text('How will you teach it?', style: Theme.of(context).textTheme.labelMedium
+                  ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 Wrap(spacing: 8, runSpacing: 8, children: [for (final m in TeachMedium.values)
                   ChoiceChip(
@@ -248,18 +250,28 @@ class _TeachMeScreenState extends State<TeachMeScreen> {
                     label: Text('Teach ${widget.parentName}'))),
               ]))),
           ],
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           if (_lessons.isNotEmpty) ...[
             Text("What you've taught ${widget.parentName}",
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.3)),
-            const SizedBox(height: 10),
+              style: Theme.of(context).textTheme.labelLarge
+                ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3)),
+            const SizedBox(height: 12),
             for (final l in _lessons)
               _LessonTile(key: ValueKey(l.id), lesson: l, parentName: widget.parentName,
                 onAskedAgain: () => _simulateAskedAgain(l)),
           ] else if (who.childTeaches)
-            const Padding(padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Nothing taught yet — pick an idea above whenever you feel like it.',
-                style: TextStyle(color: Colors.black45, fontSize: 13.5))),
+            Padding(padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: Column(children: [
+                // Deliberately a different glyph than the banner's
+                // emoji_objects_outlined above, so the empty state doesn't
+                // visually duplicate the icon already on screen.
+                Icon(Icons.lightbulb_outline, size: 40, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 12),
+                Text('Nothing taught yet — pick an idea above whenever you feel like it.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+              ]))),
         ]),
       )),
     );
@@ -276,24 +288,27 @@ class _LessonTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final askedAgain = lesson.askedAgain > 0;
-    return Card(margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(padding: const EdgeInsets.all(14),
+    return Card(margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Icon(lesson.medium.icon, color: scheme.primary, size: 20),
             const SizedBox(width: 8),
-            Expanded(child: Text(lesson.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5))),
+            Expanded(child: Text(lesson.title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
           ]),
-          const SizedBox(height: 6),
-          Text(lesson.medium.label, style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+          const SizedBox(height: 8),
+          Text(lesson.medium.label, style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: scheme.onSurfaceVariant)),
           AnimatedSwitcher(duration: const Duration(milliseconds: 300),
             child: askedAgain
               ? Padding(key: const ValueKey('asked'), padding: const EdgeInsets.only(top: 8),
                   child: Row(children: [
                     Icon(Icons.favorite, size: 15, color: scheme.primary),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Expanded(child: Text('$parentName asked to hear this again — kept forever now.',
-                      style: TextStyle(fontSize: 12, color: scheme.primary, fontWeight: FontWeight.w600))),
+                      style: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(color: scheme.primary, fontWeight: FontWeight.w600))),
                   ]))
               : const SizedBox.shrink(key: ValueKey('not-asked')),
           ),
@@ -301,7 +316,7 @@ class _LessonTile extends StatelessWidget {
             Align(alignment: Alignment.centerLeft,
               child: TextButton(onPressed: onAskedAgain,
                 child: Text('$parentName asked for this again',
-                  style: const TextStyle(fontSize: 11.5)))),
+                  style: Theme.of(context).textTheme.labelMedium))),
         ]),
       ));
   }

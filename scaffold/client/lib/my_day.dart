@@ -83,13 +83,13 @@ class MyDayScreen extends StatelessWidget {
           const SizedBox(height: 4),
           Row(children: <Widget>[
             Text(current.icon, style: const TextStyle(fontSize: 20)),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Expanded(child: Text('Right now: ${current.label}',
-              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600))),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
           ]),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           _DayRibbon(parts: parts, nowLocal: nowLocal),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           for (final StripSegment s in segments) _DayPartCard(segment: s),
         ],
       )),
@@ -160,7 +160,9 @@ class _DayRibbon extends StatelessWidget {
               child: DecoratedBox(decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(2),
-                boxShadow: const <BoxShadow>[BoxShadow(color: Colors.black38, blurRadius: 2)],
+                boxShadow: <BoxShadow>[
+                  BoxShadow(color: Theme.of(context).colorScheme.shadow.withAlpha(70), blurRadius: 3),
+                ],
               )),
             ),
           ]);
@@ -175,9 +177,10 @@ class _Pill extends StatelessWidget {
   final Color color;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(999)),
-    child: Text(text, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white)),
+    child: Text(text, style: Theme.of(context).textTheme.labelSmall
+      ?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
   );
 }
 
@@ -199,14 +202,14 @@ class _DayPartCardState extends State<_DayPartCard> {
         ? Color.lerp(bandColor, Colors.white, 0.78)!
         : Theme.of(context).colorScheme.primaryContainer.withAlpha(80);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => setState(() => _expanded = !_expanded),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             color: background,
@@ -215,20 +218,21 @@ class _DayPartCardState extends State<_DayPartCard> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
             Row(children: <Widget>[
               Text(s.icon, style: const TextStyle(fontSize: 26)),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(child: Text(s.label,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
               if (s.current) _Pill('right now', color: bandColor)
               else if (s.next) _Pill('up next', color: bandColor.withAlpha(200)),
             ]),
             const SizedBox(height: 4),
             Text('${formatTimeOfDay(s.startsLocal)} – ${formatTimeOfDay(s.endsLocal)}',
-              style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             AnimatedSize(
               duration: const Duration(milliseconds: 200),
               child: _expanded
                 ? Padding(padding: const EdgeInsets.only(top: 8),
-                    child: Text(_dayPartBlurb[s.kind] ?? '', style: const TextStyle(fontSize: 13.5)))
+                    child: Text(_dayPartBlurb[s.kind] ?? '', style: Theme.of(context).textTheme.bodyMedium))
                 : const SizedBox(width: double.infinity, height: 0),
             ),
           ]),

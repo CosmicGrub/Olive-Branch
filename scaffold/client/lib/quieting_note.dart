@@ -93,36 +93,37 @@ class QuietingScreen extends StatelessWidget {
       body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.all(14),
+          Container(padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(16)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.spa_outlined, color: scheme.onSecondaryContainer),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(child: Text(
                 "Some things in the app get quieter as you get older, $childName. That's just "
                 "what happens as you grow — it isn't about anything you did or didn't do.",
-                style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer))),
+                style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSecondaryContainer))),
             ])),
           if (faded.isNotEmpty) ...[
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
             const _SectionHeader('Quieter now'),
             for (final s in faded) _QuietingTile(item: s, faded: true),
           ],
           if (showing.isNotEmpty) ...[
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
             const _SectionHeader('Still here for now'),
             for (final s in showing) _QuietingTile(item: s, faded: false),
           ],
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           const _SectionHeader('Never goes away'),
-          Card(child: Padding(padding: const EdgeInsets.all(14),
+          Card(child: Padding(padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               for (final label in permanentChildLabels)
                 Padding(padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(children: [
                     Icon(Icons.favorite_border, size: 16, color: scheme.primary),
                     const SizedBox(width: 8),
-                    Text(label, style: const TextStyle(fontSize: 14)),
+                    Text(label, style: Theme.of(context).textTheme.bodyMedium),
                   ])),
             ]))),
         ]),
@@ -137,7 +138,8 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.3)));
+    child: Text(text, style: Theme.of(context).textTheme.labelLarge
+      ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.3)));
 }
 
 class _QuietingTile extends StatelessWidget {
@@ -148,17 +150,19 @@ class _QuietingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       constraints: const BoxConstraints(minHeight: 48),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: faded ? scheme.surfaceContainerHighest : scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(item.childLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        Text(item.childLabel, style: Theme.of(context).textTheme.bodyMedium
+          ?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
-        Text(item.childWhy, style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+        Text(item.childWhy, style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: scheme.onSurfaceVariant)),
       ]),
     );
   }
