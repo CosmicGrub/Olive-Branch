@@ -154,7 +154,7 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
           TextField(controller: _controller, maxLines: 3,
             decoration: const InputDecoration(border: OutlineInputBorder(),
               hintText: 'Type a message…')),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
 
           // --- guard 1: the notification gate --------------------------
           Container(
@@ -163,30 +163,30 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
               color: prompt.reachable
                 ? Theme.of(context).colorScheme.secondaryContainer
                 : Theme.of(context).colorScheme.errorContainer,
-              borderRadius: BorderRadius.circular(14)),
+              borderRadius: BorderRadius.circular(12)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // HER frame first, always — §8.2.3.
               Text("It's ${prompt.localTimeLabel} for ${widget.childName}"
                   '${prompt.reachable ? '' : ' — she is ${prompt.dayPartName}.'}',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 12),
               if (prompt.reachable)
                 SizedBox(width: double.infinity, height: 48,
                   child: FilledButton(onPressed: _sendNow, child: const Text('Send now')))
               else
-                Wrap(spacing: 10, runSpacing: 10, children: [
+                Wrap(spacing: 8, runSpacing: 8, children: [
                   SizedBox(height: 48, child: OutlinedButton(
                     onPressed: _sendNow, child: const Text('Send now anyway'))),
                   SizedBox(height: 48, child: FilledButton(
                     onPressed: () => _deferSend(prompt.deferLabel!),
                     child: Text('Deliver at ${prompt.deferLabel}'))),
                 ]),
-              if (_confirmation != null) Padding(padding: const EdgeInsets.only(top: 10),
-                child: Text(_confirmation!, style: const TextStyle(fontSize: 12.5))),
+              if (_confirmation != null) Padding(padding: const EdgeInsets.only(top: 12),
+                child: Text(_confirmation!, style: Theme.of(context).textTheme.bodySmall)),
             ]),
           ),
-          const SizedBox(height: 10),
-          Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 6, children: [
+          const SizedBox(height: 12),
+          Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, children: [
             for (final h in _demoHours.entries)
               ChoiceChip(label: Text(h.value), selected: _localHour == h.key,
                 onSelected: (_) => setState(() { _localHour = h.key; _confirmation = null; })),
@@ -194,13 +194,14 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
 
           const SizedBox(height: 28),
           const Divider(),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text('When should this arrive?',
             style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
-          const Text('"Next bedtime" and "the night of June 1st" are different promises — '
+          Text('"Next bedtime" and "the night of June 1st" are different promises — '
               'only the first moves if her routine does.',
-            style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+            style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 12),
           SegmentedButton<SendAnchor>(
             segments: const [
@@ -211,11 +212,11 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
             onSelectionChanged: (s) => setState(() => _anchor = s.first),
           ),
           const SizedBox(height: 12),
-          Container(padding: const EdgeInsets.all(14),
+          Container(padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12)),
-            child: Text(anchorPreview.label, style: const TextStyle(fontSize: 13.5))),
-          const SizedBox(height: 10),
+            child: Text(anchorPreview.label, style: Theme.of(context).textTheme.bodyMedium)),
+          const SizedBox(height: 12),
           TextButton.icon(onPressed: _shiftSchedule,
             icon: const Icon(Icons.schedule_outlined, size: 18),
             label: Text(_scheduleShifted

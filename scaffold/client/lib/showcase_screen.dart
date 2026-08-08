@@ -154,15 +154,15 @@ class _AskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
+    margin: const EdgeInsets.only(bottom: 12),
     color: Theme.of(context).colorScheme.tertiaryContainer,
-    child: Padding(padding: const EdgeInsets.all(14), child: Column(
+    child: Padding(padding: const EdgeInsets.all(16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(ask.line, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5,
-          color: Theme.of(context).colorScheme.onTertiaryContainer)),
-        const SizedBox(height: 6),
-        Text(ask.prompt, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.onTertiaryContainer)),
+        Text(ask.line, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onTertiaryContainer)),
+        const SizedBox(height: 8),
+        Text(ask.prompt, style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onTertiaryContainer)),
         const SizedBox(height: 12),
         SizedBox(height: 48, width: double.infinity, child: FilledButton.icon(
           onPressed: onShow, icon: const Icon(Icons.videocam), label: const Text('Show them'))),
@@ -190,13 +190,14 @@ class _SpontaneousButton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(children: [
           const Text('⚡', style: TextStyle(fontSize: 32)),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Look what happened!', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800,
-              color: Theme.of(context).colorScheme.onPrimary)),
-            const SizedBox(height: 2),
-            Text('Show something right now — nobody has to ask', style: TextStyle(
-              fontSize: 12, color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9))),
+            Text('Look what happened!', style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onPrimary)),
+            const SizedBox(height: 4),
+            Text('Show something right now — nobody has to ask',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9))),
           ])),
         ]),
       ),
@@ -231,14 +232,14 @@ class _CaptureSheetState extends State<_CaptureSheet> {
     child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.outlineVariant, borderRadius: BorderRadius.circular(2)))),
-      const SizedBox(height: 14),
+      const SizedBox(height: 16),
       if (widget.prompt != null) ...[
-        Text(widget.prompt!, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        Text(widget.prompt!, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 12),
       ],
-      const Text('Pick what you are showing', style: TextStyle(fontWeight: FontWeight.w600)),
-      const SizedBox(height: 10),
-      Wrap(spacing: 10, runSpacing: 10, children: [
+      Text('Pick what you are showing', style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 12),
+      Wrap(spacing: 8, runSpacing: 8, children: [
         for (final choice in _artifactChoices)
           _ArtifactTile(
             emoji: choice.emoji, label: choice.label,
@@ -246,7 +247,7 @@ class _CaptureSheetState extends State<_CaptureSheet> {
             onTap: () => setState(() => _chosenLabel = choice.label),
           ),
       ]),
-      const SizedBox(height: 14),
+      const SizedBox(height: 16),
       TextField(controller: _noteController, minLines: 1, maxLines: 3,
         decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Or tell them about it…'),
         onChanged: (_) => setState(() {})),
@@ -266,13 +267,13 @@ class _ArtifactTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(14),
+    borderRadius: BorderRadius.circular(12),
     onTap: onTap,
     child: Container(
       constraints: const BoxConstraints(minWidth: 88, minHeight: 64),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         color: selected
           ? Theme.of(context).colorScheme.primaryContainer
           : Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -281,7 +282,7 @@ class _ArtifactTile extends StatelessWidget {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text(emoji, style: const TextStyle(fontSize: 26)),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 11), textAlign: TextAlign.center),
+        Text(label, style: Theme.of(context).textTheme.labelSmall, textAlign: TextAlign.center),
       ]),
     ),
   );

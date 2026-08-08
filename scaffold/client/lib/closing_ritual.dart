@@ -228,7 +228,7 @@ class _ClosingRitualScreenState extends State<ClosingRitualScreen> {
           if (_closing.beat != ClosingBeat.done)
             SizedBox(height: 48, child: TextButton(
               onPressed: _skip,
-              child: const Text('Not right now', style: TextStyle(fontSize: 14)))),
+              child: const Text('Not right now'))),
         ]),
       )),
     );
@@ -245,12 +245,13 @@ class _OneThingBeat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
     const Icon(Icons.auto_awesome, size: 40),
-    const SizedBox(height: 14),
+    const SizedBox(height: 16),
     Text(prompt, textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
-    const SizedBox(height: 6),
-    Text(sub, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.black54)),
-    const SizedBox(height: 22),
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+    const SizedBox(height: 8),
+    Text(sub, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall
+      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+    const SizedBox(height: 24),
     TextField(controller: controller, textAlign: TextAlign.center, autofocus: true,
       decoration: const InputDecoration(border: OutlineInputBorder(),
         hintText: 'My wobbly tooth…'),
@@ -269,12 +270,13 @@ class _WhenNextBeat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
     const Icon(Icons.event_available_outlined, size: 40),
-    const SizedBox(height: 14),
+    const SizedBox(height: 16),
     Text(prompt, textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
-    const SizedBox(height: 6),
-    Text(sub, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.black54)),
-    const SizedBox(height: 22),
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+    const SizedBox(height: 8),
+    Text(sub, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall
+      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+    const SizedBox(height: 24),
     SizedBox(width: 220, height: 48, child: FilledButton(onPressed: onNext,
       child: const Text('Okay'))),
   ]);
@@ -288,13 +290,14 @@ class _GoodbyeBeat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
     const Icon(Icons.favorite_outline, size: 40),
-    const SizedBox(height: 14),
+    const SizedBox(height: 16),
     Text(prompt, textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
-    const SizedBox(height: 6),
-    Text(sub, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.black54)),
-    const SizedBox(height: 18),
-    Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 10,
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+    const SizedBox(height: 8),
+    Text(sub, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall
+      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+    const SizedBox(height: 16),
+    Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
       children: [for (final g in goodbyes) SizedBox(height: 48,
         child: OutlinedButton(onPressed: () => onChoose(g), child: Text(g)))]),
   ]);
@@ -313,17 +316,19 @@ class _DoneBeat extends StatelessWidget {
       const Icon(Icons.wb_twilight, size: 44),
       const SizedBox(height: 16),
       Text(goodbye ?? 'See you soon', textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
       if (closing.nextTime != null) ...[
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Text('Next time is ${closing.nextTime}.', textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: Colors.black54)),
+          style: Theme.of(context).textTheme.bodyMedium
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ],
       if (ask != null) ...[
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Text('$callerName will ask you about ${closing.oneThing} next time.',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: Colors.black54)),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic,
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ],
     ]);
   }
