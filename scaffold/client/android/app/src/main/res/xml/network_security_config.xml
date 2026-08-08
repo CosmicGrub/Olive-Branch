@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- LOCAL DEV/TEST ONLY. scaffold/tools/local-call-room-server.mjs serves
-     plain HTTP from the dev machine's LAN address so two physical devices
-     can agree on a Jitsi room name (see call_screen.dart). Android blocks
-     cleartext traffic by default from API 28+; this scopes the exception to
-     that one address instead of allowing cleartext everywhere. Remove once
-     the room-coordination endpoint moves behind the real HTTPS API. -->
+     plain HTTP so two physical devices can agree on a Jitsi room name (see
+     call_screen.dart). Android blocks cleartext traffic by default from API
+     28+; this scopes the exception instead of allowing cleartext
+     everywhere. Remove once the room-coordination endpoint moves behind the
+     real HTTPS API.
+
+     127.0.0.1, not a LAN IP: call_screen.dart reaches the dev machine via
+     `adb reverse tcp:8787 tcp:8787` per device (see that file's own header
+     for why) rather than a hardcoded LAN address, which goes stale the
+     moment the dev machine's network changes. Loopback traffic isn't
+     actually gated by Android's cleartext policy in practice, but this
+     entry is kept so the config states the real address in use rather than
+     a dead one — a previous version of this file listed 192.168.1.78, a
+     LAN IP from a network this project is no longer on, which is exactly
+     the kind of drift this comment exists to prevent from happening again. -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">192.168.1.78</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
     </domain-config>
 </network-security-config>
