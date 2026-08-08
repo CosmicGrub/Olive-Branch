@@ -76,11 +76,6 @@ class _BirthdayMarkedScreenState extends State<BirthdayMarkedScreen> with Single
   }
 }
 
-const List<String> _monthNames = [
-  'January', 'February', 'March', 'April', 'May', 'June', 'July',
-  'August', 'September', 'October', 'November', 'December',
-];
-
 class _Marked extends StatelessWidget {
   const _Marked({required this.event, required this.childName, required this.accent,
     required this.onDone});
@@ -101,7 +96,7 @@ class _Marked extends StatelessWidget {
           border: Border.all(color: accent, width: 4)), // avatar_ring placement
         child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text('${event.day}', style: TextStyle(fontSize: 46, fontWeight: FontWeight.w800, color: accent)),
-          Text(_monthNames[event.month - 1], style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          Text(months[event.month - 1].name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
         ])),
       ),
     ]),

@@ -216,6 +216,11 @@ class _LegendChip extends StatelessWidget {
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
     CircleAvatar(radius: 6, backgroundColor: color),
     const SizedBox(width: 6),
-    Text(name, style: const TextStyle(fontSize: 13)),
+    // Flexible, not a bare Text: `guardianColors` is caller-supplied (see
+    // WeeksScreen's constructor) and a real family's guardian label ("Step-mum
+    // Jennifer", say) is not bounded the way the demo's "Mom"/"Dad" are. On
+    // the Fold5 cover width (344px) an unprotected Text here overflows this
+    // Row — found by actually rendering at that width, not by inspection.
+    Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
   ]);
 }

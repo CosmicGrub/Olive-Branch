@@ -17,6 +17,23 @@ Future<void> useNarrowSurface(WidgetTester tester) async {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 void main() {
   group('her screen — she turns the pages, §9.13.2', () {
     testWidgets('opens on her screen by default, with turn controls', (tester) async {
@@ -130,5 +147,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.settings), findsNothing);
     });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      final String label = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('her screen renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('his screen renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+        await tester.tap(find.text('His screen'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }

@@ -11,6 +11,16 @@ import 'package:olive_client/maturation_ladder.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
+// Required responsive-audit matrix: MASTERFILE's own mandated minimums
+// (Fold5 cover/main), a standard phone width, and — now that Windows is a
+// real target — a short-and-wide desktop-scale width.
+const Map<String, Size> kResponsiveWidths = <String, Size>{
+  'Fold5 cover (344px)': Size(344, 900),
+  'Fold5 main (~673x841)': Size(673, 841),
+  'phone (390px)': Size(390, 900),
+  'tablet/desktop (1100px)': Size(1100, 900),
+};
+
 // Stable across rebuilds (unlike widget instances, which get recreated on
 // every setState) — tapping by this fixed title text is the robust way to
 // expand every rung tile in a loop.
@@ -203,14 +213,16 @@ void main() {
       expect(find.textContaining('{name}'), findsNothing);
     });
 
-    testWidgets('renders without overflow on the Fold5 cover-screen width', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(344, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(wrap(const MaturationLadderScreen(
-        childName: 'Ivy', childAgeYears: 12, viewer: LadderViewer.child)));
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-    });
+    for (final MapEntry<String, Size> entry in kResponsiveWidths.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const MaturationLadderScreen(
+          childName: 'Ivy', childAgeYears: 12, viewer: LadderViewer.child)));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('guardian viewer — irreversibility is structural, not just copy', () {
@@ -332,13 +344,15 @@ void main() {
       expect(find.byIcon(Icons.favorite_outline), findsNothing);
     });
 
-    testWidgets('renders without overflow on the Fold5 main-screen size', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(673, 841));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(wrap(const MaturationLadderScreen(
-        childName: 'Ivy', childAgeYears: 15, viewer: LadderViewer.guardian)));
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-    });
+    for (final MapEntry<String, Size> entry in kResponsiveWidths.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const MaturationLadderScreen(
+          childName: 'Ivy', childAgeYears: 15, viewer: LadderViewer.guardian)));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }

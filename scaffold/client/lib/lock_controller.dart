@@ -5,7 +5,7 @@
 // close to the TS original (same function names, same shapes, same ordering)
 // so the two stay auditable side by side — the same discipline this codebase
 // already applies to the cross-language kiosk-channel contract (see
-// kiosk_channel.dart / KioskBridge.kt / AssignedAccessBridge.cs).
+// kiosk_channel.dart / KioskBridge.kt / kiosk_bridge.cpp).
 //
 // One intentional adaptation: `escalatedUntil`/`cooldownUntil` are DateTime?
 // here rather than ISO-string-or-null. The TS version stores strings because

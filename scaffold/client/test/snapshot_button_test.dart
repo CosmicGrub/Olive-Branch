@@ -10,6 +10,23 @@ import 'package:olive_client/snapshot_button.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 void main() {
   group('N — screenshot capture: refused on the call surface, not silently taken', () {
     test('exactly the three call surfaces are scoped off', () {
@@ -105,5 +122,30 @@ void main() {
       await t.pumpWidget(MaterialApp(home: AppGalleryScreen(gallery: gallery)));
       expect(find.byIcon(Icons.image_outlined), findsNWidgets(2));
     });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      final String label = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('the button on an ordinary surface renders without overflow at $label',
+          (t) async {
+        await useSurface(t, size);
+        final AppGallery gallery = AppGallery();
+        await t.pumpWidget(wrap(SnapshotButton(currentSurface: 'home', gallery: gallery)));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('the gallery (with photos) renders without overflow at $label', (t) async {
+        await useSurface(t, size);
+        final AppGallery gallery = AppGallery()
+          ..add(AppPhoto(id: '1', surface: 'home', savedAt: DateTime.now()))
+          ..add(AppPhoto(id: '2', surface: 'home', savedAt: DateTime.now()));
+        await t.pumpWidget(MaterialApp(home: AppGalleryScreen(gallery: gallery)));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
   });
 }

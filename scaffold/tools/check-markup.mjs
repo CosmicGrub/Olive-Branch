@@ -252,8 +252,16 @@ if (!DEMO) {
   check('E2', 'every built module is wired into the demo or declared node-only',
     unaccounted.length ? `unaccounted: ${unaccounted.join(', ')}` : 'none', 'none');
 
+  // Originally node:-builtin-only (http, crypto) because every prior
+  // node-only module's real reason was a builtin. db/pool is the first
+  // exception: its actual reason is the `pg` npm package, a real dependency
+  // just as un-demoable in a browser as any builtin, so a bare package name
+  // (lowercase, no spaces -- the shape of an npm package specifier) is
+  // accepted too. Either way this stays a "did someone actually name
+  // something real" check, not a rubber stamp -- E7 below still verifies
+  // the named dependency is genuinely imported by that module's source.
   check('E3', 'every node-only declaration names the dependency',
-    nodeOnly.every(n => typeof n.dep === 'string' && /^node:/.test(n.dep)), true);
+    nodeOnly.every(n => typeof n.dep === 'string' && /^(node:[\w/]+|[a-z][\w.-]*)$/.test(n.dep)), true);
 
   // A module cannot be both wired and excused — that would let a real regression
   // hide behind a stale declaration.

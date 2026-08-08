@@ -14,6 +14,10 @@ scaffold/client/.dart_tool/
 scaffold/client/android/.gradle/
 scaffold/client/ios/Pods/
 
+# §16.2 #6 Step 2 — vendored third-party checkout + generated secrets,
+# not Olive source. See scaffold/tools/jitsi-selfhost/README.md.
+scaffold/tools/jitsi-selfhost/.jitsi-docker/
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db

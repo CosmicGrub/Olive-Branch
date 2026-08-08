@@ -82,6 +82,36 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    group('responsive — no overflow at any required viewport width', () {
+      Future<void> pumpAt(WidgetTester tester, Size size) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(InboxScreen(
+          childName: 'Ivy', messages: List<InboxMessage>.of(demoInboxMessages))));
+        await tester.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (tester) async {
+        await pumpAt(tester, const Size(344, 900));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (tester) async {
+        await pumpAt(tester, const Size(673, 841));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (tester) async {
+        await pumpAt(tester, const Size(390, 844));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (tester) async {
+        await pumpAt(tester, const Size(1100, 800));
+        expect(tester.takeException(), isNull);
+      });
+    });
+
     testWidgets('message tiles meet the 48dp+ touch target minimum', (tester) async {
       await tester.pumpWidget(wrap(const InboxScreen(childName: 'Ivy', messages: _messages)));
       final int count = find.byType(InkWell).evaluate().length;

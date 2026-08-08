@@ -164,4 +164,28 @@ void main() {
       expect(find.text('Cardboard counts. It always did.'), findsOneWidget);
     });
   });
+
+  group('GalleryScreen — responsive widths (phone/Fold5/tablet/desktop)', () {
+    // MASTERFILE's own mandated minimums (Fold5 cover/main), a standard phone
+    // width, and a short-and-wide desktop-scale width (Windows is now a real
+    // target). Tall enough at every width for the toggle row, era selector,
+    // and grid header to all be laid out.
+    const Map<String, Size> widths = <String, Size>{
+      'Fold5 cover (344px)': Size(344, 900),
+      'Fold5 main (~673x841)': Size(673, 841),
+      'phone (390px)': Size(390, 900),
+      'tablet/desktop (1100px)': Size(1100, 900),
+    };
+
+    for (final MapEntry<String, Size> entry in widths.entries) {
+      testWidgets('renders with no overflow/layout exception at ${entry.key}',
+          (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const GalleryScreen()));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 }

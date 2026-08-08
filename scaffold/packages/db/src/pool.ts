@@ -2,6 +2,7 @@ import pg from 'pg';
 import type { VerifiedPrincipal } from '../../auth/src/auth.ts';
 import type { Edge } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
+import type { Order } from '../../custody/src/schedule.ts';
 
 /**
  * MASTERFILE §5.18 — session context, and §5.17 — the second lock.
@@ -116,6 +117,59 @@ export async function edgesFor(pool: pg.Pool, userId: string): Promise<Edge[]> {
       closedAt: r.closed_at,
       ladderStep: r.ladder_step,
     }));
+  });
+}
+
+/**
+ * db/migrations/0007_custody_order.sql — the real end-to-end loader for
+ * schedule.ts's `Order`. §5.4 names the row shape; this is the one place
+ * that row is turned into the exact shape sleepsUntilSideChange()/
+ * patternSideOn()/blocks()/exchanges() consume (see custody_order.test.mjs,
+ * which proves both the RLS on this table and this mapping).
+ *
+ * Mirrors edgesFor()'s own shape: its own withSystemSession, one query, one
+ * row-to-domain mapping. System role because "what order governs this child
+ * today" is a lookup the route handler needs before/alongside its own
+ * caller-scoped session, not something that itself needs a second `can()`
+ * pass — RLS on custody_order already admits the child her own row and every
+ * non-child role everything else (see the migration's policies), so running
+ * this as `system` does not widen who can reach it; the handler's existing
+ * A3 childId-from-path check is what gates the call.
+ *
+ * A child can have more than one custody_order over her life (effective_from/
+ * effective_to); returns the one in force on `nowLocalDate`, or `null` if
+ * none is — an honest absence, never a guess, per the migration's own
+ * EXCLUDE constraint guaranteeing at most one row can match.
+ */
+export async function activeCustodyOrderFor(
+  pool: pg.Pool, childId: string, nowLocalDate: string,
+): Promise<Order | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT pattern, order_tz,
+              anchor_local_date::text AS anchor_local_date,
+              to_char(exchange_time, 'HH24:MI') AS exchange_time,
+              holiday_rules,
+              effective_from::text AS effective_from,
+              effective_to::text AS effective_to
+         FROM custody_order
+        WHERE child_id = $1
+          AND effective_from <= $2::date
+          AND (effective_to IS NULL OR effective_to >= $2::date)
+        LIMIT 1`,
+      [childId, nowLocalDate],
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return {
+      pattern: r.pattern,
+      orderTz: r.order_tz,
+      anchorLocalDate: r.anchor_local_date,
+      exchangeTime: r.exchange_time,
+      holidays: r.holiday_rules ?? [],
+      effectiveFrom: r.effective_from,
+      effectiveTo: r.effective_to,
+    } as Order;
   });
 }
 

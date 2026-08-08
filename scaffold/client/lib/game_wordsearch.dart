@@ -168,7 +168,12 @@ class WordSearchSetupScreen extends StatefulWidget {
 class _WordSearchSetupScreenState extends State<WordSearchSetupScreen> {
   late final List<String> _words = [...widget.initialWords];
   final _controller = TextEditingController();
-  int _size = 10;
+  // 12, not 10: the default demo word "Maple Street" cleans to 11 letters
+  // (buildWordSearch strips the space), which doesn't fit an initial 10x10
+  // grid — a brand-new guardian who never touches the size control would
+  // hit "too long for a 10x10 grid" on the very first tap of "Hide these
+  // words". Every default starter word fits a 12x12 grid.
+  int _size = 12;
   String? _problem;
 
   void _addWord() {

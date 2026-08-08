@@ -99,4 +99,39 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(48.0));
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('renders every collection card and the add sheet without overflow '
+          'at ${entry.key}', (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        await t.pumpWidget(wrap(const CollectionScreen()));
+        expect(t.takeException(), isNull);
+
+        // The "Show another dinosaurs" OutlinedButton.icon has no explicit
+        // width — the label is the widest unwrapped text on the card at the
+        // Fold5 cover's 344px, so it is the one most likely to overflow.
+        final addButton = find.widgetWithText(OutlinedButton, 'Show another dinosaurs');
+        await t.ensureVisible(addButton);
+        await t.pumpAndSettle();
+        await t.tap(addButton);
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
 }
