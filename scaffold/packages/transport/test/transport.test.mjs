@@ -257,6 +257,56 @@ const REF = 'r_' + 'a'.repeat(20);
     win.includes('UNVERIFIED'), 'true');
 }
 
+// ===========================================================================
+// K · WEAR SYNC BRIDGE CONTRACT — phone-side Data Layer channel, §21.5.
+// Same shape as § J above: a MethodChannel name/method pair must agree
+// byte-for-byte between the Dart caller and its native handler, or the
+// failure mode is silent (the watch simply never receives anything, with no
+// error on either side to point at).
+// ===========================================================================
+{
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
+  const kt = readFileSync(
+    root + 'client/android/app/src/main/kotlin/com/olivebranch/olive_client/WearSyncBridge.kt',
+    'utf8');
+  const dart = readFileSync(root + 'client/lib/wear_sync_channel.dart', 'utf8');
+
+  const chan = 'com.olivebranch.olive_client/wear_sync';
+  check('K wear bridge', 'wear_sync method channel name agrees across Kotlin/Dart',
+    [kt, dart].every(f => f.includes(`"${chan}"`) || f.includes(`'${chan}'`)), 'true');
+  check('K wear bridge', "method 'syncSleepsUntilHandover' declared in both",
+    [kt, dart].every(f => f.includes('"syncSleepsUntilHandover"') || f.includes("'syncSleepsUntilHandover'")),
+    'true');
+
+  // The watch-side DataItem path/key are a second, separate contract (native
+  // Kotlin on both ends, no Dart involved) between WearSyncBridge.kt and
+  // wear/.../MainActivity.kt -- checked here too since nothing else in this
+  // suite reaches the wear/ module at all.
+  const wearMain = readFileSync(
+    root + 'client/android/wear/src/main/kotlin/com/olivebranch/olive_client/wear/MainActivity.kt',
+    'utf8');
+  check('K wear bridge', 'DataItem path "/olive/now" agrees between phone and watch',
+    [kt, wearMain].every(f => f.includes('"/olive/now"')), 'true');
+  check('K wear bridge', 'DataMap key "sleepsUntilHandover" agrees between phone and watch',
+    [kt, wearMain].every(f => f.includes('"sleepsUntilHandover"')), 'true');
+
+  // Android-only guard: wear_sync_channel.dart must never touch the channel
+  // on a platform with no phone-side handler and no paired watch to sync to.
+  check('K wear bridge', 'Dart caller guards on Platform.isAndroid',
+    dart.includes('Platform.isAndroid'), 'true');
+
+  // §21.5's own "presence" carve-out: no computation logic for it exists
+  // anywhere, so the bridge's actual CODE must not smuggle a second field in
+  // under one pass's cover. Comments are allowed to name "presence" when
+  // explaining the carve-out (both files' headers do exactly that) -- only
+  // code lines are checked, the same way I contract's own TODO/FIXME check
+  // above cares about the real source, not prose describing its absence.
+  const stripComments = s => s.replace(/\/\/.*/g, '');
+  check('K wear bridge', 'bridge carries only sleepsUntilHandover, not presence',
+    !stripComments(kt).toLowerCase().includes('presence') &&
+    !stripComments(dart).toLowerCase().includes('presence'), 'true');
+}
+
 let g = '';
 for (const r of rows) {
   if (r.g !== g) { g = r.g; console.log(`\n${g}`); }

@@ -30,11 +30,55 @@ object KioskBridge {
     const val M_STOP       = "stopLockTask"
     const val M_MODE       = "lockTaskMode"
     const val M_IS_OWNER   = "isDeviceOwner"
+    // §16.2 #6 / §5.20 — see kiosk_channel.dart's beginCallHandoff doc comment
+    // for why this exists. Android-only; no Windows/dart-contract check.
+    const val M_BEGIN_CALL_HANDOFF = "beginCallHandoff"
 
     // Event names. Each maps to a §5.20 state-machine transition.
     const val E_EXITED     = "lockTaskExited"     // -> onLockTaskExited()
     const val E_BACKGROUND = "backgrounded"       // -> onBackgrounded()
     const val E_RESUMED    = "resumed"
+
+    // ------------------------------------------------------------------
+    // Call handoff (§16.2 #6). `WrapperJitsiMeetActivity` (patched, in
+    // third_party/jitsi_meet_flutter_sdk_patched — a SEPARATE Gradle module
+    // that this app depends on, not the other way round) cannot import this
+    // object directly: that would be a library depending on the app that
+    // consumes it, which Gradle won't allow. SharedPreferences and a
+    // same-process LocalBroadcastManager action are the two primitives here
+    // that need only a shared string contract, not a compile-time reference
+    // — the same trick the Jitsi SDK's own WrapperJitsiMeetActivity already
+    // uses (via LocalBroadcastManager) to get its native events back into
+    // this process's Flutter side. Every string below is duplicated
+    // verbatim in that Activity; there is nothing to import it from.
+    // ------------------------------------------------------------------
+    private const val HANDOFF_PREFS = "app.olive.kiosk"
+    private const val HANDOFF_KEY   = "expecting_call_handoff"
+    // WrapperJitsiMeetActivity broadcasts this literal string directly (it
+    // cannot import this constant — see the module-boundary note above); this
+    // copy exists only so MainActivity has one place to read it from when it
+    // registers its own receiver. If this ever drifts from the string in
+    // WrapperJitsiMeetActivity.kt, the mismatch fails silently (the broadcast
+    // just never arrives) — same failure shape as a channel-name typo, which
+    // is exactly why the transport contract test mirrors string constants
+    // this same way for the MethodChannel/EventChannel names above.
+    const val ACTION_CALL_LOCK_TASK_EXITED = "app.olive.kiosk.CALL_LOCK_TASK_EXITED"
+
+    private fun setExpectingCallHandoff(ctx: Context, expecting: Boolean) {
+        ctx.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(HANDOFF_KEY, expecting).apply()
+    }
+
+    /// Read-and-clear: called once by MainActivity.onResume() when the call
+    /// Activity hands the pin back, whether the call ended cleanly or the
+    /// child defeated the pinned call Activity. Either way, once we're back
+    /// here, the handoff is over.
+    fun consumeExpectingCallHandoff(ctx: Context): Boolean {
+        val was = ctx.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(HANDOFF_KEY, false)
+        if (was) setExpectingCallHandoff(ctx, false)
+        return was
+    }
 
     fun currentMode(ctx: Context): String =
         when ((ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
@@ -61,6 +105,18 @@ object KioskBridge {
                 // tablet is sealed makes worse decisions than one who knows it
                 // is not.
                 M_IS_OWNER -> result.success(currentMode(activity) == "locked")
+                // §16.2 #6 — unpin THIS Activity so the Jitsi SDK's own
+                // Activity is actually allowed to launch (pinning permits
+                // only one task on screen; launching a second one is exactly
+                // what §16.2 #6 diagnosed as the violation), and mark that
+                // the onStop() this triggers is an intentional handoff, not
+                // a defeat. `activity.stopLockTask()` is a no-op if we
+                // weren't pinned to begin with (e.g. the guardian side).
+                M_BEGIN_CALL_HANDOFF -> {
+                    setExpectingCallHandoff(activity, true)
+                    activity.stopLockTask()
+                    result.success(currentMode(activity))
+                }
                 else -> result.notImplemented()
             }
         }

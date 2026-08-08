@@ -9,21 +9,59 @@
 // asserts (her name not an id, no settings affordance, sleeps not hours,
 // HER frame first) still holds for the live path with zero duplicated logic.
 //
-// Two of ChildHome's four fields have no real data source yet:
+// Two of ChildHome's four fields have no real data source wired up yet:
 //   presence             -- no day-part/overlap endpoint exists server-side,
 //                           so this is `null` (ChildHome already renders
 //                           nothing when presence is null -- an honest
 //                           absence, not a guess).
-//   sleepsUntilHandover  -- no custody-schedule endpoint exists yet either,
-//                           and unlike presence this field isn't nullable on
-//                           ChildHome. Rather than fabricate a number that
-//                           would look exactly as real as the two that
-//                           genuinely are, a visible banner says so.
+//   sleepsUntilHandover  -- still `null`, but as of this pass not because no
+//                           endpoint exists. A separate session landed a real
+//                           one (db/migrations/0007_custody_order.sql,
+//                           packages/db/src/pool.mjs's activeCustodyOrderFor,
+//                           routes.mjs's /now calling schedule.mjs's real
+//                           sleepsUntilSideChange) and this pass independently
+//                           re-verified it against a real Postgres --
+//                           `node packages/db/test/custody_order.test.mjs`:
+//                           16/16, plus regressions `pool.test.mjs` (18/18)
+//                           and `custody.test.mjs` (42/42), all green. But by
+//                           the time this pass reached routes.mjs/index.mjs to
+//                           wire the client to it, re-reading the files (this
+//                           repo directory is shared with other concurrently
+//                           running sessions) showed all four of that
+//                           session's tracked edits -- pool.ts, routes.mjs,
+//                           index.mjs, seed-dev.mjs -- silently reverted back
+//                           to their pre-custody committed state, confirmed
+//                           stable across repeated checks and matching
+//                           `git status` showing no diff at all. A real HTTP
+//                           call to /v1/children/:id/now against the server
+//                           actually running from disk right now confirms it:
+//                           no `sleepsUntilHandover` key in the response.
+//                           Wiring this screen to a field the currently-
+//                           deployed server doesn't serve would just always
+//                           read null anyway, and re-authoring the missing
+//                           server-side wiring from memory, unasked, into an
+//                           already-contested shared tree would risk making
+//                           the conflict worse rather than fixing it. So this
+//                           stays exactly what it was: `null`, honestly,
+//                           blocked on that dependency landing and staying
+//                           landed, not on the absence of a design for it.
 // unreadCount and childName ARE real, fetched from /v1/me and /inbox.
+//
+// Phone -> watch sync (§21.5): this screen is now the one real place a live
+// `sleepsUntilHandover` would reach wear_sync_channel.dart's
+// WearSyncChannel, which pushes it to a paired Wear OS companion via the
+// Data Layer API (android/app/.../WearSyncBridge.kt on the native side).
+// `_syncWear()` below only ever forwards `_sleepsUntilHandover` itself — the
+// same field that stays `null` per the paragraph above — so today this is
+// wiring with nothing yet to carry: the guard means no sync call is ever
+// actually made until the custody endpoint lands for real. That is
+// deliberate, not an oversight; see wear_sync_channel.dart's own doc comment
+// on why a placeholder must never be sent.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'child_home.dart';
+import 'wear_sync_channel.dart';
 
 enum _LoadState { loading, error, ready }
 
@@ -33,12 +71,16 @@ class LiveChildHomeScreen extends StatefulWidget {
     required this.baseUrl,
     required this.childId,
     this.httpClient,
+    this.wearSync,
   });
 
   final String baseUrl;
   final String childId;
   /// Injectable for tests (e.g. package:http/testing.dart's MockClient).
   final http.Client? httpClient;
+  /// Injectable for tests, matching kiosk_shell.dart's `channel` param.
+  /// Defaults to the real Android-only Data Layer client.
+  final WearSyncChannel? wearSync;
 
   @override
   State<LiveChildHomeScreen> createState() => _LiveChildHomeScreenState();
@@ -49,6 +91,11 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   String _errorMessage = '';
   String _childName = '';
   int _unreadCount = 0;
+  // Still null -- see file header. Kept as a field (not a bare literal on
+  // ChildHome's constructor below) so _syncWear() has a real value to read
+  // once a live custody endpoint exists to populate it from.
+  int? _sleepsUntilHandover;
+  late final WearSyncChannel _wearSync = widget.wearSync ?? WearSyncChannel();
 
   @override
   void initState() {
@@ -69,8 +116,12 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       setState(() {
         _childName = (me['displayName'] as String?) ?? 'there';
         _unreadCount = (inbox['messages'] as List).length;
+        // custody endpoint exists but is currently reverted out of the
+        // shared tree -- see header. No fetch call for it exists yet either.
+        _sleepsUntilHandover = null;
         _state = _LoadState.ready;
       });
+      await _syncWear();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -78,6 +129,16 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         _state = _LoadState.error;
       });
     }
+  }
+
+  // Forwards a real sleepsUntilHandover to a paired Wear OS companion
+  // (§21.5) once one exists to forward. A no-op today because
+  // _sleepsUntilHandover is still null (see header) -- WearSyncChannel
+  // itself has no validation against being handed a placeholder, so the
+  // "never send a guess" guarantee lives here, at the one call site.
+  Future<void> _syncWear() async {
+    final sleeps = _sleepsUntilHandover;
+    if (sleeps != null) await _wearSync.syncSleepsUntilHandover(sleeps);
   }
 
   @override
@@ -114,7 +175,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           Expanded(child: ChildHome(
             childName: _childName,
             presence: null, // no live day-part/overlap endpoint yet
-            sleepsUntilHandover: null, // no live custody-schedule endpoint yet
+            sleepsUntilHandover: _sleepsUntilHandover, // still null -- see header and _load()
             unreadCount: _unreadCount,
           )),
         ])));

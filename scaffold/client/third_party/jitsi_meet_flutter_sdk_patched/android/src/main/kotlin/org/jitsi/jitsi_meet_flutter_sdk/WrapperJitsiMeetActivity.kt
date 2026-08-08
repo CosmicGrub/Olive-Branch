@@ -1,6 +1,7 @@
 package org.jitsi.jitsi_meet_flutter_sdk
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -16,6 +17,25 @@ import org.jitsi.meet.sdk.JitsiMeetConferenceOptions
 import org.jitsi.jitsi_meet_flutter_sdk.JitsiMeetEventStreamHandler
 import org.jitsi.meet.sdk.JitsiMeet
 
+// PATCHED (see ../../../../PATCH.md and the app's own MASTERFILE §16.2 #6):
+// this Activity's own singleTask launch mode is exactly what the host app's
+// kiosk lock-task pinning refuses to launch as a second task
+// (`E/ActivityTaskManager: Attempted Lock Task Mode violation`, confirmed on
+// a real Galaxy Z Fold5). The host app now unpins itself and hands the pin
+// to THIS Activity right before launching it (com.olivebranch.olive_client's
+// KioskBridge.kt, method channel `beginCallHandoff`) rather than just
+// dropping it for the call's duration. The two halves of that handoff can't
+// share a compile-time import — this library module cannot depend on the
+// app module that depends on it — so they agree only on plain string
+// contracts (a SharedPreferences file/key, a broadcast action), duplicated
+// verbatim on both sides and cross-referenced in comments, the same way the
+// MethodChannel/EventChannel name strings already are between
+// kiosk_channel.dart, KioskBridge.kt, and kiosk_bridge.cpp.
+private const val HANDOFF_PREFS = "app.olive.kiosk"
+private const val HANDOFF_KEY   = "expecting_call_handoff"
+// Mirrors com.olivebranch.olive_client.KioskBridge.ACTION_CALL_LOCK_TASK_EXITED.
+private const val ACTION_CALL_LOCK_TASK_EXITED = "app.olive.kiosk.CALL_LOCK_TASK_EXITED"
+
 class WrapperJitsiMeetActivity : JitsiMeetActivity() {
     private val eventStreamHandler = JitsiMeetEventStreamHandler.instance
     private val broadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
@@ -23,6 +43,29 @@ class WrapperJitsiMeetActivity : JitsiMeetActivity() {
             this@WrapperJitsiMeetActivity.onBroadcastReceived(intent)
         }
     }
+
+    // Set once we've self-pinned, so a config change or PiP-related onResume
+    // doesn't call startLockTask() a second time. This Activity instance
+    // only ever hosts one call, so it's never reset.
+    private var hasSelfPinned = false
+    // Tracked the same way MainActivity.onStop() tracks it, to tell a
+    // genuine mid-call defeat (Back+Recents) apart from this Activity simply
+    // never having been pinned (a guardian device that was never
+    // kiosk-locked, where beginCallHandoff is never called at all).
+    private var lastKnownMode = "none"
+    // A clean call end (readyToClose) and a mid-call kiosk defeat both end
+    // with this Activity unpinned — the same ambiguity call_screen.dart's own
+    // header comment already calls out for conferenceTerminated vs
+    // readyToClose. Only report a defeat if the SDK never told us it was
+    // ready to close first.
+    private var didReceiveReadyToClose = false
+
+    private fun currentLockTaskMode(): String =
+        when ((getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).lockTaskModeState) {
+            ActivityManager.LOCK_TASK_MODE_LOCKED -> "locked"
+            ActivityManager.LOCK_TASK_MODE_PINNED -> "pinned"
+            else -> "none"
+        }
 
     companion object {
         fun launch(context: Context, options: JitsiMeetConferenceOptions?) {
@@ -49,6 +92,42 @@ class WrapperJitsiMeetActivity : JitsiMeetActivity() {
 
         super.onCreate(savedInstanceState)
         registerForBroadcastMessages()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // §16.2 #6 — self-pin for the call's duration, once, only when the
+        // host app actually handed the pin off to us (never on a device that
+        // was never kiosk-locked to begin with — see beginCallHandoff's own
+        // doc comment in kiosk_channel.dart for why that guard lives on the
+        // Dart side, one level up from here).
+        if (!hasSelfPinned && expectingCallHandoff()) {
+            startLockTask()
+            hasSelfPinned = true
+        }
+        lastKnownMode = currentLockTaskMode()
+    }
+
+    private fun expectingCallHandoff(): Boolean =
+        getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(HANDOFF_KEY, false)
+
+    override fun onStop() {
+        super.onStop()
+        val current = currentLockTaskMode()
+        val wasPinnedByUs = lastKnownMode == "pinned" || lastKnownMode == "locked"
+        if (wasPinnedByUs && current == "none" && !didReceiveReadyToClose) {
+            // Mid-call defeat: this Activity was pinned and lost that pin
+            // before the SDK ever said it was ready to close. Reported back
+            // to the app process via a plain broadcast rather than a direct
+            // call — see this file's own top-of-file note on why the two
+            // modules can't share a compile-time reference. MainActivity
+            // (always alive, same process) relays it into the real
+            // EventChannel as `lockTaskExited`, same as any other defeat.
+            LocalBroadcastManager.getInstance(this)
+                .sendBroadcast(Intent(ACTION_CALL_LOCK_TASK_EXITED))
+        }
+        lastKnownMode = current
     }
 
     private fun showOnLockscreen() {
@@ -112,7 +191,10 @@ class WrapperJitsiMeetActivity : JitsiMeetActivity() {
                         data
                     )
 
-                    BroadcastEvent.Type.READY_TO_CLOSE.action -> eventStreamHandler.readyToClose()
+                    BroadcastEvent.Type.READY_TO_CLOSE.action -> {
+                        didReceiveReadyToClose = true
+                        eventStreamHandler.readyToClose()
+                    }
 
                     BroadcastEvent.Type.CUSTOM_BUTTON_PRESSED.action -> eventStreamHandler.customButtonPressed(
                         data
