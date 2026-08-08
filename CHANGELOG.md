@@ -23,8 +23,9 @@ Silent deletion is a process failure.
   **Jitsi Meet + Jitsi Videobridge** as the basis for all calls, video calls,
   screen-sharing, and streaming. Staged in two steps — Step 1 (in progress)
   proves the calling UX against Jitsi's public `meet.jit.si` server via the
-  official `jitsi_meet_flutter_sdk`; Step 2 (not started) self-hosts the full
-  stack (Prosody, Jicofo, Jitsi Videobridge). `scaffold/client/pubspec.yaml`
+  official `jitsi_meet_flutter_sdk`; Step 2 (staged and container-verified
+  as of v0.46.2, not yet device-verified) self-hosts the full stack
+  (Prosody, Jicofo, Jitsi Videobridge). `scaffold/client/pubspec.yaml`
   dropped `livekit_client` for `jitsi_meet_flutter_sdk`;
   `scaffold/tools/local-call-server.mjs` (LiveKit token minting) was replaced
   by `scaffold/tools/local-call-room-server.mjs` (Jitsi room-name
@@ -135,6 +136,98 @@ recorded here as unverified rather than assumed working from the code path
 alone. See `client/docs/MANUAL_VERIFY_call_lock_task.md` for the exact
 procedure to finish this once the devices are free, and update that file's
 own Provenance section with the real outcome when it's run.
+
+---
+
+## [0.46.2] — 2026-08-08 — §16.2 #6 Step 2 staged and container-verified
+
+The other bug from v0.46.0's callout — the public server's moderator lobby —
+gets its fix staged: a local `docker-jitsi-meet` stack
+(`scaffold/tools/jitsi-selfhost/`), actually brought up on this dev machine
+rather than only written and assumed correct. Doing so surfaced three real
+bugs, all fixed; what's confirmed and what isn't is kept explicit below,
+same standard v0.46.0/v0.46.1 already hold this project to.
+
+### Added
+- **`scaffold/tools/jitsi-selfhost/`** — `setup.sh` (clones
+  `jitsi/docker-jitsi-meet` pinned to `stable-11146-1` into a gitignored
+  `.jitsi-docker/`, layers `olive.env` over upstream's `env.example`, runs
+  `gen-passwords.sh`, installs `docker-compose.override.yml`),
+  `olive.env` (anonymous domain — no `ENABLE_AUTH` — is the whole point;
+  see its own inline comments for why each setting is what it is), and
+  `docker-compose.override.yml` (the Windows bind-mount fix, see "Fixed").
+  `scaffold/tools/with-jitsi.sh` mirrors `with-livekit.sh`'s lifecycle
+  pattern (bring up, wait for health, optionally run a command, `down` to
+  tear down) but — unlike `with-livekit.sh` — leaves the stack running by
+  default, since a multi-container compose stack is too slow to cycle per
+  test run.
+- **`JITSI_SERVER_URL` env var** in `local-call-room-server.mjs`, defaulting
+  to `https://meet.jit.si` so the original v0.46.0 finding stays
+  reproducible with no config; override to point at the local Step 2 stack.
+  `call_screen.dart`'s header comment updated to match.
+
+### Fixed — three bugs found by actually running this, not by reading the compose file
+- **Docker Desktop's containerd-snapshotter image store corrupted these
+  images' user resolution.** Every container failed identically —
+  `unable to find user s6: no matching entries in passwd file` — reproduced
+  even with a bare `docker run --entrypoint sh`, ruling out a compose/volume
+  cause. Root cause: `UseContainerdSnapshotter: true` in Docker Desktop's
+  own `settings-store.json`; the classic `overlay2` graphdriver doesn't have
+  this bug. Fixed by flipping the setting, restarting Docker Desktop, and
+  re-pulling the images clean. Not specific to this project.
+- **JVB's colibri HTTP port (`8080` default) collides with
+  `server/index.mjs`'s own `PORT` default.** Found via `docker compose ps`
+  after first bringing the stack up, not from reading `docker-compose.yml`
+  — the collision is with this project's own server, not anything in
+  upstream Jitsi. Fixed: `JVB_COLIBRI_PORT=8181` in `olive.env`.
+- **Prosody couldn't write its own TLS cert.** `docker-jitsi-meet`'s default
+  `${CONFIG}/storage/prosody:/var/lib/prosody` bind mount, with `CONFIG` a
+  Windows host path, loses POSIX ownership through Docker Desktop's
+  file-sharing translation — Prosody's container (uid 1000) can never write
+  into it, so cert generation silently failed (`The directory
+  /var/lib/prosody is not owned by the current user`), cascading into
+  Jicofo and JVB's XMPP connections failing outright (`No stream features
+  to proceed with`) — the whole signaling chain was down, presenting as a
+  Jicofo/JVB problem rather than obviously a Prosody one. Fixed:
+  `docker-compose.override.yml` gives Prosody's two writable paths named
+  Docker volumes instead of Windows bind mounts, installed automatically by
+  `setup.sh`.
+
+### Verified
+- All four containers (prosody, jicofo, jvb, web) reach a stable `Up` state
+  with no restart loop, after the three fixes above.
+- Jicofo's log shows it discovering Prosody's components (lobby, breakout,
+  av-moderation, etc.), joining the JVB brewery MUC, and registering the
+  videobridge — the full signaling handshake completes, not just individual
+  containers reporting healthy in isolation.
+- Prosody's own **live-rendered** config
+  (`/run/prosody/config/conf.d/jitsi-meet.cfg.lua` inside the container,
+  read directly rather than inferred from env vars) confirms
+  `authentication = "jitsi-anonymous"` on `VirtualHost "meet.jitsi"`, with
+  `muc_lobby_rooms` loaded as an available module but no forced-lobby or
+  auth-gated-moderator setting anywhere in the rendered config — the actual
+  mechanism, not just the compose file, that avoids the meet.jit.si
+  moderator-lobby finding from v0.46.0.
+- `curl -sk https://127.0.0.1:8443/` returns the real Jitsi Meet SPA
+  (HTTP 200).
+- Stack torn down cleanly after verification (`with-jitsi.sh down`); named
+  volumes (certs, registered users) persist for the next `up`.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+No real WebRTC join was completed. The stack's self-signed cert (no
+`ENABLE_LETSENCRYPT` — that needs a real public DNS name, out of scope for
+localhost dev) blocks a browser outright — confirmed via the Chrome
+devtools protocol: `net::ERR_CERT_AUTHORITY_INVALID` on every request to
+`https://127.0.0.1:8443` — and would equally block
+`jitsi_meet_flutter_sdk` on a real device, which has no client-side
+"skip cert validation" flag. Fixing that (a `<trust-anchors>` entry in
+`network_security_config.xml` for dev builds, or running the stack behind a
+tunnel with a real cert) is not done here. Physical two-device
+re-verification — the standard v0.46.0 itself holds this project to — is
+also not done: this session has no attached Android hardware, and the
+cert-trust gap above would block it even if it did. Tracked in
+`scaffold/tools/jitsi-selfhost/README.md`'s status note, and in the §16.2
+#6 callout and §20.2b in MASTERFILE.md.
 
 ---
 

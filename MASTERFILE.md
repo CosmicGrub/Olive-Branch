@@ -11,7 +11,7 @@
 | **Document** | MASTERFILE (canonical) |
 | **Version** | 0.46.0 |
 | **Last amended** | 2026-08-07 |
-| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call had two independent bugs, verified live on two physical devices; one is now fixed in code (v0.46.1), not yet re-verified live** (§16.2 #6 callout, §20.2b) — the child-side kiosk-lock/Activity conflict has an implemented, compiled, `flutter analyze`/`flutter test`-clean fix pending a live device re-run; the public Jitsi server's moderator lobby is still open, gated on Step 2 self-hosting. |
+| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call had two independent bugs, verified live on two physical devices; one is now fixed in code (v0.46.1), not yet re-verified live** (§16.2 #6 callout, §20.2b) — the child-side kiosk-lock/Activity conflict has an implemented, compiled, `flutter analyze`/`flutter test`-clean fix pending a live device re-run; the public Jitsi server's moderator lobby has Step 2 (self-hosting) staged and container-verified as of v0.46.2 — `scaffold/tools/jitsi-selfhost/` — but not yet device-verified: the stack's self-signed cert blocks both a browser and, unfixed, would block the Flutter SDK on a real device. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
 | **Companion docs** | `OLIVE BRANCH_CHANGELOG.md`, `OLIVE BRANCH_VISUAL.html`, `OLIVE BRANCH_MARKUP.html` |
@@ -2020,10 +2020,28 @@ enrollment. Documented in the security policy required by §10.1.
 >   self-hosting work starts. No SFU is self-hosted yet at this step — calls
 >   run on Jitsi's shared public infrastructure, which is **not** an
 >   acceptable posture for a real family's call metadata or media long-term.
-> - **Step 2 (not started).** Self-host the full stack — Prosody, Jicofo, and
->   Jitsi Videobridge, most likely via `docker-jitsi-meet` — so the same
->   COPPA sub-processor and data-residency reasoning above applies to a
->   server Olive operates, not a third party's.
+> - **Step 2 (staged, container-level verified, unreleased).** Self-host the
+>   full stack — Prosody, Jicofo, and Jitsi Videobridge, via
+>   `docker-jitsi-meet` — so the same COPPA sub-processor and
+>   data-residency reasoning above applies to a server Olive operates, not a
+>   third party's. `scaffold/tools/jitsi-selfhost/` stands the stack up
+>   locally (pinned `stable-11146-1`), gitignored/vendored rather than
+>   committed, matching how `local-call-room-server.mjs` already stands in
+>   for the production API. Actually bringing it up — not just writing the
+>   compose config — surfaced three real bugs, now fixed and documented in
+>   that directory's README: a Docker Desktop containerd-snapshotter bug
+>   that corrupts these images' user resolution, a JVB port collision with
+>   `server/index.mjs`, and a Windows bind-mount permissions bug that
+>   silently broke Prosody's own TLS cert generation (masquerading as a
+>   Jicofo/JVB connection failure, not obviously a Prosody problem). Once
+>   healthy, Prosody's live-rendered config was read directly to confirm
+>   `authentication = "jitsi-anonymous"` with no forced-lobby or
+>   auth-gated-moderator setting — the actual mechanism, not just the
+>   compose file, that avoids the meet.jit.si finding below. **Not yet
+>   done:** a real WebRTC join — the stack's self-signed cert blocks a
+>   browser (confirmed: `net::ERR_CERT_AUTHORITY_INVALID`) and would
+>   equally block `jitsi_meet_flutter_sdk` on a real device — and physical
+>   two-device re-verification, which this session has no hardware for.
 >
 > **What this reopens.** The COPPA sub-processor disclosure above must name
 > whichever party is running the videobridge at each step (a public
@@ -2035,7 +2053,12 @@ enrollment. Documented in the security policy required by §10.1.
 > only the LiveKit-specific `Grant`/JWT shape stops being the thing consumed
 > at the end of the pipe. Whether Jitsi's own JWT auth (`mod_auth_token` via
 > Prosody) replaces that shape, or whether room-name secrecy alone remains the
-> security boundary, is undecided and blocks Step 2.
+> security boundary, is still the real open decision for a production
+> deployment. The local dev stack above makes a provisional, scoped choice —
+> anonymous domain, no `ENABLE_AUTH` — precisely so I1/I4 stay the boundary
+> and `rooms.ts` doesn't need to change to prove Step 2 out; that is a dev
+> convenience, not a resolution of the production question, which still
+> blocks anything beyond this local scaffold.
 >
 > **Step 1, tested end to end on two physical devices, does not work —
 > verified rather than trusted from code review.** A guardian tablet and a
@@ -2570,7 +2593,7 @@ This list matters more than the one above.
 | ~~Native kiosk bridge (Android)~~ | **CLOSED v0.43.0.** `startLockTask` wired end to end: `client/android/.../KioskBridge.kt` (real, in the actual Gradle module — the old `native/android/` copy was a never-compiled reference), `client/lib/lock_controller.dart` (a port of the §5.20 state machine), `client/lib/kiosk_shell.dart` (the wiring). The §5.20 state machine is driven by real lock-task/lifecycle events on a real device, not only synthetic ones. Windows and Wear OS are covered in the two rows below; iOS remains Ph.4 per §8.3's own table. |
 | **Windows kiosk bridge** | **REAL, UNVERIFIED — v0.45.0.** `client/windows/runner/kiosk_bridge.{h,cpp}` — an app-level lock (window-chrome strip + a re-arming `WH_KEYBOARD_LL` hook), not OS Assigned Access. Compiled clean with `cl.exe /W4` against the real embedder headers; `flutter build windows` itself cannot run here (Visual Studio Build Tools missing the "Desktop development with C++" workload) — still marked UNVERIFIED in the header comment and the transport contract test until it is. |
 | **Wear OS companion (Galaxy Watch6)** | **DEMO ONLY — v0.45.0.** Standalone Jetpack Wear Compose module (`client/android/wear/`); `:wear:assembleDebug`/`:wear:compileDebugKotlin` both BUILD SUCCESSFUL. Phone↔watch data sync via the Wear Data Layer API is not implemented. |
-| **Real-time call — kiosk-lock cause fixed (v0.46.1), not yet re-verified live; lobby cause still open** | Two independent causes were found, detailed in the §16.2 #6 callout above the tech-stack table. **Kiosk lock-task conflict:** fixed via a pin handoff (`KioskBridge.kt`'s `beginCallHandoff`, the patched `WrapperJitsiMeetActivity.kt` self-pinning for the call's duration) — implemented, compiles, `flutter analyze`/`flutter test` clean, screen-pinning re-confirmed engaging correctly on the real Fold5, but the actual call-launches-under-the-handoff step was not re-confirmed live this session (device access collided with a concurrent session's own testing — see `client/docs/MANUAL_VERIFY_call_lock_task.md`). **Moderator lobby:** still open, gated on §16.2 #6 Step 2 (self-hosting). Neither device crashed during the original finding. Two separate follow-ups, since fixing one does not fix the other. |
+| **Real-time call — both causes have staged fixes (v0.46.1, v0.46.2), neither re-verified live** | Two independent causes were found, detailed in the §16.2 #6 callout above the tech-stack table. **Kiosk lock-task conflict:** fixed via a pin handoff (`KioskBridge.kt`'s `beginCallHandoff`, the patched `WrapperJitsiMeetActivity.kt` self-pinning for the call's duration) — implemented, compiles, `flutter analyze`/`flutter test` clean, screen-pinning re-confirmed engaging correctly on the real Fold5, but the actual call-launches-under-the-handoff step was not re-confirmed live this session (device access collided with a concurrent session's own testing — see `client/docs/MANUAL_VERIFY_call_lock_task.md`). **Moderator lobby:** Step 2 (self-hosting, `scaffold/tools/jitsi-selfhost/`) staged and container-verified as of v0.46.2 — full signaling chain healthy, Prosody's live config confirmed anonymous-domain with no forced lobby — but not device-verified: the stack's self-signed cert blocks a real join, on a browser confirmed and on `jitsi_meet_flutter_sdk` expected. Neither device crashed during the original finding. Two separate follow-ups, since fixing one does not fix the other, and neither is done until it's re-run on real hardware. |
 | **OCR** | Homework capture specified, not built. |
 | **CI, migration runner, observability** | Worse than "not scheduled": `verify.yml` lived at `scaffold/.github/workflows/verify.yml` rather than the repo root, so GitHub Actions never once discovered or ran it — confirmed via the GitHub API returning zero registered workflows despite Actions being enabled and the file existing on every branch since it was introduced. Fix committed (`git mv` to the true root); not yet live, blocked on an OAuth token missing the `workflow` scope needed to push a change under `.github/workflows/`. `orphan_risk` and `retention_breach` are also still views with no alerting. |
 
