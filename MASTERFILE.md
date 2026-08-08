@@ -9,9 +9,9 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.44.0 |
+| **Version** | 0.45.0 |
 | **Last amended** | 2026-08-04 |
-| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The native kiosk bridge is built on Android** (§5.20, §8.3, §20.2b); Windows Assigned Access and iOS Guided Access remain contract-only/Ph.4. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is now complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. |
+| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
 | **Companion docs** | `OLIVE BRANCH_CHANGELOG.md`, `OLIVE BRANCH_VISUAL.html`, `OLIVE BRANCH_MARKUP.html` |
@@ -1560,7 +1560,7 @@ POST   /v1/rituals
 | Platform | Mechanism |
 |---|---|
 | Android | Screen Pinning / kiosk (`startLockTask`) |
-| Windows | Assigned Access |
+| Windows | **App-level lock** (window-chrome strip + a re-arming `WH_KEYBOARD_LL` hook) — **not** OS Assigned Access; Ctrl+Alt+Del is OS-reserved and undeliverable to any user-mode hook, by design |
 | iOS (Ph.4) | Guided Access + Screen Time API |
 
 - Escalation to guardian scope requires **PIN + biometric**, or a passkey.
@@ -2473,7 +2473,9 @@ This list matters more than the one above.
 |---|---|
 | ~~A compiled client~~ | **CLOSED v0.15.0.** Flutter 3.24.5 / Dart 3.5.4. `flutter analyze` clean under strict casts, strict inference and strict raw types; 14 widget tests execute inside `verify.sh`. A missing toolchain is treated as a gap, not a skip. |
 | ~~A live LiveKit server~~ | **CLOSED v0.12.0.** livekit-server 1.8.0 runs inside `verify.sh` via `tools/with-livekit.sh`. 21 assertions against the real server, including the I2 proof that a join token is refused for every admin call. |
-| ~~Native kiosk bridge (Android)~~ | **CLOSED v0.43.0.** `startLockTask` wired end to end: `client/android/.../KioskBridge.kt` (real, in the actual Gradle module — the old `native/android/` copy was a never-compiled reference), `client/lib/lock_controller.dart` (a port of the §5.20 state machine), `client/lib/kiosk_shell.dart` (the wiring). The §5.20 state machine is driven by real lock-task/lifecycle events on a real device, not only synthetic ones. **Assigned Access and Guided Access remain unwritten** — Windows has no Flutter platform target scaffolded yet, and iOS is Ph.4 per §8.3's own table. |
+| ~~Native kiosk bridge (Android)~~ | **CLOSED v0.43.0.** `startLockTask` wired end to end: `client/android/.../KioskBridge.kt` (real, in the actual Gradle module — the old `native/android/` copy was a never-compiled reference), `client/lib/lock_controller.dart` (a port of the §5.20 state machine), `client/lib/kiosk_shell.dart` (the wiring). The §5.20 state machine is driven by real lock-task/lifecycle events on a real device, not only synthetic ones. Windows and Wear OS are covered in the two rows below; iOS remains Ph.4 per §8.3's own table. |
+| **Windows kiosk bridge** | **REAL, UNVERIFIED — v0.45.0.** `client/windows/runner/kiosk_bridge.{h,cpp}` — an app-level lock (window-chrome strip + a re-arming `WH_KEYBOARD_LL` hook), not OS Assigned Access. Compiled clean with `cl.exe /W4` against the real embedder headers; `flutter build windows` itself cannot run here (Visual Studio Build Tools missing the "Desktop development with C++" workload) — still marked UNVERIFIED in the header comment and the transport contract test until it is. |
+| **Wear OS companion (Galaxy Watch6)** | **DEMO ONLY — v0.45.0.** Standalone Jetpack Wear Compose module (`client/android/wear/`); `:wear:assembleDebug`/`:wear:compileDebugKotlin` both BUILD SUCCESSFUL. Phone↔watch data sync via the Wear Data Layer API is not implemented. |
 | **OCR** | Homework capture specified, not built. |
 | **CI, migration runner, observability** | `npm run verify` exists and computes its own totals, but nothing runs it on a schedule. `orphan_risk` and `retention_breach` are views with no alerting. |
 
@@ -4470,6 +4472,6 @@ Still open:
 
 ---
 
-*End of MASTERFILE v0.44.0. Amend in place. Bump version. Log in CHANGELOG.
+*End of MASTERFILE v0.45.0. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*

@@ -54,6 +54,78 @@ line went stale for three versions before being caught here.)
 
 ---
 
+## [0.45.0] — 2026-08-04 — Windows joins the kiosk bridge, a watch companion, and a responsive-hardening pass across every screen
+
+§8.3's platform table listed Android real, Windows and iOS as gaps. This
+increment closes the Windows half honestly — a real bridge that has never
+actually been run end to end, not a rewritten contract stub — and adds a
+Wear OS companion that is explicitly a demo shell. It also runs the full
+95-screen client back through the four required viewports and fixes what
+that audit found.
+
+### Added
+- **`client/windows/runner/kiosk_bridge.{h,cpp}`** — a real Win32 kiosk
+  implementation, not a stub: strips the window's caption/system menu/
+  resize border and maximizes it, installs a `WH_KEYBOARD_LL` hook that
+  swallows the Windows key, Alt+Tab, and Ctrl+Esc, and re-arms it on a 3s
+  heartbeat to detect the OS silently dropping a slow low-level hook. **This
+  is an app-level lock, not OS Assigned Access** — see the §8.3 table
+  correction below. **Ctrl+Alt+Del is deliberately left untouched** —
+  OS-reserved, not deliverable to any user-mode hook — and the header
+  comment says so rather than implying otherwise by omission.
+  `lockTaskMode()`/`isDeviceOwner()` report `"assigned"`/`false`, matching
+  what Windows actually lets an app claim. `flutter_window.{h,cpp}` wires it
+  into the engine messenger; `scaffold/native/windows/AssignedAccessBridge.cs`
+  (the old contract-only C# stub) is deleted — `scaffold/native/` is now
+  empty.
+- **A Galaxy Watch6 companion** (`client/android/wear/`) — a standalone Wear
+  OS Gradle module (Jetpack Wear Compose) showing a sleeps-until-handover
+  count and a "Call Dad" button. Compiles and installs as a real,
+  standalone-launchable APK. **Explicitly a demo**: phone↔watch sync via the
+  Wear Data Layer API is not implemented.
+- **`tools/verify.sh` gains a `:wear:assembleDebug` gate**, same "gap, not
+  skip" posture as the existing `:app:compileDebugKotlin` one.
+- **Responsive-hardening pass, all 95 client files**, re-audited at the four
+  required viewports (Fold5 cover 344px, Fold5 main 673×841, phone 390px,
+  tablet/desktop ~1100px). Ten real overflow/layout bugs found and fixed —
+  the chess/checkers button bars, the chain/story turn banners, the
+  word-search default grid, `the_book.dart`'s stat row,
+  `weeks_screen.dart`'s legend chip, `collection_screen.dart` (plus a latent
+  reorder identity-key bug found the same pass), `court_export.dart` /
+  `gallery_screen.dart`, `guardian_home.dart`'s action grid, and a real dead
+  prop in `child_home.dart`: `unreadCount` was accepted by the constructor
+  but never rendered anywhere — now drives a badge on the Messages tile.
+  ~55 files were confirmed already correct at all four widths, with test
+  coverage added regardless so this is a permanent regression guard, not a
+  one-time pass.
+
+### Fixed
+- Two hygiene bugs bundled in because they were on files already open for
+  the audit: `birthday_marked.dart`'s duplicated month-name list, and a
+  misplaced widget `Key`.
+
+### Verified
+- `flutter analyze` (client): clean.
+- `flutter test` (client): **1235 passed, 0 failed** (up from 76).
+- `npm run test:transport`: 60 passed, 0 failed, including new Windows
+  J-bridge contract assertions.
+- `:wear:compileDebugKotlin` and `:wear:assembleDebug`: BUILD SUCCESSFUL.
+
+### Out of scope, on purpose
+- **`flutter build windows` does not run here** — the local Visual Studio
+  Build Tools install is missing the "Desktop development with C++"
+  workload (confirmed via `vswhere.exe` and `flutter doctor -v` — a real
+  gap, not a code problem). Substitute verification: the new/modified C++
+  was compiled directly with `cl.exe /W4` against the cached Flutter
+  Windows embedder headers — 0 errors, 0 warnings. **Still marked
+  UNVERIFIED** in both the header comment and the transport contract test,
+  same discipline Android only dropped the marker under after an actual
+  successful build+run on a real device.
+- Phone↔watch data sync (Wear Data Layer API) — flagged for follow-up, not
+  attempted this pass.
+
+---
+
 ## [0.44.0] — 2026-08-04 — fourteen groups, one navigation graph
 
 Fourteen parallel build groups had each shipped their assigned client screens
