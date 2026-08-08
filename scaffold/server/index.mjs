@@ -31,7 +31,7 @@ if (!SESSION_SECRET) { console.error('SESSION_SECRET required'); process.exit(2)
 const pool = createPool(DATABASE_URL);
 const secret = Buffer.from(SESSION_SECRET, 'utf8');
 const api = new Api(secret, dbPort(pool));
-registerRoutes(api);
+registerRoutes(api, pool);
 
 async function devLogin(rawBody) {
   if (!DEV_LOGIN) return { status: 404, body: { error: 'not_found' } };
