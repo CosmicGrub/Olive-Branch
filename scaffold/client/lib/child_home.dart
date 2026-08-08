@@ -38,7 +38,11 @@ class ChildHome extends StatelessWidget {
 
   final String childName;
   final ParentPresence? presence;
-  final int sleepsUntilHandover;
+  // Nullable for the same reason `presence` is: no live custody-schedule
+  // source exists yet for a screen fetching real data (see
+  // child_home_live.dart), and a fabricated number would look exactly as
+  // real as the two fields that genuinely are. Absent, not guessed.
+  final int? sleepsUntilHandover;
   final int unreadCount;
 
   @override
@@ -111,8 +115,10 @@ class ChildHome extends StatelessWidget {
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => ChildMoreScreen(childName: childName)))),
         ]),
-      const SizedBox(height: 12),
-      _Sleeps(sleepsUntilHandover),
+      if (sleepsUntilHandover != null) ...[
+        const SizedBox(height: 12),
+        _Sleeps(sleepsUntilHandover!),
+      ],
     ]))),
   );
 }
@@ -156,6 +162,7 @@ class _Tile extends StatelessWidget {
   // Unread-style count shown on the icon corner when positive. Was accepted
   // by ChildHome (`unreadCount`) and threaded all the way to main.dart's demo
   // data but never rendered anywhere — a declaration with nothing behind it.
+  // Optional — null/0 renders no badge at all, not a badge showing "0".
   final int? badgeCount;
   @override
   Widget build(BuildContext context) => InkWell(
