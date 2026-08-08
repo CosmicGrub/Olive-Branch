@@ -54,6 +54,74 @@ line went stale for three versions before being caught here.)
 
 ---
 
+## [0.46.0] — 2026-08-07 — the client's first live screen, a CI blind spot closed, and the call verified broken on real devices
+
+A stranded branch merge finished, a real CI gap found and fixed, and — the
+headline finding — §16.2 #6 Step 1 (Jitsi over the public server) driven
+end to end on two physical Android devices rather than trusted from code
+review. It does not work, on either device, for two independent reasons.
+
+### Added
+- **`LiveChildHomeScreen` (`client/lib/child_home_live.dart`) +
+  `main_live.dart`.** The first client screen wired to real network calls
+  instead of demo constants: fetches `/v1/me` + `/inbox` through the
+  existing dev-login path, reuses `ChildHome` unmodified so every invariant
+  its own test suite already asserts still holds on the live path, and is
+  honest about what isn't real yet — `presence` and `sleepsUntilHandover`
+  render as an absence, not a guessed number, since no day-part or
+  custody-schedule endpoint exists server-side. 4 new tests (loading,
+  real-data render, unreachable-server retry, recovery).
+- **`server/routes.mjs`**: `/v1/me` now resolves a real `display_name`
+  instead of returning bare ids.
+
+### Fixed
+- **`.github/workflows/verify.yml` had never once run.** It lived at
+  `scaffold/.github/workflows/verify.yml` — GitHub Actions only discovers
+  workflows under `<repo-root>/.github/workflows/`. Confirmed via
+  `gh api repos/.../actions/workflows` returning zero registered workflows
+  despite Actions being enabled repo-wide and the file existing on every
+  branch since it was introduced; `gh run list` returned an empty run
+  history for the entire project. Fixed with a `git mv` to the true root.
+  **Not live yet** — blocked on an OAuth token missing the `workflow` scope
+  needed to push a change under `.github/workflows/`; the commit is queued
+  and pushes as soon as that scope is granted.
+- **`call_screen.dart`'s `devRoomServerBase` hardcoded a dead LAN IP**
+  (`192.168.1.78`, from a network this project is no longer on) — silently
+  breaks two-device testing with no clue why. Switched to `127.0.0.1` +
+  `adb reverse tcp:8787 tcp:8787` per device, which works over USB
+  regardless of whether the phones and the dev machine share a WiFi network.
+- **`network_security_config.xml` still whitelisted the old LAN IP** after
+  the fix above — config drift caught in the same pass. Updated to match.
+
+### Verified — and found broken, on two real devices
+§16.2 #6 Step 1 was driven end to end on a guardian tablet and a child's
+Galaxy Z Fold5, in both join orders. Neither completes, for two independent
+reasons (full detail in the §16.2 #6 callout in MASTERFILE.md and the new
+§20.2b row):
+
+- **The child's kiosk lock blocks the call from ever starting**, and this
+  is orthogonal to Step 1 vs. Step 2 — self-hosting will not fix it alone.
+  `jitsi_meet_flutter_sdk` opens calls in a separate `singleTask` Activity;
+  Android's screen-pinning (§5.20, engaged for real on the child side)
+  refuses to launch it — `E/ActivityTaskManager: Attempted Lock Task Mode
+  violation` — and `call_screen.dart`'s "Joining…" spinner waits forever on
+  a callback from an Activity the OS never started.
+- **The public `meet.jit.si` server puts new rooms in a moderator-approval
+  lobby** — `[app:lobby] Lobby starting knocking (membersOnly = ...)` in the
+  SDK's own log, on the guardian side, which otherwise connected cleanly and
+  captured real camera/mic. No login/moderator flow exists to clear it. This
+  is evidence *for* Step 2 (self-hosting), not a reason to distrust Jitsi
+  generally.
+
+Neither device crashed — both degrade to a stuck-but-recoverable state,
+confirmed against a full logcat capture with zero `FATAL EXCEPTION`s from
+the app across the session. Homework capture, the emergency card, and
+general navigation were also spot-checked on both physical devices (tablet
++ Fold5) with no crashes or layout issues found beyond what the 0.45.0
+responsive pass already covered.
+
+---
+
 ## [0.45.0] — 2026-08-04 — Windows joins the kiosk bridge, a watch companion, and a responsive-hardening pass across every screen
 
 §8.3's platform table listed Android real, Windows and iOS as gaps. This

@@ -9,9 +9,9 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.45.0 |
-| **Last amended** | 2026-08-04 |
-| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. |
+| **Version** | 0.46.0 |
+| **Last amended** | 2026-08-07 |
+| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call does not work, verified live on two physical devices** (§16.2 #6 callout, §20.2b) — a child-side kiosk-lock/Activity conflict and the public Jitsi server's moderator lobby, two separate bugs. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
 | **Companion docs** | `OLIVE BRANCH_CHANGELOG.md`, `OLIVE BRANCH_VISUAL.html`, `OLIVE BRANCH_MARKUP.html` |
@@ -2036,6 +2036,38 @@ enrollment. Documented in the security policy required by §10.1.
 > at the end of the pipe. Whether Jitsi's own JWT auth (`mod_auth_token` via
 > Prosody) replaces that shape, or whether room-name secrecy alone remains the
 > security boundary, is undecided and blocks Step 2.
+>
+> **Step 1, tested end to end on two physical devices, does not work —
+> verified rather than trusted from code review.** A guardian tablet and a
+> child's Galaxy Z Fold5 were driven through a real call attempt in both
+> join orders. Neither completed, for two independent reasons:
+>
+> - **The child's kiosk lock blocks the call from ever starting, and this is
+>   orthogonal to Step 1 vs. Step 2.** `jitsi_meet_flutter_sdk` opens calls in
+>   a separate `singleTask` Activity (`WrapperJitsiMeetActivity`); Android's
+>   screen-pinning (§5.20, engaged for real on the child side) refuses to
+>   launch any second Activity, logging `E/ActivityTaskManager: Attempted
+>   Lock Task Mode violation`. `call_screen.dart`'s "Joining…" spinner then
+>   waits forever on a callback from an Activity the OS never started.
+>   Self-hosting the videobridge will not fix this by itself — the child side
+>   needs either a lock-task exit/re-entry around the call, a Device-Owner-
+>   level lock-task allowlist naming the Jitsi activity, or the call rendered
+>   without a second Activity at all.
+> - **The public `meet.jit.si` server puts new/unclaimed rooms in a
+>   moderator-approval lobby.** Confirmed via the SDK's own log —
+>   `[app:lobby] Lobby starting knocking (membersOnly = ...)` — on the
+>   guardian side, which otherwise connected cleanly and captured real
+>   camera/mic. The app has no login/moderator flow, so it waits indefinitely
+>   for an approval nobody can grant. This is direct evidence *for* Step 2
+>   rather than a reason to distrust Jitsi generally — a self-hosted
+>   Videobridge under Olive's own Prosody/Jicofo config is not subject to a
+>   public instance's anti-abuse lobby default.
+>
+> Neither device crashed; both degrade to a stuck-but-recoverable state,
+> confirmed against a full logcat capture with zero `FATAL EXCEPTION`s from
+> the app across the session. Tracked as two separate follow-ups rather than
+> one, since fixing the lock-task conflict does not require Step 2 and
+> completing Step 2 does not by itself fix the lock-task conflict.
 
 ---
 
@@ -2476,8 +2508,9 @@ This list matters more than the one above.
 | ~~Native kiosk bridge (Android)~~ | **CLOSED v0.43.0.** `startLockTask` wired end to end: `client/android/.../KioskBridge.kt` (real, in the actual Gradle module — the old `native/android/` copy was a never-compiled reference), `client/lib/lock_controller.dart` (a port of the §5.20 state machine), `client/lib/kiosk_shell.dart` (the wiring). The §5.20 state machine is driven by real lock-task/lifecycle events on a real device, not only synthetic ones. Windows and Wear OS are covered in the two rows below; iOS remains Ph.4 per §8.3's own table. |
 | **Windows kiosk bridge** | **REAL, UNVERIFIED — v0.45.0.** `client/windows/runner/kiosk_bridge.{h,cpp}` — an app-level lock (window-chrome strip + a re-arming `WH_KEYBOARD_LL` hook), not OS Assigned Access. Compiled clean with `cl.exe /W4` against the real embedder headers; `flutter build windows` itself cannot run here (Visual Studio Build Tools missing the "Desktop development with C++" workload) — still marked UNVERIFIED in the header comment and the transport contract test until it is. |
 | **Wear OS companion (Galaxy Watch6)** | **DEMO ONLY — v0.45.0.** Standalone Jetpack Wear Compose module (`client/android/wear/`); `:wear:assembleDebug`/`:wear:compileDebugKotlin` both BUILD SUCCESSFUL. Phone↔watch data sync via the Wear Data Layer API is not implemented. |
+| **Real-time call — verified broken on real devices** | **Neither call direction completes**, tested live on a guardian tablet and a child's Galaxy Z Fold5. Two independent causes, detailed in the §16.2 #6 callout above the tech-stack table: the child's kiosk lock blocks the Jitsi SDK's own Activity from launching at all (`Attempted Lock Task Mode violation`); the public `meet.jit.si` server puts new rooms in a moderator lobby the app has no login flow to clear. Neither device crashed. Two separate follow-ups, since fixing one does not fix the other. |
 | **OCR** | Homework capture specified, not built. |
-| **CI, migration runner, observability** | `npm run verify` exists and computes its own totals, but nothing runs it on a schedule. `orphan_risk` and `retention_breach` are views with no alerting. |
+| **CI, migration runner, observability** | Worse than "not scheduled": `verify.yml` lived at `scaffold/.github/workflows/verify.yml` rather than the repo root, so GitHub Actions never once discovered or ran it — confirmed via the GitHub API returning zero registered workflows despite Actions being enabled and the file existing on every branch since it was introduced. Fix committed (`git mv` to the true root); not yet live, blocked on an OAuth token missing the `workflow` scope needed to push a change under `.github/workflows/`. `orphan_risk` and `retention_breach` are also still views with no alerting. |
 
 ### 20.3 Honest assessment
 
@@ -4472,6 +4505,6 @@ Still open:
 
 ---
 
-*End of MASTERFILE v0.45.0. Amend in place. Bump version. Log in CHANGELOG.
+*End of MASTERFILE v0.46.0. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*
