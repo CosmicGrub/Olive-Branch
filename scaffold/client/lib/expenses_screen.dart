@@ -156,20 +156,28 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
         Container(padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(12)),
           child: Row(children: [
-            const Icon(Icons.visibility_off_outlined, size: 18),
+            Icon(Icons.visibility_off_outlined, size: 18,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(width: 8),
             Expanded(child: Text('Guardian ↔ guardian only. ${widget.childName} never sees '
               'this screen, a total, or a notification about it.',
-              style: const TextStyle(fontSize: 12))),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant))),
           ])),
         const SizedBox(height: 20),
         _SectionLabel('Needs your answer (${pending.length})'),
         const SizedBox(height: 8),
         if (pending.isEmpty)
-          const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Nothing waiting.', style: TextStyle(color: Colors.black45)))
+          Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(children: [
+              Icon(Icons.mark_email_read_outlined, size: 32,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: 8),
+              Text('Nothing waiting.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ]))
         else
           for (final InboxItem item in pending)
             _ApprovalCard(item: item, onAction: (String a) => _resolve(item.id, a)),
@@ -196,8 +204,8 @@ class _SectionLabel extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Text(text.toUpperCase(),
-    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: 0.5,
-      color: Theme.of(context).colorScheme.primary));
+    style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700,
+      letterSpacing: 0.5, color: Theme.of(context).colorScheme.primary));
 }
 
 class _ApprovalCard extends StatelessWidget {
@@ -212,9 +220,10 @@ class _ApprovalCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(item.summary, style: const TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
+        // 48dp minimum tap target — these were 44dp (finding #3).
         Wrap(spacing: 8, runSpacing: 8, children: [
           for (final String action in item.actions)
-            SizedBox(height: 44, child: OutlinedButton(
+            SizedBox(height: 48, child: OutlinedButton(
               onPressed: () => onAction(action), child: Text(action))),
         ]),
       ])));

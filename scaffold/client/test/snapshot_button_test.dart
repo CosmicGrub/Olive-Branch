@@ -109,10 +109,12 @@ void main() {
   });
 
   group('AppGalleryScreen — her own gallery, never the device roll', () {
-    testWidgets('shows an honest empty state before anything is saved', (t) async {
+    testWidgets('shows an honest empty state before anything is saved, with a real icon',
+        (t) async {
       final AppGallery gallery = AppGallery();
       await t.pumpWidget(MaterialApp(home: AppGalleryScreen(gallery: gallery)));
       expect(find.textContaining('Nothing saved yet'), findsOneWidget);
+      expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
     });
 
     testWidgets('renders one tile per saved photo', (t) async {

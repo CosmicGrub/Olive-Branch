@@ -129,6 +129,26 @@ void main() {
       expect(find.text('Stop here for tonight'), findsNothing);
     });
 
+    testWidgets('the turn-row/"The end" swap is a real completion moment, not an instant cut',
+        (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+
+      expect(find.byKey(const ValueKey('turnRow')), findsOneWidget);
+      expect(find.byKey(const ValueKey('theEnd')), findsNothing);
+
+      for (int i = 0; i < 11; i++) {
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+      }
+      // Reached the end: the turn controls are gone, "The end" is in, and
+      // pumpAndSettle above already proves the crossfade settles cleanly
+      // rather than hanging mid-animation.
+      expect(find.byKey(const ValueKey('turnRow')), findsNothing);
+      expect(find.byKey(const ValueKey('theEnd')), findsOneWidget);
+    });
+
     testWidgets('starring toggles the icon and adds a chip to the shelf', (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));

@@ -164,15 +164,19 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
     appBar: AppBar(title: const Text('Meds & care')),
     body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
       Text('Between guardians only — ${widget.childName} never sees this screen.',
-        style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 16),
       if (_banner != null)
         Container(margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
-            borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(12)),
           child: Row(children: [
-            const Icon(Icons.info_outline, size: 18), const SizedBox(width: 8),
-            Expanded(child: Text(_banner!, style: const TextStyle(fontSize: 13))),
+            Icon(Icons.info_outline, size: 18,
+              color: Theme.of(context).colorScheme.onSecondaryContainer),
+            const SizedBox(width: 8),
+            Expanded(child: Text(_banner!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSecondaryContainer))),
           ])),
       const _SectionLabel('Scheduled medications'),
       const SizedBox(height: 8),
@@ -183,13 +187,14 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
             Text('${med.name} · ${med.dose}', style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             for (final String slot in med.slots)
-              Padding(padding: const EdgeInsets.symmetric(vertical: 3),
+              Padding(padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(children: [
                   Expanded(child: Text(slot[0].toUpperCase() + slot.substring(1))),
                   if (_givenToday(med, slot))
                     const Chip(label: Text('Given today'))
                   else
-                    SizedBox(height: 44, child: FilledButton(
+                    // 48dp minimum tap target — was 44dp (finding #3).
+                    SizedBox(height: 48, child: FilledButton(
                       onPressed: () => _logDose(med, slot, status: DoseStatus.given),
                       child: const Text('Log dose'))),
                 ])),
@@ -202,7 +207,8 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
           child: Row(children: [
             Expanded(child: Text('${med.name} · ${med.dose}',
               style: const TextStyle(fontWeight: FontWeight.w600))),
-            SizedBox(height: 44, child: OutlinedButton(
+            // 48dp minimum tap target — was 44dp (finding #3).
+            SizedBox(height: 48, child: OutlinedButton(
               onPressed: () => _logDose(med, 'prn', status: DoseStatus.given),
               child: const Text('Log PRN dose'))),
           ]))),
@@ -213,7 +219,7 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Allergies', style: TextStyle(fontWeight: FontWeight.w600)),
           for (final String a in _allergies) Text(a),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           const Text('Conditions', style: TextStyle(fontWeight: FontWeight.w600)),
           for (final String c in _conditions) Text(c),
         ]))),
@@ -226,6 +232,6 @@ class _SectionLabel extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Text(text.toUpperCase(),
-    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: 0.5,
-      color: Theme.of(context).colorScheme.primary));
+    style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700,
+      letterSpacing: 0.5, color: Theme.of(context).colorScheme.primary));
 }

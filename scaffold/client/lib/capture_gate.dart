@@ -111,10 +111,10 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
               }),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Hold the page flat inside the frame, then take the photo.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 15.5)),
+              style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 20),
             SizedBox(
               width: 76, height: 76,
@@ -127,12 +127,12 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
                     : const Icon(Icons.camera_alt, size: 30),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Text(
               'Demo capture — this preview build simulates the photo; there is '
               'no camera wired up yet.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
           ]),
         ),
       ),

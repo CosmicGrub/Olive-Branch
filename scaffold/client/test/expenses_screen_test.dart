@@ -83,6 +83,27 @@ void main() {
       expect(find.byType(FilledButton), findsNothing);
       expect(find.byType(TextField), findsNothing);
     });
+
+    testWidgets('resolving every approval shows a calm, honest empty state — '
+        'a real icon and message, not a bare label', (t) async {
+      await t.pumpWidget(wrap(const ExpensesScreen()));
+      await t.tap(find.widgetWithText(OutlinedButton, 'Agree').first);
+      await t.pump();
+      await t.tap(find.widgetWithText(OutlinedButton, 'Agree').first);
+      await t.pump();
+      expect(find.textContaining('NEEDS YOUR ANSWER (0)'), findsOneWidget);
+      expect(find.text('Nothing waiting.'), findsOneWidget);
+      expect(find.byIcon(Icons.mark_email_read_outlined), findsOneWidget);
+    });
+
+    testWidgets('approval action buttons meet the 48dp minimum tap target',
+        (t) async {
+      await t.pumpWidget(wrap(const ExpensesScreen()));
+      final Size size = t.getSize(find.ancestor(
+        of: find.text('Agree').first,
+        matching: find.byWidgetPredicate((Widget w) => w is OutlinedButton)));
+      expect(size.height, greaterThanOrEqualTo(48));
+    });
   });
 
   group('responsive — Fold5 cover/main, phone, and desktop widths', () {

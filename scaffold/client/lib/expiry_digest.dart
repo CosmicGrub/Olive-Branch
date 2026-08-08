@@ -140,8 +140,9 @@ class _ExpiryDigestScreenState extends State<ExpiryDigestScreen> {
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
         Text(digest.headline, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
-        const Text('Guardian-only, always — never shown to her.',
-          style: TextStyle(fontSize: 12, color: Colors.black54)),
+        Text('Guardian-only, always — never shown to her.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 12),
         if (digest.byKind.isNotEmpty)
           Wrap(spacing: 8, children: [
@@ -153,8 +154,14 @@ class _ExpiryDigestScreenState extends State<ExpiryDigestScreen> {
           AnimatedSize(duration: const Duration(milliseconds: 200),
             child: _ExpiringTile(artifact: a, onKeep: () => _keep(a.artifactId))),
         if (digest.items.isEmpty)
-          const Padding(padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text('All clear.', style: TextStyle(color: Colors.black45))),
+          Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(children: [
+              Icon(Icons.check_circle_outline, size: 32,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: 8),
+              Text('All clear.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ])),
       ])),
     );
   }
@@ -176,7 +183,8 @@ class _ExpiringTile extends StatelessWidget {
     child: ListTile(
       title: Text(artifact.caption ?? _kindLabel(artifact.kind)),
       subtitle: Text('${artifact.daysLeft == 1 ? '1 day' : '${artifact.daysLeft} days'} left'),
-      trailing: SizedBox(height: 40, child: OutlinedButton(
+      // 48dp minimum tap target — was 40dp.
+      trailing: SizedBox(height: 48, child: OutlinedButton(
         onPressed: onKeep, child: const Text('Keep forever'))),
     ));
 }

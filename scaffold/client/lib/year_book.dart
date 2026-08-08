@@ -115,8 +115,8 @@ class _YearBookScreenState extends State<YearBookScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
-            const Text('A year of her, preserved.',
-                style: TextStyle(fontSize: 13, color: Colors.black54)),
+            Text('A year of her, preserved.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -166,23 +166,27 @@ class _CoverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           begin: Alignment.topLeft, end: Alignment.bottomRight,
           colors: <Color>[scheme.primaryContainer, scheme.tertiaryContainer],
         ),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        // A deliberate, oversized cover-hero numeral — the same one-off
+        // treatment §8.2.5's sleeps-countdown documents, not a candidate for
+        // a textTheme role.
         Text('${book.year}', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800)),
         const SizedBox(height: 4),
-        Text("$childName's year", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
+        Text("$childName's year", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 12),
         Text('${book.artifactCount} pieces preserved',
-            style: TextStyle(fontSize: 13, color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
+            style: textTheme.bodySmall?.copyWith(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
       ]),
     );
   }
@@ -193,26 +197,30 @@ class _PlacesCard extends StatelessWidget {
   final List<YearBookPlace> places;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            Text('WHERE THIS YEAR HAPPENED',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6,
-                    color: Theme.of(context).colorScheme.primary)),
-            const SizedBox(height: 8),
-            for (final YearBookPlace p in places)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(children: <Widget>[
-                  Expanded(child: Text(p.zone, style: const TextStyle(fontSize: 13.5))),
-                  Text('${p.days} day${p.days == 1 ? '' : 's'} captured',
-                      style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
-                ]),
-              ),
-          ]),
-        ),
-      );
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text('WHERE THIS YEAR HAPPENED',
+              style: textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700, letterSpacing: 0.6, color: scheme.primary)),
+          const SizedBox(height: 8),
+          for (final YearBookPlace p in places)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: <Widget>[
+                Expanded(child: Text(p.zone, style: textTheme.bodyMedium)),
+                Text('${p.days} day${p.days == 1 ? '' : 's'} captured',
+                    style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              ]),
+            ),
+        ]),
+      ),
+    );
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -225,16 +233,19 @@ class _SectionCard extends StatelessWidget {
     final Map<String, Artifact> byId = <String, Artifact>{
       for (final Artifact a in artifacts) a.id: a,
     };
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Row(children: <Widget>[
             Expanded(child: Text(section.title,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-            Text('${section.artifactIds.length}', style: const TextStyle(color: Colors.black45)),
+                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
+            Text('${section.artifactIds.length}',
+                style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -264,7 +275,7 @@ class _PieceChip extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
           Icon(_iconForKind(artifact.kind), size: 22),
           const SizedBox(height: 4),
-          Text(_shortDate(artifact.capturedAt), style: const TextStyle(fontSize: 10)),
+          Text(_shortDate(artifact.capturedAt), style: Theme.of(context).textTheme.labelSmall),
         ]),
       );
 }
@@ -276,9 +287,10 @@ class _PrintableCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final TextTheme textTheme = Theme.of(context).textTheme;
     if (book.printable) {
       return Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
             color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
@@ -286,9 +298,9 @@ class _PrintableCard extends StatelessWidget {
             const Icon(Icons.auto_stories_outlined),
             const SizedBox(width: 8),
             Expanded(child: Text('Ready to print — ${book.artifactCount} pieces make a proper Year Book',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5))),
+                style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -302,7 +314,7 @@ class _PrintableCard extends StatelessWidget {
       );
     }
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
@@ -313,7 +325,7 @@ class _PrintableCard extends StatelessWidget {
               'Not a book yet — just ${book.artifactCount} piece${book.artifactCount == 1 ? '' : 's'} so far. '
               'Under twelve, this would print as a slideshow, not a Year Book, so we say so rather than '
               'offer to print one.',
-              style: const TextStyle(fontSize: 12.5)),
+              style: textTheme.bodySmall),
         ),
       ]),
     );

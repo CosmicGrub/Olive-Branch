@@ -127,7 +127,7 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
           child: LayoutBuilder(builder: (context, constraints) {
             final bool narrow = constraints.maxWidth < 420;
             return Padding(
-              padding: EdgeInsets.all(narrow ? 10 : 16),
+              padding: EdgeInsets.all(narrow ? 8 : 16),
               child: Column(children: [
                 Expanded(
                   child: LayoutBuilder(builder: (context, inner) {
@@ -151,8 +151,8 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
                     );
                   }),
                 ),
-                SizedBox(height: narrow ? 10 : 14),
-                Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 10, children: [
+                SizedBox(height: narrow ? 8 : 12),
+                Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
                   for (final Color c in _kPalette)
                     _PaletteSwatch(
                       color: c,
@@ -187,7 +187,9 @@ class _PaletteSwatch extends StatelessWidget {
               shape: BoxShape.circle,
               color: color,
               border: Border.all(
-                color: selected ? Theme.of(context).colorScheme.primary : Colors.black12,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outlineVariant,
                 width: selected ? 3.5 : 1),
             ),
           ),

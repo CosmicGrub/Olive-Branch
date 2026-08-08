@@ -81,11 +81,17 @@ void main() {
         (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+      // Not shown before the last page — it is a genuine completion moment,
+      // not an always-there button.
+      expect(find.text('Read another one together'), findsNothing);
+
       // The grammar always emits exactly 12 lines regardless of seed.
       for (int i = 0; i < 11; i++) {
         await tester.tap(find.text('Turn the page'));
         await tester.pumpAndSettle();
       }
+      // pumpAndSettle above already proves the AnimatedSize grow-in settles
+      // rather than hanging mid-animation.
       expect(find.text('Read another one together'), findsOneWidget);
       expect(find.textContaining('%'), findsNothing);
     });

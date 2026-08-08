@@ -98,6 +98,13 @@ void main() {
           reason: 'a photographed physical work gets no different treatment than a photo');
       expect(photoOfObject, collage);
     });
+
+    test('uses the photo-frame radius (16), not the home-tile radius (14) — '
+        'those two are reserved for different roles in this codebase', () {
+      final ColorScheme scheme = ColorScheme.fromSeed(seedColor: Colors.deepPurple);
+      final BoxDecoration decoration = frameFor(scheme, 'drawing');
+      expect(decoration.borderRadius, BorderRadius.circular(16));
+    });
   });
 
   group('GalleryScreen — the widget itself', () {
@@ -162,6 +169,15 @@ void main() {
     testWidgets('closes with "Cardboard counts. It always did."', (WidgetTester tester) async {
       await pumpScreen(tester);
       expect(find.text('Cardboard counts. It always did.'), findsOneWidget);
+    });
+
+    testWidgets('an empty collection gets a real icon and an honest message, not a bare Text',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(900, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const GalleryScreen(debugPieces: <GalleryPiece>[])));
+      expect(find.text('Nothing here yet.'), findsOneWidget);
+      expect(find.byIcon(Icons.photo_outlined), findsOneWidget);
     });
   });
 
