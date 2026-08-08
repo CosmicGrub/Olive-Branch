@@ -19,6 +19,7 @@ import { issueSession } from '../packages/auth/src/auth.mjs';
 import { Api } from '../packages/api/src/api.mjs';
 import { createPool, dbPort } from '../packages/db/src/pool.mjs';
 import { registerRoutes } from './routes.mjs';
+import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -32,6 +33,15 @@ const pool = createPool(DATABASE_URL);
 const secret = Buffer.from(SESSION_SECRET, 'utf8');
 const api = new Api(secret, dbPort(pool));
 registerRoutes(api);
+
+// ---- network play (checkers, live) — MASTERFILE §5.14, §5.17, §5.19 ------
+// In-memory only (packages/game-sync/src/table.ts's T7): no table, token, or
+// move ever touches Postgres or disk. A dropped connection ends the game;
+// see game_tables.mjs's own header for why that is a deliberate simplicity
+// choice, not an oversight.
+const gameTableSecret = deriveGameTableSecret(secret);
+const gameTables = new Map();
+registerGameTableRoutes(api, { secret: gameTableSecret, tables: gameTables });
 
 async function devLogin(rawBody) {
   if (!DEV_LOGIN) return { status: 404, body: { error: 'not_found' } };
@@ -80,6 +90,11 @@ const server = createServer((req, res) => {
     }
   });
 });
+
+// Node's own upgrade event on the SAME http.Server and SAME port — no second
+// listener, no LAN-broadcast/discovery mechanism of any kind. Every table
+// connection is relayed through this one authenticated process.
+attachGameSocketServer(server, { secret: gameTableSecret, tables: gameTables });
 
 server.listen(PORT, () => {
   console.log(`olive-branch server listening on :${PORT}` + (DEV_LOGIN ? ' (DEV_LOGIN enabled)' : ''));

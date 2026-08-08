@@ -30,9 +30,22 @@ export interface Ctx {
   db: DbPort;
 }
 
+export interface SiblingLinkRow {
+  childA: string;
+  childB: string;
+  contactAllowed: boolean;
+}
+
 export interface DbPort {
   edgesFor(userId: string): Promise<Edge[]>;
   withSession<T>(p: VerifiedPrincipal, fn: (q: Query) => Promise<T>): Promise<T>;
+  /**
+   * §5.14 — the sibling_link row for exactly this pair, or null if none
+   * exists. Used only by the game-sync table-open route's own authorization
+   * step (packages/game-sync/src/table.ts's `canOpenTable`) — never a
+   * traversal path into guardianship access (see that module's own header).
+   */
+  siblingLinkFor?(childA: string, childB: string): Promise<SiblingLinkRow | null>;
 }
 export type Query = (sql: string, params?: unknown[]) => Promise<any[]>;
 

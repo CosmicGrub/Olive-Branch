@@ -16,6 +16,117 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Added
+- **Secure network play (checkers, live) — `packages/game-sync`.** Every
+  existing game (§9.2) was pass-and-play: one device, two turns. A guardian
+  and a child, or two siblings, on separate devices had no way to play each
+  other live. Built server-mediated — relayed through this app's own
+  authenticated backend, never peer-to-peer, never LAN-broadcast/discovery —
+  because that is the same trust boundary §5.21 already fought to establish
+  for calls (a P2P path leaks an IP address; §5.21's whole point was closing
+  exactly that door), and a second feature quietly reopening it in a
+  different corner of the app would undo that work. New §7.4b in
+  MASTERFILE.md documents the HTTP+WSS surface this adds.
+  - **`packages/game-sync/src/table.ts`** — new package, pure
+    authorization/lifecycle core, fully unit-tested (`test/table.test.mjs`,
+    80 assertions) before any transport was wired, per this codebase's own
+    build order. `canOpenTable()` gates a table between a guardian and
+    child via the exact `can('call', ...)` check session-runtime already
+    uses for real-time contact (§5.19 I4) — no new authorization path for
+    that pairing — or between two siblings via
+    `sibling_link.contact_allowed` (§5.14), deliberately a SEPARATE check
+    that never lets an adult's guardianship edge reach a table through a
+    sibling traversal (the lateral-escalation path §5.17/H3 already
+    forbids `can()` itself from taking). Join tokens
+    (`mintJoinToken`/`readJoinToken`) reuse this codebase's existing
+    HMAC-SHA256 signed-payload convention (`auth.ts`'s
+    `issueSession`/`readSession`) rather than a new scheme, with a key
+    derived from `SESSION_SECRET` for domain separation. Tokens are
+    short-lived (180s), single-use (`redeemJoin`), and scoped to exactly
+    one table and seat. The server tracks whose turn it is by SEAT
+    ALTERNATION ONLY — `applyIncomingMove` has never heard of checkers —
+    and refuses an out-of-turn, malformed, oversized, or
+    rate-limit-exceeding message outright (deny-by-default, matching
+    `child-lock/lock.ts`'s `canRender()` posture). Either seat
+    disconnecting ends the table outright: no reconnect, no persistence,
+    nothing that could need RLS-style scoping in the first place (T7).
+  - **`server/game_tables.mjs`** — wires `table.ts` to `server/index.mjs`'s
+    real `http.Server` via `POST /v1/game-tables`, `POST
+    /v1/game-tables/:tableId/join`, and a `WSS
+    /v1/game-tables/:tableId/socket` relay attached through Node's own
+    `upgrade` event (the `ws` package, newly added — no second port, no
+    second listener). The HTTP routes use `api.ts`'s `action: null` escape
+    hatch rather than its normal `:childId`-scoped A1-A3 middleware,
+    because a table always involves TWO principals and the sibling case
+    has neither as "the caller's own child"; authorization runs entirely
+    through `canOpenTable`. The join endpoint re-verifies the
+    family-graph edge/sibling_link FRESH (mirroring session-runtime's
+    I4b) rather than trusting the table-open decision to still hold
+    minutes later.
+  - **`packages/db/src/pool.ts` — `siblingLinkFor()`** and
+    **`packages/api/src/api.ts` — `DbPort.siblingLinkFor`**: the one new
+    real-DB lookup the sibling↔sibling authorization path needs,
+    following `edgesFor`'s own pattern exactly (system-role session,
+    never a traversal through `guardianship`).
+  - **`client/lib/networked_checkers_channel.dart` —
+    `NetworkedCheckersChannel`.** WebSocket transport
+    (`package:web_socket_channel`, newly added) for one table.
+    Deny-by-default frame parsing (a malformed or spoofed-seat message is
+    dropped, never surfaced); never sends a seat (the server assigns and
+    trusts only the seat bound to the authenticated connection).
+  - **`client/lib/game_checkers.dart` — `CkNetworkHook`/`CkRemoteMove`/
+    `CkNetStatus`, and an optional `GameCheckers.network` parameter.**
+    Additive only: `network == null` (every existing call site, every
+    existing test) behaves byte-identically to before. When supplied, the
+    built-in simulated opponent never runs — the remote peer is the
+    opponent — and, critically, every remote move is re-validated through
+    the exact same pure `playCheckers` engine the local pass-and-play path
+    already uses before it is ever applied to the board. An illegal move
+    from an authenticated-but-compromised peer is dropped and surfaced as
+    a notice, never applied. `game_checkers.dart` itself gained zero
+    dependency on any transport package — `CkNetworkHook` is plain
+    data/callbacks, defined there specifically so a test can supply a
+    fake with no networking at all.
+  - **`client/lib/api_client.dart` — `OliveApi.requestGameTable`/
+    `joinGameTable`, `GameTableTicket`.**
+  - **`client/lib/networked_checkers_lobby_screen.dart` —
+    `NetworkedCheckersLobbyScreen`**, reachable from a new "Checkers — play
+    live" tile in `games_hub.dart`. The real, working entry point: sign in
+    (dev-only bootstrap, same as `server/index.mjs`'s own documented
+    DEV_LOGIN ceremony — nothing in `client/lib` threads a real backend
+    session through the widget tree yet at all, an honest pre-existing gap
+    this pass does not paper over), open or join a table by its opaque
+    id, then start playing on the real `GameCheckers` widget wired to a
+    real `NetworkedCheckersChannel`.
+  - **Verified:** `npm run test:game-sync` (new) 80/0; a real end-to-end
+    run (not simulated) against Postgres 16 in WSL2 + the real
+    `server/index.mjs` + real `ws` sockets, 38/0, covering the attack
+    scenarios in this pass's own security review (cross-table token,
+    expired token, forged token, replayed token, out-of-turn move,
+    malformed/out-of-bounds move, a third connection joining a full
+    table, a rate-limit burst — each correctly refused/dropped); `flutter
+    analyze` clean; `flutter test` 907/0 (full existing suite unchanged +
+    new coverage). `npm run test:transport`'s existing contract suite
+    required two real fixes: `/v1/game-tables` documented in MASTERFILE's
+    §7 (the suite refuses any client-called path absent from it), and the
+    two new Dart files carry the same `UNVERIFIED (no Flutter toolchain in
+    tools/verify.sh's automated pipeline)` marker every other client file
+    already does. Every other existing JS suite re-run individually and
+    confirmed unaffected; the aggregate `npm test` chain still cannot
+    complete end to end on this Windows environment, aborting right after
+    `test:stack`'s own 94 assertions all pass on the **pre-existing** libuv
+    `UV_HANDLE_CLOSING` teardown assertion already flagged in this
+    project's own history, not anything this pass introduced.
+  - **Out of scope, on purpose:** reconnect after a dropped connection
+    (T7 ends the table outright instead — the simplest choice that keeps
+    the ephemeral guarantee absolute); real invite delivery through the
+    async delivery engine's own `delivery_intent` (§5.3) rather than the
+    lobby screen's on-screen opaque table id; games other than checkers
+    (`table.ts`'s server contract is otherwise generic — the 8x8
+    board-bounds check in `parseClientMessage` is the one
+    checkers-specific constant, called out in its own comment as the seam
+    to generalize).
+
 ### Reversed
 - **§16.2 #6 — call/video infrastructure, reversed at the owner's direction.**
   v0.40.0 settled on staying on LiveKit Cloud (see the callout above the tech

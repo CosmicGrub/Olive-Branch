@@ -23,6 +23,7 @@
 // the same posture games.ts's `childView()` takes with `boxesEach` — and
 // disappear the moment the game ends, replaced by "Good game." regardless
 // of who has more pieces on the board.
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 
@@ -175,6 +176,65 @@ CkPlayResult playCheckers(CheckersState s, CkSide side, CkCell from, CkCell to) 
 int checkersCount(CheckersState s, CkSide side) =>
     s.board.expand((row) => row).where((p) => p?.side == side).length;
 
+// ======================================================= NETWORK HOOK ======
+// A minimal, transport-agnostic seam for LIVE (non-local) network play —
+// see MASTERFILE's network-play security review. This file stays entirely
+// ignorant of WebSockets, HTTP, or any transport package; the real
+// implementation (networked_checkers_channel.dart) imports THIS file for
+// these types, never the other way, so there is no dependency cycle and a
+// unit test can supply a trivial fake hook with no networking at all.
+//
+// When `GameCheckers.network` is null, every code path below behaves
+// EXACTLY as it always has — local pass-and-play against the built-in
+// simulated opponent. Supplying a hook is strictly additive.
+
+/// One move as received from the remote peer, already shape- and
+/// turn-validated by the SERVER (packages/game-sync/src/table.ts) and by the
+/// transport layer — but the server deliberately never checks GAME legality
+/// (it has never heard of checkers). That check happens HERE, via the exact
+/// same `playCheckers` the local pass-and-play path already uses, before
+/// the move is ever applied — defense in depth: never trust a move just
+/// because it arrived over an authenticated channel.
+class CkRemoteMove {
+  const CkRemoteMove(this.from, this.to, this.continues);
+  final CkCell from;
+  final CkCell to;
+  final bool continues;
+}
+
+enum CkNetStatus { connecting, waitingForPeer, active, ended }
+
+/// Wires one live networked table into [GameCheckers].
+class CkNetworkHook {
+  const CkNetworkHook({
+    required this.mySide,
+    required this.onLocalMove,
+    required this.remoteMoves,
+    required this.status,
+  });
+
+  /// Which side of the board THIS device's player controls — assigned by
+  /// the server at token-mint time, never chosen by this widget. The
+  /// built-in simulated opponent never runs when a hook is supplied: the
+  /// remote peer IS the opponent.
+  final CkSide mySide;
+
+  /// Called once, immediately after a LOCAL move (made by [mySide]) has
+  /// already been validated and applied via the existing `playCheckers`
+  /// path. `continues` mirrors `CheckersState.mustContinueFrom != null`
+  /// after that move — i.e. whether this was mid multi-jump chain.
+  final void Function(CkCell from, CkCell to, {required bool continues}) onLocalMove;
+
+  /// Moves from the remote peer. Re-validated via `playCheckers` before
+  /// being applied — see `_GameCheckersState._applyRemoteMove`. A move that
+  /// fails that check is dropped, never applied.
+  final Stream<CkRemoteMove> remoteMoves;
+
+  /// Connection/table lifecycle, rendered as a banner rather than silently
+  /// swallowed.
+  final Stream<CkNetStatus> status;
+}
+
 // ================================================================= WIDGET ===
 class GameCheckers extends StatefulWidget {
   const GameCheckers({
@@ -182,6 +242,7 @@ class GameCheckers extends StatefulWidget {
     this.childName = 'Ivy',
     this.parentName = 'Dad',
     this.botThinkDelay = const Duration(milliseconds: 550),
+    this.network,
   });
 
   final String childName;
@@ -190,6 +251,14 @@ class GameCheckers extends StatefulWidget {
   /// tests can keep it short rather than because a real product setting
   /// belongs here — there is no settings affordance on this screen.
   final Duration botThinkDelay;
+
+  /// When non-null, this screen is a LIVE networked game instead of local
+  /// pass-and-play: [CkNetworkHook.mySide] decides which side this device
+  /// plays, remote moves arrive over the network instead of from the
+  /// built-in simulated opponent (which is disabled entirely), and the
+  /// undo control is disabled (undoing locally would desync the two boards
+  /// — there is no "local-only" move in a live game).
+  final CkNetworkHook? network;
 
   @override
   State<GameCheckers> createState() => _GameCheckersState();
@@ -203,12 +272,44 @@ class _GameCheckersState extends State<GameCheckers> {
   bool _parentThinking = false;
   String? _hint;
 
+  StreamSubscription<CkRemoteMove>? _remoteMoveSub;
+  StreamSubscription<CkNetStatus>? _netStatusSub;
+  CkNetStatus _netStatus = CkNetStatus.connecting;
+  String? _netNotice;
+
+  /// Which side THIS device's human player controls. Local pass-and-play
+  /// (network == null) always plays the child's side, exactly as before —
+  /// this getter changes nothing there; it only starts to matter once a
+  /// [CkNetworkHook] assigns the local player the parent's side instead.
+  CkSide get _localSide => widget.network?.mySide ?? CkSide.child;
+
+  @override
+  void initState() {
+    super.initState();
+    final net = widget.network;
+    if (net != null) {
+      _remoteMoveSub = net.remoteMoves.listen(_applyRemoteMove);
+      _netStatusSub = net.status.listen((s) {
+        if (!mounted) return;
+        setState(() => _netStatus = s);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _remoteMoveSub?.cancel();
+    _netStatusSub?.cancel();
+    super.dispose();
+  }
+
   bool get _forcedJumpPending =>
       _state.outcome == null &&
-      _state.turn == CkSide.child &&
-      checkersMoves(_state, CkSide.child).any((m) => m.jumps.isNotEmpty);
+      _state.turn == _localSide &&
+      checkersMoves(_state, _localSide).any((m) => m.jumps.isNotEmpty);
 
   void _reset() {
+    if (widget.network != null) return; // a live table has no "play again" — see undo, same reasoning
     setState(() {
       _state = newCheckers();
       _history.clear();
@@ -221,8 +322,8 @@ class _GameCheckersState extends State<GameCheckers> {
 
   void _selectPiece(CkCell cell) {
     final piece = _state.board[cell.$1][cell.$2];
-    if (piece == null || piece.side != CkSide.child) return;
-    final legal = checkersMoves(_state, CkSide.child).where((m) => m.from == cell).toList();
+    if (piece == null || piece.side != _localSide) return;
+    final legal = checkersMoves(_state, _localSide).where((m) => m.from == cell).toList();
     if (legal.isEmpty) {
       // Compulsory-capture told kindly rather than a silent no-op — §9.2.
       setState(() => _hint = _forcedJumpPending
@@ -239,7 +340,12 @@ class _GameCheckersState extends State<GameCheckers> {
 
   void _tapCell(int r, int c) {
     if (_state.outcome != null || _parentThinking) return;
-    if (_state.turn != CkSide.child) return;
+    // UX guard, not a security boundary: the server enforces table-active
+    // and turn-order regardless (see game-sync's own T6) — this just avoids
+    // sending a move the server would reject (and drop the connection for)
+    // before the peer has even joined.
+    if (widget.network != null && _netStatus != CkNetStatus.active) return;
+    if (_state.turn != _localSide) return;
     final cell = (r, c);
     if (_selected == null) {
       _selectPiece(cell);
@@ -249,31 +355,41 @@ class _GameCheckersState extends State<GameCheckers> {
       setState(() { _selected = null; _legalFromSelected = const []; });
       return;
     }
-    final ownPieceHere = _state.board[r][c]?.side == CkSide.child;
+    final ownPieceHere = _state.board[r][c]?.side == _localSide;
     final isDestination = _legalFromSelected.any((m) => m.to == cell);
     if (!isDestination && ownPieceHere) {
       _selectPiece(cell);
       return;
     }
     if (!isDestination) return;
-    _applyMove(CkSide.child, _selected!, cell);
+    _applyMove(_localSide, _selected!, cell);
   }
 
   void _applyMove(CkSide side, CkCell from, CkCell to) {
     final result = playCheckers(_state, side, from, to);
     if (!result.ok) return; // engine already vetted via _legalFromSelected
     _history.add(_state);
+    final continued = result.state!.mustContinueFrom != null;
     setState(() {
       _state = result.state!;
       _hint = null;
-      if (_state.mustContinueFrom != null && side == CkSide.child) {
+      if (continued && side == _localSide) {
         _selected = _state.mustContinueFrom;
-        _legalFromSelected = checkersMoves(_state, CkSide.child);
+        _legalFromSelected = checkersMoves(_state, _localSide);
       } else {
         _selected = null;
         _legalFromSelected = const [];
       }
     });
+
+    final net = widget.network;
+    if (net != null) {
+      // Networked: the remote peer is the opponent. Tell them about OUR
+      // move; never run the built-in bot.
+      if (side == _localSide) net.onLocalMove(from, to, continues: continued);
+      return;
+    }
+
     if (_state.outcome == null &&
         _state.turn == CkSide.parent &&
         _state.mustContinueFrom == null) {
@@ -283,6 +399,29 @@ class _GameCheckersState extends State<GameCheckers> {
       // guarded defensively so the bot never stalls the game.
       _scheduleParentMove();
     }
+  }
+
+  /// DEFENSE IN DEPTH — a move arriving over the network is never applied
+  /// on trust. It is re-validated through the exact same pure engine
+  /// (`playCheckers`) the local pass-and-play path already uses. A move
+  /// that fails this check (an illegal move from an authenticated-but-
+  /// compromised peer, or simple corruption) is dropped outright and
+  /// surfaced as a notice — never silently applied, never crashes the UI.
+  void _applyRemoteMove(CkRemoteMove m) {
+    final remoteSide = _localSide.opposite;
+    final result = playCheckers(_state, remoteSide, m.from, m.to);
+    if (!result.ok) {
+      setState(() => _netNotice = "Ignored an invalid move from the network (${result.reason}).");
+      return;
+    }
+    _history.add(_state);
+    setState(() {
+      _state = result.state!;
+      _hint = null;
+      _netNotice = null;
+      _selected = null;
+      _legalFromSelected = const [];
+    });
   }
 
   void _scheduleParentMove() {
@@ -337,7 +476,22 @@ class _GameCheckersState extends State<GameCheckers> {
       ),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
         final narrow = constraints.maxWidth < 420;
+        final networked = widget.network != null;
+        final waitingForPeer = networked &&
+            (_netStatus == CkNetStatus.connecting || _netStatus == CkNetStatus.waitingForPeer);
         return ListView(padding: const EdgeInsets.all(16), children: [
+          if (networked && _netStatus == CkNetStatus.ended) const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: _CalloutBanner(text: 'Connection to the other player ended.'),
+          ),
+          if (waitingForPeer) const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: _CalloutBanner(text: 'Waiting for the other player to join…'),
+          ),
+          if (_netNotice != null) Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _CalloutBanner(text: _netNotice!),
+          ),
           _TurnBanner(
             finished: finished,
             parentThinking: _parentThinking,
@@ -372,12 +526,15 @@ class _GameCheckersState extends State<GameCheckers> {
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             SizedBox(height: 48, child: OutlinedButton.icon(
               key: const Key('ckUndo'),
-              onPressed: _history.isEmpty ? null : _undo,
+              // Undo is local-board-only. In a live networked game the peer
+              // never sees it, so it would desync the two boards — disabled
+              // outright rather than pretending to work.
+              onPressed: (networked || _history.isEmpty) ? null : _undo,
               icon: const Icon(Icons.undo),
               label: const Text('Take that back'),
             )),
             const SizedBox(width: 12),
-            if (finished) SizedBox(height: 48, child: FilledButton.icon(
+            if (finished && !networked) SizedBox(height: 48, child: FilledButton.icon(
               key: const Key('ckPlayAgain'),
               onPressed: _reset,
               icon: const Icon(Icons.refresh),

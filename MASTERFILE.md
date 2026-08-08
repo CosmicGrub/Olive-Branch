@@ -1421,6 +1421,33 @@ POST   /v1/sessions/:id/captions        live caption + translation stream (§8.4
 POST   /v1/sessions/:id/end
 ```
 
+### 7.4b Network play (game-sync)
+
+Two paired devices playing one existing pass-and-play game (checkers first)
+against each other live — relayed through this same backend, never
+peer-to-peer, never LAN-broadcast/discovery-based. `packages/game-sync/src/
+table.ts` is the pure authorization/lifecycle core; `server/game_tables.mjs`
+wires it to these endpoints plus the WSS relay below.
+
+```
+POST   /v1/game-tables                  open a table: { game, partnerChildId | partnerUserId }
+                                         guardian↔child via can('call', ...) — the same gate
+                                         session-runtime uses for real-time contact; child↔child
+                                         via sibling_link.contact_allowed (§5.14) — never a
+                                         traversal through a guardian's own edge
+POST   /v1/game-tables/:tableId/join    the other seat independently re-authorized (fresh
+                                         edge/sibling_link check) and issued its own token
+WSS    /v1/game-tables/:tableId/socket  ?token=<short-lived, single-use join token>. The server
+                                         relays a move ONLY to the other seat at this exact
+                                         table — never a broadcast, never a third connection —
+                                         and drops the socket on any malformed or out-of-turn
+                                         message. Game LEGALITY is never checked server-side;
+                                         the receiving client re-validates every move through
+                                         the game's own pure engine before applying it
+                                         (defense in depth). Ephemeral: no table, token, or move
+                                         history is persisted anywhere.
+```
+
 ### 7.5 Homework
 
 ```

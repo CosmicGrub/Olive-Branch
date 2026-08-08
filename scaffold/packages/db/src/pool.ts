@@ -119,10 +119,35 @@ export async function edgesFor(pool: pg.Pool, userId: string): Promise<Edge[]> {
   });
 }
 
+/**
+ * §5.14 — the sibling_link row for exactly one pair, canonically ordered.
+ * Used only by the game-sync table-open route (packages/game-sync). Runs
+ * under the system role for the same reason `edgesFor` does: this is an
+ * identity/relationship lookup the caller needs BEFORE `canOpenTable` (the
+ * actual authorization gate) can run, not something `can()` has already
+ * cleared — and it deliberately never joins through `guardianship`, so there
+ * is no path here for an adult's edge to reach a sibling's table.
+ */
+export async function siblingLinkFor(
+  pool: pg.Pool, childA: string, childB: string,
+): Promise<{ childA: string; childB: string; contactAllowed: boolean } | null> {
+  const [lo, hi] = childA < childB ? [childA, childB] : [childB, childA];
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT child_a, child_b, contact_allowed FROM sibling_link
+        WHERE child_a = $1 AND child_b = $2`,
+      [lo, hi],
+    );
+    if (!rows.length) return null;
+    return { childA: rows[0].child_a, childB: rows[0].child_b, contactAllowed: rows[0].contact_allowed };
+  });
+}
+
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */
 export function dbPort(pool: pg.Pool): DbPort {
   return {
     edgesFor: (userId: string) => edgesFor(pool, userId),
     withSession: (principal, fn) => withSession(pool, principal, fn),
+    siblingLinkFor: (childA: string, childB: string) => siblingLinkFor(pool, childA, childB),
   };
 }

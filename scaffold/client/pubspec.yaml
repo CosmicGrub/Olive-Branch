@@ -11,6 +11,7 @@ dependencies:
     sdk: flutter
   jitsi_meet_flutter_sdk: ^13.1.0
   http: ^1.2.2
+  web_socket_channel: ^3.0.3
 
 # See third_party/PATCH.md. Compile-time-only fix for a hardcoded
 # compileSdkVersion 34 in the published package's own android/build.gradle,
@@ -24,6 +25,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  # Used directly by networked_checkers_channel_test.dart to build a fake
+  # WebSocketChannel — declared explicitly rather than relying on it being a
+  # transitive dependency of web_socket_channel.
+  stream_channel: ^2.1.4
 
 flutter:
   uses-material-design: true
