@@ -37,6 +37,11 @@ else
   echo ".env already exists — not overwriting. Diff ../olive.env against it by hand if upstream's env.example changed."
 fi
 
+# Windows-only: see docker-compose.override.yml's own header comment for why.
+# Harmless to copy on other platforms too — compose only applies the volume
+# overrides it declares, and named volumes work fine on Linux/macOS as well.
+cp ../docker-compose.override.yml .
+
 if [ ! -x gen-passwords.sh ]; then
   echo "gen-passwords.sh missing or not executable in $CHECKOUT_DIR — checkout may be incomplete." >&2
   exit 1
