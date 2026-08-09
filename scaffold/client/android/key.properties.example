@@ -1,0 +1,16 @@
+# Copy this file to "key.properties" (same directory, i.e.
+# scaffold/client/android/key.properties) and fill in your own values below.
+#
+# NEVER commit the real key.properties or your .jks/.keystore file --
+# both are already excluded in android/.gitignore. If either one leaks,
+# anyone who has it can sign updates to this app as if they were you.
+#
+# See RELEASE_SIGNING.md in this same directory for how to generate a
+# real keystore before filling this in. Until this file exists, release
+# builds automatically fall back to the debug keystore -- nothing breaks
+# by leaving this unset for now.
+
+storePassword=REPLACE_WITH_YOUR_KEYSTORE_PASSWORD
+keyPassword=REPLACE_WITH_YOUR_KEY_PASSWORD
+keyAlias=REPLACE_WITH_YOUR_KEY_ALIAS
+storeFile=REPLACE_WITH_PATH_TO_YOUR_KEYSTORE_FILE
