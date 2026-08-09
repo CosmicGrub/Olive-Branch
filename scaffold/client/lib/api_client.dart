@@ -53,6 +53,20 @@ class OliveApi {
   // --- guarded by escalation (§8.3) --------------------------------------
   static const settings = '/v1/children/:childId/settings';
 
+  // --- real authentication (§7.1, §8.1, §8.3) -----------------------------
+  // Path constants only, contract-checked against the registered server
+  // routes by packages/api/test/contract.test.mjs (and by transport.test.mjs's
+  // own "I · CLIENT CONTRACT" section, which scans every .dart file's string
+  // literals) -- the Dart CALLING code that actually uses these lands in a
+  // later phase; see server/routes.mjs and server/index.mjs for the real,
+  // already-implemented, already-tested server side of every one of these.
+  static const kioskPinVerify = '/v1/children/:childId/kiosk-pin/verify';
+  static const setGuardianPin = '/v1/me/pin';
+  static const webauthnRegisterChallenge = '/v1/auth/webauthn/register/challenge';
+  static const webauthnRegisterVerify = '/v1/auth/webauthn/register/verify';
+  static const webauthnLoginChallenge = '/v1/auth/webauthn/login/challenge';
+  static const webauthnLoginVerify = '/v1/auth/webauthn/login/verify';
+
   // --- login (dev-only — see server/index.mjs's own header comment) ------
   static const devLoginPath = '/v1/auth/dev-login';
 

@@ -44,6 +44,20 @@ export interface Route {
   action: Action | null;
   /** Requires live escalation (§8.3). */
   escalated?: boolean;
+  /**
+   * A1's own escape hatch, and the ONLY one. `action: null` on a `:childId`
+   * path is normally refused at registration below — a null action there is
+   * indistinguishable from a route that forgot to call `can()`. The WebAuthn/
+   * PIN identity routes (server/routes.mjs's kiosk-pin/verify) are a real,
+   * narrow exception: the question they answer is "is this session literally
+   * THIS exact child", which has nothing to do with a guardianship edge and
+   * everything to do with the raw session-vs-path identity match `can()` was
+   * never built to answer (a child holds no edge to herself). Setting this
+   * to `true` is a promise enforced nowhere but in these words: the handler
+   * performs its own `principal.childId !== childId` (or equivalent) check
+   * as its very first line, unconditionally, before touching anything else.
+   */
+  identityScopedByHandler?: boolean;
   handler: (c: Ctx, q: Query) => Promise<{ status?: number; body?: any }>;
 }
 
@@ -59,7 +73,7 @@ export class Api {
     // A1 enforced at registration. `action: undefined` is a mistake;
     // `action: null` is an explicit declaration of identity-only.
     if (!('action' in r)) throw new Error(`route ${r.path} must declare an action`);
-    if (r.path.includes(':childId') && r.action === null) {
+    if (r.path.includes(':childId') && r.action === null && !r.identityScopedByHandler) {
       throw new Error(`route ${r.path} is child-scoped but declares no action`);
     }
     this.routes.push(r);
