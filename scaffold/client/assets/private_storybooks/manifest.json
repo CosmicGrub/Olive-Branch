@@ -6,6 +6,90 @@
       "title": "The Sample Story",
       "description": "A tiny placeholder tale used to test the reader end to end.",
       "assetPath": "assets/private_storybooks/sample_story.html"
+    },
+    {
+      "id": "peter-rabbit",
+      "title": "The Tale of Peter Rabbit",
+      "description": "A curious young rabbit sneaks into a forbidden garden and learns why his mother's rules matter.",
+      "assetPath": "assets/private_storybooks/peter_rabbit.html"
+    },
+    {
+      "id": "squirrel-nutkin",
+      "title": "The Tale of Squirrel Nutkin",
+      "description": "A cheeky squirrel keeps teasing a quiet old owl until his mischief nearly costs him his tail.",
+      "assetPath": "assets/private_storybooks/squirrel_nutkin.html"
+    },
+    {
+      "id": "jemima-puddle-duck",
+      "title": "The Tale of Jemima Puddle-Duck",
+      "description": "A trusting duck is charmed by a smooth-talking stranger, and a loyal farm dog saves the day.",
+      "assetPath": "assets/private_storybooks/jemima_puddle_duck.html"
+    },
+    {
+      "id": "two-bad-mice",
+      "title": "The Tale of Two Bad Mice",
+      "description": "Two mischievous mice raid a dollhouse full of food that turns out to be nothing but paint.",
+      "assetPath": "assets/private_storybooks/two_bad_mice.html"
+    },
+    {
+      "id": "cinderella",
+      "title": "Cinderella",
+      "description": "A kind girl gets a magical night at the ball, and a glass slipper finds its way home.",
+      "assetPath": "assets/private_storybooks/cinderella.html"
+    },
+    {
+      "id": "snow-white",
+      "title": "Snow White",
+      "description": "A gentle princess finds shelter with seven new friends and a happy ending after a long sleep.",
+      "assetPath": "assets/private_storybooks/snow_white.html"
+    },
+    {
+      "id": "ugly-duckling",
+      "title": "The Ugly Duckling",
+      "description": "A duckling who never felt like he belonged discovers who he was growing into all along.",
+      "assetPath": "assets/private_storybooks/ugly_duckling.html"
+    },
+    {
+      "id": "thumbelina",
+      "title": "Thumbelina",
+      "description": "A tiny girl drifts from one home to another until she finds the place she truly fits.",
+      "assetPath": "assets/private_storybooks/thumbelina.html"
+    },
+    {
+      "id": "velveteen-rabbit",
+      "title": "The Velveteen Rabbit",
+      "description": "A stuffed rabbit learns what it means to become Real through a boy who loves him.",
+      "assetPath": "assets/private_storybooks/velveteen_rabbit.html"
+    },
+    {
+      "id": "nursery-rhymes",
+      "title": "Nursery Rhymes",
+      "description": "Four gentle bedtime rhymes about stars, a dancing cow, a brave spider, and two puddle-loving friends.",
+      "assetPath": "assets/private_storybooks/nursery_rhymes.html"
+    },
+    {
+      "id": "tortoise-and-hare",
+      "title": "The Tortoise and the Hare",
+      "description": "A boastful hare learns that slow and steady really can win the race.",
+      "assetPath": "assets/private_storybooks/tortoise_and_hare.html"
+    },
+    {
+      "id": "boy-who-cried-wolf",
+      "title": "The Boy Who Cried Wolf",
+      "description": "A bored shepherd boy plays one trick too many and learns why trust matters.",
+      "assetPath": "assets/private_storybooks/boy_who_cried_wolf.html"
+    },
+    {
+      "id": "lion-and-mouse",
+      "title": "The Lion and the Mouse",
+      "description": "A tiny mouse repays a big favor and proves that size is not the measure of a true friend.",
+      "assetPath": "assets/private_storybooks/lion_and_mouse.html"
+    },
+    {
+      "id": "ant-and-grasshopper",
+      "title": "The Ant and the Grasshopper",
+      "description": "A hardworking ant and a carefree grasshopper learn very different lessons about winter.",
+      "assetPath": "assets/private_storybooks/ant_and_grasshopper.html"
     }
   ]
 }
