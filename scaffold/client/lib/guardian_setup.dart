@@ -15,13 +15,31 @@
 // this screen says exactly that instead of pretending to succeed. When a
 // real implementation exists, it plugs in as [registerPasskey] without this
 // screen changing shape.
+//
+// Kiosk PIN (§8.3, §7.1): a SEPARATE capability from the passkey section
+// above — this is the guardian setting/changing the short numeric code her
+// OWN device's kiosk lock checks on defeat (server/routes.mjs's real
+// POST /v1/me/pin, api_client.dart's OliveApi.setGuardianPin), never a
+// password and never an account-login credential (§11's password ban is
+// about signing IN, which stays passkey-only). Same honest-stub convention
+// as [registerPasskey]: with no [setGuardianPin] wired, this section says so
+// instead of rendering a form with nothing real behind it; supplying it is
+// the whole integration point.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
+import 'api_client.dart' show ApiException;
 
 /// What a (future, real) passkey registration ceremony reports back.
 enum PasskeyOutcome { success, declined, unavailable }
 
 class GuardianSetupScreen extends StatefulWidget {
-  const GuardianSetupScreen({super.key, this.registerPasskey, this.onComplete, this.onOpenAgreement});
+  const GuardianSetupScreen({
+    super.key,
+    this.registerPasskey,
+    this.onComplete,
+    this.onOpenAgreement,
+    this.setGuardianPin,
+  });
 
   /// Null in every build today — see file header. Supplying this is the
   /// entire integration point for a real §11 identity service later.
@@ -30,15 +48,32 @@ class GuardianSetupScreen extends StatefulWidget {
   /// Honest stub for reviewing the family agreement / responsibilities —
   /// no such document view exists yet either.
   final VoidCallback? onOpenAgreement;
+  /// Null in every build today — see file header's Kiosk PIN section. The
+  /// real implementation is [OliveApi.setGuardianPin] (api_client.dart);
+  /// this screen only ever calls whatever is handed to it, never constructs
+  /// its own OliveApi, so it stays session/baseUrl-agnostic.
+  final Future<void> Function(String pin)? setGuardianPin;
 
   @override
   State<GuardianSetupScreen> createState() => _GuardianSetupScreenState();
 }
 
 enum _Phase { idle, working, failed }
+enum _PinPhase { idle, working, failed, success }
 
 class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
   _Phase _phase = _Phase.idle;
+  _PinPhase _pinPhase = _PinPhase.idle;
+  String _pinError = '';
+  final _pinController = TextEditingController();
+  final _pinConfirmController = TextEditingController();
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    _pinConfirmController.dispose();
+    super.dispose();
+  }
 
   Future<void> _tap() async {
     final register = widget.registerPasskey;
@@ -67,10 +102,46 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
       content: Text('Family agreement — not built yet.'), duration: Duration(seconds: 2)));
   }
 
+  Future<void> _submitPin() async {
+    final setter = widget.setGuardianPin;
+    if (setter == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Kiosk PIN setup has no backend wired in this preview build yet.'),
+        duration: Duration(seconds: 3)));
+      return;
+    }
+    final pin = _pinController.text;
+    if (!RegExp(r'^\d{4,8}$').hasMatch(pin)) {
+      setState(() { _pinPhase = _PinPhase.failed; _pinError = 'Enter a 4-8 digit PIN.'; });
+      return;
+    }
+    if (pin != _pinConfirmController.text) {
+      setState(() { _pinPhase = _PinPhase.failed; _pinError = "The two PINs don't match."; });
+      return;
+    }
+    setState(() { _pinPhase = _PinPhase.working; _pinError = ''; });
+    try {
+      await setter(pin);
+      if (!mounted) return;
+      _pinController.clear();
+      _pinConfirmController.clear();
+      setState(() => _pinPhase = _PinPhase.success);
+    } catch (e) {
+      if (!mounted) return;
+      // Same "real reason, not a guess" convention child_home_live.dart's own
+      // error surface already uses for an ApiException.
+      setState(() {
+        _pinPhase = _PinPhase.failed;
+        _pinError = e is ApiException ? '${e.statusCode}: ${e.error}' : 'Could not set your PIN.';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final connected = widget.registerPasskey != null;
+    final pinConnected = widget.setGuardianPin != null;
     return Scaffold(
       appBar: AppBar(title: const Text('Set up your account')),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) =>
@@ -125,6 +196,70 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
                 onPressed: _tapAgreement,
                 style: TextButton.styleFrom(minimumSize: const Size(88, 48)),
                 child: const Text('Review the family agreement'))),
+              const SizedBox(height: 32),
+              const Divider(),
+              const SizedBox(height: 24),
+              Icon(Icons.pin_outlined, size: 40, color: scheme.primary),
+              const SizedBox(height: 16),
+              Text('Kiosk PIN', style: Theme.of(context).textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text('A 4-8 digit code her kiosk lock checks when you need back in — '
+                  'separate from your passkey above, and never used to sign in.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 24),
+              if (!pinConnected)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(12)),
+                  child: Row(children: [
+                    Icon(Icons.info_outline_rounded, size: 20, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(
+                      'Kiosk PIN setup has no backend wired in this preview build yet.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
+                  ]),
+                )
+              else ...[
+                TextField(
+                  controller: _pinController,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  maxLength: 8,
+                  decoration: const InputDecoration(
+                    labelText: 'New PIN', counterText: '', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _pinConfirmController,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  maxLength: 8,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm PIN', counterText: '', border: OutlineInputBorder()),
+                ),
+                if (_pinPhase == _PinPhase.failed) Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(_pinError,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.error)),
+                ),
+                if (_pinPhase == _PinPhase.success) Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text('PIN updated.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.primary)),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(height: 56, child: FilledButton(
+                  onPressed: _pinPhase == _PinPhase.working ? null : _submitPin,
+                  child: _pinPhase == _PinPhase.working
+                    ? const SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.4))
+                    : const Text('Save PIN',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
+              ],
             ]))))),
     );
   }

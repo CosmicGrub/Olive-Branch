@@ -54,14 +54,20 @@ class OliveApi {
   static const settings = '/v1/children/:childId/settings';
 
   // --- real authentication (§7.1, §8.1, §8.3) -----------------------------
-  // Path constants only, contract-checked against the registered server
-  // routes by packages/api/test/contract.test.mjs (and by transport.test.mjs's
-  // own "I · CLIENT CONTRACT" section, which scans every .dart file's string
-  // literals) -- the Dart CALLING code that actually uses these lands in a
-  // later phase; see server/routes.mjs and server/index.mjs for the real,
+  // Path constants, contract-checked against the registered server routes by
+  // packages/api/test/contract.test.mjs (and by transport.test.mjs's own
+  // "I · CLIENT CONTRACT" section, which scans every .dart file's string
+  // literals) -- see server/routes.mjs and server/index.mjs for the real,
   // already-implemented, already-tested server side of every one of these.
+  // kioskPinVerify and guardianPinPath now have real Dart CALLING code below
+  // (verifyKioskPin / setGuardianPin); the WebAuthn paths are still
+  // path-constants-only, wired in a later phase.
   static const kioskPinVerify = '/v1/children/:childId/kiosk-pin/verify';
-  static const setGuardianPin = '/v1/me/pin';
+  // Named guardianPinPath, not setGuardianPin, so it doesn't collide with the
+  // instance method of that name below -- same string value either way, and
+  // contract.test.mjs/transport.test.mjs only regex-scan for the literal
+  // '/v1/me/pin', never the Dart identifier.
+  static const guardianPinPath = '/v1/me/pin';
   static const webauthnRegisterChallenge = '/v1/auth/webauthn/register/challenge';
   static const webauthnRegisterVerify = '/v1/auth/webauthn/register/verify';
   static const webauthnLoginChallenge = '/v1/auth/webauthn/login/challenge';
@@ -79,6 +85,20 @@ class OliveApi {
     return _decode(res);
   }
 
+  /// Mirrors [_get]'s header/decode conventions for a JSON-body POST.
+  Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body,
+      {String? childId}) async {
+    final res = await _client.post(
+      _uri(path, childId),
+      headers: {
+        'authorization': 'Bearer $sessionToken',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _decode(res);
+  }
+
   Map<String, dynamic> _decode(http.Response res) {
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
@@ -91,6 +111,40 @@ class OliveApi {
   Future<Map<String, dynamic>> fetchMe() => _get(mePath);
   Future<Map<String, dynamic>> fetchNow(String childId) => _get(childNow, childId: childId);
   Future<Map<String, dynamic>> fetchInbox(String childId) => _get(inbox, childId: childId);
+
+  /// Checks [pin] against every LIVE guardian of [childId] -- POST
+  /// kioskPinVerify, server/routes.mjs's real handler. This is the check
+  /// kiosk_shell.dart's PIN gate calls after a kiosk defeat, replacing
+  /// main_live.dart's former hardcoded '1273' demo stub.
+  ///
+  /// FAILS CLOSED, DELIBERATELY: a network error, a timeout, a malformed
+  /// response body, or any non-2xx status all return `false` here, never
+  /// `true` and never a thrown exception. A broken network must never be
+  /// indistinguishable from "the PIN was correct" -- that would let a lost
+  /// connection defeat the kiosk lock outright, which is a strictly worse
+  /// failure mode than a rejected PIN a guardian can just retry.
+  Future<bool> verifyKioskPin(String childId, String pin) async {
+    try {
+      final body = await _post(kioskPinVerify, {'pin': pin}, childId: childId);
+      return body['ok'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Sets/replaces the CALLER'S OWN guardian PIN -- POST guardianPinPath,
+  /// server/routes.mjs's real handler. Requires a guardian session (the
+  /// server returns 403 guardian_session_required for a child session).
+  ///
+  /// Unlike [verifyKioskPin] this is NOT fail-closed-to-a-bool: it's a
+  /// guardian-initiated settings write, not a lock-defeat check something
+  /// else's security posture depends on, so a caller needs the REAL reason a
+  /// PIN couldn't be set (e.g. invalid_pin_format, guardian_session_required)
+  /// rather than an opaque `false`. Throws [ApiException] on any non-2xx
+  /// response, exactly like [fetchMe]/[fetchNow]/[fetchInbox] above.
+  Future<void> setGuardianPin(String pin) async {
+    await _post(guardianPinPath, {'pin': pin});
+  }
 
   void close() => _client.close();
 }

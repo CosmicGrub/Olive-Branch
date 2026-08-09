@@ -14,6 +14,7 @@
 // file's own header for why). childId defaults to the seed data in
 // server/seed-dev.mjs ("Ivy").
 import 'package:flutter/material.dart';
+import 'api_client.dart';
 import 'child_home_live.dart';
 import 'kiosk_shell.dart';
 
@@ -22,10 +23,40 @@ const _defaultBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
 const _defaultChildId = String.fromEnvironment('OLIVE_CHILD_ID',
     defaultValue: 'aaaaaaaa-0000-4000-8000-000000000001'); // seed-dev.mjs's Ivy
 
-/// Demo-only stand-in for a real backend PIN check, same posture as
-/// main.dart's own — see that file for why this isn't pretending to reach a
-/// real guardian-PIN endpoint that doesn't exist.
-Future<bool> _demoVerifyGuardianPin(String pin) async => pin == '1273';
+/// The real backend PIN check — replaces the former hardcoded
+/// `_demoVerifyGuardianPin` ('1273', never checked against anything). This is
+/// the actual release-blocker fix: server/routes.mjs's real
+/// POST /kiosk-pin/verify now backs the kiosk lock's PIN gate on this entry
+/// point, exactly the way KioskShell's own header always said a real backend
+/// would slot in once one existed.
+///
+/// Reuses child_home_live.dart's own session plumbing rather than inventing
+/// a second path: the same `devLoginFor()` dev-login helper, against the same
+/// `_defaultBaseUrl`/`_defaultChildId` this file already defines (see that
+/// file's `_load()` for the pattern this mirrors). A fresh dev-login per PIN
+/// attempt, not a token cached across this screen's lifetime: dev-login is a
+/// stateless, side-effect-free shortcut fenced behind DEV_LOGIN=1 (see
+/// server/index.mjs's own header) with nothing worth preserving between
+/// attempts, and re-authenticating here means a PIN check never trusts a
+/// token that might have outlived whatever this session's real lifecycle
+/// should be.
+///
+/// FAILS CLOSED at every stage. [OliveApi.verifyKioskPin] already fails
+/// closed on a network error reaching /kiosk-pin/verify itself; the
+/// `devLoginFor()` call in front of it is wrapped the same way here — a
+/// server that's unreachable, or a dev-login that 404s/500s, must reject the
+/// PIN, never accept it. A broken network must never look like a correct PIN.
+Future<bool> _verifyGuardianPin(String pin) async {
+  try {
+    final token = await devLoginFor(_defaultBaseUrl, childId: _defaultChildId);
+    final api = OliveApi(_defaultBaseUrl, token);
+    final ok = await api.verifyKioskPin(_defaultChildId, pin);
+    api.close();
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
 
 void main() {
   runApp(const OliveLive());
@@ -42,7 +73,7 @@ class OliveLive extends StatelessWidget {
       useMaterial3: true,
     ),
     home: const KioskShell(
-      verifyPin: _demoVerifyGuardianPin,
+      verifyPin: _verifyGuardianPin,
       child: LiveChildHomeScreen(
         baseUrl: _defaultBaseUrl,
         childId: _defaultChildId,

@@ -52,6 +52,87 @@ void main() {
     });
   });
 
+  group('verifyKioskPin — real POST, fails closed on anything but a clean 200/ok:true', () {
+    test('a 200 with {ok: true} returns true', () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.toString(), 'http://api.test/v1/children/child-a/kiosk-pin/verify');
+        expect(req.headers['authorization'], 'Bearer tok-123');
+        expect(jsonDecode(req.body), {'pin': '5193'});
+        return http.Response(jsonEncode({'ok': true}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      expect(await api.verifyKioskPin('child-a', '5193'), isTrue);
+    });
+
+    test('a 200 with {ok: false} (wrong PIN, or every guardian locked out) returns false',
+        () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'ok': false}), 200));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      expect(await api.verifyKioskPin('child-a', '0000'), isFalse);
+    });
+
+    test('a simulated network exception returns false, never throws', () async {
+      final mock = MockClient((req) async {
+        throw Exception('simulated network failure');
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(api.verifyKioskPin('child-a', '5193'), completion(isFalse));
+    });
+
+    test('a non-2xx response (e.g. 403 not_this_child) returns false, never throws',
+        () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'not_this_child'}), 403));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(api.verifyKioskPin('child-a', '5193'), completion(isFalse));
+    });
+
+    test('a malformed (non-JSON) 200 body returns false, never throws', () async {
+      final mock = MockClient((req) async => http.Response('not json', 200));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(api.verifyKioskPin('child-a', '5193'), completion(isFalse));
+    });
+  });
+
+  group('setGuardianPin — real POST, real errors (not fail-closed-to-a-bool)', () {
+    test('a 200 with {ok: true} completes normally', () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.toString(), 'http://api.test/v1/me/pin');
+        expect(jsonDecode(req.body), {'pin': '5193'});
+        return http.Response(jsonEncode({'ok': true}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(api.setGuardianPin('5193'), completes);
+    });
+
+    test('a 400 invalid_pin_format throws ApiException carrying the real reason',
+        () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'invalid_pin_format'}), 400));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.setGuardianPin('12'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 400)
+            .having((e) => e.error, 'error', 'invalid_pin_format')),
+      );
+    });
+
+    test('a 403 guardian_session_required (a child session tried this) throws',
+        () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'guardian_session_required'}), 403));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.setGuardianPin('5193'),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 403)),
+      );
+    });
+  });
+
   group('devLoginFor — the dev-only login shortcut', () {
     test('posts the childId and returns the issued token', () async {
       final mock = MockClient((req) async {

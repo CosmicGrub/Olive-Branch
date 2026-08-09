@@ -69,6 +69,79 @@ void main() {
     expect(size.height, greaterThanOrEqualTo(48));
   });
 
+  group('kiosk PIN section — §8.3, §7.1', () {
+    testWidgets('with no setGuardianPin wired, shows an honest stub and no PIN fields',
+        (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: GuardianSetupScreen()));
+      expect(find.textContaining('Kiosk PIN setup has no backend wired'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('a matching valid PIN calls setGuardianPin and shows confirmation',
+        (tester) async {
+      String? sent;
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async { sent = pin; },
+      )));
+      // The PIN section's own stub message must be gone now that it's wired
+      // -- the unrelated passkey stub above it (registerPasskey is still
+      // null in this test) is expected to remain, so this checks the
+      // PIN-specific text only, not the broader "isn't connected" phrase
+      // both stubs would otherwise share.
+      expect(find.textContaining('Kiosk PIN setup has no backend wired'), findsNothing);
+      await tester.enterText(find.byType(TextField).at(0), '5193');
+      await tester.enterText(find.byType(TextField).at(1), '5193');
+      await tester.ensureVisible(find.text('Save PIN'));
+      await tester.tap(find.text('Save PIN'));
+      await tester.pumpAndSettle();
+      expect(sent, '5193');
+      expect(find.text('PIN updated.'), findsOneWidget);
+    });
+
+    testWidgets('mismatched PINs are refused locally — setGuardianPin is never called',
+        (tester) async {
+      var called = false;
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async { called = true; },
+      )));
+      await tester.enterText(find.byType(TextField).at(0), '5193');
+      await tester.enterText(find.byType(TextField).at(1), '9999');
+      await tester.ensureVisible(find.text('Save PIN'));
+      await tester.tap(find.text('Save PIN'));
+      await tester.pump();
+      expect(called, isFalse);
+      expect(find.textContaining("don't match"), findsOneWidget);
+    });
+
+    testWidgets('a too-short PIN is refused locally — setGuardianPin is never called',
+        (tester) async {
+      var called = false;
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async { called = true; },
+      )));
+      await tester.enterText(find.byType(TextField).at(0), '12');
+      await tester.enterText(find.byType(TextField).at(1), '12');
+      await tester.ensureVisible(find.text('Save PIN'));
+      await tester.tap(find.text('Save PIN'));
+      await tester.pump();
+      expect(called, isFalse);
+      expect(find.text('Enter a 4-8 digit PIN.'), findsOneWidget);
+    });
+
+    testWidgets('a server-side rejection surfaces the real reason, not a guess',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async { throw Exception('boom'); },
+      )));
+      await tester.enterText(find.byType(TextField).at(0), '5193');
+      await tester.enterText(find.byType(TextField).at(1), '5193');
+      await tester.ensureVisible(find.text('Save PIN'));
+      await tester.tap(find.text('Save PIN'));
+      await tester.pumpAndSettle();
+      expect(find.text('Could not set your PIN.'), findsOneWidget);
+    });
+  });
+
   group('responsive — required audit viewports', () {
     // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and a
     // desktop/tablet-scale width. Unwired state (the info banner is on
