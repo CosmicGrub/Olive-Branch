@@ -18,6 +18,7 @@ import 'degradation_banner.dart';
 import 'deletion_screen.dart';
 import 'expiry_digest.dart';
 import 'gallery_screen.dart';
+import 'games_access_screen.dart';
 import 'guardian_setup.dart';
 import 'hub_widgets.dart';
 import 'invitation_screen.dart';
@@ -96,6 +97,9 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.key_outlined, title: 'Guardian setup',
             subtitle: 'Passkey sign-in — an honest stub, not a faked grant',
             onTap: () => _open(context, const GuardianSetupScreen())),
+          HubTile(icon: Icons.videogame_asset_outlined, title: 'Games access',
+            subtitle: 'Locked by default — only you can turn games on for $childName',
+            onTap: () => _open(context, GamesAccessScreen(childName: childName))),
           HubTile(icon: Icons.push_pin_outlined, title: 'Kiosk lock advisory',
             subtitle: 'What this platform actually guarantees, honestly',
             onTap: () => _open(context, const LockAdvisoryScreen())),

@@ -7,6 +7,7 @@
 // integrity, not about the absence of settings.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/games_access_screen.dart';
 import 'package:olive_client/guardian_more.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -15,9 +16,12 @@ Widget wrap(Widget child) => MaterialApp(home: child);
 /// 800x600 test surface, which leaves lower tiles ('Invite a co-parent',
 /// 'Availability') below the fold and un-hittable by `tap()` without either
 /// scrolling first or a taller surface. Matches meds_care_test.dart's own
-/// pattern for a similarly long screen.
+/// pattern for a similarly long screen. Bumped from 1800 to 1950 when the
+/// 'Games access' tile (db/migrations/0008_games_access.sql) was added to
+/// the 'Family setup' section -- the extra tile pushed 'Availability' just
+/// past the previous height.
 Future<void> pump(WidgetTester tester, Widget child) async {
-  await tester.binding.setSurfaceSize(const Size(800, 1800));
+  await tester.binding.setSurfaceSize(const Size(800, 1950));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(wrap(child));
 }
@@ -46,6 +50,19 @@ void main() {
       await t.tap(find.text('Availability'));
       await t.pump();
       expect(find.textContaining('not built yet'), findsOneWidget);
+    });
+
+    // §5.17/§5.18, db/migrations/0008_games_access.sql -- the lock/unlock
+    // CONTROL must be reachable from real guardian navigation, not just
+    // exist as an isolated widget nothing ever routes to.
+    testWidgets('Games access opens the real GamesAccessScreen, childName threaded',
+        (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      await t.tap(find.text('Games access'));
+      await t.pumpAndSettle();
+      expect(find.byType(GuardianMoreScreen), findsNothing);
+      expect(find.byType(GamesAccessScreen), findsOneWidget);
+      expect(find.textContaining('Ivy'), findsWidgets);
     });
   });
 

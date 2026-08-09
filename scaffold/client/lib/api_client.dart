@@ -53,6 +53,18 @@ class OliveApi {
   // --- guarded by escalation (§8.3) --------------------------------------
   static const settings = '/v1/children/:childId/settings';
 
+  // --- games access (db/migrations/0008_games_access.sql) ----------------
+  // Guardian-only lock/unlock, reusing the `settings` Action server-side
+  // (see server/routes.mjs's own comment on that reuse) -- there is no
+  // separate read route: the child-scoped value is only ever exposed via
+  // GET /v1/me for a child principal (house convention: no settings
+  // affordance ever on a child-facing surface, so that is the ONE place a
+  // live "is this on" read makes sense). A guardian screen therefore has no
+  // honest live source for "the current value" before it acts -- see
+  // games_access_screen.dart's own header for how that absence is handled
+  // without guessing.
+  static const gamesAccess = '/v1/children/:childId/games-access';
+
   // --- login (dev-only — see server/index.mjs's own header comment) ------
   static const devLoginPath = '/v1/auth/dev-login';
 
@@ -62,6 +74,17 @@ class OliveApi {
   Future<Map<String, dynamic>> _get(String path, {String? childId}) async {
     final res = await _client.get(_uri(path, childId),
         headers: {'authorization': 'Bearer $sessionToken'});
+    return _decode(res);
+  }
+
+  Future<Map<String, dynamic>> _patch(String path,
+      {String? childId, required Map<String, dynamic> body}) async {
+    final res = await _client.patch(_uri(path, childId),
+        headers: {
+          'authorization': 'Bearer $sessionToken',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(body));
     return _decode(res);
   }
 
@@ -77,6 +100,15 @@ class OliveApi {
   Future<Map<String, dynamic>> fetchMe() => _get(mePath);
   Future<Map<String, dynamic>> fetchNow(String childId) => _get(childNow, childId: childId);
   Future<Map<String, dynamic>> fetchInbox(String childId) => _get(inbox, childId: childId);
+
+  /// Guardian-only. Throws [ApiException] (via `_decode`) on any non-2xx --
+  /// including the real 403s a child-cannot / no-edge / restricted guardian
+  /// gets back from the server's own two independent locks (routes.mjs's
+  /// explicit child reject, then packages/db/src/pool.ts's setGamesEnabledFor
+  /// can()/RLS pair) -- there is no client-side guess about whether this
+  /// call is allowed; the server's answer is the only answer.
+  Future<Map<String, dynamic>> setGamesEnabled(String childId, bool enabled) =>
+      _patch(OliveApi.gamesAccess, childId: childId, body: {'enabled': enabled});
 
   void close() => _client.close();
 }

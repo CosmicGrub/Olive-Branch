@@ -52,6 +52,47 @@ void main() {
     });
   });
 
+  group('setGamesEnabled — guardian-only games lock/unlock (PATCH)', () {
+    test('sends a real PATCH with the boolean body and decodes the 200', () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'PATCH');
+        expect(req.url.toString(), 'http://api.test/v1/children/child-a/games-access');
+        expect(req.headers['authorization'], 'Bearer tok-123');
+        expect(req.headers['content-type'], 'application/json');
+        final sent = jsonDecode(req.body) as Map<String, dynamic>;
+        expect(sent, {'enabled': true});
+        return http.Response(
+            jsonEncode({'childId': 'child-a', 'gamesEnabled': true}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final body = await api.setGamesEnabled('child-a', true);
+      expect(body['gamesEnabled'], true);
+    });
+
+    test('a 403 no_edge throws ApiException carrying the real reason', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'no_edge'}), 403));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.setGamesEnabled('child-a', true),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 403)
+            .having((e) => e.error, 'error', 'no_edge')),
+      );
+    });
+
+    test('a 403 child_cannot_toggle_games throws ApiException with that reason', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'child_cannot_toggle_games'}), 403));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.setGamesEnabled('child-a', false),
+        throwsA(isA<ApiException>()
+            .having((e) => e.error, 'error', 'child_cannot_toggle_games')),
+      );
+    });
+  });
+
   group('devLoginFor — the dev-only login shortcut', () {
     test('posts the childId and returns the issued token', () async {
       final mock = MockClient((req) async {
