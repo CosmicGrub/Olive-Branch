@@ -1,7 +1,23 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Real release signing, when a keystore is provided. See
+// android/key.properties.example and android/RELEASE_SIGNING.md for how to
+// generate one -- neither the keystore file nor key.properties itself is
+// ever committed (see android/.gitignore). Absent a real key.properties,
+// this falls back to the debug keystore exactly as before, so
+// `flutter run --release` and CI keep working without a real keystore.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasRealSigningConfig = keystorePropertiesFile.exists()
+val keystoreProperties = Properties()
+if (hasRealSigningConfig) {
+    FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
 }
 
 android {
@@ -19,7 +35,9 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Real, unique application ID -- not the Flutter template default.
+        // Matches `namespace` above; keep both in sync if this ever changes,
+        // since Play Store submissions treat applicationId as permanent.
         applicationId = "com.olivebranch.olive_client"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -33,11 +51,41 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasRealSigningConfig) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Real signing when android/key.properties exists (see
+            // key.properties.example and RELEASE_SIGNING.md); otherwise
+            // falls back to the debug keystore so `flutter run --release`
+            // and CI keep working without a real keystore. This is the
+            // only thing that decides which key signs a release build --
+            // there is no separate "is this a real release" flag that
+            // could get out of sync with it.
+            signingConfig = if (hasRealSigningConfig) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            // R8 minification runs on release by default and, without this,
+            // fails outright on a Giphy SDK class (transitive via
+            // jitsi_meet_flutter_sdk) that references a source-retention
+            // Kotlin annotation R8 can't resolve. See proguard-rules.pro
+            // for the full explanation -- this was a real, reproducible
+            // build failure, not a preventative rule.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
