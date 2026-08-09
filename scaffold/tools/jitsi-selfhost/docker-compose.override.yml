@@ -1,0 +1,44 @@
+# Windows-specific fix, applied by setup.sh (copied into .jitsi-docker/, where
+# docker compose picks it up automatically as an override).
+#
+# Found by actually bringing the stack up, not assumed: docker-jitsi-meet's
+# default CONFIG layout bind-mounts host directories straight into the
+# containers (${CONFIG}/storage/prosody:/var/lib/prosody, etc). On Docker
+# Desktop for Windows, host paths under a Windows drive (C:\Users\... /
+# /c/Users/... from Git Bash) go through a file-sharing translation layer
+# that does not preserve POSIX ownership — Prosody's container (uid 1000,
+# "s6") cannot write into a bind-mounted Windows directory no matter what
+# it's chmod'd to on the Windows side, so it can never generate its
+# self-signed cert:
+#
+#   The directory /var/lib/prosody is not owned by the current user, won't
+#   be able to write files to it
+#   ...
+#   certmanager  error  SSL/TLS: Failed to load '/run/prosody/config/certs/
+#   meet.jitsi.key': Check that the file exists and the permissions are
+#   correct
+#
+# which then cascades into Jicofo and JVB's XMPP connections to Prosody
+# failing outright (`No stream features to proceed with`) — the whole
+# signaling chain is down, not just a cosmetic TLS warning.
+#
+# Fix: give Prosody's two writable paths (config/certs and its data dir)
+# named Docker volumes instead of Windows bind mounts. Named volumes live
+# inside the Docker Desktop Linux VM's own filesystem, so this sidesteps the
+# translation layer entirely. Everything else (web, jicofo, jvb configs,
+# which are read-mostly) stays on the normal ${CONFIG}/... bind mounts from
+# upstream so they're still inspectable from Windows Explorer.
+#
+# Not needed at all if this is ever run from inside a native Linux host or a
+# WSL2 distro's own filesystem instead of a /c/Users/... or C:\Users\...
+# path — this is a Windows-bind-mount-specific workaround, not a
+# docker-jitsi-meet bug.
+services:
+  prosody:
+    volumes:
+      - ${CONFIG}/prosody/prosody-plugins-custom:/prosody-plugins-custom:Z
+      - prosody-config:/config:Z
+      - prosody-storage:/var/lib/prosody:Z
+volumes:
+  prosody-config:
+  prosody-storage:
