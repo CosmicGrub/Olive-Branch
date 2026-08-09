@@ -31,6 +31,22 @@ await client.query(
   `INSERT INTO child_tz_interval (child_id, tz, valid, source)
    VALUES ($1, 'America/New_York', tstzrange(now() - interval '1 year', null), 'manual')
    ON CONFLICT DO NOTHING`, [IVY]);
+// A real custody order for Ivy so GET /v1/children/:childId/now's
+// sleepsUntilHandover is manually verifiable end to end, not just in
+// packages/db/test/custody_order.test.mjs's fixture. Same shape as that
+// suite's own order (2-2-3, anchored on a real Monday, 6pm Eastern
+// exchanges), open-ended. custody_order.id is a generated uuid with no
+// natural conflict target, so idempotency is a plain existence check rather
+// than ON CONFLICT, matching this table's own EXCLUDE constraint (one active
+// order per child per date range).
+await client.query(
+  `INSERT INTO custody_order
+     (child_id, order_tz, pattern, anchor_local_date, exchange_time,
+      holiday_rules, effective_from, effective_to)
+   SELECT $1, 'America/New_York', '2-2-3', '2026-01-05', '18:00',
+          '[]', '2024-01-01', null
+    WHERE NOT EXISTS (SELECT 1 FROM custody_order WHERE child_id = $1)`,
+  [IVY]);
 const artifact = await client.query(
   `INSERT INTO media_artifact (id, child_id, author_id, kind, storage_key, captured_at, captured_tz, expires_at)
    VALUES (gen_random_uuid(), $1, $2, 'video_msg', 'dev/goodnight-1.mp4', now() - interval '2 hours',

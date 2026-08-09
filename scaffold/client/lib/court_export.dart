@@ -417,7 +417,12 @@ class _RawExportCard extends StatelessWidget {
           Row(children: <Widget>[
             Icon(Icons.lock_open_outlined, color: scheme.primary),
             const SizedBox(width: 8),
-            Text('Raw export', style: Theme.of(context).textTheme.titleMedium),
+            // Expanded + ellipsis, not a bare Text: at the Fold5 cover width
+            // (344px) the sibling "Certified export" header overflowed its
+            // Row by 18px with this exact shape — fixed there and mirrored
+            // here so this card doesn't regress the same way later.
+            Expanded(child: Text('Raw export', style: Theme.of(context).textTheme.titleMedium,
+                overflow: TextOverflow.ellipsis)),
           ]),
           const SizedBox(height: 10),
           const Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
@@ -524,7 +529,11 @@ class _CertifiedExportCard extends StatelessWidget {
           Row(children: <Widget>[
             Icon(Icons.verified_outlined, color: scheme.tertiary),
             const SizedBox(width: 8),
-            Text('Certified export', style: Theme.of(context).textTheme.titleMedium),
+            // Expanded + ellipsis: at the Fold5 cover width (344px) this Row
+            // overflowed by 18px with a bare Text here — "Certified export"
+            // plus the icon didn't fit the card's ~272px inner width.
+            Expanded(child: Text('Certified export', style: Theme.of(context).textTheme.titleMedium,
+                overflow: TextOverflow.ellipsis)),
           ]),
           const SizedBox(height: 10),
           const Text(

@@ -17,6 +17,14 @@ set -u
 PGBIN=${PGBIN:-/usr/lib/postgresql/16/bin}
 PORT=${PORT:-5433}
 DB=${DB:-verify_run}
+# TCP connections (see the -h localhost fix below) hit Postgres's default
+# host-auth method, which needs a password even for a throwaway dev/CI
+# database -- unlike the Unix-socket path this replaced, which used peer/trust
+# auth and never needed one. Matches the same "postgres" password both this
+# session's local olive-postgres container and .github/workflows/verify.yml's
+# own `POSTGRES_PASSWORD: postgres` already use; override for any setup that
+# picks a different one.
+export PGPASSWORD=${PGPASSWORD:-postgres}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -83,16 +91,24 @@ record "demo drive (19 screens)" "${p:-0}" "${f:-0}"
 
 echo ""
 echo "── Dart client ────────────────────────────────────────────────"
-if [ -x "${FLUTTER_BIN:-/tmp/flutter/bin/flutter}" ]; then
+# /tmp/flutter is only a guess for a locally-installed toolchain. CI's own
+# flutter-action installs it under FLUTTER_ROOT (e.g.
+# /opt/hostedtoolcache/flutter/...) and never sets FLUTTER_BIN at all, so the
+# old default silently reported MISSING TOOLCHAIN even with a real, working
+# Flutter install sitting right there under a different path -- never caught
+# because, like everything else in this section, this workflow never actually
+# ran until it was moved to the true repo root.
+FLUTTER_BIN="${FLUTTER_BIN:-${FLUTTER_ROOT:-/tmp/flutter}/bin/flutter}"
+if [ -x "$FLUTTER_BIN" ]; then
   export FLUTTER_ROOT="${FLUTTER_ROOT:-/tmp/flutter}"
-  (cd client && "${FLUTTER_BIN:-/tmp/flutter/bin/flutter}" analyze >/tmp/da.out 2>&1)
+  (cd client && "$FLUTTER_BIN" analyze >/tmp/da.out 2>&1)
   if grep -q "No issues found" /tmp/da.out; then
     echo "  dart analyze                clean"
   else
     grep -E "error|warning" /tmp/da.out | head -5 | sed 's/^/  /'
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
-  out=$(cd client && "${FLUTTER_BIN:-/tmp/flutter/bin/flutter}" test --reporter compact 2>&1)
+  out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
   p=$(printf '%s' "$out" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
   f=$(printf '%s' "$out" | grep -oE '\-[0-9]+' | tail -1 | tr -d '-')
   record "dart widget invariants" "${p:-0}" "${f:-0}"
@@ -117,10 +133,20 @@ if [ -n "$ANDROID_SDK" ] && [ -d "$ANDROID_SDK" ] && [ -x "$GRADLEW" ]; then
     tail -15 /tmp/gradle.out | sed 's/^/  /'
     echo "  ANDROID KOTLIN COMPILE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
+  # Galaxy Watch6 Classic companion (§21.5) — a separate Gradle module, native
+  # Wear Compose rather than Flutter (see client/android/wear/build.gradle.kts
+  # for why). Same gate, same posture: a real compile check, not a skip.
+  if (cd client/android && ./gradlew -q :wear:assembleDebug >/tmp/gradle-wear.out 2>&1); then
+    echo "  wear os compile             clean"
+  else
+    tail -15 /tmp/gradle-wear.out | sed 's/^/  /'
+    echo "  WEAR OS COMPILE FAILED"; PROBLEMS=$((PROBLEMS+1))
+  fi
 else
   # Not a skip. The SDK is a declared dependency of this suite.
   echo "  android kotlin compile      MISSING TOOLCHAIN — not a skip, a gap"
-  PROBLEMS=$((PROBLEMS+1))
+  echo "  wear os compile             MISSING TOOLCHAIN — not a skip, a gap"
+  PROBLEMS=$((PROBLEMS+2))
 fi
 
 echo ""
@@ -138,16 +164,26 @@ fi
 
 echo ""
 echo "── Database suites ────────────────────────────────────────────"
-PSQL="$PGBIN/psql -h /tmp -p $PORT -U postgres"
+# -h localhost, not /tmp: a Unix socket in /tmp only exists for a Postgres
+# started natively via pg_ctl on this same host. Every environment that
+# actually runs this script points at a Postgres reached over TCP instead --
+# the Docker container this session's local dev uses (olive-postgres), and
+# CI's own postgres: service container (see .github/workflows/verify.yml) --
+# neither of which puts a socket file on the runner's/host's filesystem.
+# -h /tmp silently looked for a socket that was never going to exist, so this
+# ABORT was unreachable-by-design until the CI workflow file was corrected to
+# actually run (it lived at the wrong path, non-functional, until now) -- the
+# very first real CI run is what surfaced it.
+PSQL="$PGBIN/psql -h localhost -p $PORT -U postgres"
 if ! $PSQL -c 'select 1' >/dev/null 2>&1; then
   echo "  ABORT: Postgres unreachable on port $PORT. Not a skip — a failure."
   exit 2
 fi
 # These previously omitted -U and failed silently, leaving every suite to run
 # against the previous run's data. Redirecting stderr hid it completely.
-$PGBIN/dropdb   -h /tmp -p "$PORT" -U postgres --if-exists "$DB" \
+$PGBIN/dropdb   -h localhost -p "$PORT" -U postgres --if-exists "$DB" \
   || { echo "  ABORT: cannot drop $DB"; exit 2; }
-$PGBIN/createdb -h /tmp -p "$PORT" -U postgres "$DB" \
+$PGBIN/createdb -h localhost -p "$PORT" -U postgres "$DB" \
   || { echo "  ABORT: cannot create $DB"; exit 2; }
 # Applied through the runner, so ordering, checksums, and idempotency are
 # exercised on every verification rather than only when someone remembers.

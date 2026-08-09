@@ -73,5 +73,38 @@ void main() {
       expect(find.byIcon(Icons.settings), findsNothing);
       expect(find.byIcon(Icons.settings_outlined), findsNothing);
     });
+
+    group('responsive — no overflow at any required viewport width', () {
+      // Age 14 renders both the "faded" and "still here" sections plus the
+      // permanent-features card, so this exercises the fullest layout.
+      Widget buildScreen() => wrap(const QuietingScreen(childName: 'Maya', age: 14));
+
+      Future<void> pumpAt(WidgetTester t, Size size) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(buildScreen());
+        await t.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (t) async {
+        await pumpAt(t, const Size(344, 900));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (t) async {
+        await pumpAt(t, const Size(673, 841));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (t) async {
+        await pumpAt(t, const Size(390, 844));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (t) async {
+        await pumpAt(t, const Size(1100, 800));
+        expect(t.takeException(), isNull);
+      });
+    });
   });
 }

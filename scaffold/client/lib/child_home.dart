@@ -38,7 +38,11 @@ class ChildHome extends StatelessWidget {
 
   final String childName;
   final ParentPresence? presence;
-  final int sleepsUntilHandover;
+  // Nullable for the same reason `presence` is: no live custody-schedule
+  // source exists yet for a screen fetching real data (see
+  // child_home_live.dart), and a fabricated number would look exactly as
+  // real as the two fields that genuinely are. Absent, not guessed.
+  final int? sleepsUntilHandover;
   final int unreadCount;
 
   @override
@@ -93,7 +97,7 @@ class ChildHome extends StatelessWidget {
           _Tile(icon: Icons.star_border, label: 'My list',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => const WantsNeedsScreen()))),
-          _Tile(icon: Icons.mail_outline, label: 'Messages',
+          _Tile(icon: Icons.mail_outline, label: 'Messages', badgeCount: unreadCount,
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => InboxScreen(
                 childName: childName, messages: List<InboxMessage>.of(demoInboxMessages))))),
@@ -111,8 +115,10 @@ class ChildHome extends StatelessWidget {
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => ChildMoreScreen(childName: childName)))),
         ]),
-      const SizedBox(height: 12),
-      _Sleeps(sleepsUntilHandover),
+      if (sleepsUntilHandover != null) ...[
+        const SizedBox(height: 12),
+        _Sleeps(sleepsUntilHandover!),
+      ],
     ]))),
   );
 }
@@ -147,12 +153,17 @@ class _PresenceCard extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.icon, required this.label, this.onTap});
+  const _Tile({required this.icon, required this.label, this.onTap, this.badgeCount});
   final IconData icon;
   final String label;
   // Defaults to the honest not-built-yet acknowledgment; tiles with a real
   // destination (e.g. "My list" -> WantsNeedsScreen) override it.
   final void Function(BuildContext context)? onTap;
+  // Unread-style count shown on the icon corner when positive. Was accepted
+  // by ChildHome (`unreadCount`) and threaded all the way to main.dart's demo
+  // data but never rendered anywhere — a declaration with nothing behind it.
+  // Optional — null/0 renders no badge at all, not a badge showing "0".
+  final int? badgeCount;
   @override
   Widget build(BuildContext context) => InkWell(
     onTap: () => (onTap ?? (c) => _notBuiltYet(c, label))(context),
@@ -161,9 +172,31 @@ class _Tile extends StatelessWidget {
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
         color: Theme.of(context).colorScheme.primaryContainer),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(icon, size: 28), const Spacer(),
+        Row(children: [
+          Icon(icon, size: 28),
+          if (badgeCount != null && badgeCount! > 0) ...[
+            const Spacer(),
+            _UnreadBadge(count: badgeCount!),
+          ],
+        ]),
+        const Spacer(),
         Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
       ])));
+}
+
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({required this.count});
+  final int count;
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+    decoration: BoxDecoration(color: Theme.of(context).colorScheme.error,
+      borderRadius: BorderRadius.circular(9)),
+    alignment: Alignment.center,
+    child: Text(count > 9 ? '9+' : '$count',
+      style: TextStyle(color: Theme.of(context).colorScheme.onError,
+        fontSize: 11, fontWeight: FontWeight.w700)));
 }
 
 class _Sleeps extends StatelessWidget {

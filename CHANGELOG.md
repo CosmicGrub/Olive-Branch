@@ -23,8 +23,9 @@ Silent deletion is a process failure.
   **Jitsi Meet + Jitsi Videobridge** as the basis for all calls, video calls,
   screen-sharing, and streaming. Staged in two steps — Step 1 (in progress)
   proves the calling UX against Jitsi's public `meet.jit.si` server via the
-  official `jitsi_meet_flutter_sdk`; Step 2 (not started) self-hosts the full
-  stack (Prosody, Jicofo, Jitsi Videobridge). `scaffold/client/pubspec.yaml`
+  official `jitsi_meet_flutter_sdk`; Step 2 (staged and container-verified
+  as of v0.46.2, not yet device-verified) self-hosts the full stack
+  (Prosody, Jicofo, Jitsi Videobridge). `scaffold/client/pubspec.yaml`
   dropped `livekit_client` for `jitsi_meet_flutter_sdk`;
   `scaffold/tools/local-call-server.mjs` (LiveKit token minting) was replaced
   by `scaffold/tools/local-call-room-server.mjs` (Jitsi room-name
@@ -51,6 +52,322 @@ Silent deletion is a process failure.
 Phase 2 decisions: §16.2 #6 Step 2 (self-hosting Jitsi). §21.9 D — whether
 "becomes a parent" reuses the account. (§16.2 #8 was resolved in 0.40.0 — this
 line went stale for three versions before being caught here.)
+
+---
+
+## [0.46.2] — 2026-08-08 — §16.2 #6 Step 2 staged and container-verified
+
+The other bug from v0.46.0's callout — the public server's moderator lobby —
+gets its fix staged: a local `docker-jitsi-meet` stack
+(`scaffold/tools/jitsi-selfhost/`), actually brought up on this dev machine
+rather than only written and assumed correct. Doing so surfaced three real
+bugs, all fixed; what's confirmed and what isn't is kept explicit below,
+same standard v0.46.0/v0.46.1 already hold this project to.
+
+### Added
+- **`scaffold/tools/jitsi-selfhost/`** — `setup.sh` (clones
+  `jitsi/docker-jitsi-meet` pinned to `stable-11146-1` into a gitignored
+  `.jitsi-docker/`, layers `olive.env` over upstream's `env.example`, runs
+  `gen-passwords.sh`, installs `docker-compose.override.yml`),
+  `olive.env` (anonymous domain — no `ENABLE_AUTH` — is the whole point;
+  see its own inline comments for why each setting is what it is), and
+  `docker-compose.override.yml` (the Windows bind-mount fix, see "Fixed").
+  `scaffold/tools/with-jitsi.sh` mirrors `with-livekit.sh`'s lifecycle
+  pattern (bring up, wait for health, optionally run a command, `down` to
+  tear down) but — unlike `with-livekit.sh` — leaves the stack running by
+  default, since a multi-container compose stack is too slow to cycle per
+  test run.
+- **`JITSI_SERVER_URL` env var** in `local-call-room-server.mjs`, defaulting
+  to `https://meet.jit.si` so the original v0.46.0 finding stays
+  reproducible with no config; override to point at the local Step 2 stack.
+  `call_screen.dart`'s header comment updated to match.
+
+### Fixed — three bugs found by actually running this, not by reading the compose file
+- **Docker Desktop's containerd-snapshotter image store corrupted these
+  images' user resolution.** Every container failed identically —
+  `unable to find user s6: no matching entries in passwd file` — reproduced
+  even with a bare `docker run --entrypoint sh`, ruling out a compose/volume
+  cause. Root cause: `UseContainerdSnapshotter: true` in Docker Desktop's
+  own `settings-store.json`; the classic `overlay2` graphdriver doesn't have
+  this bug. Fixed by flipping the setting, restarting Docker Desktop, and
+  re-pulling the images clean. Not specific to this project.
+- **JVB's colibri HTTP port (`8080` default) collides with
+  `server/index.mjs`'s own `PORT` default.** Found via `docker compose ps`
+  after first bringing the stack up, not from reading `docker-compose.yml`
+  — the collision is with this project's own server, not anything in
+  upstream Jitsi. Fixed: `JVB_COLIBRI_PORT=8181` in `olive.env`.
+- **Prosody couldn't write its own TLS cert.** `docker-jitsi-meet`'s default
+  `${CONFIG}/storage/prosody:/var/lib/prosody` bind mount, with `CONFIG` a
+  Windows host path, loses POSIX ownership through Docker Desktop's
+  file-sharing translation — Prosody's container (uid 1000) can never write
+  into it, so cert generation silently failed (`The directory
+  /var/lib/prosody is not owned by the current user`), cascading into
+  Jicofo and JVB's XMPP connections failing outright (`No stream features
+  to proceed with`) — the whole signaling chain was down, presenting as a
+  Jicofo/JVB problem rather than obviously a Prosody one. Fixed:
+  `docker-compose.override.yml` gives Prosody's two writable paths named
+  Docker volumes instead of Windows bind mounts, installed automatically by
+  `setup.sh`.
+
+### Verified
+- All four containers (prosody, jicofo, jvb, web) reach a stable `Up` state
+  with no restart loop, after the three fixes above.
+- Jicofo's log shows it discovering Prosody's components (lobby, breakout,
+  av-moderation, etc.), joining the JVB brewery MUC, and registering the
+  videobridge — the full signaling handshake completes, not just individual
+  containers reporting healthy in isolation.
+- Prosody's own **live-rendered** config
+  (`/run/prosody/config/conf.d/jitsi-meet.cfg.lua` inside the container,
+  read directly rather than inferred from env vars) confirms
+  `authentication = "jitsi-anonymous"` on `VirtualHost "meet.jitsi"`, with
+  `muc_lobby_rooms` loaded as an available module but no forced-lobby or
+  auth-gated-moderator setting anywhere in the rendered config — the actual
+  mechanism, not just the compose file, that avoids the meet.jit.si
+  moderator-lobby finding from v0.46.0.
+- `curl -sk https://127.0.0.1:8443/` returns the real Jitsi Meet SPA
+  (HTTP 200).
+- Stack torn down cleanly after verification (`with-jitsi.sh down`); named
+  volumes (certs, registered users) persist for the next `up`.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+No real WebRTC join was completed. The stack's self-signed cert (no
+`ENABLE_LETSENCRYPT` — that needs a real public DNS name, out of scope for
+localhost dev) blocks a browser outright — confirmed via the Chrome
+devtools protocol: `net::ERR_CERT_AUTHORITY_INVALID` on every request to
+`https://127.0.0.1:8443` — and would equally block
+`jitsi_meet_flutter_sdk` on a real device, which has no client-side
+"skip cert validation" flag. Fixing that (a `<trust-anchors>` entry in
+`network_security_config.xml` for dev builds, or running the stack behind a
+tunnel with a real cert) is not done here. Physical two-device
+re-verification — the standard v0.46.0 itself holds this project to — is
+also not done: this session has no attached Android hardware, and the
+cert-trust gap above would block it even if it did. Tracked in
+`scaffold/tools/jitsi-selfhost/README.md`'s status note, and in the §16.2
+#6 callout and §20.2b in MASTERFILE.md.
+
+---
+
+## [0.46.1] — 2026-08-08 — the kiosk-lock half of §16.2 #6 fixed, not yet re-verified live
+
+v0.46.0 drove §16.2 #6 Step 1 end to end on two physical devices and found
+two independent bugs. This increment fixes one of them — the child-side
+kiosk-lock/Activity conflict — and evaluates the three options v0.46.0's
+callout left open. The other bug (the public server's moderator lobby) is
+untouched, still gated on Step 2.
+
+### Fixed
+- **Kiosk lock-task vs. the Jitsi call Activity (§16.2 #6, §5.20).**
+  `jitsi_meet_flutter_sdk` launches calls in `WrapperJitsiMeetActivity`
+  (`singleTask`), which Android's `ActivityTaskManager` opens in a new task
+  regardless of shared package identity — exactly what screen-pinning
+  refuses mid-lock, logging `Attempted Lock Task Mode violation` and leaving
+  `call_screen.dart`'s "Joining…" spinner waiting forever on a callback from
+  an Activity that never started.
+  - **Device-Owner lock-task allowlisting — ruled out.** Both real test
+    devices already carry ordinary Google/system accounts;
+    `dpm set-device-owner` refuses on a device with any existing account
+    short of a factory reset. Not viable for an already-provisioned family
+    phone, which is this app's actual deployment shape.
+  - **Embedding the call without a second Activity — deferred.** Jitsi's
+    Android SDK is React-Native-based with no fragment/embedded-view entry
+    point today; a Flutter `PlatformView` bridge into it is real future
+    work, not a same-session change.
+  - **Implemented: a lock-task handoff**, not a plain unpin/re-pin. A naive
+    exit-and-re-enter was checked against `WrapperJitsiMeetActivity`'s own
+    `singleTask` semantics and found to leave the *entire call*, not just
+    the transition, unpinned — the call Activity opens in a separate task
+    that re-pinning the original Activity never reaches. Instead:
+    `client/lib/kiosk_channel.dart` gets `beginCallHandoff()`;
+    `KioskBridge.kt`'s new `beginCallHandoff` method unpins `MainActivity`
+    and flags the coming `onStop()` as an intentional handoff rather than a
+    kiosk defeat; the already-patched
+    `client/third_party/jitsi_meet_flutter_sdk_patched/.../WrapperJitsiMeetActivity.kt`
+    self-pins for the call's duration and reports its own mid-call defeat
+    (Back+Recents during the call) back through the same `lockTaskExited`
+    event path an ordinary defeat already uses — calling capability adds no
+    new, undetected escape route. The app module and the Jitsi plugin
+    module have no compile-time reference path between them (a library
+    can't depend on the app consuming it), so the two sides coordinate
+    through a SharedPreferences flag and a `LocalBroadcastManager` action,
+    string-mirrored across files the same way the MethodChannel/EventChannel
+    names already are.
+  - Surfaced one real build gap along the way: `androidx.localbroadcastmanager`
+    was reachable from `WrapperJitsiMeetActivity.kt`'s own module (a
+    transitive dependency of `org.jitsi:jitsi-meet-sdk`) but not from the
+    app module — Flutter wires plugin modules in as `implementation`, which
+    doesn't expose a dependency's own transitive deps to the consumer.
+    `compileDebugKotlin` failed with `Unresolved reference
+    'localbroadcastmanager'` until `android/app/build.gradle.kts` declared
+    it explicitly.
+
+### Verified
+- `flutter analyze`: clean. `flutter test`: all 1239 tests pass, including
+  3 new ones in `test/kiosk_channel_test.dart` covering `beginCallHandoff`'s
+  method-channel contract and its `MissingPluginException` degradation.
+- `node packages/transport/test/transport.test.mjs`: 66 passed, 0 failed —
+  the Android-source-no-longer-UNVERIFIED assertion still holds against the
+  new `KioskBridge.kt` code.
+- Full Gradle/Kotlin build succeeds across both the app module and the
+  patched Jitsi plugin module (`flutter build apk --debug`).
+- Reinstalled on the real Fold5 from v0.46.0's session: the OS's own "App is
+  pinned" dialog appeared and `dumpsys activity activities` reported
+  `mLockTaskModeState=PINNED`, confirming screen-pinning still engages
+  correctly under the changed `MainActivity.kt`.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+Whether `WrapperJitsiMeetActivity` actually launches under the handoff
+without the violation, and whether the pin visibly survives the Activity
+swap, was **not** confirmed live this session. A concurrent session was
+mid-edit on this same repo (§16.2 #6 Step 2 self-hosting work) and, per
+logcat (`PackageManager: installation completed for package:
+com.olivebranch.olive_client`), reinstalled the app on the same physical
+Fold5 mid-test, killing the run before the call attempt completed. This
+failure mode produces no crash and no visible error under `flutter test` —
+a green CI run would look identical whether the fix works or not — so it is
+recorded here as unverified rather than assumed working from the code path
+alone. See `client/docs/MANUAL_VERIFY_call_lock_task.md` for the exact
+procedure to finish this once the devices are free, and update that file's
+own Provenance section with the real outcome when it's run.
+
+---
+
+## [0.46.0] — 2026-08-07 — the client's first live screen, a CI blind spot closed, and the call verified broken on real devices
+
+A stranded branch merge finished, a real CI gap found and fixed, and — the
+headline finding — §16.2 #6 Step 1 (Jitsi over the public server) driven
+end to end on two physical Android devices rather than trusted from code
+review. It does not work, on either device, for two independent reasons.
+
+### Added
+- **`LiveChildHomeScreen` (`client/lib/child_home_live.dart`) +
+  `main_live.dart`.** The first client screen wired to real network calls
+  instead of demo constants: fetches `/v1/me` + `/inbox` through the
+  existing dev-login path, reuses `ChildHome` unmodified so every invariant
+  its own test suite already asserts still holds on the live path, and is
+  honest about what isn't real yet — `presence` and `sleepsUntilHandover`
+  render as an absence, not a guessed number, since no day-part or
+  custody-schedule endpoint exists server-side. 4 new tests (loading,
+  real-data render, unreachable-server retry, recovery).
+- **`server/routes.mjs`**: `/v1/me` now resolves a real `display_name`
+  instead of returning bare ids.
+
+### Fixed
+- **`.github/workflows/verify.yml` had never once run.** It lived at
+  `scaffold/.github/workflows/verify.yml` — GitHub Actions only discovers
+  workflows under `<repo-root>/.github/workflows/`. Confirmed via
+  `gh api repos/.../actions/workflows` returning zero registered workflows
+  despite Actions being enabled repo-wide and the file existing on every
+  branch since it was introduced; `gh run list` returned an empty run
+  history for the entire project. Fixed with a `git mv` to the true root.
+  **Not live yet** — blocked on an OAuth token missing the `workflow` scope
+  needed to push a change under `.github/workflows/`; the commit is queued
+  and pushes as soon as that scope is granted.
+- **`call_screen.dart`'s `devRoomServerBase` hardcoded a dead LAN IP**
+  (`192.168.1.78`, from a network this project is no longer on) — silently
+  breaks two-device testing with no clue why. Switched to `127.0.0.1` +
+  `adb reverse tcp:8787 tcp:8787` per device, which works over USB
+  regardless of whether the phones and the dev machine share a WiFi network.
+- **`network_security_config.xml` still whitelisted the old LAN IP** after
+  the fix above — config drift caught in the same pass. Updated to match.
+
+### Verified — and found broken, on two real devices
+§16.2 #6 Step 1 was driven end to end on a guardian tablet and a child's
+Galaxy Z Fold5, in both join orders. Neither completes, for two independent
+reasons (full detail in the §16.2 #6 callout in MASTERFILE.md and the new
+§20.2b row):
+
+- **The child's kiosk lock blocks the call from ever starting**, and this
+  is orthogonal to Step 1 vs. Step 2 — self-hosting will not fix it alone.
+  `jitsi_meet_flutter_sdk` opens calls in a separate `singleTask` Activity;
+  Android's screen-pinning (§5.20, engaged for real on the child side)
+  refuses to launch it — `E/ActivityTaskManager: Attempted Lock Task Mode
+  violation` — and `call_screen.dart`'s "Joining…" spinner waits forever on
+  a callback from an Activity the OS never started.
+- **The public `meet.jit.si` server puts new rooms in a moderator-approval
+  lobby** — `[app:lobby] Lobby starting knocking (membersOnly = ...)` in the
+  SDK's own log, on the guardian side, which otherwise connected cleanly and
+  captured real camera/mic. No login/moderator flow exists to clear it. This
+  is evidence *for* Step 2 (self-hosting), not a reason to distrust Jitsi
+  generally.
+
+Neither device crashed — both degrade to a stuck-but-recoverable state,
+confirmed against a full logcat capture with zero `FATAL EXCEPTION`s from
+the app across the session. Homework capture, the emergency card, and
+general navigation were also spot-checked on both physical devices (tablet
++ Fold5) with no crashes or layout issues found beyond what the 0.45.0
+responsive pass already covered.
+
+---
+
+## [0.45.0] — 2026-08-04 — Windows joins the kiosk bridge, a watch companion, and a responsive-hardening pass across every screen
+
+§8.3's platform table listed Android real, Windows and iOS as gaps. This
+increment closes the Windows half honestly — a real bridge that has never
+actually been run end to end, not a rewritten contract stub — and adds a
+Wear OS companion that is explicitly a demo shell. It also runs the full
+95-screen client back through the four required viewports and fixes what
+that audit found.
+
+### Added
+- **`client/windows/runner/kiosk_bridge.{h,cpp}`** — a real Win32 kiosk
+  implementation, not a stub: strips the window's caption/system menu/
+  resize border and maximizes it, installs a `WH_KEYBOARD_LL` hook that
+  swallows the Windows key, Alt+Tab, and Ctrl+Esc, and re-arms it on a 3s
+  heartbeat to detect the OS silently dropping a slow low-level hook. **This
+  is an app-level lock, not OS Assigned Access** — see the §8.3 table
+  correction below. **Ctrl+Alt+Del is deliberately left untouched** —
+  OS-reserved, not deliverable to any user-mode hook — and the header
+  comment says so rather than implying otherwise by omission.
+  `lockTaskMode()`/`isDeviceOwner()` report `"assigned"`/`false`, matching
+  what Windows actually lets an app claim. `flutter_window.{h,cpp}` wires it
+  into the engine messenger; `scaffold/native/windows/AssignedAccessBridge.cs`
+  (the old contract-only C# stub) is deleted — `scaffold/native/` is now
+  empty.
+- **A Galaxy Watch6 companion** (`client/android/wear/`) — a standalone Wear
+  OS Gradle module (Jetpack Wear Compose) showing a sleeps-until-handover
+  count and a "Call Dad" button. Compiles and installs as a real,
+  standalone-launchable APK. **Explicitly a demo**: phone↔watch sync via the
+  Wear Data Layer API is not implemented.
+- **`tools/verify.sh` gains a `:wear:assembleDebug` gate**, same "gap, not
+  skip" posture as the existing `:app:compileDebugKotlin` one.
+- **Responsive-hardening pass, all 95 client files**, re-audited at the four
+  required viewports (Fold5 cover 344px, Fold5 main 673×841, phone 390px,
+  tablet/desktop ~1100px). Ten real overflow/layout bugs found and fixed —
+  the chess/checkers button bars, the chain/story turn banners, the
+  word-search default grid, `the_book.dart`'s stat row,
+  `weeks_screen.dart`'s legend chip, `collection_screen.dart` (plus a latent
+  reorder identity-key bug found the same pass), `court_export.dart` /
+  `gallery_screen.dart`, `guardian_home.dart`'s action grid, and a real dead
+  prop in `child_home.dart`: `unreadCount` was accepted by the constructor
+  but never rendered anywhere — now drives a badge on the Messages tile.
+  ~55 files were confirmed already correct at all four widths, with test
+  coverage added regardless so this is a permanent regression guard, not a
+  one-time pass.
+
+### Fixed
+- Two hygiene bugs bundled in because they were on files already open for
+  the audit: `birthday_marked.dart`'s duplicated month-name list, and a
+  misplaced widget `Key`.
+
+### Verified
+- `flutter analyze` (client): clean.
+- `flutter test` (client): **1235 passed, 0 failed** (up from 76).
+- `npm run test:transport`: 60 passed, 0 failed, including new Windows
+  J-bridge contract assertions.
+- `:wear:compileDebugKotlin` and `:wear:assembleDebug`: BUILD SUCCESSFUL.
+
+### Out of scope, on purpose
+- **`flutter build windows` does not run here** — the local Visual Studio
+  Build Tools install is missing the "Desktop development with C++"
+  workload (confirmed via `vswhere.exe` and `flutter doctor -v` — a real
+  gap, not a code problem). Substitute verification: the new/modified C++
+  was compiled directly with `cl.exe /W4` against the cached Flutter
+  Windows embedder headers — 0 errors, 0 warnings. **Still marked
+  UNVERIFIED** in both the header comment and the transport contract test,
+  same discipline Android only dropped the marker under after an actual
+  successful build+run on a real device.
+- Phone↔watch data sync (Wear Data Layer API) — flagged for follow-up, not
+  attempted this pass.
 
 ---
 

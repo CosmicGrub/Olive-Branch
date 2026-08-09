@@ -169,7 +169,8 @@ const REF = 'r_' + 'a'.repeat(20);
 
 
 // ===========================================================================
-// J · NATIVE BRIDGE CONTRACT — Android real and wired; Windows still a stub
+// J · NATIVE BRIDGE CONTRACT — Android real + device-verified; Windows now a
+// real C++ implementation, but not yet a real BUILD (see below)
 // ===========================================================================
 {
   const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -180,26 +181,34 @@ const REF = 'r_' + 'a'.repeat(20);
   const kt  = readFileSync(
     root + 'client/android/app/src/main/kotlin/com/olivebranch/olive_client/KioskBridge.kt',
     'utf8');
-  const cs  = readFileSync(root + 'native/windows/AssignedAccessBridge.cs', 'utf8');
+  // Windows similarly moved out of native/ (native/windows/AssignedAccessBridge.cs,
+  // an inert C# contract stub — no .NET toolchain ever touched it) once it was
+  // replaced by a real C++ implementation registered from flutter_window.cpp.
+  // Read both halves of the split (declarations in the header, logic in the
+  // source) the same way KioskBridge.kt is read as one file.
+  const winH = readFileSync(root + 'client/windows/runner/kiosk_bridge.h', 'utf8');
+  const winC = readFileSync(root + 'client/windows/runner/kiosk_bridge.cpp', 'utf8');
+  const win = winH + '\n' + winC;
+  const winWindow = readFileSync(root + 'client/windows/runner/flutter_window.cpp', 'utf8');
   const dart = readFileSync(root + 'client/lib/kiosk_channel.dart', 'utf8');
 
   // Channel names must be byte-identical across all three or the platform
   // channel silently never connects — a failure that presents as "the kiosk
   // just doesn't lock" with no error anywhere.
   const chan = 'app.olive/kiosk';
-  check('J bridge', 'method channel name agrees across Kotlin/C#/Dart',
-    [kt, cs, dart].every(f => f.includes(`'${chan}'`) || f.includes(`"${chan}"`)), 'true');
+  check('J bridge', 'method channel name agrees across Kotlin/C++/Dart',
+    [kt, win, dart].every(f => f.includes(`'${chan}'`) || f.includes(`"${chan}"`)), 'true');
   check('J bridge', 'event channel name agrees',
-    [kt, cs, dart].every(f => f.includes(`${chan}_events`)), 'true');
+    [kt, win, dart].every(f => f.includes(`${chan}_events`)), 'true');
 
   // Every method and event constant must exist in all three.
   for (const name of ['startLockTask','stopLockTask','lockTaskMode','isDeviceOwner']) {
     check('J bridge', `method '${name}' declared in all three`,
-      [kt, cs, dart].every(f => f.includes(`"${name}"`) || f.includes(`'${name}'`)), 'true');
+      [kt, win, dart].every(f => f.includes(`"${name}"`) || f.includes(`'${name}'`)), 'true');
   }
   for (const name of ['lockTaskExited','backgrounded','resumed']) {
     check('J bridge', `event '${name}' declared in all three`,
-      [kt, cs, dart].every(f => f.includes(`"${name}"`) || f.includes(`'${name}'`)), 'true');
+      [kt, win, dart].every(f => f.includes(`"${name}"`) || f.includes(`'${name}'`)), 'true');
   }
 
   // §5.20 — every emitted event must map to a state-machine transition.
@@ -209,19 +218,20 @@ const REF = 'r_' + 'a'.repeat(20);
   check('J bridge', 'backgrounded maps to onBackgrounded',
     lock.includes('onBackgrounded'), 'true');
 
-  // Windows must never claim to be fully locked — Assigned Access is exitable.
-  check('J bridge', 'Windows never reports a fully locked device',
-    /IsFullyLocked\(\)\s*=>\s*false/.test(cs), 'true');
+  // Windows has no device-owner equivalent it could point to, so it must
+  // never claim "locked": CurrentMode() always returns "assigned" and the
+  // isDeviceOwner handler always answers false.
+  check('J bridge', 'Windows CurrentMode() always returns "assigned"',
+    /CurrentMode\(\)\s*\{\s*return\s*"assigned";\s*\}/.test(win), 'true');
   check('J bridge', 'Windows reports its mode as escapable',
-    cs.includes('"assigned"'), 'true');
+    win.includes('"assigned"'), 'true');
+  check('J bridge', 'Windows isDeviceOwner handler always reports false',
+    win.includes('EncodableValue(false)'), 'true');
 
   // Android must distinguish device-owner LOCKED from escapable PINNED.
   check('J bridge', 'Android distinguishes LOCKED from PINNED',
     kt.includes('LOCK_TASK_MODE_LOCKED') && kt.includes('LOCK_TASK_MODE_PINNED'), 'true');
 
-  // Windows is still an untouched, never-compiled stub — must still say so.
-  check('J bridge', 'Windows source still marked UNVERIFIED',
-    cs.includes('UNVERIFIED'), 'true');
   // Android is real now: wired into MainActivity, built, and manually
   // verified on a device this session. Claiming UNVERIFIED here would be the
   // exact "declaration with nothing behind it" MASTERFILE §0 warns is worse
@@ -230,6 +240,71 @@ const REF = 'r_' + 'a'.repeat(20);
     kt.includes('UNVERIFIED'), 'false');
   check('J bridge', 'Android source lives in the real app package',
     kt.includes('package com.olivebranch.olive_client'), 'true');
+
+  // Windows is a real, wired C++ implementation now (registered from
+  // flutter_window.cpp, not a dangling declaration) — but it is not yet a
+  // *compiled* one: the local VS Build Tools install is missing the Native
+  // Desktop C++ workload (`flutter build windows` fails at the toolchain
+  // check, before CMake even configures — see CHANGELOG), so this has never
+  // actually built, let alone run on a real window. That is a materially
+  // different, and weaker, claim than Android's "built, installed, and
+  // manually verified on a device" — so unlike Android above, the UNVERIFIED
+  // marker stays asserted PRESENT here, honestly, until a real build
+  // succeeds.
+  check('J bridge', 'Windows bridge is wired into FlutterWindow, not just declared',
+    winWindow.includes('KioskBridge') && winWindow.includes('RegisterWith'), 'true');
+  check('J bridge', 'Windows source still marked UNVERIFIED (no successful build yet)',
+    win.includes('UNVERIFIED'), 'true');
+}
+
+// ===========================================================================
+// K · WEAR SYNC BRIDGE CONTRACT — phone-side Data Layer channel, §21.5.
+// Same shape as § J above: a MethodChannel name/method pair must agree
+// byte-for-byte between the Dart caller and its native handler, or the
+// failure mode is silent (the watch simply never receives anything, with no
+// error on either side to point at).
+// ===========================================================================
+{
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
+  const kt = readFileSync(
+    root + 'client/android/app/src/main/kotlin/com/olivebranch/olive_client/WearSyncBridge.kt',
+    'utf8');
+  const dart = readFileSync(root + 'client/lib/wear_sync_channel.dart', 'utf8');
+
+  const chan = 'com.olivebranch.olive_client/wear_sync';
+  check('K wear bridge', 'wear_sync method channel name agrees across Kotlin/Dart',
+    [kt, dart].every(f => f.includes(`"${chan}"`) || f.includes(`'${chan}'`)), 'true');
+  check('K wear bridge', "method 'syncSleepsUntilHandover' declared in both",
+    [kt, dart].every(f => f.includes('"syncSleepsUntilHandover"') || f.includes("'syncSleepsUntilHandover'")),
+    'true');
+
+  // The watch-side DataItem path/key are a second, separate contract (native
+  // Kotlin on both ends, no Dart involved) between WearSyncBridge.kt and
+  // wear/.../MainActivity.kt -- checked here too since nothing else in this
+  // suite reaches the wear/ module at all.
+  const wearMain = readFileSync(
+    root + 'client/android/wear/src/main/kotlin/com/olivebranch/olive_client/wear/MainActivity.kt',
+    'utf8');
+  check('K wear bridge', 'DataItem path "/olive/now" agrees between phone and watch',
+    [kt, wearMain].every(f => f.includes('"/olive/now"')), 'true');
+  check('K wear bridge', 'DataMap key "sleepsUntilHandover" agrees between phone and watch',
+    [kt, wearMain].every(f => f.includes('"sleepsUntilHandover"')), 'true');
+
+  // Android-only guard: wear_sync_channel.dart must never touch the channel
+  // on a platform with no phone-side handler and no paired watch to sync to.
+  check('K wear bridge', 'Dart caller guards on Platform.isAndroid',
+    dart.includes('Platform.isAndroid'), 'true');
+
+  // §21.5's own "presence" carve-out: no computation logic for it exists
+  // anywhere, so the bridge's actual CODE must not smuggle a second field in
+  // under one pass's cover. Comments are allowed to name "presence" when
+  // explaining the carve-out (both files' headers do exactly that) -- only
+  // code lines are checked, the same way I contract's own TODO/FIXME check
+  // above cares about the real source, not prose describing its absence.
+  const stripComments = s => s.replace(/\/\/.*/g, '');
+  check('K wear bridge', 'bridge carries only sleepsUntilHandover, not presence',
+    !stripComments(kt).toLowerCase().includes('presence') &&
+    !stripComments(dart).toLowerCase().includes('presence'), 'true');
 }
 
 let g = '';

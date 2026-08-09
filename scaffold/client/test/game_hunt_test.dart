@@ -111,5 +111,26 @@ void main() {
       final Size size = tester.getSize(find.widgetWithText(FilledButton, 'Found it!').first);
       expect(size.height, greaterThanOrEqualTo(48.0));
     });
+
+    group('responsive audit — Fold5, phone, and tablet/desktop widths', () {
+      // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+      // unfolded main screens), plus a standard phone width and a
+      // short-and-wide desktop/tablet width now that Windows is a real
+      // target.
+      for (final MapEntry<String, Size> entry in const <String, Size>{
+        'Fold5 cover (344 CSS px)': Size(344, 882),
+        'Fold5 unfolded main (~673 CSS px)': Size(673, 841),
+        'a standard phone (~390 CSS px)': Size(390, 844),
+        'a tablet/desktop (~1100 CSS px)': Size(1100, 800),
+      }.entries) {
+        testWidgets('renders without overflow at ${entry.key}', (tester) async {
+          await tester.binding.setSurfaceSize(entry.value);
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          await tester.pumpWidget(wrap(const GameHuntScreen()));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+        });
+      }
+    });
   });
 }

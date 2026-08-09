@@ -4,11 +4,17 @@
  *
  * Under the Jitsi pivot (MASTERFILE §16.2 #6, reversed — see the note added
  * there), calls run on Jitsi Meet + Jitsi Videobridge rather than LiveKit.
- * For now that means the public meet.jit.si server: no self-hosted SFU, so
- * there is no token/JWT to mint. The one thing two devices still need to
- * agree on is *which room* — and that still has to satisfy I1 (a room name
- * must never be derived from a child id, user id, or anything else an
- * attacker can guess) and I4 (only an authorized principal may learn it).
+ * Step 1 pointed this at the public meet.jit.si server and found it puts new
+ * rooms in a moderator-approval lobby the app can never clear (v0.46.0,
+ * verified on two physical devices) — evidence for Step 2, not a reason to
+ * distrust Jitsi generally. JITSI_SERVER_URL below lets this point at a
+ * Step 2 self-hosted stack (tools/jitsi-selfhost/, `with-jitsi.sh`) instead,
+ * without losing the ability to reproduce the original meet.jit.si finding.
+ * Either way there's no self-hosted-with-JWT-auth SFU decided yet, so there
+ * is no token/JWT to mint. The one thing two devices still need to agree on
+ * is *which room* — and that still has to satisfy I1 (a room name must
+ * never be derived from a child id, user id, or anything else an attacker
+ * can guess) and I4 (only an authorized principal may learn it).
  *
  * This script reuses createSession/mintToken from packages/session-runtime
  * verbatim for exactly that: createSession() calls the same tested
@@ -20,6 +26,7 @@
  * Two fixed identities for local two-device testing: a guardian ("dad") and
  * a child ("ivy"), sharing one session/room.
  *   node tools/local-call-room-server.mjs
+ *   JITSI_SERVER_URL=https://127.0.0.1:8443 node tools/local-call-room-server.mjs
  *
  * GET /room?who=dad|ivy -> { room, serverURL, identity, displayName }
  */
@@ -27,7 +34,10 @@ import { createServer } from 'node:http';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
 
 const HTTP_PORT = 8787;
-const JITSI_SERVER_URL = 'https://meet.jit.si';
+// Defaults to the public server so the original v0.46.0 lobby finding stays
+// reproducible without any config; override to point at a local Step 2
+// stack — see tools/jitsi-selfhost/README.md.
+const JITSI_SERVER_URL = process.env.JITSI_SERVER_URL ?? 'https://meet.jit.si';
 
 const CHILD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const DAD_ID = '11111111-1111-1111-1111-111111111111';

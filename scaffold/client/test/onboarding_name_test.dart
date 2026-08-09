@@ -99,4 +99,28 @@ void main() {
     expect(auditOnboardingCopy('Try again!').ok, isFalse);
     expect(auditOnboardingCopy('Good job!').ok, isFalse);
   });
+
+  group('responsive — required audit viewports', () {
+    // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and a
+    // desktop/tablet-scale width. A maxed-out, unbroken (space-free) name is
+    // typed at each width — the single case with real width pressure, since
+    // the live preview (fontSize 44) has no spaces to wrap on.
+    const viewports = {
+      'Fold5 cover (344x882)': Size(344, 882),
+      'Fold5 main (673x841)': Size(673, 841),
+      'phone (390x844)': Size(390, 844),
+      'tablet/desktop (1200x800)': Size(1200, 800),
+    };
+
+    for (final entry in viewports.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await pump(tester, (_) {});
+        await tester.enterText(find.byType(TextField), 'X' * maxNameLength);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 }

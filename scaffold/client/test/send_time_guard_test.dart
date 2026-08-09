@@ -101,4 +101,40 @@ void main() {
       expect(find.textContaining('Arrives the night of June 1st, 8:00 PM'), findsNothing);
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('renders the blocked-send guard and the anchor picker without overflow '
+          'at ${entry.key}', (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        await t.pumpWidget(wrap(const SendTimeGuardScreen(childName: 'Ivy')));
+        expect(t.takeException(), isNull);
+
+        // The SegmentedButton's two labels ("Next bedtime" / "The night of
+        // June 1st") are the widest fixed-in-a-row content on this screen —
+        // the one most likely to overflow at the Fold5 cover's 344px.
+        final specificDate = find.text('The night of June 1st');
+        await t.ensureVisible(specificDate);
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+        await t.tap(specificDate);
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
 }

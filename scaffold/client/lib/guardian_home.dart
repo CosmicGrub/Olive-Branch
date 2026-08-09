@@ -86,11 +86,21 @@ class GuardianHome extends StatelessWidget {
           child: Text(overlapLabel!, style: const TextStyle(fontSize: 11))),
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: GridView(shrinkWrap: true,
+          // LayoutBuilder-driven breakpoint, not a single fixed extent: at the
+          // Fold5 cover-screen width (344px logical, ~151px per column here)
+          // the longer two-word labels ('Send-time guard', 'Morning
+          // briefing') wrap to three lines and a flat mainAxisExtent: 108
+          // overflowed the tile by 4px -- caught by widget tests pinned to
+          // that exact width, not by inspection. Wider layouts keep the
+          // original, more compact extent.
+          child: LayoutBuilder(builder: (context, constraints) {
+            final columnWidth = (constraints.maxWidth - 10) / 2;
+            final mainAxisExtent = columnWidth < 165.0 ? 128.0 : 108.0;
+            return GridView(shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10,
-              mainAxisExtent: 108),
+              mainAxisExtent: mainAxisExtent),
             children: [
               _GTile(icon: Icons.schedule_send, label: 'Message banking',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -128,7 +138,8 @@ class GuardianHome extends StatelessWidget {
               _GTile(icon: Icons.more_horiz, label: 'More',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => GuardianMoreScreen(childName: childName)))),
-            ])),
+            ]);
+          })),
         const SizedBox(height: 16),
       ]))),
   );

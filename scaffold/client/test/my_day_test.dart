@@ -76,6 +76,45 @@ void main() {
       expect(find.text(blurb), findsNothing);
     });
 
+    group('responsive — no overflow at any required viewport width', () {
+      // Fold5 cover, Fold5 main, phone, and tablet/desktop widths. The
+      // surface height at each is taller than the named device — this
+      // screen renders with a ListView (see class doc), whose sliver only
+      // lays out day-part cards near the viewport, so a device-accurate
+      // short height would leave the last couple of cards unbuilt and any
+      // overflow in them undetectable, same reasoning this file's own
+      // 800x1800 surface above already applies. Width is what a RenderFlex
+      // overflow actually depends on, so the extra height doesn't change
+      // what's being tested.
+      Future<void> pumpAt(WidgetTester tester, Size size) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const MyDayScreen(
+          childName: 'Ivy', parts: demoDayParts, nowLocal: '07:15')));
+        await tester.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (tester) async {
+        await pumpAt(tester, const Size(344, 2200));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (tester) async {
+        await pumpAt(tester, const Size(673, 2200));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (tester) async {
+        await pumpAt(tester, const Size(390, 2200));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (tester) async {
+        await pumpAt(tester, const Size(1100, 1400));
+        expect(tester.takeException(), isNull);
+      });
+    });
+
     testWidgets('day-part cards meet the 48dp+ touch target minimum', (tester) async {
       await tester.binding.setSurfaceSize(const Size(800, 1800));
       addTearDown(() => tester.binding.setSurfaceSize(null));

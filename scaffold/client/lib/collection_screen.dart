@@ -100,7 +100,14 @@ class _CollectionScreenState extends State<CollectionScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         for (final c in _byRecency)
+          // Keyed by interestId, on the actual list item this time — not a
+          // descendant several levels in. `_byRecency` reorders on every add
+          // (the just-updated collection jumps to the front), and ListView's
+          // reconciliation matches unkeyed children by POSITION: without this
+          // key, a reorder would silently rebind an existing Element to a
+          // different collection's data instead of recognising it moved.
           _CollectionCard(
+            key: ValueKey(c.interestId),
             label: _interestLabels[c.interestId] ?? 'Things',
             collection: c,
             onAddAnother: () =>
@@ -111,7 +118,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 }
 
 class _CollectionCard extends StatelessWidget {
-  const _CollectionCard({required this.label, required this.collection, required this.onAddAnother});
+  const _CollectionCard({super.key, required this.label, required this.collection, required this.onAddAnother});
   final String label;
   final Collection collection;
   final VoidCallback onAddAnother;
@@ -121,7 +128,6 @@ class _CollectionCard extends StatelessWidget {
     final view = collectionChildView(collection);
     final sorted = [...collection.entries]..sort((a, b) => a.shownAt.compareTo(b.shownAt));
     return Card(
-      key: ValueKey(collection.interestId),
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(padding: const EdgeInsets.all(16), child: Column(
         crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -210,8 +216,15 @@ class _SpecimenChip extends StatelessWidget {
         ? Theme.of(context).colorScheme.primaryContainer
         : Theme.of(context).colorScheme.surfaceContainerHighest,
     ),
+    // Flexible, not a bare Text: a Wrap only bounds a chip's width by
+    // whatever room is left on its line, and a long specimen name plus the
+    // "new!" tag can exceed that on a narrow screen (e.g. the Fold5 cover's
+    // 344px) — bare Text has nothing to shrink into and overflows the Row
+    // instead of wrapping. Flexible lets it wrap onto a second line within
+    // the chip, which grows to fit rather than clipping or cutting the name.
     child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text(entry.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+      Flexible(child: Text(entry.name,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5))),
       if (isNewest) ...[
         const SizedBox(width: 6),
         Text('new!', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,

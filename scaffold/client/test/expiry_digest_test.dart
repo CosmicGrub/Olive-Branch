@@ -91,4 +91,39 @@ void main() {
       expect(find.byIcon(Icons.settings), findsNothing);
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, and desktop widths', () {
+    Future<void> atSize(WidgetTester t, Size size, Widget child) async {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(wrap(child));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('renders on the Fold5 cover-screen width (344 CSS px) without overflow',
+        (t) async {
+      await atSize(t, const Size(344, 882), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders on the Fold5 unfolded main screen (~673x841) without overflow',
+        (t) async {
+      await atSize(t, const Size(673, 841), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a standard phone width (390 logical px) without overflow',
+        (t) async {
+      await atSize(t, const Size(390, 900), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a tablet/desktop width (1100, short-and-wide) without overflow',
+        (t) async {
+      await atSize(t, const Size(1100, 700), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
+  });
 }

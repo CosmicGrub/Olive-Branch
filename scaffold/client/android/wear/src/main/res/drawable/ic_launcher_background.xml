@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid deepPurple field, matching the phone app's ColorScheme.fromSeed
+     seed color (main.dart), so the two icons read as one product. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#6750A4" />
+</shape>

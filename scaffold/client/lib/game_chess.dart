@@ -728,26 +728,27 @@ class _GameChessState extends State<GameChess> {
             )),
           )),
           const SizedBox(height: 16),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          // Wrap, not a Row: on the Fold5 cover screen (344 CSS px), even
+          // just "Take that back" + "Change setup" don't fit on one line —
+          // confirmed by a widget test at that width — and a third button
+          // once the game finishes makes it worse. This must wrap to
+          // additional rows rather than overflow.
+          Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 10, children: [
             SizedBox(height: 48, child: OutlinedButton.icon(
               onPressed: _state.history.isEmpty ? null : _takeBack,
               icon: const Icon(Icons.undo),
               label: const Text('Take that back'),
             )),
-            const SizedBox(width: 12),
             SizedBox(height: 48, child: OutlinedButton.icon(
               onPressed: _resetToSetup,
               icon: const Icon(Icons.tune),
               label: const Text('Change setup'),
             )),
-            if (finished) ...[
-              const SizedBox(width: 12),
-              SizedBox(height: 48, child: FilledButton.icon(
-                onPressed: _playAgainSameSetup,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Play again'),
-              )),
-            ],
+            if (finished) SizedBox(height: 48, child: FilledButton.icon(
+              onPressed: _playAgainSameSetup,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Play again'),
+            )),
           ]),
         ]);
       })),

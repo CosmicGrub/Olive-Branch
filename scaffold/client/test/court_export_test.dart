@@ -210,4 +210,28 @@ void main() {
       expect(find.byType(TextFormField), findsNothing);
     });
   });
+
+  group('CourtExportScreen — responsive widths (phone/Fold5/tablet/desktop)', () {
+    // MASTERFILE's own mandated minimums (Fold5 cover/main), a standard phone
+    // width, and — now that Windows is a real target — a short-and-wide
+    // desktop-scale width that also crosses this screen's own 760px
+    // two-column breakpoint.
+    const Map<String, Size> widths = <String, Size>{
+      'Fold5 cover (344px)': Size(344, 820),
+      'Fold5 main (~673x841)': Size(673, 841),
+      'phone (390px)': Size(390, 844),
+      'tablet/desktop (1100px)': Size(1100, 900),
+    };
+
+    for (final MapEntry<String, Size> entry in widths.entries) {
+      testWidgets('renders with no overflow/layout exception at ${entry.key}',
+          (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const CourtExportScreen()));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 }

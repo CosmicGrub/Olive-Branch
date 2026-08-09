@@ -143,6 +143,47 @@ void main() {
       expect(find.textContaining("Sealed until you're 18"), findsNothing);
     });
 
+    group('responsive — no overflow at any required viewport width', () {
+      // Fold5 cover, Fold5 main, phone, and tablet/desktop widths. Seeds one
+      // opened letter (so its body actually renders and wraps) and one
+      // sealed letter (so the chip row and sealed-tile copy both render).
+      Widget buildScreen() => wrap(LettersScreen(childName: 'Ivy', currentAge: 11, initialLetters: [
+        Letter(id: 'l1', childId: 'demo-child', writtenAtAge: 9, openAtAge: 11,
+          writtenAt: DateTime(2024, 1, 1), openedAt: DateTime(2026, 1, 1),
+          body: 'now you are old enough, and this body text is somewhat long so it '
+                'actually wraps and stresses the layout on a narrow screen'),
+        Letter(id: 'l2', childId: 'demo-child', writtenAtAge: 9, openAtAge: 18,
+          writtenAt: DateTime(2024, 1, 1), body: 'sealed body'),
+      ]));
+
+      Future<void> pumpAt(WidgetTester t, Size size) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(buildScreen());
+        await t.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (t) async {
+        await pumpAt(t, const Size(344, 900));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (t) async {
+        await pumpAt(t, const Size(673, 841));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (t) async {
+        await pumpAt(t, const Size(390, 844));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (t) async {
+        await pumpAt(t, const Size(1100, 800));
+        expect(t.takeException(), isNull);
+      });
+    });
+
     testWidgets('NO settings affordance and no absence-guilt language', (t) async {
       await t.pumpWidget(wrap(const LettersScreen(childName: 'Maya', currentAge: 11)));
       expect(find.byIcon(Icons.settings), findsNothing);

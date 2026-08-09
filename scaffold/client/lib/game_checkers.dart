@@ -369,14 +369,16 @@ class _GameCheckersState extends State<GameCheckers> {
             )),
           )),
           const SizedBox(height: 16),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          // Wrap, not a Row: on the Fold5 cover screen (344 CSS px) "Take
+          // that back" and "Play again" together don't fit on one line, and
+          // this must wrap to a second row rather than overflow.
+          Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 10, children: [
             SizedBox(height: 48, child: OutlinedButton.icon(
               key: const Key('ckUndo'),
               onPressed: _history.isEmpty ? null : _undo,
               icon: const Icon(Icons.undo),
               label: const Text('Take that back'),
             )),
-            const SizedBox(width: 12),
             if (finished) SizedBox(height: 48, child: FilledButton.icon(
               key: const Key('ckPlayAgain'),
               onPressed: _reset,

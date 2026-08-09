@@ -11,17 +11,32 @@
 // (school/bedtime/etc.) is NOT wired yet -- a real follow-up, not silently
 // glossed over.
 import { DateTime } from 'luxon';
+import { activeCustodyOrderFor } from '../packages/db/src/pool.mjs';
+import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 
-/** @param {import('../packages/api/src/api.ts').Api} api */
-export function registerRoutes(api) {
+/**
+ * @param {import('../packages/api/src/api.ts').Api} api
+ * @param {import('pg').Pool} pool raw pool, needed for activeCustodyOrderFor()
+ *   — it runs its own withSystemSession (see pool.ts), independent of the
+ *   caller-scoped session api.handle() already opened for this request.
+ */
+export function registerRoutes(api, pool) {
   api.register({
     method: 'GET', path: '/v1/me', action: null,
-    handler: async (c) => ({ body: {
-      userId: c.principal.userId,
-      childId: c.principal.childId,
-      roleName: c.principal.roleName,
-      escalated: c.principal.escalated,
-    } }),
+    handler: async (c, q) => {
+      // Her own name, not an id (§8.1) -- resolved for real here so a live
+      // client never has to hardcode "Ivy" the way the demo build does.
+      const displayName = c.principal.roleName === 'child'
+        ? (await q(`SELECT display_name FROM child WHERE id = $1`, [c.principal.childId]))[0]?.display_name
+        : (await q(`SELECT display_name FROM app_user WHERE id = $1`, [c.principal.userId]))[0]?.display_name;
+      return { body: {
+        userId: c.principal.userId,
+        childId: c.principal.childId,
+        roleName: c.principal.roleName,
+        escalated: c.principal.escalated,
+        displayName: displayName ?? null,
+      } };
+    },
   });
 
   api.register({
@@ -46,10 +61,21 @@ export function registerRoutes(api) {
         tz = child[0].home_tz;
       }
       const local = nowUtc.setZone(tz);
+      // §8.2.5 — "3 sleeps until Dad's week" is counted on HER local day
+      // boundaries (child-local), never the order's zone or the server's.
+      const nowLocalDate = local.toISODate();
+      const order = await activeCustodyOrderFor(pool, c.childId, nowLocalDate);
+      // Honest absence: a child with no active custody order gets null here,
+      // never a guessed/fabricated countdown (db/migrations/0007's own
+      // reasoning; see custody_order.test.mjs's NOORDER fixture).
+      const sleepsUntilHandover = order
+        ? sleepsUntilSideChange(order, nowLocalDate)?.sleeps ?? null
+        : null;
       return { body: {
         childLocalTime: local.toFormat('h:mm a'),
         zoneAbbr: local.toFormat('ZZZZ'),
         zone: tz,
+        sleepsUntilHandover,
       } };
     },
   });
