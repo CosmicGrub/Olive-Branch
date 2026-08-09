@@ -67,6 +67,19 @@ void main() {
   });
 
   group('letters screen — child-facing', () {
+    testWidgets('the empty state carries a calm icon, and it clears once one is sealed',
+        (t) async {
+      await t.pumpWidget(wrap(const LettersScreen(childName: 'Maya', currentAge: 11)));
+      expect(find.byIcon(Icons.mail_outline), findsOneWidget);
+
+      await t.enterText(find.byType(TextField), 'Dear future me, hello.');
+      await t.pump();
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Seal it'));
+      await t.tap(find.widgetWithText(FilledButton, 'Seal it'));
+      await t.pump();
+      expect(find.byIcon(Icons.mail_outline), findsNothing);
+    });
+
     testWidgets('the age picker only offers ages at least a year out', (t) async {
       await t.pumpWidget(wrap(const LettersScreen(childName: 'Maya', currentAge: 17)));
       expect(find.widgetWithText(ChoiceChip, '18'), findsOneWidget);
@@ -189,6 +202,19 @@ void main() {
       expect(find.byIcon(Icons.settings), findsNothing);
       expect(find.textContaining("haven't"), findsNothing);
       expect(find.textContaining('streak'), findsNothing);
+    });
+
+    testWidgets('privacy banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const LettersScreen(childName: 'Maya', currentAge: 11)));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.mail_lock_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
     });
   });
 }

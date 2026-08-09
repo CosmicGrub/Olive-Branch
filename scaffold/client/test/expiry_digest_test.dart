@@ -90,6 +90,35 @@ void main() {
       await pump(t, const ExpiryDigestScreen());
       expect(find.byIcon(Icons.settings), findsNothing);
     });
+
+    testWidgets('keeping everything shows the calm "all clear" empty state, '
+        'a real icon and message', (t) async {
+      await pump(t, const ExpiryDigestScreen());
+      // Keep every pending item forever, one tap at a time — the button list
+      // shrinks by one each time (proven by the earlier test), so always
+      // tapping the first is safe until none remain.
+      while (find.text('Keep forever').evaluate().isNotEmpty) {
+        await t.tap(find.text('Keep forever').first);
+        await t.pumpAndSettle();
+      }
+      expect(find.text('All clear.'), findsOneWidget);
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+
+      // 40, matching the house "nothing pending" empty-state idiom used
+      // throughout (journal_screen.dart, letters_screen.dart, teach_me.dart,
+      // weeks_screen.dart, inbox_screen.dart, etc.), not a one-off size.
+      final Icon icon = t.widget(find.byIcon(Icons.check_circle_outline));
+      expect(icon.size, 40.0);
+    });
+
+    testWidgets('the "keep forever" button meets the 48dp minimum tap target',
+        (t) async {
+      await pump(t, const ExpiryDigestScreen());
+      final Size size = t.getSize(find.ancestor(
+        of: find.text('Keep forever').first,
+        matching: find.byWidgetPredicate((Widget w) => w is OutlinedButton)));
+      expect(size.height, greaterThanOrEqualTo(48));
+    });
   });
 
   group('responsive — Fold5 cover/main, phone, and desktop widths', () {

@@ -140,7 +140,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         if (_lastChildName != null) Padding(
           padding: const EdgeInsets.only(top: 16),
           child: Text('Last run finished for "$_lastChildName".',
-            style: const TextStyle(fontSize: 12.5)),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ),
       ]),
     )),

@@ -47,9 +47,9 @@ class InvitationScreen extends StatelessWidget {
               const SizedBox(height: 20),
               Text("You're invited", textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text("$inviterLabel has invited you to join $childName's family as $yourLabel.",
-                textAlign: TextAlign.center, style: const TextStyle(fontSize: 15.5)),
+                textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -57,16 +57,20 @@ class InvitationScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16)),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   for (var i = 0; i < grants.length; i++) ...[
-                    if (i > 0) const SizedBox(height: 10),
+                    if (i > 0) const SizedBox(height: 12),
                     _Grant(text: grants[i]),
                   ],
                 ]),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 32),
               SizedBox(height: 56, child: FilledButton(
                 onPressed: onAccept,
                 style: FilledButton.styleFrom(shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18))),
+                  borderRadius: BorderRadius.circular(16))),
+                // Deliberately not a textTheme role — see onboarding_shared.dart's
+                // continue button for why button labels keep a plain, colorless
+                // TextStyle rather than one with Typography.material2021's
+                // baked-in onSurface color.
                 child: const Text('Accept invitation',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
               if (onDecline != null) ...[
@@ -86,7 +90,7 @@ class _Grant extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Icon(Icons.check_circle_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
-    const SizedBox(width: 10),
-    Expanded(child: Text(text, style: const TextStyle(fontSize: 13.5))),
+    const SizedBox(width: 8),
+    Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
   ]);
 }

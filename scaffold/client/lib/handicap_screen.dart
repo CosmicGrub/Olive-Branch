@@ -66,13 +66,14 @@ class _HandicapScreenState extends State<HandicapScreen> {
       appBar: AppBar(title: Text('Make it fair · ${meta.title}')),
       body: SafeArea(
         child: ListView(padding: const EdgeInsets.all(20), children: [
-          Text(offer.prompt, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+          Text(offer.prompt,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Pick something for him to deal with. You can change your mind any time — even mid-game.',
-            style: TextStyle(fontSize: 13.5),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           _HandicapTile(
             label: 'Play it straight — no handicap',
             icon: Icons.balance_rounded,
@@ -80,7 +81,7 @@ class _HandicapScreenState extends State<HandicapScreen> {
             onTap: () => _choose(null),
           ),
           for (final h in offer.options) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             _HandicapTile(
               label: h.label,
               icon: Icons.bolt_rounded,
@@ -90,11 +91,11 @@ class _HandicapScreenState extends State<HandicapScreen> {
           ],
           if (meta.handicaps.isEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 14),
+              padding: const EdgeInsets.only(top: 12),
               child: Text('${meta.title} is a together game — nobody needs a handicap.',
-                  style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
             ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           // Consequence motion only, well under 400ms, and only after her
           // own tap selects a handicap (§8.13.1) — nothing here animates on
           // its own.
@@ -126,7 +127,7 @@ class _HandicapTile extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         constraints: const BoxConstraints(minHeight: 56), // §8.4 touch target
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: selected ? cs.primaryContainer : cs.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(18),
@@ -137,8 +138,7 @@ class _HandicapTile extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(label,
-                style: TextStyle(
-                    fontSize: 15,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: selected ? cs.onPrimaryContainer : cs.onSurface)),
           ),
@@ -156,12 +156,17 @@ class _BannerPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: cs.tertiaryContainer, borderRadius: BorderRadius.circular(16)),
       child: Row(children: [
         Icon(Icons.campaign_rounded, color: cs.onTertiaryContainer),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text, style: TextStyle(color: cs.onTertiaryContainer, fontWeight: FontWeight.w600))),
+        const SizedBox(width: 12),
+        Expanded(
+            child: Text(text,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: cs.onTertiaryContainer, fontWeight: FontWeight.w600))),
       ]),
     );
   }

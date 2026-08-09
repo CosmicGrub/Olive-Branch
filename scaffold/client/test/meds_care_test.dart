@@ -116,6 +116,19 @@ void main() {
       await pump(t, const MedsCareScreen());
       expect(find.byIcon(Icons.settings), findsNothing);
     });
+
+    testWidgets('the log-dose and log-PRN-dose buttons meet the 48dp minimum '
+        'tap target', (t) async {
+      await pump(t, const MedsCareScreen());
+      final Size doseSize = t.getSize(find.ancestor(
+        of: find.text('Log dose').first,
+        matching: find.byWidgetPredicate((Widget w) => w is FilledButton)));
+      expect(doseSize.height, greaterThanOrEqualTo(48));
+      final Size prnSize = t.getSize(find.ancestor(
+        of: find.text('Log PRN dose'),
+        matching: find.byWidgetPredicate((Widget w) => w is OutlinedButton)));
+      expect(prnSize.height, greaterThanOrEqualTo(48));
+    });
   });
 
   group('responsive — Fold5 cover/main, phone, and desktop widths', () {

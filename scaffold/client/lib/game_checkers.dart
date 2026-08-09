@@ -372,7 +372,7 @@ class _GameCheckersState extends State<GameCheckers> {
           // Wrap, not a Row: on the Fold5 cover screen (344 CSS px) "Take
           // that back" and "Play again" together don't fit on one line, and
           // this must wrap to a second row rather than overflow.
-          Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 10, children: [
+          Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 12, children: [
             SizedBox(height: 48, child: OutlinedButton.icon(
               key: const Key('ckUndo'),
               onPressed: _history.isEmpty ? null : _undo,
@@ -423,7 +423,7 @@ class _TallyRow extends StatelessWidget {
   Widget build(BuildContext context) => Row(children: [
     Expanded(child: _TallyChip(label: childName, count: childCount,
       color: Theme.of(context).colorScheme.primaryContainer)),
-    const SizedBox(width: 10),
+    const SizedBox(width: 12),
     Expanded(child: _TallyChip(label: parentName, count: parentCount,
       color: Theme.of(context).colorScheme.secondaryContainer)),
   ]);
@@ -437,11 +437,11 @@ class _TallyChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 48),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      Text('$count', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+      Text('$count', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
     ]),
   );
 }
@@ -450,13 +450,13 @@ class _GoodGameBanner extends StatelessWidget {
   const _GoodGameBanner();
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.tertiaryContainer,
       borderRadius: BorderRadius.circular(16)),
     child: const Row(children: [
       Icon(Icons.emoji_events_outlined),
-      SizedBox(width: 10),
+      SizedBox(width: 8),
       Expanded(child: Text('Good game.', style: TextStyle(fontWeight: FontWeight.w600))),
     ]),
   );
@@ -468,11 +468,11 @@ class _CalloutBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedContainer(
     duration: const Duration(milliseconds: 200),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12)),
-    child: Text(text, style: const TextStyle(fontSize: 13)),
+    child: Text(text, style: Theme.of(context).textTheme.bodySmall),
   );
 }
 
@@ -534,7 +534,14 @@ class _PieceView extends StatelessWidget {
         shape: BoxShape.circle,
         color: color,
         border: Border.all(color: Colors.white.withValues(alpha: 0.85), width: 2.5),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1.5))],
+        // Soft and tinted toward the theme's own shadow role, not a flat
+        // grey/black box-shadow.
+        boxShadow: [
+          BoxShadow(
+              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.25),
+              blurRadius: 3,
+              offset: const Offset(0, 1.5)),
+        ],
       ),
       child: piece.king
           ? const Center(child: Icon(Icons.star, color: Colors.white, size: 16))

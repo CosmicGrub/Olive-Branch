@@ -146,13 +146,13 @@ class _GameKimState extends State<GameKim> {
         Text(_scene.title, style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text('made of stand-in pictures for now — a real photo of the table comes later',
-          style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic,
-            color: scheme.onSurfaceVariant)),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant)),
         const SizedBox(height: 16),
         Text(_studying
             ? 'Take a good look at ${widget.parentName}\'s table.'
             : "Which one's missing?",
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         _ItemGrid(items: visibleItems, keyPrefix: 'kimTable'),
         const SizedBox(height: 20),
@@ -166,12 +166,12 @@ class _GameKimState extends State<GameKim> {
           if (solved) _SolvedBanner(missing: _missing)
           else ...[
             Text('Tap the thing you think is gone:',
-              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 10),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
             _ItemGrid(items: _choiceOrder, keyPrefix: 'kimChoice', onTap: _guess,
               highlightWrong: _lastGuessCorrect == false),
             if (_lastGuessCorrect == false) const Padding(
-              padding: EdgeInsets.only(top: 10),
+              padding: EdgeInsets.only(top: 8),
               child: _CalloutKim(text: 'Not quite — want to look again?'),
             ),
           ],
@@ -200,15 +200,15 @@ class _SolvedBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     key: const Key('kimSolved'),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.tertiaryContainer,
       borderRadius: BorderRadius.circular(16)),
     child: Row(children: [
       const Icon(Icons.celebration_outlined),
-      const SizedBox(width: 10),
+      const SizedBox(width: 8),
       Expanded(child: Text('Yes! The ${missing.label.toLowerCase()} was missing.',
-        style: const TextStyle(fontWeight: FontWeight.w600))),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
     ]),
   );
 }
@@ -219,11 +219,11 @@ class _CalloutKim extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedContainer(
     duration: const Duration(milliseconds: 200),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12)),
-    child: Text(text, style: const TextStyle(fontSize: 13)),
+    child: Text(text, style: Theme.of(context).textTheme.bodySmall),
   );
 }
 
@@ -238,22 +238,22 @@ class _ItemGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Wrap(spacing: 10, runSpacing: 10, children: [
+    return Wrap(spacing: 8, runSpacing: 8, children: [
       for (final item in items) InkWell(
         key: Key('${keyPrefix}_${item.id}'),
         onTap: onTap == null ? null : () => onTap!(item),
         borderRadius: BorderRadius.circular(16),
         child: Container(
           constraints: const BoxConstraints(minWidth: 88, minHeight: 88),
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: scheme.primaryContainer,
             borderRadius: BorderRadius.circular(16)),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(item.icon, size: 30, color: scheme.onPrimaryContainer),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(item.label, textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11.5, color: scheme.onPrimaryContainer)),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onPrimaryContainer)),
           ]),
         ),
       ),

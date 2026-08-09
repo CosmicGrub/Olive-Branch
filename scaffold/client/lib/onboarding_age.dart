@@ -43,7 +43,7 @@ class _ObAgeScreenState extends State<ObAgeScreen> {
       onSkip: () => widget.onContinue(
         acceptAge(null, widget.birthDate, widget.now ?? DateTime.now())),
       body: Wrap(
-        spacing: 10, runSpacing: 10, alignment: WrapAlignment.center,
+        spacing: 12, runSpacing: 12, alignment: WrapAlignment.center,
         children: [for (var a = minAge; a <= maxAge; a++) TapChoice(
           key: ValueKey('age_$a'),
           label: '$a',

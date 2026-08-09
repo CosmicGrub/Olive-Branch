@@ -80,7 +80,7 @@ class _LockAdvisoryScreenState extends State<LockAdvisoryScreen> {
               color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 12),
             Expanded(child: Text(_platformLabel(_mode),
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
           ]),
           const SizedBox(height: 16),
           Card(
@@ -88,32 +88,32 @@ class _LockAdvisoryScreenState extends State<LockAdvisoryScreen> {
               ? Theme.of(context).colorScheme.surfaceContainerHighest
               : Theme.of(context).colorScheme.primaryContainer,
             child: Padding(padding: const EdgeInsets.all(16),
-              child: Text(advisory, style: const TextStyle(fontSize: 15, height: 1.35))),
+              child: Text(advisory, style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.35))),
           ),
           if (isEscapable) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             const _InfoRow(icon: Icons.pin_outlined,
               text: 'If it happens, a shuffled PIN screen appears immediately — never '
                     'the app menu, never a settings screen.'),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             _InfoRow(icon: Icons.hourglass_bottom_outlined,
               text: 'After ${lock.maxPinAttempts} wrong PINs in a row, the device pauses for '
                     '${_formatMinutes(lock.cooldownDuration)} before trying again.'),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             const _InfoRow(icon: Icons.vpn_key_outlined,
               text: "If you're ever locked out yourself and it can't wait, a break-glass "
                     'path gets you back in — it is always recorded.'),
           ] else ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             const _InfoRow(icon: Icons.shield_outlined,
               text: 'No menu, home button, or app switch can get past this — only a '
                     'guardian unlocking it from here.'),
           ],
           const SizedBox(height: 28),
           const Divider(),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text('Preview — see another platform',
-            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600,
               color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
@@ -135,7 +135,7 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Icon(icon, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
-    const SizedBox(width: 10),
-    Expanded(child: Text(text, style: const TextStyle(fontSize: 13.5))),
+    const SizedBox(width: 8),
+    Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
   ]);
 }

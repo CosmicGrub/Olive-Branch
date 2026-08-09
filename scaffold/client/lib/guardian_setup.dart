@@ -81,30 +81,31 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Icon(Icons.fingerprint_rounded, size: 40, color: scheme.primary),
               const SizedBox(height: 16),
-              const Text('Sign in with a passkey', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+              Text('Sign in with a passkey', style: Theme.of(context).textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               Text('Your device confirms it is you — a fingerprint, a face, or your '
                   "screen lock. There is no password to create, forget, or have stolen.",
-                style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
-              const SizedBox(height: 22),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 24),
               if (!connected)
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(color: scheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(12)),
                   child: Row(children: [
                     Icon(Icons.info_outline_rounded, size: 20, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(child: Text(
                       "Passkey sign-in isn't connected in this preview build. "
                       'Your real account is created once the identity service is live.',
-                      style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant))),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
                   ]),
                 ),
               if (_phase == _Phase.failed) Padding(
-                padding: const EdgeInsets.only(top: 14),
+                padding: const EdgeInsets.only(top: 16),
                 child: Text('Could not complete passkey setup. You can try again.',
-                  style: TextStyle(fontSize: 13, color: scheme.error)),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.error)),
               ),
               const SizedBox(height: 24),
               SizedBox(height: 56, child: FilledButton.icon(
@@ -113,9 +114,13 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
                   ? const SizedBox(width: 18, height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2.4))
                   : const Icon(Icons.fingerprint_rounded),
+                // Deliberately not a textTheme role — see onboarding_shared.dart's
+                // continue button for why button labels keep a plain, colorless
+                // TextStyle rather than one with Typography.material2021's
+                // baked-in onSurface color.
                 label: const Text('Continue with passkey',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Center(child: TextButton(
                 onPressed: _tapAgreement,
                 style: TextButton.styleFrom(minimumSize: const Size(88, 48)),

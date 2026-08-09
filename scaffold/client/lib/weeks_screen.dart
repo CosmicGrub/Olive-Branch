@@ -74,11 +74,17 @@ class WeeksScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (nights.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
       return Scaffold(
         appBar: AppBar(title: const Text('My weeks')),
-        body: const SafeArea(child: Center(
-          child: Padding(padding: EdgeInsets.all(24),
-            child: Text("Nothing to show yet.", style: TextStyle(fontSize: 15))))),
+        body: SafeArea(child: Center(
+          child: Padding(padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.nights_stay_outlined, size: 40, color: scheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text('Nothing to show yet.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+            ])))),
       );
     }
     final String currentWith = nights.first.withWhom;
@@ -93,7 +99,7 @@ class WeeksScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           Text("$childName's weeks", style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           _RhythmHeader(
             currentWith: currentWith,
             currentColor: _colorFor(currentWith),
@@ -101,9 +107,10 @@ class WeeksScreen extends StatelessWidget {
             nextColor: changeIdx == -1 ? null : _colorFor(nights[changeIdx].withWhom),
             sleeps: sleepsUntilChange,
           ),
-          const SizedBox(height: 22),
-          const Text('Every circle is one sleep. Today is the bright one.',
-            style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+          const SizedBox(height: 24),
+          Text('Every circle is one sleep. Today is the bright one.',
+            style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 12),
           Wrap(spacing: 10, runSpacing: 14, children: <Widget>[
             for (int i = 0; i < nights.length; i++)
@@ -141,38 +148,44 @@ class _RhythmHeader extends StatelessWidget {
   final int? sleeps;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Color.lerp(currentColor, Colors.white, 0.85),
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: currentColor, width: 2),
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-      Row(children: <Widget>[
-        CircleAvatar(radius: 8, backgroundColor: currentColor),
-        const SizedBox(width: 8),
-        Expanded(child: Text("You're with $currentWith right now",
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-      ]),
-      if (sleeps != null && nextWith != null) ...<Widget>[
-        const SizedBox(height: 10),
-        Row(crossAxisAlignment: CrossAxisAlignment.center, children: <Widget>[
-          Text('$sleeps', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: nextColor)),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Color.lerp(currentColor, Colors.white, 0.85),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: currentColor, width: 2),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Row(children: <Widget>[
+          CircleAvatar(radius: 8, backgroundColor: currentColor),
           const SizedBox(width: 8),
-          Expanded(child: Text(
-            sleeps == 1
-              ? 'sleep until you\'re with $nextWith'
-              : 'sleeps until you\'re with $nextWith',
-            style: const TextStyle(fontSize: 13.5))),
+          Expanded(child: Text("You're with $currentWith right now",
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
         ]),
-      ] else
-        const Padding(padding: EdgeInsets.only(top: 10),
-          child: Text("No change coming up in the nights shown here.",
-            style: TextStyle(fontSize: 12.5, color: Colors.black54))),
-    ]),
-  );
+        if (sleeps != null && nextWith != null) ...<Widget>[
+          const SizedBox(height: 12),
+          // The sleeps numeral is a documented hero-number exception (§8.2.5)
+          // — hand-set large/bold, not a themed text role. See child_home.dart's
+          // _Sleeps for the same discipline applied to the same kind of number.
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: <Widget>[
+            Text('$sleeps', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: nextColor)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              sleeps == 1
+                ? 'sleep until you\'re with $nextWith'
+                : 'sleeps until you\'re with $nextWith',
+              style: Theme.of(context).textTheme.bodyMedium)),
+          ]),
+        ] else
+          Padding(padding: const EdgeInsets.only(top: 12),
+            child: Text('No change coming up in the nights shown here.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
+      ]),
+    );
+  }
 }
 
 class _NightBead extends StatelessWidget {
@@ -199,8 +212,11 @@ class _NightBead extends StatelessWidget {
         shape: BoxShape.circle,
         color: color,
         border: isToday ? Border.all(color: Colors.white, width: 3) : null,
+        // Soft, tinted toward the bead's own guardian colour rather than a
+        // flat black shadow — the highlight should read as a glow, not a drop
+        // shadow. See journal etc.'s Finding #5 sibling fix in my_day.dart.
         boxShadow: isToday
-          ? const <BoxShadow>[BoxShadow(color: Colors.black38, blurRadius: 6, spreadRadius: 1)]
+          ? <BoxShadow>[BoxShadow(color: color.withAlpha(90), blurRadius: 8, spreadRadius: 1)]
           : null,
       ),
       child: const Text('🌙', style: TextStyle(fontSize: 18)),
@@ -215,12 +231,13 @@ class _LegendChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
     CircleAvatar(radius: 6, backgroundColor: color),
-    const SizedBox(width: 6),
+    const SizedBox(width: 8),
     // Flexible, not a bare Text: `guardianColors` is caller-supplied (see
     // WeeksScreen's constructor) and a real family's guardian label ("Step-mum
     // Jennifer", say) is not bounded the way the demo's "Mom"/"Dad" are. On
     // the Fold5 cover width (344px) an unprotected Text here overflows this
     // Row — found by actually rendering at that width, not by inspection.
-    Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+    Flexible(child: Text(name, overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodySmall)),
   ]);
 }

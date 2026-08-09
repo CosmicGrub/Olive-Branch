@@ -446,7 +446,11 @@ class _StatusBanner extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: Theme.of(context).textTheme.titleLarge),
       if (narration != null && !finished) Padding(padding: const EdgeInsets.only(top: 4),
-        child: Text(narration!, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        child: Text(narration!,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
     ]);
   }
 }
@@ -462,7 +466,7 @@ class _TallyRowBs extends StatelessWidget {
     child: Row(children: [
       Expanded(child: _TallyChipBs(label: '$childName\'s ships', count: childShips,
         color: Theme.of(context).colorScheme.primaryContainer)),
-      const SizedBox(width: 10),
+      const SizedBox(width: 12),
       Expanded(child: _TallyChipBs(label: '$parentName\'s ships', count: parentShips,
         color: Theme.of(context).colorScheme.secondaryContainer)),
     ]),
@@ -477,11 +481,11 @@ class _TallyChipBs extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 48),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-      Text('$count', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+      Text('$count', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
     ]),
   );
 }
@@ -502,13 +506,17 @@ class _PlacementPanel extends StatelessWidget {
       for (final name in unplacedNames)
         ChoiceChip(label: Text(name), selected: name == pending, onSelected: (_) => onPickShip(name)),
     ]),
-    const SizedBox(height: 10),
+    const SizedBox(height: 12),
     SizedBox(height: 48, child: OutlinedButton.icon(
       onPressed: onToggleOrientation,
       icon: Icon(horizontal ? Icons.swap_horiz : Icons.swap_vert),
       label: Text(horizontal ? 'Lying flat' : 'Standing up'))),
     if (hint != null) Padding(padding: const EdgeInsets.only(top: 8),
-      child: Text(hint!, style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.error))),
+      child: Text(hint!,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.error))),
   ]);
 }
 
@@ -527,7 +535,7 @@ class _OwnGrid extends StatelessWidget {
       itemCount: bsSize * bsSize,
       itemBuilder: (context, i) {
         final info = view.cells[i];
-        final color = info.hit && info.hasShip ? Colors.red.shade400
+        final color = info.hit && info.hasShip ? scheme.errorContainer
             : info.hit ? scheme.surfaceContainerHighest
             : info.hasShip ? scheme.primary.withValues(alpha: 0.55)
             : scheme.surfaceContainerLow;
@@ -565,13 +573,13 @@ class _EnemyGrid extends StatelessWidget {
         final color = switch (status) {
           BsCellStatus.unknown => scheme.tertiaryContainer.withValues(alpha: 0.5),
           BsCellStatus.miss => scheme.surfaceContainerHighest,
-          BsCellStatus.hit => Colors.orange.shade400,
-          BsCellStatus.sunk => Colors.red.shade700,
+          BsCellStatus.hit => scheme.tertiary,
+          BsCellStatus.sunk => scheme.error,
         };
         final icon = switch (status) {
           BsCellStatus.miss => const Icon(Icons.remove, size: 14),
-          BsCellStatus.hit => const Icon(Icons.local_fire_department, size: 14, color: Colors.white),
-          BsCellStatus.sunk => const Icon(Icons.close, size: 16, color: Colors.white),
+          BsCellStatus.hit => Icon(Icons.local_fire_department, size: 14, color: scheme.onTertiary),
+          BsCellStatus.sunk => Icon(Icons.close, size: 16, color: scheme.onError),
           BsCellStatus.unknown => null,
         };
         return GestureDetector(

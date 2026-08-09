@@ -111,6 +111,14 @@ void main() {
       expect(find.textContaining('expense'), findsNothing);
     });
 
+    testWidgets('the sibling tab switcher meets the 48dp minimum tap target',
+        (t) async {
+      await t.pumpWidget(wrap(SiblingsScreen(
+        siblingSet: _threeKids, authorizedChildIds: const <String>{'a', 'b'})));
+      final Size size = t.getSize(find.byType(ChoiceChip).first);
+      expect(size.height, greaterThanOrEqualTo(48));
+    });
+
     testWidgets('an authorized closed sibling shows a kind stagger notice, '
         'audited clean', (t) async {
       final CloseForOk closed = closeFor(_threeKids, 'c', DateTime.utc(2030, 1, 1)) as CloseForOk;

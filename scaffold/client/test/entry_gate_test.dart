@@ -52,6 +52,21 @@ void main() {
       final Size childButton = t.getSize(find.byType(FilledButton).first);
       expect(childButton.height, greaterThanOrEqualTo(48.0));
     });
+
+    testWidgets('the subtitle and disclaimer use the themed secondary text '
+        'color, not a hardcoded black (design-token audit finding #1)',
+        (t) async {
+      await t.pumpWidget(wrap(const EntryGate(
+        childDestination: SizedBox(), grownupDestination: SizedBox())));
+      final BuildContext context = t.element(find.text('Welcome'));
+      final Color onSurfaceVariant =
+          Theme.of(context).colorScheme.onSurfaceVariant;
+      final Text subtitle = t.widget(find.text('Which side is this?'));
+      final Text disclaimer = t.widget(
+          find.text('Choosing a side here unlocks nothing by itself.'));
+      expect(subtitle.style!.color, onSurfaceVariant);
+      expect(disclaimer.style!.color, onSurfaceVariant);
+    });
   });
 
   group('responsive layout — phone, Fold5 (cover + main), and desktop-scale '

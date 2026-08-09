@@ -137,30 +137,31 @@ class _BusyForkScreenState extends State<BusyForkScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Card(
             color: Theme.of(context).colorScheme.primaryContainer,
-            child: Padding(padding: const EdgeInsets.all(18),
+            child: Padding(padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onPrimaryContainer),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(child: Text(fork.line,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
                 ]),
                 if (fork.nextWindow != null) ...[
-                  const SizedBox(height: 10),
-                  Text('Next window: ${fork.nextWindow}', style: const TextStyle(fontSize: 14)),
+                  const SizedBox(height: 12),
+                  Text('Next window: ${fork.nextWindow}', style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ])),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           SizedBox(width: double.infinity, height: 48,
             child: FilledButton.icon(
               onPressed: _banked ? null : () => _bankInstead(context),
               icon: const Icon(Icons.schedule_send),
               label: Text(_banked ? 'Sent to message banking' : 'Bank a message instead'))),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
             "She'll see it whenever she next looks — never that you tried and it didn't go through.",
-            style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           if (fork.urgentPath != null) ...[
             const SizedBox(height: 20),
             const Divider(),
@@ -171,14 +172,15 @@ class _BusyForkScreenState extends State<BusyForkScreen> {
                   builder: (_) => const EmergencyCardScreen())),
                 icon: const Icon(Icons.medical_information_outlined),
                 label: const Text('Open the emergency card'))),
-            const SizedBox(height: 6),
-            Text(fork.urgentPath!, style: const TextStyle(fontSize: 12.5)),
+            const SizedBox(height: 8),
+            Text(fork.urgentPath!, style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ],
           const SizedBox(height: 28),
           const Divider(),
           const SizedBox(height: 8),
-          Text('Preview — try another reason', style: TextStyle(fontSize: 11.5,
-            fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text('Preview — try another reason', style: Theme.of(context).textTheme.labelSmall
+            ?.copyWith(fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final u in Unavailable.values)

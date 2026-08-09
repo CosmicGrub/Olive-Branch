@@ -30,8 +30,9 @@ class HubTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 5),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
@@ -43,15 +44,15 @@ class HubTile extends StatelessWidget {
               backgroundColor: scheme.primaryContainer,
               child: Icon(icon, color: scheme.onPrimaryContainer),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5)),
+                Text(title, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 if (subtitle != null) Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(subtitle!, style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(subtitle!, style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
                 ),
               ],
             )),
@@ -71,12 +72,12 @@ class HubSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+    padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
         padding: const EdgeInsets.only(left: 12, bottom: 4),
-        child: Text(title.toUpperCase(), style: TextStyle(
-          fontSize: 11.5, letterSpacing: 0.6, fontWeight: FontWeight.w700,
+        child: Text(title.toUpperCase(), style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          letterSpacing: 0.6, fontWeight: FontWeight.w700,
           color: Theme.of(context).colorScheme.primary)),
       ),
       ...children,

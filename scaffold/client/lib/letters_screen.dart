@@ -204,32 +204,38 @@ class _LettersScreenState extends State<LettersScreen> {
       body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(16)),
+          // 12, matching the compact inline info-banner role used elsewhere
+          // (expenses_screen.dart, meds_care.dart, morning_briefing.dart,
+          // care_note.dart, guardian_setup.dart) — was 16, a leftover from
+          // before the radius sweep.
+          Container(padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(Icons.mail_lock_outlined, color: scheme.onSecondaryContainer),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(child: Text(
                 "Write to the you who's older. Once it's sealed, nobody can open it early — "
                 'not you, and not anyone else. It gets kept forever.',
-                style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer))),
+                style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSecondaryContainer))),
             ])),
-          const SizedBox(height: 18),
-          Card(child: Padding(padding: const EdgeInsets.all(14),
+          const SizedBox(height: 16),
+          Card(child: Padding(padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Dear future me…', style: TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 16, color: scheme.primary)),
-              const SizedBox(height: 10),
+              Text('Dear future me…', style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
+              const SizedBox(height: 12),
               TextField(controller: _controller, minLines: 4, maxLines: 10,
                 decoration: const InputDecoration(
                   hintText: 'Say whatever you want. This is between you and future you.',
                   border: OutlineInputBorder())),
               const SizedBox(height: 12),
-              const Text('Open it when I turn:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              Text('Open it when I turn:', style: Theme.of(context).textTheme.labelMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               if (avail.isEmpty)
-                const Text("There's no age left that's far enough away to seal one right now.",
-                  style: TextStyle(fontSize: 12.5, color: Colors.black54))
+                Text("There's no age left that's far enough away to seal one right now.",
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))
               else
                 Wrap(spacing: 8, runSpacing: 8, children: [for (final age in avail)
                   ChoiceChip(
@@ -237,18 +243,24 @@ class _LettersScreenState extends State<LettersScreen> {
                     selected: _selectedOpenAge == age,
                     onSelected: (_) => setState(() => _selectedOpenAge = age)),
                 ]),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               SizedBox(width: double.infinity, height: 48,
                 child: FilledButton.icon(
                   onPressed: (avail.isEmpty || _controller.text.trim().isEmpty) ? null : _seal,
                   icon: const Icon(Icons.lock_outline),
                   label: const Text('Seal it'))),
             ]))),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           if (_letters.isEmpty)
-            const Padding(padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text('No letters yet. Write one whenever you feel like it.',
-                style: TextStyle(color: Colors.black45, fontSize: 13.5)))
+            Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: Column(children: [
+                Icon(Icons.mail_outline, size: 40, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 12),
+                Text('No letters yet. Write one whenever you feel like it.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+              ])))
           else
             for (final l in _letters)
               _LetterTile(key: ValueKey(l.id), letter: l, currentAge: widget.currentAge,
@@ -273,8 +285,8 @@ class _LetterTile extends StatelessWidget {
     final opened = letter.openedAt != null;
     final ready = !opened && currentAge >= letter.openAtAge;
 
-    return Card(margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(padding: const EdgeInsets.all(14),
+    return Card(margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(padding: const EdgeInsets.all(16),
         child: AnimatedSize(
           // Consequence-driven expand/reveal only, well under the motion
           // budget — never ambient, never looping.
@@ -286,18 +298,18 @@ class _LetterTile extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(child: Text(
                 opened ? 'Opened' : (ready ? 'Ready whenever you want' : "Sealed until you're ${letter.openAtAge}"),
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5))),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
             IconButton(tooltip: 'Delete this letter', onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline)),
             ]),
             const SizedBox(height: 4),
             Text('Written when you were ${letter.writtenAtAge}',
-              style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             if (opened) ...[
-              const SizedBox(height: 10),
-              Text(letter.body, style: const TextStyle(fontSize: 14.5, height: 1.35)),
+              const SizedBox(height: 12),
+              Text(letter.body, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35)),
             ] else if (ready) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               SizedBox(width: double.infinity, height: 48,
                 child: FilledButton.tonal(onPressed: onOpen, child: const Text('Open it'))),
             ],

@@ -100,19 +100,21 @@ class _DeletionScreenState extends State<DeletionScreen> {
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
         Text('What stays', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
-        const Text('Stated before anything happens — not after.',
-          style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-        const SizedBox(height: 10),
+        Text('Stated before anything happens — not after.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 12),
         for (final RetentionFact f in whatDeletionKeeps)
           Card(margin: const EdgeInsets.only(bottom: 8),
             child: Padding(padding: const EdgeInsets.all(12),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Icon(Icons.shield_outlined, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(f.item, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(f.why, style: const TextStyle(fontSize: 12.5)),
+                  const SizedBox(height: 4),
+                  Text(f.why, style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 ])),
               ]))),
         const SizedBox(height: 16),
@@ -121,7 +123,7 @@ class _DeletionScreenState extends State<DeletionScreen> {
         Card(child: Padding(padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             for (final String r in whatDeletionRemoves)
-              Padding(padding: const EdgeInsets.symmetric(vertical: 3),
+              Padding(padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(children: [
                   const Icon(Icons.remove_circle_outline, size: 18),
                   const SizedBox(width: 8),

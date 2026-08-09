@@ -58,7 +58,7 @@ class ReceiptScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         children: <Widget>[
           _StampCard(senderName: senderName, phrase: phrase),
-          const SizedBox(height: 26),
+          const SizedBox(height: 24),
           SizedBox(width: double.infinity, height: 52, child: FilledButton.icon(
             onPressed: () => _notBuiltYet(context, 'Recording a message back'),
             icon: const Icon(Icons.videocam_outlined),
@@ -92,13 +92,13 @@ class _StampCard extends StatelessWidget {
         const SizedBox(height: 12),
         Text("You watched $senderName's message!",
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 14),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 16),
         const _DashedDivider(),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Text(phrase,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14.5, fontStyle: FontStyle.italic)),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
       ]),
     ),
   );

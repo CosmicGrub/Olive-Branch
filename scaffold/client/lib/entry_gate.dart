@@ -54,15 +54,16 @@ class EntryGate extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text('Welcome', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
-            const Text("Which side is this?",
-              style: TextStyle(fontSize: 15, color: Colors.black54)),
+            Text("Which side is this?",
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 32),
             _RoleButton(
               icon: Icons.child_care,
               label: "My child's device",
               onTap: () => _go(context, childDestination),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             _RoleButton(
               icon: Icons.person,
               label: "The grown-up's device",
@@ -71,8 +72,9 @@ class EntryGate extends StatelessWidget {
             const SizedBox(height: 20),
             // Neither choice grants anything by itself — real guardian
             // capability is still gated by the family-graph authorizer.
-            const Text('Choosing a side here unlocks nothing by itself.',
-              style: TextStyle(fontSize: 11, color: Colors.black38)),
+            Text('Choosing a side here unlocks nothing by itself.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ]))))),
   );
 }
@@ -86,5 +88,6 @@ class _RoleButton extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(height: 64,
     child: FilledButton.icon(
       onPressed: onTap, icon: Icon(icon), label: Text(label,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))));
+        style: Theme.of(context).textTheme.titleMedium
+          ?.copyWith(fontWeight: FontWeight.w600))));
 }

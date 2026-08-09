@@ -154,9 +154,9 @@ class _GameStoryScreenState extends State<GameStoryScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Make up a story')),
       body: SafeArea(child: Column(children: [
-        const Padding(padding: EdgeInsets.fromLTRB(16, 10, 16, 4),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Text('One line each. Nobody wins — you just see where it goes.',
-            style: TextStyle(fontSize: 12.5, color: Colors.black54))),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
         if (!view.finished) Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: _TurnBanner(name: _name(_game.turn))),
         if (view.finished) Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -194,9 +194,9 @@ class _GameStoryScreenState extends State<GameStoryScreen> {
             SizedBox(width: double.infinity, height: 48,
               child: FilledButton.tonal(onPressed: _startNewStory,
                 child: const Text('Start a new story'))),
-          if (artifact != null) Padding(padding: const EdgeInsets.only(top: 10),
+          if (artifact != null) Padding(padding: const EdgeInsets.only(top: 8),
             child: Text('Every story you make together is saved for keeps.',
-              style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant))),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
         ])),
       ])),
     );
@@ -210,7 +210,7 @@ class _TurnBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(999)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.auto_stories, size: 18, color: scheme.onTertiaryContainer),
@@ -230,12 +230,19 @@ class _TurnBanner extends StatelessWidget {
 class _EmptyStoryHint extends StatelessWidget {
   const _EmptyStoryHint();
   @override
-  Widget build(BuildContext context) => Center(child: Padding(
-    padding: const EdgeInsets.all(24),
-    child: Text('Type the very first line to begin.',
-      textAlign: TextAlign.center,
-      style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-  ));
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Center(child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.auto_stories_outlined, size: 40, color: cs.onSurfaceVariant),
+        const SizedBox(height: 12),
+        Text('Type the very first line to begin.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
+      ]),
+    ));
+  }
 }
 
 class _StoryFeed extends StatelessWidget {
@@ -273,16 +280,16 @@ class _StoryBubble extends StatelessWidget {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.78),
         child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
+          margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: mine ? scheme.secondaryContainer : scheme.primaryContainer,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 3),
-            Text(text, style: const TextStyle(fontSize: 14.5)),
+            Text(name, style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(text, style: Theme.of(context).textTheme.bodyMedium),
           ]),
         ),
       ),
@@ -306,6 +313,6 @@ class _StoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     padding: const EdgeInsets.all(20),
-    child: Text(text, style: const TextStyle(fontSize: 16.5, height: 1.5)),
+    child: Text(text, style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5)),
   );
 }

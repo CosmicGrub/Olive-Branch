@@ -68,26 +68,35 @@ class _AllergyCard extends StatelessWidget {
   const _AllergyCard();
 
   @override
-  Widget build(BuildContext context) => Card(
-    key: const Key('allergyCard'),
-    color: Colors.red.shade50,
-    elevation: 0,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14),
-      side: BorderSide(color: Colors.red.shade700, width: 3)),
-    child: Padding(padding: const EdgeInsets.all(16), child:
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 32),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('ALLERGIES', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
-            color: Colors.red.shade900, letterSpacing: 0.5)),
-          const SizedBox(height: 6),
-          Text('Peanuts — carries an EpiPen, in her backpack side pocket',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
-              color: Colors.red.shade900)),
+  Widget build(BuildContext context) {
+    // Theme error roles, not raw Colors.red: matches the same "red literal
+    // -> theme role" fix applied elsewhere this pass (game_battleship.dart's
+    // hit cells, exchange_screen.dart's essential-item marker) and keeps
+    // this card legible in dark theme, where a fixed light-pink background
+    // with near-black text would otherwise fight the surrounding surface —
+    // the opposite of "fast to read in a hurry" this file exists for.
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Card(
+      key: const Key('allergyCard'),
+      color: scheme.errorContainer,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.error, width: 3)),
+      child: Padding(padding: const EdgeInsets.all(16), child:
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.warning_rounded, color: scheme.error, size: 32),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('ALLERGIES', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
+              color: scheme.onErrorContainer, letterSpacing: 0.5)),
+            const SizedBox(height: 6),
+            Text('Peanuts — carries an EpiPen, in her backpack side pocket',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
+                color: scheme.onErrorContainer)),
+          ])),
         ])),
-      ])),
-  );
+    );
+  }
 }
 
 class _Section extends StatelessWidget {

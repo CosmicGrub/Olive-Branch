@@ -64,13 +64,13 @@ class _SharedReadingScreenState extends State<SharedReadingScreen> {
       appBar: AppBar(title: Text(_read.title)),
       body: SafeArea(child: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const _PreviewBanner(),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(children: [
               Expanded(child: Text('$readerLabel is reading tonight',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
               TextButton(
                 onPressed: _swapReader,
                 child: Text(_sheIsReading
@@ -117,15 +117,16 @@ class _PreviewBanner extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(10)),
-    child: const Row(children: [
-      Icon(Icons.info_outline_rounded, size: 16),
-      SizedBox(width: 8),
+      borderRadius: BorderRadius.circular(12)),
+    child: Row(children: [
+      const Icon(Icons.info_outline_rounded, size: 16),
+      const SizedBox(width: 8),
       Expanded(child: Text(
         'Previewing one shared book on two screens — live pairing between '
         'her device and the call is not built yet, so flip the toggle below '
         'to see each side.',
-        style: TextStyle(fontSize: 11.5))),
+        style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
     ]),
   );
 }
@@ -177,12 +178,21 @@ class _HerScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_forward_rounded),
           label: const Text('Turn the page')))),
       ]),
-      if (finished) Padding(
-        padding: const EdgeInsets.only(top: 14),
-        child: SizedBox(width: double.infinity, height: 52, child: FilledButton.tonalIcon(
-          onPressed: onNewBook,
-          icon: const Icon(Icons.autorenew_rounded),
-          label: const Text('Read another one together')))),
+      // Reaching the last page is a genuine completion moment — grown in
+      // with AnimatedSize rather than popping in instantly, the same
+      // restraint storyteller_screen.dart's own "The end" transition uses.
+      AnimatedSize(
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+        child: finished
+          ? Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: SizedBox(width: double.infinity, height: 52, child: FilledButton.tonalIcon(
+                onPressed: onNewBook,
+                icon: const Icon(Icons.autorenew_rounded),
+                label: const Text('Read another one together'))))
+          : const SizedBox.shrink(),
+      ),
     ]),
   );
 }
@@ -200,9 +210,9 @@ class _HerLineCard extends StatelessWidget {
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.campaign_rounded, size: 16, color: Colors.amber.shade800),
-        const SizedBox(width: 6),
-        Text('YOUR LINE!', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
-          letterSpacing: 0.6, color: Colors.amber.shade900)),
+        const SizedBox(width: 4),
+        Text('YOUR LINE!', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.amber.shade900)),
       ]),
       const SizedBox(height: 8),
       Text(text, textAlign: TextAlign.center,
@@ -216,7 +226,7 @@ class _Dots extends StatelessWidget {
   final int total, current;
   @override
   Widget build(BuildContext context) => Wrap(
-    alignment: WrapAlignment.center, spacing: 5,
+    alignment: WrapAlignment.center, spacing: 4,
     children: [for (int i = 0; i < total; i++) Container(
       width: i == current ? 9 : 6, height: i == current ? 9 : 6,
       decoration: BoxDecoration(shape: BoxShape.circle,
@@ -241,15 +251,18 @@ class _HisScreen extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(20),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('line ${index + 1} of $total', style: const TextStyle(fontSize: 11, color: Colors.black45)),
+      Text('line ${index + 1} of $total', style: Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 4),
       Text('$readerLabel reads aloud; she turns the page when she is ready.',
-        style: const TextStyle(fontSize: 12, color: Colors.black54)),
-      const SizedBox(height: 18),
+        style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      const SizedBox(height: 16),
       Expanded(child: Center(child: block.herLine
         ? Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('(pause here — it is her line)',
-              style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.black54)),
+            Text('(pause here — it is her line)',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontStyle: FontStyle.italic, color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 8),
             Text(block.text, textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),

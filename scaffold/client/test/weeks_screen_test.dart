@@ -92,6 +92,7 @@ void main() {
       await tester.pumpWidget(wrap(const WeeksScreen(
         childName: 'Ivy', nights: <CustodyNight>[], guardianColors: demoGuardianColors)));
       expect(find.textContaining('Nothing to show yet'), findsOneWidget);
+      expect(find.byIcon(Icons.nights_stay_outlined), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

@@ -34,6 +34,17 @@ void main() {
       expect(find.text('2 of 3 waiting'), findsOneWidget);
     });
 
+    testWidgets('nothing pending renders a real icon+message empty state, not bare text',
+        (t) async {
+      await pump(t, const ShowGuardianScreen(initialAsks: []));
+      expect(find.text('0 of 3 waiting'), findsOneWidget);
+      expect(find.text('Nothing waiting right now.'), findsOneWidget);
+      // A real empty-state treatment, not a lone Text node: a calm icon
+      // sits with the message rather than the message standing alone.
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+      expect(find.textContaining('error'), findsNothing);
+    });
+
     testWidgets('sending a third ask fills the cap with no confirmation needed', (t) async {
       await pump(t, const ShowGuardianScreen());
       await t.enterText(find.byType(TextField).first, 'Show me your shoes');

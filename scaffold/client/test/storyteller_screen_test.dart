@@ -6,6 +6,7 @@
 // invariants (no settings affordance, 48dp touch targets).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/library_logic.dart';
 import 'package:olive_client/storyteller_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -129,6 +130,26 @@ void main() {
       expect(find.text('Stop here for tonight'), findsNothing);
     });
 
+    testWidgets('the turn-row/"The end" swap is a real completion moment, not an instant cut',
+        (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+
+      expect(find.byKey(const ValueKey('turnRow')), findsOneWidget);
+      expect(find.byKey(const ValueKey('theEnd')), findsNothing);
+
+      for (int i = 0; i < 11; i++) {
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+      }
+      // Reached the end: the turn controls are gone, "The end" is in, and
+      // pumpAndSettle above already proves the crossfade settles cleanly
+      // rather than hanging mid-animation.
+      expect(find.byKey(const ValueKey('turnRow')), findsNothing);
+      expect(find.byKey(const ValueKey('theEnd')), findsOneWidget);
+    });
+
     testWidgets('starring toggles the icon and adds a chip to the shelf', (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
@@ -147,6 +168,22 @@ void main() {
       await tester.tap(find.descendant(of: readingCard, matching: find.byIcon(Icons.star_rounded)));
       await tester.pump();
       expect(find.text('Your starred stories'), findsNothing);
+    });
+
+    testWidgets('a starred-story chip never overflows, even for the longest '
+        'shapeTitles entry, on the narrowest required width — regression '
+        'for the flaky RenderFlex overflow freshStory\'s random title length '
+        'could intermittently trigger here', (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy',
+        initialFavourites: [
+          Favourite(code: 'the_thing_that_was_lost', title: 'The Thing That Was Lost',
+            starredAt: '2026-01-01T00:00:00.000Z', timesRead: 1),
+        ])));
+      await tester.pump();
+      expect(find.text('Your starred stories'), findsOneWidget);
+      expect(find.textContaining('The Thing That Was Lost'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('bookmarking mid-story adds an entry under "Left off partway"',
