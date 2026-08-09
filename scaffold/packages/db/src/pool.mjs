@@ -1,4 +1,5 @@
 import pg from "pg";
+import { can } from "../../family-graph/src/authorize.ts";
 function createPool(connectionString) {
   return new pg.Pool({ connectionString });
 }
@@ -90,6 +91,38 @@ async function activeCustodyOrderFor(pool, childId, nowLocalDate) {
     };
   });
 }
+async function gamesEnabledFor(pool, childId) {
+  return withSession(pool, { roleName: "child", userId: null, childId }, async (q) => {
+    const rows = await q(
+      `SELECT games_enabled FROM child_games_access WHERE child_id = $1`,
+      [childId]
+    );
+    return rows.length ? rows[0].games_enabled : false;
+  });
+}
+async function setGamesEnabledFor(pool, childId, guardianUserId, enabled) {
+  const edges = await edgesFor(pool, guardianUserId);
+  const decision = can("settings", edges, childId, /* @__PURE__ */ new Date(), "guardian");
+  if (!decision.allow) return { allow: false, reason: decision.reason };
+  return withSession(
+    pool,
+    { roleName: "guardian", userId: guardianUserId, childId: null },
+    async (q) => {
+      const rows = await q(
+        `INSERT INTO child_games_access (child_id, games_enabled, updated_by, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (child_id) DO UPDATE
+           SET games_enabled = EXCLUDED.games_enabled,
+               updated_by    = EXCLUDED.updated_by,
+               updated_at    = now()
+         RETURNING games_enabled`,
+        [childId, enabled, guardianUserId]
+      );
+      if (!rows.length) return { allow: false, reason: "no_edge" };
+      return { allow: true, enabled: rows[0].games_enabled };
+    }
+  );
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -101,6 +134,8 @@ export {
   createPool,
   dbPort,
   edgesFor,
+  gamesEnabledFor,
+  setGamesEnabledFor,
   withSession,
   withSystemSession
 };

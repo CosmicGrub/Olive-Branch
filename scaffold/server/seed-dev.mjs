@@ -4,6 +4,7 @@
 // 'Ivy', ParentPresence('Dad', ...)) so the real backend and the Flutter
 // client's existing placeholder data describe the same family.
 import pg from 'pg';
+import { createPool, setGamesEnabledFor } from '../packages/db/src/pool.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
@@ -60,5 +61,25 @@ await client.query(
   [IVY, DAD, artifact.rows[0].id]);
 
 await client.query('COMMIT');
-console.log(`seeded: child ${IVY} (Ivy), guardian ${DAD} (Dad), one delivered message`);
 await client.end();
+
+// db/migrations/0008_games_access.sql -- games dormant (locked) by default,
+// unlockable only by Ivy's own guardian. Seeded through the REAL guardian-
+// authorized path (packages/db/src/pool.ts's setGamesEnabledFor), not a raw
+// INSERT: child_games_access's RLS admits writes only from a session that is
+// actually 'guardian' AND holds a live 'guardian'-role edge to this child, so
+// this call only succeeds because DAD's guardianship row was just committed
+// above -- proving the write path end to end, not just asserting a row into
+// existence. Explicit `false` (not omitted) to match the column's own
+// production default and make the manual "flip it and see both states" path
+// in the task's own verification plan honest: starts locked, a guardian call
+// against PATCH /v1/children/:childId/games-access is what unlocks it.
+const pool = createPool(DATABASE_URL);
+const gamesAccess = await setGamesEnabledFor(pool, IVY, DAD, false);
+await pool.end();
+if (!gamesAccess.allow) {
+  console.error(`FAILED to seed games access for Ivy: ${gamesAccess.reason}`);
+  process.exit(1);
+}
+console.log(`seeded: child ${IVY} (Ivy), guardian ${DAD} (Dad), one delivered message, ` +
+  `games_enabled=${gamesAccess.enabled} (locked by default)`);

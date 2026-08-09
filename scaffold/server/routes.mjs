@@ -11,7 +11,7 @@
 // (school/bedtime/etc.) is NOT wired yet -- a real follow-up, not silently
 // glossed over.
 import { DateTime } from 'luxon';
-import { activeCustodyOrderFor } from '../packages/db/src/pool.mjs';
+import { activeCustodyOrderFor, gamesEnabledFor, setGamesEnabledFor } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 
 /**
@@ -29,13 +29,54 @@ export function registerRoutes(api, pool) {
       const displayName = c.principal.roleName === 'child'
         ? (await q(`SELECT display_name FROM child WHERE id = $1`, [c.principal.childId]))[0]?.display_name
         : (await q(`SELECT display_name FROM app_user WHERE id = $1`, [c.principal.userId]))[0]?.display_name;
+      // db/migrations/0008_games_access.sql -- games dormant by default,
+      // unlockable only by her own guardian. Real value for the child role
+      // ONLY, via the loader's own child-scoped session (its RLS admits
+      // nothing else) -- never a toggle here, ChildHome may only passively
+      // render what this says (house convention: no settings affordance ever
+      // on a child-facing surface).
+      const gamesEnabled = c.principal.roleName === 'child'
+        ? await gamesEnabledFor(pool, c.principal.childId)
+        : undefined;
       return { body: {
         userId: c.principal.userId,
         childId: c.principal.childId,
         roleName: c.principal.roleName,
         escalated: c.principal.escalated,
         displayName: displayName ?? null,
+        ...(gamesEnabled !== undefined ? { gamesEnabled } : {}),
       } };
+    },
+  });
+
+  api.register({
+    // No dedicated Action exists for "lock/unlock games" in
+    // family-graph/src/authorize.ts, and none is needed: `settings` is
+    // already guardian-only in ROLE_CAPS, exactly the shape this needs, so
+    // it is reused rather than inventing a parallel capability `can()` was
+    // never taught to recognize -- same reasoning routes.mjs's own /now
+    // route already documents for calendar.view.
+    method: 'PATCH', path: '/v1/children/:childId/games-access', action: 'settings',
+    handler: async (c, q) => {
+      // Defense in depth: api.ts's own authorize step hard-blocks a child
+      // principal only for P6/P7-reserved reasons (see api.ts's own comment
+      // on that branch) -- every other action, `settings` included, falls
+      // through to the handler for a child acting inside her own scope. A
+      // child-side write path here must be structurally impossible (house
+      // convention), so this is an explicit first-line reject, not reliance
+      // on setGamesEnabledFor()'s incidental null-userId fail-closed path.
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_toggle_games' } };
+      }
+      const enabled = c.body?.enabled;
+      if (typeof enabled !== 'boolean') {
+        return { status: 400, body: { error: 'enabled_must_be_boolean' } };
+      }
+      const result = await setGamesEnabledFor(pool, c.childId, c.principal.userId, enabled);
+      if (!result.allow) {
+        return { status: 403, body: { error: result.reason } };
+      }
+      return { body: { childId: c.childId, gamesEnabled: result.enabled } };
     },
   });
 

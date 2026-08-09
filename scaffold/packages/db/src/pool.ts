@@ -1,6 +1,6 @@
 import pg from 'pg';
 import type { VerifiedPrincipal } from '../../auth/src/auth.ts';
-import type { Edge } from '../../family-graph/src/authorize.ts';
+import { can, type Edge, type Deny } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
 
@@ -171,6 +171,80 @@ export async function activeCustodyOrderFor(
       effectiveTo: r.effective_to,
     } as Order;
   });
+}
+
+/**
+ * db/migrations/0008_games_access.sql — games dormant by default, unlockable
+ * only by the child's own guardian. House convention: no settings affordance
+ * ever on a child-facing surface, so this loader is the ONLY thing a child
+ * session ever calls — it runs as that child, which is precisely what
+ * child_games_access's own RLS admits (read her own row, nothing else,
+ * FOR SELECT only — see the migration).
+ *
+ * Absence of a row is a real, intended default, not a guess: the column
+ * itself is `NOT NULL DEFAULT false`, so a child with no row yet (never
+ * toggled by her guardian, or provisioned before this feature shipped) is
+ * exactly as dormant as one with an explicit row. Returning anything else for
+ * "no row" would be inventing data this system does not have.
+ */
+export async function gamesEnabledFor(pool: pg.Pool, childId: string): Promise<boolean> {
+  return withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
+    const rows = await q(
+      `SELECT games_enabled FROM child_games_access WHERE child_id = $1`,
+      [childId],
+    );
+    return rows.length ? rows[0].games_enabled : false;
+  });
+}
+
+export type GamesAccessDecision =
+  | { allow: true; enabled: boolean }
+  | { allow: false; reason: Deny };
+
+/**
+ * Guardian-authorized write — the ONLY way games access ever changes; there
+ * is no child-side write path (see gamesEnabledFor's own doc, and the
+ * migration's FOR SELECT-only child policy).
+ *
+ * Two independent locks, neither trusting the other:
+ *  1. FIRST LOCK, here: the real `can()`/`edgesFor()` authorizer (§5.17) —
+ *     reused, not reinvented. There is no dedicated Action for this in
+ *     family-graph/src/authorize.ts, and none is needed: `settings` is
+ *     already guardian-only in ROLE_CAPS, which is exactly the shape
+ *     "lock/unlock games" needs. Rejects with the real `Deny` reason
+ *     `can()` produced (no_edge, edge_closed, restricted, ...) before ever
+ *     opening a write session — a guardian with no real edge to this child
+ *     never reaches the database for this call.
+ *  2. SECOND LOCK: the write itself runs `withSession` AS that guardian
+ *     (never `system`), so child_games_access's own RLS
+ *     (`actor_is_guardian_of`) independently re-checks the same live edge.
+ *     A bug that let (1) pass incorrectly would still be caught here.
+ */
+export async function setGamesEnabledFor(
+  pool: pg.Pool, childId: string, guardianUserId: string, enabled: boolean,
+): Promise<GamesAccessDecision> {
+  const edges = await edgesFor(pool, guardianUserId);
+  const decision = can('settings', edges, childId, new Date(), 'guardian');
+  if (!decision.allow) return { allow: false, reason: decision.reason };
+
+  return withSession(pool, { roleName: 'guardian', userId: guardianUserId, childId: null },
+    async (q) => {
+      const rows = await q(
+        `INSERT INTO child_games_access (child_id, games_enabled, updated_by, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (child_id) DO UPDATE
+           SET games_enabled = EXCLUDED.games_enabled,
+               updated_by    = EXCLUDED.updated_by,
+               updated_at    = now()
+         RETURNING games_enabled`,
+        [childId, enabled, guardianUserId],
+      );
+      // RLS's own WITH CHECK would have raised, not returned zero rows, if the
+      // second lock disagreed with the first — this length check is therefore
+      // defensive, not the primary guard.
+      if (!rows.length) return { allow: false, reason: 'no_edge' };
+      return { allow: true, enabled: rows[0].games_enabled };
+    });
 }
 
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */
