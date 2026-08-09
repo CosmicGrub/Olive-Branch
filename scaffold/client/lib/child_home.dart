@@ -32,9 +32,25 @@ void _notBuiltYet(BuildContext context, String what) {
     SnackBar(content: Text('$what — not built yet.'), duration: const Duration(seconds: 2)));
 }
 
+/// Tap-feedback for a real, current, guardian-set state (games dormant),
+/// not an unbuilt feature — same SnackBar mechanism as [_notBuiltYet] and
+/// the same calm tone, but distinct wording because this isn't a "coming
+/// later" stub, it's "on right now, ask a grown-up." Pairs with the tile's
+/// own icon swap to `Icons.lock_outline` (the passive, always-visible part
+/// of the state — a child never has to tap to see the tile is locked); this
+/// SnackBar is only the honest, non-dead-end feedback for what happens when
+/// she does tap it. No settings affordance is reachable from here or
+/// anywhere else on this surface — house convention: the lock/unlock
+/// CONTROL lives only on the guardian side.
+void _gamesLocked(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Ask a grown-up to turn on games'),
+      duration: Duration(seconds: 2)));
+}
+
 class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
-    required this.sleepsUntilHandover, required this.unreadCount});
+    required this.sleepsUntilHandover, required this.unreadCount, this.gamesEnabled = true});
 
   final String childName;
   final ParentPresence? presence;
@@ -44,6 +60,14 @@ class ChildHome extends StatelessWidget {
   // real as the two fields that genuinely are. Absent, not guessed.
   final int? sleepsUntilHandover;
   final int unreadCount;
+  // Real, server-enforced games access (db/migrations/0008_games_access.sql,
+  // guardian-only PATCH /v1/children/:childId/games-access). Defaults to
+  // `true` here only so this widget's own contract stays additive — every
+  // caller that predates this field (main.dart's offline demo,
+  // invariants_test.dart's existing cases) keeps rendering exactly as
+  // before. The real dormant-by-default posture lives server-side and in
+  // child_home_live.dart's fetch, not in this default.
+  final bool gamesEnabled;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -78,22 +102,28 @@ class ChildHome extends StatelessWidget {
           _Tile(icon: Icons.edit, label: 'Homework',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => HomeworkScreen(childName: childName)))),
-          _Tile(icon: Icons.extension, label: 'Play together',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => GamePickerScreen(
-                childName: childName,
-                onPlay: (playContext, kind) {
-                  if (kind == GameKind.story) {
-                    Navigator.of(playContext).push(MaterialPageRoute<void>(
-                      builder: (_) => GameStoryScreen(childName: childName)));
-                  } else {
-                    _notBuiltYet(playContext, 'That game');
-                  }
-                },
-              )))),
-          _Tile(icon: Icons.casino_outlined, label: 'More games',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => GamesHubScreen(childName: childName)))),
+          _Tile(icon: gamesEnabled ? Icons.extension : Icons.lock_outline,
+            label: 'Play together',
+            onTap: gamesEnabled
+              ? (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => GamePickerScreen(
+                  childName: childName,
+                  onPlay: (playContext, kind) {
+                    if (kind == GameKind.story) {
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => GameStoryScreen(childName: childName)));
+                    } else {
+                      _notBuiltYet(playContext, 'That game');
+                    }
+                  },
+                )))
+              : _gamesLocked),
+          _Tile(icon: gamesEnabled ? Icons.casino_outlined : Icons.lock_outline,
+            label: 'More games',
+            onTap: gamesEnabled
+              ? (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => GamesHubScreen(childName: childName, gamesEnabled: gamesEnabled)))
+              : _gamesLocked),
           _Tile(icon: Icons.star_border, label: 'My list',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => const WantsNeedsScreen()))),
@@ -157,7 +187,10 @@ class _Tile extends StatelessWidget {
   final IconData icon;
   final String label;
   // Defaults to the honest not-built-yet acknowledgment; tiles with a real
-  // destination (e.g. "My list" -> WantsNeedsScreen) override it.
+  // destination (e.g. "My list" -> WantsNeedsScreen) override it. The
+  // locked-games tiles above override it with `_gamesLocked` instead —
+  // same SnackBar mechanism, real wording for a real current state rather
+  // than an unbuilt one.
   final void Function(BuildContext context)? onTap;
   // Unread-style count shown on the icon corner when positive. Was accepted
   // by ChildHome (`unreadCount`) and threaded all the way to main.dart's demo

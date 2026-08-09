@@ -8,6 +8,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/child_home.dart';
+import 'package:olive_client/game_picker.dart';
+import 'package:olive_client/games_hub.dart';
 import 'package:olive_client/guardian_home.dart';
 import 'package:olive_client/kiosk_channel.dart';
 import 'package:olive_client/kiosk_shell.dart';
@@ -100,6 +102,101 @@ void main() {
         childName: 'Maya', presence: null,
         sleepsUntilHandover: 3, unreadCount: 0)));
       expect(find.text('0'), findsNothing);
+    });
+  });
+
+  group('games dormancy — child side (db/migrations/0008_games_access.sql)', () {
+    testWidgets('default (no gamesEnabled passed) behaves exactly as before this field existed',
+        (t) async {
+      // No `gamesEnabled:` argument at all — the exact call shape every
+      // caller before this field existed already used. Must default to
+      // unlocked so main.dart's offline demo and this file's own
+      // pre-existing tests above keep behaving identically.
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0)));
+      expect(find.byIcon(Icons.extension), findsOneWidget);
+      expect(find.byIcon(Icons.casino_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.lock_outline), findsNothing);
+      await t.tap(find.text('Play together'));
+      await t.pumpAndSettle();
+      expect(find.byType(GamePickerScreen), findsOneWidget);
+    });
+
+    testWidgets('unlocked (gamesEnabled: true) opens the real games hub as before', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0, gamesEnabled: true)));
+      await t.tap(find.text('More games'));
+      await t.pumpAndSettle();
+      expect(find.byType(GamesHubScreen), findsOneWidget);
+    });
+
+    testWidgets('locked: both games tiles stay visible with a real lock icon, passively, '
+        'with no tap needed to see the state', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0, gamesEnabled: false)));
+      // Not silently disappeared — the tile labels are still exactly there.
+      expect(find.text('Play together'), findsOneWidget);
+      expect(find.text('More games'), findsOneWidget);
+      // A real icon replaces the game icon on both, passively, with no tap —
+      // "the child side may only ever passively show whether games are on
+      // or off."
+      expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
+      expect(find.byIcon(Icons.extension), findsNothing);
+      expect(find.byIcon(Icons.casino_outlined), findsNothing);
+    });
+
+    testWidgets('locked: tapping "Play together" gives calm, honest feedback, never '
+        'opens the game picker', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0, gamesEnabled: false)));
+      await t.tap(find.text('Play together'));
+      await t.pump();
+      expect(find.text('Ask a grown-up to turn on games'), findsOneWidget);
+      expect(find.byType(GamePickerScreen), findsNothing);
+      expect(t.takeException(), isNull);
+      await t.pumpAndSettle();
+    });
+
+    testWidgets('locked: tapping "More games" gives calm, honest feedback, never opens '
+        'the games hub', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0, gamesEnabled: false)));
+      await t.tap(find.text('More games'));
+      await t.pump();
+      expect(find.text('Ask a grown-up to turn on games'), findsOneWidget);
+      expect(find.byType(GamesHubScreen), findsNothing);
+      expect(t.takeException(), isNull);
+      await t.pumpAndSettle();
+    });
+
+    testWidgets('locked state still shows no settings/toggle control of any kind', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0, gamesEnabled: false)));
+      expect(find.byType(Switch), findsNothing);
+      expect(find.byType(Checkbox), findsNothing);
+      expect(find.byIcon(Icons.settings), findsNothing);
+      expect(find.byIcon(Icons.settings_outlined), findsNothing);
+      expect(find.textContaining('Settings'), findsNothing);
+      expect(find.textContaining('turn off'), findsNothing);
+    });
+
+    testWidgets('locked ChildHome renders without overflow at the Fold5 cover width (344px)',
+        (t) async {
+      t.view.physicalSize = const Size(344, 882);
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0, gamesEnabled: false)));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
     });
   });
 

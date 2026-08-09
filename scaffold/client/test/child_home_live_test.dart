@@ -108,6 +108,83 @@ void main() {
       expect(find.text('Hi Ivy'), findsOneWidget);
     });
 
+    group('games dormancy — real gamesEnabled fetched from /v1/me', () {
+      testWidgets('gamesEnabled: false from the server renders the honest locked '
+          'state through the real, unmodified ChildHome', (t) async {
+        final mock = MockClient((req) async {
+          if (req.url.path == '/v1/auth/dev-login') {
+            return http.Response(jsonEncode({'token': 'tok'}), 200);
+          }
+          if (req.url.path == '/v1/me') {
+            return http.Response(
+                jsonEncode({'displayName': 'Ivy', 'gamesEnabled': false}), 200);
+          }
+          if (req.url.path.endsWith('/inbox')) {
+            return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+          }
+          return http.Response('not found', 404);
+        });
+        await t.pumpWidget(wrap(LiveChildHomeScreen(
+          baseUrl: 'http://api.test', childId: 'child-a', httpClient: mock)));
+        await t.pumpAndSettle();
+
+        expect(find.text('Hi Ivy'), findsOneWidget);
+        // The passive, always-visible part of the state (no tap needed):
+        // both games tiles show the real lock icon in place of their
+        // ordinary icon. child_home's own tests cover the tap-feedback text.
+        expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
+        expect(find.byIcon(Icons.extension), findsNothing);
+        expect(find.byIcon(Icons.casino_outlined), findsNothing);
+      });
+
+      testWidgets('gamesEnabled: true from the server renders the ordinary unlocked tiles',
+          (t) async {
+        final mock = MockClient((req) async {
+          if (req.url.path == '/v1/auth/dev-login') {
+            return http.Response(jsonEncode({'token': 'tok'}), 200);
+          }
+          if (req.url.path == '/v1/me') {
+            return http.Response(
+                jsonEncode({'displayName': 'Ivy', 'gamesEnabled': true}), 200);
+          }
+          if (req.url.path.endsWith('/inbox')) {
+            return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+          }
+          return http.Response('not found', 404);
+        });
+        await t.pumpWidget(wrap(LiveChildHomeScreen(
+          baseUrl: 'http://api.test', childId: 'child-a', httpClient: mock)));
+        await t.pumpAndSettle();
+
+        expect(find.text('Hi Ivy'), findsOneWidget);
+        expect(find.byIcon(Icons.lock_outline), findsNothing);
+        expect(find.byIcon(Icons.extension), findsOneWidget);
+      });
+
+      testWidgets('a response missing the gamesEnabled key fails closed (locked), never open',
+          (t) async {
+        final mock = MockClient((req) async {
+          if (req.url.path == '/v1/auth/dev-login') {
+            return http.Response(jsonEncode({'token': 'tok'}), 200);
+          }
+          if (req.url.path == '/v1/me') {
+            // No gamesEnabled key at all — must not be read as permission.
+            return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
+          }
+          if (req.url.path.endsWith('/inbox')) {
+            return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+          }
+          return http.Response('not found', 404);
+        });
+        await t.pumpWidget(wrap(LiveChildHomeScreen(
+          baseUrl: 'http://api.test', childId: 'child-a', httpClient: mock)));
+        await t.pumpAndSettle();
+
+        expect(find.text('Hi Ivy'), findsOneWidget);
+        expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
+      });
+    });
+
     testWidgets(
         'never syncs a placeholder to the Wear companion while '
         'sleepsUntilHandover is still null', (t) async {

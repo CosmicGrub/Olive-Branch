@@ -47,6 +47,19 @@
 //                           landed, not on the absence of a design for it.
 // unreadCount and childName ARE real, fetched from /v1/me and /inbox.
 //
+// gamesEnabled is ALSO now real (db/migrations/0008_games_access.sql,
+// server/routes.mjs's GET /v1/me): fetched from the same /v1/me call as
+// childName, off a real RLS-scoped Postgres row a guardian can flip via
+// PATCH /v1/children/:childId/games-access. Unlike sleepsUntilHandover's
+// permanent `null` above, this is not an absent field being honestly
+// reported absent -- it is a live, working value, parsed straight off
+// `me['gamesEnabled']` in `_load()` below. The only defaulting is a
+// fail-CLOSED fallback (dormant, matching the migration's own
+// `games_enabled boolean NOT NULL DEFAULT false`) if that key were ever
+// unexpectedly missing from a real response -- the opposite direction
+// from `displayName`'s fail-friendly `?? 'there'`, because this field
+// gates a real feature rather than filling in copy.
+//
 // Phone -> watch sync (§21.5): this screen is now the one real place a live
 // `sleepsUntilHandover` would reach wear_sync_channel.dart's
 // WearSyncChannel, which pushes it to a paired Wear OS companion via the
@@ -95,6 +108,13 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // ChildHome's constructor below) so _syncWear() has a real value to read
   // once a live custody endpoint exists to populate it from.
   int? _sleepsUntilHandover;
+  // Fail-closed (dormant) until a real fetch says otherwise -- see file
+  // header. Never read before `_state` reaches `ready`, since ChildHome
+  // itself isn't built in the `loading`/`error` states below, but starting
+  // locked rather than unlocked matches the migration's own
+  // `DEFAULT false` for the same reason: a gate's unknown state should
+  // read as off, not on.
+  bool _gamesEnabled = false;
   late final WearSyncChannel _wearSync = widget.wearSync ?? WearSyncChannel();
 
   @override
@@ -119,6 +139,10 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         // custody endpoint exists but is currently reverted out of the
         // shared tree -- see header. No fetch call for it exists yet either.
         _sleepsUntilHandover = null;
+        // Real value from GET /v1/me -- see file header. Fails closed
+        // (locked) if the key is ever missing rather than treating absence
+        // as permission.
+        _gamesEnabled = (me['gamesEnabled'] as bool?) ?? false;
         _state = _LoadState.ready;
       });
       await _syncWear();
@@ -177,6 +201,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             presence: null, // no live day-part/overlap endpoint yet
             sleepsUntilHandover: _sleepsUntilHandover, // still null -- see header and _load()
             unreadCount: _unreadCount,
+            gamesEnabled: _gamesEnabled, // real value fetched in _load() -- see header
           )),
         ])));
     }

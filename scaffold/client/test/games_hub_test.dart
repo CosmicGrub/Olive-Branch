@@ -85,6 +85,55 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(48.0));
     });
 
+    group('games dormancy — reached directly while locked (defense in depth; '
+        'child_home.dart\'s own tile already refuses to navigate here at all)', () {
+      testWidgets('unlocked (default) still shows every tile exactly as before this field existed',
+          (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen()));
+        expect(find.text('Checkers'), findsOneWidget);
+        expect(find.byIcon(Icons.lock_outline), findsNothing);
+      });
+
+      testWidgets('locked shows a calm, honest message instead of the game list — no dead end',
+          (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen(gamesEnabled: false)));
+        expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+        expect(find.text('Ask a grown-up to turn on games'), findsOneWidget);
+        // The AppBar chrome is still real and present — this isn't a blank
+        // dead end, it's an honest, calm alternative body.
+        expect(find.text('More games'), findsOneWidget);
+      });
+
+      testWidgets('locked shows none of the actual game tiles', (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen(gamesEnabled: false)));
+        for (final title in <String>[
+          'Checkers', 'Chess', 'Battleship', 'Word search', "Kim's game",
+          'Word chain', 'Story game', 'Scavenger hunt', 'Find the thing',
+          'Play it easier (demo)',
+        ]) {
+          expect(find.text(title), findsNothing);
+        }
+      });
+
+      testWidgets('locked shows no settings/toggle control of any kind', (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen(gamesEnabled: false)));
+        expect(find.byType(Switch), findsNothing);
+        expect(find.byType(Checkbox), findsNothing);
+        expect(find.byIcon(Icons.settings), findsNothing);
+        expect(find.byIcon(Icons.settings_outlined), findsNothing);
+        expect(find.textContaining('Settings'), findsNothing);
+      });
+
+      testWidgets('locked hub renders without overflow at the Fold5 cover width (344px)',
+          (t) async {
+        await t.binding.setSurfaceSize(const Size(344, 882));
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(wrap(const GamesHubScreen(gamesEnabled: false)));
+        await t.pump();
+        expect(t.takeException(), isNull);
+      });
+    });
+
     group('responsive audit — Fold5, phone, and tablet/desktop widths', () {
       // MASTERFILE's own mandated minimum widths (the Fold5's cover and
       // unfolded main screens), plus a standard phone width and a

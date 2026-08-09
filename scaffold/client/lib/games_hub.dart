@@ -12,6 +12,15 @@
 //
 // child_home.dart's "Play together" tile still goes straight to
 // GamePickerScreen, per the wiring brief; "More games" opens this instead.
+//
+// Games dormancy (db/migrations/0008_games_access.sql): child_home.dart's
+// own "More games" tile already refuses to navigate here at all while
+// locked (it shows its own passive locked state and never pushes this
+// route — see that file). `gamesEnabled` exists on THIS screen too, purely
+// as defense in depth for the case this is reached some other way (a deep
+// link, a future call site, a test constructing it directly) — "reached
+// directly" bypassing that gate. Defaults to `true` so every existing call
+// site and test that predates this field keeps rendering exactly as before.
 import 'package:flutter/material.dart';
 import 'game_battleship.dart';
 import 'game_chain.dart';
@@ -27,9 +36,11 @@ import 'handicap_screen.dart';
 import 'hub_widgets.dart';
 
 class GamesHubScreen extends StatelessWidget {
-  const GamesHubScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad'});
+  const GamesHubScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad',
+    this.gamesEnabled = true});
   final String childName;
   final String parentName;
+  final bool gamesEnabled;
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -37,7 +48,10 @@ class GamesHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('More games')),
-    body: SafeArea(child: SingleChildScrollView(
+    body: SafeArea(child: gamesEnabled ? _hubBody(context) : const _GamesLocked()),
+  );
+
+  Widget _hubBody(BuildContext context) => SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         HubSection(title: 'Board & strategy', children: [
@@ -78,7 +92,26 @@ class GamesHubScreen extends StatelessWidget {
             subtitle: 'She sets a handicap for a grown-up — never the other way',
             onTap: () => _open(context, const HandicapScreen(kind: GameKind.tictactoe))),
         ]),
-      ]),
-    )),
-  );
+      ]));
+}
+
+/// Calm, honest locked state for this screen being reached while games are
+/// dormant (see file header). Same icon-plus-text tone
+/// child_home_live.dart's own "Couldn't reach the server" state already
+/// uses for "the real thing isn't available right now" — a real icon, a
+/// short real sentence, no fabricated detail, no settings control anywhere
+/// on it (there is nothing to tap here at all).
+class _GamesLocked extends StatelessWidget {
+  const _GamesLocked();
+  @override
+  Widget build(BuildContext context) => Center(child: Padding(
+    padding: const EdgeInsets.all(24),
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.lock_outline, size: 40, color: Theme.of(context).colorScheme.outline),
+      const SizedBox(height: 12),
+      const Text('Ask a grown-up to turn on games',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontWeight: FontWeight.w600)),
+    ]),
+  ));
 }
