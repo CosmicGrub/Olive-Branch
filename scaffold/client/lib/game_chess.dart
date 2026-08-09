@@ -701,7 +701,7 @@ class _GameChessState extends State<GameChess> {
         final narrow = constraints.maxWidth < 420;
         return ListView(padding: const EdgeInsets.all(16), children: [
           if (_handicapBanner() != null) Padding(
-            padding: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.only(bottom: 8),
             child: _CalloutBanner(text: _handicapBanner()!)),
           _TurnBanner(finished: finished, parentThinking: _parentThinking,
             childName: widget.childName, parentName: widget.parentName,
@@ -803,17 +803,17 @@ class _ChessSetupState extends State<_ChessSetup> {
     appBar: AppBar(title: const Text('Chess')),
     body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
       Text('You go first.', style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 6),
+      const SizedBox(height: 8),
       // Reuses games.ts's handicapOffer() prompt verbatim — her choice, her
       // framing, never "you keep losing".
       Text('Want to make it harder for ${widget.parentName}?',
-        style: const TextStyle(fontSize: 14.5)),
-      const SizedBox(height: 14),
+        style: Theme.of(context).textTheme.bodyMedium),
+      const SizedBox(height: 16),
       _SetupOption(label: 'No — play it straight', selected: _choice == null,
         onTap: () => setState(() => _choice = null)),
       for (final h in chessHandicaps) _SetupOption(label: h.labelFor(widget.parentName),
         selected: _choice == h.id, onTap: () => setState(() => _choice = h.id)),
-      const SizedBox(height: 18),
+      const SizedBox(height: 16),
       SizedBox(width: double.infinity, height: 52, child: FilledButton(
         onPressed: () => widget.onStart(_choice),
         child: const Text('Start game'),
@@ -830,7 +830,7 @@ class _SetupOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(padding: const EdgeInsets.only(bottom: 10), child: InkWell(
+    return Padding(padding: const EdgeInsets.only(bottom: 8), child: InkWell(
       onTap: onTap, borderRadius: BorderRadius.circular(14),
       child: Container(constraints: const BoxConstraints(minHeight: 52),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -866,12 +866,12 @@ class _EndBanner extends StatelessWidget {
   final String line;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.tertiaryContainer,
       borderRadius: BorderRadius.circular(16)),
     child: Row(children: [
       const Icon(Icons.emoji_events_outlined),
-      const SizedBox(width: 10),
+      const SizedBox(width: 8),
       Expanded(child: Text(line, style: const TextStyle(fontWeight: FontWeight.w600))),
     ]),
   );
@@ -886,14 +886,19 @@ class _CoachCard extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedSwitcher(
     duration: const Duration(milliseconds: 250),
     child: Container(key: ValueKey<String>(text),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Icon(Icons.lightbulb_outline, size: 18),
         const SizedBox(width: 8),
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic))),
+        Expanded(
+            child: Text(text,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(fontStyle: FontStyle.italic))),
       ]),
     ),
   );
@@ -905,10 +910,10 @@ class _CalloutBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedContainer(
     duration: const Duration(milliseconds: 200),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.errorContainer,
       borderRadius: BorderRadius.circular(12)),
-    child: Text(text, style: const TextStyle(fontSize: 13)),
+    child: Text(text, style: Theme.of(context).textTheme.bodySmall),
   );
 }
 
@@ -917,24 +922,31 @@ class _PromotionPicker extends StatelessWidget {
   final ChSide side;
   final ValueChanged<ChPieceType> onChoose;
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)]),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Text('Choose a piece', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-      const SizedBox(height: 12),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-        for (final t in const [ChPieceType.queen, ChPieceType.rook,
-            ChPieceType.bishop, ChPieceType.knight])
-          SizedBox(width: 64, height: 64, child: OutlinedButton(
-            onPressed: () => onChoose(t),
-            style: OutlinedButton.styleFrom(shape: const CircleBorder()),
-            child: Text(_glyph(ChPiece(type: t, side: side)), style: const TextStyle(fontSize: 30)),
-          )),
+  Widget build(BuildContext context) => Material(
+    // M3 elevation, not a hand-rolled flat box-shadow — see the design-token
+    // audit's Finding #5.
+    color: Theme.of(context).colorScheme.surface,
+    elevation: 6,
+    shadowColor: Theme.of(context).colorScheme.shadow,
+    surfaceTintColor: Theme.of(context).colorScheme.surfaceTint,
+    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('Choose a piece',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 12),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          for (final t in const [ChPieceType.queen, ChPieceType.rook,
+              ChPieceType.bishop, ChPieceType.knight])
+            SizedBox(width: 64, height: 64, child: OutlinedButton(
+              onPressed: () => onChoose(t),
+              style: OutlinedButton.styleFrom(shape: const CircleBorder()),
+              child: Text(_glyph(ChPiece(type: t, side: side)), style: const TextStyle(fontSize: 30)),
+            )),
+        ]),
       ]),
-    ]),
+    ),
   );
 }
 

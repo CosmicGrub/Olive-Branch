@@ -63,6 +63,18 @@ void main() {
       expect(find.text('Nothing written yet. Whenever you feel like it.'), findsOneWidget);
     });
 
+    testWidgets('the empty state carries a calm icon, and it clears once she writes',
+        (t) async {
+      await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
+      expect(find.byIcon(Icons.edit_note_outlined), findsOneWidget);
+
+      await t.enterText(find.byType(TextField), 'Today was a good day.');
+      await t.pump();
+      await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await t.pump();
+      expect(find.byIcon(Icons.edit_note_outlined), findsNothing);
+    });
+
     testWidgets('multiple entries all persist, most recent first', (t) async {
       await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
       await t.enterText(find.byType(TextField), 'First entry');
@@ -144,6 +156,19 @@ void main() {
         await pumpAt(t, const Size(1100, 800));
         expect(t.takeException(), isNull);
       });
+    });
+
+    testWidgets('privacy banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.shield_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
     });
 
     testWidgets('seeded entries constructed for someone else never render', (t) async {

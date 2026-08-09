@@ -207,10 +207,14 @@ class DegradationBanner extends StatelessWidget {
     return Align(
       alignment: Alignment.topCenter,
       child: Container(
-        margin: const EdgeInsets.only(top: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         constraints: const BoxConstraints(minHeight: 48),
         decoration: BoxDecoration(
+          // Deliberately literal, not themed: this scrim sits atop live video
+          // of arbitrary colour and must stay legible regardless of the
+          // app's own light/dark theme — a themed surface colour here could
+          // wash out against a bright or dark camera feed.
           color: Colors.black.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(20),
         ),
@@ -218,7 +222,8 @@ class DegradationBanner extends StatelessWidget {
           const Icon(Icons.volume_up_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 8),
           Flexible(child: Text(n.line, textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500))),
+            style: Theme.of(context).textTheme.bodyMedium
+              ?.copyWith(color: Colors.white, fontWeight: FontWeight.w500))),
         ]),
       ),
     );
@@ -310,14 +315,15 @@ class _LiveDegradeScreenState extends State<LiveDegradeScreen> {
             const SizedBox(height: 20),
             // The demo harness. Explicitly out-of-frame, explicitly labelled.
             Container(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('Preview harness — not part of what she sees',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 const SizedBox(height: 8),
                 Row(children: [
@@ -327,7 +333,7 @@ class _LiveDegradeScreenState extends State<LiveDegradeScreen> {
                       backgroundColor: _condition == Condition.good
                         ? Theme.of(context).colorScheme.primaryContainer : null),
                     child: const Text('Line is fine')))),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(child: SizedBox(height: 48, child: OutlinedButton(
                     onPressed: () => _setCondition(Condition.strained),
                     style: OutlinedButton.styleFrom(
@@ -335,13 +341,14 @@ class _LiveDegradeScreenState extends State<LiveDegradeScreen> {
                         ? Theme.of(context).colorScheme.errorContainer : null),
                     child: const Text('Wobble the line')))),
                 ]),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Text('Rung: ${_stream.video ? _qualityLabel(_stream.quality) : "Audio only"}',
-                  style: const TextStyle(fontSize: 12.5)),
+                  style: Theme.of(context).textTheme.bodySmall),
                 if (senderLine(_stream).isNotEmpty)
                   Padding(padding: const EdgeInsets.only(top: 4),
                     child: Text('What ${widget.callerName} would see: ${senderLine(_stream)}',
-                      style: const TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic))),
+                      style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(fontStyle: FontStyle.italic))),
               ]),
             ),
           ]),

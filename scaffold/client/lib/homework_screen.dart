@@ -96,14 +96,15 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
       // reasoning: generous text can exceed a small phone's viewport.
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           children: [
             Text("Let's get your worksheet", style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
               'Take a clear photo of the page and we\'ll help you spot where '
               'to start — never the answers themselves.',
-              style: TextStyle(fontSize: 14.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 20),
             if (!_captured)
               SizedBox(
@@ -117,13 +118,13 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
               duration: Duration(milliseconds: fadeMs),
               child: _captured
                   ? Column(key: const ValueKey('problems'), children: [
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Align(alignment: Alignment.centerLeft,
                         child: Text('Photo looks good — here\'s what we found:',
-                          style: TextStyle(fontSize: 13.5,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w600))),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
                       for (int i = 0; i < _demoProblems.length; i++)
                         _ProblemCard(
                           text: _demoProblems[i].text,
@@ -156,10 +157,10 @@ class _ProblemCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(
         margin: const EdgeInsets.only(bottom: 12),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(text, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             AnimatedSwitcher(
               duration: Duration(milliseconds: fadeMs),
               child: verdict == null
@@ -197,11 +198,11 @@ class _HintBubble extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // §9.1 — "logged and visible, never silent": always labelled, so
           // it never reads as a person answering.
-          Text('AI HINT', style: TextStyle(fontSize: 10.5, letterSpacing: 0.6,
-            fontWeight: FontWeight.w700,
+          Text('AI HINT', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            letterSpacing: 0.6, fontWeight: FontWeight.w700,
             color: Theme.of(context).colorScheme.onSecondaryContainer.withValues(alpha: 0.7))),
-          const SizedBox(height: 3),
-          Text(shown, style: const TextStyle(fontSize: 15)),
+          const SizedBox(height: 4),
+          Text(shown, style: Theme.of(context).textTheme.bodyLarge),
         ])),
       ]),
     );

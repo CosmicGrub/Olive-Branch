@@ -273,11 +273,11 @@ class _GameChainScreenState extends State<GameChainScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Word chain')),
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        const Text('One thing each, and the list keeps going',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        Text('One thing each, and the list keeps going',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        const Text('Grown a little more every time you two play.',
-          style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+        Text('Grown a little more every time you two play.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
         const SizedBox(height: 16),
         AnimatedContainer(
           duration: const Duration(milliseconds: 280),
@@ -288,14 +288,17 @@ class _GameChainScreenState extends State<GameChainScreen> {
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${view.length} things so far',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: scheme.primary)),
-            const SizedBox(height: 6),
-            Text(view.prompt, style: const TextStyle(fontSize: 14.5)),
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary)),
+            const SizedBox(height: 8),
+            Text(view.prompt, style: Theme.of(context).textTheme.bodyMedium),
             // Shared, never comparative — shown alongside, not instead of,
             // the plain "it stopped" line above.
             if (view.closing != null) Padding(padding: const EdgeInsets.only(top: 4),
               child: Text(view.closing!,
-                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700))),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700))),
           ]),
         ),
         const SizedBox(height: 16),
@@ -317,7 +320,7 @@ class _GameChainScreenState extends State<GameChainScreen> {
                 : 'What was next in the chain?…',
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           SizedBox(width: double.infinity, height: 48,
             child: FilledButton(
               onPressed: _submit,
@@ -331,9 +334,9 @@ class _GameChainScreenState extends State<GameChainScreen> {
         if (artifact != null) Padding(padding: const EdgeInsets.only(top: 16),
           child: Row(children: [
             Icon(Icons.auto_stories_outlined, size: 18, color: scheme.primary),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Expanded(child: Text('Long enough to keep — this one is saved for your book.',
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant))),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
           ])),
       ])),
     );
@@ -350,7 +353,7 @@ class _TurnBanner extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final String verb = phase == ChainPhase.building ? 'to add something' : 'to remember';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: scheme.tertiaryContainer,
         borderRadius: BorderRadius.circular(999),
@@ -405,7 +408,7 @@ class _ChainChip extends StatelessWidget {
         color: mine ? scheme.secondaryContainer : scheme.primaryContainer,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Text(label, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+      child: Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
     ),
   );
 }

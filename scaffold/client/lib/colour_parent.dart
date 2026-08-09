@@ -55,10 +55,11 @@ class _ColourReadout extends StatelessWidget {
           const SizedBox(width: 16),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // One neutral sentence. Never an interpretation — see §8.6.4.
-            Text(view.line, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
+            Text(view.line, style: Theme.of(context).textTheme.bodyLarge
+              ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
             Text('This is hers to choose — you cannot change it here.',
-              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           ])),
         ]),
       ),
@@ -69,7 +70,13 @@ class _ColourReadout extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
   @override
-  Widget build(BuildContext context) => Center(child: Text(
-    'No colour chosen yet.',
-    style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant)));
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.palette_outlined, size: 40, color: scheme.onSurfaceVariant),
+      const SizedBox(height: 8),
+      Text('No colour chosen yet.',
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant)),
+    ]));
+  }
 }

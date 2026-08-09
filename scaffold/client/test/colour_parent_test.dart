@@ -52,6 +52,11 @@ void main() {
     expect(find.textContaining('error'), findsNothing);
   });
 
+  testWidgets('the empty state carries a real icon, not a bare line of text', (tester) async {
+    await pump(tester, h: const []);
+    expect(find.byIcon(Icons.palette_outlined), findsOneWidget);
+  });
+
   testWidgets('there is no edit control of any kind — read-only by construction', (tester) async {
     await pump(tester);
     expect(find.byType(GestureDetector), findsNothing);

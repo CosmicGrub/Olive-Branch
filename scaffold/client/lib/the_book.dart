@@ -86,17 +86,21 @@ class _TooFew extends StatelessWidget {
       mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.menu_book_outlined, size: 44, color: Theme.of(context).colorScheme.primary),
         const SizedBox(height: 16),
-        const Text('Not quite enough for a book yet', textAlign: TextAlign.center,
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-        const SizedBox(height: 10),
+        Text('Not quite enough for a book yet', textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 12),
         Text(
           '$childName has starred $have of the 5 stories it takes to bind a '
           "book. Under five, it's a pamphlet — so this screen says so rather "
           'than printing one anyway.',
-          textAlign: TextAlign.center, style: const TextStyle(fontSize: 13.5, color: Colors.black54)),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         const SizedBox(height: 4),
-        const Text('Keep starring the ones worth a second read — this fills in on its own.',
-          textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: Colors.black54)),
+        Text('Keep starring the ones worth a second read — this fills in on its own.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ])),
   );
 }
@@ -119,23 +123,27 @@ class _CompiledBook extends StatelessWidget {
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text("${book.childName}'s Stories",
         style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-      const SizedBox(height: 6),
-      Text(book.dedication, style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 14)),
+      const SizedBox(height: 8),
+      Text(book.dedication, style: Theme.of(context).textTheme.bodyMedium
+        ?.copyWith(fontStyle: FontStyle.italic)),
       const SizedBox(height: 16),
       _MetaRow(meta: book.meta),
       const SizedBox(height: 16),
       Card(
         color: Theme.of(context).colorScheme.surfaceContainerHigh,
-        child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
+        child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
           const Icon(Icons.info_outline_rounded, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Text(book.readerNote, style: const TextStyle(fontSize: 12.5))),
+          const SizedBox(width: 8),
+          Expanded(child: Text(book.readerNote, style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
         ])),
       ),
       const SizedBox(height: 20),
-      const Text('Contents — oldest first', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-      const Text("Ordered as a year, not a leaderboard.", style: TextStyle(fontSize: 11.5, color: Colors.black45)),
-      const SizedBox(height: 10),
+      Text('Contents — oldest first', style: Theme.of(context).textTheme.titleSmall
+        ?.copyWith(fontWeight: FontWeight.w700)),
+      Text("Ordered as a year, not a leaderboard.", style: Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      const SizedBox(height: 12),
       for (final p in book.pages) _PageRow(page: p),
       const SizedBox(height: 20),
       SizedBox(width: double.infinity, child: OutlinedButton.icon(
@@ -174,7 +182,8 @@ class _MetaStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-    Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+    Text(label, style: Theme.of(context).textTheme.labelSmall
+      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
   ]);
 }
 
@@ -183,16 +192,18 @@ class _PageRow extends StatelessWidget {
   final BookPage page;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: 8),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       SizedBox(width: 28, child: Text('${page.number}.',
-        style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black54))),
+        style: TextStyle(fontWeight: FontWeight.w700,
+          color: Theme.of(context).colorScheme.onSurfaceVariant))),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(page.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)),
+        Text(page.title, style: Theme.of(context).textTheme.bodyMedium
+          ?.copyWith(fontWeight: FontWeight.w600)),
         if (page.timesRead > 1)
           Text('you asked for this one ${page.timesRead} times',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary,
-              fontStyle: FontStyle.italic)),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary, fontStyle: FontStyle.italic)),
       ])),
     ]),
   );
@@ -212,7 +223,7 @@ class _ExportPanelState extends State<_ExportPanel> {
   Widget build(BuildContext context) {
     final text = bookAsText(widget.book);
     return Padding(
-      padding: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.only(top: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Container(
           key: const Key('exportPlainText'),
@@ -221,7 +232,8 @@ class _ExportPanelState extends State<_ExportPanel> {
           decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12)),
           child: SingleChildScrollView(
-            child: SelectableText(text, style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5))),
+            child: SelectableText(text, style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(fontFamily: 'monospace'))),
         ),
         const SizedBox(height: 8),
         Row(children: [
@@ -234,11 +246,12 @@ class _ExportPanelState extends State<_ExportPanel> {
             icon: Icon(_copied ? Icons.check_rounded : Icons.copy_rounded),
             label: Text(_copied ? 'Copied' : 'Copy text'))),
         ]),
-        const SizedBox(height: 6),
-        const Text(
+        const SizedBox(height: 8),
+        Text(
           'Plain text, on purpose (§2.11) — paste it anywhere, or hand it to '
           'any print shop. Nothing here holds it hostage to a file format.',
-          style: TextStyle(fontSize: 11, color: Colors.black45)),
+          style: Theme.of(context).textTheme.labelSmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ]),
     );
   }

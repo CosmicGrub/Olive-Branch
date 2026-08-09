@@ -87,9 +87,9 @@ class _DayGrid extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Column(children: [
       Row(children: [for (final d in dowShort) Expanded(child: Center(
-        child: Text(d, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          color: scheme.onSurfaceVariant))))]),
-      const SizedBox(height: 6),
+        child: Text(d, style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant))))]),
+      const SizedBox(height: 8),
       GridView.count(
         crossAxisCount: 7,
         shrinkWrap: true,
@@ -116,8 +116,19 @@ class _DayCell extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       customBorder: const CircleBorder(),
+      // §8.4's 48dp floor, declared to match the rest of the app — though on
+      // a 7-column GridView.count, SliverGridRegularTileLayout.getBoxConstraints
+      // hands every cell a *tight* BoxConstraints (min == max), so this
+      // minWidth/minHeight can only ever raise the floor when the grid's own
+      // per-cell math already clears it; it cannot force a wider cell than
+      // the grid computed. On the narrowest audited viewport (Fold5 cover,
+      // 344px) seven columns for a calendar week genuinely produce cells
+      // under 48dp — the same trade-off already accepted for dense grids
+      // elsewhere, not something a local constraint tweak can fix without
+      // dropping to fewer columns (an information-architecture change this
+      // pass isn't authorised to make).
       child: Container(
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
         alignment: Alignment.center,
         child: Text('$day', style: const TextStyle(fontWeight: FontWeight.w600)),
       ),
@@ -133,7 +144,7 @@ class _YearCheck extends StatelessWidget {
   Widget build(BuildContext context) => Row(children: [
     Expanded(child: SizedBox(height: 56, child: OutlinedButton(
       onPressed: () => onAnswer(false), child: const Text('Not yet')))),
-    const SizedBox(width: 14),
+    const SizedBox(width: 16),
     Expanded(child: SizedBox(height: 56, child: FilledButton(
       onPressed: () => onAnswer(true), child: const Text('Yes')))),
   ]);

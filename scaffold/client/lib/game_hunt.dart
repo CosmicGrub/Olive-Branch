@@ -207,12 +207,12 @@ class _GameHuntScreenState extends State<GameHuntScreen> {
       appBar: AppBar(title: const Text('Scavenger hunt')),
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
         Text('${widget.parentName} hid these around the house',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
         // No timer, ever — §9.2. This is the only progress language on the
         // whole screen, and it is a goal ("X more to find"), not a score.
         Text('${progress.found} of ${progress.total} found — go find them whenever you like.',
-          style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
         const SizedBox(height: 16),
         for (final HuntPrompt p in _hunt.prompts)
           _HuntTile(prompt: p, onFound: () => _found(p.id)),
@@ -222,8 +222,8 @@ class _GameHuntScreenState extends State<GameHuntScreen> {
           const SizedBox(height: 8),
           const Divider(),
           const SizedBox(height: 8),
-          Text('Saved for your book', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700,
-            color: scheme.onSurfaceVariant)),
+          Text('Saved for your book', style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [for (final HuntArtifactEntry a in saved)
             Chip(avatar: const Icon(Icons.photo_outlined, size: 18), label: Text(a.caption))]),
@@ -243,7 +243,7 @@ class _HuntTile extends StatelessWidget {
     final bool found = prompt.artifactId != null;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       color: found ? scheme.surfaceContainerHighest : null,
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -251,8 +251,7 @@ class _HuntTile extends StatelessWidget {
           Icon(found ? Icons.check_circle : Icons.travel_explore_outlined,
             color: found ? scheme.primary : scheme.onSurfaceVariant),
           const SizedBox(width: 12),
-          Expanded(child: Text(prompt.text, style: TextStyle(
-            fontSize: 15,
+          Expanded(child: Text(prompt.text, style: Theme.of(context).textTheme.bodyLarge?.copyWith(
             decoration: found ? TextDecoration.lineThrough : TextDecoration.none,
             color: found ? scheme.onSurfaceVariant : null,
           ))),
@@ -282,9 +281,13 @@ class _Celebration extends StatelessWidget {
       decoration: BoxDecoration(color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(16)),
       child: Column(children: [
         Text('You found everything $name hid!',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: scheme.onTertiaryContainer)),
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700, color: scheme.onTertiaryContainer)),
         const SizedBox(height: 4),
-        Text('That was a good one.', style: TextStyle(color: scheme.onTertiaryContainer)),
+        Text('That was a good one.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onTertiaryContainer)),
       ]),
     );
     return TweenAnimationBuilder<double>(

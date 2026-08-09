@@ -213,7 +213,10 @@ class _WordSearchSetupScreenState extends State<WordSearchSetupScreen> {
     body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
       Text('Her name, the dog, her street, something she\'s excited about this '
            'week — a word search is a message disguised as a puzzle.',
-        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 16),
       Row(children: [
         Expanded(child: TextField(controller: _controller,
@@ -229,8 +232,8 @@ class _WordSearchSetupScreenState extends State<WordSearchSetupScreen> {
           InputChip(label: Text(_words[i]), onDeleted: () => _removeWord(i)),
       ]),
       const SizedBox(height: 20),
-      Text('Grid size', style: TextStyle(fontWeight: FontWeight.w600,
-        color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12.5)),
+      Text('Grid size', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 8),
       SegmentedButton<int>(
         segments: const [
@@ -316,17 +319,17 @@ class _WordSearchScreenState extends State<WordSearchScreen> {
           const SizedBox(height: 16),
           if (complete) Container(
             key: const Key('wsComplete'),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(color: scheme.tertiaryContainer,
               borderRadius: BorderRadius.circular(16)),
             child: const Row(children: [
               Icon(Icons.celebration_outlined),
-              SizedBox(width: 10),
+              SizedBox(width: 8),
               Expanded(child: Text('You found them all!',
                 style: TextStyle(fontWeight: FontWeight.w600))),
             ]),
           ) else Text('Tap a letter, then tap the last letter of the word.',
-            style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 16),
           Center(child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: min(constraints.maxWidth, 480)),

@@ -135,7 +135,8 @@ class _CareNoteScreenState extends State<CareNoteScreen> {
     appBar: AppBar(title: const Text('Care note')),
     body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
       Text('A soft channel for the hard days — about ${widget.childName}, '
-        'never seen by her.', style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
+        'never seen by her.', style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         for (final CareKind k in CareKind.values)
@@ -147,16 +148,18 @@ class _CareNoteScreenState extends State<CareNoteScreen> {
         decoration: const InputDecoration(border: OutlineInputBorder(),
           hintText: 'She had a rough night, or a cough, or...')),
       if (_guidance != null) Padding(padding: const EdgeInsets.only(top: 8),
-        child: Container(padding: const EdgeInsets.all(10),
+        child: Container(padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: Theme.of(context).colorScheme.errorContainer,
-            borderRadius: BorderRadius.circular(8)),
-          child: Text(_guidance!, style: const TextStyle(fontSize: 12.5)))),
-      const SizedBox(height: 10),
+            borderRadius: BorderRadius.circular(12)),
+          child: Text(_guidance!, style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onErrorContainer)))),
+      const SizedBox(height: 8),
       SizedBox(width: double.infinity, height: 48,
         child: FilledButton(onPressed: _send, child: const Text('Send note'))),
       const SizedBox(height: 8),
-      const Text('Not evidence — outside the court-tier log, and clears itself in '
-        '7 days.', style: TextStyle(fontSize: 11.5, color: Colors.black45)),
+      Text('Not evidence — outside the court-tier log, and clears itself in '
+        '7 days.', style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 20),
       const Divider(),
       const SizedBox(height: 8),

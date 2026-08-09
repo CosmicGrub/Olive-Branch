@@ -84,6 +84,22 @@ void main() {
       expect(find.textContaining('404'), findsOneWidget);
     });
 
+    testWidgets('the error icon and message use the themed secondary color, '
+        'not a hardcoded black (design-token audit finding #1)', (t) async {
+      final mock = MockClient((req) async => http.Response(
+          jsonEncode({'error': 'child_not_found'}), 404));
+      await t.pumpWidget(wrap(LiveChildHomeScreen(
+        baseUrl: 'http://api.test', childId: 'nope', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      final BuildContext context =
+          t.element(find.text("Couldn't reach the server"));
+      final Color onSurfaceVariant =
+          Theme.of(context).colorScheme.onSurfaceVariant;
+      final Icon icon = t.widget(find.byIcon(Icons.cloud_off));
+      expect(icon.color, onSurfaceVariant);
+    });
+
     testWidgets('retry re-runs the fetch and can recover into the ready state', (t) async {
       var attempt = 0;
       final mock = MockClient((req) async {

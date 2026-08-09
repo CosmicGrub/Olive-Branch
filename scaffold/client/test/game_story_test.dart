@@ -59,6 +59,21 @@ void main() {
       expect(find.textContaining("Ivy's turn"), findsOneWidget);
     });
 
+    testWidgets('the empty state is a real icon + message, not bare text, and clears on the first line',
+        (tester) async {
+      await tester.pumpWidget(wrap(const GameStoryScreen()));
+      expect(find.byIcon(Icons.auto_stories_outlined), findsOneWidget);
+      expect(find.textContaining('Type the very first line'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'Once there was a dragon');
+      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+      await tester.pump();
+
+      // The empty-state icon+message is gone the moment there is a real line.
+      expect(find.byIcon(Icons.auto_stories_outlined), findsNothing);
+      expect(find.textContaining('Type the very first line'), findsNothing);
+    });
+
     testWidgets('adding a line appends it and hands the turn to the other side', (tester) async {
       await tester.pumpWidget(wrap(const GameStoryScreen()));
       await tester.enterText(find.byType(TextField), 'Once there was a very small dragon');

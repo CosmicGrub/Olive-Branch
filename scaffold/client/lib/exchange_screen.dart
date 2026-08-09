@@ -286,11 +286,12 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
         const SizedBox(height: 20),
         const _SectionHeader('Running late'),
         const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.all(14),
+        Card(child: Padding(padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('One tap logs it — the log cannot be edited afterward.',
-              style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-            const SizedBox(height: 10),
+            Text('One tap logs it — the log cannot be edited afterward.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final int m in <int>[10, 20, 30])
                 SizedBox(height: 48, child: OutlinedButton(
@@ -300,19 +301,21 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
             if (_lateLog.isNotEmpty) ...[
               const SizedBox(height: 12),
               for (final RunningLateEntry e in _lateLog.reversed)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 3),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Text('Logged ${_clock(e.loggedAt)} · ETA +${e.etaMinutes} min',
-                    style: const TextStyle(fontSize: 12.5))),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant))),
             ],
           ]))),
         const SizedBox(height: 20),
         const _SectionHeader('Arrival'),
         const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.all(14),
+        Card(child: Padding(padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('An event, never a place. No location is ever recorded — P3.',
-              style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-            const SizedBox(height: 10),
+            Text('An event, never a place. No location is ever recorded — P3.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
             if (_arrival == null)
               SizedBox(height: 48, child: FilledButton(
                 onPressed: _logArrival, child: const Text('Log arrival')))
@@ -361,7 +364,10 @@ class _HandoffCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // HER frame is dominant — a sentence about her day, not a clock diff.
         Text('$childName goes to $nextSideName in',
-          style: const TextStyle(fontSize: 14)),
+          style: Theme.of(context).textTheme.bodyMedium),
+        // §8.2.5 documented exception: the sleeps-countdown numeral is a
+        // bespoke hero number, not a themed role — see the file's own
+        // "HER frame is dominant" comment above.
         Row(crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic, children: [
             Text('$sleeps', style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800)),
@@ -369,10 +375,11 @@ class _HandoffCard extends StatelessWidget {
             Text(sleeps == 1 ? 'sleep' : 'sleeps',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           ]),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         // Subordinate aside: verbatim, never a computed offset.
         Text('The decree says $orderTimeLabel.',
-          style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.7))),
       ])));
 }
 
@@ -381,8 +388,8 @@ class _SectionHeader extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Text(text.toUpperCase(),
-    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: 0.5,
-      color: Theme.of(context).colorScheme.primary));
+    style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700,
+      letterSpacing: 0.5, color: Theme.of(context).colorScheme.primary));
 }
 
 class _BagRow extends StatelessWidget {
@@ -397,16 +404,17 @@ class _BagRow extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
     child: Row(children: [
       if (item.essential)
-        Padding(padding: const EdgeInsets.only(right: 6),
-          child: Icon(Icons.priority_high, size: 16, color: Colors.red.shade600)),
+        Padding(padding: const EdgeInsets.only(right: 4),
+          child: Icon(Icons.priority_high, size: 16,
+            color: Theme.of(context).colorScheme.tertiary)),
       Expanded(child: Text(item.label)),
       SizedBox(width: 96, child: CheckboxListTile(dense: true,
         contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading,
-        title: const Text('sent', style: TextStyle(fontSize: 11)),
+        title: Text('sent', style: Theme.of(context).textTheme.labelSmall),
         value: item.sent, onChanged: (_) => onSent())),
       SizedBox(width: 110, child: CheckboxListTile(dense: true,
         contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading,
-        title: const Text('returned', style: TextStyle(fontSize: 11)),
+        title: Text('returned', style: Theme.of(context).textTheme.labelSmall),
         value: item.returned, onChanged: (_) => onReturned())),
     ]));
 }

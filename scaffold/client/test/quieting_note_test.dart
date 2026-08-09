@@ -106,5 +106,40 @@ void main() {
         expect(t.takeException(), isNull);
       });
     });
+
+    testWidgets('a non-faded quieting tile pairs its caption text with '
+        'onPrimaryContainer, not onSurfaceVariant, to match its '
+        'primaryContainer background (same pairing bug exchange_screen.dart '
+        "'s _HandoffCard was fixed for)", (t) async {
+      await t.pumpWidget(wrap(const QuietingScreen(childName: 'Maya', age: 8)));
+      const caption = "You can read a calendar now, so that's just there when you want it.";
+      final BuildContext context = t.element(find.text(caption));
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      final Text captionWidget = t.widget(find.text(caption));
+      expect(captionWidget.style!.color, scheme.onPrimaryContainer.withValues(alpha: 0.7));
+    });
+
+    testWidgets('a faded quieting tile keeps onSurfaceVariant, matching its '
+        'neutral surfaceContainerHighest background', (t) async {
+      await t.pumpWidget(wrap(const QuietingScreen(childName: 'Maya', age: 17)));
+      const caption = "You can read a calendar now, so that's just there when you want it.";
+      final BuildContext context = t.element(find.text(caption));
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      final Text captionWidget = t.widget(find.text(caption));
+      expect(captionWidget.style!.color, scheme.onSurfaceVariant);
+    });
+
+    testWidgets('privacy banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const QuietingScreen(childName: 'Maya', age: 8)));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.spa_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
+    });
   });
 }

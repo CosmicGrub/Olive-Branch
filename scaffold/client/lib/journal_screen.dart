@@ -143,11 +143,11 @@ class _JournalScreenState extends State<JournalScreen> {
           _PrivacyBanner(childName: widget.childName, scheme: scheme),
           const SizedBox(height: 16),
           Card(child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Write something', style: TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 16, color: scheme.primary)),
-              const SizedBox(height: 10),
+              Text('Write something', style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
+              const SizedBox(height: 12),
               TextField(
                 controller: _controller,
                 minLines: 3,
@@ -165,11 +165,17 @@ class _JournalScreenState extends State<JournalScreen> {
                   label: const Text('Keep it, just for me'))),
             ]),
           )),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           if (_entries.isEmpty)
-            const Padding(padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text('Nothing written yet. Whenever you feel like it.',
-                style: TextStyle(color: Colors.black45, fontSize: 13.5)))
+            Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: Column(children: [
+                Icon(Icons.edit_note_outlined, size: 40, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 12),
+                Text('Nothing written yet. Whenever you feel like it.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+              ])))
           else
             for (final e in _entries)
               _JournalTile(key: ValueKey(e.id), entry: e, justAdded: e.id == _justAddedId),
@@ -185,18 +191,23 @@ class _PrivacyBanner extends StatelessWidget {
   final ColorScheme scheme;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
+    // 12, matching the compact inline info-banner role used everywhere else
+    // this shape appears (expenses_screen.dart, meds_care.dart,
+    // morning_briefing.dart, care_note.dart, guardian_setup.dart) — this
+    // banner previously used 16, a leftover from before the radius sweep.
+    padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
       color: scheme.secondaryContainer,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
     ),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Icon(Icons.shield_outlined, color: scheme.onSecondaryContainer),
-      const SizedBox(width: 10),
+      const SizedBox(width: 8),
       Expanded(child: Text(
         "This is yours, $childName. Nobody else can open it — not your mom, "
         'not your dad, not anyone.',
-        style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer))),
+        style: Theme.of(context).textTheme.bodyMedium
+          ?.copyWith(color: scheme.onSecondaryContainer))),
     ]),
   );
 }
@@ -208,13 +219,14 @@ class _JournalTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final card = Card(margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(padding: const EdgeInsets.all(14),
+    final scheme = Theme.of(context).colorScheme;
+    final card = Card(margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(friendlyDate(entry.createdAt), style: const TextStyle(
-            fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black54)),
-          const SizedBox(height: 6),
-          Text(entry.body, style: const TextStyle(fontSize: 14.5, height: 1.35)),
+          Text(friendlyDate(entry.createdAt), style: Theme.of(context).textTheme.labelMedium
+            ?.copyWith(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Text(entry.body, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35)),
         ]),
       ));
     if (!justAdded) return card;

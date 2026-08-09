@@ -134,15 +134,17 @@ class _PresenceCard extends StatelessWidget {
   final String childName;
   @override
   Widget build(BuildContext context) => Card(child: Padding(
-    padding: const EdgeInsets.all(14),
+    padding: const EdgeInsets.all(16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('${p.name} is free right now',
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+        style: Theme.of(context).textTheme.titleMedium
+          ?.copyWith(fontWeight: FontWeight.w600)),
       // HER frame first; his time is the aside.
       Text("It's ${p.theirLocalTime} where ${p.name} is · "
            'until ${p.freeUntilHerTime}',
-        style: const TextStyle(fontSize: 12.5)),
-      const SizedBox(height: 10),
+        style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      const SizedBox(height: 12),
       SizedBox(width: double.infinity, height: 48,
         child: FilledButton(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -180,7 +182,8 @@ class _Tile extends StatelessWidget {
           ],
         ]),
         const Spacer(),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(label, style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(fontWeight: FontWeight.w600)),
       ])));
 }
 
@@ -190,13 +193,13 @@ class _UnreadBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.error,
       borderRadius: BorderRadius.circular(9)),
     alignment: Alignment.center,
     child: Text(count > 9 ? '9+' : '$count',
-      style: TextStyle(color: Theme.of(context).colorScheme.onError,
-        fontSize: 11, fontWeight: FontWeight.w700)));
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Theme.of(context).colorScheme.onError, fontWeight: FontWeight.w700)));
 }
 
 class _Sleeps extends StatelessWidget {
@@ -204,10 +207,14 @@ class _Sleeps extends StatelessWidget {
   final int n;
   @override
   Widget build(BuildContext context) => Row(children: [
+    // Hand-set hero numeral, not a textTheme role — documented exception
+    // (§8.2.5; kept bespoke per the UI/UX design-token audit's typography
+    // finding).
     Text('$n', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700)),
-    const SizedBox(width: 10),
+    const SizedBox(width: 12),
     // "sleeps", never hours. Children do not think in hours (§8.2.5).
     Text(n == 1 ? 'sleep until\nthe handover' : 'sleeps until\nthe handover',
-      style: const TextStyle(fontSize: 12.5)),
+      style: Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
   ]);
 }

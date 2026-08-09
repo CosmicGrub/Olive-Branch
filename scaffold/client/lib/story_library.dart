@@ -107,13 +107,15 @@ class _EmptyShelf extends StatelessWidget {
       mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.star_border_rounded, size: 48,
           color: Theme.of(context).colorScheme.primary),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Text('Nothing on the shelf yet, $childName',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
-        const Text('Star a story from the storyteller and it will live here.',
-          textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: Colors.black54)),
+        Text('Star a story from the storyteller and it will live here.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ])),
   );
 }
@@ -160,7 +162,7 @@ class _ShelfTile extends StatelessWidget {
         Icon(_iconFor(entry.code), size: 26, color: Theme.of(context).colorScheme.primary),
         const Spacer(),
         Text(entry.title, maxLines: 2, overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
       ]),
     ),
   );
@@ -195,14 +197,15 @@ class _SearchShelf extends StatelessWidget {
 
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text("You have so many stories now!",
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          Text("You have so many stories now!",
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          const Text('Type a bit of the name to find one.',
-            style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-          const SizedBox(height: 10),
+          Text('Type a bit of the name to find one.',
+            style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
           SizedBox(height: 52, child: TextField(
             key: const Key('librarySearchField'),
             controller: controller,
@@ -220,14 +223,17 @@ class _SearchShelf extends StatelessWidget {
         child: query.isEmpty
             ? ListView(padding: const EdgeInsets.symmetric(horizontal: 16), children: [
                 const SizedBox(height: 8),
-                const Text('Recently starred', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                Text('Recently starred', style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 for (final e in recent) _SearchResultTile(entry: e, onTap: () => onOpen(e.code)),
               ])
             : matches.isEmpty
-                ? const Padding(padding: EdgeInsets.all(24),
+                ? Padding(padding: const EdgeInsets.all(24),
                     child: Text('No story with that name yet — try a different bit of it.',
-                      textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)))
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)))
                 : ListView(
                     key: const Key('librarySearchResults'),
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -270,12 +276,12 @@ class _LibraryStoryScreen extends StatelessWidget {
       appBar: AppBar(title: Text(read.title)),
       body: SafeArea(child: ListView(padding: const EdgeInsets.all(20), children: [
         const _LibraryAttribution(),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         for (final b in read.blocks) Padding(
-          padding: EdgeInsets.only(bottom: b.pauseAfter ? 18 : 10),
+          padding: EdgeInsets.only(bottom: b.pauseAfter ? 16 : 8),
           child: b.herLine
               ? Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.amber.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(14),
@@ -293,14 +299,14 @@ class _LibraryAttribution extends StatelessWidget {
   const _LibraryAttribution();
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
       borderRadius: BorderRadius.circular(20)),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       const Icon(Icons.auto_stories, size: 14),
-      const SizedBox(width: 5),
-      Text('told by the storyteller', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700,
-        color: Theme.of(context).colorScheme.onSecondaryContainer)),
+      const SizedBox(width: 4),
+      Text('told by the storyteller', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSecondaryContainer)),
     ]),
   );
 }

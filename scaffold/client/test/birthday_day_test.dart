@@ -132,6 +132,21 @@ void main() {
     expect(find.byIcon(Icons.settings), findsNothing);
   });
 
+  testWidgets('a day cell declares the app-wide 48dp tap-target floor', (tester) async {
+    // §8.4 discipline: the day cell's own declared minimum now matches the
+    // rest of the app (48, not 40). On a 7-column GridView.count this floor
+    // can only raise a cell already at/above 48 — SliverGridRegularTileLayout
+    // hands every cell a *tight* BoxConstraints, so the grid's own per-cell
+    // math (not this constraint) is what actually determines rendered size.
+    // See the comment on _DayCell in birthday_day.dart for the full story.
+    await pump(tester, BirthdayDayScreen(
+      month: 3, authoritative: '2019-03-14', age: 7, now: fixedNow, onComplete: (_) {}));
+    final cell = tester.widget<Container>(find.descendant(
+      of: find.ancestor(of: find.text('14'), matching: find.byType(InkWell)),
+      matching: find.byType(Container)).first);
+    expect(cell.constraints, const BoxConstraints(minWidth: 48, minHeight: 48));
+  });
+
   group('responsive — required audit viewports', () {
     // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and a
     // desktop/tablet-scale width. Checked both on the seven-column day grid

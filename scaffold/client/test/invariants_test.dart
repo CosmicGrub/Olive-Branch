@@ -101,6 +101,22 @@ void main() {
         sleepsUntilHandover: 3, unreadCount: 0)));
       expect(find.text('0'), findsNothing);
     });
+
+    testWidgets('presence secondary text and the sleeps caption use the '
+        'themed secondary color, not a hardcoded value (design-token audit '
+        'finding #1)', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya',
+        presence: ParentPresence('Dad', '8:41 PM', '9:30'),
+        sleepsUntilHandover: 3, unreadCount: 0)));
+      final BuildContext context = t.element(find.text('Hi Maya'));
+      final Color onSurfaceVariant =
+          Theme.of(context).colorScheme.onSurfaceVariant;
+      final Text presenceLine = t.widget(find.textContaining('where Dad is'));
+      final Text sleepsCaption = t.widget(find.textContaining('sleeps until'));
+      expect(presenceLine.style!.color, onSurfaceVariant);
+      expect(sleepsCaption.style!.color, onSurfaceVariant);
+    });
   });
 
   group('guardian shell — §8.2', () {
@@ -140,6 +156,26 @@ void main() {
         childStateSentence: 'Maya is just home from school',
         childBands: bands, actorBands: bands)));
       expect(find.text('Maya is just home from school'), findsOneWidget);
+    });
+
+    testWidgets('the actor line, state sentence, and zone abbreviation use '
+        'the themed secondary color, not a hardcoded value (design-token '
+        'audit finding #1)', (t) async {
+      await t.pumpWidget(wrap(const GuardianHome(
+        childName: 'Maya', childLocalTime: '4:12 PM', childZoneAbbr: 'EDT',
+        actorLocalTime: '3:12 PM CDT',
+        childStateSentence: 'Maya is just home from school',
+        childBands: bands, actorBands: bands)));
+      final BuildContext context = t.element(find.text('4:12 PM'));
+      final Color onSurfaceVariant =
+          Theme.of(context).colorScheme.onSurfaceVariant;
+      final Text actorLine = t.widget(find.text('you · 3:12 PM CDT'));
+      final Text stateSentence =
+          t.widget(find.text('Maya is just home from school'));
+      final Text zone = t.widget(find.text('EDT'));
+      expect(actorLine.style!.color, onSurfaceVariant);
+      expect(stateSentence.style!.color, onSurfaceVariant);
+      expect(zone.style!.color, onSurfaceVariant);
     });
   });
 

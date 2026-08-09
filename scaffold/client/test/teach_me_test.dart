@@ -75,6 +75,22 @@ void main() {
       expect(find.text('Nothing taught yet — pick an idea above whenever you feel like it.'), findsNothing);
     });
 
+    testWidgets('the empty taught-list state carries its own icon, distinct from the banner',
+        (t) async {
+      await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
+      // One emoji_objects_outlined (the banner) and one distinct lightbulb for
+      // the empty state — never the same glyph twice on one screen.
+      expect(find.byIcon(Icons.emoji_objects_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.lightbulb_outline), findsOneWidget);
+
+      await t.enterText(find.byType(TextField), 'A card trick');
+      await t.pump();
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.tap(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.pump();
+      expect(find.byIcon(Icons.lightbulb_outline), findsNothing);
+    });
+
     testWidgets('tapping a seed idea fills the text field', (t) async {
       await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
       await t.tap(find.text('A card trick'));
@@ -170,6 +186,19 @@ void main() {
         await pumpAt(t, const Size(1100, 800));
         expect(t.takeException(), isNull);
       });
+    });
+
+    testWidgets('intro banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.emoji_objects_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
     });
   });
 }

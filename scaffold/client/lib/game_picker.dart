@@ -64,7 +64,11 @@ class GamePickerScreen extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 4),
-            const Text('Something to play, just the two of you.', style: TextStyle(fontSize: 13)),
+            Text('Something to play, just the two of you.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 16),
             GridView(
               shrinkWrap: true,
@@ -74,8 +78,8 @@ class GamePickerScreen extends StatelessWidget {
               // height with device width on this engine build.
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: cross,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
                 mainAxisExtent: 182,
               ),
               children: [
@@ -153,7 +157,11 @@ class _GameCardState extends State<_GameCard> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: _cardColor(cs, meta.kind),
-              borderRadius: BorderRadius.circular(22),
+              // 14, not a one-off radius: the canonical action-grid tile
+              // radius shared with child_home.dart's _Tile and
+              // guardian_home.dart's _GTile, so a new tile component here
+              // matches the house pairing instead of reinventing its own.
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(_kindIcon[meta.kind], size: 30, color: onColor),
@@ -161,15 +169,20 @@ class _GameCardState extends State<_GameCard> {
               Text(meta.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, color: onColor)),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700, color: onColor)),
               const SizedBox(height: 4),
               Text(meta.blurb,
-                  maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: onColor)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: onColor)),
               const SizedBox(height: 8),
               Row(children: [
                 Icon(meta.competitive ? Icons.emoji_people_rounded : Icons.diversity_3_rounded,
                     size: 15, color: onColor),
-                const SizedBox(width: 5),
+                const SizedBox(width: 4),
                 // Flexible + ellipsis rather than mainAxisSize.min: at three
                 // columns on a wide unfolded screen the card can be narrow
                 // enough that "Just for fun, together" doesn't fit, and this
@@ -179,7 +192,10 @@ class _GameCardState extends State<_GameCard> {
                   child: Text(meta.competitive ? 'Play against Dad' : 'Just for fun, together',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: onColor)),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(fontWeight: FontWeight.w600, color: onColor)),
                 ),
               ]),
             ]),

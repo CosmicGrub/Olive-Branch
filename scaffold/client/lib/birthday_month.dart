@@ -41,8 +41,8 @@ class _BirthdayMonthScreenState extends State<BirthdayMonthScreen> {
         crossAxisCount: 3,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
         childAspectRatio: 1.5,
         children: [for (final m in months) _MonthTile(
           key: ValueKey('month_${m.index}'),
@@ -84,7 +84,8 @@ class _MonthTile extends StatelessWidget {
                 border: Border.all(color: scheme.primary, width: 2))
             : null,
           alignment: Alignment.center,
-          child: Text(meta.name, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+          child: Text(meta.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
             color: selected ? scheme.onPrimary : scheme.onSurface)),
         ),
       ),

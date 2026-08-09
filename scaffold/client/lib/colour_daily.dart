@@ -54,12 +54,12 @@ class _ColourDailyScreenState extends State<ColourDailyScreen> {
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             Text('Pick one — there is no wrong answer.',
-              style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
             const SizedBox(height: 28),
             narrow
               ? Column(children: [
                   for (final s in [_pair.a, _pair.b]) Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.only(bottom: 16),
                     child: SizedBox(width: double.infinity, height: 120,
                       child: _ColourCard(swatch: s, picked: _picked == s.id, onTap: () => _pick(s)))),
                 ])
@@ -93,7 +93,7 @@ class _ColourCard extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 96),
         child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
           if (picked) Icon(Icons.check_circle_rounded, color: swatch.ink, size: 28),
-          if (picked) const SizedBox(height: 6),
+          if (picked) const SizedBox(height: 4),
           Text(swatch.label, style: TextStyle(
             fontSize: 18, fontWeight: FontWeight.w800, color: swatch.ink)),
         ])),

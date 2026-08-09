@@ -353,6 +353,8 @@ class _CourtExportScreenState extends State<CourtExportScreen> {
       body: SafeArea(
         child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
           final bool wide = constraints.maxWidth >= 760;
+          final TextTheme textTheme = Theme.of(context).textTheme;
+          final ColorScheme scheme = Theme.of(context).colorScheme;
           final Widget rawCard = _RawExportCard(
             plan: plan,
             prepared: _rawPrepared,
@@ -376,11 +378,11 @@ class _CourtExportScreenState extends State<CourtExportScreen> {
             padding: const EdgeInsets.all(16),
             children: <Widget>[
               Text("$_demoChildName's archive, for the one reader who must trust it",
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 6),
-              const Text(
+                  style: textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(
                   'Two different files, for two different jobs. One of them is never behind a paywall.',
-                  style: TextStyle(fontSize: 13, color: Colors.black54)),
+                  style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
               const SizedBox(height: 16),
               if (wide)
                 Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
@@ -409,6 +411,7 @@ class _RawExportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Card(
       color: scheme.primaryContainer.withValues(alpha: 0.35),
       child: Padding(
@@ -421,50 +424,50 @@ class _RawExportCard extends StatelessWidget {
             // (344px) the sibling "Certified export" header overflowed its
             // Row by 18px with this exact shape — fixed there and mirrored
             // here so this card doesn't regress the same way later.
-            Expanded(child: Text('Raw export', style: Theme.of(context).textTheme.titleMedium,
+            Expanded(child: Text('Raw export', style: textTheme.titleMedium,
                 overflow: TextOverflow.ellipsis)),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           const Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
             _Badge('FREE'),
             _Badge('EVERY TIER'),
             _Badge('EVEN AFTER CANCELLATION'),
           ]),
           const SizedBox(height: 12),
-          const Text(
+          Text(
               'Every message, calendar entry, medication log, and photo in her archive, '
               'as plain files you keep. This never requires a paid plan, and letting your '
               'subscription lapse never locks it away — that is a standing rule here, not a promotion.',
-              style: TextStyle(fontSize: 13.5)),
-          const SizedBox(height: 14),
-          Text('WHAT’S INCLUDED', style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: scheme.primary)),
-          const SizedBox(height: 6),
+              style: textTheme.bodyMedium),
+          const SizedBox(height: 16),
+          Text('WHAT’S INCLUDED', style: textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700, letterSpacing: 0.6, color: scheme.primary)),
+          const SizedBox(height: 8),
           for (final String item in _rawManifest)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                 const Text('•  '),
-                Expanded(child: Text(item, style: const TextStyle(fontSize: 13))),
+                Expanded(child: Text(item, style: textTheme.bodyMedium)),
               ]),
             ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: scheme.surface, borderRadius: BorderRadius.circular(10),
+                color: scheme.surface, borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: scheme.outlineVariant)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
               Text('${formatBytes(plan.totalBytes)} total — chunked under the transfer ceiling',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(
                   'Split into ${plan.chunkCount} files of ${formatBytes(plan.ceilingBytes)} or less, '
                   'so it can actually be attached to an email or uploaded to a portal with a size limit.',
-                  style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
+                  style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             ]),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -475,20 +478,20 @@ class _RawExportCard extends StatelessWidget {
             ),
           ),
           if (prepared) ...<Widget>[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Text('Part 1 of ${plan.chunkCount} — ${formatBytes(plan.chunkSizes.first)}',
-                style: const TextStyle(fontSize: 12.5, fontFamily: 'monospace')),
-            const SizedBox(height: 2),
+                style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+            const SizedBox(height: 4),
             Text(
                 plan.chunkCount > 1
                     ? '…and ${plan.chunkCount - 1} more, generated the same way.'
                     : 'That’s the whole export — it fits under the ceiling in one file.',
-                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             const SizedBox(height: 8),
             Text(
                 'No backend exists yet to actually generate these files in this preview build — '
                 'this is exactly what you’d receive.',
-                style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: scheme.outline)),
+                style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, color: scheme.outline)),
           ],
         ]),
       ),
@@ -522,6 +525,7 @@ class _CertifiedExportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -532,24 +536,24 @@ class _CertifiedExportCard extends StatelessWidget {
             // Expanded + ellipsis: at the Fold5 cover width (344px) this Row
             // overflowed by 18px with a bare Text here — "Certified export"
             // plus the icon didn't fit the card's ~272px inner width.
-            Expanded(child: Text('Certified export', style: Theme.of(context).textTheme.titleMedium,
+            Expanded(child: Text('Certified export', style: textTheme.titleMedium,
                 overflow: TextOverflow.ellipsis)),
           ]),
-          const SizedBox(height: 10),
-          const Text(
+          const SizedBox(height: 12),
+          Text(
               'Tamper-evident, hash-chained, court-formatted, with an attestation page a reader '
               'can verify without taking our word for it. One free copy per guardian every rolling '
               'year; Court tier covers any more than that.',
-              style: TextStyle(fontSize: 13.5)),
-          const SizedBox(height: 14),
+              style: textTheme.bodyMedium),
+          const SizedBox(height: 16),
           _PreviewControls(
             courtTier: courtTier, certifiedUsed: certifiedUsed, previewTampered: previewTampered,
             onTierChanged: onTierChanged, onUsedChanged: onUsedChanged,
             onTamperedChanged: onTamperedChanged,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           _AuthorizationBanner(authorization),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -560,7 +564,7 @@ class _CertifiedExportCard extends StatelessWidget {
             ),
           ),
           if (attestation != null) ...<Widget>[
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             _AttestationPanel(attestation!),
           ],
         ]),
@@ -586,19 +590,21 @@ class _PreviewControls extends StatelessWidget {
   final ValueChanged<bool> onTamperedChanged;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10)),
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Text('PREVIEW CONTROLS (this build only — not a real setting)',
-              style: TextStyle(
-                  fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.4,
-                  color: Theme.of(context).colorScheme.outline)),
-          const SizedBox(height: 10),
+              style: textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700, letterSpacing: 0.4, color: scheme.outline)),
+          const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: <Widget>[
-            const Text('Plan:', style: TextStyle(fontSize: 12.5)),
+            Text('Plan:', style: textTheme.bodySmall),
             ChoiceChip(label: const Text('Not Court'), selected: !courtTier,
                 onSelected: (_) => onTierChanged(false)),
             ChoiceChip(label: const Text('Court'), selected: courtTier,
@@ -606,12 +612,12 @@ class _PreviewControls extends StatelessWidget {
           ]),
           const SizedBox(height: 8),
           Row(children: <Widget>[
-            const Expanded(child: Text('Certified exports used this year',
-                style: TextStyle(fontSize: 12.5))),
+            Expanded(child: Text('Certified exports used this year',
+                style: textTheme.bodySmall)),
             IconButton(
                 onPressed: () => onUsedChanged(certifiedUsed - 1),
                 icon: const Icon(Icons.remove_circle_outline)),
-            SizedBox(width: 22, child: Text('$certifiedUsed', textAlign: TextAlign.center,
+            SizedBox(width: 24, child: Text('$certifiedUsed', textAlign: TextAlign.center,
                 style: const TextStyle(fontWeight: FontWeight.w600))),
             IconButton(
                 onPressed: () => onUsedChanged(certifiedUsed + 1),
@@ -626,14 +632,15 @@ class _PreviewControls extends StatelessWidget {
             child: SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
-              title: const Text('Preview: a file altered after export',
-                  style: TextStyle(fontSize: 12.5)),
+              title: Text('Preview: a file altered after export',
+                  style: textTheme.bodySmall),
               value: previewTampered,
               onChanged: onTamperedChanged,
             ),
           ),
         ]),
       );
+  }
 }
 
 class _AuthorizationBanner extends StatelessWidget {
@@ -663,11 +670,11 @@ class _AuthorizationBanner extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Icon(icon, size: 20),
         const SizedBox(width: 8),
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 12.5))),
+        Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
       ]),
     );
   }
@@ -680,10 +687,11 @@ class _AttestationPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: scheme.surface, borderRadius: BorderRadius.circular(10),
+          color: scheme.surface, borderRadius: BorderRadius.circular(12),
           border: Border.all(color: att.chainVerified ? scheme.outlineVariant : scheme.error, width: att.chainVerified ? 1 : 2)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Row(children: <Widget>[
@@ -691,20 +699,20 @@ class _AttestationPanel extends StatelessWidget {
               color: att.chainVerified ? scheme.primary : scheme.error, size: 20),
           const SizedBox(width: 8),
           Text(att.chainVerified ? 'Chain verified' : 'VERIFICATION FAILED',
-              style: TextStyle(fontWeight: FontWeight.w700,
+              style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700,
                   color: att.chainVerified ? null : scheme.error)),
         ]),
         const SizedBox(height: 8),
         Text('${att.entryCount} entries · seq ${att.firstSeq ?? '—'}–${att.lastSeq ?? '—'}',
-            style: const TextStyle(fontSize: 12.5)),
-        const SizedBox(height: 6),
-        const Text('HEAD HASH', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-        SelectableText(att.headHash, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
-        const SizedBox(height: 6),
-        const Text('BUNDLE HASH', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-        SelectableText(att.bundleHash, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+            style: textTheme.bodySmall),
         const SizedBox(height: 8),
-        Text(att.statement, style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+        Text('HEAD HASH', style: textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+        SelectableText(att.headHash, style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+        const SizedBox(height: 8),
+        Text('BUNDLE HASH', style: textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+        SelectableText(att.bundleHash, style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+        const SizedBox(height: 8),
+        Text(att.statement, style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
       ]),
     );
   }
@@ -714,16 +722,16 @@ class _Badge extends StatelessWidget {
   const _Badge(this.text);
   final String text;
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary,
-            borderRadius: BorderRadius.circular(999)),
-        child: Text(text,
-            style: TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.4,
-                color: Theme.of(context).colorScheme.onPrimary)),
-      );
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(999)),
+      child: Text(text,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w800, letterSpacing: 0.4, color: scheme.onPrimary)),
+    );
+  }
 }
 
 class _FootNote extends StatelessWidget {
@@ -733,5 +741,6 @@ class _FootNote extends StatelessWidget {
       'Pricing the evidence of your own life behind a paywall was ruled out on principle here — '
       'raw export stays free and unlimited, on every tier, whether or not a subscription is active. '
       'Only the certified copy, and only past the first free one each year, ever asks for a plan.',
-      style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.outline));
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.outline));
 }

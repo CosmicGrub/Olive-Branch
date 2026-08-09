@@ -100,19 +100,24 @@ class _Marked extends StatelessWidget {
         ])),
       ),
     ]),
-    const SizedBox(height: 22),
+    const SizedBox(height: 24),
     Text('My birthday', style: Theme.of(context).textTheme.headlineSmall
       ?.copyWith(fontWeight: FontWeight.w800)),
     const SizedBox(height: 8),
     Text('Every year, this day is $childName\'s.',
       textAlign: TextAlign.center,
-      style: TextStyle(fontSize: 14.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-    const SizedBox(height: 30),
+      style: Theme.of(context).textTheme.bodyMedium
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+    const SizedBox(height: 32),
     SizedBox(width: double.infinity, height: 56, child: FilledButton(
       onPressed: onDone,
       style: FilledButton.styleFrom(shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18))),
-      child: const Text('All done!', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)))),
+        borderRadius: BorderRadius.circular(16))),
+      // Deliberately not a textTheme role — see onboarding_shared.dart's
+      // continue button for why button labels keep a plain, colorless
+      // TextStyle rather than one with Typography.material2021's baked-in
+      // onSurface color.
+      child: const Text('All done!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
   ]);
 }
 
@@ -120,10 +125,15 @@ class _Incomplete extends StatelessWidget {
   const _Incomplete({required this.onDone});
   final VoidCallback onDone;
   @override
-  Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
-    Text("We don't have your birthday yet.",
-      style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-    const SizedBox(height: 18),
-    FilledButton(onPressed: onDone, child: const Text('Continue')),
-  ]);
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.cake_outlined, size: 40, color: scheme.onSurfaceVariant),
+      const SizedBox(height: 8),
+      Text("We don't have your birthday yet.",
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant)),
+      const SizedBox(height: 16),
+      FilledButton(onPressed: onDone, child: const Text('Continue')),
+    ]);
+  }
 }
