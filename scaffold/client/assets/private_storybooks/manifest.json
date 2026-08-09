@@ -1,0 +1,11 @@
+{
+  "//": "PRIVATE BUILD ONLY -- DO NOT SHIP. See scaffold/client/lib/private_storybooks/README.md. To add a real book: drop its HTML file in this same directory and append one entry below -- no code change needed.",
+  "storybooks": [
+    {
+      "id": "sample-001",
+      "title": "The Sample Story",
+      "description": "A tiny placeholder tale used to test the reader end to end.",
+      "assetPath": "assets/private_storybooks/sample_story.html"
+    }
+  ]
+}

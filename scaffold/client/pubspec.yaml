@@ -11,6 +11,14 @@ dependencies:
     sdk: flutter
   jitsi_meet_flutter_sdk: ^13.1.0
   http: ^1.2.2
+  # PRIVATE BUILD ONLY -- DO NOT SHIP. Sole consumer is
+  # lib/private_storybooks/, a dev-only feature that is compile-time-gated
+  # off (kPrivateStorybooksEnabled) and never reachable in a normal build.
+  # Renders markup-only, no script execution -- a real security requirement
+  # on this child-facing app, not just a preference. See
+  # lib/private_storybooks/README.md before ever merging this branch anywhere
+  # near a release.
+  flutter_html: ^3.0.0
 
 # See third_party/PATCH.md. Compile-time-only fix for a hardcoded
 # compileSdkVersion 34 in the published package's own android/build.gradle,
@@ -27,3 +35,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # PRIVATE BUILD ONLY -- DO NOT SHIP. Placeholder sample content for
+  # lib/private_storybooks/ only -- see that directory's README.md. The
+  # feature that reads these assets is compile-time-gated off by default.
+  assets:
+    - assets/private_storybooks/manifest.json
+    - assets/private_storybooks/

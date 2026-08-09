@@ -18,6 +18,8 @@ import 'journal_screen.dart';
 import 'letters_screen.dart';
 import 'maturation_ladder.dart';
 import 'onboarding_flow.dart';
+import 'private_storybooks/private_storybook_shelf.dart';
+import 'private_storybooks/private_storybooks_flag.dart';
 import 'quieting_note.dart';
 import 'shared_gallery.dart';
 import 'shared_reading.dart';
@@ -98,6 +100,19 @@ class ChildMoreScreen extends StatelessWidget {
             subtitle: 'The first-run screens, walked through again',
             onTap: () => _open(context, OnboardingFlowScreen(fallbackName: childName))),
         ]),
+        // PRIVATE BUILD ONLY -- DO NOT SHIP. This is the feature's one and
+        // only call site outside lib/private_storybooks/ (see that
+        // directory's README.md). kPrivateStorybooksEnabled is a
+        // compile-time constant that is false unless a build explicitly
+        // passes --dart-define=ENABLE_PRIVATE_STORYBOOKS=true, so this
+        // entire branch compiles away to nothing in a normal build -- no
+        // tile, no section, no seam.
+        if (kPrivateStorybooksEnabled)
+          HubSection(title: 'Private build only', children: [
+            HubTile(icon: Icons.menu_book_outlined, title: 'Private storybooks',
+              subtitle: 'Test-only — not part of the released app',
+              onTap: () => _open(context, const PrivateStorybookShelfScreen())),
+          ]),
       ]),
     )),
   );
