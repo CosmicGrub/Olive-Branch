@@ -31,7 +31,7 @@
 // White's own back rank — while that same file's newChess() comment says
 // "the child plays white". Read literally, the reference source hands the
 // missing queen to the CHILD, exactly backwards from every handicap label
-// ("Dad plays without his queen") and from §9.2's entire point ("she
+// ("{parent} plays without their queen") and from §9.2's entire point ("she
 // chooses what the PARENT gives up"). `chessHandicaps` below removes pieces
 // from the PARENT's (ChSide.parent's) side instead, matching the label text
 // and the stated design intent rather than reproducing what reads as a
@@ -92,17 +92,24 @@ const List<ChPieceType> _backRank = [
 /// lever (§9.2). See the file header for why this removes pieces from the
 /// PARENT's back rank rather than reproducing games2.ts's FEN literally.
 class ChessHandicap {
-  const ChessHandicap({required this.id, required this.label, required this.removeFiles});
+  const ChessHandicap({required this.id, required this.labelTemplate, required this.removeFiles});
   final String id;
-  final String label;
+  /// Label text with `{parent}` standing in for the parent's name — call
+  /// [labelFor] to render it. Templated rather than a fixed "Dad" string
+  /// because a GameChess can be built with any parentName ('Mom',
+  /// 'Grandpa', ...), and "their" is used throughout rather than guessing
+  /// a pronoun from that name.
+  final String labelTemplate;
   /// Files (0-7) cleared from the parent's back rank at game start.
   final List<int> removeFiles;
+
+  String labelFor(String parentName) => labelTemplate.replaceAll('{parent}', parentName);
 }
 
 const List<ChessHandicap> chessHandicaps = [
-  ChessHandicap(id: 'no_queen', label: "Dad plays without his queen", removeFiles: [3]),
-  ChessHandicap(id: 'no_rooks', label: 'Dad plays without both rooks', removeFiles: [0, 7]),
-  ChessHandicap(id: 'no_queen_rooks', label: 'Dad plays without his queen and rooks',
+  ChessHandicap(id: 'no_queen', labelTemplate: '{parent} plays without their queen', removeFiles: [3]),
+  ChessHandicap(id: 'no_rooks', labelTemplate: '{parent} plays without both rooks', removeFiles: [0, 7]),
+  ChessHandicap(id: 'no_queen_rooks', labelTemplate: '{parent} plays without their queen and rooks',
     removeFiles: [0, 3, 7]),
 ];
 
@@ -756,7 +763,10 @@ class _GameChessState extends State<GameChess> {
   String? _handicapBanner() {
     if (_handicapId == null) return null;
     for (final h in chessHandicaps) {
-      if (h.id == _handicapId) return "${widget.parentName}'s playing the hard way — ${h.label.toLowerCase()}";
+      if (h.id == _handicapId) {
+        return "${widget.parentName}'s playing the hard way — "
+            '${h.labelFor(widget.parentName).toLowerCase()}';
+      }
     }
     return null;
   }
@@ -801,8 +811,8 @@ class _ChessSetupState extends State<_ChessSetup> {
       const SizedBox(height: 16),
       _SetupOption(label: 'No — play it straight', selected: _choice == null,
         onTap: () => setState(() => _choice = null)),
-      for (final h in chessHandicaps) _SetupOption(label: h.label, selected: _choice == h.id,
-        onTap: () => setState(() => _choice = h.id)),
+      for (final h in chessHandicaps) _SetupOption(label: h.labelFor(widget.parentName),
+        selected: _choice == h.id, onTap: () => setState(() => _choice = h.id)),
       const SizedBox(height: 16),
       SizedBox(width: double.infinity, height: 52, child: FilledButton(
         onPressed: () => widget.onStart(_choice),

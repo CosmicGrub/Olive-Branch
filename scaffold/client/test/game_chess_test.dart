@@ -235,10 +235,19 @@ void main() {
       expect(find.text('Want to make it harder for Dad?'), findsOneWidget);
       expect(find.text('No — play it straight'), findsOneWidget);
       for (final h in chessHandicaps) {
-        expect(find.text(h.label), findsOneWidget);
+        expect(find.text(h.labelFor('Dad')), findsOneWidget);
       }
       final startButton = t.getSize(find.widgetWithText(FilledButton, 'Start game'));
       expect(startButton.height, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('handicap labels use the actual parentName, not a hardcoded "Dad"', (t) async {
+      await t.pumpWidget(wrap(const GameChess(parentName: 'Mom')));
+      expect(find.text('Want to make it harder for Mom?'), findsOneWidget);
+      for (final h in chessHandicaps) {
+        expect(find.text(h.labelFor('Mom')), findsOneWidget);
+        expect(find.text(h.labelFor('Dad')), findsNothing);
+      }
     });
 
     testWidgets('NO settings affordance exists at any depth', (t) async {
