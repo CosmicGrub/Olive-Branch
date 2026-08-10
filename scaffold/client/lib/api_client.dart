@@ -146,7 +146,100 @@ class OliveApi {
     await _post(guardianPinPath, {'pin': pin});
   }
 
+  /// Requests a real WebAuthn REGISTRATION challenge -- POST the
+  /// [webauthnRegisterChallenge] path, server/routes.mjs's real handler.
+  /// Requires a guardian session (403 guardian_session_required for a child
+  /// session). Named distinctly from the path constant above it calls (same
+  /// disambiguation [setGuardianPin]/[guardianPinPath] already uses) so the
+  /// two don't collide. Returns the raw `{challenge, rpId, userId}` body:
+  /// webauthn_channel.dart's [buildRegisterPasskeyCallback] is what actually
+  /// consumes it (feeds it straight to WebAuthnChannel.register()), not this
+  /// class -- this class stays transport-only, matching every other method
+  /// here.
+  Future<Map<String, dynamic>> requestWebauthnRegisterChallenge() =>
+      _post(webauthnRegisterChallenge, const {});
+
+  /// Verifies a real WebAuthn REGISTRATION ceremony -- POST the
+  /// [webauthnRegisterVerify] path, server/routes.mjs's real handler
+  /// (challenge consumption, rpIdHash check, CBOR/COSE public-key
+  /// extraction, credential storage). [clientDataJSON]/[attestationObject]
+  /// must be the base64url strings WebAuthnBridge.kt's register() returned,
+  /// untouched. Throws [ApiException] on any non-2xx response (e.g.
+  /// challenge_mismatch, rpid_mismatch, origin_mismatch) -- a registration
+  /// failure is a real fact the caller must see, not one to fail silently
+  /// past.
+  Future<void> submitWebauthnRegisterVerify({
+    required String clientDataJSON,
+    required String attestationObject,
+  }) async {
+    await _post(webauthnRegisterVerify,
+        {'clientDataJSON': clientDataJSON, 'attestationObject': attestationObject});
+  }
+
   void close() => _client.close();
+}
+
+/// Real WebAuthn LOGIN — the passkey ceremony's counterpart to [devLoginFor],
+/// and free functions for the identical structural reason: server/index.mjs
+/// implements both LOGIN routes outside api.register() because they
+/// ESTABLISH a session (see that file's own header), so there is no existing
+/// [OliveApi] instance -- which always already holds a session token -- to
+/// hang these off of.
+///
+/// Takes a `userId` hint, not a discoverable-credential lookup -- see
+/// server/index.mjs's webauthnLoginChallenge() for why (a real, deliberate
+/// scope decision recorded there, not a shortcut). Returns the raw
+/// `{challenge, rpId}` body.
+Future<Map<String, dynamic>> webauthnLoginChallenge(
+  String baseUrl,
+  String userId, {
+  http.Client? client,
+}) async {
+  final c = client ?? http.Client();
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.webauthnLoginChallenge}'),
+    headers: {'content-type': 'application/json'},
+    body: jsonEncode({'userId': userId}),
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body;
+}
+
+/// Verifies a real WebAuthn LOGIN ceremony -- POST webauthnLoginVerify,
+/// server/index.mjs's real handler (single-use challenge consume BEFORE
+/// signature check, credential lookup, auth.ts's real verifyAssertion(),
+/// sign-count update). All four assertion fields must be the base64url
+/// strings WebAuthnBridge.kt's authenticate() returned, untouched. Returns
+/// the new guardian session token on success, exactly like [devLoginFor].
+Future<String> webauthnLoginVerify(
+  String baseUrl, {
+  required String userId,
+  required String credentialId,
+  required String clientDataJSON,
+  required String authenticatorData,
+  required String signature,
+  http.Client? client,
+}) async {
+  final c = client ?? http.Client();
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.webauthnLoginVerify}'),
+    headers: {'content-type': 'application/json'},
+    body: jsonEncode({
+      'userId': userId,
+      'credentialId': credentialId,
+      'clientDataJSON': clientDataJSON,
+      'authenticatorData': authenticatorData,
+      'signature': signature,
+    }),
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body['token'] as String;
 }
 
 /// Dev-only login helper wrapping [OliveApi.devLoginPath] — see

@@ -65,6 +65,11 @@ class MainActivity : FlutterActivity() {
         // Phone -> watch sync (§21.5). See WearSyncBridge.kt's own header for
         // scope.
         WearSyncBridge.register(this, MethodChannel(messenger, WearSyncBridge.METHOD_CHANNEL))
+
+        // Real WebAuthn/passkey ceremony (§7.1, §8.1, §11). See
+        // WebAuthnBridge.kt's own header for the API-level tension and the
+        // discoverable-credential requirement this bridge is built around.
+        WebAuthnBridge.register(this, MethodChannel(messenger, WebAuthnBridge.METHOD_CHANNEL))
     }
 
     override fun onStop() {
