@@ -1,5 +1,5 @@
 import pg from "pg";
-import { newChallenge } from "../../auth/src/auth.ts";
+import { newChallenge, verifyPin } from "../../auth/src/auth.ts";
 function createPool(connectionString) {
   return new pg.Pool({ connectionString });
 }
@@ -156,6 +156,41 @@ async function recordPinAttempt(pool, userId, success) {
     return { lockedUntil: rows[0]?.locked_until ?? null };
   });
 }
+async function attemptPinFor(pool, userId, candidatePin) {
+  return withSession(pool, { roleName: "guardian", userId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT pin_hash, failed_attempts, locked_until
+         FROM pin_credential WHERE user_id = $1 FOR UPDATE`,
+      [userId]
+    );
+    if (!rows.length) return { matched: false, hasCredential: false, locked: false };
+    const r = rows[0];
+    if (r.locked_until && r.locked_until.getTime() > Date.now()) {
+      return { matched: false, hasCredential: true, locked: true };
+    }
+    const ok = verifyPin(candidatePin, r.pin_hash);
+    if (ok) {
+      await q(
+        `UPDATE pin_credential SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+          WHERE user_id = $1`,
+        [userId]
+      );
+    } else {
+      await q(
+        `UPDATE pin_credential
+            SET failed_attempts = CASE WHEN failed_attempts + 1 >= $2 THEN 0
+                                        ELSE failed_attempts + 1 END,
+                locked_until = CASE WHEN failed_attempts + 1 >= $2
+                                     THEN now() + ($3 || ' milliseconds')::interval
+                                     ELSE locked_until END,
+                updated_at = now()
+          WHERE user_id = $1`,
+        [userId, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS]
+      );
+    }
+    return { matched: ok, hasCredential: true, locked: false };
+  });
+}
 const CHALLENGE_TTL_MS = 5 * 60 * 1e3;
 async function createChallenge(pool, userId, purpose) {
   const challenge = newChallenge();
@@ -223,11 +258,15 @@ async function webauthnCredentialById(pool, credentialId) {
   });
 }
 async function updateWebauthnSignCount(pool, credentialId, newSignCount) {
-  await withSystemSession(pool, async (q) => {
-    await q(
-      `UPDATE webauthn_credential SET sign_count = $2 WHERE credential_id = $1`,
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE webauthn_credential
+          SET sign_count = $2
+        WHERE credential_id = $1 AND ($2 = 0 OR sign_count < $2)
+        RETURNING sign_count`,
       [credentialId, newSignCount]
     );
+    return rows.length === 1;
   });
 }
 function dbPort(pool) {
@@ -241,6 +280,7 @@ export {
   PIN_LOCKOUT_MS,
   PIN_MAX_ATTEMPTS,
   activeCustodyOrderFor,
+  attemptPinFor,
   consumeChallenge,
   createChallenge,
   createPool,

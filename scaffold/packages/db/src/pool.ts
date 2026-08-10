@@ -1,6 +1,6 @@
 import pg from 'pg';
 import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
-import { newChallenge } from '../../auth/src/auth.ts';
+import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
 import type { Edge } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
@@ -323,6 +323,93 @@ export async function recordPinAttempt(
 }
 
 /**
+ * The real fix for a critical, live-reproduced bug found in adversarial
+ * review of this file's original kiosk-pin/verify caller: that caller read
+ * `pinCredentialFor()` (a plain SELECT, no row lock) to decide whether a
+ * guardian is currently locked out, and only LATER — as a completely separate
+ * round trip, after the slow ~64ms scrypt verify — called `recordPinAttempt()`
+ * to record the outcome. Nothing held a lock across that gap, so N concurrent
+ * guesses against the SAME guardian all read "not locked" before any of them
+ * had a chance to observe a lock a sibling request was in the middle of
+ * imposing — every single one of them then ran a real scrypt verification
+ * against the true hash, regardless of PIN_MAX_ATTEMPTS. Measured live: 200
+ * concurrent guesses against one guardian, 200/200 ran verifyPin(), account
+ * merely ended up at failed_attempts=1 — the lockout provided ZERO protection
+ * against a concurrent burst, only against sequential guessing.
+ *
+ * The fix: fold "read the lock state", "verify", and "record the outcome"
+ * into ONE transaction that takes a `SELECT ... FOR UPDATE` row lock on the
+ * guardian's own pin_credential row FIRST, before doing anything else.
+ * Postgres serializes every concurrent transaction that wants that same row:
+ * only one can hold the lock at a time, and each one that acquires it next
+ * sees the FRESH state left by the one before it (including any lock that one
+ * just imposed) — not a stale snapshot read before that write happened. This
+ * makes the check-then-verify-then-record sequence atomic with respect to
+ * every OTHER concurrent attempt against the same guardian, which a separate
+ * SELECT (no lock) followed by a separate UPDATE never was, no matter how
+ * correct either statement was in isolation (recordPinAttempt()'s own UPDATE
+ * was already provably safe from lost updates on the COUNTER — see its own
+ * comment — the bug was entirely in the READ that decided whether to even
+ * attempt verifyPin() in the first place).
+ *
+ * Net effect under concurrency: of N simultaneous guesses against one
+ * guardian, AT MOST PIN_MAX_ATTEMPTS of them ever reach verifyPin() before
+ * the rest observe the lock this same function just imposed and skip it —
+ * exactly the sequential-guessing guarantee the lockout's own numbers
+ * (PIN_MAX_ATTEMPTS/PIN_LOCKOUT_MS) were designed around, now also true when
+ * every guess arrives at once. Proven live in
+ * packages/db/test/auth_credentials.test.mjs's "F concurrency" section.
+ */
+export async function attemptPinFor(
+  pool: pg.Pool, userId: string, candidatePin: string,
+): Promise<{ matched: boolean; hasCredential: boolean; locked: boolean }> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    // FOR UPDATE — taken BEFORE anything else runs, so a concurrent call for
+    // this exact userId blocks here until this transaction commits, rather
+    // than racing ahead on a stale read. Real, not cosmetic: this is the one
+    // line that turns "check" and "act" back into a single atomic step.
+    const rows = await q(
+      `SELECT pin_hash, failed_attempts, locked_until
+         FROM pin_credential WHERE user_id = $1 FOR UPDATE`,
+      [userId],
+    );
+    if (!rows.length) return { matched: false, hasCredential: false, locked: false };
+    const r = rows[0];
+    if (r.locked_until && r.locked_until.getTime() > Date.now()) {
+      // Same documented, deliberate timing trade-off kiosk-pin/verify's own
+      // comment already accepts: a locked guardian's scrypt check is skipped
+      // entirely rather than run-and-discarded.
+      return { matched: false, hasCredential: true, locked: true };
+    }
+    const ok = verifyPin(candidatePin, r.pin_hash);
+    // Still inside the SAME transaction, still holding the SAME row lock —
+    // this UPDATE cannot itself be raced by another attemptPinFor() call for
+    // this userId, because no other such call can even acquire the FOR
+    // UPDATE lock above until this one commits.
+    if (ok) {
+      await q(
+        `UPDATE pin_credential SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+          WHERE user_id = $1`,
+        [userId],
+      );
+    } else {
+      await q(
+        `UPDATE pin_credential
+            SET failed_attempts = CASE WHEN failed_attempts + 1 >= $2 THEN 0
+                                        ELSE failed_attempts + 1 END,
+                locked_until = CASE WHEN failed_attempts + 1 >= $2
+                                     THEN now() + ($3 || ' milliseconds')::interval
+                                     ELSE locked_until END,
+                updated_at = now()
+          WHERE user_id = $1`,
+        [userId, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS],
+      );
+    }
+    return { matched: ok, hasCredential: true, locked: false };
+  });
+}
+
+/**
  * Matches auth.ts's verifyAssertion() own default `challengeTtlMs` exactly.
  * Kept as a named constant rather than repeating the literal, so the two
  * never drift silently out of sync with each other.
@@ -429,20 +516,60 @@ export async function webauthnCredentialById(
   });
 }
 
-/** Same system-scoped justification as webauthnCredentialById() immediately
+/**
+ * Same system-scoped justification as webauthnCredentialById() immediately
  * above — part of the same pre-session login ceremony, called only AFTER
  * auth.ts's verifyAssertion() has already independently proven possession of
  * the private key for this exact credential (its own signCount-replay
  * check), so by the time this runs the caller is not a stranger, only not
- * yet holding an ISSUED session token (issueSession happens after this). */
+ * yet holding an ISSUED session token (issueSession happens after this).
+ *
+ * A real TOCTOU, found and fixed here: this used to be an UNCONDITIONAL
+ * `UPDATE ... SET sign_count = $2`, with no compare against the row's CURRENT
+ * value. verifyAssertion()'s own replay check only ever sees a SNAPSHOT of
+ * sign_count read moments earlier by webauthnCredentialById() — two truly
+ * concurrent login attempts (e.g. a cloned authenticator used at the same
+ * moment as the real one) that both read the same stale stored count and
+ * both present the same next signCount both pass that snapshot check, and an
+ * unconditional write here would let BOTH persist and BOTH be issued a
+ * session — exactly the "bearer token that can be replayed forever" auth.ts's
+ * own header says this mechanism exists to prevent.
+ *
+ * Fixed the same way consumeChallenge() above closes its own TOCTOU: the
+ * comparison moves INTO the UPDATE's WHERE clause, so it is checked against
+ * the row's value at the moment this exact statement acquires the row's
+ * write lock, not a value read by an earlier, separate statement. Two
+ * concurrent calls with the same `newSignCount` can both START, but Postgres
+ * serializes them on the row: the first to acquire the lock sees the
+ * pre-update value and its WHERE matches; the second, after waiting for the
+ * first's lock to release, re-evaluates WHERE against the row the first one
+ * just wrote and finds it no longer matches, updating zero rows.
+ *
+ * `$2 = 0` bypasses the comparison entirely rather than being folded into
+ * `sign_count < $2` (which `0 < 0` would always fail): this app's real
+ * authenticators (Android platform/synced passkeys, see WebAuthnBridge.kt's
+ * own header) commonly report signCount=0 on every genuine login by design —
+ * verifyAssertion() already treats "both incoming and stored are 0" as
+ * "this authenticator does not support a counter, don't enforce one", and
+ * this write path has to agree with that or every second real login from
+ * such a device would start silently failing the CAS.
+ *
+ * Returns whether the write actually took effect — the caller MUST treat
+ * `false` as a failed login (the race this function exists to lose safely),
+ * not as an ignorable side channel.
+ */
 export async function updateWebauthnSignCount(
   pool: pg.Pool, credentialId: string, newSignCount: number,
-): Promise<void> {
-  await withSystemSession(pool, async (q) => {
-    await q(
-      `UPDATE webauthn_credential SET sign_count = $2 WHERE credential_id = $1`,
+): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE webauthn_credential
+          SET sign_count = $2
+        WHERE credential_id = $1 AND ($2 = 0 OR sign_count < $2)
+        RETURNING sign_count`,
       [credentialId, newSignCount],
     );
+    return rows.length === 1;
   });
 }
 

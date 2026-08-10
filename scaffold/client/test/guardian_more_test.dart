@@ -43,7 +43,17 @@ void main() {
     testWidgets('the one genuinely unbuilt tile stays an honest stub',
         (t) async {
       await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
-      await t.tap(find.text('Availability'));
+      // 'Availability' now sits below even this file's own generous 1800px
+      // test surface (this hub's tile list grew again — the real-authentication
+      // pass's WebAuthn dev-verification tile — same class of drift this
+      // file's own header comment already anticipated). ensureVisible scrolls
+      // it into the SingleChildScrollView first, which is exactly what a real
+      // guardian's own scroll gesture does; a taller fixed surface would only
+      // paper over the same fragility again the next time a tile is added.
+      final availability = find.text('Availability');
+      await t.ensureVisible(availability);
+      await t.pumpAndSettle();
+      await t.tap(availability);
       await t.pump();
       expect(find.textContaining('not built yet'), findsOneWidget);
     });

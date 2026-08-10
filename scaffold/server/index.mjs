@@ -140,7 +140,17 @@ async function webauthnLoginVerify(rawBody) {
     return { status: 401, body: { error: result.reason } };
   }
 
-  await updateWebauthnSignCount(pool, credentialId, result.newSignCount);
+  // A real compare-and-swap, not a bare write — see pool.ts's own comment on
+  // updateWebauthnSignCount(). `false` here means a concurrent request for
+  // this same credential already advanced sign_count to (or past) this exact
+  // value first: the specific race a cloned authenticator used at the same
+  // moment as the real one would produce. Denying the SECOND request to
+  // finish is the whole point — a session must never be issued off the losing
+  // side of that race.
+  const advanced = await updateWebauthnSignCount(pool, credentialId, result.newSignCount);
+  if (!advanced) {
+    return { status: 401, body: { error: 'signcount_replay' } };
+  }
   const token = issueSession(secret,
     { userId, roleName: 'guardian', childId: null, escalated: false }, now);
   return { status: 200, body: { token } };

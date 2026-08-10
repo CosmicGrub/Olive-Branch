@@ -28,7 +28,7 @@
 import pg from 'pg';
 import {
   createPool, withSession, guardiansOfChild, pinCredentialFor, setPinCredential,
-  recordPinAttempt, PIN_MAX_ATTEMPTS, createChallenge, consumeChallenge,
+  recordPinAttempt, attemptPinFor, PIN_MAX_ATTEMPTS, createChallenge, consumeChallenge,
   storeWebauthnCredential, webauthnCredentialsForUser, webauthnCredentialById,
   updateWebauthnSignCount,
 } from '../src/pool.mjs';
@@ -320,9 +320,104 @@ await admin.query('COMMIT');
   const byIdUnknown = await webauthnCredentialById(pool, 'no-such-credential');
   check('E webauthn', 'an unknown credentialId returns null, not a throw', byIdUnknown, 'null');
 
-  await updateWebauthnSignCount(pool, 'mom-cred-1', 7);
+  const advanced1 = await updateWebauthnSignCount(pool, 'mom-cred-1', 7);
+  check('E webauthn', 'updateWebauthnSignCount reports success on a real advance', advanced1, 'true');
   const afterUpdate = await webauthnCredentialById(pool, 'mom-cred-1');
   check('E webauthn', 'updateWebauthnSignCount persists the new count', afterUpdate?.signCount, 7);
+
+  // Real fix for a real TOCTOU: the write is now a compare-and-swap, not an
+  // unconditional UPDATE. A stale/non-increasing write must be REFUSED and
+  // must NOT touch the stored row.
+  const staleWrite = await updateWebauthnSignCount(pool, 'mom-cred-1', 5);
+  check('E webauthn CAS', 'a write with a LOWER signCount than stored is refused',
+    staleWrite, 'false');
+  const afterStale = await webauthnCredentialById(pool, 'mom-cred-1');
+  check('E webauthn CAS', "and the stored count is UNCHANGED", afterStale?.signCount, 7);
+
+  const equalWrite = await updateWebauthnSignCount(pool, 'mom-cred-1', 7);
+  check('E webauthn CAS', 'a write with an EQUAL signCount to stored is also refused',
+    equalWrite, 'false');
+
+  // The real concurrency shape from the review's own reproduction: two
+  // truly simultaneous writes claiming the SAME next signCount (exactly what
+  // a cloned authenticator used at the same moment as the real one would
+  // produce). Before this fix, BOTH succeeded — a session would have been
+  // issued off each. Now exactly one may.
+  await admin.query(`UPDATE webauthn_credential SET sign_count = 10 WHERE credential_id = 'mom-cred-1'`);
+  const [raceA, raceB] = await Promise.all([
+    updateWebauthnSignCount(pool, 'mom-cred-1', 11),
+    updateWebauthnSignCount(pool, 'mom-cred-1', 11),
+  ]);
+  check('E webauthn CAS', 'exactly one of two SIMULTANEOUS same-target writes succeeds',
+    [raceA, raceB].filter(Boolean).length, 1);
+  const afterRace = await webauthnCredentialById(pool, 'mom-cred-1');
+  check('E webauthn CAS', 'the stored count reflects the winner, not a torn write',
+    afterRace?.signCount, 11);
+
+  // The real, common Android case this fix must not break: an authenticator
+  // that has ALWAYS reported 0 keeps being able to "advance" to 0 forever —
+  // this is the deliberate `$2 = 0` bypass, not an oversight.
+  await admin.query(`DELETE FROM webauthn_credential WHERE user_id = $1`, [DAD]);
+  await storeWebauthnCredential(pool, DAD, 'dad-cred-zero', '-----BEGIN PUBLIC KEY-----\nDAD0\n-----END PUBLIC KEY-----');
+  const zero1 = await updateWebauthnSignCount(pool, 'dad-cred-zero', 0);
+  const zero2 = await updateWebauthnSignCount(pool, 'dad-cred-zero', 0);
+  check('E webauthn CAS', 'an always-0 authenticator writing 0 repeatedly always succeeds (1st)',
+    zero1, 'true');
+  check('E webauthn CAS', 'and again (2nd) — the common real Android case must never regress',
+    zero2, 'true');
+}
+
+// ===========================================================================
+// F · concurrency — the real fix for the PIN lockout's concurrent-burst hole
+// ===========================================================================
+// Real, live-reproduced bug (adversarial review): pinCredentialFor()'s read
+// and recordPinAttempt()'s write were two separate, unsynchronized round
+// trips, so N simultaneous guesses against one guardian all read "not locked"
+// before any of them observed a lock a sibling was in the middle of
+// imposing — every guess ran a real scrypt verification regardless of
+// PIN_MAX_ATTEMPTS. attemptPinFor() fixes this with a single `SELECT ... FOR
+// UPDATE` transaction per attempt; this proves it under the exact concurrent
+// shape the review used to break the old code.
+{
+  await admin.query(`DELETE FROM pin_credential WHERE user_id = $1`, [MOM]);
+  const realPin = '4821';
+  await setPinCredential(pool, MOM, hashPin(realPin));
+
+  // 20 concurrent WRONG guesses, fired with Promise.all (not sequentially
+  // awaited) so they genuinely race at the database, the same shape
+  // Promise.all([...200 guesses...]) used in the original finding's
+  // reproduction.
+  const wrongGuesses = Array.from({ length: 20 }, (_, i) => String(1000 + i).padStart(4, '0'))
+    .filter((g) => g !== realPin);
+  const results = await Promise.all(wrongGuesses.map((g) => attemptPinFor(pool, MOM, g)));
+
+  const ranVerify = results.filter((r) => !r.locked).length;   // reached verifyPin()
+  const skippedLocked = results.filter((r) => r.locked).length; // saw the lock, skipped
+  check('F concurrency', `AT MOST ${PIN_MAX_ATTEMPTS} of ${wrongGuesses.length} concurrent guesses ever reach verifyPin()`,
+    ranVerify <= PIN_MAX_ATTEMPTS, 'true');
+  check('F concurrency', 'every guess accounted for (ran verify OR observed the lock, never neither)',
+    ranVerify + skippedLocked, wrongGuesses.length);
+  check('F concurrency', 'none of the wrong guesses matched', results.some((r) => r.matched), 'false');
+
+  const lockedCred = await pinCredentialFor(pool, MOM);
+  check('F concurrency', 'the account ends up locked — the burst did not evade the lockout',
+    lockedCred.lockedUntil !== null, 'true');
+  check('F concurrency', 'failed_attempts sits at the post-lock reset value (0), no lost/duplicated increments',
+    lockedCred.failedAttempts, 0);
+
+  // The real PIN, tried WHILE the account is still locked from the burst
+  // above, must still be refused — this is the actual property that was
+  // broken: the lockout must hold even when the correct value is known.
+  const stillLocked = await attemptPinFor(pool, MOM, realPin);
+  check('F concurrency', "the REAL pin is refused while the account is locked (locked:true, no verify run)",
+    `${stillLocked.matched}/${stillLocked.locked}`, 'false/true');
+
+  // Sanity: verifyPin against the real hash still works once unlocked — the
+  // lockout is enforced by the caller/attemptPinFor, not by breaking the hash.
+  await admin.query(`UPDATE pin_credential SET locked_until = NULL, failed_attempts = 0 WHERE user_id = $1`, [MOM]);
+  const nowMatches = await attemptPinFor(pool, MOM, realPin);
+  check('F concurrency', 'once unlocked, the real PIN matches normally',
+    `${nowMatches.matched}/${nowMatches.locked}`, 'true/false');
 }
 
 await admin.query(`DELETE FROM auth_challenge WHERE user_id IN ($1,$2,$3)`, [DAD, MOM, STRANGER]);

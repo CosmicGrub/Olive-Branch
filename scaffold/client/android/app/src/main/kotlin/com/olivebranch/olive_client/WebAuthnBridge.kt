@@ -195,7 +195,26 @@ object WebAuthnBridge {
         // No allowCredentials narrowing -- see file header: login has no
         // credentialId to hand in, so this can only ever find a discoverable
         // (resident) credential, which register() above deliberately creates.
-        val request = GetCredentialRequest(listOf(option))
+        //
+        // preferImmediatelyAvailableCredentials(true) -- the real, verified
+        // (javap'd against this project's actual androidx.credentials:
+        // credentials:1.6.0 AAR, not assumed -- Builder() takes NO
+        // constructor arguments; options are added via addCredentialOption(),
+        // confirmed against the real compiled class after an earlier attempt
+        // at Builder(listOf(option)) failed to even COMPILE against the real
+        // AAR) mechanism for keeping this ceremony consistent with
+        // registration's own platform-only posture. WebAuthn's
+        // PublicKeyCredentialRequestOptionsJSON has no authenticatorAttachment
+        // field at all (that concept only exists on the CREATE side, see
+        // buildCreateRequestJson's own comment) -- this Builder flag is the
+        // one real lever the GET side has, and without it the system
+        // credential picker on a shared/kiosk device would still silently
+        // offer a cross-device/roaming (hybrid/caBLE) option even though
+        // every credential this app ever creates is platform-attached.
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(option)
+            .setPreferImmediatelyAvailableCredentials(true)
+            .build()
 
         scope.launch {
             try {

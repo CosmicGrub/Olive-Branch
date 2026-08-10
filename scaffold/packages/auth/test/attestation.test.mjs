@@ -120,9 +120,10 @@ function buildAttestationObject(fmt, authData) {
   const clientDataJSON = clientDataJSONBuf.toString('base64url');
 
   // A LOGIN authData: same rpIdHash, but the AT flag is not required (only
-  // UP, bit 0x01) and signCount must exceed the stored value (0) to pass
+  // UP, bit 0x01, and UV, bit 0x04 — auth.ts now requires both, see auth.ts's
+  // own comment) and signCount must exceed the stored value (0) to pass
   // auth.ts's own replay guard.
-  const loginFlags = Buffer.from([0x01]);
+  const loginFlags = Buffer.from([0x05]);
   const loginSignCount = Buffer.alloc(4); loginSignCount.writeUInt32BE(1);
   const loginAuthData = Buffer.concat([rpIdHash, loginFlags, loginSignCount]);
   const authenticatorData = loginAuthData.toString('base64url');
@@ -240,6 +241,109 @@ function buildAttestationObject(fmt, authData) {
   const authDataRight = buildAuthData(Buffer.from('id4'), rightKey);
   check('C sanity', 'the same shape with correct alg/crv/kty is accepted',
     throws(() => extractCredentialPublicKey(authDataRight)), 'false');
+}
+
+// ============================================================================
+// D · UV (user-verified) flag enforcement — a real fix, not just UP
+// ============================================================================
+// A real EC P-256 credential, shared by sections D and E below, plus a
+// helper to sign a login assertion with an arbitrary flags byte / signCount
+// so each case only has to name what's different about it.
+{
+  const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = publicKey.export({ format: 'jwk' });
+  const x = Buffer.from(jwk.x, 'base64url');
+  const y = Buffer.from(jwk.y, 'base64url');
+  const credentialIdBuf = Buffer.from('d0d1d2d3d4d5d6d7', 'hex');
+  const coseKeyBuf = encodeCoseKeyEc2(x, y);
+  const rpId = 'olivebranch.local';
+  const rpIdHash = createHash('sha256').update(rpId, 'utf8').digest();
+  const regAuthData = buildAuthData(credentialIdBuf, coseKeyBuf, { rpIdHash });
+  const { authData: parsedAuthData } = parseAttestationObject(
+    buildAttestationObject('none', regAuthData).toString('base64url'));
+  const { credentialId, publicKeyPem } = extractCredentialPublicKey(parsedAuthData);
+
+  const challenge = 'ZmxhZ3MtdGVzdC1jaGFsbGVuZ2U'; // arbitrary base64url text
+  const origin = 'https://olivebranch.local';
+
+  function signLoginAssertion({ flags, signCount }) {
+    const clientData = { type: 'webauthn.get', challenge, origin };
+    const clientDataJSONBuf = Buffer.from(JSON.stringify(clientData), 'utf8');
+    const clientDataJSON = clientDataJSONBuf.toString('base64url');
+    const flagsBuf = Buffer.from([flags]);
+    const signCountBuf = Buffer.alloc(4); signCountBuf.writeUInt32BE(signCount);
+    const authenticatorDataBuf = Buffer.concat([rpIdHash, flagsBuf, signCountBuf]);
+    const clientHash = createHash('sha256').update(clientDataJSONBuf).digest();
+    const signature = createSign('sha256')
+      .update(Buffer.concat([authenticatorDataBuf, clientHash]))
+      .sign(privateKey).toString('base64url');
+    return {
+      credentialId, clientDataJSON,
+      authenticatorData: authenticatorDataBuf.toString('base64url'), signature,
+    };
+  }
+
+  const verify = (assertion, credential) => verifyAssertion({
+    assertion, credential, expectedChallenge: challenge, expectedOrigin: origin,
+    expectedRpIdHash: rpIdHash, challengeIssuedAt: Date.now() - 1000, now: Date.now(),
+  });
+
+  const cred0 = { credentialId, publicKeyPem, signCount: 0, userId: 'test-guardian' };
+
+  // UP only (0x01), no UV (0x04) — this app always requests userVerification:
+  // "required" (WebAuthnBridge.kt), so a real assertion missing UV is either
+  // a client that silently downgraded the request or a forged one; either
+  // way it must be rejected, not merely logged.
+  const upOnly = verify(signLoginAssertion({ flags: 0x01, signCount: 1 }), cred0);
+  check('D UV flag', 'UP without UV is rejected', upOnly.ok, 'false');
+  check('D UV flag', 'and names the real reason', upOnly.ok ? '' : upOnly.reason, 'user_not_verified');
+
+  // UP + UV (0x01 | 0x04 = 0x05) — the real shape a genuine Android platform
+  // authenticator produces when userVerification:"required" was honored.
+  const upAndUv = verify(signLoginAssertion({ flags: 0x05, signCount: 1 }), cred0);
+  check('D UV flag', 'UP + UV is accepted', upAndUv.ok, 'true');
+
+  // UV without UP would never happen from a real authenticator (UV implies
+  // UP per spec), but this file's job is to prove auth.ts's OWN check order,
+  // not the whole world's compliance — UP is still checked first and still
+  // enforced independently.
+  const uvOnlyNoUp = verify(signLoginAssertion({ flags: 0x04, signCount: 1 }), cred0);
+  check('D UV flag', 'UV without UP is still rejected (UP checked independently)',
+    uvOnlyNoUp.ok, 'false');
+  check('D UV flag', 'and names the UP reason, not the UV one',
+    uvOnlyNoUp.ok ? '' : uvOnlyNoUp.reason, 'user_not_present');
+
+  // ==========================================================================
+  // E · signCount=0 clone/rollback bypass — fixed to check BOTH sides
+  // ==========================================================================
+
+  // A credential whose stored counter has ALREADY advanced past 0 (five real
+  // prior logins, say) now presents an assertion claiming signCount=0 — the
+  // exact signal of a cloned key or a rolled-back authenticator. Before the
+  // fix this was UNCONDITIONALLY accepted (only the incoming side was
+  // checked); it must now be rejected.
+  const advancedCred = { credentialId, publicKeyPem, signCount: 5, userId: 'test-guardian' };
+  const zeroAfterAdvanced = verify(signLoginAssertion({ flags: 0x05, signCount: 0 }), advancedCred);
+  check('E signCount=0', 'signCount=0 against a credential with signCount=5 stored is REJECTED',
+    zeroAfterAdvanced.ok, 'false');
+  check('E signCount=0', 'and names the replay reason',
+    zeroAfterAdvanced.ok ? '' : zeroAfterAdvanced.reason, 'signcount_replay');
+
+  // The real, common Android case this fix must NOT break: an authenticator
+  // that has ALWAYS reported 0 (stored=0) presents ANOTHER assertion also
+  // claiming 0 — this must keep working exactly as before, forever.
+  const zeroAfterZero = verify(signLoginAssertion({ flags: 0x05, signCount: 0 }), cred0);
+  check('E signCount=0', 'signCount=0 against a credential with signCount=0 stored is ACCEPTED '
+    + '(the always-0 Android case must not regress)', zeroAfterZero.ok, 'true');
+  check('E signCount=0', 'newSignCount stays 0', zeroAfterZero.ok ? zeroAfterZero.newSignCount : null, 0);
+
+  // A normal, real increment still passes.
+  const normalIncrement = verify(signLoginAssertion({ flags: 0x05, signCount: 6 }), advancedCred);
+  check('E signCount=0', 'a real increment (5 -> 6) is still accepted', normalIncrement.ok, 'true');
+
+  // An equal or lower nonzero count is still a replay, unaffected by this fix.
+  const equalCount = verify(signLoginAssertion({ flags: 0x05, signCount: 5 }), advancedCred);
+  check('E signCount=0', 'an equal nonzero count is still rejected as replay', equalCount.ok, 'false');
 }
 
 let g = '';

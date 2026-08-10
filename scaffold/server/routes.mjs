@@ -12,11 +12,11 @@
 // glossed over.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { DateTime } from 'luxon';
-import { activeCustodyOrderFor, guardiansOfChild, pinCredentialFor, setPinCredential,
-         recordPinAttempt, createChallenge, consumeChallenge,
+import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
+         attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
-import { hashPin, verifyPin } from '../packages/auth/src/auth.mjs';
+import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
 
 /**
@@ -130,6 +130,13 @@ export function registerRoutes(api, pool) {
   api.register({
     method: 'POST', path: '/v1/children/:childId/kiosk-pin/verify',
     action: null, identityScopedByHandler: true,
+    // See api.ts's Route.skipOuterSession doc comment — this handler runs
+    // every DB call scoped to a GUARDIAN's own session (attemptPinFor et al.),
+    // never the calling child's, so the outer withSession() api.handle() would
+    // otherwise open is pure dead weight — and, under concurrency, the exact
+    // self-deadlock this flag exists to close (confirmed live: 10-15
+    // concurrent requests here froze the whole server before this fix).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'child' || c.principal.childId !== c.childId) {
         return { status: 403, body: { error: 'not_this_child' } };
@@ -139,8 +146,11 @@ export function registerRoutes(api, pool) {
 
       const guardians = await guardiansOfChild(pool, c.childId);
       // Deliberately NOT short-circuited on the first match: every guardian
-      // gets the same treatment (load credential, skip if locked, verify,
-      // record the attempt) regardless of whether an earlier guardian in the
+      // gets the same treatment (attemptPinFor(): load credential, skip if
+      // locked, verify, record the attempt, all as ONE atomic, row-locked
+      // step — see pool.ts's own comment on why that atomicity, not just the
+      // per-guardian loop shape, is what actually defends the lockout under
+      // concurrent guessing) regardless of whether an earlier guardian in the
       // list already matched, so response latency is not a function of WHICH
       // guardian's PIN was tried, or of whether one matched at all. The one
       // accepted, DOCUMENTED gap: a LOCKED guardian's scrypt verification is
@@ -154,12 +164,8 @@ export function registerRoutes(api, pool) {
       // or whether any guardian has a PIN configured at all).
       let matched = false;
       for (const g of guardians) {
-        const cred = await pinCredentialFor(pool, g.userId);
-        if (!cred) continue;
-        if (cred.lockedUntil && cred.lockedUntil.getTime() > Date.now()) continue;
-        const ok = verifyPin(pin, cred.pinHash);
-        await recordPinAttempt(pool, g.userId, ok);
-        if (ok) matched = true;
+        const r = await attemptPinFor(pool, g.userId, pin);
+        if (r.matched) matched = true;
       }
       // Same shape whether the PIN was wrong, no guardian has one set yet, or
       // every guardian is currently locked out — a network trace cannot tell
@@ -173,6 +179,9 @@ export function registerRoutes(api, pool) {
   // no A1 exception needed.
   api.register({
     method: 'POST', path: '/v1/me/pin', action: null,
+    // See api.ts's Route.skipOuterSession doc comment — setPinCredential runs
+    // its own guardian-scoped session; the outer one would sit idle.
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'guardian_session_required' } };
@@ -195,6 +204,8 @@ export function registerRoutes(api, pool) {
   // see that file's own header.)
   api.register({
     method: 'POST', path: '/v1/auth/webauthn/register/challenge', action: null,
+    // See api.ts's Route.skipOuterSession doc comment.
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'guardian_session_required' } };
@@ -206,6 +217,8 @@ export function registerRoutes(api, pool) {
 
   api.register({
     method: 'POST', path: '/v1/auth/webauthn/register/verify', action: null,
+    // See api.ts's Route.skipOuterSession doc comment.
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'guardian_session_required' } };

@@ -79,7 +79,7 @@ export interface Assertion {
 
 export type AuthFailure =
   | 'unknown_credential' | 'challenge_mismatch' | 'origin_mismatch'
-  | 'type_mismatch' | 'rpid_mismatch' | 'user_not_present'
+  | 'type_mismatch' | 'rpid_mismatch' | 'user_not_present' | 'user_not_verified'
   | 'bad_signature' | 'signcount_replay' | 'challenge_expired';
 
 const b64u = (s: string) => Buffer.from(s, 'base64url');
@@ -131,6 +131,16 @@ export function verifyAssertion(input: {
   }
   const flags = authData[32];
   if ((flags & 0x01) === 0) return { ok: false, reason: 'user_not_present' };
+  // UV (bit 0x04, "user verified") — this app always requests
+  // userVerification: "required" (WebAuthnBridge.kt's own buildCreateRequest-
+  // Json/buildGetOptionJson), which is a REQUEST the untrusted client makes to
+  // its own local authenticator; the server has no independent way to know
+  // verification actually happened unless it inspects the bit the
+  // authenticator itself set in the signed authenticatorData. Checking only
+  // UP (as this file did before) would accept an assertion from a client that
+  // silently downgraded to userVerification: "discouraged" — a repackaged
+  // APK is a real threat model for a shared household kiosk device.
+  if ((flags & 0x04) === 0) return { ok: false, reason: 'user_not_verified' };
   const signCount = authData.readUInt32BE(33);
 
   // Signed payload is authenticatorData || sha256(clientDataJSON).
@@ -146,7 +156,30 @@ export function verifyAssertion(input: {
 
   // Replay guard. A counter that never increases is either a cloned key or a
   // replayed assertion; either way the ceremony must fail.
-  if (signCount !== 0 && signCount <= c.signCount) {
+  //
+  // WebAuthn L2 §7.2 step 21's real rule: skip the comparison ONLY when BOTH
+  // the incoming AND the stored counter are 0 ("this authenticator has never
+  // reported a real counter"), never on the incoming value alone. The
+  // previous `signCount !== 0 && ...` here checked only the incoming side —
+  // an attacker holding a cloned private key could forge every future
+  // assertion with signCount=0 and unconditionally bypass this guard forever,
+  // regardless of how far the REAL counter had already advanced, and would
+  // even regress the stored counter back to 0 on acceptance, erasing its
+  // forward history. Checking both sides closes that: once a stored counter
+  // has legitimately moved past 0, a later assertion claiming 0 is exactly
+  // the cloned/rolled-back-authenticator signal this mechanism exists to
+  // catch, and is now rejected rather than silently accepted.
+  //
+  // This app's real authenticators (Android platform/synced passkeys, see
+  // WebAuthnBridge.kt's own header) commonly report signCount=0 on EVERY
+  // genuine login by design — for those, stored stays 0 forever, so
+  // `counterMeaningful` stays false forever and this guard is correctly a
+  // permanent no-op, same behavior as before for the deployment that
+  // actually exists today. The fix only changes behavior once a stored
+  // counter has advanced past 0, which no authenticator in this app's real
+  // fleet currently does.
+  const counterMeaningful = !(signCount === 0 && c.signCount === 0);
+  if (counterMeaningful && signCount <= c.signCount) {
     return { ok: false, reason: 'signcount_replay' };
   }
   return { ok: true, newSignCount: signCount };

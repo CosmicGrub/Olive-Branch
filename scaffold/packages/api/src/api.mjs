@@ -1,6 +1,11 @@
 import { createServer } from "node:http";
 import { readSession } from "../../auth/src/auth.ts";
 import { can } from "../../family-graph/src/authorize.ts";
+const unusedQuery = async () => {
+  throw new Error(
+    "this route is registered with skipOuterSession: true and must not call q \u2014 it is responsible for its own, correctly-scoped database session(s)."
+  );
+};
 class Api {
   constructor(secret, db, now = () => Date.now()) {
     this.secret = secret;
@@ -79,14 +84,15 @@ class Api {
       }
     }
     try {
-      const out = await this.db.withSession(principal, (q) => m.route.handler({
+      const ctx = {
         principal,
         childId,
         params: m.params,
         body,
         query: u.searchParams,
         db: this.db
-      }, q));
+      };
+      const out = m.route.skipOuterSession ? await m.route.handler(ctx, unusedQuery) : await this.db.withSession(principal, (q) => m.route.handler(ctx, q));
       return { status: out.status ?? 200, body: out.body ?? null };
     } catch (e) {
       if (e?.status) return { status: e.status, body: { error: e.code ?? "error" } };

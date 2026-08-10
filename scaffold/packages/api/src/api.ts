@@ -58,8 +58,40 @@ export interface Route {
    * as its very first line, unconditionally, before touching anything else.
    */
   identityScopedByHandler?: boolean;
+  /**
+   * Opt-out of the A2 outer `db.withSession()` wrapper for a handler that
+   * never touches the injected `q` at all — it does every read/write itself,
+   * against its OWN, differently-scoped session(s) (see server/routes.mjs's
+   * kiosk-pin/verify: it must check PIN hashes as each individual guardian's
+   * own session, never as the calling child's, so the outer session can never
+   * be the right one for it to use).
+   *
+   * Real, confirmed bug this closes: `this.db.withSession()` checks out ONE
+   * connection from the shared pg.Pool and holds it for the handler's entire
+   * lifetime (see packages/db/src/pool.ts's withSession()). A handler that
+   * ignores that connection and instead calls its own pool-scoped accessors
+   * checks out a SECOND connection from the SAME bounded pool while the first
+   * is still held open doing nothing. Once enough concurrent requests to such
+   * a route reach the pool's max size, every slot is filled by outer wrappers
+   * each blocked waiting on their own handler, which can never finish because
+   * its inner connect() can never be satisfied — a self-referential deadlock
+   * that does not resolve on its own (load-tested live: reproduced and fixed
+   * during the real-authentication adversarial review, kiosk-pin/verify).
+   *
+   * Setting this to `true` is a promise enforced nowhere but in these words:
+   * the handler must not read `q` (it is handed a stub that throws if called,
+   * specifically so a future edit that starts using `q` fails loudly instead
+   * of silently running outside any session/transaction).
+   */
+  skipOuterSession?: boolean;
   handler: (c: Ctx, q: Query) => Promise<{ status?: number; body?: any }>;
 }
+
+const unusedQuery: Query = async () => {
+  throw new Error(
+    'this route is registered with skipOuterSession: true and must not call q — ' +
+    'it is responsible for its own, correctly-scoped database session(s).');
+};
 
 export class Api {
   private routes: Route[] = [];
@@ -148,9 +180,15 @@ export class Api {
 
     // ---- A2: run inside the session context --------------------------------
     try {
-      const out = await this.db.withSession(principal, (q) =>
-        m.route.handler({ principal, childId, params: m.params, body,
-                          query: u.searchParams, db: this.db }, q));
+      const ctx = { principal, childId, params: m.params, body,
+                    query: u.searchParams, db: this.db };
+      // skipOuterSession — see the Route field's own doc comment: this
+      // handler manages its own, correctly-scoped session(s) and must not be
+      // handed a connection it will never use, which is exactly the shape
+      // that self-deadlocked the shared pool under concurrency.
+      const out = m.route.skipOuterSession
+        ? await m.route.handler(ctx, unusedQuery)
+        : await this.db.withSession(principal, (q) => m.route.handler(ctx, q));
       return { status: out.status ?? 200, body: out.body ?? null };
     } catch (e: any) {
       if (e?.status) return { status: e.status, body: { error: e.code ?? 'error' } };
