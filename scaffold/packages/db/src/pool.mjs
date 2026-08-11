@@ -366,6 +366,35 @@ async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
     };
   });
 }
+async function childCtxFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [childId]);
+    if (!child.length) return null;
+    const tzRows = await q(
+      `SELECT tz, lower(valid)::text AS start, upper(valid)::text AS "end"
+         FROM child_tz_interval WHERE child_id = $1 ORDER BY lower(valid)`,
+      [childId]
+    );
+    const dpRows = await q(
+      `SELECT kind, starts_local::text AS starts_local, ends_local::text AS ends_local,
+              days_of_week, reachable
+         FROM day_part
+        WHERE child_id = $1 AND effective @> CURRENT_DATE`,
+      [childId]
+    );
+    return {
+      homeTz: child[0].home_tz,
+      tzIntervals: tzRows.map((r) => ({ tz: r.tz, start: r.start, end: r.end })),
+      dayParts: dpRows.map((r) => ({
+        kind: r.kind,
+        startsLocal: r.starts_local,
+        endsLocal: r.ends_local,
+        daysOfWeek: r.days_of_week,
+        reachable: r.reachable
+      }))
+    };
+  });
+}
 async function rawExportBundleFor(pool, principal, childId) {
   if (principal.roleName === "child") {
     throw new Error(
@@ -461,6 +490,82 @@ async function rawExportBundleFor(pool, principal, childId) {
     return { ok: true, bundle, serialized, recordId: inserted[0].id, bundleHash };
   });
 }
+async function persistCapturedMessage(pool, capture, opts = {}) {
+  return withSystemSession(pool, async (q) => {
+    const a = capture.artifact;
+    const artifactRows = await q(
+      `INSERT INTO media_artifact
+         (child_id, author_id, kind, storage_key, duration_ms, caption_key,
+          captured_at, captured_tz, era_tag, preserved, preserved_by,
+          preserved_at, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8,$9,$10,$11,
+               $12::timestamptz,$13::timestamptz)
+       RETURNING id`,
+      [
+        a.childId,
+        a.authorId,
+        a.kind,
+        a.storageKey,
+        a.durationMs,
+        a.captionKey,
+        a.capturedAt,
+        a.capturedTz,
+        a.eraTag,
+        a.preserved,
+        a.preservedBy,
+        a.preservedAt,
+        a.expiresAt
+      ]
+    );
+    const artifactId = artifactRows[0].id;
+    const i = capture.intent;
+    let batchId = i.batchId;
+    if (opts.newBatch) {
+      const b = opts.newBatch;
+      const batchRows = await q(
+        `INSERT INTO intent_batch
+           (child_id, sender_id, label, reason, cadence, daypart,
+            starts_local, ends_local)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date)
+         RETURNING id`,
+        [
+          i.childId,
+          i.senderId,
+          b.label,
+          b.reason ?? null,
+          b.cadence,
+          i.targetDaypart,
+          b.startsLocal,
+          b.endsLocal
+        ]
+      );
+      batchId = batchRows[0].id;
+    }
+    const intentRows = await q(
+      `INSERT INTO delivery_intent
+         (child_id, sender_id, payload_kind, payload_ref, policy,
+          target_local_date, target_daypart, batch_id, batch_seq, state,
+          expires_at)
+       VALUES ($1,$2,$3,$4,$5::delivery_policy,$6::date,$7,$8,$9,$10,
+               $11::timestamptz)
+       RETURNING id`,
+      [
+        i.childId,
+        i.senderId,
+        i.payloadKind,
+        artifactId,
+        i.policy,
+        i.targetLocalDate,
+        i.targetDaypart,
+        batchId,
+        i.batchSeq,
+        i.state,
+        i.expiresAt
+      ]
+    );
+    return { artifactId, intentId: intentRows[0].id, batchId };
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -474,6 +579,7 @@ export {
   activeCustodyOrderFor,
   attemptPinFor,
   availabilityFor,
+  childCtxFor,
   consumeChallenge,
   createChallenge,
   createPool,
@@ -481,6 +587,7 @@ export {
   deactivateAccount,
   edgesFor,
   guardiansOfChild,
+  persistCapturedMessage,
   pinCredentialFor,
   rawExportBundleFor,
   recordPinAttempt,
