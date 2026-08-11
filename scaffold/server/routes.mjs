@@ -15,7 +15,7 @@ import { DateTime } from 'luxon';
 import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential, availabilityFor,
-         setAvailabilityWindows } from '../packages/db/src/pool.mjs';
+         setAvailabilityWindows, deactivateAccount } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
@@ -78,6 +78,43 @@ export function registerRoutes(api, pool) {
         escalated: c.principal.escalated,
         displayName: displayName ?? null,
       } };
+    },
+  });
+
+  api.register({
+    // MASTERFILE §2.10, §2.11, §9.8, P8 — account deletion, for real.
+    // `action: null` (identity-only, same as GET /v1/me above): this is not
+    // child-scoped and does not go through can()/edgesFor() at all — a
+    // guardian deactivating THEIR OWN account is an identity operation, not
+    // an action against a child's data. The userId acted on comes ONLY from
+    // `c.principal.userId` (the verified session, A2/A3's own rule — never
+    // from the request body), so there is nothing here for a request body to
+    // widen. deactivateAccount() (packages/db/src/pool.mjs) additionally
+    // enforces the same restriction a SECOND way, independently, via RLS
+    // (0011_account_deletion.sql's app_user_self_update policy) — even a bug
+    // in this handler that passed the wrong id could not reach another
+    // guardian's row.
+    method: 'POST', path: '/v1/me/delete', action: null,
+    handler: async (c) => {
+      // A child principal always has userId: null (readSession's own
+      // invariant, packages/auth/src/auth.ts) — children have no login of
+      // their own to delete (§11), so this is the real, structural guard,
+      // not just a nicety.
+      if (!c.principal.userId) {
+        return { status: 400, body: { error: 'no_user_identity' } };
+      }
+      try {
+        const result = await deactivateAccount(pool, c.principal.userId, c.principal.roleName);
+        return { status: 200, body: { ok: true, ...result } };
+      } catch (e) {
+        if (e?.code === 'already_deactivated') {
+          return { status: 409, body: { error: 'already_deactivated' } };
+        }
+        if (e?.code === 'account_not_found') {
+          return { status: 404, body: { error: 'account_not_found' } };
+        }
+        throw e; // -> Api.handle's catch-all -> 500, logged there
+      }
     },
   });
 

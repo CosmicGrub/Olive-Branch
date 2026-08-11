@@ -119,6 +119,8 @@ class OliveApi {
   static const meAvailability    = '/v1/me/availability';
   // --- homework OCR capture (§9.1, §20.2b) --------------------------------
   static const homeworkCapture = '/v1/children/:childId/homework/capture';
+  // --- account lifecycle (§2.10, §2.11, §9.8, P8) -------------------------
+  static const deleteAccountPath = '/v1/me/delete';
 
   // --- login (dev-only — see server/index.mjs's own header comment) ------
   static const devLoginPath = '/v1/auth/dev-login';
@@ -279,6 +281,23 @@ class OliveApi {
   /// returns rather than a 404, see that route's own comment.
   Future<Map<String, dynamic>> getCustodyOrder(String childId) =>
       _get(custodyOrder, childId: childId);
+
+  /// POST /v1/me/delete — MASTERFILE §2.10, §2.11, §9.8, P8. Deactivates the
+  /// CALLING guardian's own account (server/routes.mjs resolves the target
+  /// from the verified session; nothing this method sends can widen or
+  /// redirect it). See packages/db/src/pool.ts's deactivateAccount() for
+  /// exactly what survives (delivered messages, the parent-to-parent log,
+  /// the child's preserved archive) and what does not (queued/undelivered
+  /// delivery_intent rows, PIN/passkey credentials, the login itself). On
+  /// success the response body carries `ok: true` plus counts of what was
+  /// removed; on failure this throws [ApiException] with the server's real
+  /// reason (`already_deactivated`, `account_not_found`, `no_user_identity`,
+  /// or a transport/auth failure) — deletion_screen.dart's `_confirm()` is
+  /// the caller responsible for turning that into honest on-screen copy.
+  /// No real body to send — server resolves the target from the session,
+  /// same empty-map convention [requestWebauthnRegisterChallenge] already
+  /// uses for a POST with nothing to carry.
+  Future<Map<String, dynamic>> deleteAccount() => _post(deleteAccountPath, const {});
 
   void close() => _client.close();
 }

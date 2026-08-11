@@ -742,6 +742,102 @@ and packages/custody/src/schedule.ts's tested `Order`/`HolidayRule` types and
   includes 14 new tests in `family_agreement_screen_test.dart` and 2 new
   integration tests in `guardian_more_test.dart`, with no regressions
   anywhere else in the suite.
+## [0.47.0] — 2026-08-11 — account deletion, for real — §2.10, §2.11, §9.8, P8
+
+`client/lib/deletion_screen.dart` was a fully honest, fully specified UI stub —
+the retention facts, the forbidden-language audit, the acknowledge-before-enable
+gate — whose `_confirm()` only showed a snackbar. §21.7 calls this "the hardest
+button anyone builds here"; this pass makes it real, for a guardian deleting
+their own account.
+
+### Added
+- **`db/migrations/0011_account_deletion.sql`** — `app_user.deactivated_at
+  timestamptz`. The row itself is never deleted (`message_log.author_id` and a
+  delivered `delivery_intent.sender_id` both reference it with no cascading
+  delete). RLS on `app_user` for the first time — no earlier migration put any
+  policy on this table. Unlike every other RLS table in this codebase (one `FOR
+  ALL` policy each), three narrow, command-scoped policies: `SELECT`/`INSERT`
+  stay open (unchanged behavior for the broad reads this table already serves —
+  `GET /v1/me`, the inbox's sender-name join, dev-login's lookup), `UPDATE` is
+  restricted to `current_role_name() = 'system' OR id = current_actor()`, and no
+  `DELETE` policy exists at all — Postgres itself now refuses `DELETE FROM
+  app_user` for every non-superuser role.
+- **`packages/db/src/pool.ts`'s `deactivateAccount(pool, userId, callerRoleName)`**
+  — one transaction: cancels `delivery_intent` rows authored by the user that
+  are NOT `delivered`/`opened` (the schema's real state enum has six values;
+  `pending`/`ready`/`expired`/`revoked` all count as "not yet delivered"),
+  removes every `pin_credential`/`webauthn_credential`/`webauthn_challenge` row
+  for that user, and sets `deactivated_at` — asserting row counts throughout
+  (`FOR UPDATE` existence/idempotency check first, `RETURNING` on every mutating
+  statement). Refuses a `'child'` caller role outright (children have no login
+  of their own to delete, §11) and refuses a second call on an
+  already-deactivated account (`already_deactivated`) rather than silently
+  repeating.
+- **`POST /v1/me/delete`** (`server/routes.mjs`) — identity-only (`action:
+  null`, same shape as the existing `GET /v1/me`), acting only on
+  `c.principal.userId` from the verified session; nothing in the request body
+  can widen or redirect the target.
+- **`server/index.mjs`'s dev-login** now checks `deactivated_at` and refuses
+  with `403 account_deactivated` — the one real login/session-issuing path this
+  codebase has today (no PIN/WebAuthn login endpoint exists anywhere yet;
+  `packages/auth/src/auth.ts`'s own header says so).
+- **`OliveApi.deleteAccount()`** (`client/lib/api_client.dart`) and a real
+  `_confirm()` in `deletion_screen.dart` — real success copy (audited against
+  `deletionForbiddenClaims`, same as the retention facts always were) and a
+  real, honest error on failure. `baseUrl`/`sessionToken`/`httpClient` are new,
+  optional constructor fields — see "NOT verified" below for why optional.
+
+### Verified
+- **`packages/db/test/deletion.test.mjs` — 29/29** against real Postgres (not a
+  fake `DbPort`): a delivered message and its `message_log` entry survive
+  byte-for-byte; every non-delivered `delivery_intent` state and every
+  credential row is actually gone; RLS blocks one guardian from deactivating
+  another's account via a direct `UPDATE` (0 rows) while confirming the same
+  guardian CAN touch their own row (1 row) — the real attack surface, since
+  `deactivateAccount()` has no separate "target" parameter to trick; and — the
+  literal ask, "a deactivated user's subsequent login attempt fails" — proven
+  by spawning the REAL `server/index.mjs` as a child process and hitting real
+  HTTP: dev-login succeeds before deletion, 403s after. Regression-checked
+  against this same database: `pool.test.mjs` 18/18, `custody_order.test.mjs`
+  16/16, both unchanged by the new `app_user` RLS.
+- **`flutter analyze`** — clean (0 issues; the pass surfaced two real
+  `use_build_context_synchronously` lints from the new `await`s, fixed with
+  `context.mounted`).
+- **`flutter test`** — full suite, **1281 passed, 0 failed**, including 14 in
+  `deletion_screen_test.dart` covering success, in-flight progress, a wrong
+  session (401), and an unreachable server, all against a real
+  `OliveApi`/`MockClient`, not a hand-waved stub.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **No live guardian entry point exists anywhere in this client** to supply
+  `deletion_screen.dart` a real `baseUrl`/`sessionToken` — `main.dart` is
+  deliberately offline (its own header says so) and `main_live.dart` wires up
+  only the child side (`LiveChildHomeScreen`). `baseUrl`/`sessionToken` are
+  therefore optional with defaults, so `guardian_more.dart`'s existing call
+  site keeps compiling and, if tapped today, makes a genuine network call that
+  fails honestly (no session / unreachable host) — not a fake success, but not
+  end-to-end device-verified either. A real live guardian shell is a
+  separate, larger gap this pass does not close.
+- **A pre-deletion session token stays valid until its own 1h TTL.** Sessions
+  in this codebase are signed, not stored (`auth.ts`'s own header) — there is
+  no server-side session table to revoke early. `deletion.test.mjs`'s section D
+  asserts this gap explicitly rather than leaving it untested. Closing it needs
+  a real session/deny-list, out of scope here.
+- **`flutter test`/`flutter analyze`** ran clean for THIS session — still not
+  part of `tools/verify.sh`'s automated pipeline for Dart (that gate depends on
+  a `FLUTTER_BIN` being present on the CI runner, unchanged by this pass).
+- **`npm run test:stack` (`packages/api/test/stack.test.mjs`) crashes on
+  process exit on this Windows environment** (`UV_HANDLE_CLOSING` assertion in
+  libuv, after printing its own 94/94 passed) — pre-existing, unrelated to this
+  change (nothing in `packages/api`/`packages/auth`/`packages/storage` was
+  touched), and it aborts `npm test`'s `&&` chain at that point. Verified no
+  regression by running every downstream suite individually instead
+  (time-engine, delivery-engine, family-graph, session-runtime, messaging,
+  transport, custody, phase12, phase3 — all green); `packages/homework/test/
+  homework.test.mjs` separately fails for an unrelated, pre-existing reason
+  (`make-fixtures.sh` needs a shell image tool not installed on this host).
+
+---
 
 ## [0.46.2] — 2026-08-08 — §16.2 #6 Step 2 staged and container-verified
 
