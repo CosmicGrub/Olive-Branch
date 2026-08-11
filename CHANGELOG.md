@@ -180,6 +180,118 @@ Silent deletion is a process failure.
   (previously `3984`, already stale/unverified — see the "NOT verified"
   note under [0.47.0] below) are corrected to `3950` to match, confirmed via
   `node tools/check-markup.mjs --total 3950`: 44/44 passed.
+### Added — raw export, §16.1 #3 / §2.11, real for the first time
+`client/lib/deletion_screen.dart`'s "Download raw export" button was a
+snackbar-only stub ("not built yet"). `db/migrations/0006_court_tier.sql`'s
+`export_record` table has existed since that migration landed, with nothing
+writing to it — this closes that gap for the RAW half of §16.1 #3 (certified
+export, court-tier, remains unbuilt server-side; `client/lib/court_export
+.dart`'s certified card is still its own standalone demo).
+
+- **`packages/db/src/pool.ts` — `rawExportBundleFor()`.** Assembles a child's
+  delivered/opened `delivery_intent` rows (with joined `media_artifact`
+  metadata), `child_journal_entry` rows, and `message_log` for a live
+  guardian, and inserts a real `export_record` row (`kind: 'raw'`,
+  `was_free: true`) with a real sha256 `bundle_hash` computed over the exact
+  serialized bundle (`packages/ledger/src/sha256.ts`'s `sha256Hex`, the same
+  primitive `ledger.ts`'s `certify()` already uses for certified export — not
+  reinvented). Returns the exact serialized string alongside the hash
+  (`serialized`) so a caller can verify byte-for-byte rather than
+  re-encoding and risking a false mismatch.
+  - `delivery_intent`/`media_artifact` carry **no row-level security policy
+    at all** (confirmed against `db/DEPLOYMENT.md`'s own RLS inventory), and
+    `message_log`'s policy (`log_no_child`) blocks the `child` role but does
+    **not** scope by `child_id` — a guardian session querying either table
+    directly for the wrong child gets that child's real rows back. This
+    function therefore re-derives "is the caller a live `guardian` edge of
+    THIS child" itself in SQL (not closed, not expired, inside its valid
+    range, not restricted) before running a single content query — the
+    second lock `authorize.ts`'s own header describes for `can()`, applied
+    one layer deeper because these tables have no first lock of their own.
+  - `child_journal_entry` is queried unconditionally (never hardcoded
+    empty) — P7 (`journal_owner_only`, 0001) returns zero rows to every
+    guardian caller for real, enforced by Postgres, not by this file
+    remembering to leave a table out.
+  - **Honest scope limit:** a child pulling her own export (§21.2 rung 17,
+    `packages/maturation/src/rungs.ts`'s `authorizeExport()`) is **not**
+    implemented here — that function's own age gate (`age < 17`) has no
+    wiring to any route or to `VerifiedPrincipal`, and
+    `export_record.requested_by` is `NOT NULL REFERENCES app_user(id)`,
+    which a child principal (no `app_user` row — `auth.ts`) cannot honestly
+    satisfy. A child principal reaching this function throws rather than
+    faking either.
+- **`server/routes.mjs` — `GET /v1/children/:childId/export`.** Matches
+  MASTERFILE §7.9's already-documented shape exactly. Uses the existing
+  `export.raw` `Action` (in `family-graph/src/authorize.ts`'s union since
+  before this pass, with nothing behind it — `ROLE_CAPS` already restricts it
+  to the `guardian` role alone). A child caller gets an honest `501
+  child_self_export_not_implemented`, not a silent empty bundle.
+- **`client/lib/api_client.dart` — `fetchRawExport()`**, and
+  **`client/lib/deletion_screen.dart`'s `_export()`** now makes a real
+  dev-login + export network round trip, writes the server's exact
+  `bundleJson` bytes to a real file in the app's documents directory
+  (`path_provider`, newly added to `pubspec.yaml`), independently
+  recomputes the sha256 client-side against the saved file
+  (`client/lib/sha256.dart`, the existing port), and shows the real file
+  path and hash — or an honest failure/hash-mismatch state — never a fake
+  success. In-flight state disables the button against a double tap.
+
+### Verified
+- `node packages/db/test/raw_export.test.mjs` — 26/26 passed, against a real
+  Postgres (0001–0007 applied), including: a closed former guardian, a
+  guardian of a different child, and a restricted-but-live guardian edge all
+  get `not_a_live_guardian` and no bundle; a live guardian gets exactly the
+  one delivered intent (not the pending one) with real artifact metadata;
+  `journalEntries` is empty despite a real seeded row (P7); the full
+  message_log chain is present; `export_record` is written with `kind:
+  'raw'`, `was_free: true`, and a `bundle_hash` independently recomputed
+  from the returned bundle and matched against both the response and the
+  persisted row; a second export writes a second row (unlimited, not
+  upserted).
+- Manual end-to-end smoke test against a live `server/index.mjs` (DEV_LOGIN):
+  a real guardian dev-login + `GET .../export` returns a real bundle,
+  `exportRecordId`, and `bundleHash`; a guardian with no edge to the child
+  gets `403 no_edge` at the route layer (before `rawExportBundleFor` runs at
+  all); a child dev-login against her own export gets `501
+  child_self_export_not_implemented`.
+- `flutter analyze` clean, whole `client/` (`No issues found!`). `flutter
+  test client/test/deletion_screen_test.dart` — 15/15 passed. Full
+  `flutter test` (every suite in `client/test/`) — **1282/1282 passed**,
+  confirming this pass's changes (the new file-write/hash-verify path,
+  `path_provider`'s new transitive deps, the Windows plugin-registrant
+  regeneration) regressed nothing elsewhere in the client. New/updated
+  widget tests exercise the real (MockClient-transported) network round
+  trip, a real temp-file write and read-back, a hash-mismatch path, a
+  server-denial path, and the in-flight button state.
+
+### Fixed — a real Flutter-test-harness bug, found and worth recording
+Writing `deletion_screen_test.dart` surfaced a genuine, reproducible gap in
+how this project's own tests must be written, not specific to this feature:
+a **real asynchronous `dart:io` call made from inside a widget's own async
+callback (or a test's `setUp`) hangs indefinitely under the plain
+`flutter test` widget-test binding** (`AutomatedTestWidgetsFlutterBinding`)
+— confirmed by isolating it to a two-line repro (`await Directory.systemTemp
+.createTemp(...)` alone hung for the full 10-minute default test timeout;
+swapping to `createTempSync` fixed it instantly, no other change). `_export
+()`'s file write and every dart:io call added to its tests now use the sync
+variant for exactly this reason (see both files' own comments). Flutter's
+own docs name `tester.runAsync(...)` as the correct fix for a test that
+needs the operation to stay genuinely asynchronous; the sync variant was
+chosen here as simpler and more than fast enough for a one-shot local JSON
+write this size. Worth a project-wide note for the next person who hits an
+unexplained `pumpAndSettle`/test timeout touching real files.
+
+### NOT verified — and why
+- **Certified export** (the other half of §16.1 #3) is still entirely
+  unbuilt server-side; `client/lib/court_export.dart` remains its own
+  standalone, backend-less demo, untouched by this pass.
+- **A child's own raw export (rung 17)** is a documented gap, not a silent
+  one — see `rawExportBundleFor()`'s own header for exactly why (age gate,
+  `export_record.requested_by`'s FK).
+- No physical-device run of the wired button — this pass's live testing was
+  `flutter test` (mocked transport) plus a manual `curl`/`fetch`-equivalent
+  smoke test against a real `server/index.mjs` process on this dev machine,
+  not an on-device tap through the actual client UI.
 
 Phase 2 decisions: §16.2 #6 Step 2 (self-hosting Jitsi). §21.9 D — whether
 "becomes a parent" reuses the account. (§16.2 #8 was resolved in 0.40.0 — this

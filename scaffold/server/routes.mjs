@@ -15,7 +15,8 @@ import { DateTime } from 'luxon';
 import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential, availabilityFor,
-         setAvailabilityWindows, deactivateAccount } from '../packages/db/src/pool.mjs';
+         setAvailabilityWindows, deactivateAccount,
+         rawExportBundleFor } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
@@ -466,6 +467,48 @@ export function registerRoutes(api, pool) {
         return { status: 422, body: { ok: false, reason: result.reason, advice: result.advice } };
       }
       return { status: 200, body: result };
+    },
+  });
+
+  api.register({
+    // MASTERFILE §7.9 documents this exact shape: `GET .../export  full
+    // portable bundle`. GET, not POST, both to match that spec and because it
+    // is the only verb client/lib/api_client.dart's OliveApi has a helper for
+    // today -- adding this route is what backs deletion_screen.dart's
+    // previously snackbar-only "Download raw export" button (§2.11, §16.1
+    // #3: free, unlimited, every tier). `export.raw` already existed in
+    // family-graph/src/authorize.ts's Action union with nothing behind it.
+    method: 'GET', path: '/v1/children/:childId/export', action: 'export.raw',
+    handler: async (c, _q) => {
+      // packages/db/src/pool.mjs's rawExportBundleFor() runs its OWN
+      // withSession(pool, principal, ...) independent of the caller-scoped
+      // `q` this handler was already given -- the same "runs its own
+      // session, separate from the request's" shape /now's handler above
+      // uses for activeCustodyOrderFor(), for the same reason: the pool
+      // function needs to be callable (and independently unit-testable)
+      // without going through this route at all.
+      if (c.principal.roleName === 'child') {
+        // §21.2 rung 17 ("her own export") is real in
+        // packages/maturation/src/rungs.ts's authorizeExport() but has no
+        // age gate wired to any route, and export_record.requested_by has no
+        // app_user row a child principal could honestly be attributed to
+        // (see rawExportBundleFor's own header for the full reasoning). A
+        // clear 501, not a silent empty bundle or a fabricated ledger row.
+        return { status: 501, body: { error: 'child_self_export_not_implemented' } };
+      }
+      const result = await rawExportBundleFor(pool, c.principal, c.childId);
+      if (!result.ok) return { status: 403, body: { error: result.reason } };
+      return { body: {
+        bundle: result.bundle,
+        // The EXACT string bundleHash was computed over -- client/lib/
+        // deletion_screen.dart hashes and persists THIS field, not a
+        // client-side re-serialization of `bundle`, so "the hash on this
+        // file verifies" is never a false negative caused by a JSON
+        // encoder disagreeing with Node on key order or number formatting.
+        bundleJson: result.serialized,
+        exportRecordId: result.recordId,
+        bundleHash: result.bundleHash,
+      } };
     },
   });
 }

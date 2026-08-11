@@ -1,5 +1,6 @@
 import pg from "pg";
 import { newChallenge, verifyPin } from "../../auth/src/auth.ts";
+import { sha256Hex } from "../../ledger/src/sha256.ts";
 function createPool(connectionString) {
   return new pg.Pool({ connectionString });
 }
@@ -365,6 +366,101 @@ async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
     };
   });
 }
+async function rawExportBundleFor(pool, principal, childId) {
+  if (principal.roleName === "child") {
+    throw new Error(
+      "rawExportBundleFor: child-self export is not implemented (no age gate wired, and export_record.requested_by has no app_user row to name)"
+    );
+  }
+  if (!principal.userId) {
+    throw new Error("rawExportBundleFor: non-child principal missing userId");
+  }
+  const requesterId = principal.userId;
+  return withSession(pool, principal, async (q) => {
+    const live = await q(
+      `SELECT 1 FROM guardianship
+        WHERE child_id = $1 AND user_id = $2 AND role = 'guardian'
+          AND closed_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())
+          AND restricted = false
+          AND valid @> now()
+        LIMIT 1`,
+      [childId, requesterId]
+    );
+    if (!live.length) return { ok: false, reason: "not_a_live_guardian" };
+    const childRows = await q(`SELECT display_name FROM child WHERE id = $1`, [childId]);
+    const deliveredRows = await q(
+      `SELECT di.id, di.payload_kind, di.sender_id, u.display_name AS sender_name,
+              di.state, di.materialized_at::text,
+              m.id AS artifact_id, m.kind AS artifact_kind, m.storage_key,
+              m.duration_ms, m.caption_key, m.captured_at::text, m.captured_tz,
+              m.era_tag, m.preserved
+         FROM delivery_intent di
+         JOIN app_user u ON u.id = di.sender_id
+         LEFT JOIN media_artifact m ON m.id = di.payload_ref
+        WHERE di.child_id = $1 AND di.state IN ('delivered', 'opened')
+        ORDER BY di.materialized_at ASC NULLS LAST`,
+      [childId]
+    );
+    const journalRows = await q(
+      `SELECT id, body, media_ref, created_at::text
+         FROM child_journal_entry WHERE child_id = $1 ORDER BY created_at ASC`,
+      [childId]
+    );
+    const logRows = await q(
+      `SELECT seq, author_id, at::text, body, prev_hash, hash
+         FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
+      [childId]
+    );
+    const bundle = {
+      childId,
+      childName: childRows[0]?.display_name ?? null,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      requestedByUserId: requesterId,
+      delivered: deliveredRows.map((r) => ({
+        id: r.id,
+        payloadKind: r.payload_kind,
+        senderId: r.sender_id,
+        senderName: r.sender_name ?? null,
+        state: r.state,
+        materializedAt: r.materialized_at ?? null,
+        artifact: r.artifact_id ? {
+          id: r.artifact_id,
+          kind: r.artifact_kind,
+          storageKey: r.storage_key,
+          durationMs: r.duration_ms ?? null,
+          captionKey: r.caption_key ?? null,
+          capturedAt: r.captured_at,
+          capturedTz: r.captured_tz,
+          eraTag: r.era_tag ?? null,
+          preserved: r.preserved
+        } : null
+      })),
+      journalEntries: journalRows.map((r) => ({
+        id: r.id,
+        body: r.body ?? null,
+        mediaRef: r.media_ref ?? null,
+        createdAt: r.created_at
+      })),
+      messageLog: logRows.map((r) => ({
+        seq: Number(r.seq),
+        authorId: r.author_id,
+        at: r.at,
+        body: r.body,
+        prevHash: r.prev_hash,
+        hash: r.hash
+      }))
+    };
+    const serialized = JSON.stringify(bundle);
+    const bundleHash = sha256Hex(serialized);
+    const inserted = await q(
+      `INSERT INTO export_record (child_id, requested_by, kind, was_free, bundle_hash)
+       VALUES ($1, $2, 'raw', true, $3) RETURNING id::text`,
+      [childId, requesterId, bundleHash]
+    );
+    return { ok: true, bundle, serialized, recordId: inserted[0].id, bundleHash };
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -386,6 +482,7 @@ export {
   edgesFor,
   guardiansOfChild,
   pinCredentialFor,
+  rawExportBundleFor,
   recordPinAttempt,
   setAvailabilityWindows,
   setPinCredential,
