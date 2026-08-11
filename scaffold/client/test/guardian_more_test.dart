@@ -11,7 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:olive_client/availability_screen.dart';
+import 'package:olive_client/family_agreement_screen.dart';
 import 'package:olive_client/guardian_more.dart';
+import 'package:olive_client/guardian_setup.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
@@ -91,6 +93,34 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byType(AvailabilityScreen), findsOneWidget);
       expect(find.text('When you can be reached'), findsOneWidget);
+    });
+
+    testWidgets("'Guardian setup' -> 'Review the family agreement' reaches a "
+        'REAL FamilyAgreementScreen, no longer the honest-stub snackbar',
+        (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      await t.tap(find.text('Guardian setup'));
+      await t.pumpAndSettle();
+      expect(find.byType(GuardianSetupScreen), findsOneWidget);
+
+      await t.tap(find.text('Review the family agreement'));
+      await t.pumpAndSettle();
+      expect(find.byType(FamilyAgreementScreen), findsOneWidget);
+      // Not the old dead-end: guardian_setup.dart's own honest-stub snackbar
+      // only fires when onOpenAgreement is null, which it no longer is here.
+      expect(find.textContaining('not built yet'), findsNothing);
+    });
+
+    testWidgets('with no live backend wired into this preview build, the real '
+        'screen shows a real error, never a faked schedule', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      await t.tap(find.text('Guardian setup'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Review the family agreement'));
+      await t.pumpAndSettle();
+
+      expect(find.text("Couldn't load the agreement"), findsOneWidget);
+      expect(find.textContaining('No live backend is wired'), findsOneWidget);
     });
   });
 

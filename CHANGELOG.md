@@ -637,6 +637,111 @@ UNCHANGED, on purpose (capture.ts wasn't touched).
   needed for that scope.
 
 ---
+## [0.46.3] — 2026-08-11 — a real family agreement screen, backed by the real custody order
+
+`guardian_setup.dart`'s "Review the family agreement" button had no
+`onOpenAgreement` wired at all — tapping it always fell through to the
+screen's own honest-stub snackbar ("Family agreement — not built yet").
+MASTERFILE names no bespoke "family agreement" data model anywhere (grepped —
+there is none), so rather than invent one, this is a real, read-only view of
+the actual custody order already backed by db/migrations/0007_custody_order.sql
+and packages/custody/src/schedule.ts's tested `Order`/`HolidayRule` types and
+`activeCustodyOrderFor()` loader — the same closest-real-thing reasoning
+`deletion_screen.dart`'s own header already documents for "deletion."
+
+### Added
+- **`GET /v1/children/:childId/custody-order`** (`scaffold/server/routes.mjs`,
+  action `calendar.view` — no dedicated Action exists for this either, same
+  gap `/now` already calls out). Resolves the child's real zone
+  (`child_tz_interval`, falling back to `child.home_tz`, mirroring `/now`'s
+  own logic) to find the order active on her local date via the existing
+  `activeCustodyOrderFor()`, and returns it as `{ order: Order | null }` —
+  `null` for a real child with no `custody_order` row yet (honest absence,
+  not a 404 and not a guessed schedule), a real 404 (`child_not_found`) for a
+  child that does not exist at all.
+- **`OliveApi.getCustodyOrder(childId)`** (`client/lib/api_client.dart`).
+- **`client/lib/family_agreement_screen.dart`** — new. Fetches and renders
+  the real order: the pattern spelled out in plain words (`2-2-3` → "2
+  nights, then 2 nights, then 3 nights…"), order timezone, exchange time,
+  anchor date, effective window, and the holiday rules list (name, date
+  range, which side holds it in even/odd years). Read-only — no editing UI,
+  deliberately (an "agreement" is a legal document; this screen's job is
+  rendering the real one honestly, not letting anyone quietly change it from
+  a phone). Real loading/error/empty states via an injected `fetchOrder`
+  callback (same DI pattern `GuardianSetupScreen.registerPasskey` already
+  uses) — a child with no `custody_order` row shows "No agreement on file,"
+  never a crash or a fabricated schedule. Honestly notes that the order
+  tracks two sides ("A"/"B") but does not itself record which guardian is
+  which — that mapping is not part of this build.
+- **`guardian_more.dart`'s "Guardian setup" tile now passes a real
+  `onOpenAgreement`** that opens `FamilyAgreementScreen`, replacing the
+  previous `null` (which fell through to `guardian_setup.dart`'s own
+  honest-stub snackbar — that fallback is untouched and still fires for any
+  other caller that leaves `onOpenAgreement` unset).
+  `GuardianMoreScreen` gained `childId` (defaults to `seed-dev.mjs`'s real
+  seeded "Ivy," the same id `main_live.dart`'s own `_defaultChildId` already
+  uses — not a fabricated placeholder) and an optional
+  `fetchAgreementOrder` override. `main.dart`'s demo shell is deliberately
+  offline (see that file's own header) and has no baseUrl/session
+  anywhere in its navigation tree, so the default `fetchAgreementOrder`
+  (`_noLiveBackendWired`) does not pretend to reach a server that isn't
+  there — it throws a real error, which `FamilyAgreementScreen`'s own real
+  error state then surfaces truthfully ("Couldn't load the agreement… No
+  live backend is wired into this preview build yet"). A live caller
+  supplies the real thing, e.g. `(id) => OliveApi(baseUrl,
+  token).getCustodyOrder(id)` — main_live.dart does not do this yet for the
+  guardian side (only the child side is live today, via
+  `child_home_live.dart`); wiring that is real follow-up work, not silently
+  glossed over.
+- **`server/test/routes.test.mjs`** — new route contract test (no real
+  Postgres; a hand-written fake `DbPort` + fake `pg.Pool`, mirroring
+  `packages/api/test/stack.test.mjs`'s own "F · API" pattern). Covers auth
+  (no session → 401), authz (no edge → 403 `no_edge`; wrong child on a child
+  token → 403 `wrong_child`), the populated state (exact `Order` field
+  round-trip, both a guardian and the owning child can read it), the empty
+  state (`{ order: null }`, status 200, not an error), and the
+  child-does-not-exist state (404 `child_not_found`, distinct from "no order
+  yet"). Wired into `npm test`/`npm run test:routes` and
+  `tools/verify.sh`'s suite list.
+- **`client/test/family_agreement_screen_test.dart`** — new widget test.
+  Covers the populated state (plain-words pattern, timezone/exchange
+  time/anchor date, holiday rule with even/odd side, read-only — no
+  `TextField`/`TextFormField` anywhere), the empty state (no order → "No
+  agreement on file," never a crash), the error state (a thrown
+  `fetchOrder` → the real error UI, `Try again` recovers), and the required
+  responsive viewports (Fold5 cover/main, phone, tablet/desktop).
+  `client/test/guardian_more_test.dart` gained two integration tests proving
+  the "Guardian setup" → "Review the family agreement" path now reaches a
+  real `FamilyAgreementScreen` (not the old snackbar dead end) and shows a
+  real error when no live backend is wired.
+
+### Fixed
+- `family_agreement_screen.dart`'s `_ReadyView` was first written with a
+  plain `ListView`, which the responsive-viewport tests caught immediately
+  (missing holiday text, missing trailing notice) — the exact sliver-drops-
+  offscreen-children issue `guardian_home.dart`'s own comment already
+  documents. Changed to `SingleChildScrollView` + `Column`, same fix. A
+  `_DetailRow`'s value text (e.g. "6:00 PM (America/New_York)") also
+  overflowed at the Fold5 cover width (344px) because only the fixed-length
+  *label* was wrapped in `Expanded`, not the variable-length *value* —
+  swapped which side gets the flexible space.
+
+### Verified
+- `node server/test/routes.test.mjs`: **19 passed, 0 failed.**
+- `node packages/db/test/custody_order.test.mjs` (real Postgres, isolated
+  `verify_gap_familyagreement` database, `app_owner` NOSUPERUSER NOBYPASSRLS
+  role — db/DEPLOYMENT.md's own requirement): **16 passed, 0 failed** —
+  confirms the RLS and the `Order` shape this route depends on, unchanged.
+  `node packages/db/test/pool.test.mjs` (same database): **18 passed, 0
+  failed** — no regression.
+  `node packages/api/test/stack.test.mjs`: **94 passed, 0 failed** — no
+  regression (the file's own known Windows/libuv teardown assertion after
+  the count line is pre-existing, unrelated to this change).
+- `flutter analyze` (client/): **No issues found.**
+- `flutter test` (client/), full suite: **1294 passed, 0 failed** —
+  includes 14 new tests in `family_agreement_screen_test.dart` and 2 new
+  integration tests in `guardian_more_test.dart`, with no regressions
+  anywhere else in the suite.
 
 ## [0.46.2] — 2026-08-08 — §16.2 #6 Step 2 staged and container-verified
 

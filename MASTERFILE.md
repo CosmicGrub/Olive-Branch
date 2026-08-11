@@ -621,6 +621,21 @@ CREATE TABLE calendar_event (
 );
 ```
 
+> **Real implementation, v0.46.3.** `custody_order` above is the original spec
+> shape; `db/migrations/0007_custody_order.sql`'s real table diverges from it
+> deliberately (drops the unimplemented `'custom'` pattern, adds
+> `anchor_local_date`/`exchange_time`/`effective_from`/`effective_to` — see
+> that migration's own header for why) and is what `packages/custody/src/
+> schedule.ts`'s tested `Order`/`HolidayRule` types and `activeCustodyOrderFor()`
+> actually consume. As of v0.46.3 that real order is exposed end to end: `GET
+> /v1/children/:childId/custody-order` (`server/routes.mjs`) returns it as
+> JSON, and `client/lib/family_agreement_screen.dart` renders it read-only —
+> pattern in plain words, order timezone, exchange time, anchor date, holiday
+> rules — reachable from `guardian_more.dart`'s "Guardian setup" tile. No
+> editing surface exists anywhere; a `custody_order` row is written by a
+> future intake flow, not by this screen. `calendar_event` above remains
+> unimplemented — no route or table exists for it yet.
+
 > **Recurrence rule.** Recurring events store **local wall clock + IANA zone +
 > RRULE**, materialized to instants at query time. Storing a recurring event as
 > a UTC instant guarantees a one-hour drift twice a year.

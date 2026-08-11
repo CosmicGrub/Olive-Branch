@@ -20,6 +20,7 @@ import 'court_export.dart';
 import 'degradation_banner.dart';
 import 'deletion_screen.dart';
 import 'expiry_digest.dart';
+import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
 import 'guardian_setup.dart';
 import 'hub_widgets.dart';
@@ -34,6 +35,20 @@ import 'the_book.dart';
 import 'webauthn_channel.dart';
 import 'year_book.dart';
 
+/// server/index.mjs never got the FamilyAgreementScreen tile a real network
+/// call: this hub has no baseUrl/session anywhere (it's reached from main.dart's
+/// intentionally offline demo shell — see that file's own header on why
+/// bolting live networking onto it would break the one thing it's for; only
+/// main_live.dart's child-side screens do that today). So the default
+/// [GuardianMoreScreen.fetchAgreementOrder] does not pretend to reach a
+/// server that isn't there — it throws a real, honest error, which
+/// FamilyAgreementScreen's own real error state then surfaces truthfully.
+/// A live caller overrides this with the real thing, e.g.
+/// `(id) => OliveApi(baseUrl, token).getCustodyOrder(id)`.
+Future<Map<String, dynamic>> _noLiveBackendWired(String childId) async =>
+    throw StateError('No live backend is wired into this preview build yet — '
+        'see main_live.dart for the real network path.');
+
 class GuardianMoreScreen extends StatelessWidget {
   const GuardianMoreScreen({
     super.key,
@@ -41,30 +56,44 @@ class GuardianMoreScreen extends StatelessWidget {
     this.childAge = 9,
     this.baseUrl,
     this.guardianId,
-    this.childId,
+    // seed-dev.mjs's own seeded "Ivy" — the same real id main_live.dart's
+    // own _defaultChildId already uses for this exact demo child, not a
+    // fabricated placeholder. Non-nullable (unlike baseUrl/guardianId below):
+    // this same id doubles as the family-agreement fetch target, which needs
+    // SOME concrete child in scope even before a live session exists —
+    // _noLiveBackendWired is what stays honest about the backend, not this.
+    this.childId = 'aaaaaaaa-0000-4000-8000-000000000001',
     this.availabilityHttpClient,
+    this.fetchAgreementOrder,
   });
   final String childName;
   final int childAge;
-
-  /// Live-session wiring for AvailabilityScreen — all three optional and
-  /// defaulted to null because nothing upstream of this hub (guardian_home.dart,
-  /// main.dart's static demo data) carries a real base URL, guardian id, or
-  /// child id yet; every other call site in this file is still the same
-  /// pre-backend demo build LiveChildHomeScreen's own header describes for
-  /// the child side. When all three ARE supplied, the Availability tile
-  /// opens the real AvailabilityScreen; otherwise it gives the same honest
-  /// not-connected feedback guardian_setup.dart's passkey button gives when
-  /// its own real dependency isn't wired in yet — never a silent no-op, and
-  /// never a screen pretending to have live data it doesn't.
+  /// Live-session wiring for AvailabilityScreen and the family-agreement
+  /// fetch below both key off this same child — baseUrl/guardianId stay
+  /// optional and default to null because nothing upstream of this hub
+  /// (guardian_home.dart, main.dart's static demo data) carries a real base
+  /// URL or guardian id yet; every other call site in this file is still the
+  /// same pre-backend demo build LiveChildHomeScreen's own header describes
+  /// for the child side. When baseUrl/guardianId ARE supplied, the
+  /// Availability tile opens the real AvailabilityScreen; otherwise it gives
+  /// the same honest not-connected feedback guardian_setup.dart's passkey
+  /// button gives when its own real dependency isn't wired in yet — never a
+  /// silent no-op, and never a screen pretending to have live data it
+  /// doesn't.
   final String? baseUrl;
   final String? guardianId;
-  final String? childId;
+  final String childId;
   /// Injectable for tests only (e.g. package:http/testing.dart's MockClient) —
   /// matches child_home_live.dart's LiveChildHomeScreen.httpClient. Null in
   /// every real call site; AvailabilityScreen falls back to a real
   /// http.Client() itself when this is null.
   final http.Client? availabilityHttpClient;
+  /// Injected the same way guardian_setup.dart's own [GuardianSetupScreen.
+  /// registerPasskey] is: null in this offline preview build (see main.dart's
+  /// own header — no live networking belongs here), so opening the family
+  /// agreement screen shows a REAL, honest "can't load" state rather than
+  /// faking one. See [_noLiveBackendWired].
+  final Future<Map<String, dynamic>> Function(String childId)? fetchAgreementOrder;
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -119,9 +148,9 @@ class GuardianMoreScreen extends StatelessWidget {
   /// from this specific demo entry point, same as LiveChildHomeScreen not
   /// being threaded into main.dart's own static demo navigation either.
   void _openAvailability(BuildContext context) {
-    final url = baseUrl, gid = guardianId, cid = childId;
-    if (url != null && gid != null && cid != null) {
-      _open(context, AvailabilityScreen(baseUrl: url, guardianId: gid, childId: cid,
+    final url = baseUrl, gid = guardianId;
+    if (url != null && gid != null) {
+      _open(context, AvailabilityScreen(baseUrl: url, guardianId: gid, childId: childId,
         httpClient: availabilityHttpClient));
       return;
     }
@@ -182,7 +211,18 @@ class GuardianMoreScreen extends StatelessWidget {
             ))),
           HubTile(icon: Icons.key_outlined, title: 'Guardian setup',
             subtitle: 'Passkey sign-in — an honest stub, not a faked grant',
-            onTap: () => _open(context, const GuardianSetupScreen())),
+            onTap: () => _open(context, GuardianSetupScreen(
+              // Real navigation wiring — no longer a null-checked snackbar
+              // fallback (see guardian_setup.dart's own _tapAgreement, which
+              // still keeps that fallback for any OTHER caller that leaves
+              // this null). fetchOrder itself is honest about whether a live
+              // backend actually exists — see _noLiveBackendWired above.
+              onOpenAgreement: () => _open(context, FamilyAgreementScreen(
+                childId: childId,
+                childName: childName,
+                fetchOrder: fetchAgreementOrder ?? _noLiveBackendWired,
+              )),
+            ))),
           HubTile(icon: Icons.fingerprint_outlined,
             title: 'Guardian setup — passkey (dev verification)',
             subtitle: 'Real ceremony, real backend, local dev server only',
