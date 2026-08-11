@@ -13,10 +13,13 @@
 // against a running server/index.mjs (DEV_LOGIN=1 required — see that
 // file's own header for why). childId defaults to the seed data in
 // server/seed-dev.mjs ("Ivy").
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'child_home_live.dart';
 import 'kiosk_shell.dart';
+import 'push_channel.dart';
 
 const _defaultBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
     defaultValue: 'http://10.0.2.2:8123'); // Android emulator's host-loopback alias
@@ -58,7 +61,31 @@ Future<bool> _verifyGuardianPin(String pin) async {
   }
 }
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // MASTERFILE §11 -- registers the real top-level background handler
+  // (push_channel.dart's firebaseMessagingBackgroundHandler) at the one
+  // place FlutterFire's own docs require it: before runApp(), so a
+  // background/terminated-state push tap has a real callback waiting for it
+  // from the moment this isolate exists.
+  //
+  // Wrapped in try/catch because Firebase.initializeApp() genuinely fails in
+  // this checkout -- no real android/app/google-services.json exists here
+  // (see pubspec.yaml's own comment on why one is not fabricated). Letting
+  // that exception escape would crash this entire preview build before it
+  // ever draws a frame, which would defeat main_live.dart's whole purpose
+  // (see this file's own header -- a real device/emulator target meant to
+  // stay inspectable). push_channel.dart's PushChannel.initialize(), called
+  // later from child_home_live.dart once a real session exists, is the
+  // second, independent attempt -- THAT failure is the one surfaced (as
+  // PushInitializationError) rather than silently caught, per house style;
+  // this one is intentionally the boot-time exception.
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  } catch (e) {
+    debugPrint('[olive.push] background handler not registered at boot: $e');
+  }
   runApp(const OliveLive());
 }
 

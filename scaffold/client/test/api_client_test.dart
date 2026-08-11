@@ -184,6 +184,50 @@ void main() {
     });
   });
 
+  group('OliveApi — device-token registration (§11)', () {
+    test('registerDeviceToken POSTs {platform, token} and returns the real id',
+        () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.toString(), 'http://api.test/v1/me/device-tokens');
+        expect(req.headers['authorization'], 'Bearer tok-123');
+        final sent = jsonDecode(req.body) as Map<String, dynamic>;
+        expect(sent['platform'], 'android');
+        expect(sent['token'], 'fcm-tok-1');
+        return http.Response(jsonEncode({'id': 'dt-1'}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final id = await api.registerDeviceToken(platform: 'android', token: 'fcm-tok-1');
+      expect(id, 'dt-1');
+    });
+
+    test('unregisterDeviceToken DELETEs {token} and returns the real deleted flag',
+        () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'DELETE');
+        expect(req.url.toString(), 'http://api.test/v1/me/device-tokens');
+        final sent = jsonDecode(req.body) as Map<String, dynamic>;
+        expect(sent['token'], 'fcm-tok-1');
+        return http.Response(jsonEncode({'deleted': true}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final deleted = await api.unregisterDeviceToken('fcm-tok-1');
+      expect(deleted, isTrue);
+    });
+
+    test('a 400 for an invalid platform throws ApiException', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'platform_must_be_android_or_ios'}), 400));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.registerDeviceToken(platform: 'toaster', token: 'x'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 400)
+            .having((e) => e.error, 'error', 'platform_must_be_android_or_ios')),
+      );
+    });
+  });
+
   group('devLoginFor — the dev-only login shortcut', () {
     test('posts the childId and returns the issued token', () async {
       final mock = MockClient((req) async {

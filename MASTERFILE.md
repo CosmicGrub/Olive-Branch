@@ -9,9 +9,9 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.47.0 |
+| **Version** | 0.48.0 |
 | **Last amended** | 2026-08-11 |
-| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call had two independent bugs, verified live on two physical devices; one is now fixed in code (v0.46.1), not yet re-verified live** (§16.2 #6 callout, §20.2b) — the child-side kiosk-lock/Activity conflict has an implemented, compiled, `flutter analyze`/`flutter test`-clean fix pending a live device re-run; the public Jitsi server's moderator lobby has Step 2 (self-hosting) staged and container-verified as of v0.46.2 — `scaffold/tools/jitsi-selfhost/` — but not yet device-verified: the stack's self-signed cert blocks both a browser and, unfixed, would block the Flutter SDK on a real device. **Real guardian authentication is now wired end to end** (v0.47.0, §7.1, §8.1, §8.3) — the hardcoded, unauthenticated `'1273'` kiosk PIN is gone, replaced by a real scrypt-hashed PIN + WebAuthn/passkey system against RLS-scoped Postgres (`pin_credential`/`webauthn_credential`/`auth_challenge`, migration 0008), a real Android Credential Manager bridge, and a real client wiring. Two independent adversarial reviews found five real defects (two CRITICAL: a connection-pool self-deadlock that froze the entire server, and a PIN-lockout that gave zero protection against a concurrent brute-force burst); both CRITICALs and both MEDIUM webauthn signCount findings are fixed and **verified live** — real Postgres (WSL2), a real running server, real concurrent HTTP load, and a real Android device kiosk-PIN unlock (wrong PIN rejected, right PIN accepted, screenshotted). The WebAuthn native Kotlin bridge compiles clean against the real androidx.credentials 1.6.0 AAR (one real compile-time API misuse found and fixed in this pass — see CHANGELOG v0.47.0) but the interactive on-device passkey ceremony itself was **not** independently re-verified this pass — device-blocked, not skipped: the only device with a configured secure lock screen + biometric available was the operator's own personal phone, correctly left unlocked/untouched rather than bypassed. **Real homework OCR closes §20.2b's own "specified, not built" OCR gap** (v0.47.0, §9.1, §20.2b) — a real quality gate (blur/skew measurement), real tesseract.js text recognition, and a rule-based (explicitly non-LLM — no API key for one exists anywhere in this repository) hint generator all run server-side through the existing guardHint() output guard; the client's simulated demo path is demoted to a fallback for when no live backend is configured. **A real family agreement screen is wired in** (v0.46.3, §7, §9) — `guardian_setup.dart`'s "Review the family agreement" tile no longer dead-ends at an honest-stub snackbar; it opens a real, read-only view of the actual custody order already backed by `db/migrations/0007_custody_order.sql` and `packages/custody/src/schedule.ts`'s tested `Order`/`HolidayRule` types, reached via a new `GET /v1/children/:childId/custody-order` route. No bespoke "family agreement" data model was invented — MASTERFILE names none, and none was needed. **A guardian's own account deletion is now real** (v0.47.0, §2.10/§2.11/§9.8/P8, §21.7's "hardest button") — `POST /v1/me/delete` deactivates the login, cancels undelivered content, and leaves delivered messages/the parent-to-parent log/the child's archive untouched, proven against real Postgres RLS (`packages/db/test/deletion.test.mjs`, 29/29) — see §21.7's status note. |
+| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call had two independent bugs, verified live on two physical devices; one is now fixed in code (v0.46.1), not yet re-verified live** (§16.2 #6 callout, §20.2b) — the child-side kiosk-lock/Activity conflict has an implemented, compiled, `flutter analyze`/`flutter test`-clean fix pending a live device re-run; the public Jitsi server's moderator lobby has Step 2 (self-hosting) staged and container-verified as of v0.46.2 — `scaffold/tools/jitsi-selfhost/` — but not yet device-verified: the stack's self-signed cert blocks both a browser and, unfixed, would block the Flutter SDK on a real device. **Real guardian authentication is now wired end to end** (v0.47.0, §7.1, §8.1, §8.3) — the hardcoded, unauthenticated `'1273'` kiosk PIN is gone, replaced by a real scrypt-hashed PIN + WebAuthn/passkey system against RLS-scoped Postgres (`pin_credential`/`webauthn_credential`/`auth_challenge`, migration 0008), a real Android Credential Manager bridge, and a real client wiring. Two independent adversarial reviews found five real defects (two CRITICAL: a connection-pool self-deadlock that froze the entire server, and a PIN-lockout that gave zero protection against a concurrent brute-force burst); both CRITICALs and both MEDIUM webauthn signCount findings are fixed and **verified live** — real Postgres (WSL2), a real running server, real concurrent HTTP load, and a real Android device kiosk-PIN unlock (wrong PIN rejected, right PIN accepted, screenshotted). The WebAuthn native Kotlin bridge compiles clean against the real androidx.credentials 1.6.0 AAR (one real compile-time API misuse found and fixed in this pass — see CHANGELOG v0.47.0) but the interactive on-device passkey ceremony itself was **not** independently re-verified this pass — device-blocked, not skipped: the only device with a configured secure lock screen + biometric available was the operator's own personal phone, correctly left unlocked/untouched rather than bypassed. **Real homework OCR closes §20.2b's own "specified, not built" OCR gap** (v0.47.0, §9.1, §20.2b) — a real quality gate (blur/skew measurement), real tesseract.js text recognition, and a rule-based (explicitly non-LLM — no API key for one exists anywhere in this repository) hint generator all run server-side through the existing guardHint() output guard; the client's simulated demo path is demoted to a fallback for when no live backend is configured. **A real family agreement screen is wired in** (v0.46.3, §7, §9) — `guardian_setup.dart`'s "Review the family agreement" tile no longer dead-ends at an honest-stub snackbar; it opens a real, read-only view of the actual custody order already backed by `db/migrations/0007_custody_order.sql` and `packages/custody/src/schedule.ts`'s tested `Order`/`HolidayRule` types, reached via a new `GET /v1/children/:childId/custody-order` route. No bespoke "family agreement" data model was invented — MASTERFILE names none, and none was needed. **A guardian's own account deletion is now real** (v0.47.0, §2.10/§2.11/§9.8/P8, §21.7's "hardest button") — `POST /v1/me/delete` deactivates the login, cancels undelivered content, and leaves delivered messages/the parent-to-parent log/the child's archive untouched, proven against real Postgres RLS (`packages/db/test/deletion.test.mjs`, 29/29) — see §21.7's status note. **§11 push delivery is now implemented end to end as of v0.48.0** — server-side (v0.47.0): `device_token` table + RLS, a real FCM v1 sender, a real APNs HTTP/2 sender, and `notifyDevices()`'s single sendGuard()-gated dispatch; client-side (v0.48.0): `client/lib/push_channel.dart`'s real `firebase_messaging` wiring — permission request, token registration, `onTokenRefresh` re-registration, a real top-level background handler, and a foreground handler that (like the background one) reads only the content-free `kind`/`ref`/`callHandle` fields, never `message.notification` or any other payload key. All of it tested against a live Postgres / mocked network transports / a mocked HTTP client respectively — but **never run against a live FCM/APNs endpoint or a real device** (no credentials and no `google-services.json` exist in this environment, neither fabricated) and **not wired to any real server-side trigger** (none exists yet on `main` to wire it to). |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
 | **Companion docs** | `OLIVE BRANCH_CHANGELOG.md`, `OLIVE BRANCH_VISUAL.html`, `OLIVE BRANCH_MARKUP.html` |
@@ -2032,6 +2032,69 @@ enrollment. Documented in the security policy required by §10.1.
 | Time | **Luxon** → `Temporal` | Never hand-roll offsets |
 | Auth | Passkeys / WebAuthn (parents); device-bound token + PIN (children) | Children should not need email addresses |
 | Push | FCM + APNs with **CallKit / Android full-screen intent** | A call from Dad arriving as a silent notification is a broken product |
+
+> **Push delivery, server side, real as of v0.47.0.** `db/migrations/
+> 0012_push_device_token.sql` (`device_token`, dual owner — a child's own
+> tablet is a push target too, not only a guardian's phone — real RLS,
+> ENABLE+FORCE); `packages/transport/src/fcm.ts` (real FCM v1 HTTP sender,
+> real OAuth2 self-signed-JWT-bearer flow via `node:crypto`); `packages/
+> transport/src/apns.ts` (real APNs HTTP/2 sender, real ES256
+> provider-token JWT); `packages/transport/src/notify.ts`'s
+> `notifyDevices()` (looks up a target's devices, runs `buildPush()` then
+> `sendGuard()` — see `push.ts`'s own header for why that is non-negotiable
+> — before either sender, per-device try/catch so one failure never aborts
+> another). `push.ts` itself (`buildPush`/`auditPush`/`sendGuard`/
+> `GENERIC`/`FORBIDDEN_DATA_KEYS`) is untouched — this is new code on top of
+> that existing, already-tested contract.
+>
+> **Never run against a live FCM or APNs endpoint** — no
+> `FCM_SERVICE_ACCOUNT_JSON` or `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID`/
+> `APNS_TOPIC` exists in this environment; every claim about request shape
+> and JWT-signature correctness is proven against a mocked transport (see
+> `packages/transport/test/fcm.test.mjs`, `apns.test.mjs`). **Not wired to
+> any real trigger** — the live route surface on `main` at the time this was
+> built is essentially auth routes plus a couple of GETs, with nothing that
+> writes a message/call/reminder for `notifyDevices()` to hang off; this
+> ships `notifyDevices()` itself plus real `POST`/`DELETE
+> /v1/me/device-tokens` registration routes rather than a fabricated trigger
+> route. Client-side device registration is a separate, not-yet-done pass.
+> See CHANGELOG v0.47.0 for the full account, including a real RLS defect
+> (Postgres's UPDATE/DELETE policies do not substitute for a SELECT policy)
+> caught only by testing against a live database.
+
+> **Push delivery, client side, real as of v0.48.0.** `client/lib/
+> push_channel.dart`'s `PushChannel` — real `FirebaseMessaging.instance.
+> requestPermission()`, real `getToken()` + registration against `POST
+> /v1/me/device-tokens`, real re-registration on every `onTokenRefresh`
+> event (a token can rotate at any time, not only at first launch). A real
+> top-level `firebaseMessagingBackgroundHandler`, `@pragma('vm:entry-point')`
+> annotated and independently calling `Firebase.initializeApp()` (a
+> background isolate shares no state with the main isolate) — proven to
+> actually BE top-level (not a closure, the well-known Flutter/Firebase
+> pitfall that compiles fine and then silently never fires in the
+> background) via a `const` function-reference assignment, which only a
+> top-level/static function tear-off can satisfy. Both the background and
+> foreground handlers read ONLY `kind`/`ref`/`callHandle` out of a message —
+> `PushPointer` structurally has no field `message.notification` text or any
+> other payload key could occupy, so there is no call site in this client
+> that could surface real content even by accident. Wired into
+> `child_home_live.dart`, the one place a real authenticated session already
+> exists in this client (mirrors how `_syncWear()` already piggybacks on the
+> same token) — push registration failing (which it does, honestly, absent
+> real Firebase config) never breaks that screen's own readiness.
+>
+> **Never run against a real device** — no Firebase project config
+> (`google-services.json`/`GoogleService-Info.plist`) exists in this
+> environment, neither fabricated (see `pubspec.yaml`'s own comment on why a
+> fake one would be worse than none — it would fail confusingly deep inside
+> the Firebase SDK instead of loudly at `Firebase.initializeApp()`). No
+> `ios/` platform folder exists in this client at all (Android and Windows
+> are its only two real build targets), so `firebase_messaging`'s iOS path
+> is real, compiled, unexercised code, same as any platform this client does
+> not yet build for. No sign-out flow exists anywhere in `lib/`, so
+> `PushChannel.unregister()` (symmetric with the server's `DELETE
+> /v1/me/device-tokens`) is written and unit-tested but has no real call
+> site yet. See CHANGELOG v0.48.0 for the full account.
 
 > **§16.2 #6, settled v0.40.0.** Stay on LiveKit Cloud. Self-hosting is
 > revisited only when either trigger fires — not on a vague "when residency

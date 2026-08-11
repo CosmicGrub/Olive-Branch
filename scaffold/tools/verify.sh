@@ -52,6 +52,9 @@ for spec in \
   "auth+storage+api|packages/api/test/stack.test.mjs" \
   "route contract: custody-order|server/test/routes.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
+  "push: fcm sender (mocked)|packages/transport/test/fcm.test.mjs" \
+  "push: apns sender (mocked)|packages/transport/test/apns.test.mjs" \
+  "push: notify dispatch (mocked)|packages/transport/test/notify.test.mjs" \
   "homework + real OCR|packages/homework/test/homework.test.mjs" \
   "capture button + screenshot scope|packages/homework/test/snapshot.test.mjs" \
   "homework ImageStats measurement|packages/homework/test/measure.test.mjs" \
@@ -243,22 +246,23 @@ done
 
 echo ""
 echo "── DB suites requiring a real NOSUPERUSER NOBYPASSRLS role ──────"
-# packages/db/test/{pool,custody_order,auth_credentials}.test.mjs are the ONLY
-# suites proving RLS actually denies a child/guardian session (not just that
-# application code doesn't expose it) — and until now NONE of the three ever
-# ran here or in CI, because they need a real, connectable role that OWNS
-# every table (db/DEPLOYMENT.md's app_owner; "any test of RLS run as
-# `postgres` measures nothing" — that doc, quoting a real incident), which
-# nothing in this repo's automation provisioned. That gap meant every one of
-# this migration's own comments claiming RLS/lockout/challenge behavior was
-# "verified for real, not assumed" had zero regression protection: a future
-# edit to 0008_auth_credentials.sql or pool.ts could silently break any of
-# it and CI would stay green throughout. Fixed here, not by adding a new
+# These suites prove RLS actually denies a child/guardian session (not just
+# that application code doesn't expose it) — they need a real, connectable
+# role that OWNS every table (db/DEPLOYMENT.md's app_owner; "any test of RLS
+# run as `postgres` measures nothing" — that doc, quoting a real incident),
+# which nothing in this repo's automation provisioned until pool/custody_
+# order/auth_credentials were fixed here originally. Not by adding a new
 # role (0001_constraints.test.sql above and 0003_session.test.sql below
 # already create/extend app_owner for their own narrower purposes) but by
 # finishing the job: a real password so it is reachable over the same TCP
 # connection style everything else in this script uses, and ownership of
 # EVERY table, not just child_journal_entry.
+#
+# availability/deletion/raw_export/message_capture were each written and
+# passing locally by their own PRs, but never actually added to this list —
+# a real, silent gap across four already-merged PRs, closed here rather than
+# left for a future rebase to notice by accident. device_token is this PR's
+# own addition, following the identical pattern.
 APP_OWNER_PW="verify_run_app_owner_pw"
 $PSQL -d "$DB" -q -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
@@ -289,7 +293,12 @@ DB_URL="postgresql://app_owner:${APP_OWNER_PW}@localhost:${PORT}/${DB}"
 ADMIN_URL="postgresql://postgres:postgres@localhost:${PORT}/${DB}"
 for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db custody order (real RLS)|packages/db/test/custody_order.test.mjs" \
-            "db auth credentials (real RLS)|packages/db/test/auth_credentials.test.mjs" ; do
+            "db auth credentials (real RLS)|packages/db/test/auth_credentials.test.mjs" \
+            "db availability (real RLS)|packages/db/test/availability.test.mjs" \
+            "db account deletion (real RLS)|packages/db/test/deletion.test.mjs" \
+            "db raw export (real RLS)|packages/db/test/raw_export.test.mjs" \
+            "db message capture (real RLS)|packages/db/test/message_capture.test.mjs" \
+            "db device token (real RLS)|packages/db/test/device_token.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

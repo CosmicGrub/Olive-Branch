@@ -17,7 +17,8 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          storeWebauthnCredential, availabilityFor,
          setAvailabilityWindows, deactivateAccount,
          rawExportBundleFor, edgesFor, childCtxFor,
-         persistCapturedMessage } from '../packages/db/src/pool.mjs';
+         persistCapturedMessage, registerDeviceToken,
+         unregisterDeviceToken } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
@@ -58,6 +59,8 @@ function invalidAvailabilityBody(body) {
   }
   return null;
 }
+
+const DEVICE_PLATFORMS = new Set(['android', 'ios']);
 
 /**
  * @param {import('../packages/api/src/api.ts').Api} api
@@ -159,6 +162,47 @@ export function registerRoutes(api, pool) {
         zone: tz,
         sleepsUntilHandover,
       } };
+    },
+  });
+
+  // -----------------------------------------------------------------------
+  // §11 push registration. MASTERFILE §7's own action model treats these as
+  // identity-only (action: null) exactly like GET /v1/me above -- a device
+  // token belongs to the CALLING principal (child or guardian; see 0008's
+  // own header for why both), never to a :childId in the path, so there is
+  // no child-scope action to declare and A1/A3 (api.ts) don't apply here.
+  //
+  // registerDeviceToken()/unregisterDeviceToken() (packages/db/src/pool.mjs)
+  // open their OWN session scoped to c.principal, same pattern
+  // activeCustodyOrderFor() above already uses alongside this handler's own
+  // `q` -- RLS's device_token_insert_own/_update_own/_delete_own policies
+  // (0008) are what actually confine a write to the caller's own rows, not
+  // application logic here.
+  api.register({
+    method: 'POST', path: '/v1/me/device-tokens', action: null,
+    handler: async (c) => {
+      const platform = c.body?.platform;
+      const token = c.body?.token;
+      if (!DEVICE_PLATFORMS.has(platform)) {
+        return { status: 400, body: { error: 'platform_must_be_android_or_ios' } };
+      }
+      if (typeof token !== 'string' || token.length === 0) {
+        return { status: 400, body: { error: 'token_required' } };
+      }
+      const id = await registerDeviceToken(pool, c.principal, platform, token);
+      return { status: 200, body: { id } };
+    },
+  });
+
+  api.register({
+    method: 'DELETE', path: '/v1/me/device-tokens', action: null,
+    handler: async (c) => {
+      const token = c.body?.token;
+      if (typeof token !== 'string' || token.length === 0) {
+        return { status: 400, body: { error: 'token_required' } };
+      }
+      const deleted = await unregisterDeviceToken(pool, c.principal, token);
+      return { status: 200, body: { deleted } };
     },
   });
 

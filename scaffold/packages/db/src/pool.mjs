@@ -566,6 +566,60 @@ async function persistCapturedMessage(pool, capture, opts = {}) {
     return { artifactId, intentId: intentRows[0].id, batchId };
   });
 }
+async function registerDeviceToken(pool, principal, platform, token) {
+  if (principal.roleName === "system") {
+    throw new Error("registerDeviceToken: system role cannot own a device");
+  }
+  const isChild = principal.roleName === "child";
+  const ownerUserId = isChild ? null : principal.userId;
+  const ownerChildId = isChild ? principal.childId : null;
+  const upsert = () => withSession(pool, principal, async (q) => {
+    const rows = await q(
+      `INSERT INTO device_token (owner_user_id, owner_child_id, platform, token, last_seen_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (token) DO UPDATE
+         SET owner_user_id  = EXCLUDED.owner_user_id,
+             owner_child_id = EXCLUDED.owner_child_id,
+             platform       = EXCLUDED.platform,
+             last_seen_at   = now()
+       RETURNING id`,
+      [ownerUserId, ownerChildId, platform, token]
+    );
+    return rows[0].id;
+  });
+  try {
+    return await upsert();
+  } catch (e) {
+    const isRlsDenial = e?.code === "42501" && String(e?.message ?? "").includes("row-level security policy");
+    if (!isRlsDenial) throw e;
+    await withSystemSession(pool, (q) => q(`DELETE FROM device_token WHERE token = $1`, [token]));
+    return upsert();
+  }
+}
+async function unregisterDeviceToken(pool, principal, token) {
+  return withSession(pool, principal, async (q) => {
+    const rows = await q(`DELETE FROM device_token WHERE token = $1 RETURNING id`, [token]);
+    return rows.length > 0;
+  });
+}
+async function deviceTokensFor(pool, owner) {
+  return withSystemSession(pool, async (q) => {
+    const rows = "userId" in owner ? await q(
+      `SELECT id, platform, token FROM device_token WHERE owner_user_id = $1`,
+      [owner.userId]
+    ) : await q(
+      `SELECT id, platform, token FROM device_token WHERE owner_child_id = $1`,
+      [owner.childId]
+    );
+    return rows.map((r) => ({ id: r.id, platform: r.platform, token: r.token }));
+  });
+}
+async function removeDeviceTokenSystem(pool, id) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`DELETE FROM device_token WHERE id = $1 RETURNING id`, [id]);
+    return rows.length > 0;
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -585,15 +639,19 @@ export {
   createPool,
   dbPort,
   deactivateAccount,
+  deviceTokensFor,
   edgesFor,
   guardiansOfChild,
   persistCapturedMessage,
   pinCredentialFor,
   rawExportBundleFor,
   recordPinAttempt,
+  registerDeviceToken,
+  removeDeviceTokenSystem,
   setAvailabilityWindows,
   setPinCredential,
   storeWebauthnCredential,
+  unregisterDeviceToken,
   updateWebauthnSignCount,
   webauthnCredentialById,
   webauthnCredentialsForUser,
