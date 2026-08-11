@@ -25,7 +25,7 @@ Silent deletion is a process failure.
   child-authored); this is the guardian-to-guardian one: each guardian's own
   weekly reachability windows, visible to any live co-guardian and to their
   shared child.
-  - `db/migrations/0009_availability.sql` — `guardian_availability_window`
+  - `db/migrations/0010_availability.sql` — `guardian_availability_window`
     (`guardian_id references app_user`, `weekday` 0=Sun..6=Sat matching
     `packages/delivery-engine`'s own convention, `start_local`/`end_local`
     `time`, nullable `note`). RLS: `ENABLE`+`FORCE`, four policies — a
@@ -99,7 +99,7 @@ Silent deletion is a process failure.
   next to the newly-real one).
 
 ### NOT verified — and why this entry says so rather than claiming otherwise
-- **`db/migrations/0009_availability.sql`'s RLS, and the new
+- **`db/migrations/0010_availability.sql`'s RLS, and the new
   `packages/db/test/availability.test.mjs`** (real-Postgres RLS negative
   tests: a guardian's UPDATE/DELETE/INSERT against another guardian's rows
   each independently probed, plus the co-guardian/shared-child read

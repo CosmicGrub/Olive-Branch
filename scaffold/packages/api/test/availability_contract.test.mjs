@@ -22,7 +22,7 @@
  * What this suite CANNOT prove — and does not claim to — is that Postgres's
  * own RLS on guardian_availability_window actually enforces "a guardian
  * writes only her own rows" / "co-guardian or her child can read". That is
- * db/migrations/0009_availability.sql's job, and packages/db/test/
+ * db/migrations/0010_availability.sql's job, and packages/db/test/
  * availability.test.mjs (requires a real DATABASE_URL, same gate as
  * pool.test.mjs/custody_order.test.mjs) is what proves it.
  */

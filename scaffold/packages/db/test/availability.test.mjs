@@ -1,7 +1,7 @@
 /**
  * packages/db — guardian_availability_window: real RLS, and the real
  * setAvailabilityWindows()/availabilityFor()/guardiansOfChild() loaders.
- * MASTERFILE §9 (MARKUP screen 'availability'). db/migrations/0009_availability.sql.
+ * MASTERFILE §9 (MARKUP screen 'availability'). db/migrations/0010_availability.sql.
  *
  * Mirrors pool.test.mjs / custody_order.test.mjs exactly (same
  * DATABASE_URL/ADMIN_DATABASE_URL split, same check() harness): requires a

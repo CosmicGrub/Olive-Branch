@@ -175,7 +175,7 @@ export async function activeCustodyOrderFor(
 }
 
 /**
-db/migrations/0008_auth_credentials.sql — real guardian PIN + WebAuthn
+ * db/migrations/0008_auth_credentials.sql — real guardian PIN + WebAuthn
  * credentials, replacing the hardcoded, unauthenticated '1273' the client
  * shipped with (client/lib/main.dart). Every function below follows the two
  * patterns already established in this file: identity-resolution reads run

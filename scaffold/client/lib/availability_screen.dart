@@ -8,7 +8,7 @@
 // (previously calling _notBuiltYet with nothing behind it). Backed by real
 // endpoints: server/routes.mjs's GET /v1/children/:childId/availability and
 // PUT /v1/me/availability, packages/db/src/pool.mjs's
-// setAvailabilityWindows()/availabilityFor(), db/migrations/0009_availability.sql's
+// setAvailabilityWindows()/availabilityFor(), db/migrations/0010_availability.sql's
 // RLS. This is a DIFFERENT feature from MASTERFILE §21.3's "she publishes
 // her own availability" (the age-15 ladder rung, child-authored) — that one
 // remains unbuilt and untouched here. This is the guardian-to-guardian one:
@@ -24,7 +24,7 @@
 //
 // Weekday convention: 0=Sunday..6=Saturday, matching the server's own
 // (packages/delivery-engine's `weekday % 7 // Sun=0`, carried through
-// db/migrations/0009_availability.sql and pool.mjs) — NOT Dart
+// db/migrations/0010_availability.sql and pool.mjs) — NOT Dart
 // DateTime.weekday's native 1=Monday..7=Sunday.
 //
 // UI simplification, stated honestly: this screen shows and edits ONE

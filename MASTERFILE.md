@@ -1495,7 +1495,7 @@ PUT    /v1/me/availability               the calling guardian's own windows only
 ```
 
 **Built — see CHANGELOG's `[Unreleased]` → "Guardian availability" entry.**
-`db/migrations/0009_availability.sql` (`guardian_availability_window`, real
+`db/migrations/0010_availability.sql` (`guardian_availability_window`, real
 RLS), `packages/db/src/pool.ts`
 (`setAvailabilityWindows`/`availabilityFor`/`guardiansOfChild`),
 `server/routes.mjs`, `client/lib/availability_screen.dart` — MARKUP screen
