@@ -308,6 +308,34 @@ else
 fi
 
 echo ""
+echo "── Health alert (tools/health-alert.mjs) ────────────────────────"
+# A second, complementary path into the SAME health_check view queried just
+# above -- DATABASE_URL/pg-driver based instead of the psql binary, structured
+# stderr lines instead of a table, meant to be invoked by a real cron/monitor
+# LATER (see the script's own header for exactly what is and is not wired up
+# today). $DB here is the same freshly migrated, trivially healthy database
+# the "Health" step above already found clean, so this step is not expected
+# to breach in normal operation -- it exists to prove the script itself runs
+# and reports correctly against a real database, not to re-litigate the
+# Health section above. Only a hard ABORT (exit 2 -- the script itself is
+# broken, e.g. cannot connect or health_check is missing) counts against
+# PROBLEMS; an unexpected breach (exit 1) is reported but does not gate the
+# suite's exit code, per this task's own instructions.
+HA_URL="postgres://postgres:$PGPASSWORD@localhost:$PORT/$DB"
+DATABASE_URL="$HA_URL" node tools/health-alert.mjs >/tmp/ha.out 2>/tmp/ha.err
+HA_CODE=$?
+if [ "$HA_CODE" = "0" ]; then
+  echo "  health-alert                $(cat /tmp/ha.out)"
+elif [ "$HA_CODE" = "1" ]; then
+  echo "  health-alert                UNEXPECTED BREACH on a fresh DB (reported, not gating):"
+  sed 's/^/    /' /tmp/ha.err
+else
+  echo "  health-alert                ABORT (exit $HA_CODE)"
+  sed 's/^/    /' /tmp/ha.err
+  PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
 # is passed in so C7 compares MARKUP's quoted figure against what was actually

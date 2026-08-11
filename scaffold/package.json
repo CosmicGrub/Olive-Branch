@@ -23,6 +23,7 @@
     "test:a11y": "npm run build && node packages/a11y/test/a11y.test.mjs",
     "migrate": "node tools/migrate.mjs",
     "health": "node tools/healthcheck.mjs",
+    "health:alert": "node tools/health-alert.mjs",
     "test:live": "npm run build && node packages/live/test/live.test.mjs",
     "test:custody": "npm run build && node packages/custody/test/custody.test.mjs",
     "test:phase12": "npm run build && node packages/agency/test/phase12.test.mjs",
