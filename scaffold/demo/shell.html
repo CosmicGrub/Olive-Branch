@@ -520,8 +520,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
 </script>
 <script type="application/json" id="tl-manifest">
 {
-  "version": "0.47.0",
-  "spec": "0.47.0",
+  "version": "0.48.1",
+  "spec": "0.48.1",
   "nodeOnly": [
     { "module": "api/api", "dep": "node:http" },
     { "module": "auth/auth", "dep": "node:crypto" },
@@ -529,9 +529,12 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "session-runtime/rooms", "dep": "node:crypto" },
     { "module": "storage/storage", "dep": "node:crypto" },
     { "module": "db/pool", "dep": "pg" },
-    { "module": "homework/measure", "dep": "pngjs" }
+    { "module": "homework/measure", "dep": "pngjs" },
+    { "module": "transport/fcm", "dep": "node:crypto" },
+    { "module": "transport/apns", "dep": "node:http2" },
+    { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 4066,
+  "assertions": 3870,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",

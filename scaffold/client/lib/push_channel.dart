@@ -1,6 +1,8 @@
 // OLIVE BRANCH — push notification channel (client side). MASTERFILE §11.
 //
-// HONEST STATUS: this compiles, and every request shape/registration/
+// UNVERIFIED against a real device — see the file-wide convention this
+// codebase uses for exactly this caveat. HONEST STATUS: this compiles, and
+// every request shape/registration/
 // refresh/dispatch decision below is real code exercised by
 // push_channel_test.dart against a mocked HTTP transport and, for the
 // Firebase-unconfigured path, against the REAL (unmocked)
