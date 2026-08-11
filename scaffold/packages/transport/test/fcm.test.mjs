@@ -139,6 +139,66 @@ const MSG_PAYLOAD = {
 }
 
 // ===========================================================================
+// B2 · CONCURRENT MINT COALESCING
+//
+// Regression test for an adversarial-review finding: without coalescing, two
+// sendFcm() calls landing at the same moment the cache is empty/expired both
+// read the same stale cache (there's a real network `await` between the
+// cache check and the cache write in mintAccessToken), so each independently
+// signs an RS256 JWT and POSTs to Google's OAuth endpoint — redundant work
+// that scales with concurrent send volume and could trip Google's own
+// rate limits during a broadcast burst. Fixed via a module-level in-flight
+// promise a second racing caller joins instead of starting its own mint.
+// ===========================================================================
+{
+  process.env.FCM_SERVICE_ACCOUNT_JSON = JSON.stringify(SERVICE_ACCOUNT);
+  _resetFcmTokenCacheForTests();
+
+  let tokenCalls = 0;
+  let releaseToken;
+  const tokenGate = new Promise((res) => { releaseToken = res; });
+  const calls2 = [];
+  const fetchImpl = async (url, init) => {
+    calls2.push({ url, init });
+    if (url === 'https://oauth2.googleapis.com/token') {
+      tokenCalls++;
+      await tokenGate; // held open until the test explicitly releases it
+      return { ok: true, status: 200,
+        json: async () => ({ access_token: 'coalesced-token', expires_in: 3600 }), text: async () => '' };
+    }
+    return { ok: true, status: 200, json: async () => ({ name: 'projects/example-project/messages/2' }),
+      text: async () => '' };
+  };
+
+  // Fire two sends WITHOUT awaiting the first — both must observe the same
+  // empty/expired cache and race to mint.
+  const p1 = sendFcm(CALL_PAYLOAD, { fetchImpl, now: Date.parse('2026-02-01T00:00:00Z') });
+  const p2 = sendFcm(MSG_PAYLOAD, { fetchImpl, now: Date.parse('2026-02-01T00:00:00Z') });
+
+  // A few microtask ticks so anything either send needed to do before
+  // reaching its own network await has genuinely run, while the OAuth
+  // response is still deliberately held open below.
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  check('B2 coalesce', 'exactly ONE OAuth token request is in flight for two concurrent sends',
+    tokenCalls, 1);
+
+  releaseToken();
+  const [r1, r2] = await Promise.all([p1, p2]);
+  check('B2 coalesce', 'both concurrent sends still resolve ok:true', Boolean(r1.ok && r2.ok), 'true');
+
+  const tokenRequests = calls2.filter(c => c.url.includes('oauth2.googleapis.com'));
+  check('B2 coalesce', 'still exactly one OAuth request total once both sends finished',
+    tokenRequests.length, 1);
+  const sendRequests = calls2.filter(c => c.url.includes('messages:send'));
+  check('B2 coalesce', 'both real sends still went out separately (2 messages:send calls)',
+    sendRequests.length, 2);
+  check('B2 coalesce', 'both sends carry the SAME coalesced bearer token',
+    sendRequests.every(c => c.init.headers.authorization === 'Bearer coalesced-token'), 'true');
+
+  _resetFcmTokenCacheForTests();
+}
+
+// ===========================================================================
 // C · REQUEST SHAPE — PushPayload -> real FCM v1 body, call vs message
 // ===========================================================================
 {

@@ -36,6 +36,27 @@ export interface DeviceSendResult {
   /** Present only when ok:false — one of buildPush/sendGuard/fcm/apns's own
    * thrown `.code`s, e.g. 'fcm_config_missing', 'apns_send_failed'. */
   code?: string;
+  /**
+   * Present only when ok:false — `String(e.message)` from whichever of
+   * buildPush/sendGuard/fcm.ts/apns.ts threw. NOT REDACTED: fcm.ts's own
+   * `fcm_send_failed`/`fcm_oauth_failed` and apns.ts's own
+   * `apns_send_failed` embed the third party's raw response text verbatim
+   * (see each file's own `safeText()`/response-body handling) — genuinely
+   * useful for server-side logs and a system-role caller debugging a send
+   * failure, which is the only kind of caller this function has today (grep
+   * across server/routes.mjs confirms notifyDevices() has zero HTTP call
+   * sites as of this writing).
+   *
+   * THIS IS DELIBERATELY NOT SAFE TO RETURN VERBATIM IN AN HTTP RESPONSE.
+   * Whoever wires the first real API-facing caller of notifyDevices() MUST
+   * NOT naively serialize `results`/`results[].message` into that response —
+   * `code` above is the already-generalized, safe-to-expose signal a
+   * client-facing surface should use instead. Caught by an adversarial
+   * review while this was still a forward-looking gap, not a live one;
+   * recorded here rather than "fixed" by guessing at a redaction shape the
+   * real caller's actual needs (ops dashboard vs. client-facing error toast
+   * likely want different things) don't exist yet to inform.
+   */
   message?: string;
   /** True when the device's row was reaped because the platform told us the
    * token is permanently dead (see fcm.ts/apns.ts's `deviceGone`). */

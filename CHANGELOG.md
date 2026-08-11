@@ -1108,6 +1108,156 @@ their own account.
   transport, custody, phase12, phase3 — all green); `packages/homework/test/
   homework.test.mjs` separately fails for an unrelated, pre-existing reason
   (`make-fixtures.sh` needs a shell image tool not installed on this host).
+
+## [0.48.1] — 2026-08-11 — §11 push delivery: adversarial-review hardening pass
+
+Three independent adversarial reviewers examined v0.47.0/v0.48.0's push
+delivery feature (already committed) against four questions (authz bypass
+on device-token registration, RLS correctness, reliability of the client
+payload parser, and resource hygiene of the FCM/APNs senders). Each of the
+seven raw findings was read against the actual code — not trusted on its
+own framing — before deciding to fix, or to record as not-real /
+already-handled / acceptable-as-designed. THE CONTRACT
+(`packages/transport/src/push.ts`'s `buildPush`/`auditPush`/`sendGuard`/
+`GENERIC`/`FORBIDDEN_DATA_KEYS`) is untouched. `packages/transport/src/
+channels.ts` and `packages/phase3/src/phase3.ts` (SMS) are untouched — out
+of scope, as before.
+
+### Fixed
+- **`client/lib/push_channel.dart`** — `PushPointer.fromData` used unguarded
+  `data['kind'] as String?`-style casts. FCM v1's data map is
+  server-enforced `map<string,string>`, but APNs (the day this client ships
+  an `ios/` folder — it has none yet) carries arbitrary JSON with no type
+  constraint on custom keys; a malformed/adversarial payload (`"kind": 7`)
+  threw an uncaught `TypeError` inside the foreground stream listener or the
+  background isolate entry point instead of degrading gracefully — for
+  `call_incoming` specifically, the one kind push.ts's own header says must
+  ring rather than fail silently, a crash meant it never rang at all. Fixed
+  with a new `_asString(dynamic v) => v is String ? v : null` helper in
+  place of the bare cast; a malformed value now degrades to `''`/`null`,
+  never throws. The content-free guarantee held either way (a crash
+  happens before anything is displayed/logged/forwarded) — this is a
+  reliability fix, not a privacy one.
+- **`packages/transport/src/apns.ts`** — `sendApns()`'s two error branches
+  (`session.on('error', ...)` and `req.on('error', ...)`) rejected the
+  promise but never called `session.close()` — only the clean `'end'` path
+  did. `sendApns()` opens a fresh `h2.connect(host)` session per call with
+  no pooling, so a batch of sends during a flaky network path (mid-write
+  `RST_STREAM`, transient connection error) would accumulate open HTTP/2
+  sessions/sockets in a long-running Node process, one per failure,
+  eventually risking file-descriptor/socket exhaustion unrelated to the
+  actual send outcome. Fixed by calling `session.close()` in both error
+  handlers before rejecting.
+- **`packages/transport/src/fcm.ts`** — `mintAccessToken()` had a real race:
+  the cache check and the cache write are separated by a network `await`,
+  so two `sendFcm()` calls landing concurrently (e.g. two households'
+  notifications firing near-simultaneously) while the cache is empty/expired
+  both read the same stale cache and each independently signed an RS256 JWT
+  and POSTed to Google's OAuth endpoint — redundant work scaling with
+  concurrent send volume, risking Google's own OAuth rate limits during a
+  broadcast burst. (Each token minted this way was individually valid — this
+  was a resource-efficiency bug, not a correctness one.) Fixed with a
+  module-level in-flight-mint promise (`inFlightMint`): a second caller
+  racing the same service account now joins the first mint instead of
+  starting its own. The actual sign+POST logic was extracted into
+  `doMintAccessToken()` so the in-flight promise can be recorded in
+  `inFlightMint` synchronously, before it is ever awaited — the ordering
+  that makes the join race-free.
+
+### Documented (not code fixes — recorded so the gap isn't silent)
+- **`packages/transport/src/notify.ts`** — `DeviceSendResult.message` carries
+  `String(e.message)` verbatim, including raw third-party OAuth/API response
+  text `fcm.ts`/`apns.ts` embed in their own thrown errors. Not fixed by
+  redacting: `notifyDevices()` has zero HTTP call sites as of this writing
+  (confirmed by grep across `server/routes.mjs`), so there is no live path
+  today where this reaches an API caller, and the message is genuinely
+  useful for server-side logs / a system-role caller debugging a failure —
+  the only kind of caller that exists today. Guessing at a redaction shape
+  before a real caller's actual needs exist to inform it would be worse than
+  documenting the gap. Added an explicit doc comment on `DeviceSendResult.
+  message` warning whoever wires the first real API-facing caller that this
+  field is not safe to return verbatim over HTTP — `code` is the
+  already-generalized, safe-to-expose signal for that purpose.
+
+### Findings recorded as not real / already handled / acceptable-as-designed
+- **Authorization/RLS review (informational, no bypass found).** Re-traced
+  by hand against the current code: `registerDeviceToken`/
+  `unregisterDeviceToken` take `principal` only from the HMAC-verified
+  session (`packages/api/src/api.ts`), never from the request body;
+  `deviceTokensFor()` is system-role-only and has zero importers outside
+  `notify.ts`, which itself has zero route call sites, so there is no HTTP
+  path to it at all; no route returns a raw device_token row (`POST`
+  returns only a fresh `id`, `DELETE` only a boolean), so there is no
+  enumeration oracle. Confirmed correct; no change needed.
+- **Dedupe-by-token reattribution has no family-graph check (low, by
+  design).** `db/migrations/0012_push_device_token.sql`'s own header already
+  documents this exact tradeoff at length: dedupe is by token because
+  `registerDeviceToken()` receives no client device id, and reattribution
+  under a new owner is deliberate (a shared device changing hands). The
+  finding's own text confirms nothing shipped in this diff exposes a raw
+  token to any caller (no route ever serializes one), so this is the
+  already-accepted, already-documented blast radius of a token leaking
+  through some other channel entirely — not a bug in this diff. No change.
+- **No sign-out flow calls `PushChannel.unregister()` (low, not an authz
+  issue).** True, and already honestly disclosed in-line
+  (`push_channel.dart`'s own comment: "No call site in this client uses
+  this yet"). Building a sign-out/child-switch flow is a real feature, not
+  a bug fix, and is out of scope for a review-response pass — flagged here
+  again rather than silently left, but not built.
+
+### Verified
+- `packages/transport/test/fcm.test.mjs`: **39/39** (34 prior + 5 new,
+  section B2 — proves exactly one OAuth token request occurs for two
+  concurrent `sendFcm()` calls racing an empty cache, both calls still
+  resolve, and both real sends carry the same coalesced bearer token).
+- `packages/transport/test/apns.test.mjs`: **39/39** (35 prior + 4 new,
+  section E — proves `session.close()` runs on both the session-level and
+  the stream-level error path via a new `fakeHttp2Erroring()` harness).
+- `client/test/push_channel_test.dart`: **21/22** (18 prior + 4 new
+  `PushPointer.fromData` non-String-value regression tests, all new ones
+  passing). The one failure — `firebaseMessagingBackgroundHandler ...
+  is declared at column 0 ... immediately preceded by @pragma('vm:entry-
+  point')` — is a **pre-existing environmental artifact, not a regression**:
+  proven via `git stash` that the UNMODIFIED committed file fails this same
+  literal-`\n` regex identically, because this Windows checkout's
+  `core.autocrlf=true` rewrites the file's LF line endings to CRLF on
+  checkout (verified at the byte level — the character immediately after
+  `@pragma('vm:entry-point')` is `\r`, not `\n`, in the checked-out working
+  tree, on both the pre-fix and post-fix file). Not touched here — a
+  checkout/line-ending fragility in a pre-existing test, unrelated to any
+  of the seven findings this pass addresses.
+- `client/test/child_home_live_test.dart` + `api_client_test.dart`:
+  **18/18** (unchanged from v0.48.0 — not touched this pass).
+- `flutter analyze`: clean, 0 issues.
+- Full `flutter test`, all 90 files, `--concurrency=2`: **1305 passed, 1
+  failed** (the same single pre-existing CRLF artifact above; every other
+  test, including all four newly added, passes).
+- `packages/transport/test/transport.test.mjs` (contract suite, unaffected
+  by this pass's changes): **65/66**, one pre-existing failure ("every Dart
+  file is marked UNVERIFIED") reproduced identically against the unmodified
+  committed HEAD via `git stash` before touching anything — unrelated to
+  push delivery, not introduced by this pass, not one of the seven
+  findings.
+- `npm run build`: clean (fcm.mjs/apns.mjs/notify.mjs/push_channel.dart
+  compile with no new esbuild errors).
+
+### NOT verified
+- **`packages/db/test/device_token.test.mjs` and `packages/transport/test/
+  notify.test.mjs` could not be re-run** — both require a live Postgres
+  (`DATABASE_URL`/`ADMIN_DATABASE_URL`), and no Postgres was reachable in
+  this sandbox this session: `localhost:5433`/`5432` both refused a raw TCP
+  connection, and the `docker` CLI itself did not return even after a
+  300-second wait (`docker-desktop`'s WSL2 distro was in the `Stopped`
+  state — confirmed via `wsl -l -v` — and `Docker Desktop.exe` was not
+  found at its expected install path to relaunch it). This independently
+  reproduces the exact same limitation the adversarial review's own
+  authorization finding already disclosed ("I was unable to run that suite
+  or any live-Postgres probe of my own in this environment"). Neither
+  suite exercises code this pass changed — `device_token.test.mjs` touches
+  none of it; `notify.test.mjs` exercises `notify.ts`, which received only
+  a doc-comment addition (see "Documented" above), no behavioral change —
+  but this is recorded as unverified, not silently assumed green.
+
 ## [0.48.0] — 2026-08-11 — §11 push delivery, client side: real firebase_messaging wiring, completing the feature
 
 Closes the gap v0.47.0's own "NOT verified" section named explicitly:

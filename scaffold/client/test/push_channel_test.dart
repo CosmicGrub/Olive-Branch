@@ -110,6 +110,74 @@ void main() {
       expect(p.toString(), isNot(contains('h-1')));
       expect(p.toString(), contains('<redacted>'));
     });
+
+    // Regression: adversarial-review finding -- APNs (unlike FCM v1's
+    // server-enforced map<string,string>) carries arbitrary JSON with no
+    // type constraint on custom keys, so a malformed/adversarial payload
+    // could hand this a non-String value for kind/ref/callHandle. A bare
+    // `as String?` cast throws an uncaught TypeError in that case; this
+    // must degrade to '' / null instead, never throw -- especially for
+    // call_incoming, which MASTERFILE §11 says must ring rather than fail
+    // silently.
+    test('a non-String kind (e.g. a malformed/adversarial APNs payload) '
+        'degrades to an empty kind instead of throwing', () {
+      final p = PushPointer.fromData(const {'kind': 7, 'ref': 'r-1'});
+      expect(p.kind, '');
+      expect(p.ref, 'r-1');
+    });
+
+    test('a non-String ref degrades to an empty ref instead of throwing',
+        () {
+      final p = PushPointer.fromData(
+          const {'kind': 'message_ready', 'ref': <String, int>{'x': 1}});
+      expect(p.kind, 'message_ready');
+      expect(p.ref, '');
+    });
+
+    test('a non-String callHandle degrades to null instead of throwing -- '
+        'the call_incoming case this file\'s own header says must ring '
+        'rather than crash', () {
+      final p = PushPointer.fromData(const {
+        'kind': 'call_incoming',
+        'ref': 'r-1',
+        'callHandle': <String, int>{'x': 1},
+      });
+      expect(p.kind, 'call_incoming');
+      expect(p.callHandle, isNull);
+    });
+
+    test('constructing from a message.data map with mixed valid/invalid '
+        'types never throws end to end, through the real foreground '
+        'handler', () async {
+      final captured = <PushPointer>[];
+      final onMessageController = StreamController<RemoteMessage>();
+      final api = OliveApi('http://api.test', 'tok',
+          client: MockClient((_) async => http.Response('{}', 200)));
+      final channel = PushChannel(
+        api,
+        onForegroundPointer: captured.add,
+        deps: PushChannelDeps(
+          initializeFirebase: () async {},
+          requestPermission: () async {},
+          getToken: () async => null,
+          onTokenRefresh: const Stream<String>.empty(),
+          onMessage: onMessageController.stream,
+        ),
+      );
+      await channel.initialize();
+
+      onMessageController.add(const RemoteMessage(
+        data: {'kind': 'call_incoming', 'ref': 'r-1', 'callHandle': 42},
+      ));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(captured, hasLength(1));
+      expect(captured.single.kind, 'call_incoming');
+      expect(captured.single.callHandle, isNull);
+
+      channel.dispose();
+      await onMessageController.close();
+    });
   });
 
   group('PushChannel — foreground handler never surfaces raw payload text '

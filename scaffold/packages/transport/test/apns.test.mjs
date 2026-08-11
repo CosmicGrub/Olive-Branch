@@ -75,6 +75,45 @@ function fakeHttp2(onRequest) {
   };
 }
 
+/** Variant of fakeHttp2() above that simulates a session-level or
+ * stream-level 'error' event instead of a normal response — used only by
+ * section E below, to prove sendApns() closes the HTTP/2 session on BOTH
+ * error paths, not just the clean 'end' path. */
+function fakeHttp2Erroring(mode) {
+  let closed = false;
+  const impl = {
+    connect() {
+      const sessionListeners = {};
+      const session = {
+        request() {
+          const streamListeners = {};
+          const stream = {
+            setEncoding() {},
+            on(event, cb) { (streamListeners[event] ??= []).push(cb); return stream; },
+            end() {
+              if (mode === 'stream') {
+                queueMicrotask(() =>
+                  (streamListeners.error ?? []).forEach(cb => cb(new Error('stream boom'))));
+              }
+              // mode === 'session': the stream never completes on its own;
+              // the session-level 'error' below is what settles the promise.
+            },
+          };
+          return stream;
+        },
+        on(event, cb) { (sessionListeners[event] ??= []).push(cb); },
+        close() { closed = true; },
+      };
+      if (mode === 'session') {
+        queueMicrotask(() =>
+          (sessionListeners.error ?? []).forEach(cb => cb(new Error('session boom'))));
+      }
+      return session;
+    },
+  };
+  return { impl, isClosed: () => closed };
+}
+
 // ===========================================================================
 // A · CONFIG — missing env vars fail loudly, name exactly what's missing
 // ===========================================================================
@@ -207,6 +246,49 @@ function fakeHttp2(onRequest) {
   check('D failures', 'a real server error throws apns_send_failed too', serverErr?.code, 'apns_send_failed');
   check('D failures', 'a transient server error does NOT set deviceGone',
     Boolean(serverErr?.deviceGone), 'false');
+}
+
+// ===========================================================================
+// E · RESOURCE CLEANUP — session.close() runs on BOTH error paths, not just
+//     the clean 'end' path.
+//
+//     Regression test for an adversarial-review finding: sendApns() opens a
+//     brand-new h2.connect(host) session per call with no pooling, and
+//     BEFORE this fix, session.close() was only ever reached from inside the
+//     stream's 'end' handler. A session-level 'error' (session.on('error'))
+//     or a stream-level 'error' (req.on('error') — e.g. a mid-write
+//     RST_STREAM on a flaky network path) rejected the promise correctly but
+//     left that session's socket open. In a long-running Node process
+//     sending a batch of pushes while a device's network path is flaky,
+//     repeated failures of this kind would accumulate open HTTP/2
+//     sessions/sockets, eventually risking file-descriptor/socket
+//     exhaustion unrelated to the actual send outcome.
+// ===========================================================================
+{
+  process.env.APNS_KEY_P8 = KEY_P8;
+  process.env.APNS_KEY_ID = 'KEYID1234';
+  process.env.APNS_TEAM_ID = 'TEAM1234AB';
+  process.env.APNS_TOPIC = 'com.olivebranch.olive_client';
+  _resetApnsTokenCacheForTests();
+
+  const sessionErr = fakeHttp2Erroring('session');
+  let sessErrCaught = null;
+  try { await sendApns(MSG_PAYLOAD, { http2Impl: sessionErr.impl, now: 1 }); }
+  catch (e) { sessErrCaught = e; }
+  check('E cleanup', 'a session-level error still rejects with apns_connect_failed',
+    sessErrCaught?.code, 'apns_connect_failed');
+  check('E cleanup', 'a session-level error CLOSES the session (no socket leak)',
+    sessionErr.isClosed(), 'true');
+
+  _resetApnsTokenCacheForTests();
+  const streamErr = fakeHttp2Erroring('stream');
+  let streamErrCaught = null;
+  try { await sendApns(MSG_PAYLOAD, { http2Impl: streamErr.impl, now: 1 }); }
+  catch (e) { streamErrCaught = e; }
+  check('E cleanup', 'a stream-level error still rejects with apns_stream_failed',
+    streamErrCaught?.code, 'apns_stream_failed');
+  check('E cleanup', 'a stream-level error CLOSES the session (no socket leak)',
+    streamErr.isClosed(), 'true');
 }
 
 for (const k of ['APNS_KEY_P8', 'APNS_KEY_ID', 'APNS_TEAM_ID', 'APNS_TOPIC']) delete process.env[k];

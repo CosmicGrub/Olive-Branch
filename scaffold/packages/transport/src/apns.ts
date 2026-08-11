@@ -172,6 +172,17 @@ export function sendApns(
       return;
     }
     session.on('error', (err: Error) => {
+      // Close on the way out — otherwise a session that failed with its own
+      // 'error' event still holds an open socket. h2.connect() opens one
+      // fresh session per sendApns() call with no pooling, so a batch of
+      // sends during a flaky network path (mid-write RST_STREAM, transient
+      // connection error) would otherwise accumulate open HTTP/2
+      // sessions/sockets in a long-running Node process, one per failure,
+      // eventually risking file-descriptor/socket exhaustion unrelated to
+      // the actual send outcome. session.close() on an already-erroring
+      // session is safe (node:http2 tolerates closing a session that's
+      // mid-teardown).
+      session.close();
       reject(apnsError('apns_connect_failed', `APNs HTTP/2 session error: ${err.message}`));
     });
 
@@ -193,6 +204,12 @@ export function sendApns(
     req.setEncoding('utf8');
     req.on('data', (chunk: string) => { responseBody += chunk; });
     req.on('error', (err: Error) => {
+      // Same reasoning as session.on('error') above — a stream-level error
+      // (e.g. mid-write RST_STREAM) must not leave the session it belongs to
+      // open. This is the fix for the review finding: previously only the
+      // clean 'end' path below ever called session.close(), so BOTH error
+      // branches leaked a socket per failed send.
+      session.close();
       reject(apnsError('apns_stream_failed', `APNs HTTP/2 stream error: ${err.message}`));
     });
     req.on('end', () => {

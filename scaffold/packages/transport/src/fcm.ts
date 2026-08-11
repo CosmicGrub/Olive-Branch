@@ -82,9 +82,31 @@ const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 interface CachedToken { key: string; accessToken: string; expiresAtMs: number }
 let cachedToken: CachedToken | null = null;
 
-/** Test-only: the cache is module-level state, so a suite that changes the
- * service account between cases must be able to clear it. */
-export function _resetFcmTokenCacheForTests(): void { cachedToken = null; }
+/**
+ * IN-FLIGHT MINT COALESCING — fixes an adversarial-review finding.
+ *
+ * Without this, two notifyDevices() calls landing concurrently (e.g. two
+ * different households' notifications firing near-simultaneously) at a
+ * moment cachedToken is null/expired would both read the same stale cache
+ * BEFORE either finishes minting (there's a real network `await` between the
+ * cache check and the cache write), so both independently sign an RS256 JWT
+ * and POST to Google's OAuth endpoint — redundant work that scales with
+ * concurrent send volume and could trip Google's own rate limits during a
+ * broadcast burst. Each token minted this way is individually valid (no
+ * stale-token-reuse bug), so this is a resource-efficiency fix, not a
+ * correctness one.
+ *
+ * A second caller that arrives while a mint for the SAME service account is
+ * already in flight joins that same promise instead of starting a new one.
+ */
+let inFlightMint: { key: string; promise: Promise<string> } | null = null;
+
+/** Test-only: cache + in-flight state are both module-level, so a suite that
+ * changes the service account between cases must be able to clear both. */
+export function _resetFcmTokenCacheForTests(): void {
+  cachedToken = null;
+  inFlightMint = null;
+}
 
 async function safeText(res: FetchResponseLike): Promise<string> {
   try { return await res.text(); } catch { return '<unreadable body>'; }
@@ -106,6 +128,34 @@ async function mintAccessToken(
     return cachedToken.accessToken;
   }
 
+  // COALESCE: a mint for this exact service account is already in flight —
+  // join it rather than signing and POSTing a second, redundant JWT. This
+  // check (and the inFlightMint assignment below, once a fresh mint starts)
+  // both happen synchronously, with no `await` between them, so two callers
+  // racing on the same tick can never both fall through to a fresh mint.
+  if (inFlightMint && inFlightMint.key === cacheKey) {
+    return inFlightMint.promise;
+  }
+
+  const promise = doMintAccessToken(sa, fetchImpl, nowMs, cacheKey);
+  inFlightMint = { key: cacheKey, promise };
+  try {
+    return await promise;
+  } finally {
+    // Only clear if we're still the current in-flight entry for this key —
+    // a later mint (e.g. after this one failed and a retry started) must not
+    // have its own in-flight marker wiped out by this settling late.
+    if (inFlightMint && inFlightMint.promise === promise) inFlightMint = null;
+  }
+}
+
+/** The actual JWT-sign + OAuth POST, extracted so mintAccessToken() above can
+ * assign its Promise to `inFlightMint` BEFORE awaiting it — that ordering is
+ * what lets a second concurrent caller find and join it instead of starting
+ * its own. */
+async function doMintAccessToken(
+  sa: FcmServiceAccount, fetchImpl: FetchLike, nowMs: number, cacheKey: string,
+): Promise<string> {
   const tokenUri = sa.token_uri ?? GOOGLE_TOKEN_URI;
   const iat = Math.floor(nowMs / 1000);
   const exp = iat + 3600; // Google's own maximum for this grant type.

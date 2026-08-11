@@ -53,6 +53,12 @@ class PushInitializationError implements Exception {
       'configured, not silently broken. Underlying error: $cause';
 }
 
+/// `v is String ? v : null` — never `v as String?`. A bare cast throws a
+/// TypeError the instant `v` is a non-null, non-String value (an int, a
+/// bool, a nested map); this returns null instead, so a malformed data
+/// value degrades gracefully rather than crashing whatever's reading it.
+String? _asString(dynamic v) => v is String ? v : null;
+
 /// The entire content-free surface a push payload can ever hand this app —
 /// deliberately not a raw `Map<String, dynamic>` passthrough. There is no
 /// field here a server-side regression of push.ts's own audit could smuggle
@@ -79,10 +85,23 @@ class PushPointer {
   /// other key — including any FORBIDDEN_DATA_KEYS-shaped leak
   /// (push.ts's own list: childName, senderName, body, text, …) — is
   /// silently, structurally ignored: not filtered out, just never read.
+  ///
+  /// Uses [_asString] rather than a bare `as String?` cast. FCM's v1 data
+  /// map is server-enforced `map<string,string>` (fcm.ts never puts
+  /// anything else there), but APNs carries arbitrary custom JSON with NO
+  /// type constraint — the day this client ships an ios/ platform folder, a
+  /// malformed or adversarial APNs payload (e.g. `"kind": 7`) must degrade
+  /// to an empty/null field, not throw an uncaught TypeError inside
+  /// [_handleForeground]'s stream listener or the background isolate entry
+  /// point. For call_incoming specifically — the kind push.ts's own header
+  /// says must ring rather than fail silently — a crash here would mean a
+  /// malformed call push never rings at all. Degrading to `''`/`null`
+  /// preserves the content-free guarantee fail-closed either way: nothing is
+  /// displayed, logged, or forwarded from a value that failed this check.
   factory PushPointer.fromData(Map<String, dynamic> data) => PushPointer(
-        kind: (data['kind'] as String?) ?? '',
-        ref: (data['ref'] as String?) ?? '',
-        callHandle: data['callHandle'] as String?,
+        kind: _asString(data['kind']) ?? '',
+        ref: _asString(data['ref']) ?? '',
+        callHandle: _asString(data['callHandle']),
       );
 
   @override
