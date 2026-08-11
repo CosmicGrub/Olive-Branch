@@ -241,12 +241,16 @@ only.
     such integration exists anywhere in this repository; wiring the exit
     code into a real cron job and a real notification channel is future
     work.
-  - **`scaffold/db/migrations/0012_health_check_canonical.sql`** — an audit
+  - **`scaffold/db/migrations/0009_health_check_canonical.sql`** — an audit
     finding recorded as a migration, not a schema redefinition. Changes no
     table and no view *definition*; adds `COMMENT ON VIEW` documentation to
     `health_check`, `orphan_risk`, and `retention_breach` in the catalog
     itself, naming `health_check` as canonical so the next added check
-    extends one view instead of choosing between two.
+    extends one view instead of choosing between two. Numbered `0009`, not
+    `0008` — `0008` was independently claimed by a sibling branch
+    (`feature/account-deletion`'s `0008_account_deletion.sql`) built in
+    parallel off the same `main`; renumbered here to keep both branches'
+    migrations mergeable in sequence.
   - **`scaffold/tools/verify.sh`** — new "Health alert" step, right after
     the existing "Health" step, running `tools/health-alert.mjs` against the
     same freshly migrated `$DB`. Only a hard ABORT counts against the
