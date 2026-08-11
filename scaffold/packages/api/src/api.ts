@@ -64,7 +64,14 @@ export interface Route {
    * against its OWN, differently-scoped session(s) (see server/routes.mjs's
    * kiosk-pin/verify: it must check PIN hashes as each individual guardian's
    * own session, never as the calling child's, so the outer session can never
-   * be the right one for it to use).
+   * be the right one for it to use), or has real, possibly slow, CPU/IO work
+   * that doesn't touch Postgres at all (homework OCR — see
+   * packages/homework/src/capture-route.ts, registered in
+   * server/routes.mjs) — holding a pooled Postgres connection open, idle,
+   * for the whole duration of a multi-second tesseract.js recognize() call
+   * wastes a connection every concurrent capture needs, for no benefit: A1
+   * (declared action) and A3 (childId from path) are enforced above, BEFORE
+   * this flag is even consulted, so authorization is unaffected either way.
    *
    * Real, confirmed bug this closes: `this.db.withSession()` checks out ONE
    * connection from the shared pg.Pool and holds it for the handler's entire
@@ -81,7 +88,12 @@ export interface Route {
    * Setting this to `true` is a promise enforced nowhere but in these words:
    * the handler must not read `q` (it is handed a stub that throws if called,
    * specifically so a future edit that starts using `q` fails loudly instead
-   * of silently running outside any session/transaction).
+   * of silently running outside any session/transaction). A route that sets
+   * this and still needs Postgres is responsible for opening its own scoped
+   * session (`db.withSession(c.principal, ...)`) or a system one, exactly the
+   * way routes.mjs's `/now` handler already calls
+   * `activeCustodyOrderFor(pool, ...)` alongside its own caller-scoped `q` —
+   * there is no third, implicit way to reach the database from a handler.
    */
   skipOuterSession?: boolean;
   handler: (c: Ctx, q: Query) => Promise<{ status?: number; body?: any }>;
@@ -178,14 +190,15 @@ export class Api {
       catch { return { status: 400, body: { error: 'bad_json' } }; }
     }
 
-    // ---- A2: run inside the session context --------------------------------
+    // ---- A2: run inside the session context (unless explicitly opted out) ---
+    const ctx: Ctx = { principal, childId, params: m.params, body,
+                        query: u.searchParams, db: this.db };
     try {
-      const ctx = { principal, childId, params: m.params, body,
-                    query: u.searchParams, db: this.db };
       // skipOuterSession — see the Route field's own doc comment: this
-      // handler manages its own, correctly-scoped session(s) and must not be
-      // handed a connection it will never use, which is exactly the shape
-      // that self-deadlocked the shared pool under concurrency.
+      // handler manages its own, correctly-scoped session(s) (or has real
+      // work that doesn't touch Postgres at all) and must not be handed a
+      // connection it will never use, which is exactly the shape that
+      // self-deadlocked the shared pool under concurrency.
       const out = m.route.skipOuterSession
         ? await m.route.handler(ctx, unusedQuery)
         : await this.db.withSession(principal, (q) => m.route.handler(ctx, q));

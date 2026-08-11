@@ -17,6 +17,7 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          storeWebauthnCredential, availabilityFor,
          setAvailabilityWindows } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
+import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
 
@@ -324,6 +325,66 @@ export function registerRoutes(api, pool) {
         note: w.note ?? null,
       })));
       return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // §9.1 / §20.2b — homework capture: real image-quality gate, real OCR, a
+  // real (rule-based, non-LLM — see packages/homework/src/hints.ts's own
+  // header) hint generator, all run through the existing guardHint(). No DB
+  // row is written here: this route is deliberately scoped to closing the
+  // "OCR: Homework capture specified, not built" gap the MASTERFILE §20.2b
+  // table named. Persisting recognized problems for later retrieval (the
+  // broader §7.5 GET /v1/homework/:id, POST .../annotations surface) is a
+  // real, separate follow-up, not silently folded in here.
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/homework/capture',
+    // homework.annotate, not homework.view: capture PRODUCES new homework
+    // content (recognized problems + hints), so it belongs with the other
+    // WRITES actions in authorize.ts — an observer-only guardian correctly
+    // gets P17.3's observer_readonly denial the same way homework.annotate
+    // already denies any other write, rather than this route inventing its
+    // own separate rule. A child capturing her OWN homework is unaffected —
+    // api.ts's child branch only checks P6/P7, not ROLE_CAPS/edges.
+    action: 'homework.annotate',
+    // No Postgres access at all in this handler (see capture-route.ts) — see
+    // Route.skipOuterSession's own doc comment in api.ts for why holding a
+    // pooled connection open for a multi-second tesseract.js recognize()
+    // call would be a real cost for no benefit. A1 (action declared above)
+    // and A3 (childId came from the path, matched against the caller before
+    // this handler ever runs) are both still enforced by api.ts regardless.
+    skipOuterSession: true,
+    handler: async (c) => {
+      const imageB64 = c.body?.image;
+      if (typeof imageB64 !== 'string' || imageB64.length === 0) {
+        return { status: 400, body: { error: 'image_required' } };
+      }
+      let bytes;
+      try {
+        bytes = Buffer.from(imageB64, 'base64');
+      } catch {
+        return { status: 400, body: { error: 'bad_image' } };
+      }
+      // Note: server/index.mjs's own raw-request-body cap (2,000,000 chars,
+      // shared by every route, not something this one route should quietly
+      // change on its own) limits a base64-encoded photo to roughly 1.5MB of
+      // real image bytes — a real constraint for a high-resolution phone
+      // photo, flagged here rather than silently hit.
+      if (bytes.length === 0) return { status: 400, body: { error: 'bad_image' } };
+      let result;
+      try {
+        result = await runHomeworkCapture(bytes);
+      } catch (e) {
+        // decodeImage() (measure.ts) throws on anything that isn't a real
+        // PNG/JPEG — an honest 400, not a 500 masquerading as a server bug.
+        return { status: 400, body: { error: 'unsupported_image_format' } };
+      }
+      if (!result.ok) {
+        // The verdict's own reason/advice, unchanged — this route invents
+        // no wording of its own for a quality-gate refusal (capture.ts's
+        // own header: advice is written for a child holding a tablet).
+        return { status: 422, body: { ok: false, reason: result.reason, advice: result.advice } };
+      }
+      return { status: 200, body: result };
     },
   });
 }

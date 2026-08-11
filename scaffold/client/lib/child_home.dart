@@ -10,6 +10,7 @@
 // real — see kiosk_shell.dart, which wraps this widget from entry_gate.dart
 // rather than living inside it. ChildHome itself stays lock-agnostic.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
@@ -34,7 +35,8 @@ void _notBuiltYet(BuildContext context, String what) {
 
 class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
-    required this.sleepsUntilHandover, required this.unreadCount});
+    required this.sleepsUntilHandover, required this.unreadCount,
+    this.baseUrl, this.childId, this.sessionToken, this.httpClient});
 
   final String childName;
   final ParentPresence? presence;
@@ -44,6 +46,18 @@ class ChildHome extends StatelessWidget {
   // real as the two fields that genuinely are. Absent, not guessed.
   final int? sleepsUntilHandover;
   final int unreadCount;
+
+  // Real homework-capture wiring (§9.1, §20.2b) — optional and additive, so
+  // every existing caller (the offline demo build's ChildHome() with no
+  // arguments, and every existing test) keeps behaving exactly as before.
+  // Only child_home_live.dart supplies these today; when null, the
+  // Homework tile pushed below still works, just against
+  // capture_gate.dart's own honest simulated fallback (see that file's own
+  // header) rather than a real server.
+  final String? baseUrl;
+  final String? childId;
+  final String? sessionToken;
+  final http.Client? httpClient;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -77,7 +91,9 @@ class ChildHome extends StatelessWidget {
         children: [
           _Tile(icon: Icons.edit, label: 'Homework',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => HomeworkScreen(childName: childName)))),
+              builder: (_) => HomeworkScreen(childName: childName,
+                baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                httpClient: httpClient)))),
           _Tile(icon: Icons.extension, label: 'Play together',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => GamePickerScreen(
