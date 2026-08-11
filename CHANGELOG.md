@@ -16,6 +16,104 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Added
+- **Guardian availability, real end to end — closes the `guardian_more.dart`
+  gap CHANGELOG's own 0.44.0 entry left "Out of scope, on purpose."**
+  MASTERFILE §9, MARKUP screen `availability` — "when he can actually be
+  reached, honestly rendered." A different feature from §21.3's "she
+  publishes her own availability" (the unbuilt age-15 ladder rung,
+  child-authored); this is the guardian-to-guardian one: each guardian's own
+  weekly reachability windows, visible to any live co-guardian and to their
+  shared child.
+  - `db/migrations/0009_availability.sql` — `guardian_availability_window`
+    (`guardian_id references app_user`, `weekday` 0=Sun..6=Sat matching
+    `packages/delivery-engine`'s own convention, `start_local`/`end_local`
+    `time`, nullable `note`). RLS: `ENABLE`+`FORCE`, four policies — a
+    guardian writes only her own rows (`guardian_id = current_actor()`, both
+    `USING` and `WITH CHECK`); any live co-guardian and the shared child can
+    read (mirrors `effective_guardianship`, the same "live edge" definition
+    `custody_order`'s own policies already use); a `system`-role read policy
+    for the trusted backend, safe because the route's own A3 authorization
+    already gated the call before it runs (same reasoning
+    `activeCustodyOrderFor()` already established for `custody_order`).
+  - `packages/db/src/pool.ts`: `setAvailabilityWindows()` (replace-all,
+    opens its own **guardian-scoped** session — not `withSystemSession`,
+    unlike this file's read helpers — so the RLS write policy is the thing
+    actually enforcing "own rows only," not just a comment claiming it),
+    `availabilityFor()` (every co-guardian's windows for a child, including
+    the caller's own, joined against `app_user.display_name`), and
+    `guardiansOfChild()` (every live guardian of a child — the function the
+    task asked to mirror `edgesFor`'s own shape, which did not exist before
+    this pass).
+  - `server/routes.mjs`: `GET /v1/children/:childId/availability` (action
+    `calendar.view` — no dedicated Action exists yet, same acknowledged gap
+    `/now`'s own route comment already calls out) and
+    `PUT /v1/me/availability` (identity-only, `action: null`; the guardian
+    always writes under her own `principal.userId`, never a body value).
+    `packages/api/src/api.ts`'s `Method` union gained `'PUT'` — the first
+    route in this codebase to need it.
+  - `client/lib/availability_screen.dart` — a real `StatefulWidget`: real
+    `OliveApi` calls, real loading/error/ready states, `TimeOfDay` pickers
+    for each day, a read-only co-guardian section, no fake network delay.
+    Follows `child_home_live.dart`'s `LiveChildHomeScreen` shape (baseUrl +
+    ids, an internal dev-login), not `guardian_setup.dart`'s. Stated
+    limitation: shows/edits one start-end range per day, matching the task's
+    own shape; the schema allows more than one per day, and any such extra
+    windows are round-tripped on Save rather than silently dropped.
+    `client/lib/api_client.dart` gained `getAvailability()`/`setAvailability()`.
+  - `guardian_more.dart`'s `Availability` tile (formerly the sole entry in a
+    now-removed `HubSection(title: 'Not yet built')`) and `guardian_home.dart`'s
+    own separate quick-access `Availability` tile (a second, previously
+    undiscovered stub calling the same dead-end `_notBuiltYet`) both now open
+    the real screen when a live session (`baseUrl`/`guardianId`/`childId`)
+    is threaded in — optional fields, all null at every current call site
+    (this preview build's demo data still carries none of them, same
+    honest-stub posture `guardian_setup.dart`'s passkey button already
+    takes), so both tiles fall back to accurate "not connected" feedback
+    rather than the now-false "not built yet".
+
+### Verified — guardian availability
+- `node packages/api/test/availability_contract.test.mjs` (new): **26
+  passed, 0 failed**. Drives the REAL `registerRoutes()` from
+  `server/routes.mjs` through a real `Api` instance with a fake `pg.Pool`
+  (query text/param assertions, not a hand-waved stub) — real route
+  registration, the real `can()`/`edgesFor()` authorization path, real body
+  validation, and the real replace-all DELETE-then-INSERT `pool.mjs` issues.
+- `node packages/api/test/stack.test.mjs` (regression, unmodified by this
+  pass): **94 passed, 0 failed** — the `Method` union's new `'PUT'` member
+  changed nothing about existing routes.
+- `npm run build` (esbuild) succeeds; `packages/db/src/pool.mjs` regenerated
+  from the edited `pool.ts` and committed alongside it (this package commits
+  its `.mjs`, confirmed via `git ls-files` first).
+- `flutter analyze` (client): clean, 0 issues.
+- `flutter test client/test/availability_screen_test.dart` (new): **8
+  passed, 0 failed**.
+- `flutter test client/test/guardian_more_test.dart`: **8 passed, 0
+  failed** (2 rewritten for the honest "not connected" wording, 1 new for
+  the live-wired real-screen path).
+- `flutter test client/test/widget_test.dart`: **15 passed, 0 failed** (1
+  rewritten — `guardian_home.dart` turned out to carry a SECOND, previously
+  undiscovered `Availability` stub on its own quick-access grid, not only
+  the one in `guardian_more.dart` the task named; wired both from one
+  shared `_openAvailability()` helper rather than leaving a second dead tap
+  next to the newly-real one).
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **`db/migrations/0009_availability.sql`'s RLS, and the new
+  `packages/db/test/availability.test.mjs`** (real-Postgres RLS negative
+  tests: a guardian's UPDATE/DELETE/INSERT against another guardian's rows
+  each independently probed, plus the co-guardian/shared-child read
+  policies) — this suite is written and requires only `DATABASE_URL` /
+  `ADMIN_DATABASE_URL` to run (same gate as the existing `pool.test.mjs` /
+  `custody_order.test.mjs`), but no Postgres or Docker daemon was reachable
+  in this session's sandbox (`psql`/`pg_ctl` absent, `docker ps` failed to
+  reach the daemon) to actually run it against. Run it for real before
+  trusting the RLS claims above as anything more than "compiles and reads
+  correctly" — `DB=verify_gap_guardian_availability bash tools/verify.sh`-style
+  isolation, per this session's own instructions.
+- The Fold5/physical-device state from v0.46.1/v0.46.2 above is untouched by
+  this pass and remains exactly as unverified as those entries already say.
+
 ### Reversed
 - **§16.2 #6 — call/video infrastructure, reversed at the owner's direction.**
   v0.40.0 settled on staying on LiveKit Cloud (see the callout above the tech

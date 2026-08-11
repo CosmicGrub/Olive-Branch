@@ -1488,7 +1488,20 @@ GET    /v1/children/:id/expenses         403 for child role — RLS, not middlew
 POST   /v1/children/:id/expenses
 POST   /v1/expenses/:id/accept | /dispute | /reimburse
 GET    /v1/children/:id/expenses/export  court-tier PDF (Phase 3)
+
+GET    /v1/children/:id/availability     every co-guardian's windows, incl. the caller's own
+PUT    /v1/me/availability               the calling guardian's own windows only — identity-only,
+                                          not child-scoped; always the session's own userId
 ```
+
+**Built — see CHANGELOG's `[Unreleased]` → "Guardian availability" entry.**
+`db/migrations/0009_availability.sql` (`guardian_availability_window`, real
+RLS), `packages/db/src/pool.ts`
+(`setAvailabilityWindows`/`availabilityFor`/`guardiansOfChild`),
+`server/routes.mjs`, `client/lib/availability_screen.dart` — MARKUP screen
+`availability`, §9. CHANGELOG has the full account, including what remains
+unverified (the RLS suite needs a real Postgres this session's sandbox
+didn't have).
 
 ### 7.8 Exchange
 

@@ -94,11 +94,7 @@ async function activeCustodyOrderFor(pool, childId, nowLocalDate) {
 async function guardiansOfChild(pool, childId) {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT DISTINCT g.user_id
-         FROM guardianship g
-        WHERE g.child_id = $1
-          AND g.closed_at IS NULL
-          AND g.valid @> now()`,
+      `SELECT DISTINCT user_id FROM effective_guardianship WHERE child_id = $1`,
       [childId]
     );
     return rows.map((r) => ({ userId: r.user_id }));
@@ -269,6 +265,48 @@ async function updateWebauthnSignCount(pool, credentialId, newSignCount) {
     return rows.length === 1;
   });
 }
+async function setAvailabilityWindows(pool, guardianId, windows) {
+  await withSession(
+    pool,
+    { roleName: "guardian", userId: guardianId, childId: null },
+    async (q) => {
+      await q(`DELETE FROM guardian_availability_window WHERE guardian_id = $1`, [guardianId]);
+      for (const w of windows) {
+        await q(
+          `INSERT INTO guardian_availability_window
+             (guardian_id, weekday, start_local, end_local, note)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [guardianId, w.weekday, w.startLocal, w.endLocal, w.note ?? null]
+        );
+      }
+    }
+  );
+}
+async function availabilityFor(pool, childId) {
+  const guardianIds = (await guardiansOfChild(pool, childId)).map((g) => g.userId);
+  if (!guardianIds.length) return [];
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT w.guardian_id, w.weekday,
+              to_char(w.start_local, 'HH24:MI') AS start_local,
+              to_char(w.end_local,   'HH24:MI') AS end_local,
+              w.note, u.display_name AS guardian_name
+         FROM guardian_availability_window w
+         JOIN app_user u ON u.id = w.guardian_id
+        WHERE w.guardian_id = ANY($1::uuid[])
+        ORDER BY w.guardian_id, w.weekday, w.start_local`,
+      [guardianIds]
+    );
+    return rows.map((r) => ({
+      guardianId: r.guardian_id,
+      guardianName: r.guardian_name,
+      weekday: r.weekday,
+      startLocal: r.start_local,
+      endLocal: r.end_local,
+      note: r.note
+    }));
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -281,6 +319,7 @@ export {
   PIN_MAX_ATTEMPTS,
   activeCustodyOrderFor,
   attemptPinFor,
+  availabilityFor,
   consumeChallenge,
   createChallenge,
   createPool,
@@ -289,6 +328,7 @@ export {
   guardiansOfChild,
   pinCredentialFor,
   recordPinAttempt,
+  setAvailabilityWindows,
   setPinCredential,
   storeWebauthnCredential,
   updateWebauthnSignCount,

@@ -8,8 +8,9 @@
 // contract-checked against the registered API routes by
 // packages/api/test/contract.test.mjs so the two cannot drift silently. The
 // server currently implements a real, narrow slice of these — /v1/me, /now,
-// /inbox — not the full list; calling an unimplemented one gets a real 404
-// from the real router, not a fake one.
+// /inbox, and (as of this pass) GET .../availability + PUT /v1/me/availability
+// — not the full list; calling an unimplemented one gets a real 404 from the
+// real router, not a fake one.
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -73,6 +74,12 @@ class OliveApi {
   static const webauthnLoginChallenge = '/v1/auth/webauthn/login/challenge';
   static const webauthnLoginVerify = '/v1/auth/webauthn/login/verify';
 
+  // --- guardian availability (§9, MARKUP screen 'availability') ----------
+  // Real as of this pass — server/routes.mjs, packages/db/src/pool.mjs's
+  // setAvailabilityWindows()/availabilityFor(), db/migrations/0010_availability.sql.
+  static const childAvailability = '/v1/children/:childId/availability';
+  static const meAvailability    = '/v1/me/availability';
+
   // --- login (dev-only — see server/index.mjs's own header comment) ------
   static const devLoginPath = '/v1/auth/dev-login';
 
@@ -96,6 +103,18 @@ class OliveApi {
       },
       body: jsonEncode(body),
     );
+    return _decode(res);
+  }
+
+  /// Mirrors [_post]'s header/decode conventions for a JSON-body PUT
+  /// (replace-all semantics — see [setAvailability]).
+  Future<Map<String, dynamic>> _put(String path, {String? childId, required Object body}) async {
+    final res = await _client.put(_uri(path, childId),
+        headers: {
+          'authorization': 'Bearer $sessionToken',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(body));
     return _decode(res);
   }
 
@@ -175,6 +194,22 @@ class OliveApi {
     await _post(webauthnRegisterVerify,
         {'clientDataJSON': clientDataJSON, 'attestationObject': attestationObject});
   }
+
+  /// `{windows: [{guardianId, weekday, startLocal, endLocal, note}, ...]}` —
+  /// every co-guardian's windows for `childId`, INCLUDING the caller's own
+  /// (see pool.mjs's availabilityFor() header for why). Decoding into a
+  /// domain shape is left to the caller, matching fetchNow/fetchInbox above.
+  Future<Map<String, dynamic>> getAvailability(String childId) =>
+      _get(childAvailability, childId: childId);
+
+  /// Replace-all: `windows` is the caller's ENTIRE new set for every call,
+  /// never a delta — omitting a day clears it. Each map is
+  /// `{weekday, startLocal, endLocal, note}`; no `guardianId` field — the
+  /// server always uses the authenticated caller's own identity
+  /// (server/routes.mjs's PUT /v1/me/availability), never anything the body
+  /// could redirect.
+  Future<Map<String, dynamic>> setAvailability(List<Map<String, dynamic>> windows) =>
+      _put(meAvailability, body: windows);
 
   void close() => _client.close();
 }

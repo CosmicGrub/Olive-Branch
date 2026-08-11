@@ -175,7 +175,7 @@ export async function activeCustodyOrderFor(
 }
 
 /**
- * db/migrations/0008_auth_credentials.sql — real guardian PIN + WebAuthn
+db/migrations/0008_auth_credentials.sql — real guardian PIN + WebAuthn
  * credentials, replacing the hardcoded, unauthenticated '1273' the client
  * shipped with (client/lib/main.dart). Every function below follows the two
  * patterns already established in this file: identity-resolution reads run
@@ -198,22 +198,25 @@ export async function activeCustodyOrderFor(
  * it is gated at the application layer, per 0007's own header), so there is
  * no narrower session this could run under that would change what it sees.
  *
- * Only LIVE edges count — closed_at IS NULL and valid @> now(), matching
- * effective_guardianship's own definition (0003_session_context.sql) rather
- * than re-deriving a second, possibly-divergent notion of "current guardian"
- * here. A revoked guardian's old PIN must stop working the moment their edge
- * closes, not linger until someone remembers to delete a credential row too.
+ * Queries `effective_guardianship` (0003_session_context.sql) rather than
+ * re-deriving "live edge" against the raw `guardianship` table a second time
+ * — merged in from the guardian-availability branch, which caught a real gap
+ * in this function's first draft: the raw-table version only checked
+ * `closed_at IS NULL AND valid @> now()`, missing `expires_at`, so a
+ * guardianship edge that had timed out via `expires_at` but not yet been
+ * explicitly closed would still count as "live" for kiosk-PIN purposes.
+ * `effective_guardianship` is the one already-audited definition of "live"
+ * every other RLS policy in this schema agrees on; this now matches it
+ * exactly instead of maintaining a second, slightly-wrong copy of the same
+ * filter. Return shape stays `{ userId }[]`, not a bare `string[]`, because
+ * the kiosk-pin/verify route (routes.mjs) already destructures `g.userId`.
  */
 export async function guardiansOfChild(
   pool: pg.Pool, childId: string,
 ): Promise<{ userId: string }[]> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT DISTINCT g.user_id
-         FROM guardianship g
-        WHERE g.child_id = $1
-          AND g.closed_at IS NULL
-          AND g.valid @> now()`,
+      `SELECT DISTINCT user_id FROM effective_guardianship WHERE child_id = $1`,
       [childId],
     );
     return rows.map((r: any) => ({ userId: r.user_id }));
@@ -570,6 +573,110 @@ export async function updateWebauthnSignCount(
       [credentialId, newSignCount],
     );
     return rows.length === 1;
+  });
+}
+
+/**
+ * db/migrations/0010_availability.sql. weekday is 0=Sunday..6=Saturday,
+ * matching packages/delivery-engine/src/materialize.ts's own convention
+ * (`DateTime...weekday % 7  // Sun=0`) rather than Luxon's native ISO
+ * weekday — see the migration's own header for why.
+ */
+export interface AvailabilityWindowInput {
+  weekday: number;
+  startLocal: string;   // 'HH:mm'
+  endLocal: string;     // 'HH:mm'
+  note?: string | null;
+}
+
+export interface AvailabilityWindow extends AvailabilityWindowInput {
+  guardianId: string;
+  /** app_user.display_name at read time — for rendering a co-guardian's
+   *  windows as "Dad", not a bare uuid. Not stored on the row itself. */
+  guardianName: string;
+}
+
+/**
+ * PUT /v1/me/availability — the calling guardian's ENTIRE new set of
+ * windows, replace-all semantics (routes.mjs hands this the whole array on
+ * every call, never a delta; a guardian who wants to clear a day just omits
+ * it from the array).
+ *
+ * Deliberately opens its OWN guardian-scoped session (`withSession`, not
+ * `withSystemSession`) with `userId: guardianId` — unlike
+ * activeCustodyOrderFor()/guardiansOfChild() above, which run as `system`
+ * because their tables admit the right rows to *every* non-child/system
+ * role. guardian_availability_window's own write policy
+ * (guardian_availability_own, 0010's migration) is keyed on
+ * `guardian_id = current_actor()`; running this under `system` would leave
+ * current_actor() NULL and the DELETE would silently affect zero rows while
+ * every INSERT's WITH CHECK failed outright. Opening the session as the
+ * real guardian makes the RLS policy the thing actually enforcing "a
+ * guardian can write only their own rows", not just a comment claiming it —
+ * the same "second lock" reasoning db/DEPLOYMENT.md and every other
+ * RLS-backed table in this file already follow.
+ *
+ * `guardianId` MUST be the authenticated caller's own principal.userId,
+ * never anything from the request body — routes.mjs passes
+ * `c.principal.userId`, the same A3 discipline childId gets from the path,
+ * applied here to the guardian's own identity on an identity-only route.
+ */
+export async function setAvailabilityWindows(
+  pool: pg.Pool, guardianId: string, windows: AvailabilityWindowInput[],
+): Promise<void> {
+  await withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null },
+    async (q) => {
+      await q(`DELETE FROM guardian_availability_window WHERE guardian_id = $1`, [guardianId]);
+      for (const w of windows) {
+        await q(
+          `INSERT INTO guardian_availability_window
+             (guardian_id, weekday, start_local, end_local, note)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [guardianId, w.weekday, w.startLocal, w.endLocal, w.note ?? null],
+        );
+      }
+    });
+}
+
+/**
+ * GET /v1/children/:childId/availability — every co-guardian's windows for
+ * `childId` (via guardiansOfChild() above), INCLUDING the calling guardian's
+ * own rows: the caller is herself one of `childId`'s guardians, so her own
+ * windows come back in the same list rather than needing a second call.
+ * System role, mirroring activeCustodyOrderFor()'s own reasoning: the route
+ * handler's real A3 childId-from-path + `can()` check already gated this
+ * call before it runs (see guardian_availability_window's policy 4 in
+ * 0010's migration for why that makes a system-role read here safe, not a
+ * widening of access).
+ *
+ * guardiansOfChild() now returns `{ userId }[]` (merged shape, see its own
+ * header) rather than the bare `string[]` this function originally assumed
+ * — mapped here rather than changing the query below, which wants a plain
+ * uuid array for its `= ANY($1::uuid[])` clause.
+ */
+export async function availabilityFor(pool: pg.Pool, childId: string): Promise<AvailabilityWindow[]> {
+  const guardianIds = (await guardiansOfChild(pool, childId)).map(g => g.userId);
+  if (!guardianIds.length) return [];
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT w.guardian_id, w.weekday,
+              to_char(w.start_local, 'HH24:MI') AS start_local,
+              to_char(w.end_local,   'HH24:MI') AS end_local,
+              w.note, u.display_name AS guardian_name
+         FROM guardian_availability_window w
+         JOIN app_user u ON u.id = w.guardian_id
+        WHERE w.guardian_id = ANY($1::uuid[])
+        ORDER BY w.guardian_id, w.weekday, w.start_local`,
+      [guardianIds],
+    );
+    return rows.map((r: any): AvailabilityWindow => ({
+      guardianId: r.guardian_id,
+      guardianName: r.guardian_name,
+      weekday: r.weekday,
+      startLocal: r.start_local,
+      endLocal: r.end_local,
+      note: r.note,
+    }));
   });
 }
 

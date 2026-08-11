@@ -5,8 +5,12 @@
 // side, a settings-style affordance (Guardian setup, Kiosk lock advisory) is
 // EXPECTED here, so the assertions are about real navigation and layout
 // integrity, not about the absence of settings.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:olive_client/availability_screen.dart';
 import 'package:olive_client/guardian_more.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -40,7 +44,8 @@ void main() {
       expect(find.textContaining('Ivy'), findsWidgets);
     });
 
-    testWidgets('the one genuinely unbuilt tile stays an honest stub',
+    testWidgets('Availability gives honest not-connected feedback when no '
+        'live session is threaded in (this hub\'s default demo call site)',
         (t) async {
       await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
       // 'Availability' now sits below even this file's own generous 1800px
@@ -55,7 +60,30 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(availability);
       await t.pump();
-      expect(find.textContaining('not built yet'), findsOneWidget);
+      expect(find.textContaining('not connected'), findsOneWidget);
+      // And it is honestly worded, not the generic (and by now false)
+      // "not built yet" this tile used to show.
+      expect(find.textContaining('not built yet'), findsNothing);
+    });
+
+    testWidgets('Availability opens the REAL AvailabilityScreen once a live '
+        'session is threaded in', (t) async {
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/availability')) {
+          return http.Response(jsonEncode({'windows': <dynamic>[]}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      await t.tap(find.text('Availability'));
+      await t.pumpAndSettle();
+      expect(find.byType(AvailabilityScreen), findsOneWidget);
+      expect(find.text('When you can be reached'), findsOneWidget);
     });
   });
 

@@ -14,7 +14,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { DateTime } from 'luxon';
 import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
-         storeWebauthnCredential } from '../packages/db/src/pool.mjs';
+         storeWebauthnCredential, availabilityFor,
+         setAvailabilityWindows } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
@@ -32,6 +33,27 @@ import { parseAttestationObject, extractCredentialPublicKey } from '../packages/
  */
 export const RP_ID = 'olivebranch.local';
 export const RP_ORIGIN = `https://${RP_ID}`;
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Validates the PUT /v1/me/availability body shape before it ever reaches
+ * pool.mjs's setAvailabilityWindows() — a 400 with a specific reason here is
+ * more useful than a Postgres CHECK-constraint or RLS error surfacing as a
+ * bare 500. Returns a string reason on failure, null on a valid array.
+ */
+function invalidAvailabilityBody(body) {
+  if (!Array.isArray(body)) return 'body_must_be_array';
+  for (const w of body) {
+    if (!w || typeof w !== 'object') return 'window_must_be_object';
+    if (!Number.isInteger(w.weekday) || w.weekday < 0 || w.weekday > 6) return 'bad_weekday';
+    if (typeof w.startLocal !== 'string' || !HHMM.test(w.startLocal)) return 'bad_startLocal';
+    if (typeof w.endLocal !== 'string' || !HHMM.test(w.endLocal)) return 'bad_endLocal';
+    if (w.endLocal <= w.startLocal) return 'endLocal_before_startLocal';
+    if (w.note !== undefined && w.note !== null && typeof w.note !== 'string') return 'bad_note';
+  }
+  return null;
+}
 
 /**
  * @param {import('../packages/api/src/api.ts').Api} api
@@ -216,6 +238,22 @@ export function registerRoutes(api, pool) {
   });
 
   api.register({
+    // MASTERFILE §9, MARKUP screen 'availability' — "when he can actually be
+    // reached, honestly rendered." No dedicated Action exists for this in
+    // family-graph/src/authorize.ts's Action union (same real gap the /now
+    // route's own comment calls out); calendar.view is the closest existing
+    // fit — schedule/reachability-adjacent, already granted to every adult
+    // role that should plausibly see it, and (per Api.handle's own child
+    // branch) a same-family child session passes through regardless of the
+    // specific action chosen, so the child sees her own family's windows too.
+    method: 'GET', path: '/v1/children/:childId/availability', action: 'calendar.view',
+    handler: async (c) => {
+      const windows = await availabilityFor(pool, c.childId);
+      return { body: { windows } };
+    },
+  });
+
+  api.register({
     method: 'POST', path: '/v1/auth/webauthn/register/verify', action: null,
     // See api.ts's Route.skipOuterSession doc comment.
     skipOuterSession: true,
@@ -264,6 +302,28 @@ export function registerRoutes(api, pool) {
 
       await storeWebauthnCredential(pool, c.principal.userId, credentialId, publicKeyPem);
       return { body: { ok: true } };
+    },
+  });
+
+  api.register({
+    // Identity-only (no :childId in the path) — action MUST be null per
+    // Api.register's own A1 rule, matching GET /v1/me above. The guardian
+    // sets HER OWN windows; guardianId is always c.principal.userId, the
+    // authenticated caller, never anything the body could redirect (A3's
+    // own discipline, applied here to the guardian's identity instead of a
+    // child's).
+    method: 'PUT', path: '/v1/me/availability', action: null,
+    handler: async (c) => {
+      if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_only' } };
+      }
+      const reason = invalidAvailabilityBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      await setAvailabilityWindows(pool, c.principal.userId, c.body.map((w) => ({
+        weekday: w.weekday, startLocal: w.startLocal, endLocal: w.endLocal,
+        note: w.note ?? null,
+      })));
+      return { status: 200, body: { ok: true } };
     },
   });
 }

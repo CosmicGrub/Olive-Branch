@@ -19,7 +19,7 @@ import { can, type Edge, type Action } from '../../family-graph/src/authorize.ts
  *      which are attacker-controlled in the same way.
  */
 
-export type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 export interface Ctx {
   principal: VerifiedPrincipal;
