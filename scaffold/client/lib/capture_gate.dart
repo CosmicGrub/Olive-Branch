@@ -1,5 +1,7 @@
 // OLIVE BRANCH — homework capture gate. MASTERFILE §9.1, §8.13.5, §20.2b.
-// Renders MARKUP screen 'capture'.
+// Renders MARKUP screen 'capture'. UNVERIFIED against a real device/camera
+// — see the file-wide convention this codebase uses for exactly this
+// caveat.
 //
 // "Thresholds derived from measurement, not taste." This screen owns no
 // thresholds itself. Two capture paths now, chosen at runtime, not two

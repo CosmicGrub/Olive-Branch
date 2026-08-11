@@ -44,6 +44,19 @@ jobs:
       # loudly, which is exactly the false-green this project's own verify.sh
       # header says it was written to stop happening.
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client tesseract-ocr imagemagick
+      # Pillow is a REAL dependency too: packages/homework/test/gen_ocr_fixture.py
+      # generates the real-OCR-quality worksheet images capture-route.test.mjs
+      # actually recognizes text from, and it imports PIL directly. Without it
+      # the suite's own honest toolchain check (group P) fails loudly with
+      # "0 passed, 1 failed" -- caught here for the first time because this
+      # is the first CI run this branch's suite ever actually executed on
+      # (a GitHub Actions billing block had silently swallowed every earlier
+      # run before it could reach this step at all). Installed via apt, not
+      # `pip install` -- this runner's system Python is PEP-668 "externally
+      # managed" (Ubuntu 24.04), so a bare pip install fails outright;
+      # confirmed directly against a matching Ubuntu 24.04 environment
+      # before landing this line, not assumed.
+      - run: sudo apt-get install -y python3-pil
       # livekit-server is a real dependency of the live suite, not optional.
       # verify.sh treats a missing binary as a gap, not a skip.
       - name: fetch livekit-server

@@ -1,5 +1,6 @@
 // OLIVE BRANCH — homework helper. MASTERFILE §9.1, §8.13.5, §20.2b. Renders
-// MARKUP screen 'homework'.
+// MARKUP screen 'homework'. UNVERIFIED against a real device/camera — see
+// the file-wide convention this codebase uses for exactly this caveat.
 //
 // "Photograph the sheet; the quality gate refuses blur and skew before OCR
 // ever runs." The capture half is capture_gate.dart pushed from the button
