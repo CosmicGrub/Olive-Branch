@@ -49,6 +49,40 @@ Silent deletion is a process failure.
   here worth keeping a foothold in. Should not be re-proposed absent new
   direction from the owner.
 
+### Fixed
+- **2026-08-11 — `tools/verify.sh` reported 2 phantom Dart test failures on
+  CI, never locally.** GitHub Actions reported `dart widget invariants 1291
+  passed 2 failed` on `feature/real-authentication`'s HEAD, reproducibly
+  across a fresh run and a manual rerun — but `flutter test` run directly
+  (not through `verify.sh`) showed `1291 passed, 0 failed` every time, on
+  Windows and on four independent WSL2/Ubuntu-24.04 attempts (default
+  timezone, `TZ=UTC`, a from-scratch clean clone, and reduced concurrency).
+  Root cause, found via a two-step CI diagnostic that dumped the reporter's
+  real output into the log: the script's failure-count extraction,
+  `grep -oE '\-[0-9]+' | tail -1`, searched the ENTIRE captured
+  `--reporter compact` output for any hyphen-digit substring rather than the
+  reporter's own summary line — and `client/test/api_client_test.dart` has a
+  real test named `...a non-2xx response (e.g. 403 not_this_child) returns
+  false, never throws`. Every Dart test genuinely passes, so a clean run
+  never emits a real `-N` counter to compete with it; the incidental `-2` in
+  `non-2xx` was the only match, and the script confidently reported it as
+  "2 failed" against a suite with zero real failures. Not a Linux-only
+  platform bug at all — a false-red in the verification script's own
+  reporting, the same class of bug this file's header already exists to
+  catch, just pointing the opposite direction from the false-greens it was
+  written for. **Fixed**: `tools/verify.sh` now anchors both the pass and
+  fail extraction to the reporter's own `^<elapsed> +passed[ -failed]:`
+  line-start prefix — structured data the reporter itself emits — instead of
+  a free-floating search, so no test's own description text can collide
+  with it. No Dart source, test, or lib file needed any change. **Verified**:
+  confirmed directly on GitHub Actions' own `ubuntu-24.04` runner (not just
+  locally) — `dart widget invariants 1291 passed 0 failed`, and the full
+  `tools/verify.sh` run went from `COMPUTED TOTAL 3950 passed 2 failed` to
+  `3950 passed 0 failed`. `MARKUP.html`/`shell.html`'s assertion counts
+  (previously `3984`, already stale/unverified — see the "NOT verified"
+  note under [0.47.0] below) are corrected to `3950` to match, confirmed via
+  `node tools/check-markup.mjs --total 3950`: 44/44 passed.
+
 Phase 2 decisions: §16.2 #6 Step 2 (self-hosting Jitsi). §21.9 D — whether
 "becomes a parent" reuses the account. (§16.2 #8 was resolved in 0.40.0 — this
 line went stale for three versions before being caught here.)
