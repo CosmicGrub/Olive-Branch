@@ -6,7 +6,7 @@ import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
 import {
   verifyChain, certify, authorizeExport,
-  type LogEntry, type Attestation, type ChainFault,
+  type LogEntry, type Attestation, type ChainFault, type ExportDenial,
 } from '../../ledger/src/ledger.ts';
 import { sha256Hex } from '../../ledger/src/sha256.ts';
 import type { ArtifactRow, IntentRow } from '../../messaging/src/pipeline.ts';
@@ -1383,15 +1383,28 @@ export async function removeDeviceTokenSystem(pool: pg.Pool, id: string): Promis
 // Derived from authorize.ts's own `Deny`, minus the members that are
 // structurally unreachable through the `can()` call below (P6/P7 never
 // apply to 'export.certified'; ladder_none/observer_readonly only ever fire
-// for actions in CONTACT/WRITES, which 'export.certified' is in neither of;
-// 'tier_required' from can() itself can never fire because the tier passed
-// below is forced true — see this function's header) — plus the two reasons
-// only `authorizeExport()` can produce.
+// for actions in CONTACT/WRITES, which 'export.certified' is in neither of),
+// plus `ExportDenial` (ledger.ts) — the reasons `authorizeExport()` itself can
+// produce — and 'chain_broken', the one reason this file adds on top of that.
+//
+// NOTE on 'tier_required': `can()`'s OWN 'tier_required' member (from Deny)
+// really is unreachable here, because the tier passed to `can()` below is
+// forced true — see this function's header. That is a DIFFERENT source from
+// `ExportDenial`'s 'tier_required', which is the literal
+// `authorizeExport()` (ledger.ts:167) actually returns on every real denial
+// once the annual free allowance is spent and the guardian lacks Court tier —
+// read that function; there is no separate 'annual_allowance_used' branch in
+// it, so that string is never produced by a live call despite being part of
+// `ExportDenial`'s declared type. An earlier version of this type excluded
+// 'tier_required' outright, conflating the two sources: that made this type
+// narrower than what `authorizeExport()`'s real return value actually is,
+// which is exactly the contract violation
+// packages/db/test/court_export.test.mjs section B/D exists to catch — see
+// that file's own assertions for the reachable value.
 export type CertifiedExportDenial =
   | Exclude<Deny,
-      'ladder_none' | 'observer_readonly' | 'P6_child_financial'
-      | 'P7_journal_never' | 'tier_required'>
-  | 'annual_allowance_used' | 'chain_broken';
+      'ladder_none' | 'observer_readonly' | 'P6_child_financial' | 'P7_journal_never'>
+  | ExportDenial | 'chain_broken';
 
 export type CertifiedExportResult =
   | {
@@ -1444,6 +1457,26 @@ export async function certifiedExportBundleFor(
     // on why this does NOT reuse 0006's certified_exports_last_year() SQL
     // helper, which counts per (requested_by, child_id) and therefore
     // answers a narrower question than §16.1 #3 actually specifies.
+    //
+    // FOR UPDATE here, and BEFORE the count query, on purpose: without it, two
+    // concurrent requests from the SAME guardian each open their own
+    // transaction at the default READ COMMITTED isolation, each see
+    // certifiedInLast12Months=0 before either has committed its own INSERT,
+    // and both walk away with was_free=true — a real TOCTOU that defeats
+    // §16.1 #3's one-free-per-rolling-year rule under nothing more exotic
+    // than two browser tabs. count(*) can't itself carry FOR UPDATE (Postgres
+    // rejects FOR UPDATE with an aggregate), so this locks the guardian's own
+    // app_user row instead: a second transaction's FOR UPDATE on the same row
+    // blocks here until the first COMMITs (or ROLLBACKs), so its own count
+    // query below is guaranteed to run AFTER the first request's INSERT is
+    // visible, never racing it. Per-guardian granularity, not a global lock —
+    // two DIFFERENT guardians exporting concurrently lock different rows and
+    // never block each other. See court_export.test.mjs's own concurrent-
+    // request section (E) for the regression this closes.
+    const tierRows = await q(
+      `SELECT court_tier FROM app_user WHERE id = $1 FOR UPDATE`, [requestedBy]);
+    const courtTier: boolean = tierRows[0]?.court_tier ?? false;
+
     const countRows = await q(
       `SELECT count(*)::int AS n FROM export_record
         WHERE requested_by = $1 AND kind = 'certified'
@@ -1451,9 +1484,6 @@ export async function certifiedExportBundleFor(
       [requestedBy],
     );
     const certifiedInLast12Months: number = countRows[0]?.n ?? 0;
-
-    const tierRows = await q(`SELECT court_tier FROM app_user WHERE id = $1`, [requestedBy]);
-    const courtTier: boolean = tierRows[0]?.court_tier ?? false;
 
     const auth = authorizeExport({
       kind: 'certified', childId, requestedBy, courtTier, certifiedInLast12Months,

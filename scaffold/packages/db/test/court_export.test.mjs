@@ -30,6 +30,15 @@
  *   D · route contract — a real `Api` + real `dbPort(pool)` +
  *       server/routes.mjs's actual `registerRoutes()`, hit over
  *       `api.handle()` with real sessions, no fake DbPort anywhere.
+ *   E · concurrency — N truly concurrent certifiedExportBundleFor() calls
+ *       from the SAME guardian, racing for the SAME still-available free
+ *       credit, must not let more than one of them win it. Regression test
+ *       for the TOCTOU an adversarial review surfaced: two (or N) requests
+ *       each opening their own READ COMMITTED transaction could previously
+ *       all read certifiedInLast12Months=0 before any of them committed its
+ *       own INSERT, so all of them walked away with was_free=true. Fixed by
+ *       a `SELECT ... FOR UPDATE` on the guardian's own app_user row, taken
+ *       before the count query — see pool.ts's certifiedExportBundleFor().
  */
 import pg from 'pg';
 import { createPool, dbPort, certifiedExportBundleFor } from '../src/pool.mjs';
@@ -75,7 +84,20 @@ const AT1 = '2026-06-01T16:05:00.000Z';
 async function seedFamily() {
   await admin.query('BEGIN');
   await admin.query(`DELETE FROM export_record WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
+  // message_log_no_delete (0006) rejects EVERY delete unconditionally — P8,
+  // by design (see db/test/0005_court.test.sql's own "DELETING an entry
+  // (P8)" must_fail case). A re-run of this file against a database that
+  // already has a previous run's IVY/SOLO chain in it therefore needs the
+  // same deliberate, admin-only, disable/enable bracket section C already
+  // uses to reach a tampered state — this was previously UNGUARDED here,
+  // so any run after the very first against an already-seeded database
+  // (or the file's own final cleanup below, on ITS first run) threw
+  // 'P8: ... DELETE is not permitted' instead of ever reaching a single
+  // assertion. Found by actually running this suite against real Postgres
+  // for the first time, not hypothetically.
+  await admin.query('ALTER TABLE message_log DISABLE TRIGGER message_log_no_delete');
   await admin.query(`DELETE FROM message_log WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
+  await admin.query('ALTER TABLE message_log ENABLE TRIGGER message_log_no_delete');
   await admin.query(`DELETE FROM guardianship WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
   await admin.query(`DELETE FROM child WHERE id IN ($1, $2)`, [IVY, SOLO]);
   await admin.query(`DELETE FROM app_user WHERE id IN ($1, $2)`, [DAD, MOM]);
@@ -133,7 +155,20 @@ const chain = await seedFamily();
 
   // A child with a real edge but zero message_log rows: an honest empty
   // chain, still verified (verifyChain([]) === ok per ledger.ts), never an
-  // error.
+  // error. This checks empty-chain handling specifically, NOT the annual
+  // allowance (section B owns that) — so DAD is temporarily granted
+  // court_tier here. Without it this call is legitimately DENIED
+  // (tier_required): the allowance is GUARDIAN-scoped, not
+  // (guardian, child)-scoped (this file's own section B comment, and
+  // certifiedExportBundleFor()'s, say so explicitly), so guardianFirst just
+  // above already spent DAD's one 2026 credit on IVY — a second child does
+  // NOT grant a second free credit. Asserting `emptyChain.ok === true` with
+  // court_tier still false was a real bug in this fixture (this suite was
+  // written but never run — see CHANGELOG's own "NOT verified" entry for
+  // this feature — so nothing ever caught it): it silently assumed a
+  // per-child allowance the real, pre-existing authorizeExport() (ledger.ts)
+  // does not implement.
+  await admin.query(`UPDATE app_user SET court_tier = true WHERE id = $1`, [DAD]);
   await admin.query(
     `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
      VALUES ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`,
@@ -145,6 +180,9 @@ const chain = await seedFamily();
     emptyChain.ok ? emptyChain.attestation.entryCount : -1, 0);
   await admin.query(`DELETE FROM export_record WHERE child_id = $1`, [SOLO]);
   await admin.query(`DELETE FROM guardianship WHERE child_id = $1 AND user_id = $2`, [SOLO, DAD]);
+  // Reset before section B, which depends on DAD's IVY credit still reading
+  // as spent-without-court-tier.
+  await admin.query(`UPDATE app_user SET court_tier = false WHERE id = $1`, [DAD]);
 }
 
 // B · the real annual allowance — authorizeExport()'s real rule, queried,
@@ -155,8 +193,17 @@ const chain = await seedFamily();
   const second = await certifiedExportBundleFor(pool, DAD, IVY, new Date());
   check('B allowance', 'a second certified export in the same window is denied',
     second.ok, 'false');
-  check('B allowance', 'and the real reason is annual_allowance_used, not a generic error',
-    second.ok ? '' : second.reason, 'annual_allowance_used');
+  // The real reason is 'tier_required' — that IS what ledger.ts's
+  // authorizeExport() (line ~167) actually returns once the allowance is
+  // spent and court_tier is false; 'annual_allowance_used' is a distinct
+  // member of ExportDenial's type that no live call of that function ever
+  // returns (there is no separate branch for it). Asserting
+  // 'annual_allowance_used' here was itself a bug — this suite would have
+  // FAILED the very first time it ran against real Postgres. See
+  // packages/db/src/pool.ts's CertifiedExportDenial comment for the full
+  // story.
+  check('B allowance', 'and the real reason is tier_required, not a generic error',
+    second.ok ? '' : second.reason, 'tier_required');
 
   await admin.query(`UPDATE app_user SET court_tier = true WHERE id = $1`, [DAD]);
   const third = await certifiedExportBundleFor(pool, DAD, IVY, new Date());
@@ -258,14 +305,53 @@ const chain = await seedFamily();
   const denied = await hit('GET', `/v1/children/${IVY}/export?kind=certified`, dadTok);
   check('D route', 'a second call this window -> 403 over the real route',
     denied.status, 403);
-  check('D route', 'reason is annual_allowance_used, with a plain-language message',
-    denied.body.error, 'annual_allowance_used');
+  check('D route', 'reason is tier_required, with a plain-language message',
+    denied.body.error, 'tier_required');
   check('D route', 'the denial message never claims a payment flow exists in this build',
     /no payment flow/i.test(denied.body.message ?? ''), 'true');
 }
 
+// E · concurrency — the TOCTOU regression. N genuinely concurrent calls (not
+// sequential awaits) racing for DAD's one still-available free credit on IVY.
+// Without pool.ts's FOR UPDATE lock this reliably let every one of them
+// through as was_free=true; with it, exactly one wins and the rest are
+// denied with the real reason, and the database itself — not just the
+// in-process return values — agrees.
+{
+  await admin.query(`DELETE FROM export_record WHERE requested_by = $1`, [DAD]);
+  await admin.query(`UPDATE app_user SET court_tier = false WHERE id = $1`, [DAD]);
+
+  const N = 5;
+  const results = await Promise.all(
+    Array.from({ length: N }, () => certifiedExportBundleFor(pool, DAD, IVY, new Date())));
+
+  const frees = results.filter(r => r.ok && r.free);
+  const denials = results.filter(r => !r.ok);
+  check('E race', `exactly one of ${N} truly concurrent requests gets the free credit`,
+    frees.length, 1);
+  check('E race', `the other ${N - 1} are correctly denied, never silently granted`,
+    denials.length, N - 1);
+  check('E race', 'every denial names the real reason (tier_required), not a crash',
+    denials.every(r => r.reason === 'tier_required'), 'true');
+
+  const raceRecords = await admin.query(
+    `SELECT count(*)::int AS n, count(*) FILTER (WHERE was_free)::int AS free_n
+       FROM export_record WHERE requested_by = $1 AND child_id = $2 AND kind = 'certified'`,
+    [DAD, IVY]);
+  check('E race', 'the database persisted exactly one export_record row for the whole race',
+    raceRecords.rows[0].n, 1);
+  check('E race', 'and it is the one marked was_free — the DB agrees with the in-process result',
+    raceRecords.rows[0].free_n, 1);
+
+  await admin.query(`DELETE FROM export_record WHERE requested_by = $1`, [DAD]);
+  await admin.query(`UPDATE app_user SET court_tier = false WHERE id = $1`, [DAD]);
+}
+
 await admin.query(`DELETE FROM export_record WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
+// Same P8 bracket as seedFamily() above — see that function's comment.
+await admin.query('ALTER TABLE message_log DISABLE TRIGGER message_log_no_delete');
 await admin.query(`DELETE FROM message_log WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
+await admin.query('ALTER TABLE message_log ENABLE TRIGGER message_log_no_delete');
 await admin.query(`DELETE FROM guardianship WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
 await admin.query(`DELETE FROM child WHERE id IN ($1, $2)`, [IVY, SOLO]);
 await admin.query(`DELETE FROM app_user WHERE id IN ($1, $2)`, [DAD, MOM]);

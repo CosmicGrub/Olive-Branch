@@ -14,6 +14,180 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.1] — 2026-08-11 — certified export: adversarial review fixes
+
+An adversarial review examined v0.49.0's certified-export backend and raised
+three findings. Two were real; the third — a "checked and found NOT
+vulnerable" write-up covering cross-child access, `authorizeExport()`
+bypass, and `court_tier` self-elevation — is confirmed correct on rereading
+and needed no change, recorded below rather than silently accepted.
+Verifying the two real fixes required finally running
+`packages/db/test/court_export.test.mjs` against a real Postgres — it had
+never been run before (v0.49.0's own "NOT verified" entry says so plainly)
+— which surfaced two more real, pre-existing bugs in the suite's own
+fixture/cleanup code, unrelated to the review but blocking any real count
+until fixed. Fixed here too, on the same "found by actually running it"
+standard this project holds itself to.
+
+### Fixed
+- **TOCTOU on the annual free-certified-export allowance (Medium).**
+  `certifiedExportBundleFor()` (`packages/db/src/pool.ts:287-306`) queried
+  `export_record`'s trailing-12-month count and `app_user.court_tier` with no
+  lock of any kind, at the default READ COMMITTED isolation. Two (or N)
+  concurrent requests from the SAME guardian each read
+  `certifiedInLast12Months=0` before either committed its own `INSERT`, so
+  every one of them could walk away `was_free: true` — two browser tabs
+  defeated §16.1 #3's one-free-per-rolling-year rule outright, and no unique
+  constraint on `export_record` caught it either. Fixed with `SELECT
+  court_tier FROM app_user WHERE id = $1 FOR UPDATE`, moved to run BEFORE the
+  count query (a straight `count(*) ... FOR UPDATE` is rejected by Postgres —
+  `FOR UPDATE` cannot pair with an aggregate). A second concurrent
+  transaction now blocks on that row lock until the first COMMITs, so its own
+  count query is guaranteed to see the first request's row rather than race
+  it. Per-guardian granularity — two different guardians exporting at once
+  lock different rows and never block each other. Proven by a new regression
+  test, not just reasoned about: `packages/db/test/court_export.test.mjs`
+  section E fires 5 genuinely concurrent requests for the same still-
+  available credit; exactly one succeeds `was_free: true`, the other four are
+  denied `tier_required`, and the database itself — not just the in-process
+  results — shows exactly one `export_record` row.
+- **`CertifiedExportDenial` excluded the one denial reason
+  `authorizeExport()` actually returns (Low).** `ledger.ts`'s
+  `authorizeExport()` (untouched, pre-existing, line ~167) returns
+  `{reason:'tier_required'}` on every real certified-export denial — the
+  allowance is spent AND court tier is missing; there is no code path in
+  that function that ever returns `'annual_allowance_used'` despite it being
+  part of `ExportDenial`'s declared type. `pool.ts`'s own
+  `CertifiedExportDenial` type explicitly `Exclude`d `'tier_required'`,
+  reasoning (correctly) that `can()`'s OWN separate `tier_required` member
+  is unreachable here, but conflating that with `ExportDenial`'s
+  DIFFERENT `tier_required` — the literal value the very next line's
+  `authorizeExport()` call actually returns. Esbuild strips types without
+  checking them, so this compiled and shipped silently; the new test's own
+  assertions (`court_export.test.mjs` section B/D) asserted the wrong
+  literal (`'annual_allowance_used'`) and would have failed the first time
+  they were actually run. Fixed: `CertifiedExportDenial` now includes
+  `ExportDenial` directly (`packages/db/src/pool.ts`, the type's own
+  definition and its explanatory comment), the two test assertions now
+  check for the real value `'tier_required'`, and
+  `EXPORT_DENIAL_MESSAGES['tier_required']` (`server/routes.mjs`) now states
+  both halves of the real reason — the allowance is spent AND Court tier is
+  required — rather than only the tier half, matching §2.11's "a denial
+  must say plainly why" rule more completely than before.
+- **(found while re-running, not part of the review)
+  `court_export.test.mjs`'s own cleanup unconditionally `DELETE`d from
+  `message_log`.** `message_log_no_delete` (0006) rejects every delete,
+  unconditionally, by design (P8 — see `db/test/0005_court.test.sql`'s own
+  "DELETING an entry (P8)" `must_fail` case). The suite's `seedFamily()` and
+  its final teardown both ran a bare `DELETE FROM message_log ...` with no
+  disable/enable bracket around it (section C already uses exactly that
+  bracket to reach a tampered state — it just wasn't applied to cleanup),
+  so any run past the very first against an already-seeded database threw
+  `P8: ... DELETE is not permitted` before a single assertion executed.
+  Never caught, because the suite had never been run. Fixed with the same
+  admin-only `ALTER TABLE message_log DISABLE/ENABLE TRIGGER
+  message_log_no_delete` bracket section C already established.
+- **(found while re-running) section A's empty-chain check assumed a
+  per-child allowance the real, guardian-scoped rule does not have.** The
+  same section that establishes IVY/DAD's one 2026 free credit is spent
+  (`guardianFirst`) then, moments later, expected a SECOND child (SOLO,
+  same guardian DAD, `court_tier` still false) to also get a free certified
+  export. §16.1 #3's allowance is per-**guardian**, not per-`(guardian,
+  child)` — this file's own header comment and `pool.ts`'s own comment say
+  so explicitly — so that second call is correctly DENIED
+  (`tier_required`) by the real, unmodified `authorizeExport()`; the test's
+  expectation of `ok: true` was itself wrong. Fixed by granting DAD
+  `court_tier` for that one check only (isolating "does an empty chain
+  export honestly" from "does the allowance apply," which section B already
+  owns), then reverting before section B runs.
+
+### Verified
+- **The third (informational) finding re-checked, not just re-quoted.**
+  Cross-child access: `certifiedExportBundleFor()` re-derives the caller's
+  edges via `edgesFor()`/`can()` itself (`pool.ts:277-279`), independent of
+  and in addition to the route's coarse check — confirmed by reading
+  `api.ts`'s dispatch layer and `authorize.ts`'s `ROLE_CAPS`/`can()`
+  directly, not assumed from the write-up. Bypass/spoofed tier: `courtTier`
+  and `certifiedInLast12Months` are always freshly queried server-side from
+  `app_user`/`export_record` by the server-derived `requestedBy`, never
+  accepted as request input — confirmed by rereading the full function body.
+  Self-elevation of `court_tier`: grep across the worktree confirms the only
+  writers are `0008`'s own `DEFAULT false` and the test file's direct
+  `admin.query()` `UPDATE`s (fixture, not app code) — no route or handler
+  exposes a write path. No change needed; recorded rather than silently
+  accepted.
+- **`packages/db/test/court_export.test.mjs`: 39 passed, 0 failed** — run
+  for the first time ever, against a real Postgres 16 (see "NOT verified"
+  below for which one and why), re-run twice from a freshly re-seeded state
+  for idempotency, and once more end to end under the correct
+  `NOSUPERUSER NOBYPASSRLS` role (`app_owner`, per `db/DEPLOYMENT.md`'s own
+  documented requirement) rather than the `postgres` superuser used to
+  bring the database up — the same class of mistake §20.4's own process
+  finding #2 and standing rule 4 already warn about, self-caught mid-session
+  (an earlier pass run as `postgres` against `pool.test.mjs`, below, produced
+  3 false PASSes that RLS should have refused).
+- **`packages/db/test/pool.test.mjs`: 18 passed, 0 failed**, under
+  `app_owner`. Run first (by mistake) as `postgres`: 3 of 18 assertions in
+  its own "D real RLS" section came back FALSE PASS (`postgres` bypasses RLS
+  even under `FORCE` — exactly what `db/DEPLOYMENT.md`'s own §2 already
+  warns "measures nothing") — re-run correctly once the mistake was caught,
+  not reported on the wrong number.
+- **`packages/db/test/custody_order.test.mjs`: 16 passed, 0 failed** —
+  collateral check; this pass edits `pool.ts` but not `custody_order.test.mjs`
+  or anything it exercises.
+- **`packages/family-graph/test/graph.test.mjs`: 59 passed, 0 failed** —
+  `can()`'s own H8 export assertions, untouched by this pass, still hold
+  exactly as v0.49.0's own entry recorded.
+- **`packages/api/test/stack.test.mjs`: 94 passed, 0 failed**, followed by
+  the same pre-existing, unrelated Windows `UV_HANDLE_CLOSING` libuv
+  teardown crash that file's own header already documents — not this
+  change, and not counted as a failure.
+- **`packages/ledger/test/phase3.test.mjs`: 95 passed, 0 failed** —
+  `ledger.ts` itself is untouched by this pass (by design: the fix is in
+  the caller's type/wiring, not the pre-existing business rule); this
+  confirms `authorizeExport()`/`verifyChain()`/`certify()` are unaffected.
+- `npm run build` (scaffold/): succeeds; `packages/db/src/pool.mjs`
+  regenerated. `node --check` clean on every touched `.mjs`
+  (`server/routes.mjs`, `packages/db/src/pool.mjs`,
+  `packages/db/test/court_export.test.mjs`).
+- No Dart file is touched by this pass — `client/test/court_export_test.dart`
+  mocks the server's `error`/`message` strings directly rather than
+  hardcoding the real server's denial logic, so it is unaffected by the
+  `tier_required`/`annual_allowance_used` fix; `flutter analyze`/`flutter
+  test` were not re-run since there is nothing in this pass for them to
+  catch.
+
+### NOT verified
+- **Full `tools/verify.sh` / MARKUP.html↔DEMO.html↔shell.html
+  version-and-assertion-count sync: NOT attempted this pass.** v0.49.0's own
+  entry already disclosed this debt, blocked then by Docker Desktop being
+  completely unreachable. This pass unblocks Postgres specifically (see
+  below) but does not stand up tesseract, imagemagick, `livekit-server`, or
+  an Android SDK — all real dependencies `verify.sh`'s own `TOTAL_PASS`
+  requires, none of which this pass confirmed present in this fresh
+  worktree. Writing a partial or guessed total into `MARKUP.html` would be
+  exactly the fabricated-total failure mode §20.4's own standing rule 5
+  exists to prevent, so this entry does not attempt it — MARKUP/DEMO/
+  shell.html remain at their v0.46.2 figures, a known, disclosed gap, not a
+  silently accepted one. CI's own `verify.yml` provisions the full
+  toolchain and computes the real total on push.
+- **Docker Desktop remains broken on this machine** — the identical
+  corrupted `...\Docker\run\dockerInference` reparse point v0.49.0's own
+  entry already documented, confirmed again independently this session
+  (still refuses deletion via an elevated PowerShell `Remove-Item -Force`
+  as the file's own owner; `com.docker.backend.exe.log` shows the identical
+  `remove ...: The file cannot be accessed by the system` crash). Not
+  fixed — worked around via a real, already-installed, already-running
+  Postgres 16 inside this machine's own WSL2 Ubuntu-24.04 distribution
+  (port 5433, matching this repo's own established `localhost:5433`/
+  `postgres`/`postgres` convention exactly), reached from Windows-side
+  `node` either via the WSL bridge IP directly or via `localhost` port
+  forwarding (the latter proved intermittent across this session — several
+  `ECONNREFUSED`s mid-run — so the bridge IP was used for the runs recorded
+  above). A real non-Docker Postgres, not a fake or a mocked `pg.Pool`.
+
+---
+
 ## [0.49.0] — 2026-08-11 — certified export gets a real backend
 
 `client/lib/court_export.dart`'s own header said it plainly: a real, well-built

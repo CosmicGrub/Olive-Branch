@@ -69,6 +69,18 @@ const DEVICE_PLATFORMS = new Set(['android', 'ios']);
  * must say plainly WHY, and since no payment flow exists anywhere in this
  * codebase, that upgrading is not available in this build rather than
  * rendering a paywall that has nothing real behind it.
+ *
+ * `tier_required` is the ONLY reason ledger.ts's authorizeExport() (line
+ * ~167) ever actually returns once a guardian's certified-export request is
+ * denied — it fires precisely when the rolling-12-month free allowance has
+ * already been spent AND the guardian lacks Court tier (there is no separate
+ * code path in authorizeExport() that returns while the allowance is still
+ * available but Court tier is missing, since an available allowance always
+ * authorizes for free regardless of tier). Its message below says both halves
+ * of that plainly, rather than only the tier half. `annual_allowance_used` is
+ * kept here because it remains part of ledger.ts's own `ExportDenial` type —
+ * a future change to that pre-existing, untouched function could start
+ * returning it — but no live call produces it today.
  */
 const EXPORT_DENIAL_MESSAGES = {
   no_edge: 'You are not a guardian of this child.',
@@ -83,9 +95,9 @@ const EXPORT_DENIAL_MESSAGES = {
     + 'any additional ones — there is no payment flow in this build to upgrade, '
     + 'so a Court-tier flag has to be set by an admin, by hand, until one exists.',
   tier_required:
-    'Certified export requires Court tier for this request. There is no payment '
-    + 'flow in this build to upgrade — Court tier has to be set by an admin, by hand, '
-    + 'until one exists.',
+    "This year's free certified export has already been used, and additional "
+    + 'certified exports require Court tier. There is no payment flow in this build '
+    + 'to upgrade — Court tier has to be set by an admin, by hand, until one exists.',
   chain_broken:
     "This child's handover log did not verify as an unbroken chain, so no certified "
     + 'export was produced. Raw export is unaffected and remains free and unlimited.',

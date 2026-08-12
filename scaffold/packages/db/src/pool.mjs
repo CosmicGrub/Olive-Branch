@@ -649,6 +649,11 @@ async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__
   const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
   if (!rbac.allow) return { ok: false, reason: rbac.reason };
   return withSystemSession(pool, async (q) => {
+    const tierRows = await q(
+      `SELECT court_tier FROM app_user WHERE id = $1 FOR UPDATE`,
+      [requestedBy]
+    );
+    const courtTier = tierRows[0]?.court_tier ?? false;
     const countRows = await q(
       `SELECT count(*)::int AS n FROM export_record
         WHERE requested_by = $1 AND kind = 'certified'
@@ -656,8 +661,6 @@ async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__
       [requestedBy]
     );
     const certifiedInLast12Months = countRows[0]?.n ?? 0;
-    const tierRows = await q(`SELECT court_tier FROM app_user WHERE id = $1`, [requestedBy]);
-    const courtTier = tierRows[0]?.court_tier ?? false;
     const auth = authorizeExport({
       kind: "certified",
       childId,
