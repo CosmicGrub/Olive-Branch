@@ -109,22 +109,29 @@ if [ -x "$FLUTTER_BIN" ]; then
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
   out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
-  # TEMP DIAGNOSTIC (to be reverted): full reporter output dumped verbatim so
-  # CI's log shows real failing test names/stack traces instead of only the
-  # compacted +N/-M summary. IMPORTANT: --reporter compact is kept exactly as
-  # the original invocation had it -- a first diagnostic attempt that DROPPED
-  # this flag (letting flutter test auto-select "expanded" since CI's stdout
-  # isn't a tty) made the 2 failures vanish entirely (1291/0 instead of
-  # 1289/2), so the failure is reporter/timing-sensitive and reproducing it
-  # requires the exact original flag. Compact reporter uses \r to overwrite
-  # its running counter in a real terminal; piped/captured raw, those \r
-  # bytes would otherwise collapse the whole run into what looks like one
-  # line, so they're translated to real newlines before printing.
-  echo "=== TEMP DIAGNOSTIC: full flutter test output ==="
-  printf '%s\n' "$out" | tr '\r' '\n'
-  echo "=== END TEMP DIAGNOSTIC ==="
-  p=$(printf '%s' "$out" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
-  f=$(printf '%s' "$out" | grep -oE '\-[0-9]+' | tail -1 | tr -d '-')
+  # p/f must come from the compact reporter's own progress-counter PREFIX at
+  # the very START of a line (e.g. "03:29 +1291 -2: ..."), never from a bare
+  # "-[0-9]+" search anywhere in the captured blob. That is what this block
+  # used to do, and it produced a real false failure on CI (Linux only,
+  # never reproducible locally, because it isn't a test bug at all): every
+  # dart test genuinely passes, but api_client_test.dart's own test name --
+  # "...a non-2xx response (e.g. 403 not_this_child) returns false, never
+  # throws" -- contains the substring "-2", and because a fully-passing run
+  # never emits a real "-N" counter to begin with, that incidental text in
+  # the test's own DESCRIPTION was the only thing matching `grep -oE
+  # '\-[0-9]+' | tail -1`, so the script confidently reported "2 failed"
+  # against a suite with zero real failures. CI's own false-red, the same
+  # class of bug this file's own header exists to catch, just pointed the
+  # other direction. Anchoring with ^ to the reporter's own
+  # "<elapsed> +passed[ -failed]:" prefix -- structured data the reporter
+  # itself emits, never test-author-controlled text -- makes this immune to
+  # what any individual test happens to be named. The reporter uses \r to
+  # overwrite its own line in a real terminal; piped/captured raw those
+  # bytes are still literal \r, so they're normalized to \n first so ^ can
+  # anchor each update correctly.
+  lines=$(printf '%s' "$out" | tr '\r' '\n')
+  p=$(printf '%s' "$lines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
+  f=$(printf '%s' "$lines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+ -[0-9]+' | tail -1 | grep -oE '\-[0-9]+$' | tr -d '-')
   record "dart widget invariants" "${p:-0}" "${f:-0}"
 else
   # Not a skip. The toolchain is a declared dependency of this suite.
