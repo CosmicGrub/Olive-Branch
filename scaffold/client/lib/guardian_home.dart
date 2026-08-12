@@ -11,6 +11,8 @@
 // handover notes); the rest are honest not-built-yet stubs, same posture
 // child_home.dart already takes for its own unbuilt tiles.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'availability_screen.dart';
 import 'call_screen.dart';
 import 'care_note.dart';
 import 'emergency_card.dart';
@@ -23,9 +25,25 @@ import 'message_banking.dart';
 import 'morning_briefing.dart';
 import 'send_time_guard.dart';
 
-void _notBuiltYet(BuildContext context, String what) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$what — not built yet.'), duration: const Duration(seconds: 2)));
+/// Opens the real AvailabilityScreen when this home screen has actually been
+/// given a live session (baseUrl/guardianId/childId — see GuardianHome's own
+/// field doc comment); otherwise gives honest feedback rather than a silent
+/// no-op or a screen built on data it doesn't have. Shared by GuardianHome's
+/// own quick-access tile and guardian_more.dart's GuardianMoreScreen — same
+/// helper, so the two entry points can never say different things about the
+/// same real screen.
+void _openAvailability(BuildContext context, {
+  required String? baseUrl, required String? guardianId, required String? childId,
+  http.Client? httpClient,
+}) {
+  if (baseUrl != null && guardianId != null && childId != null) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AvailabilityScreen(
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId, httpClient: httpClient)));
+    return;
+  }
+  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+    content: Text("Availability needs a live session — not connected in this preview build."),
+    duration: Duration(seconds: 3)));
 }
 
 class RibbonBand {
@@ -39,12 +57,24 @@ class GuardianHome extends StatelessWidget {
   const GuardianHome({super.key, required this.childName,
     required this.childLocalTime, required this.childZoneAbbr,
     required this.actorLocalTime, required this.childStateSentence,
-    required this.childBands, required this.actorBands, this.overlapLabel});
+    required this.childBands, required this.actorBands, this.overlapLabel,
+    this.baseUrl, this.guardianId, this.childId, this.availabilityHttpClient});
 
   final String childName, childLocalTime, childZoneAbbr, actorLocalTime;
   final String childStateSentence;
   final List<RibbonBand> childBands, actorBands;
   final String? overlapLabel;
+
+  /// Live-session wiring for the real AvailabilityScreen (both this
+  /// screen's own quick-access tile and the one nested in
+  /// guardian_more.dart's GuardianMoreScreen) — see guardian_more.dart's own
+  /// field doc comment for why these are optional and null in every current
+  /// call site (main.dart's static demo data carries none of them yet).
+  final String? baseUrl;
+  final String? guardianId;
+  final String? childId;
+  /// Injectable for tests only — matches GuardianMoreScreen's own field.
+  final http.Client? availabilityHttpClient;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -123,12 +153,10 @@ class GuardianHome extends StatelessWidget {
               _GTile(icon: Icons.account_balance_wallet, label: 'Expenses',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => ExpensesScreen(childName: childName)))),
-              // No screen among this batch renders MARKUP's 'availability'
-              // slug (verified by grepping every new file's own "Renders
-              // MARKUP screen" comment) — stays an honest stub rather than
-              // being pointed at something that only looks related.
               _GTile(icon: Icons.event_available, label: 'Availability',
-                onTap: () => _notBuiltYet(context, 'Availability')),
+                onTap: () => _openAvailability(context,
+                  baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+                  httpClient: availabilityHttpClient)),
               _GTile(icon: Icons.schedule, label: 'Send-time guard',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => SendTimeGuardScreen(childName: childName)))),
@@ -143,7 +171,9 @@ class GuardianHome extends StatelessWidget {
                   builder: (_) => CareNoteScreen(childName: childName)))),
               _GTile(icon: Icons.more_horiz, label: 'More',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => GuardianMoreScreen(childName: childName)))),
+                  builder: (_) => GuardianMoreScreen(childName: childName,
+                    baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+                    availabilityHttpClient: availabilityHttpClient)))),
             ]);
           })),
         const SizedBox(height: 16),

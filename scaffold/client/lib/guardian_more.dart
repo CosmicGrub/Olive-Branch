@@ -9,7 +9,9 @@
 // "every new screen must be reachable" holds without crowding that home
 // screen the way child_more.dart does for the child side.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'availability_screen.dart';
 import 'busy_fork.dart';
 import 'call_security_info.dart';
 import 'closing_ritual.dart';
@@ -32,15 +34,37 @@ import 'the_book.dart';
 import 'webauthn_channel.dart';
 import 'year_book.dart';
 
-void _notBuiltYet(BuildContext context, String what) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$what — not built yet.'), duration: const Duration(seconds: 2)));
-}
-
 class GuardianMoreScreen extends StatelessWidget {
-  const GuardianMoreScreen({super.key, this.childName = 'Ivy', this.childAge = 9});
+  const GuardianMoreScreen({
+    super.key,
+    this.childName = 'Ivy',
+    this.childAge = 9,
+    this.baseUrl,
+    this.guardianId,
+    this.childId,
+    this.availabilityHttpClient,
+  });
   final String childName;
   final int childAge;
+
+  /// Live-session wiring for AvailabilityScreen — all three optional and
+  /// defaulted to null because nothing upstream of this hub (guardian_home.dart,
+  /// main.dart's static demo data) carries a real base URL, guardian id, or
+  /// child id yet; every other call site in this file is still the same
+  /// pre-backend demo build LiveChildHomeScreen's own header describes for
+  /// the child side. When all three ARE supplied, the Availability tile
+  /// opens the real AvailabilityScreen; otherwise it gives the same honest
+  /// not-connected feedback guardian_setup.dart's passkey button gives when
+  /// its own real dependency isn't wired in yet — never a silent no-op, and
+  /// never a screen pretending to have live data it doesn't.
+  final String? baseUrl;
+  final String? guardianId;
+  final String? childId;
+  /// Injectable for tests only (e.g. package:http/testing.dart's MockClient) —
+  /// matches child_home_live.dart's LiveChildHomeScreen.httpClient. Null in
+  /// every real call site; AvailabilityScreen falls back to a real
+  /// http.Client() itself when this is null.
+  final http.Client? availabilityHttpClient;
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -85,6 +109,25 @@ class GuardianMoreScreen extends StatelessWidget {
     } catch (_) {
       return PasskeyOutcome.declined;
     }
+  }
+
+  /// Opens the real AvailabilityScreen when this hub has actually been given
+  /// a live session to hand it (see the field doc comment above); otherwise
+  /// gives honest feedback rather than a silent no-op or a screen built on
+  /// data it doesn't have. Deliberately NOT worded "not built yet" — the
+  /// screen exists and is real; what's missing here is live session wiring
+  /// from this specific demo entry point, same as LiveChildHomeScreen not
+  /// being threaded into main.dart's own static demo navigation either.
+  void _openAvailability(BuildContext context) {
+    final url = baseUrl, gid = guardianId, cid = childId;
+    if (url != null && gid != null && cid != null) {
+      _open(context, AvailabilityScreen(baseUrl: url, guardianId: gid, childId: cid,
+        httpClient: availabilityHttpClient));
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text("Availability needs a live session — not connected in this preview build."),
+      duration: Duration(seconds: 3)));
   }
 
   @override
@@ -172,10 +215,10 @@ class GuardianMoreScreen extends StatelessWidget {
             subtitle: 'No synthetic parent voice, ever — what P1 forbids and why',
             onTap: () => _open(context, const StorytellerSafetyScreen())),
         ]),
-        HubSection(title: 'Not yet built', children: [
+        HubSection(title: 'Coordination', children: [
           HubTile(icon: Icons.event_available_outlined, title: 'Availability',
-            subtitle: 'When he can actually be reached — no screen implements this yet',
-            onTap: () => _notBuiltYet(context, 'Availability')),
+            subtitle: 'When he can actually be reached, honestly rendered',
+            onTap: () => _openAvailability(context)),
         ]),
       ]),
     )),

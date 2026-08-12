@@ -102,19 +102,25 @@ void main() {
   });
 
   // Exchange and Expenses used to be this suite's stub-feedback example, but
-  // this wiring pass gave both real destinations — see the parity tests
-  // below. Availability is the one guardian tile with no implementing
-  // screen anywhere in this batch (verified by grepping every new file's own
-  // "Renders MARKUP screen" comment for the 'availability' slug), so it is
-  // the honest remaining stub this test now exercises.
-  testWidgets('GuardianHome stub tiles show honest not-built-yet feedback',
+  // an earlier wiring pass gave both real destinations. Availability now has
+  // a real implementing screen too (client/lib/availability_screen.dart,
+  // backed by server/routes.mjs's real GET/PUT availability endpoints) — but
+  // OliveDemo's own static demo data (main.dart) still doesn't thread a real
+  // baseUrl/guardianId/childId into GuardianMoreScreen, so tapping it here
+  // still shows honest feedback: not "not built yet" (false, now that a real
+  // screen exists), but "not connected" — this specific demo entry point
+  // has no live session to hand the real screen. See
+  // guardian_more_test.dart's own "opens the REAL AvailabilityScreen once a
+  // live session is threaded in" test for proof the real screen itself
+  // opens once that wiring exists.
+  testWidgets('GuardianHome Availability tile shows honest not-connected feedback',
       (WidgetTester tester) async {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Availability'));
     await tester.pump();
-    expect(find.textContaining('not built yet'), findsOneWidget);
+    expect(find.textContaining('not connected'), findsOneWidget);
   });
 
   testWidgets('GuardianHome Exchange tile reaches the real screen',
