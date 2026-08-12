@@ -80,6 +80,13 @@ void main() {
       await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
         baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
         availabilityHttpClient: mock));
+      // real-authentication's WebAuthn dev-verification tile now sits above
+      // this one in the same scrollable hub, pushing Availability far enough
+      // down that a fixed-size test viewport doesn't have it on screen —
+      // scroll it into view first, same fix this file already needed once
+      // for the Guardian-setup dev tile.
+      await t.ensureVisible(find.text('Availability'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Availability'));
       await t.pumpAndSettle();
       expect(find.byType(AvailabilityScreen), findsOneWidget);
