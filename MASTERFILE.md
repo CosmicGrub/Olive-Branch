@@ -4787,6 +4787,6 @@ Still open:
 
 ---
 
-*End of MASTERFILE v0.47.0. Amend in place. Bump version. Log in CHANGELOG.
+*End of MASTERFILE v0.49.1. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*
