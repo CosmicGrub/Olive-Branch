@@ -108,16 +108,20 @@ if [ -x "$FLUTTER_BIN" ]; then
     grep -E "error|warning" /tmp/da.out | head -5 | sed 's/^/  /'
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
-  out=$(cd client && "$FLUTTER_BIN" test 2>&1)
+  out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
   # TEMP DIAGNOSTIC (to be reverted): full reporter output dumped verbatim so
   # CI's log shows real failing test names/stack traces instead of only the
-  # compacted +N/-M summary -- reproducing the 2-failure CI/Linux-only result
-  # locally has not worked across four separate WSL2/Ubuntu-24.04 attempts
-  # (default TZ, TZ=UTC, and a from-scratch clean clone all report 1291/1291),
-  # so this run captures the actual detail directly from the environment that
-  # DOES fail.
+  # compacted +N/-M summary. IMPORTANT: --reporter compact is kept exactly as
+  # the original invocation had it -- a first diagnostic attempt that DROPPED
+  # this flag (letting flutter test auto-select "expanded" since CI's stdout
+  # isn't a tty) made the 2 failures vanish entirely (1291/0 instead of
+  # 1289/2), so the failure is reporter/timing-sensitive and reproducing it
+  # requires the exact original flag. Compact reporter uses \r to overwrite
+  # its running counter in a real terminal; piped/captured raw, those \r
+  # bytes would otherwise collapse the whole run into what looks like one
+  # line, so they're translated to real newlines before printing.
   echo "=== TEMP DIAGNOSTIC: full flutter test output ==="
-  printf '%s\n' "$out"
+  printf '%s\n' "$out" | tr '\r' '\n'
   echo "=== END TEMP DIAGNOSTIC ==="
   p=$(printf '%s' "$out" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
   f=$(printf '%s' "$out" | grep -oE '\-[0-9]+' | tail -1 | tr -d '-')
