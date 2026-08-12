@@ -5,8 +5,11 @@
 // asserts against the TS original), and widget tests against the actual
 // rendered screen, in the style of invariants_test.dart — the load-bearing
 // property being that RAW export never looks, anywhere, like it needs a plan.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/court_export.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -233,5 +236,196 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+  });
+
+  group('LiveCourtExportScreen — real network wiring', () {
+    // charset=utf-8 explicit, matching the real fix in server/index.mjs /
+    // packages/api/src/api.ts (found via this exact suite): without it,
+    // package:http's Response constructor encodes the body as latin1 by
+    // default and throws on the em dash EXPORT_DENIAL_MESSAGES actually use.
+    http.Response jsonRes(Object body, int status) => http.Response(
+        jsonEncode(body), status, headers: {'content-type': 'application/json; charset=utf-8'});
+
+    Map<String, dynamic> fakeAttestation({bool verified = true}) => <String, dynamic>{
+          'childId': 'child-a',
+          'generatedAt': '2026-08-11T00:00:00.000Z',
+          'entryCount': 2,
+          'firstSeq': 0,
+          'lastSeq': 1,
+          'headHash': 'a' * 64,
+          'bundleHash': 'b' * 64,
+          'chainVerified': verified,
+          'statement': verified ? 'Each entry carries a SHA-256 hash...' : 'VERIFICATION FAILED.',
+        };
+
+    testWidgets('shows a loading indicator before the fetch resolves', (WidgetTester tester) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        return jsonRes(<String, String>{'token': 'tok'}, 200);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a real successful certified export renders the real attestation',
+        (WidgetTester tester) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        if (req.url.path == '/v1/children/child-a/export') {
+          expect(req.url.queryParameters['kind'], 'certified');
+          return jsonRes(<String, dynamic>{
+            'kind': 'certified', 'free': true,
+            'chain': <dynamic>[], 'attestation': fakeAttestation(),
+            'bundleHash': 'c' * 64, 'exportRecordId': 'rec-1',
+          }, 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Included — this one is free.'), findsOneWidget);
+      expect(find.text('Chain verified'), findsOneWidget);
+      expect(find.textContaining('Live:'), findsOneWidget);
+      expect(find.text('a' * 64), findsOneWidget); // the real head hash, not a demo one
+    });
+
+    testWidgets('a paid (not-free) certified export says so, not "free"',
+        (WidgetTester tester) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        return jsonRes(<String, dynamic>{
+          'kind': 'certified', 'free': false,
+          'chain': <dynamic>[], 'attestation': fakeAttestation(),
+          'bundleHash': 'c' * 64, 'exportRecordId': 'rec-2',
+        }, 200);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Included with Court tier.'), findsOneWidget);
+      expect(find.text('Included — this one is free.'), findsNothing);
+    });
+
+    testWidgets('a REAL denial (annual allowance used, no Court tier) renders honestly — '
+        'not a crash, not a silent success', (WidgetTester tester) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        return jsonRes(<String, dynamic>{
+          'error': 'annual_allowance_used',
+          'message': "This year's free certified export has already been used. "
+              'Court tier covers any additional ones — there is no payment flow '
+              'in this build to upgrade, so a Court-tier flag has to be set by '
+              'an admin, by hand, until one exists.',
+        }, 403);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Certified export not authorized'), findsOneWidget);
+      expect(find.textContaining('REASON: annual_allowance_used'), findsOneWidget);
+      expect(find.textContaining("already been used"), findsOneWidget);
+      // Never claims a certified export was produced when it was denied.
+      expect(find.text('Chain verified'), findsNothing);
+      expect(find.text('VERIFICATION FAILED'), findsNothing);
+    });
+
+    testWidgets('a REAL denial (not a guardian of this child) renders honestly',
+        (WidgetTester tester) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        return jsonRes(<String, dynamic>{
+          'error': 'no_edge',
+          'message': 'You are not a guardian of this child.',
+        }, 403);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'mom', childId: 'not-her-child', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Certified export not authorized'), findsOneWidget);
+      expect(find.textContaining('REASON: no_edge'), findsOneWidget);
+    });
+
+    testWidgets('a tampered/broken chain denial is refused, not silently exported',
+        (WidgetTester tester) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        return jsonRes(<String, dynamic>{
+          'error': 'chain_broken',
+          'message': "This child's handover log did not verify as an unbroken "
+              'chain, so no certified export was produced. Raw export is '
+              'unaffected and remains free and unlimited.',
+        }, 403);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Certified export not authorized'), findsOneWidget);
+      expect(find.textContaining('REASON: chain_broken'), findsOneWidget);
+      // Two widgets legitimately contain this phrase — the server's own
+      // denial message AND this screen's own static reassurance footer —
+      // so "at least one", not "exactly one", is the real property.
+      expect(find.textContaining('Raw export is unaffected'), findsWidgets);
+    });
+
+    testWidgets('shows a retry affordance on a real network/server error, distinct from a denial',
+        (WidgetTester tester) async {
+      final MockClient mock =
+          MockClient((http.Request req) async => jsonRes(<String, String>{'error': 'internal'}, 500));
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.text("Couldn't reach the server"), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+      expect(find.text('Certified export not authorized'), findsNothing);
+    });
+
+    testWidgets('retry re-runs the fetch and can recover from denied into ready',
+        (WidgetTester tester) async {
+      int attempt = 0;
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        attempt++;
+        if (attempt == 1) {
+          return jsonRes(<String, dynamic>{
+            'error': 'annual_allowance_used', 'message': 'already used',
+          }, 403);
+        }
+        return jsonRes(<String, dynamic>{
+          'kind': 'certified', 'free': false,
+          'chain': <dynamic>[], 'attestation': fakeAttestation(),
+          'bundleHash': 'c' * 64, 'exportRecordId': 'rec-3',
+        }, 200);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+      expect(find.text('Certified export not authorized'), findsOneWidget);
+
+      await tester.tap(find.text('Check again'));
+      await tester.pumpAndSettle();
+      expect(find.text('Included with Court tier.'), findsOneWidget);
+    });
   });
 }

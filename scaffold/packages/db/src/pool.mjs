@@ -1,5 +1,11 @@
 import pg from "pg";
 import { newChallenge, verifyPin } from "../../auth/src/auth.ts";
+import { can } from "../../family-graph/src/authorize.ts";
+import {
+  verifyChain,
+  certify,
+  authorizeExport
+} from "../../ledger/src/ledger.ts";
 import { sha256Hex } from "../../ledger/src/sha256.ts";
 function createPool(connectionString) {
   return new pg.Pool({ connectionString });
@@ -620,6 +626,69 @@ async function removeDeviceTokenSystem(pool, id) {
     return rows.length > 0;
   });
 }
+async function loadMessageChain(q, childId) {
+  const rows = await q(
+    `SELECT seq, author_id,
+            to_char(at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at,
+            body, prev_hash, hash
+       FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
+    [childId]
+  );
+  return rows.map((r) => ({
+    seq: Number(r.seq),
+    childId,
+    authorId: r.author_id,
+    at: r.at,
+    body: r.body,
+    prevHash: r.prev_hash,
+    hash: r.hash
+  }));
+}
+async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__PURE__ */ new Date()) {
+  const edges = await edgesFor(pool, requestedBy);
+  const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
+  if (!rbac.allow) return { ok: false, reason: rbac.reason };
+  return withSystemSession(pool, async (q) => {
+    const countRows = await q(
+      `SELECT count(*)::int AS n FROM export_record
+        WHERE requested_by = $1 AND kind = 'certified'
+          AND created_at > now() - interval '12 months'`,
+      [requestedBy]
+    );
+    const certifiedInLast12Months = countRows[0]?.n ?? 0;
+    const tierRows = await q(`SELECT court_tier FROM app_user WHERE id = $1`, [requestedBy]);
+    const courtTier = tierRows[0]?.court_tier ?? false;
+    const auth = authorizeExport({
+      kind: "certified",
+      childId,
+      requestedBy,
+      courtTier,
+      certifiedInLast12Months
+    });
+    if (!auth.ok) return { ok: false, reason: auth.reason };
+    const chain = await loadMessageChain(q, childId);
+    const verification = verifyChain(chain);
+    if (!verification.ok) {
+      return { ok: false, reason: "chain_broken", faults: verification.faults };
+    }
+    const attestation = certify(chain, childId, now.toISOString());
+    const bundleHash = sha256Hex(JSON.stringify({ chain, attestation }));
+    const inserted = await q(
+      `INSERT INTO export_record (child_id, requested_by, kind, was_free, head_hash, bundle_hash)
+       VALUES ($1, $2, 'certified', $3, $4, $5)
+       RETURNING id`,
+      [childId, requestedBy, auth.free, attestation.headHash, bundleHash]
+    );
+    return {
+      ok: true,
+      free: auth.free,
+      chain,
+      attestation,
+      bundleHash,
+      exportRecordId: inserted[0].id
+    };
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -633,6 +702,7 @@ export {
   activeCustodyOrderFor,
   attemptPinFor,
   availabilityFor,
+  certifiedExportBundleFor,
   childCtxFor,
   consumeChallenge,
   createChallenge,

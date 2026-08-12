@@ -217,7 +217,9 @@ export class Api {
         const out = await this.handle(req.method ?? 'GET', req.url ?? '/',
           req.headers as any, raw);
         res.writeHead(out.status, {
-          'content-type': 'application/json',
+          // charset=utf-8 explicit -- see server/index.mjs's own header on
+          // this exact fix, found via court_export.dart's live wiring.
+          'content-type': 'application/json; charset=utf-8',
           // Child media must never be cached by an intermediary.
           'cache-control': 'no-store',
           'x-content-type-options': 'nosniff',

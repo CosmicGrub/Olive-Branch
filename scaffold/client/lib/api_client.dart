@@ -15,9 +15,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
-  ApiException(this.statusCode, this.error);
+  ApiException(this.statusCode, this.error, {this.message});
   final int statusCode;
   final String error;
+  /// Plain-language explanation, when the server sent one (e.g. a certified
+  /// export denial reason — see server/routes.mjs's EXPORT_DENIAL_MESSAGES).
+  /// Null for endpoints that don't send one.
+  final String? message;
   @override
   String toString() => 'ApiException($statusCode, $error)';
 }
@@ -128,6 +132,13 @@ class OliveApi {
   static const homeworkCapture = '/v1/children/:childId/homework/capture';
   // --- account lifecycle (§2.10, §2.11, §9.8, P8) -------------------------
   static const deleteAccountPath = '/v1/me/delete';
+  // --- court export (§2.11, §16.1 #3) -------------------------------------
+  // Certified export reuses `export_` above (same route, `?kind=certified`)
+  // rather than a second path constant for the identical URL — server/
+  // routes.mjs's single GET .../export handler dispatches on that query
+  // param, not on a second registration (api.ts's register() has no
+  // duplicate-route guard; a second registration for the same method+path
+  // would just be silently unreachable dead code behind the first).
 
   // --- login (dev-only — see server/index.mjs's own header comment) ------
   static const devLoginPath = '/v1/auth/dev-login';
@@ -139,11 +150,16 @@ class OliveApi {
   // the real caller (permission request, token fetch, refresh listener).
   static const deviceTokens = '/v1/me/device-tokens';
 
-  Uri _uri(String path, [String? childId]) => Uri.parse(
-      '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}');
+  Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
+      '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
+          .replace(queryParameters: query);
 
-  Future<Map<String, dynamic>> _get(String path, {String? childId}) async {
-    final res = await _client.get(_uri(path, childId),
+  Future<Map<String, dynamic>> _get(
+    String path, {
+    String? childId,
+    Map<String, String>? query,
+  }) async {
+    final res = await _client.get(_uri(path, childId, query),
         headers: {'authorization': 'Bearer $sessionToken'});
     return _decode(res);
   }
@@ -191,7 +207,8 @@ class OliveApi {
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode >= 400) {
-      throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+      throw ApiException(res.statusCode, body['error'] as String? ?? 'error',
+          message: body['message'] as String?);
     }
     return body;
   }
@@ -333,6 +350,17 @@ class OliveApi {
   /// not re-encode `bundle` itself (see routes.mjs's own comment on why).
   Future<Map<String, dynamic>> fetchRawExport(String childId) =>
       _get(export_, childId: childId);
+
+  /// GET /v1/children/:childId/export?kind=certified — §2.11, §16.1 #3.
+  /// Same route as [fetchRawExport], distinguished by the `kind` query
+  /// param server-side (routes.mjs's single handler dispatches on it, not a
+  /// second registration — see `export_`'s own doc comment above). A denial
+  /// (annual allowance used / tier required / a broken chain / not a
+  /// guardian of this child) surfaces as an [ApiException] with the real
+  /// server-reported `error` reason and plain-language `message`, never a
+  /// silent failure or a fabricated success.
+  Future<Map<String, dynamic>> fetchCertifiedExport(String childId) =>
+      _get(export_, childId: childId, query: const {'kind': 'certified'});
 
   /// POST .../messages — server/routes.mjs's real counterpart to
   /// [fetchInbox], and the real backend for receipt_screen.dart's "Send one

@@ -14,6 +14,212 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.0] — 2026-08-11 — certified export gets a real backend
+
+`client/lib/court_export.dart`'s own header said it plainly: a real, well-built
+UI with a real 1:1 port of `ledger.ts`'s authorization logic, and "no backend
+exists yet to actually assemble or transfer these files." This closes that gap
+for the certified half (§2.11, §16.1 #3) — raw export is `feature/raw-export`'s
+own scope, a sibling branch not present in this checkout.
+
+### Added
+- **`db/migrations/0013_court_tier_flag.sql`** — `app_user.court_tier boolean
+  NOT NULL DEFAULT false`, the real, checkable Court-tier flag §16.1 #3's own
+  gate needed and never had, despite `0006_court_tier.sql` being *named* for
+  it. Per-guardian, not per-child or per-household: §16.1 #3's own wording is
+  "one free certified export per **guardian** per rolling 12 months," and
+  `ledger.ts`'s `ExportRequest`/`authorizeExport()` already carry `courtTier`
+  and `certifiedInLast12Months` as properties of the requester, never of the
+  child. **There is no payment processor anywhere in this codebase** (grep
+  confirms it, same finding this session already hit for Firebase, APNs, and
+  Twilio) — nothing here invents one. Nothing in this codebase can ever set
+  `court_tier` to `true` except a manual/admin path; the column comment says
+  so. Same migration closes a real, separate finding from reading (not
+  assuming) 0006's own RLS: `export_record` had **no row-level security at
+  all** despite being created in the same migration as `expense`/
+  `message_log`, which both got real policies — fixed with the same "not
+  child" shape as those two, plus `export_record` added to `health_check`'s
+  `rls_unforced` probe (which had the same blind spot).
+- **`packages/db/src/pool.ts`: `certifiedExportBundleFor()`.** Reads a
+  child's real `message_log` chain (real rows, real hash chain — no
+  synthetic fixture), independently re-verifies it via `ledger.ts`'s real
+  `verifyChain()` (a broken/tampered chain is refused with reason
+  `chain_broken`, never silently exported — see the "Verified" section for
+  why this is structurally almost unreachable and how the test suite reaches
+  it anyway), then calls `authorizeExport()` with REAL inputs: the real
+  `app_user.court_tier` flag and a REAL, freshly-queried count of this
+  guardian's `certified` `export_record` rows in the trailing 12 months
+  (`SELECT count(*) ... WHERE requested_by = $1 AND kind='certified' AND
+  created_at > now() - interval '12 months'` — deliberately **guardian**-
+  scoped, not `(guardian, child)`-scoped like 0006's own
+  `certified_exports_last_year()` SQL helper, which answers a narrower
+  question than §16.1 #3 actually specifies and is therefore NOT reused
+  here). On denial, returns the precise reason
+  (`tier_required`/`annual_allowance_used`/`chain_broken`/an RBAC reason) and
+  produces no bundle, no `export_record` row. On success, calls `certify()`
+  for a real `Attestation`, hashes the real bundle+attestation with
+  `ledger.ts`'s own `sha256Hex`, and inserts a real `export_record` row
+  (`was_free` true only on the genuine free case `authorizeExport()`
+  reports). The coarse RBAC check inside this function reuses
+  `family-graph/authorize.ts`'s real `can()` — see the function's own header
+  comment for why it deliberately passes `{court:true}` there rather than
+  the caller's real flag (that flag's job is done immediately after, by
+  `authorizeExport()`; `can()`'s own `'export.certified'` branch has no
+  concept of the annual allowance and would otherwise hard-block every
+  non-Court-tier guardian's legitimately free first export at the coarse
+  layer, before this function's own real check ever ran).
+- **`GET /v1/children/:childId/export?kind=certified`**
+  (`server/routes.mjs`) — registered under action `'export.raw'`
+  *deliberately*, not `'export.certified'`; the route's own comment explains
+  why (the same `can()` tier-blindness above, this time at `api.ts`'s
+  dispatch layer, which never passes a real tier into `can()` at all — using
+  `'export.certified'` here would 403 every non-Court-tier guardian before
+  the handler runs, defeating the free-allowance rule outright). Known,
+  honestly-scoped limitation, not silently glossed over: a `coordinator`-role
+  caller holds `'export.certified'` in `ROLE_CAPS` but not `'export.raw'`,
+  so cannot reach this route as built — real follow-up work, not attempted
+  this pass. **Merge note:** feature/raw-export (this PR's own sibling
+  branch, not present in the checkout this entry was originally written
+  against) had already shipped its own `GET .../export` registration on
+  `main` by the time this branch rebased in — `api.ts`'s `register()` has no
+  duplicate-route guard, so a second registration for the identical
+  method+path would have been silently unreachable dead code behind the
+  first, not an error. Merged into ONE handler instead: `kind=certified`
+  dispatches here; `kind=raw` or a missing `kind` falls through to the
+  already-shipped raw-export behavior unchanged (not the 400 this entry
+  originally specified for that case, back when raw export's route didn't
+  exist yet to fall through to).
+- **`client/lib/court_export.dart`: `LiveCourtExportScreen`.** Mirrors
+  `child_home_live.dart`'s own shape (`devLoginFor` → `OliveApi`, injectable
+  `httpClient`, loading/error/retry) with one addition that screen doesn't
+  need: a **denied** state, rendered honestly with the server's real reason
+  and plain-language message — never a crash, never a silent success. Wired
+  through `guardian_more.dart`'s existing `baseUrl`/`guardianId`/`childId`
+  params (already present for the Availability tile, added by a since-merged
+  sibling branch this entry was originally written before — reused here
+  rather than a second `liveBaseUrl`/`liveGuardianId`/`liveChildId` triple;
+  all default `null`, so `main.dart`'s offline preview build and every
+  existing test of the demo `CourtExportScreen` are unchanged); nothing in
+  this checkout yet constructs a live guardian entry point to pass them from
+  (`main_live.dart` only wires the child side today) — a real,
+  honestly-flagged follow-up, same posture as `child_home_live.dart`'s own
+  `sleepsUntilHandover` gap.
+- **`packages/db/test/court_export.test.mjs`** — real Postgres, no fakes:
+  (A) a guardian with no live edge to a child is refused
+  (`no_edge`) certify-exporting her, a real guardian succeeds, a guardian of
+  a child with zero log entries gets an honest empty (not fabricated)
+  export; (B) the real annual allowance — first certified export free,
+  second denied (`annual_allowance_used`), succeeds (not free) once
+  `court_tier` is set by hand; (C) a tampered chain — see "Verified" for how
+  this section reaches a state the schema's own triggers make otherwise
+  impossible — is refused with `chain_broken`, not exported, and leaves no
+  `export_record` row; (D) a route contract test against the REAL `Api` +
+  REAL `dbPort(pool)` + REAL `registerRoutes()`, hit over `api.handle()`
+  with real signed sessions, covering the 400/403/200 shapes above.
+- **`client/test/court_export_test.dart`** — `LiveCourtExportScreen` group:
+  loading, a real successful export (free and not-free), each real denial
+  reason rendered honestly and distinctly from a network/server error, and
+  retry recovering from denied into ready.
+
+### Fixed
+- **`server/index.mjs` / `packages/api/src/api.ts`: `content-type` now
+  declares `; charset=utf-8`.** Found by this pass's own test suite, not
+  hypothetically: `EXPORT_DENIAL_MESSAGES`' em dash is real UTF-8 content,
+  and an unlabelled `application/json` response defaults to Latin-1 per
+  RFC 2616 — `package:http` (this app's own live client) honors that default
+  literally, throwing on encode when a mocked response carried the
+  unlabelled header and non-ASCII content. Every other route's JSON has
+  been ASCII-only so far, which is exactly how this went unnoticed until
+  now. No behavior change for ASCII bodies; real UTF-8 bodies now round-trip
+  correctly instead of silently degrading to mojibake in production.
+
+### Verified
+- `node packages/db/test/court_export.test.mjs`: **NOT run this session —
+  see "NOT verified" below.**
+- `flutter analyze` (client/): clean.
+- `flutter test` (client/): all 1286 tests pass, including 29 new ones in
+  `court_export_test.dart`'s `LiveCourtExportScreen` group.
+- `npm run build` (scaffold/): succeeds; `packages/db/src/pool.mjs`
+  regenerated and its new cross-package imports (`family-graph/authorize.ts`,
+  `ledger/ledger.ts`, `ledger/sha256.ts`) resolve and execute under Node
+  24's native TypeScript stripping — confirmed with a direct
+  `import('./packages/db/src/pool.mjs')` smoke check, not assumed from the
+  esbuild output alone.
+- Every non-DB suite `tools/verify.sh` runs was re-run individually this
+  session (not just via the `npm test` chain, which a pre-existing,
+  unrelated Windows `UV_HANDLE_CLOSING` libuv teardown race in
+  `stack.test.mjs` — documented in that file's own header — halts partway
+  through on this platform regardless of this change): all 30 suites green,
+  0 failures, including `family-graph/test/graph.test.mjs` (59/59 — proves
+  `can()`'s own H8 export assertions, untouched by this change, still hold
+  exactly as before) and `api/test/stack.test.mjs` (94/94). `npm run demo &&
+  node demo/test/drive.test.mjs`: 116/116 — the Engine Room's own
+  `authorizeExport()` wiring (`demo/src/bridge.ts`), pure and untouched by
+  this change, still renders correctly.
+  `packages/homework/test/homework.test.mjs` could not run (missing
+  ImageMagick fixture generator) — pre-existing, unrelated to this change,
+  not touched by it.
+- `node --check` clean on every touched/added `.mjs` file
+  (`server/routes.mjs`, `server/index.mjs`, `packages/db/src/pool.mjs`,
+  `packages/db/test/court_export.test.mjs`); the DB test file's own
+  `DATABASE_URL` guard was confirmed firing correctly (`exit 2`, the
+  expected message, no DB attempted) rather than assumed from reading the
+  code.
+- `server/routes.mjs` and `packages/db/src/pool.ts`'s new code paths were
+  read back end to end against `family-graph/src/authorize.ts`'s real
+  `ROLE_CAPS`/`can()` and `db/migrations/0006_court_tier.sql`'s real trigger
+  functions line by line to confirm the RBAC/allowance/chain-verification
+  sequencing described above; this is a substitute for, not equivalent to,
+  running the real test file, and is called out as such rather than blended
+  into "Verified" above without qualification.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+`packages/db/test/court_export.test.mjs` (the RLS/authorization, annual-
+allowance, tampered-chain, and route-contract suite for everything in
+"Added" above) was **written but not run this session.** This dev machine's
+Docker Desktop backend is corrupted independent of anything in this
+change — `com.docker.backend.exe.log` shows it failing to start with
+`starting services: initializing Inference manager: listening on
+unix://…/dockerInference: remove …: The file cannot be accessed by the
+system`, and the underlying `%LocalAppData%\Docker\run\` socket files
+resist deletion by every tool tried (`rm -f`, PowerShell `Remove-Item
+-Force`, `[System.IO.File]::Delete()`, `cmd /c del`), including as the
+files' own owner — a Windows-level lock or reparse-point corruption below
+what a code-editing session can safely repair. No native Postgres install
+exists on this machine as a fallback. `tools/verify.sh`'s whole database
+section, and every other DB-backed suite in this repository
+(`pool.test.mjs`, `custody_order.test.mjs`), is equally blocked, so this is
+an environment gap, not one specific to this change — recorded here rather
+than silently skipped or asserted as passing without having run. The file
+itself was written, reviewed line-by-line against the real schema/trigger
+definitions and the real `can()`/`authorizeExport()` contracts (see
+"Verified"), and its imports/syntax confirmed loadable
+(`node --check`/direct import smoke tests on every touched `.mjs`), but
+**"loads without throwing" is not "the assertions inside it pass," and this
+entry does not claim the latter.** Whoever next has a working local Postgres
+should run
+`DATABASE_URL=... ADMIN_DATABASE_URL=... node packages/db/test/court_export.test.mjs`
+(after `npm run build`) before trusting this feature in anything beyond
+code review.
+
+**MARKUP.html/DEMO.html/shell.html version and assertion-count sync is
+NOT done this pass**, for the same reason: `tools/verify.sh` computes
+`TOTAL_PASS` by summing every suite including the database section, which
+hard-aborts (`ABORT: Postgres unreachable`) before producing any number at
+all on this machine right now — there is no real total to sync MARKUP's
+`<strong>NNNN assertions</strong>` tag to, for this session or anyone else
+on this same broken environment, and writing in a guessed number would be
+exactly the kind of unverified claim of correspondence this project's own
+`check-markup.mjs` exists to catch. Once a working Postgres is available:
+run `tools/verify.sh` for the real `TOTAL_PASS`, bump MARKUP.html's
+`version`/`spec` tags to `0.46.3`, add this version's §07
+changelog-correspondence row, mirror `version`/`spec`/`assertions` in
+`shell.html`, regenerate `DEMO.html` (`npm run demo`), then
+`node tools/check-markup.mjs --total <N>` until clean — the exact sequence
+already established this session for prior entries, just not run here.
+
+---
+
 ## [0.48.3] — 2026-08-16 — deactivateAccount() runs as `system`: auth_challenge's RLS is system-only, full stop
 
 v0.48.2's fix corrected `deactivateAccount()`'s column/table names

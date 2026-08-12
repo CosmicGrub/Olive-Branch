@@ -18,7 +18,8 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          setAvailabilityWindows, deactivateAccount,
          rawExportBundleFor, edgesFor, childCtxFor,
          persistCapturedMessage, registerDeviceToken,
-         unregisterDeviceToken } from '../packages/db/src/pool.mjs';
+         unregisterDeviceToken,
+         certifiedExportBundleFor } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
@@ -61,6 +62,34 @@ function invalidAvailabilityBody(body) {
 }
 
 const DEVICE_PLATFORMS = new Set(['android', 'ios']);
+
+/**
+ * Plain-language companions to packages/db/src/pool.ts's
+ * `CertifiedExportDenial` reasons — MASTERFILE §2.11's own rule: a denial
+ * must say plainly WHY, and since no payment flow exists anywhere in this
+ * codebase, that upgrading is not available in this build rather than
+ * rendering a paywall that has nothing real behind it.
+ */
+const EXPORT_DENIAL_MESSAGES = {
+  no_edge: 'You are not a guardian of this child.',
+  edge_closed: 'Your guardianship of this child has closed.',
+  edge_expired: 'Your access to this child has expired.',
+  outside_validity: 'Your access to this child is not currently active.',
+  restricted: 'Your access to this child is restricted.',
+  role_lacks_capability: 'Your role does not include certified export.',
+  scope_denied: 'Certified export is switched off for your access to this child.',
+  annual_allowance_used:
+    "This year's free certified export has already been used. Court tier covers "
+    + 'any additional ones — there is no payment flow in this build to upgrade, '
+    + 'so a Court-tier flag has to be set by an admin, by hand, until one exists.',
+  tier_required:
+    'Certified export requires Court tier for this request. There is no payment '
+    + 'flow in this build to upgrade — Court tier has to be set by an admin, by hand, '
+    + 'until one exists.',
+  chain_broken:
+    "This child's handover log did not verify as an unbroken chain, so no certified "
+    + 'export was produced. Raw export is unaffected and remains free and unlimited.',
+};
 
 /**
  * @param {import('../packages/api/src/api.ts').Api} api
@@ -524,24 +553,73 @@ export function registerRoutes(api, pool) {
     // previously snackbar-only "Download raw export" button (§2.11, §16.1
     // #3: free, unlimited, every tier). `export.raw` already existed in
     // family-graph/src/authorize.ts's Action union with nothing behind it.
+    //
+    // Certified export (§16.1 #3) is served from THIS SAME registration,
+    // dispatched on `?kind=certified`, rather than a second api.register()
+    // call for the identical method+path -- api.ts's register() has no
+    // duplicate-route guard (it just pushes onto an array and match() takes
+    // the first hit), so a second registration here would be silently
+    // unreachable dead code behind this one, not an error. Registered under
+    // `export.raw` rather than `export.certified` DELIBERATELY -- see
+    // packages/db/src/pool.ts's certifiedExportBundleFor() header for the
+    // full reasoning: authorize.ts's can() hard-requires tier.court for
+    // 'export.certified' with no awareness of the annual free allowance, so
+    // declaring this route under that action would make api.ts's own coarse
+    // dispatch-layer check (which never passes a real tier into can() at
+    // all) deny every non-court-tier guardian's very first, legitimately-
+    // free certified export before this handler ever ran. 'export.raw' is
+    // in exactly the same guardian/coordinator ROLE_CAPS list and carries no
+    // tier gate, so it gives this route the SAME coarse "does this edge
+    // exist, live, unrestricted" check every other route gets -- the actual,
+    // precise, tier/allowance-aware decision is made below by
+    // certifiedExportBundleFor() itself (which independently re-derives the
+    // caller's edges via can() with the real 'export.certified' action name).
     method: 'GET', path: '/v1/children/:childId/export', action: 'export.raw',
     handler: async (c, _q) => {
-      // packages/db/src/pool.mjs's rawExportBundleFor() runs its OWN
-      // withSession(pool, principal, ...) independent of the caller-scoped
-      // `q` this handler was already given -- the same "runs its own
-      // session, separate from the request's" shape /now's handler above
-      // uses for activeCustodyOrderFor(), for the same reason: the pool
-      // function needs to be callable (and independently unit-testable)
-      // without going through this route at all.
+      // packages/db/src/pool.mjs's rawExportBundleFor()/certifiedExportBundleFor()
+      // each run their OWN withSession/withSystemSession, independent of the
+      // caller-scoped `q` this handler was already given -- the same "runs
+      // its own session, separate from the request's" shape /now's handler
+      // above uses for activeCustodyOrderFor(), for the same reason: the
+      // pool functions need to be callable (and independently unit-
+      // testable) without going through this route at all.
       if (c.principal.roleName === 'child') {
         // §21.2 rung 17 ("her own export") is real in
         // packages/maturation/src/rungs.ts's authorizeExport() but has no
         // age gate wired to any route, and export_record.requested_by has no
         // app_user row a child principal could honestly be attributed to
-        // (see rawExportBundleFor's own header for the full reasoning). A
+        // (see rawExportBundleFor's own header for the full reasoning).
+        // Applies to both kinds -- neither has a child-caller path built. A
         // clear 501, not a silent empty bundle or a fabricated ledger row.
         return { status: 501, body: { error: 'child_self_export_not_implemented' } };
       }
+      const kind = c.query.get('kind');
+      if (kind === 'certified') {
+        const result = await certifiedExportBundleFor(pool, c.principal.userId, c.childId);
+        if (!result.ok) {
+          return { status: 403, body: {
+            error: result.reason,
+            message: EXPORT_DENIAL_MESSAGES[result.reason] ?? result.reason,
+            ...(result.faults ? { faults: result.faults } : {}),
+          } };
+        }
+        return { status: 200, body: {
+          kind: 'certified',
+          free: result.free,
+          chain: result.chain,
+          attestation: result.attestation,
+          bundleHash: result.bundleHash,
+          exportRecordId: result.exportRecordId,
+        } };
+      }
+      // Default: kind unspecified, or kind=raw explicitly -- the original,
+      // already-shipped behavior, unchanged. Not an allowlist-and-400 on an
+      // unrecognized kind: the pre-existing client contract (fetchRawExport)
+      // never sends `kind` at all, and this route's own MASTERFILE spec
+      // predates the `kind` param entirely -- silently defaulting to the
+      // long-standing free/unlimited raw export is the honest choice here,
+      // not a behavior change for every caller that isn't asking for
+      // certified specifically.
       const result = await rawExportBundleFor(pool, c.principal, c.childId);
       if (!result.ok) return { status: 403, body: { error: result.reason } };
       return { body: {

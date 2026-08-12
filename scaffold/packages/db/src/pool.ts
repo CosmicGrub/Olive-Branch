@@ -1,9 +1,13 @@
 import pg from 'pg';
 import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
 import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
-import type { Edge } from '../../family-graph/src/authorize.ts';
+import { can, type Edge, type Deny } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
+import {
+  verifyChain, certify, authorizeExport,
+  type LogEntry, type Attestation, type ChainFault,
+} from '../../ledger/src/ledger.ts';
 import { sha256Hex } from '../../ledger/src/sha256.ts';
 import type { ArtifactRow, IntentRow } from '../../messaging/src/pipeline.ts';
 import type { ChildCtx } from '../../delivery-engine/src/materialize.ts';
@@ -1331,6 +1335,159 @@ export async function removeDeviceTokenSystem(pool: pg.Pool, id: string): Promis
   return withSystemSession(pool, async (q) => {
     const rows = await q(`DELETE FROM device_token WHERE id = $1 RETURNING id`, [id]);
     return rows.length > 0;
+  });
+}
+
+// ==================================================== certified export =====
+/**
+ * db/migrations/0006_court_tier.sql's `message_log` — the real, already
+ * hash-chained, DB-trigger-enforced parent<->parent log — and
+ * 0013_court_tier_flag.sql's `app_user.court_tier`. MASTERFILE §2.11, §16.1
+ * #3. client/lib/court_export.dart's own header names the gap this closes:
+ * a real, well-built UI with a real 1:1 port of ledger.ts's authorization
+ * logic, and "no backend exists yet to actually assemble or transfer these
+ * files." This is that backend, for the certified half only (raw export is
+ * feature/raw-export's job, a sibling branch not present in this checkout).
+ *
+ * Every real primitive below is REUSED, not re-implemented: `can()`
+ * (family-graph/authorize.ts) for "does this caller even hold export
+ * standing over this child," `authorizeExport()`/`verifyChain()`/`certify()`
+ * (ledger.ts) for the actual business rule and the actual cryptography. This
+ * file only wires them to real rows.
+ *
+ * ---- WHY THE COARSE RBAC CHECK BELOW PASSES `{ court: true }` TO can() ----
+ * `can()`'s own 'export.certified' branch (authorize.ts line ~154) is
+ * unconditional: `!tier.court` denies with no awareness of §16.1 #3's annual
+ * free allowance at all (see packages/family-graph/test/graph.test.mjs's own
+ * H8 assertions, which assert exactly that, with no allowance exception —
+ * that engine was never taught the allowance exists, and this file does not
+ * change it: graph.test.mjs's contract must keep passing unmodified). If
+ * this file called `can('export.certified', edges, childId, now, role,
+ * { court: realCourtTierFlag })`, EVERY non-court-tier guardian would be
+ * denied even their free first export, every time — can() has no way to
+ * express "unless a free credit remains." That would make the free-annual
+ * rule this whole feature exists to implement permanently unreachable.
+ *
+ * So the two questions are deliberately kept separate, exactly as
+ * MASTERFILE's own principle §2.11 keeps them separate: `can()` here answers
+ * only "does this edge exist, live, unrestricted, with export.certified role
+ * capability" (the RBAC question — identical to what export.raw or any other
+ * action would check); `authorizeExport()` below, called immediately after
+ * with the REAL court_tier flag and REAL annual count, is the sole,
+ * authoritative source of the tier/allowance decision and its precise
+ * denial reason. Passing `{court:true}` here does not weaken enforcement —
+ * a caller with no live edge to this child, a closed/expired/restricted
+ * edge, or a role lacking export.certified capability is still refused
+ * right here, before authorizeExport() ever runs.
+ */
+// Derived from authorize.ts's own `Deny`, minus the members that are
+// structurally unreachable through the `can()` call below (P6/P7 never
+// apply to 'export.certified'; ladder_none/observer_readonly only ever fire
+// for actions in CONTACT/WRITES, which 'export.certified' is in neither of;
+// 'tier_required' from can() itself can never fire because the tier passed
+// below is forced true — see this function's header) — plus the two reasons
+// only `authorizeExport()` can produce.
+export type CertifiedExportDenial =
+  | Exclude<Deny,
+      'ladder_none' | 'observer_readonly' | 'P6_child_financial'
+      | 'P7_journal_never' | 'tier_required'>
+  | 'annual_allowance_used' | 'chain_broken';
+
+export type CertifiedExportResult =
+  | {
+      ok: true;
+      free: boolean;
+      chain: LogEntry[];
+      attestation: Attestation;
+      bundleHash: string;
+      exportRecordId: string;
+    }
+  | { ok: false; reason: CertifiedExportDenial; faults?: ChainFault[] };
+
+/**
+ * `at` is a real timestamptz round-tripped as ISO-8601 with millisecond
+ * precision + 'Z' (`to_char(... , 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`) — the
+ * exact format `entryHash()` must see to reproduce the hash a writer
+ * computed at INSERT time. Nothing in this codebase writes message_log rows
+ * yet (handover_notes.dart's UI has no backend behind it either — a
+ * separate, real gap this pass does not close, see this function's own test
+ * fixtures for the one place that format is exercised end to end today).
+ */
+async function loadMessageChain(
+  q: Query, childId: string,
+): Promise<LogEntry[]> {
+  const rows = await q(
+    `SELECT seq, author_id,
+            to_char(at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at,
+            body, prev_hash, hash
+       FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
+    [childId],
+  );
+  return rows.map((r: any): LogEntry => ({
+    seq: Number(r.seq), childId, authorId: r.author_id, at: r.at,
+    body: r.body, prevHash: r.prev_hash, hash: r.hash,
+  }));
+}
+
+export async function certifiedExportBundleFor(
+  pool: pg.Pool, requestedBy: string, childId: string, now: Date = new Date(),
+): Promise<CertifiedExportResult> {
+  // 1 · RBAC — the "first lock," identical in kind to every other action.
+  // See this function's own header for why tier is forced true here.
+  const edges = await edgesFor(pool, requestedBy);
+  const rbac = can('export.certified', edges, childId, now, undefined, { court: true });
+  if (!rbac.allow) return { ok: false, reason: rbac.reason as CertifiedExportDenial };
+
+  return withSystemSession(pool, async (q) => {
+    // 2 · the REAL business rule's REAL inputs — queried, never estimated.
+    // Guardian-scoped, not (guardian, child)-scoped: see 0008's own comment
+    // on why this does NOT reuse 0006's certified_exports_last_year() SQL
+    // helper, which counts per (requested_by, child_id) and therefore
+    // answers a narrower question than §16.1 #3 actually specifies.
+    const countRows = await q(
+      `SELECT count(*)::int AS n FROM export_record
+        WHERE requested_by = $1 AND kind = 'certified'
+          AND created_at > now() - interval '12 months'`,
+      [requestedBy],
+    );
+    const certifiedInLast12Months: number = countRows[0]?.n ?? 0;
+
+    const tierRows = await q(`SELECT court_tier FROM app_user WHERE id = $1`, [requestedBy]);
+    const courtTier: boolean = tierRows[0]?.court_tier ?? false;
+
+    const auth = authorizeExport({
+      kind: 'certified', childId, requestedBy, courtTier, certifiedInLast12Months,
+    });
+    if (!auth.ok) return { ok: false, reason: auth.reason };
+
+    // 3 · the real chain, read, never assembled from a fixture.
+    const chain = await loadMessageChain(q, childId);
+
+    // 4 · verify for real. message_log's own triggers (0006) make a broken
+    // chain structurally impossible to write via a normal INSERT/UPDATE —
+    // this is defense-in-depth on top of that guarantee, not decoration; see
+    // packages/db/test/court_export.test.mjs for the one way this suite can
+    // even construct a broken chain to prove this path (deliberately
+    // disabling the trigger, since no ordinary write can produce one).
+    const verification = verifyChain(chain);
+    if (!verification.ok) {
+      return { ok: false, reason: 'chain_broken', faults: verification.faults };
+    }
+
+    const attestation = certify(chain, childId, now.toISOString());
+    const bundleHash = sha256Hex(JSON.stringify({ chain, attestation }));
+
+    const inserted = await q(
+      `INSERT INTO export_record (child_id, requested_by, kind, was_free, head_hash, bundle_hash)
+       VALUES ($1, $2, 'certified', $3, $4, $5)
+       RETURNING id`,
+      [childId, requestedBy, auth.free, attestation.headHash, bundleHash],
+    );
+
+    return {
+      ok: true, free: auth.free, chain, attestation, bundleHash,
+      exportRecordId: inserted[0].id,
+    };
   });
 }
 
