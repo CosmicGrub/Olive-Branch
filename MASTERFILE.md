@@ -9,9 +9,9 @@
 | | |
 |---|---|
 | **Document** | MASTERFILE (canonical) |
-| **Version** | 0.46.2 |
-| **Last amended** | 2026-08-08 |
-| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call had two independent bugs, verified live on two physical devices; one is now fixed in code (v0.46.1), not yet re-verified live** (§16.2 #6 callout, §20.2b) — the child-side kiosk-lock/Activity conflict has an implemented, compiled, `flutter analyze`/`flutter test`-clean fix pending a live device re-run; the public Jitsi server's moderator lobby has Step 2 (self-hosting) staged and container-verified as of v0.46.2 — `scaffold/tools/jitsi-selfhost/` — but not yet device-verified: the stack's self-signed cert blocks both a browser and, unfixed, would block the Flutter SDK on a real device. |
+| **Version** | 0.47.0 |
+| **Last amended** | 2026-08-09 |
+| **Status** | Phases 0–3 built; §9.10 showcase, 12 async + 10 live games. **The kiosk bridge is real on Android and Windows** (§5.20, §8.3, §20.2b) — Windows is an app-level lock, not OS Assigned Access, and is still **UNVERIFIED** (no local C++ toolchain to actually run `flutter build windows`); iOS Guided Access remains Ph.4 and, per Apple's own restriction, cannot be enabled programmatically at all. A **Wear OS companion** (Galaxy Watch6) exists as a demo shell with no phone↔watch data sync yet. §21 **built** — the ladder, the quieting, letters, reverse banking, rungs 15–18, siblings. **The Flutter client's own navigation graph is complete** (v0.44.0) — 62 screens built across fourteen parallel groups are reachable from `ChildHome`/`GuardianHome` and their new `*_more.dart`/`games_hub.dart` sub-hubs, not just compiled and tested in isolation. **The real-time call had two independent bugs, verified live on two physical devices; one is now fixed in code (v0.46.1), not yet re-verified live** (§16.2 #6 callout, §20.2b) — the child-side kiosk-lock/Activity conflict has an implemented, compiled, `flutter analyze`/`flutter test`-clean fix pending a live device re-run; the public Jitsi server's moderator lobby has Step 2 (self-hosting) staged and container-verified as of v0.46.2 — `scaffold/tools/jitsi-selfhost/` — but not yet device-verified: the stack's self-signed cert blocks both a browser and, unfixed, would block the Flutter SDK on a real device. **Real guardian authentication is now wired end to end** (v0.47.0, §7.1, §8.1, §8.3) — the hardcoded, unauthenticated `'1273'` kiosk PIN is gone, replaced by a real scrypt-hashed PIN + WebAuthn/passkey system against RLS-scoped Postgres (`pin_credential`/`webauthn_credential`/`auth_challenge`, migration 0008), a real Android Credential Manager bridge, and a real client wiring. Two independent adversarial reviews found five real defects (two CRITICAL: a connection-pool self-deadlock that froze the entire server, and a PIN-lockout that gave zero protection against a concurrent brute-force burst); both CRITICALs and both MEDIUM webauthn signCount findings are fixed and **verified live** — real Postgres (WSL2), a real running server, real concurrent HTTP load, and a real Android device kiosk-PIN unlock (wrong PIN rejected, right PIN accepted, screenshotted). The WebAuthn native Kotlin bridge compiles clean against the real androidx.credentials 1.6.0 AAR (one real compile-time API misuse found and fixed in this pass — see CHANGELOG v0.47.0) but the interactive on-device passkey ceremony itself was **not** independently re-verified this pass — device-blocked, not skipped: the only device with a configured secure lock screen + biometric available was the operator's own personal phone, correctly left unlocked/untouched rather than bypassed. |
 | **Assertions** | See `npm run verify` — the count is computed, never quoted here (standing rule 5, §20.4). |
 | **Market scope** | **United States only** |
 | **Companion docs** | `OLIVE BRANCH_CHANGELOG.md`, `OLIVE BRANCH_VISUAL.html`, `OLIVE BRANCH_MARKUP.html` |
@@ -1380,6 +1380,32 @@ GET    /v1/children/:id
 POST   /v1/children/:id/guardianships   invite guardian / trusted adult / sitter / coordinator
 PATCH  /v1/guardianships/:id            scope, supervised, restricted, expiry
 ```
+
+**v0.47.0 — real routes actually built, named differently than the block
+above.** The four lines above were this section's original, pre-implementation
+placeholders; §7 was never revisited when `packages/db/src/pool.ts`,
+`server/routes.mjs`, and `server/index.mjs` shipped the real thing, which is a
+real drift this entry records rather than silently reconciles (a full §7.1
+rewrite is out of scope for an authentication fix-and-verify pass). What
+actually exists, real and RLS-backed against `db/migrations/0008_auth_credentials.sql`:
+
+```
+POST   /v1/children/:childId/kiosk-pin/verify   child kiosk unlock — tries the
+                                                 PIN against every LIVE guardian
+                                                 of that child (server/routes.mjs)
+POST   /v1/me/pin                               guardian sets/replaces her own PIN
+POST   /v1/auth/webauthn/register/challenge     guardian passkey enrollment, step 1
+POST   /v1/auth/webauthn/register/verify        guardian passkey enrollment, step 2
+POST   /v1/auth/webauthn/login/challenge        guardian passkey sign-in, step 1 (server/index.mjs — pre-session, cannot go through api.register())
+POST   /v1/auth/webauthn/login/verify           guardian passkey sign-in, step 2 (ditto)
+POST   /v1/auth/dev-login                       DEV_LOGIN=1 only — never production
+```
+
+No `escalate` endpoint exists yet — §8.3's PIN+biometric escalation ceremony
+is ported and unit-tested in `packages/family-graph`/`lock_controller.dart`
+but has no route or UI surface to reach it from (`kiosk_shell.dart`'s own
+header records this as deliberate: nothing wires `escalate()` to a screen
+that doesn't exist yet, rather than wiring it to nothing).
 
 ### 7.2 Time engine
 

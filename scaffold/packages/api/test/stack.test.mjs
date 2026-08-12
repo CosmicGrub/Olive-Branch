@@ -385,6 +385,58 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
   await srv.close();
 }
 
+// ===========================================================================
+// G · skipOuterSession — the connection-pool self-deadlock fix
+// ===========================================================================
+// Real, live-reproduced bug (adversarial review of the real-authentication
+// feature): a handler that ignores the outer `q` and instead runs its own,
+// differently-scoped session(s) against the raw pool still had that outer
+// session opened and held for its entire lifetime by api.handle() — wasted at
+// best, and under concurrency a self-referential deadlock at worst (every
+// slot in the bounded pool filled by outer wrappers each blocked on their own
+// handler's inner connect(), which can never be satisfied because the pool is
+// already full of them). skipOuterSession:true is the fix; this proves BOTH
+// halves of it against the real Api class, not just against a route that
+// happens not to need `q`.
+{
+  const calls = [];
+  const db = {
+    edgesFor: async () => [],
+    withSession: async (p, fn) => { calls.push(p); return fn(async () => []); },
+  };
+  const api = new Api(SECRET, db, () => NOW);
+  let handlerRan = false, qThrew = false;
+  api.register({
+    method: 'POST', path: '/v1/me/skip-test', action: null, skipOuterSession: true,
+    handler: async (c, q) => {
+      handlerRan = true;
+      try { await q('SELECT 1'); } catch { qThrew = true; }
+      return { body: { ok: true } };
+    },
+  });
+  const tok = issueSession(SECRET, { userId: DAD, roleName: 'guardian',
+    childId: null, escalated: false }, NOW);
+  calls.length = 0;
+  const res = await api.handle('POST', '/v1/me/skip-test',
+    { authorization: `Bearer ${tok}` }, '{}');
+  check('G skipOuterSession', 'the handler still runs and its response is returned',
+    `${res.status}/${handlerRan}`, '200/true');
+  check('G skipOuterSession', 'db.withSession() is NEVER called for this route — '
+    + 'no outer connection is checked out at all', calls.length, 0);
+  check('G skipOuterSession', 'the q it is handed throws if actually called '
+    + '(a route that starts using q without dropping the flag fails loudly)',
+    qThrew, 'true');
+
+  // Sanity: an ordinary route (no flag) keeps calling db.withSession exactly
+  // as before — the opt-out changes nothing for every other route.
+  api.register({ method: 'GET', path: '/v1/me/normal-test', action: null,
+    handler: async () => ({ body: { ok: true } }) });
+  calls.length = 0;
+  await api.handle('GET', '/v1/me/normal-test', { authorization: `Bearer ${tok}` }, '');
+  check('G skipOuterSession', 'a route WITHOUT the flag still opens the outer session',
+    calls.length, 1);
+}
+
 // ---------------------------------------------------------------------------
 let g = '';
 for (const r of rows) {

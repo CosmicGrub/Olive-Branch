@@ -109,8 +109,29 @@ if [ -x "$FLUTTER_BIN" ]; then
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
   out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
-  p=$(printf '%s' "$out" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
-  f=$(printf '%s' "$out" | grep -oE '\-[0-9]+' | tail -1 | tr -d '-')
+  # p/f must come from the compact reporter's own progress-counter PREFIX at
+  # the very START of a line (e.g. "03:29 +1291 -2: ..."), never from a bare
+  # "-[0-9]+" search anywhere in the captured blob. That is what this block
+  # used to do, and it produced a real false failure on CI (Linux only,
+  # never reproducible locally, because it isn't a test bug at all): every
+  # dart test genuinely passes, but api_client_test.dart's own test name --
+  # "...a non-2xx response (e.g. 403 not_this_child) returns false, never
+  # throws" -- contains the substring "-2", and because a fully-passing run
+  # never emits a real "-N" counter to begin with, that incidental text in
+  # the test's own DESCRIPTION was the only thing matching `grep -oE
+  # '\-[0-9]+' | tail -1`, so the script confidently reported "2 failed"
+  # against a suite with zero real failures. CI's own false-red, the same
+  # class of bug this file's own header exists to catch, just pointed the
+  # other direction. Anchoring with ^ to the reporter's own
+  # "<elapsed> +passed[ -failed]:" prefix -- structured data the reporter
+  # itself emits, never test-author-controlled text -- makes this immune to
+  # what any individual test happens to be named. The reporter uses \r to
+  # overwrite its own line in a real terminal; piped/captured raw those
+  # bytes are still literal \r, so they're normalized to \n first so ^ can
+  # anchor each update correctly.
+  lines=$(printf '%s' "$out" | tr '\r' '\n')
+  p=$(printf '%s' "$lines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
+  f=$(printf '%s' "$lines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+ -[0-9]+' | tail -1 | grep -oE '\-[0-9]+$' | tr -d '-')
   record "dart widget invariants" "${p:-0}" "${f:-0}"
 else
   # Not a skip. The toolchain is a declared dependency of this suite.
@@ -215,6 +236,63 @@ for spec in "db isolation|db/test/0003_session.test.sql" \
   out=$($PSQL -d "$DB" -f "$file" 2>&1)
   record "$name" "$(printf '%s' "$out" | grep -c 'NOTICE:  PASS')" \
                  "$(printf '%s' "$out" | grep -c 'WARNING:  FAIL')"
+done
+
+echo ""
+echo "── DB suites requiring a real NOSUPERUSER NOBYPASSRLS role ──────"
+# packages/db/test/{pool,custody_order,auth_credentials}.test.mjs are the ONLY
+# suites proving RLS actually denies a child/guardian session (not just that
+# application code doesn't expose it) — and until now NONE of the three ever
+# ran here or in CI, because they need a real, connectable role that OWNS
+# every table (db/DEPLOYMENT.md's app_owner; "any test of RLS run as
+# `postgres` measures nothing" — that doc, quoting a real incident), which
+# nothing in this repo's automation provisioned. That gap meant every one of
+# this migration's own comments claiming RLS/lockout/challenge behavior was
+# "verified for real, not assumed" had zero regression protection: a future
+# edit to 0008_auth_credentials.sql or pool.ts could silently break any of
+# it and CI would stay green throughout. Fixed here, not by adding a new
+# role (0001_constraints.test.sql above and 0003_session.test.sql below
+# already create/extend app_owner for their own narrower purposes) but by
+# finishing the job: a real password so it is reachable over the same TCP
+# connection style everything else in this script uses, and ownership of
+# EVERY table, not just child_journal_entry.
+APP_OWNER_PW="verify_run_app_owner_pw"
+$PSQL -d "$DB" -q -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_owner') THEN
+    CREATE ROLE app_owner LOGIN NOSUPERUSER NOBYPASSRLS;
+  END IF;
+END
+\$\$;
+ALTER ROLE app_owner NOSUPERUSER NOBYPASSRLS LOGIN PASSWORD '$APP_OWNER_PW';
+GRANT USAGE ON SCHEMA public TO app_owner;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_owner;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO app_owner;
+DO \$\$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE %I OWNER TO app_owner', r.tablename);
+  END LOOP;
+END
+\$\$;
+SQL
+if [ $? -ne 0 ]; then
+  echo "  ABORT: could not provision app_owner for the RLS-role DB suites"
+  exit 2
+fi
+DB_URL="postgresql://app_owner:${APP_OWNER_PW}@localhost:${PORT}/${DB}"
+ADMIN_URL="postgresql://postgres:postgres@localhost:${PORT}/${DB}"
+for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
+            "db custody order (real RLS)|packages/db/test/custody_order.test.mjs" \
+            "db auth credentials (real RLS)|packages/db/test/auth_credentials.test.mjs" ; do
+  name="${spec%%|*}"; file="${spec##*|}"
+  out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
+  p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
+  f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
+  record "$name" "${p:-0}" "${f:-0}"
+  if [ "${f:-0}" != "0" ] || [ -z "$p" ]; then printf '%s\n' "$out" | tail -40 | sed 's/^/    /'; fi
 done
 
 echo ""

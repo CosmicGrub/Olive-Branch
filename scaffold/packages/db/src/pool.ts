@@ -1,5 +1,6 @@
 import pg from 'pg';
-import type { VerifiedPrincipal } from '../../auth/src/auth.ts';
+import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
+import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
 import type { Edge } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
@@ -170,6 +171,405 @@ export async function activeCustodyOrderFor(
       effectiveFrom: r.effective_from,
       effectiveTo: r.effective_to,
     } as Order;
+  });
+}
+
+/**
+ * db/migrations/0008_auth_credentials.sql — real guardian PIN + WebAuthn
+ * credentials, replacing the hardcoded, unauthenticated '1273' the client
+ * shipped with (client/lib/main.dart). Every function below follows the two
+ * patterns already established in this file: identity-resolution reads run
+ * `system`-scoped (edgesFor()'s own reasoning, extended here to
+ * guardiansOfChild()); everything else runs scoped to the SPECIFIC guardian
+ * it concerns, as that guardian's own session, so pin_credential/
+ * webauthn_credential's owner-only RLS (0008's own policies) admits exactly
+ * the one row each call needs and nothing else — there is no `system`
+ * bypass on those two tables for routine reads/writes, deliberately (see
+ * 0008's own comments on webauthn_credential's narrower exception).
+ */
+
+/**
+ * §5.17's "first lock" needs to know WHO a child's guardians are before the
+ * kiosk-pin ceremony can check an entered PIN against any of them — an
+ * identity-resolution step independent of `can()`, exactly edgesFor()'s own
+ * justification above, mirrored here for the reverse direction (child ->
+ * guardians rather than guardian -> children). Runs `system`-scoped for the
+ * same reason: guardianship itself carries no RLS in this schema (access to
+ * it is gated at the application layer, per 0007's own header), so there is
+ * no narrower session this could run under that would change what it sees.
+ *
+ * Only LIVE edges count — closed_at IS NULL and valid @> now(), matching
+ * effective_guardianship's own definition (0003_session_context.sql) rather
+ * than re-deriving a second, possibly-divergent notion of "current guardian"
+ * here. A revoked guardian's old PIN must stop working the moment their edge
+ * closes, not linger until someone remembers to delete a credential row too.
+ */
+export async function guardiansOfChild(
+  pool: pg.Pool, childId: string,
+): Promise<{ userId: string }[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT DISTINCT g.user_id
+         FROM guardianship g
+        WHERE g.child_id = $1
+          AND g.closed_at IS NULL
+          AND g.valid @> now()`,
+      [childId],
+    );
+    return rows.map((r: any) => ({ userId: r.user_id }));
+  });
+}
+
+export async function pinCredentialFor(
+  pool: pg.Pool, userId: string,
+): Promise<{ pinHash: string; failedAttempts: number; lockedUntil: Date | null } | null> {
+  // Scoped as THAT guardian's own session, not `system` — pin_credential has
+  // no system-role policy at all (0008's migration), so a PIN hash is never
+  // one dropped withSystemSession call away from being readable for every
+  // guardian at once. The caller already knows which specific guardian it is
+  // asking about (from guardiansOfChild(), or from c.principal.userId for a
+  // guardian managing her own PIN), so scoping to exactly that userId is not
+  // a widening of access — it is a change of WHICH single guardian's own row
+  // this particular call is allowed to see, same as every other call here.
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT pin_hash, failed_attempts, locked_until FROM pin_credential WHERE user_id = $1`,
+      [userId],
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { pinHash: r.pin_hash, failedAttempts: r.failed_attempts, lockedUntil: r.locked_until };
+  });
+}
+
+/** Upsert. Setting a NEW pin clears any standing lockout/counter from the OLD
+ * one — a guardian who just proved she can authenticate well enough to reach
+ * this endpoint (it requires an existing guardian session) should not stay
+ * locked out under a PIN she is actively replacing. */
+export async function setPinCredential(
+  pool: pg.Pool, userId: string, pinHash: string,
+): Promise<void> {
+  await withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    await q(
+      `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
+       VALUES ($1, $2, 0, NULL, now())
+       ON CONFLICT (user_id) DO UPDATE
+         SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0,
+             locked_until = NULL, updated_at = now()`,
+      [userId, pinHash],
+    );
+  });
+}
+
+/**
+ * Two real, defensible numbers, not bare magic ones:
+ *
+ *  PIN_MAX_ATTEMPTS = 5 — a 4-digit PIN has 10,000 possible values. scrypt
+ *  (auth.ts's hashPin/verifyPin) is the defense against an attacker who has
+ *  already stolen the hash and can guess offline as fast as hardware allows;
+ *  this counter is the OTHER defense, against an attacker (or a curious
+ *  child) hammering the live kiosk endpoint with no hash at all. 5 tries is
+ *  enough headroom for a guardian who mistypes twice in a row, while capping
+ *  any one lockout window to a tiny fraction of the keyspace.
+ *
+ *  PIN_LOCKOUT_MS = 15 minutes — long enough that 5-per-15-minutes caps a
+ *  sustained attacker at under 500 guesses/day (against 10,000 total),
+ *  short enough that this doesn't become its own safety problem: this same
+ *  PIN gates a child's escalation to a guardian who is standing right there
+ *  (§8.1) — a lockout measured in hours would turn "Mom mistyped her PIN"
+ *  into "call support," which is worse than the risk it defends against.
+ *  The counter resets to 0 the moment a lock is imposed (not merely paused),
+ *  so lockouts do not stack into an ever-longer ban across repeated windows.
+ */
+export const PIN_MAX_ATTEMPTS = 5;
+export const PIN_LOCKOUT_MS = 15 * 60 * 1000;
+
+export async function recordPinAttempt(
+  pool: pg.Pool, userId: string, success: boolean,
+): Promise<{ lockedUntil: Date | null }> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    if (success) {
+      const rows = await q(
+        `UPDATE pin_credential
+            SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+          WHERE user_id = $1
+          RETURNING locked_until`,
+        [userId],
+      );
+      return { lockedUntil: rows[0]?.locked_until ?? null };
+    }
+    // A single UPDATE, not a read-then-write: two concurrent failed attempts
+    // against the same guardian must not both observe failed_attempts=4 and
+    // both step to 5 while only one commits the lock — the same TOCTOU shape
+    // consumeChallenge() below is written to avoid (see its own comment; that
+    // exact class of bug was found and fixed on feature/secure-network-play).
+    // The CASE arms compute the new counter and the new lock deadline from
+    // the row this UPDATE already holds a lock on, never from a value read
+    // in a separate prior statement.
+    const rows = await q(
+      `UPDATE pin_credential
+          SET failed_attempts = CASE WHEN failed_attempts + 1 >= $2 THEN 0
+                                      ELSE failed_attempts + 1 END,
+              locked_until = CASE WHEN failed_attempts + 1 >= $2
+                                   THEN now() + ($3 || ' milliseconds')::interval
+                                   ELSE locked_until END,
+              updated_at = now()
+        WHERE user_id = $1
+        RETURNING locked_until`,
+      [userId, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS],
+    );
+    return { lockedUntil: rows[0]?.locked_until ?? null };
+  });
+}
+
+/**
+ * The real fix for a critical, live-reproduced bug found in adversarial
+ * review of this file's original kiosk-pin/verify caller: that caller read
+ * `pinCredentialFor()` (a plain SELECT, no row lock) to decide whether a
+ * guardian is currently locked out, and only LATER — as a completely separate
+ * round trip, after the slow ~64ms scrypt verify — called `recordPinAttempt()`
+ * to record the outcome. Nothing held a lock across that gap, so N concurrent
+ * guesses against the SAME guardian all read "not locked" before any of them
+ * had a chance to observe a lock a sibling request was in the middle of
+ * imposing — every single one of them then ran a real scrypt verification
+ * against the true hash, regardless of PIN_MAX_ATTEMPTS. Measured live: 200
+ * concurrent guesses against one guardian, 200/200 ran verifyPin(), account
+ * merely ended up at failed_attempts=1 — the lockout provided ZERO protection
+ * against a concurrent burst, only against sequential guessing.
+ *
+ * The fix: fold "read the lock state", "verify", and "record the outcome"
+ * into ONE transaction that takes a `SELECT ... FOR UPDATE` row lock on the
+ * guardian's own pin_credential row FIRST, before doing anything else.
+ * Postgres serializes every concurrent transaction that wants that same row:
+ * only one can hold the lock at a time, and each one that acquires it next
+ * sees the FRESH state left by the one before it (including any lock that one
+ * just imposed) — not a stale snapshot read before that write happened. This
+ * makes the check-then-verify-then-record sequence atomic with respect to
+ * every OTHER concurrent attempt against the same guardian, which a separate
+ * SELECT (no lock) followed by a separate UPDATE never was, no matter how
+ * correct either statement was in isolation (recordPinAttempt()'s own UPDATE
+ * was already provably safe from lost updates on the COUNTER — see its own
+ * comment — the bug was entirely in the READ that decided whether to even
+ * attempt verifyPin() in the first place).
+ *
+ * Net effect under concurrency: of N simultaneous guesses against one
+ * guardian, AT MOST PIN_MAX_ATTEMPTS of them ever reach verifyPin() before
+ * the rest observe the lock this same function just imposed and skip it —
+ * exactly the sequential-guessing guarantee the lockout's own numbers
+ * (PIN_MAX_ATTEMPTS/PIN_LOCKOUT_MS) were designed around, now also true when
+ * every guess arrives at once. Proven live in
+ * packages/db/test/auth_credentials.test.mjs's "F concurrency" section.
+ */
+export async function attemptPinFor(
+  pool: pg.Pool, userId: string, candidatePin: string,
+): Promise<{ matched: boolean; hasCredential: boolean; locked: boolean }> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    // FOR UPDATE — taken BEFORE anything else runs, so a concurrent call for
+    // this exact userId blocks here until this transaction commits, rather
+    // than racing ahead on a stale read. Real, not cosmetic: this is the one
+    // line that turns "check" and "act" back into a single atomic step.
+    const rows = await q(
+      `SELECT pin_hash, failed_attempts, locked_until
+         FROM pin_credential WHERE user_id = $1 FOR UPDATE`,
+      [userId],
+    );
+    if (!rows.length) return { matched: false, hasCredential: false, locked: false };
+    const r = rows[0];
+    if (r.locked_until && r.locked_until.getTime() > Date.now()) {
+      // Same documented, deliberate timing trade-off kiosk-pin/verify's own
+      // comment already accepts: a locked guardian's scrypt check is skipped
+      // entirely rather than run-and-discarded.
+      return { matched: false, hasCredential: true, locked: true };
+    }
+    const ok = verifyPin(candidatePin, r.pin_hash);
+    // Still inside the SAME transaction, still holding the SAME row lock —
+    // this UPDATE cannot itself be raced by another attemptPinFor() call for
+    // this userId, because no other such call can even acquire the FOR
+    // UPDATE lock above until this one commits.
+    if (ok) {
+      await q(
+        `UPDATE pin_credential SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+          WHERE user_id = $1`,
+        [userId],
+      );
+    } else {
+      await q(
+        `UPDATE pin_credential
+            SET failed_attempts = CASE WHEN failed_attempts + 1 >= $2 THEN 0
+                                        ELSE failed_attempts + 1 END,
+                locked_until = CASE WHEN failed_attempts + 1 >= $2
+                                     THEN now() + ($3 || ' milliseconds')::interval
+                                     ELSE locked_until END,
+                updated_at = now()
+          WHERE user_id = $1`,
+        [userId, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS],
+      );
+    }
+    return { matched: ok, hasCredential: true, locked: false };
+  });
+}
+
+/**
+ * Matches auth.ts's verifyAssertion() own default `challengeTtlMs` exactly.
+ * Kept as a named constant rather than repeating the literal, so the two
+ * never drift silently out of sync with each other.
+ */
+export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+/** Generates via auth.ts's own newChallenge() (CSPRNG, 32 bytes) — this file
+ * never invents its own randomness for a security token. */
+export async function createChallenge(
+  pool: pg.Pool, userId: string, purpose: 'register' | 'login',
+): Promise<string> {
+  const challenge = newChallenge();
+  await withSystemSession(pool, async (q) => {
+    await q(
+      `INSERT INTO auth_challenge (user_id, challenge, purpose) VALUES ($1, $2, $3)`,
+      [userId, challenge, purpose],
+    );
+  });
+  return challenge;
+}
+
+/**
+ * Single-use, atomically. A challenge is valid exactly once: this is a single
+ * `UPDATE ... WHERE consumed_at IS NULL ... RETURNING`, so "is this challenge
+ * still live" and "mark it consumed" happen as one statement under Postgres's
+ * own row lock rather than two round trips a second concurrent call could
+ * interleave between. Two callers racing the identical UPDATE can both issue
+ * it; Postgres serializes writers to the same row, so the second one simply
+ * matches zero rows (the first already flipped consumed_at) — never a torn
+ * read where both believe they were first. This is exactly the join-token-
+ * redemption TOCTOU class found and fixed on feature/secure-network-play;
+ * this function is written to not reintroduce it.
+ */
+export async function consumeChallenge(
+  pool: pg.Pool, userId: string, purpose: 'register' | 'login', challenge: string,
+): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE auth_challenge
+          SET consumed_at = now()
+        WHERE user_id = $1 AND purpose = $2 AND challenge = $3
+          AND consumed_at IS NULL
+          AND issued_at > now() - ($4 || ' milliseconds')::interval
+        RETURNING id`,
+      [userId, purpose, challenge, CHALLENGE_TTL_MS],
+    );
+    return rows.length === 1;
+  });
+}
+
+export async function storeWebauthnCredential(
+  pool: pg.Pool, userId: string, credentialId: string, publicKeyPem: string,
+): Promise<void> {
+  await withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    await q(
+      `INSERT INTO webauthn_credential (user_id, credential_id, public_key_pem)
+       VALUES ($1, $2, $3)`,
+      [userId, credentialId, publicKeyPem],
+    );
+  });
+}
+
+export async function webauthnCredentialsForUser(
+  pool: pg.Pool, userId: string,
+): Promise<Credential[]> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT credential_id, public_key_pem, sign_count, user_id
+         FROM webauthn_credential WHERE user_id = $1`,
+      [userId],
+    );
+    return rows.map((r: any): Credential => ({
+      credentialId: r.credential_id, publicKeyPem: r.public_key_pem,
+      signCount: Number(r.sign_count), userId: r.user_id,
+    }));
+  });
+}
+
+/**
+ * System-scoped, deliberately, unlike every other accessor in this section:
+ * at LOGIN the caller presents a bare credentialId with no session yet to
+ * scope a guardian-owned lookup to — resolving "whose credential is this" IS
+ * the identity-resolution step, not a data-access decision gated behind one.
+ * webauthn_credential's migration grants `system` a narrow, explicitly-
+ * justified lookup policy for exactly this reason, alongside (never instead
+ * of) the guardian-owns-her-own-row policy every other function in this file
+ * runs under. Returns null on no match rather than throwing — an unknown
+ * credential is an ordinary, expected outcome of a login attempt, not an
+ * error condition.
+ */
+export async function webauthnCredentialById(
+  pool: pg.Pool, credentialId: string,
+): Promise<Credential | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT credential_id, public_key_pem, sign_count, user_id
+         FROM webauthn_credential WHERE credential_id = $1`,
+      [credentialId],
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { credentialId: r.credential_id, publicKeyPem: r.public_key_pem,
+              signCount: Number(r.sign_count), userId: r.user_id };
+  });
+}
+
+/**
+ * Same system-scoped justification as webauthnCredentialById() immediately
+ * above — part of the same pre-session login ceremony, called only AFTER
+ * auth.ts's verifyAssertion() has already independently proven possession of
+ * the private key for this exact credential (its own signCount-replay
+ * check), so by the time this runs the caller is not a stranger, only not
+ * yet holding an ISSUED session token (issueSession happens after this).
+ *
+ * A real TOCTOU, found and fixed here: this used to be an UNCONDITIONAL
+ * `UPDATE ... SET sign_count = $2`, with no compare against the row's CURRENT
+ * value. verifyAssertion()'s own replay check only ever sees a SNAPSHOT of
+ * sign_count read moments earlier by webauthnCredentialById() — two truly
+ * concurrent login attempts (e.g. a cloned authenticator used at the same
+ * moment as the real one) that both read the same stale stored count and
+ * both present the same next signCount both pass that snapshot check, and an
+ * unconditional write here would let BOTH persist and BOTH be issued a
+ * session — exactly the "bearer token that can be replayed forever" auth.ts's
+ * own header says this mechanism exists to prevent.
+ *
+ * Fixed the same way consumeChallenge() above closes its own TOCTOU: the
+ * comparison moves INTO the UPDATE's WHERE clause, so it is checked against
+ * the row's value at the moment this exact statement acquires the row's
+ * write lock, not a value read by an earlier, separate statement. Two
+ * concurrent calls with the same `newSignCount` can both START, but Postgres
+ * serializes them on the row: the first to acquire the lock sees the
+ * pre-update value and its WHERE matches; the second, after waiting for the
+ * first's lock to release, re-evaluates WHERE against the row the first one
+ * just wrote and finds it no longer matches, updating zero rows.
+ *
+ * `$2 = 0` bypasses the comparison entirely rather than being folded into
+ * `sign_count < $2` (which `0 < 0` would always fail): this app's real
+ * authenticators (Android platform/synced passkeys, see WebAuthnBridge.kt's
+ * own header) commonly report signCount=0 on every genuine login by design —
+ * verifyAssertion() already treats "both incoming and stored are 0" as
+ * "this authenticator does not support a counter, don't enforce one", and
+ * this write path has to agree with that or every second real login from
+ * such a device would start silently failing the CAS.
+ *
+ * Returns whether the write actually took effect — the caller MUST treat
+ * `false` as a failed login (the race this function exists to lose safely),
+ * not as an ignorable side channel.
+ */
+export async function updateWebauthnSignCount(
+  pool: pg.Pool, credentialId: string, newSignCount: number,
+): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE webauthn_credential
+          SET sign_count = $2
+        WHERE credential_id = $1 AND ($2 = 0 OR sign_count < $2)
+        RETURNING sign_count`,
+      [credentialId, newSignCount],
+    );
+    return rows.length === 1;
   });
 }
 

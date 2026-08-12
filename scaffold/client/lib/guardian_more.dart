@@ -9,6 +9,7 @@
 // "every new screen must be reachable" holds without crowding that home
 // screen the way child_more.dart does for the child side.
 import 'package:flutter/material.dart';
+import 'api_client.dart';
 import 'busy_fork.dart';
 import 'call_security_info.dart';
 import 'closing_ritual.dart';
@@ -28,6 +29,7 @@ import 'show_guardian.dart';
 import 'siblings_screen.dart';
 import 'storyteller_screen.dart' show StorytellerSafetyScreen;
 import 'the_book.dart';
+import 'webauthn_channel.dart';
 import 'year_book.dart';
 
 void _notBuiltYet(BuildContext context, String what) {
@@ -42,6 +44,48 @@ class GuardianMoreScreen extends StatelessWidget {
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+
+  // ===========================================================================
+  // DEV VERIFICATION ONLY -- §7.1, §8.1, §11. This whole preview build has no
+  // real guardian session anywhere in its widget tree yet (main.dart's own
+  // header: "no backend behind it yet"), so there is no [OliveApi] instance
+  // in scope for the real "Guardian setup" tile above to hand
+  // guardian_setup.dart's [registerPasskey] callback. That tile is left
+  // exactly as it was -- an honest stub -- rather than silently wired to
+  // something that only works with a local dev server running.
+  //
+  // This SEPARATE tile exists purely so the real end-to-end passkey ceremony
+  // (webauthn_channel.dart -> WebAuthnBridge.kt -> Android Credential
+  // Manager -> server/routes.mjs's real verify) can actually be exercised on
+  // real hardware, the same honest-escape-hatch shape as server/index.mjs's
+  // own DEV_LOGIN: it mints a session for the real seeded 'Dad' guardian
+  // (server/seed-dev.mjs) against a local dev server, and does nothing at
+  // all against anything else. Delete this tile, not the plumbing it calls,
+  // once a real guardian sign-in phase puts an authenticated [OliveApi]
+  // somewhere this screen can actually reach.
+  static const _devServerBaseUrl =
+      String.fromEnvironment('OLIVE_DEV_SERVER', defaultValue: 'http://127.0.0.1:8080');
+  static const _devGuardianUserId = 'aaaaaaaa-0000-4000-8000-000000000002'; // 'Dad'
+
+  Future<PasskeyOutcome> _devRegisterPasskey() async {
+    // Mirrors buildRegisterPasskeyCallback's own "never throws" contract
+    // (see its doc comment) -- GuardianSetupScreen._tap() awaits
+    // [registerPasskey] with no try/catch of its own, so a dev server that
+    // isn't running (connection refused) or isn't DEV_LOGIN-enabled (404)
+    // must resolve to a real [PasskeyOutcome], never an unhandled exception.
+    try {
+      final sessionToken =
+          await devLoginFor(_devServerBaseUrl, userId: _devGuardianUserId);
+      final api = OliveApi(_devServerBaseUrl, sessionToken);
+      try {
+        return await buildRegisterPasskeyCallback(api: api, userName: 'Dad')();
+      } finally {
+        api.close();
+      }
+    } catch (_) {
+      return PasskeyOutcome.declined;
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -96,6 +140,11 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.key_outlined, title: 'Guardian setup',
             subtitle: 'Passkey sign-in — an honest stub, not a faked grant',
             onTap: () => _open(context, const GuardianSetupScreen())),
+          HubTile(icon: Icons.fingerprint_outlined,
+            title: 'Guardian setup — passkey (dev verification)',
+            subtitle: 'Real ceremony, real backend, local dev server only',
+            onTap: () => _open(context,
+              GuardianSetupScreen(registerPasskey: _devRegisterPasskey))),
           HubTile(icon: Icons.push_pin_outlined, title: 'Kiosk lock advisory',
             subtitle: 'What this platform actually guarantees, honestly',
             onTap: () => _open(context, const LockAdvisoryScreen())),

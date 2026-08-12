@@ -49,9 +49,323 @@ Silent deletion is a process failure.
   here worth keeping a foothold in. Should not be re-proposed absent new
   direction from the owner.
 
+### Fixed
+- **2026-08-11 — `tools/verify.sh` reported 2 phantom Dart test failures on
+  CI, never locally.** GitHub Actions reported `dart widget invariants 1291
+  passed 2 failed` on `feature/real-authentication`'s HEAD, reproducibly
+  across a fresh run and a manual rerun — but `flutter test` run directly
+  (not through `verify.sh`) showed `1291 passed, 0 failed` every time, on
+  Windows and on four independent WSL2/Ubuntu-24.04 attempts (default
+  timezone, `TZ=UTC`, a from-scratch clean clone, and reduced concurrency).
+  Root cause, found via a two-step CI diagnostic that dumped the reporter's
+  real output into the log: the script's failure-count extraction,
+  `grep -oE '\-[0-9]+' | tail -1`, searched the ENTIRE captured
+  `--reporter compact` output for any hyphen-digit substring rather than the
+  reporter's own summary line — and `client/test/api_client_test.dart` has a
+  real test named `...a non-2xx response (e.g. 403 not_this_child) returns
+  false, never throws`. Every Dart test genuinely passes, so a clean run
+  never emits a real `-N` counter to compete with it; the incidental `-2` in
+  `non-2xx` was the only match, and the script confidently reported it as
+  "2 failed" against a suite with zero real failures. Not a Linux-only
+  platform bug at all — a false-red in the verification script's own
+  reporting, the same class of bug this file's header already exists to
+  catch, just pointing the opposite direction from the false-greens it was
+  written for. **Fixed**: `tools/verify.sh` now anchors both the pass and
+  fail extraction to the reporter's own `^<elapsed> +passed[ -failed]:`
+  line-start prefix — structured data the reporter itself emits — instead of
+  a free-floating search, so no test's own description text can collide
+  with it. No Dart source, test, or lib file needed any change. **Verified**:
+  confirmed directly on GitHub Actions' own `ubuntu-24.04` runner (not just
+  locally) — `dart widget invariants 1291 passed 0 failed`, and the full
+  `tools/verify.sh` run went from `COMPUTED TOTAL 3950 passed 2 failed` to
+  `3950 passed 0 failed`. `MARKUP.html`/`shell.html`'s assertion counts
+  (previously `3984`, already stale/unverified — see the "NOT verified"
+  note under [0.47.0] below) are corrected to `3950` to match, confirmed via
+  `node tools/check-markup.mjs --total 3950`: 44/44 passed.
+
 Phase 2 decisions: §16.2 #6 Step 2 (self-hosting Jitsi). §21.9 D — whether
 "becomes a parent" reuses the account. (§16.2 #8 was resolved in 0.40.0 — this
 line went stale for three versions before being caught here.)
+
+---
+
+## [0.47.0] — 2026-08-09 — real guardian authentication, adversarially reviewed twice, then hardened
+
+Five prior commits on `feature/real-authentication` (backend schema/routes,
+two parallel client phases, two parallel adversarial reviews) built and
+reviewed real guardian PIN + WebAuthn/passkey authentication — replacing
+`client/lib/main.dart`'s hardcoded, unauthenticated `'1273'` kiosk PIN — but
+none of it had reached CHANGELOG.md or MASTERFILE.md yet, and the reviews'
+findings were still open. This entry closes both gaps: what shipped across
+all five commits, what the two reviews found, what got fixed for real (with a
+real test proving it, not just the absence of the bug), and what is
+genuinely device-verified versus still open.
+
+### Added (prior commits, recorded here for the first time)
+- **`db/migrations/0008_auth_credentials.sql`** — `pin_credential` (scrypt
+  hash, `failed_attempts`, `locked_until`, RLS: owner-only, no `system`
+  bypass), `webauthn_credential` (ES256 public key, `sign_count`, same
+  owner-only posture plus a narrow `system` lookup-by-`credential_id` policy
+  for pre-session login), `auth_challenge` (`system`-role-only, single-use).
+- **`packages/auth/src/auth.ts`** extended with `hashPin`/`verifyPin`
+  (scrypt N=32768), `verifyAssertion` (WebAuthn signature/challenge/rpId/
+  signCount checks), `newChallenge`, session issuance/escalation.
+- **`packages/auth/src/attestation.ts`** — a real CBOR/COSE parser for
+  WebAuthn registration `attestationObject`s, hand-rolled (no dependency),
+  proven via a full round trip: a real EC P-256 keypair, a synthetic
+  COSE_Key built with a **separate** test-only encoder, through
+  `parseAttestationObject`/`extractCredentialPublicKey`, then a real signed
+  assertion checked against the extracted PEM by `verifyAssertion` itself.
+- **`packages/db/src/pool.ts`** accessors: `guardiansOfChild`,
+  `pinCredentialFor`, `setPinCredential`, `recordPinAttempt`,
+  `createChallenge`, `consumeChallenge` (single-use via one atomic
+  `UPDATE ... WHERE consumed_at IS NULL RETURNING`), `storeWebauthnCredential`,
+  `webauthnCredentialsForUser`, `webauthnCredentialById`,
+  `updateWebauthnSignCount`.
+- **`server/routes.mjs`/`server/index.mjs`** — the real routes (§7.1 below
+  has the actual list; it differs from that section's original placeholders).
+- **Client**: `client/lib/guardian_setup.dart` (real PIN + passkey
+  enrollment), `client/lib/main_live.dart`'s `_verifyGuardianPin` (the real
+  backend check wired into `KioskShell`, replacing the demo stub),
+  `client/lib/webauthn_channel.dart`, `client/lib/api_client.dart` additions.
+- **`client/android/.../WebAuthnBridge.kt`** — real `androidx.credentials`
+  1.6.0 Credential Manager integration: `app.olive/webauthn` method channel,
+  platform-attachment-only registration (`authenticatorAttachment:
+  "platform"`, `residentKey: "required"`), runtime API-28 floor
+  (`MIN_PASSKEY_SDK_INT`) below this app's real minSdk 26, distinct error
+  codes per `MethodChannel.Result#error()` rather than a folded generic
+  failure.
+
+### Fixed — adversarial review findings
+Two independent reviews of the above surfaced nine findings (two CRITICAL,
+four MEDIUM, three LOW). Each was re-verified against the actual current
+code before being touched — a reviewer can be wrong, or a later commit can
+have already fixed it — and every one has a real, testable outcome below.
+
+- **[CRITICAL, confirmed and fixed] Connection-pool self-deadlock.**
+  `packages/api/src/api.ts`'s `Api.handle()` opens ONE pooled connection via
+  `db.withSession()` and holds it for a handler's entire lifetime — but
+  `kiosk-pin/verify`, `/v1/me/pin`, and both `webauthn/register/*` handlers
+  never touch that connection at all; each runs its own, differently-scoped
+  session(s) directly against the raw `pg.Pool` (correctly so — PIN checks
+  must run as each individual GUARDIAN's own session, RLS-owner-scoped,
+  never as the calling child's). Concurrent requests to these routes each
+  hold one pool slot hostage doing nothing while trying to acquire a second
+  from the same bounded pool (`pg.Pool` default `max: 10`) — a real,
+  reproduced, self-referential deadlock, not mere slowness. **Fixed**: a new
+  `Route.skipOuterSession` flag (`packages/api/src/api.ts`) lets a route opt
+  out of the wasted/dangerous outer wrapper entirely; the four affected
+  routes now set it (`server/routes.mjs`). **Verified live**: a real
+  server against a real Postgres (WSL2, port 5433), 20 and then 50
+  *concurrent* `POST kiosk-pin/verify` requests, both batches completing in
+  under 350ms with zero hangs and the server answering an unrelated
+  follow-up request throughout — the exact scenario the review's own
+  reproduction hung at 10-15 concurrent requests. New test:
+  `packages/api/test/stack.test.mjs` §G (4 new assertions) proves the
+  mechanism directly: `db.withSession()` is called 0 times for a
+  `skipOuterSession` route, the handler still runs, its `q` throws if a
+  future edit starts calling it, and an ordinary route is unaffected.
+- **[CRITICAL, confirmed and fixed] Concurrent PIN brute-force bypassed the
+  lockout entirely.** `pinCredentialFor()` (a plain, unlocked `SELECT`) and
+  `recordPinAttempt()` (a separate transaction) left a real gap: N
+  simultaneous guesses all read "not locked" before any one of them observed
+  a lock a sibling was mid-imposing, so every guess ran a real scrypt
+  verification regardless of `PIN_MAX_ATTEMPTS` — the review measured
+  200/200 concurrent guesses executing scrypt against one guardian. **Fixed**:
+  a new `packages/db/src/pool.ts` function, `attemptPinFor()`, folds
+  "check the lock", "verify", and "record the outcome" into ONE transaction
+  behind a `SELECT ... FOR UPDATE` row lock, so concurrent attempts against
+  the same guardian genuinely serialize at Postgres rather than racing ahead
+  on stale reads. `server/routes.mjs`'s kiosk-pin/verify loop now calls it
+  instead of the three separate calls. **Verified against real Postgres**:
+  `packages/db/test/auth_credentials.test.mjs` §F fires 19 concurrent wrong
+  guesses at one guardian and proves AT MOST `PIN_MAX_ATTEMPTS` (5) of them
+  ever reach `verifyPin()` — the rest correctly observe the lock and skip it
+  — and that the real PIN is refused while locked. **Verified live over real
+  HTTP**: a real device/curl stress test against the real running server
+  actually drove the account into `locked_until` state from concurrent
+  wrong guesses, then confirmed the correct PIN still worked once the lock
+  was cleared.
+- **[MEDIUM, confirmed and fixed] `sign_count` compare-and-swap race
+  (TOCTOU).** `updateWebauthnSignCount()` was an unconditional `UPDATE`, no
+  comparison against the row's live value — two truly concurrent logins
+  (a cloned authenticator used at the same moment as the real one) presenting
+  the same next `signCount` could both pass `verifyAssertion()`'s snapshot
+  check and both get written, both issued a session. **Fixed**: the `UPDATE`
+  now carries `WHERE credential_id = $1 AND ($2 = 0 OR sign_count < $2)
+  RETURNING sign_count`, returns whether it actually took effect, and
+  `server/index.mjs`'s `webauthnLoginVerify()` refuses to issue a session
+  when it didn't. The `$2 = 0` clause deliberately never blocks this app's
+  real authenticators (Android platform/synced passkeys, which report
+  `signCount=0` on every genuine login by design) — verified not to
+  regress that case. **Verified against real Postgres**:
+  `auth_credentials.test.mjs` §E proves a stale/equal write is refused and
+  the row is unchanged, that exactly one of two truly simultaneous
+  same-target writes succeeds, and that the always-0 case still always
+  succeeds.
+- **[MEDIUM, confirmed and fixed] `verifyAssertion()`'s clone-detection
+  skipped enforcement based on the INCOMING `signCount` alone.** Per WebAuthn
+  L2 §7.2 step 21, the replay check should be skipped only when BOTH the
+  incoming AND the stored counter are 0; checking only the incoming side let
+  an attacker holding a cloned key forge every future assertion with
+  `signCount=0` and unconditionally bypass the guard forever, regardless of
+  how far the real counter had advanced, while also regressing the stored
+  counter back to 0. **Fixed**: `packages/auth/src/auth.ts` now computes
+  `counterMeaningful = !(signCount === 0 && c.signCount === 0)` and only
+  enforces `signCount <= c.signCount` when that holds — a stored counter that
+  legitimately advanced past 0 now correctly rejects a later `signCount=0`
+  assertion as a replay, while an authenticator that has always reported 0
+  is unaffected. **Verified**: `packages/auth/test/attestation.test.mjs` §E,
+  real signed assertions (real EC P-256 keypair) — signCount=0 against a
+  credential with `signCount=5` stored is now rejected; signCount=0 against
+  a `signCount=0` credential (the real always-0 Android case) still accepts.
+- **[LOW, confirmed and fixed] `verifyAssertion()` never checked the UV
+  (user-verified) flag.** Only bit 0x01 (UP) was inspected; the app requests
+  `userVerification: "required"` client-side, but that is only a request an
+  untrusted client makes to its own local authenticator — the server had no
+  independent check that verification actually happened. **Fixed**: added
+  `if ((flags & 0x04) === 0) return { ok: false, reason: 'user_not_verified' }`.
+  **Verified**: `attestation.test.mjs` §D — UP-without-UV is rejected,
+  UP+UV is accepted, UV-without-UP is still independently rejected on the UP
+  check.
+- **[MEDIUM, confirmed and fixed] Android login didn't set
+  `preferImmediatelyAvailableCredentials`, silently re-opening the
+  roaming/cross-device fallback registration explicitly forbids.**
+  `WebAuthnBridge.kt`'s `handleAuthenticate()` used the bare
+  `GetCredentialRequest(listOf(option))` constructor, leaving the flag at its
+  default `false` — the one real lever available on the GET side to keep
+  login platform-only (`authenticatorAttachment` doesn't exist on
+  `PublicKeyCredentialRequestOptionsJSON`). **Fixed**: now builds via
+  `GetCredentialRequest.Builder().addCredentialOption(option)
+  .setPreferImmediatelyAvailableCredentials(true).build()` — confirmed
+  against the real, decompiled `androidx.credentials:credentials:1.6.0` AAR
+  (`javap`'d fresh for this fix, not assumed from docs: the Builder's real
+  constructor takes NO arguments; options are added via
+  `addCredentialOption()`, not passed to the constructor — a first attempt
+  using `Builder(listOf(option))` **failed to compile** against the real
+  class and was caught immediately by a real `flutter build apk`, then
+  corrected). **Verified**: `flutter build apk --debug --target=lib/main_live.dart`
+  succeeds end to end (`:app:compileDebugKotlin` clean) and the resulting
+  APK installs and runs on a real device.
+- **[MEDIUM, confirmed, fixed] `auth_credentials.test.mjs` (and the
+  pre-existing `pool.test.mjs`/`custody_order.test.mjs`) never ran in CI.**
+  All three need a real, connectable `NOSUPERUSER NOBYPASSRLS` role that
+  genuinely OWNS every table (`db/DEPLOYMENT.md`'s `app_owner`) — nothing in
+  `tools/verify.sh` or `.github/workflows/verify.yml` provisioned one.
+  **Fixed**: `tools/verify.sh` now provisions a real, passworded `app_owner`
+  after the existing SQL suites run (finishing the job those suites already
+  start — 0001/0003 create the role for their own narrower purposes), and
+  runs all three `.mjs` suites against it, folding their pass/fail counts
+  into the script's own computed total. **Verified**: ran the exact SQL
+  block by hand against a fresh Postgres — it provisions cleanly — then ran
+  all three suites against the resulting role: 18, 16, and 57 passed, 0
+  failed respectively (see Verified section below for the same numbers run
+  standalone). `.github/workflows/verify.yml` needed no separate change —
+  it already invokes `tools/verify.sh`.
+- **[LOW, reviewed and accepted as a documented, unchanged trade-off]
+  Response-timing side channel in `kiosk-pin/verify`.** Confirmed real (a
+  skipped-lock path is ~64ms faster than a real scrypt verification) and
+  already explicitly disclosed in the handler's own comment as a deliberate,
+  narrow trade-off (favoring hiding WHICH guardian/whether any PIN exists
+  over hiding lockout counts). Not changed — a full fix would mean running
+  scrypt unconditionally against every guardian, a real, avoidable cost
+  bought for a narrower leak than the one already closed.
+- **[LOW, reviewed and accepted as a documented, unchanged trade-off]
+  Multi-guardian "any match wins" divides brute-force resistance by guardian
+  count.** Confirmed real by code reading, and confirmed that the specific
+  attack the review checked for — rotating guesses across a shared child's
+  guardians to evade one guardian's own lockout — does NOT work
+  (`pin_credential` keys purely on `user_id`, globally, independent of which
+  child's kiosk the guess arrived through). The residual, narrower exposure
+  (N guardians ⇒ roughly N× the per-window guess budget against ANY match)
+  is exactly the trade-off `db/migrations/0008_auth_credentials.sql`'s own
+  comments already document as intentional. Not changed.
+
+### Verified
+- `npm run build`: clean (all `packages/*/src/*.ts` → `.mjs`).
+- `node packages/auth/test/attestation.test.mjs`: **34 passed, 0 failed**
+  (16 new: §D UV-flag enforcement, §E signCount=0 fix).
+- `node packages/api/test/stack.test.mjs`: **98 passed, 0 failed** (4 new:
+  §G `skipOuterSession`).
+- `node packages/api/test/contract.test.mjs`: **25 passed, 0 failed.**
+- Against a real Postgres 16 (WSL2 Ubuntu-24.04, port 5433 — Docker Desktop
+  would not start in this environment; its backend process exited within a
+  minute of launch, so WSL2's own already-installed Postgres was used
+  instead, matching this project's own prior "e2e via WSL2 Postgres"
+  precedent) with a real, freshly-provisioned `app_owner`
+  (`NOSUPERUSER NOBYPASSRLS`, owning every table):
+  `node packages/db/test/pool.test.mjs`: **18 passed, 0 failed.**
+  `node packages/db/test/custody_order.test.mjs`: **16 passed, 0 failed.**
+  `node packages/db/test/auth_credentials.test.mjs`: **57 passed, 0 failed**
+  (14 new: §E CAS race coverage, §F concurrent-burst lockout coverage).
+- `cd client && flutter analyze`: **no issues found.**
+- `cd client && flutter test`: **1291 passed, 0 failed** — one real
+  regression found and fixed along the way: `test/guardian_more_test.dart`'s
+  "the one genuinely unbuilt tile stays an honest stub" test tried to `tap()`
+  the 'Availability' tile, which the WebAuthn dev-verification tile (added
+  by the prior commit) had pushed below even this file's own generous 1800px
+  test surface — the file's own header comment had already anticipated this
+  exact class of drift once before. Fixed with `tester.ensureVisible()`
+  rather than a taller magic-number surface, which would only defer the same
+  failure to the next added tile.
+- **Real device, real end-to-end kiosk-PIN verification** (the actual
+  release-blocker fix) — a Retroid Pocket 2+ (API 28, real hardware over
+  `adb`): set a real guardian PIN via a live `POST /v1/me/pin` call, built
+  `main_live.dart` with `--dart-define=OLIVE_API_BASE_URL=http://127.0.0.1:8123`
+  and installed it, `adb reverse tcp:8123 tcp:8123` to a real
+  `server/index.mjs` against the real WSL2 Postgres. Backgrounding the app
+  triggered a real kiosk defeat → `PinGate` (native "Screen pinned" dialog
+  confirmed `startLockTask` genuinely engaged). Entered a WRONG PIN on the
+  real, shoulder-surf-shuffled keypad: real rejection (dots reset, keypad
+  reshuffled, `failed_attempts` incremented in the real database). Entered
+  the RIGHT PIN: real acceptance, unlocked into the live `ChildHome` screen
+  ("Hi Ivy", "Live: name and message count are real, fetched from the server
+  just now."), `failed_attempts` reset to 0 in the database. Screenshots
+  taken via `adb exec-out screencap` at each step. A second candidate device
+  (a Samsung Galaxy Z Fold5, `SM-F946U`, API 36) had the APK installed
+  successfully but was **not** used for the interactive walkthrough — it is
+  the operator's own personal phone with a real, secured lock screen
+  (PIN/biometric), and bypassing another person's device lock is out of
+  scope for this session regardless of ADB access; a Galaxy Watch6 (API
+  unconfirmed) was connected but not applicable to a phone-kiosk flow.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **The WebAuthn passkey ceremony itself (registration + login) was not
+  interactively re-verified on real hardware this pass.** The native Kotlin
+  bridge compiles clean against the real AAR (see the Android fix above) and
+  a debug APK containing it installs and runs, but actually walking through
+  Credential Manager's system UI — create a passkey, unlock with biometric,
+  sign in with it — needs a device with a configured screen lock/biometric.
+  The only such device connected was the operator's own personal, secured
+  phone, correctly left untouched (see above). The prior commit
+  (`4fc154d`) claims this ceremony was "verified end-to-end on real
+  hardware" for the code as it stood before this pass's Android fix; this
+  entry's fix (`preferImmediatelyAvailableCredentials`) is a login-side,
+  additive change to a request builder and does not touch the signature/
+  attestation logic that ceremony exercises, but it has not been
+  independently re-confirmed interactively since. Recorded as an open,
+  device-blocked gap rather than assumed fine because it compiles.
+- **`tools/verify.sh` was not run end-to-end in this environment.** This is a
+  Windows machine with no native `psql`/`PGBIN` toolchain, no local Docker
+  daemon (Docker Desktop's backend exited within a minute of every launch
+  attempt), and no Android SDK wired into `verify.sh`'s own gate the way CI
+  has one. Every suite `verify.sh` would run was instead run standalone
+  (see Verified above) against a real WSL2 Postgres, and the new `app_owner`
+  provisioning SQL block added to `verify.sh` was run by hand, standalone,
+  against that same Postgres and confirmed to succeed — but the full script,
+  and therefore the exact new COMPUTED total `tools/check-markup.mjs
+  --total N` would need, was not obtained. **`MARKUP.html`/`shell.html`'s
+  assertion counts are deliberately left untouched in this pass** rather
+  than guessed — per this project's own standing rule (a hardcoded/guessed
+  total is the same defect either way it drifts) and per this exact
+  instruction for this pass. Whoever next runs `tools/verify.sh` in an
+  environment with the full toolchain should update `MARKUP.html` and
+  confirm `node tools/check-markup.mjs --total <N>` passes before that
+  entry is closed.
+- **The full `tools/verify.sh` Android/Wear/LiveKit/OCR toolchain gates**
+  (`:wear:assembleDebug`, `livekit-server`, `tesseract`/`imagemagick`) were
+  not exercised — out of scope for an authentication-focused pass, and
+  unrelated to any of the nine findings above.
 
 ---
 

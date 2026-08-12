@@ -101,6 +101,22 @@ flutter {
 }
 
 dependencies {
+    // Real WebAuthn/passkey ceremony (§7.1, §8.1, §11) — WebAuthnBridge.kt.
+    // 1.6.0 is the latest STABLE release (1.7.0-alpha03 is newer but alpha;
+    // this app already cares about release hygiene — see the real
+    // release-signing wiring above — so a shipping auth feature stays on the
+    // last stable line). Verified for real against Google's own Maven
+    // metadata (dl.google.com/android/maven2/androidx/credentials/credentials
+    // /maven-metadata.xml — note its <release> tag always echoes the newest
+    // upload INCLUDING alphas, so 1.6.0 was confirmed by scanning the full
+    // <versions> list for the newest non-alpha/beta/rc entry, cross-checked
+    // against developer.android.com/jetpack/androidx/releases/credentials'
+    // "1.6.0 / April 08 2026" stable-release note), not guessed.
+    // credentials-play-services-auth is the real backing provider on devices
+    // with Google Play services (see CredentialProviderConfigurationException
+    // handling in WebAuthnBridge.kt for the case where it's missing/stale).
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     // Wear Data Layer API — phone side. Lets WearSyncBridge.kt push
     // sleepsUntilHandover to a paired Galaxy Watch6 companion (§21.5) via
     // DataClient.putDataItem(). Version matches the wear module's own
