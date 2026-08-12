@@ -108,7 +108,17 @@ if [ -x "$FLUTTER_BIN" ]; then
     grep -E "error|warning" /tmp/da.out | head -5 | sed 's/^/  /'
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
-  out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
+  out=$(cd client && "$FLUTTER_BIN" test 2>&1)
+  # TEMP DIAGNOSTIC (to be reverted): full reporter output dumped verbatim so
+  # CI's log shows real failing test names/stack traces instead of only the
+  # compacted +N/-M summary -- reproducing the 2-failure CI/Linux-only result
+  # locally has not worked across four separate WSL2/Ubuntu-24.04 attempts
+  # (default TZ, TZ=UTC, and a from-scratch clean clone all report 1291/1291),
+  # so this run captures the actual detail directly from the environment that
+  # DOES fail.
+  echo "=== TEMP DIAGNOSTIC: full flutter test output ==="
+  printf '%s\n' "$out"
+  echo "=== END TEMP DIAGNOSTIC ==="
   p=$(printf '%s' "$out" | grep -oE '\+[0-9]+' | tail -1 | tr -d '+')
   f=$(printf '%s' "$out" | grep -oE '\-[0-9]+' | tail -1 | tr -d '-')
   record "dart widget invariants" "${p:-0}" "${f:-0}"
