@@ -464,6 +464,177 @@ have already fixed it — and every one has a real, testable outcome below.
   (`:wear:assembleDebug`, `livekit-server`, `tesseract`/`imagemagick`) were
   not exercised — out of scope for an authentication-focused pass, and
   unrelated to any of the nine findings above.
+## [0.47.0] — 2026-08-11 — real homework OCR closes §20.2b's OCR gap
+
+§20.2b's own table named this precisely: "OCR: Homework capture specified,
+not built." capture.ts's image-quality gate (`gateImage`) and tutor-hint
+output guard (`guardHint`) were real and unit-tested from day one, but
+nothing computed a real `ImageStats` from a real photo, nothing OCR'd a
+photo into `Problem.text`, the client had no camera, and no hint generator
+fed the guard. All four are real now — the guard and gate themselves are
+UNCHANGED, on purpose (capture.ts wasn't touched).
+
+### Added
+- **`packages/homework/src/measure.ts`** — real `ImageStats` from raw
+  PNG/JPEG bytes (`pngjs` + `jpeg-js`, both pure JS — checked against
+  `sharp`/`canvas` first and rejected them for needing a native/prebuilt
+  binary this environment can't guarantee elsewhere either). Sharpness via
+  variance-of-Laplacian over a greyscale-downsampled copy, clipping via a
+  tolerance-banded 0/255 histogram, skew via a projection-profile angle
+  search (rotate candidates, keep the one maximising row-ink variance) —
+  all three documented inline as approximate, matching capture.ts's own
+  "measured, not guessed" posture. Also `deskewToPng`/`rotateImage`, used
+  both to actually deskew a photo pre-OCR and, empirically, to prove that
+  correction improves real OCR recovery (see `measure.test.mjs`).
+- **`packages/homework/src/hints.ts`** — a RULE-BASED hint generator.
+  **This is not an AI model and the code says so in its own header**: no
+  LLM API key is configured anywhere in this repository, so problems are
+  pattern-matched by regex shape (fraction +/-, multiplication,
+  subtraction, addition, else a generic never-leaks-a-number fallback) into
+  one of five canned templates. Every output still passes through the
+  EXISTING `guardHint()` before it can reach a response.
+- **`packages/homework/src/split.ts`** — a numbered-list heuristic
+  (`splitProblems`) that breaks one OCR'd text block into per-problem
+  strings, falling back to one whole-text problem when no numbering is
+  found.
+- **`packages/homework/src/capture-route.ts`** — the pipeline: gate →
+  deskew → tesseract.js OCR → split → generate a hint → guard it. DB-free
+  and directly unit-testable (no HTTP server, no Api instance needed).
+  tesseract.js's Node worker is pointed at an OS-tmpdir cache path rather
+  than its own CWD-relative default, so a real run doesn't drop a ~5MB
+  `eng.traineddata` into the repo root (found the hard way — the default
+  landed one there on this session's own first real OCR call).
+- **`POST /v1/children/:childId/homework/capture`** (`server/routes.mjs`),
+  action `homework.annotate` (an existing WRITES action reused, not a new
+  one invented — capture PRODUCES new content, so an observer-only
+  guardian is correctly denied the same way any other homework write
+  already is). Accepts base64 image bytes in the JSON body; on a gate
+  refusal returns the verdict's own `reason`/`advice`, unchanged, at 422;
+  on success returns the deskew angle, raw OCR text, and per-problem
+  guarded hints.
+- **`Route.skipOuterSession`** (`packages/api/src/api.ts`) — new, additive,
+  optional field on the existing `Route` interface. The capture route sets
+  it: it does no Postgres access at all, so holding a pooled connection
+  open for the whole multi-second `tesseract.js` `recognize()` call would
+  cost every concurrent capture a wasted connection for no benefit. A1
+  (declared action) and A3 (childId from path) are enforced before this
+  flag is even consulted, so authorization is unaffected either way; a
+  route that opts out and still needs the DB is responsible for its own
+  `withSession()`/`withSystemSession()` call, exactly like `/now`'s
+  handler already does for `activeCustodyOrderFor`.
+- **`packages/homework/test/gen-fixtures.mjs`** — a pure-JS worksheet-image
+  generator (hand-rolled 5x7 bitmap font, real box-blur, `measure.ts`'s own
+  `rotateImage` for the skew fixture) used by `measure.test.mjs`'s
+  known-blurred/known-skewed classification checks. No ImageMagick
+  dependency, unlike the pre-existing `make-fixtures.sh` (see "NOT
+  verified" below for why that mattered here).
+- **`packages/homework/test/gen_ocr_fixture.py`** — a Pillow-based
+  generator used only by `capture-route.test.mjs`, where real recognizable
+  text matters and a real TrueType font measurably reads far better than
+  the hand-rolled bitmap one (an earlier draft of this generator, tested
+  and rejected, actually read WORSE than a deliberately-blurred version of
+  itself). A real, declared toolchain dependency (Python 3 + Pillow), same
+  posture `make-fixtures.sh` already takes for ImageMagick/tesseract —
+  MISSING TOOLCHAIN reports as a failed assertion, never a silent skip.
+- **`client/lib/api_client.dart`** — `HomeworkProblemResult` and
+  `OliveApi.captureHomework()`, POSTing base64 image bytes and treating a
+  422 quality-gate refusal as a normal decoded body (not a thrown
+  exception), matching capture_gate.dart's existing "one more try" flow.
+- **`image_picker: ^1.2.3`** (`client/pubspec.yaml`) — federated across
+  android/ios/linux/macos/web/windows per pub.dev's own package metadata
+  (checked, not assumed).
+- **`tesseract.js: ^7.0.0`, `pngjs: ^7.0.0`, `jpeg-js: ^0.4.4`**
+  (`scaffold/package.json`) — self-contained WASM OCR, no external
+  account/API key.
+
+### Fixed / changed
+- **`client/lib/capture_gate.dart`** — the real path: when
+  `simulateCapture` is NOT overridden AND `baseUrl`/`childId`/
+  `sessionToken` are all supplied, this screen now takes an actual photo
+  via `image_picker` and POSTs the raw bytes to the new endpoint, rather
+  than duplicating `ImageStats` math in Dart. `onCaptured` now carries a
+  `HomeworkCaptureOutcome` (real problems, or `null` on the still-supported
+  simulated path) instead of a bare `ImageStats`. When neither
+  `simulateCapture` nor full real-path config is supplied (the offline
+  demo build, `lib/main.dart`, or any call site not yet wired to a live
+  session), this screen falls back to the exact same simulated demo cycle
+  it has always used — not a crash on a missing `baseUrl`, and honestly
+  re-labelled on screen either way.
+- **`client/lib/homework_screen.dart`** — renders the server's real
+  recognized problems + real guarded hints when capture used the real
+  path; `_demoProblems` is DEMOTED (task's own wording) to a fallback-only
+  path for the simulated capture case, not removed — it's what
+  `homework_screen_test.dart`'s guard-interception test still exercises.
+- **`client/lib/child_home.dart` / `child_home_live.dart`** — additive
+  optional `baseUrl`/`childId`/`sessionToken`/`httpClient` threaded from
+  the live entry point's own already-minted dev-login session down to the
+  Homework tile, so the real path is actually reachable from navigation on
+  the live build, not merely compiled. The offline demo build
+  (`lib/main.dart`) passes none of this and is unaffected.
+
+### Verified
+- `node packages/homework/test/measure.test.mjs`: **20 passed, 0 failed** —
+  unit-level Laplacian/clipping/decode/rotate checks against known pixel
+  data, plus end-to-end checks against real generated images: a real clean
+  worksheet passes the gate, a real deliberately-blurred one is refused
+  `too_blurred` with sharpness two orders of magnitude below clean, a real
+  deliberately-8°-skewed one is refused `too_skewed`, and applying the
+  measured correction (`rotateImage` by `-skewDegrees`) measurably
+  straightens it back to a passing gate.
+- `node packages/homework/test/capture-route.test.mjs`: **34 passed, 0
+  failed** — a real photo in, real recognizable text out (digits for all
+  three problem shapes recovered), the numbered-list heuristic splitting
+  OCR text into exactly 3 problems, every returned hint guarded and
+  non-leaking, different problem shapes getting different hint templates,
+  a real blurred/skewed photo refused pre-OCR with the gate's own unchanged
+  advice, the split heuristic's fallback-to-whole-text path, all 4 rule-
+  based hint templates, and — the specific ask — a deliberately-leaky hand-
+  crafted hint against a REAL OCR-derived problem still refused by the
+  existing `guardHint()`.
+- `node packages/api/test/stack.test.mjs`: **94 passed, 0 failed** — the
+  new `Route.skipOuterSession` field is additive; every pre-existing A1/A2/
+  A3 assertion still holds unchanged.
+- `node packages/homework/test/snapshot.test.mjs`: **30 passed, 0 failed**
+  (unaffected regression check — this suite has no ImageMagick dependency).
+- `flutter analyze` (client): **clean**.
+- `flutter test` (client): **1286 tests passed, 0 failed** — includes 4 new
+  real-path tests in `capture_gate_test.dart` (POST + real success,
+  server-side gate refusal renders the server's own advice, honest on-
+  screen disclosure differs from the simulated copy, a network failure
+  surfaces a plain error rather than a fabricated verdict) plus 3 new
+  `api_client_test.dart` cases for `captureHomework` (200 success, 422
+  decoded as a normal body, a genuine 500 still throws). Every pre-existing
+  test, including the full simulated demo-sequence flow in
+  `homework_screen_test.dart`, passes UNCHANGED.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **`node packages/homework/test/homework.test.mjs` (the pre-existing K
+  group) could not be run in this session's dev environment**: it shells
+  out to ImageMagick (`magick`/`convert`) to generate its own fixtures, and
+  this Windows box has no ImageMagick installed at all — only Windows'
+  own unrelated `system32\convert.exe` resolves to the name `convert`,
+  which is not ImageMagick and was not invoked. This is a pre-existing gap
+  in this file (untouched by this change, and outside this task's scope to
+  fix) that this session's own environment happened to expose; a real
+  Tesseract-OCR install IS present here and was used directly by both new
+  test suites above. `homework.test.mjs`'s J (quality gate) and L (tutor
+  guard) groups exercise logic this change didn't touch.
+- **`image_picker`'s real camera path was never driven end to end on a
+  physical device or emulator** — no device/emulator was attached in this
+  session. `flutter analyze`/`flutter test` cover everything up to and
+  excluding the literal on-device shutter press; the injected-`takePhoto`/
+  `MockClient` tests in `capture_gate_test.dart` cover the POST/response
+  handling around it.
+- **tesseract.js's first real OCR call on a fresh machine needs network
+  access once** (to fetch its WASM core + English traineddata from its own
+  CDN; cached locally after, at the OS-tmpdir path this change configures)
+  — an honest operational note, not a hidden dependency.
+- **Persisting recognized problems for later retrieval** (the broader
+  §7.5 `GET /v1/homework/:id`, `POST .../annotations` surface MASTERFILE
+  already specifies) is a real, separate follow-up. This route is
+  deliberately scoped to closing exactly the OCR gap §20.2b named — no new
+  DB table, no migration, no RLS policy was added, because none was
+  needed for that scope.
 
 ---
 

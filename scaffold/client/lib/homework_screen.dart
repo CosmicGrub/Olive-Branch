@@ -1,28 +1,39 @@
-// OLIVE BRANCH — homework helper. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.1, §8.13.5. Renders
-// MARKUP screen 'homework'.
+// OLIVE BRANCH — homework helper. MASTERFILE §9.1, §8.13.5, §20.2b. Renders
+// MARKUP screen 'homework'. UNVERIFIED against a real device/camera — see
+// the file-wide convention this codebase uses for exactly this caveat.
 //
 // "Photograph the sheet; the quality gate refuses blur and skew before OCR
 // ever runs." The capture half is capture_gate.dart pushed from the button
 // below; this file is what she sees before and after that gate passes.
 //
-// HONEST STUB, twice over, both said on screen rather than glossed over:
-//  - No OCR backend exists yet, so the "recognized problems" below are
-//    canned demo text, not extracted from a real photo.
-//  - The "hint" is a canned demo response run through
-//    homework_quality_gate.dart's guardHint(), not a live model call — but
-//    the guard itself is real: some of the canned responses are
-//    deliberately answer-leaking, to prove the guard actually intercepts
-//    them rather than always being fed something already safe.
+// §20.2b's own "OCR: Homework capture specified, not built" gap is closed:
+// when capture_gate.dart's REAL path ran (see that file's header — needs a
+// live baseUrl/childId/sessionToken), the "recognized problems" below are
+// the server's own real OCR output (packages/homework/src/capture-route.ts)
+// and each hint has already been through the real, server-side guardHint()
+// (packages/homework/src/capture.ts). `_demoProblems` below still exists,
+// DEMOTED to exactly one job: the fallback content shown when capture ran
+// on the SIMULATED path (no live backend configured, or a test's own
+// [CaptureGateScreen.simulateCapture] override) — there is no server
+// response to show in that case, so this file's own local guardHint() port
+// (homework_quality_gate.dart) still runs against canned text, same as
+// before, including the deliberately-leaking half of the pair so the guard
+// stays demonstrably load-bearing on that path too.
 //
-// §9.1's tutor guard is an OUTPUT guard, not a prompt: whatever a "model"
-// produces, only a vetted hint or the same fixed safe fallback ever reaches
+// §9.1's tutor guard is an OUTPUT guard, not a prompt: whatever produced a
+// hint, only a vetted hint or the same fixed safe fallback ever reaches
 // her — she is never shown *that* something was refused, only ever a hint,
 // because the failure mode this guards against is a tired parent reading a
 // leaked answer out loud, not a curious child learning the guard exists.
 // §9.1 also requires AI assistance be "logged and visible, never silent" —
 // so every accepted hint is labelled "AI hint" on screen, not slipped in
-// as if a person wrote it.
+// as if a person wrote it. That labelling is doubly honest on the real path:
+// hints.ts's own header is explicit that the generator is rule-based
+// pattern-matching, not an AI model — there is no LLM wired into this
+// repository anywhere (no API key configured for one) — but the "AI HINT"
+// label is kept as-is here because that is this screen's existing, tested
+// vocabulary for "assistance a person didn't personally write", which a
+// rule-based generator's output still is.
 //
 // §8.13.5: `homework` is a "still" surface, "the one surface in the product
 // that asks her to concentrate" — SURFACE_MOTION in motion_rules.dart's TS
@@ -36,6 +47,8 @@
 // completion badge for finishing a worksheet, and no financial surface
 // anywhere near it.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'capture_gate.dart';
 import 'homework_quality_gate.dart';
 import 'motion_rules.dart';
@@ -50,7 +63,9 @@ class _DemoProblem {
   final String leakyHint;
 }
 
-/// Canned "recognized problems" — see file header on the OCR stub.
+/// Fallback-only canned "recognized problems" — see file header. Used ONLY
+/// when this screen's own capture ran the simulated path, never when a real
+/// server response is available.
 const List<_DemoProblem> _demoProblems = <_DemoProblem>[
   _DemoProblem('6 x 7', 'Try skip-counting by 7, six times.', 'The answer is 42.'),
   _DemoProblem('3/4 + 1/4', 'What do the bottom numbers need to match before you can add?',
@@ -60,8 +75,23 @@ const List<_DemoProblem> _demoProblems = <_DemoProblem>[
 ];
 
 class HomeworkScreen extends StatefulWidget {
-  const HomeworkScreen({super.key, this.childName = 'Ivy'});
+  const HomeworkScreen({
+    super.key,
+    this.childName = 'Ivy',
+    this.baseUrl,
+    this.childId,
+    this.sessionToken,
+    this.httpClient,
+  });
   final String childName;
+
+  /// Real-path configuration, threaded straight through to
+  /// CaptureGateScreen — see that file's header for what happens when these
+  /// are null (falls back to the simulated demo cycle, same as always).
+  final String? baseUrl;
+  final String? childId;
+  final String? sessionToken;
+  final http.Client? httpClient;
 
   @override
   State<HomeworkScreen> createState() => _HomeworkScreenState();
@@ -70,12 +100,32 @@ class HomeworkScreen extends StatefulWidget {
 class _HomeworkScreenState extends State<HomeworkScreen> {
   bool _captured = false;
 
-  /// Which problems currently show a revealed hint (index -> verdict).
+  /// Non-null only when capture_gate.dart's REAL path produced a real
+  /// server response. Null after a SIMULATED capture — homework_screen's
+  /// own _demoProblems fallback is what renders in that case.
+  List<HomeworkProblemResult>? _realProblems;
+
+  /// Which DEMO-path problems currently show a revealed hint (index ->
+  /// verdict) — the real path never needs this: a real problem's hint is
+  /// already guarded server-side and is shown as soon as it's tapped open,
+  /// with no separate guard call to make client-side.
   final Map<int, HintVerdict> _revealed = <int, HintVerdict>{};
+
+  /// Which REAL-path problems currently show a revealed hint (index ->
+  /// visible).
+  final Set<int> _realRevealed = <int>{};
+
+  int get _problemCount => _realProblems?.length ?? _demoProblems.length;
 
   Future<void> _startCapture() async {
     final bool? ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const CaptureGateScreen()));
+      MaterialPageRoute<bool>(builder: (_) => CaptureGateScreen(
+        baseUrl: widget.baseUrl,
+        childId: widget.childId,
+        sessionToken: widget.sessionToken,
+        httpClient: widget.httpClient,
+        onCaptured: (outcome) => _realProblems = outcome.problems,
+      )));
     if (ok == true && mounted) setState(() => _captured = true);
   }
 
@@ -86,6 +136,8 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
     final HintVerdict verdict = guardHint(modelOutput, problem);
     setState(() => _revealed[i] = verdict);
   }
+
+  void _revealRealHint(int i) => setState(() => _realRevealed.add(i));
 
   @override
   Widget build(BuildContext context) {
@@ -125,16 +177,32 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w600))),
                       const SizedBox(height: 12),
-                      for (int i = 0; i < _demoProblems.length; i++)
+                      for (int i = 0; i < _problemCount; i++)
                         _ProblemCard(
-                          text: _demoProblems[i].text,
-                          verdict: _revealed[i],
+                          // Real path: the server's own OCR'd text. Demo
+                          // fallback (simulated capture only): canned text.
+                          text: _realProblems != null
+                              ? _realProblems![i].text
+                              : _demoProblems[i].text,
+                          verdict: _realProblems != null
+                              // Already guarded server-side (capture-
+                              // route.ts's own guardHint() call) — wrapping
+                              // it as HintVerdict.ok reuses _HintBubble's
+                              // existing rendering/labelling unchanged
+                              // rather than duplicating it for this path.
+                              ? (_realRevealed.contains(i)
+                                  ? HintVerdict.ok(_realProblems![i].hint)
+                                  : null)
+                              : _revealed[i],
                           fadeMs: fadeMs,
-                          // A visible dev toggle would leak the mechanism to
-                          // a child; alternating leaky/good by index instead
-                          // keeps this row exercising both guard paths
-                          // without any UI that says "try to break it".
-                          onHint: () => _revealHint(i, leaky: i.isOdd),
+                          onHint: () => _realProblems != null
+                              ? _revealRealHint(i)
+                              // A visible dev toggle would leak the
+                              // mechanism to a child; alternating
+                              // leaky/good by index instead keeps this row
+                              // exercising both guard paths without any UI
+                              // that says "try to break it".
+                              : _revealHint(i, leaky: i.isOdd),
                         ),
                     ])
                   : const SizedBox.shrink(key: ValueKey('empty')),

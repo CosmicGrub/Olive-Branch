@@ -83,15 +83,15 @@ class Api {
         return { status: 400, body: { error: "bad_json" } };
       }
     }
+    const ctx = {
+      principal,
+      childId,
+      params: m.params,
+      body,
+      query: u.searchParams,
+      db: this.db
+    };
     try {
-      const ctx = {
-        principal,
-        childId,
-        params: m.params,
-        body,
-        query: u.searchParams,
-        db: this.db
-      };
       const out = m.route.skipOuterSession ? await m.route.handler(ctx, unusedQuery) : await this.db.withSession(principal, (q) => m.route.handler(ctx, q));
       return { status: out.status ?? 200, body: out.body ?? null };
     } catch (e) {

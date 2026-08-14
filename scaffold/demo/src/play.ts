@@ -588,6 +588,8 @@ import * as Pipeline from '../../packages/messaging/src/pipeline.ts';
 import * as Push from '../../packages/transport/src/push.ts';
 import * as Capture from '../../packages/homework/src/capture.ts';
 import * as Snapshot from '../../packages/homework/src/snapshot.ts';
+import * as Hints from '../../packages/homework/src/hints.ts';
+import * as Split from '../../packages/homework/src/split.ts';
 import * as Schedule from '../../packages/custody/src/schedule.ts';
 import * as Canvas from '../../packages/annotation/src/canvas.ts';
 import * as Care from '../../packages/care/src/care.ts';
@@ -1338,11 +1340,19 @@ export function engPush(): Any {
 
 // ---- homework / OCR -------------------------------------------------------
 export function engHomework(): Any {
-  return { exports: exportsOf(Capture), probes: [
+  return { exports: { ...exportsOf(Capture), ...exportsOf(Hints), ...exportsOf(Split) }, probes: [
     probe('skew threshold (measured, not guessed)', () =>
       pick(Capture as Any, ['MAX_SKEW_DEG','MIN_EDGE_PX','MIN_CONTRAST'])),
     probe('a retake is asked for, never demanded', () =>
       Object.keys(Capture).filter(k => /retake|advice|quality|assess/i.test(k))),
+    // §20.2b's OCR gap closed this version — the split/hint half of that
+    // pipeline (real server-side OCR itself needs tesseract.js, a real
+    // node-only dependency, and stays off this browser-only demo) is pure
+    // and genuinely demoable, so it runs for real here, not just imported.
+    probe('a numbered worksheet splits into separate problems', () =>
+      Split.splitProblems('1. 6 x 7 = ____\n2. 12 - 5 = ____')),
+    probe('a rule-based hint, never an answer', () =>
+      Hints.generateHint('6 x 7 = ____')),
   ]};
 }
 

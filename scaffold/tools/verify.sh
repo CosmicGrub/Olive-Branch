@@ -53,6 +53,8 @@ for spec in \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "homework + real OCR|packages/homework/test/homework.test.mjs" \
   "capture button + screenshot scope|packages/homework/test/snapshot.test.mjs" \
+  "homework ImageStats measurement|packages/homework/test/measure.test.mjs" \
+  "homework capture route (real OCR + hints)|packages/homework/test/capture-route.test.mjs" \
   "custody schedule|packages/custody/test/custody.test.mjs" \
   "phase 1-2 features|packages/agency/test/phase12.test.mjs" \
   "phase 3 court + archive|packages/ledger/test/phase3.test.mjs" \

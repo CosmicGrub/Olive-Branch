@@ -133,6 +133,57 @@ void main() {
     });
   });
 
+  group('captureHomework — real homework OCR capture (§9.1, §20.2b)', () {
+    test('posts base64 image bytes and decodes a 200 success body', () async {
+      Uri? seenUrl;
+      Map<String, dynamic>? sentBody;
+      final mock = MockClient((req) async {
+        seenUrl = req.url;
+        sentBody = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({
+          'ok': true,
+          'deskewedBy': -3.5,
+          'rawText': '12 + 27 = ____',
+          'problems': [
+            {'text': '12 + 27 = ____', 'hint': 'Count on from the first number.', 'hintRefused': false},
+          ],
+        }), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final body = await api.captureHomework('child-a', <int>[1, 2, 3]);
+
+      expect(seenUrl.toString(), 'http://api.test/v1/children/child-a/homework/capture');
+      expect(sentBody!['image'], base64Encode(<int>[1, 2, 3]));
+      expect(body['ok'], true);
+      final problems = (body['problems'] as List)
+          .map((p) => HomeworkProblemResult.fromJson(p as Map<String, dynamic>))
+          .toList();
+      expect(problems.single.text, '12 + 27 = ____');
+      expect(problems.single.hintRefused, false);
+    });
+
+    test('a 422 quality-gate refusal decodes as a normal body, not an exception', () async {
+      final mock = MockClient((req) async => http.Response(jsonEncode({
+        'ok': false, 'reason': 'too_blurred', 'advice': 'Hold still and try again.',
+      }), 422));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final body = await api.captureHomework('child-a', <int>[1, 2, 3]);
+      expect(body['ok'], false);
+      expect(body['reason'], 'too_blurred');
+      expect(body['advice'], 'Hold still and try again.');
+    });
+
+    test('a genuinely unexpected status (500) still throws ApiException', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'internal'}), 500));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.captureHomework('child-a', <int>[1, 2, 3]),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 500)),
+      );
+    });
+  });
+
   group('devLoginFor — the dev-only login shortcut', () {
     test('posts the childId and returns the issued token', () async {
       final mock = MockClient((req) async {

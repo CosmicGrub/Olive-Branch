@@ -95,6 +95,12 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // ChildHome's constructor below) so _syncWear() has a real value to read
   // once a live custody endpoint exists to populate it from.
   int? _sleepsUntilHandover;
+  // The session token _load() mints is otherwise used-once-and-discarded
+  // (only `api` above holds it); retained here so ChildHome's own Homework
+  // tile can reach the REAL capture_gate.dart path (§9.1, §20.2b) with the
+  // same real session, instead of every child-facing screen needing its own
+  // separate dev-login call.
+  String? _sessionToken;
   late final WearSyncChannel _wearSync = widget.wearSync ?? WearSyncChannel();
 
   @override
@@ -119,6 +125,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         // custody endpoint exists but is currently reverted out of the
         // shared tree -- see header. No fetch call for it exists yet either.
         _sleepsUntilHandover = null;
+        _sessionToken = token;
         _state = _LoadState.ready;
       });
       await _syncWear();
@@ -180,6 +187,13 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             presence: null, // no live day-part/overlap endpoint yet
             sleepsUntilHandover: _sleepsUntilHandover, // still null -- see header and _load()
             unreadCount: _unreadCount,
+            // Real homework-capture wiring (§9.1, §20.2b) — the same
+            // session _load() already minted, reused rather than each
+            // child-facing screen calling devLoginFor() again on its own.
+            baseUrl: widget.baseUrl,
+            childId: widget.childId,
+            sessionToken: _sessionToken,
+            httpClient: widget.httpClient,
           )),
         ])));
     }

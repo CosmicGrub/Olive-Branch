@@ -22,6 +22,38 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode, $error)';
 }
 
+/// One recognized homework problem, as returned by POST
+/// [OliveApi.homeworkCapture] on success. `hint` has already been through
+/// the server's real guardHint() (packages/homework/src/capture.ts) — it is
+/// always safe to show a parent verbatim, never a raw model/generator
+/// output. §9.1's "hint, don't solve" is the SAME server-side guard on
+/// every path (real capture and homework_screen.dart's demo fallback both
+/// end up calling guardHint before anything reaches the screen), just
+/// applied server-side here instead of client-side.
+class HomeworkProblemResult {
+  const HomeworkProblemResult({required this.text, required this.hint, required this.hintRefused});
+
+  /// OCR'd text of this one problem (see packages/homework/src/split.ts's
+  /// numbered-list heuristic for how the server broke the page up).
+  final String text;
+
+  /// Already guarded — safe to render as-is.
+  final String hint;
+
+  /// True when the rule-based generator's own hint (packages/homework/src/
+  /// hints.ts — NOT an AI model, see that file's header) was refused by the
+  /// guard and [hint] is the guard's safe fallback instead. Kept for tests/
+  /// analytics; never itself rendered as a "this was refused" message to
+  /// her (§9.1 — she only ever sees a hint, not a refusal notice).
+  final bool hintRefused;
+
+  factory HomeworkProblemResult.fromJson(Map<String, dynamic> j) => HomeworkProblemResult(
+    text: j['text'] as String? ?? '',
+    hint: j['hint'] as String? ?? '',
+    hintRefused: j['hintRefused'] as bool? ?? false,
+  );
+}
+
 class OliveApi {
   OliveApi(this.baseUrl, this.sessionToken, {http.Client? client})
       : _client = client ?? http.Client();
@@ -79,6 +111,8 @@ class OliveApi {
   // setAvailabilityWindows()/availabilityFor(), db/migrations/0010_availability.sql.
   static const childAvailability = '/v1/children/:childId/availability';
   static const meAvailability    = '/v1/me/availability';
+  // --- homework OCR capture (§9.1, §20.2b) --------------------------------
+  static const homeworkCapture = '/v1/children/:childId/homework/capture';
 
   // --- login (dev-only — see server/index.mjs's own header comment) ------
   static const devLoginPath = '/v1/auth/dev-login';
@@ -210,6 +244,29 @@ class OliveApi {
   /// could redirect.
   Future<Map<String, dynamic>> setAvailability(List<Map<String, dynamic>> windows) =>
       _put(meAvailability, body: windows);
+
+  /// Posts a raw homework photo (PNG or JPEG bytes — server/routes.mjs's
+  /// handler sniffs real magic bytes, not a filename or content-type) as
+  /// base64 in a JSON body, and runs it through the real quality gate + OCR
+  /// + guarded-hint pipeline (packages/homework/src/capture-route.ts).
+  ///
+  /// Unlike [_get]'s all-4xx/5xx-throw contract, a 422 quality-gate refusal
+  /// is a normal, expected outcome here — the exact same "one more try" flow
+  /// retake_screen.dart already renders for a failing *simulated* verdict
+  /// (see capture_gate.dart) — so this decodes and returns that body
+  /// directly instead of throwing, and only throws [ApiException] for a
+  /// genuinely unexpected status.
+  Future<Map<String, dynamic>> captureHomework(String childId, List<int> imageBytes) async {
+    final res = await _client.post(
+      _uri(homeworkCapture, childId),
+      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      body: jsonEncode({'image': base64Encode(imageBytes)}),
+    );
+    final body =
+        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 200 || res.statusCode == 422) return body;
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
 
   void close() => _client.close();
 }
