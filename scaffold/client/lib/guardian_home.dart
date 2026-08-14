@@ -172,7 +172,13 @@ class GuardianHome extends StatelessWidget {
               _GTile(icon: Icons.more_horiz, label: 'More',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => GuardianMoreScreen(childName: childName,
-                    baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+                    baseUrl: baseUrl, guardianId: guardianId,
+                    // GuardianMoreScreen.childId is non-nullable (it also
+                    // keys the family-agreement fetch, which needs SOME
+                    // concrete child even pre-live-session) — same
+                    // seed-dev.mjs 'Ivy' fallback main_live.dart's own
+                    // defaultValue uses, not a fabricated placeholder.
+                    childId: childId ?? 'aaaaaaaa-0000-4000-8000-000000000001',
                     availabilityHttpClient: availabilityHttpClient)))),
             ]);
           })),
