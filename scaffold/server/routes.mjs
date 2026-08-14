@@ -123,6 +123,50 @@ export function registerRoutes(api, pool) {
   });
 
   api.register({
+    // db/migrations/0007_custody_order.sql, packages/db/src/pool.mjs's
+    // activeCustodyOrderFor(), packages/custody/src/schedule.ts's `Order`.
+    // MASTERFILE names no bespoke "family agreement" data model anywhere —
+    // this route is deliberately just a read-only view of the real custody
+    // order, not an invented document type. Same closest-existing-action
+    // reasoning as /now above: no dedicated Action exists for "read the
+    // custody order" either, and calendar.view is the same schedule-adjacent
+    // fit for the same undocumented reason.
+    method: 'GET', path: '/v1/children/:childId/custody-order', action: 'calendar.view',
+    handler: async (c, q) => {
+      // Which order is "active" is answered on a REAL date, resolved the
+      // same way /now resolves hers (child_tz_interval, falling back to
+      // child.home_tz) -- duplicated here rather than shared, because unlike
+      // sleepsUntilSideChange's day-boundary maths, a custody_order's
+      // effective_from/effective_to window is normally months or years wide,
+      // so this route tolerates the small duplication rather than risk
+      // changing /now's own already-relied-upon behaviour for an edge case
+      // that essentially never matters here.
+      const nowUtc = DateTime.utc();
+      const interval = await q(
+        `SELECT tz FROM child_tz_interval
+          WHERE child_id = $1 AND valid @> $2::timestamptz
+          ORDER BY confidence DESC LIMIT 1`,
+        [c.childId, nowUtc.toJSDate()],
+      );
+      let tz = interval[0]?.tz;
+      if (!tz) {
+        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
+        if (!child.length) return { status: 404, body: { error: 'child_not_found' } };
+        tz = child[0].home_tz;
+      }
+      const nowLocalDate = nowUtc.setZone(tz).toISODate();
+      const order = await activeCustodyOrderFor(pool, c.childId, nowLocalDate);
+      // Honest absence, not a 404 and not a fabricated schedule: a child who
+      // is a real child but has no custody_order row yet gets { order: null
+      // }. The exact shape activeCustodyOrderFor() returns (pattern, orderTz,
+      // anchorLocalDate, exchangeTime, holidays, effectiveFrom, effectiveTo)
+      // is passed straight through -- see that function's own header for why
+      // that shape is what it is.
+      return { body: { order } };
+    },
+  });
+
+  api.register({
     method: 'GET', path: '/v1/children/:childId/inbox', action: 'message',
     handler: async (c, q) => {
       const rows = await q(

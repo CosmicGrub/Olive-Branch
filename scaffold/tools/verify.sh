@@ -50,6 +50,7 @@ for spec in \
   "session + child lock|packages/session-runtime/test/session.test.mjs" \
   "messaging|packages/messaging/test/pipeline.test.mjs" \
   "auth+storage+api|packages/api/test/stack.test.mjs" \
+  "route contract: custody-order|server/test/routes.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "homework + real OCR|packages/homework/test/homework.test.mjs" \
   "capture button + screenshot scope|packages/homework/test/snapshot.test.mjs" \

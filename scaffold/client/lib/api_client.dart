@@ -70,6 +70,12 @@ class OliveApi {
   static const childRibbon = '/v1/children/:childId/ribbon';
   static const childOverlap = '/v1/children/:childId/overlap';
 
+  // --- custody schedule (§5.4, §9.4) --------------------------------------
+  // Read-only view of the real custody_order row -- see
+  // family_agreement_screen.dart's own header for why this is deliberately
+  // NOT a bespoke "agreement" document endpoint.
+  static const custodyOrder = '/v1/children/:childId/custody-order';
+
   // --- async delivery (§7.3) ---------------------------------------------
   static const inbox    = '/v1/children/:childId/inbox';
   static const messages = '/v1/children/:childId/messages';
@@ -267,6 +273,12 @@ class OliveApi {
     if (res.statusCode == 200 || res.statusCode == 422) return body;
     throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
   }
+
+  /// `{ order: {...} }` for a real custody order, or `{ order: null }` when
+  /// this child has none on file yet -- an honest absence server/routes.mjs
+  /// returns rather than a 404, see that route's own comment.
+  Future<Map<String, dynamic>> getCustodyOrder(String childId) =>
+      _get(custodyOrder, childId: childId);
 
   void close() => _client.close();
 }
