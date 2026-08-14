@@ -1,5 +1,15 @@
 name: verify
-on: [push, pull_request]
+# Deliberately NOT `on: [push, pull_request]` -- that fires this whole
+# ~14-16 minute suite TWICE for every commit on an open PR branch (once per
+# event, same commit, identical result). Measured against this repo's own
+# history: 49 of 138 finished runs (35.5%) were exact push/pull_request
+# duplicates before this change. `push` is scoped to `main` so a feature
+# branch commit is verified exactly once, via `pull_request`; `main` still
+# gets its own real post-merge verification via `push`.
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   verify:
