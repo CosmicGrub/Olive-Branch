@@ -14,6 +14,105 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.47.0] — 2026-08-11 — "Send one back" wired for real, and the gap it exposes
+
+`client/lib/receipt_screen.dart`'s "Send one back" was a snackbar-only stub
+(`_notBuiltYet`) since it was written — this pass gives it a real backend, end
+to end, and is honest about the one thing that real wiring surfaced rather
+than papering over: the async-message schema was built for guardian→child
+delivery only, and a child session cannot yet be a real sender.
+
+### Added
+- **`packages/db/src/pool.ts`: `childCtxFor()` and `persistCapturedMessage()`.**
+  `childCtxFor()` loads a real `ChildCtx` (home tz, tz timeline, day-parts)
+  from Postgres for `packages/messaging/src/pipeline.ts`'s `materialize()`.
+  `persistCapturedMessage()` is where `captureMessage()`'s pure `ok: true`
+  output actually lands — one `media_artifact` row, one `delivery_intent`
+  row, and (only when the caller is assembling a message-banking run, never
+  for a single reply) one new `intent_batch` row. Both run under `system`
+  role, mirroring `activeCustodyOrderFor()`'s own reasoning. Flags, rather
+  than fixes, a pre-existing gap: `media_artifact`/`intent_batch`/
+  `delivery_intent` carry no row-level security at all (unlike
+  `child_journal_entry`/`pin_credential`/`expense`/`custody_order`) —
+  closing that safely means auditing every existing reader of those tables
+  against a new policy, which is its own change.
+- **`server/routes.mjs`: `POST /v1/children/:childId/messages`**, the real
+  counterpart to the existing `GET .../inbox`. Sender identity is always
+  taken from the authenticated principal, never the request body (extends
+  `api.ts`'s own A3 reasoning to identity generally). Runs every request
+  through `captureMessage()` before persisting anything.
+- **`client/pubspec.yaml`: `image_picker`.** `receipt_screen.dart`'s "Send
+  one back" now really records a short clip (`pickVideo(source: camera)`),
+  really POSTs it through a new `api_client.dart` method
+  (`OliveApi.sendMessage()`) to the new route, and shows real
+  loading/success/error states — no more fake instant success and no more
+  swallowed failures.
+- Tests: `packages/db/test/message_capture.test.mjs` (33 assertions, real
+  Postgres), `packages/api/test/messages_route.test.mjs` (20 assertions,
+  real Postgres + real HTTP layer — including proving a `captureMessage()`
+  rejection is honoured by counting real rows before/after, not by trusting
+  the response body alone), and a rewritten
+  `client/test/receipt_screen_test.dart` (18 tests: the existing receipt
+  invariants, plus three new ones exercising the real send/error/cancel
+  flows against an injected `MockClient` and a fake picker).
+
+### Honest gap this pass found rather than hid
+`delivery_intent.sender_id` is `NOT NULL REFERENCES app_user(id)`
+(`db/migrations/0001_phase0_init.sql`), and a `child` principal carries no
+`userId` at all (`packages/auth/src/auth.ts`) — she has no `app_user` row to
+be attached as a sender. So the realistic caller for "Send one back" — the
+child's own session — reaches the new route, reaches `captureMessage()`, and
+is honestly refused (`not_authorized`), the same denial a sitter or
+coordinator gets (`pipeline.test.mjs`'s own M2 suite). This is not a bug
+introduced by this pass; it is a pre-existing product/schema gap this pass
+made reachable and provable instead of leaving implicit. Proven over real
+HTTP against a real database in `messages_route.test.mjs`'s "D auth" group,
+not merely asserted in a comment. Making a child a real sender needs a
+schema change (at minimum, some identity a child principal can be attached
+to as `sender_id`) that this pass did not make.
+
+Separately, and still true after this pass: this repo has no object storage
+backend (`packages/storage/src/storage.ts`'s `StoragePort` has no production
+implementation anywhere). The recorded clip is captured for real on-device;
+its bytes are never uploaded. `storageKey` is a locally-meaningful reference
+only.
+
+### Verified
+- `node packages/messaging/test/pipeline.test.mjs`: 32 passed, 0 failed
+  (unchanged — pipeline.ts itself was not modified).
+- `node packages/db/test/pool.test.mjs`: 18 passed, 0 failed (regression,
+  unchanged).
+- `node packages/db/test/custody_order.test.mjs`: 16 passed, 0 failed
+  (regression, unchanged).
+- `node packages/db/test/message_capture.test.mjs`: **33 passed, 0 failed**
+  (new).
+- `node packages/api/test/stack.test.mjs`: 94 passed, 0 failed (regression,
+  unchanged).
+- `node packages/api/test/messages_route.test.mjs`: **20 passed, 0 failed**
+  (new).
+- `flutter analyze` (client/): clean, no issues.
+- `flutter test` (client/): **1281 passed, 0 failed** — full suite,
+  including the rewritten `receipt_screen_test.dart` (18/18).
+- All DB suites above run against a real, isolated Postgres 16.14 database
+  under a dedicated `NOSUPERUSER NOBYPASSRLS` role
+  (`app_owner_gap_message_record_reply`), never the shared default.
+
+### NOT verified
+- **No live call site yet.** `inbox_screen.dart` — the only screen that
+  constructs `ReceiptScreen` — is still `main.dart`'s offline demo build and
+  does not supply the new `baseUrl`/`childId`/`sessionToken` params, so on
+  every existing screen today the button reports "This screen isn't
+  connected to a server yet." honestly rather than attempting a send. A live
+  call site (mirroring `child_home_live.dart`'s own pattern) is real
+  follow-up work.
+- **RLS on `media_artifact`/`intent_batch`/`delivery_intent`** — pre-existing
+  gap, surfaced above, not closed here.
+- Not run on a real device or emulator (no camera to actually record from in
+  this environment) — the client suites above exercise the wiring through an
+  injected picker and a mocked HTTP transport, not a physical camera.
+
+---
+
 ## [Unreleased]
 
 ### Added

@@ -5,6 +5,8 @@ import type { Edge } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
 import { sha256Hex } from '../../ledger/src/sha256.ts';
+import type { ArtifactRow, IntentRow } from '../../messaging/src/pipeline.ts';
+import type { ChildCtx } from '../../delivery-engine/src/materialize.ts';
 
 /**
  * MASTERFILE §5.18 — session context, and §5.17 — the second lock.
@@ -806,6 +808,54 @@ export async function deactivateAccount(
 }
 
 /**
+ * packages/messaging/src/pipeline.ts's `materialize()` (via `captureMessage()`)
+ * needs the child's real timezone timeline and day-part schedule as data
+ * (`ChildCtx`) to resolve "next bedtime" to an actual instant. This is the
+ * loader — the DB-shaped rows on the wire, turned into exactly the shape
+ * `materialize()`/`ctxZone()` already consume, mirroring `edgesFor()`'s own
+ * one-query-one-mapping shape. `null` is an honest absence: no such child.
+ *
+ * System role for the same reason `activeCustodyOrderFor` uses it — this is
+ * context assembly the route handler needs before/alongside its own
+ * caller-scoped session, not a second authorization pass.
+ */
+export async function childCtxFor(pool: pg.Pool, childId: string): Promise<ChildCtx | null> {
+  return withSystemSession(pool, async (q) => {
+    const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [childId]);
+    if (!child.length) return null;
+
+    const tzRows = await q(
+      `SELECT tz, lower(valid)::text AS start, upper(valid)::text AS "end"
+         FROM child_tz_interval WHERE child_id = $1 ORDER BY lower(valid)`,
+      [childId],
+    );
+    // Only day-parts effective TODAY — mirrors day_part's own `effective
+    // daterange` column; a day-part outside its effective window is not part
+    // of her CURRENT schedule, and materialize() has no other way to exclude
+    // a superseded one.
+    const dpRows = await q(
+      `SELECT kind, starts_local::text AS starts_local, ends_local::text AS ends_local,
+              days_of_week, reachable
+         FROM day_part
+        WHERE child_id = $1 AND effective @> CURRENT_DATE`,
+      [childId],
+    );
+
+    return {
+      homeTz: child[0].home_tz,
+      tzIntervals: tzRows.map((r: any) => ({ tz: r.tz, start: r.start, end: r.end })),
+      dayParts: dpRows.map((r: any) => ({
+        kind: r.kind,
+        startsLocal: r.starts_local,
+        endsLocal: r.ends_local,
+        daysOfWeek: r.days_of_week,
+        reachable: r.reachable,
+      })),
+    };
+  });
+}
+
+/**
  * §16.1 #3 / §2.11 — raw export. "Free, unlimited, every tier" (deletion_screen
  * .dart's own button copy), backed for real for the first time here.
  * db/migrations/0006_court_tier.sql's `export_record` table has existed since
@@ -1012,6 +1062,107 @@ export async function rawExportBundleFor(
     );
 
     return { ok: true, bundle, serialized, recordId: inserted[0].id, bundleHash };
+  });
+}
+
+/** What a NEW `intent_batch` row needs, when the caller is assembling one
+ * (message banking, §9.5) rather than a single ad-hoc capture. */
+export interface NewIntentBatch {
+  label: string;
+  reason?: 'deployment' | 'medical' | 'treatment' | 'travel' | 'custody_gap' | 'other';
+  cadence: 'daily' | 'weekdays' | 'weekly' | 'custom';
+  startsLocal: string;   // date, 'YYYY-MM-DD'
+  endsLocal: string;
+}
+
+export interface PersistedCapture {
+  artifactId: string;
+  intentId: string;
+  /** Non-null only when `opts.newBatch` was supplied, or the intent already
+   * named an existing batch (message banking's later members). */
+  batchId: string | null;
+}
+
+/**
+ * packages/messaging/src/pipeline.ts's `captureMessage()` is pure — it
+ * decides whether a message may be captured and computes the artifact/
+ * intent rows, but writes nothing to Postgres. This is where its `ok: true`
+ * output actually lands: one `media_artifact` row (the video — every
+ * capture through this pipeline includes one; `kind` is hardcoded
+ * `'video_msg'` in pipeline.ts, so there is no branch where the payload
+ * arrives without media), one `delivery_intent` row (the schedule), and —
+ * only when the caller passes `opts.newBatch`, i.e. is assembling a
+ * message-banking run rather than a single reply — one new `intent_batch`
+ * row the intent is filed under.
+ *
+ * `system` role: by the time this runs, `action: 'message'` has already been
+ * the FIRST lock (packages/api/src/api.ts) and `captureMessage()`'s own
+ * `can()` check has already been the SECOND (§5.17/§5.18) — this function
+ * only ever receives an `ok: true` result. Mirrors `activeCustodyOrderFor`'s
+ * own reasoning for the same role choice.
+ *
+ * HONEST GAP, not introduced by this function and not fixed by it:
+ * `media_artifact`, `intent_batch`, and `delivery_intent` carry NO row-level
+ * security at all (see db/migrations/0001_phase0_init.sql — unlike
+ * `child_journal_entry`, `pin_credential`, `expense`, `custody_order`, none
+ * of the three tables written here ever got an ENABLE/FORCE pass). Closing
+ * that safely means auditing every existing reader of these tables (the
+ * delivery sweep's system-role `claim_due_intents()`, GET .../inbox's
+ * caller-scoped SELECT, the reaper's `artifacts_due_for_reaping()`) against a
+ * new policy — its own migration and its own review, not a side effect of
+ * adding one new write path. Flagged here rather than silently left implicit.
+ */
+export async function persistCapturedMessage(
+  pool: pg.Pool,
+  capture: { artifact: ArtifactRow; intent: Omit<IntentRow, 'payloadRef'> },
+  opts: { newBatch?: NewIntentBatch } = {},
+): Promise<PersistedCapture> {
+  return withSystemSession(pool, async (q) => {
+    const a = capture.artifact;
+    const artifactRows = await q(
+      `INSERT INTO media_artifact
+         (child_id, author_id, kind, storage_key, duration_ms, caption_key,
+          captured_at, captured_tz, era_tag, preserved, preserved_by,
+          preserved_at, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8,$9,$10,$11,
+               $12::timestamptz,$13::timestamptz)
+       RETURNING id`,
+      [a.childId, a.authorId, a.kind, a.storageKey, a.durationMs, a.captionKey,
+       a.capturedAt, a.capturedTz, a.eraTag, a.preserved, a.preservedBy,
+       a.preservedAt, a.expiresAt],
+    );
+    const artifactId = artifactRows[0].id as string;
+
+    const i = capture.intent;
+    let batchId: string | null = i.batchId;
+    if (opts.newBatch) {
+      const b = opts.newBatch;
+      const batchRows = await q(
+        `INSERT INTO intent_batch
+           (child_id, sender_id, label, reason, cadence, daypart,
+            starts_local, ends_local)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date)
+         RETURNING id`,
+        [i.childId, i.senderId, b.label, b.reason ?? null, b.cadence,
+         i.targetDaypart, b.startsLocal, b.endsLocal],
+      );
+      batchId = batchRows[0].id as string;
+    }
+
+    const intentRows = await q(
+      `INSERT INTO delivery_intent
+         (child_id, sender_id, payload_kind, payload_ref, policy,
+          target_local_date, target_daypart, batch_id, batch_seq, state,
+          expires_at)
+       VALUES ($1,$2,$3,$4,$5::delivery_policy,$6::date,$7,$8,$9,$10,
+               $11::timestamptz)
+       RETURNING id`,
+      [i.childId, i.senderId, i.payloadKind, artifactId, i.policy,
+       i.targetLocalDate, i.targetDaypart, batchId, i.batchSeq, i.state,
+       i.expiresAt],
+    );
+
+    return { artifactId, intentId: intentRows[0].id as string, batchId };
   });
 }
 

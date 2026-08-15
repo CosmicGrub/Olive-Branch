@@ -16,11 +16,13 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential, availabilityFor,
          setAvailabilityWindows, deactivateAccount,
-         rawExportBundleFor } from '../packages/db/src/pool.mjs';
+         rawExportBundleFor, edgesFor, childCtxFor,
+         persistCapturedMessage } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
+import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
 
 /**
  * LOCAL DEV/TEST ONLY — same honesty convention server/index.mjs's own
@@ -509,6 +511,87 @@ export function registerRoutes(api, pool) {
         exportRecordId: result.recordId,
         bundleHash: result.bundleHash,
       } };
+    },
+  });
+
+  api.register({
+    // POST counterpart to GET .../inbox — records an async video message and
+    // schedules it, the real backend for client/lib/receipt_screen.dart's
+    // "Send one back" (see that file's header). `packages/messaging/src/
+    // pipeline.ts`'s captureMessage() is the pure, already-tested decision
+    // function; this handler's only jobs are (1) load the DB-shaped inputs it
+    // needs, (2) run it, and (3) on `ok: true`, hand the result to
+    // packages/db/src/pool.ts's persistCapturedMessage() — never insert a row
+    // captureMessage() has not first validated.
+    method: 'POST', path: '/v1/children/:childId/messages', action: 'message',
+    handler: async (c, q) => {
+      const body = c.body ?? {};
+      const storageKey = typeof body.storageKey === 'string' && body.storageKey
+        ? body.storageKey : null;
+      const durationMs = typeof body.durationMs === 'number' ? body.durationMs : null;
+      if (!storageKey || durationMs === null) {
+        return { status: 400, body: { error: 'storage_key_and_duration_ms_required' } };
+      }
+      const captionKey = typeof body.captionKey === 'string' ? body.captionKey : undefined;
+      const targetLocalDate = typeof body.targetLocalDate === 'string'
+        ? body.targetLocalDate : null;
+      const daypart = typeof body.daypart === 'string' ? body.daypart : 'bedtime';
+      const preserve = body.preserve === true;
+      const batchId = typeof body.batchId === 'string' ? body.batchId : undefined;
+      const batchSeq = typeof body.batchSeq === 'number' ? body.batchSeq : undefined;
+
+      // Sender identity is ALWAYS the authenticated principal, never the
+      // body (A3's own reasoning in api.ts, extended to identity generally —
+      // a body-supplied senderId would let anyone forge a message as coming
+      // from any guardian). A `child` principal carries no `userId`
+      // (packages/auth/src/auth.ts's VerifiedPrincipal, server/index.mjs's
+      // dev-login), so `edges` below is honestly `[]` for a child caller.
+      //
+      // HONEST GAP this route surfaces rather than hides: `delivery_intent.
+      // sender_id` is `NOT NULL REFERENCES app_user(id)`, and a child has no
+      // `app_user` row — this schema has no representation for a child AS a
+      // sender at all. So a `child` session hitting this route (the
+      // realistic caller for "Send one back") always reaches
+      // captureMessage() with empty edges and gets `not_authorized` back —
+      // the exact same denial a sitter or coordinator would get (see
+      // pipeline.test.mjs's M2 suite) — a real, honoured rejection, not a
+      // silently faked success. Wiring a child as a genuine sender would need
+      // a schema change this task did not ask for; see receipt_screen.dart's
+      // header and this pass's final report for the same note.
+      const senderId = c.principal.userId;
+      const senderRole = c.principal.roleName;
+      const edges = senderId ? await edgesFor(pool, senderId) : [];
+
+      const ctx = await childCtxFor(pool, c.childId);
+      if (!ctx) return { status: 404, body: { error: 'child_not_found' } };
+
+      const result = captureMessage(
+        {
+          childId: c.childId,
+          // captureMessage() never reads senderId on a denial path (it checks
+          // `can()` first and returns before touching the value) — see
+          // pipeline.ts. The '' fallback only ever reaches that dead branch.
+          senderId: senderId ?? '',
+          senderRole,
+          storageKey,
+          durationMs,
+          captionKey,
+          targetLocalDate,
+          daypart,
+          preserve,
+          batchId,
+          batchSeq,
+        },
+        edges, ctx, DateTime.utc(),
+      );
+      if (!result.ok) {
+        return { status: result.reason === 'not_authorized' ? 403 : 400,
+                 body: { error: result.reason } };
+      }
+
+      const persisted = await persistCapturedMessage(pool, result);
+      return { status: 201, body: {
+        id: persisted.intentId, artifactId: persisted.artifactId, state: 'pending' } };
     },
   });
 }

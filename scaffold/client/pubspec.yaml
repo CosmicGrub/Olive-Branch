@@ -17,7 +17,11 @@ dependencies:
   # own package metadata for this version, not assumed. No physical device
   # or emulator attached in this session to actually drive
   # ImageSource.camera end to end; `flutter analyze`/`flutter test` below
-  # exercise everything except the literal on-device shutter press.
+  # exercise everything except the literal on-device shutter press. Also used
+  # by receipt_screen.dart's "Send one back" — real camera video capture
+  # (pickVideo, source camera). See that file's own header for what "real"
+  # covers and what it honestly doesn't (no object storage backend exists in
+  # this repo yet, so the recorded file is never actually uploaded anywhere).
   image_picker: ^1.2.3
   # deletion_screen.dart's raw-export button (§16.1 #3, §2.11) writes the
   # downloaded bundle to the app's real documents directory.

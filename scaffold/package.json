@@ -52,7 +52,9 @@
     "test:auth-credentials": "npm run build && node packages/db/test/auth_credentials.test.mjs",
     "test:attestation": "npm run build && node packages/auth/test/attestation.test.mjs",
     "test:contract": "npm run build && node packages/api/test/contract.test.mjs",
-    "test:db:export": "npm run build && node packages/db/test/raw_export.test.mjs"
+    "test:db:export": "npm run build && node packages/db/test/raw_export.test.mjs",
+    "test:message-capture": "npm run build && node packages/db/test/message_capture.test.mjs",
+    "test:messages-route": "npm run build && node packages/api/test/messages_route.test.mjs"
   },
   "dependencies": {
     "chess.js": "^1.4.0",

@@ -1,9 +1,17 @@
 // OLIVE BRANCH — receipt_screen.dart tests. §8.2.4, §9.5.
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:olive_client/receipt_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
+
+/// A fake recorded clip — no real file I/O, no platform channel.
+XFile _fakeClip() => XFile.fromData(Uint8List(0), name: 'clip.mp4');
 
 void main() {
   group('Receipt — §8.2.4, her frame first', () {
@@ -40,7 +48,8 @@ void main() {
       expect(find.textContaining('+1'), findsNothing);
     });
 
-    testWidgets('NO settings affordance, no price, no error copy anywhere', (tester) async {
+    testWidgets('NO settings affordance, no price, no error copy anywhere before any tap',
+        (tester) async {
       await tester.pumpWidget(wrap(const ReceiptScreen(
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school')));
@@ -50,13 +59,17 @@ void main() {
       expect(find.textContaining('failed'), findsNothing);
     });
 
-    testWidgets("'Send one back' is an honest stub, not a faked success", (tester) async {
+    testWidgets(
+        "'Send one back' with no live wiring reports itself honestly, not a faked success",
+        (tester) async {
+      // No baseUrl/childId/sessionToken supplied -- the real shape of every
+      // call site today (inbox_screen.dart is still the offline demo build).
       await tester.pumpWidget(wrap(const ReceiptScreen(
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school')));
       await tester.tap(find.text('Send one back'));
       await tester.pump();
-      expect(find.textContaining('not built yet.'), findsOneWidget);
+      expect(find.textContaining("isn't connected to a server yet"), findsOneWidget);
       expect(find.textContaining('Sent!'), findsNothing);
     });
 
@@ -114,6 +127,95 @@ void main() {
       await tester.tap(find.text('Back to messages'));
       await tester.pumpAndSettle();
       expect(find.byType(ReceiptScreen), findsNothing);
+    });
+  });
+
+  group('Receipt — "Send one back" really wired (live params + injected picker/client)', () {
+    testWidgets('records, POSTs, and shows a real success state', (tester) async {
+      Uri? seenUrl;
+      Map<String, dynamic>? seenBody;
+      // A real (if tiny) delay on the mocked transport — otherwise every
+      // await in _sendOneBack resolves within the same microtask flush a
+      // single tester.pump() already drains, and the busy state below would
+      // never actually be observable, real or not.
+      final MockClient mock = MockClient((http.Request req) async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        seenUrl = req.url;
+        seenBody = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({'id': 'intent-1', 'artifactId': 'artifact-1', 'state': 'pending'}), 201);
+      });
+
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad',
+        watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(),
+      )));
+
+      await tester.tap(find.text('Send one back'));
+      await tester.pump();
+      // Mid-flight: a real busy state, not an instant fake success.
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Sending…'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.text('Sent!'), findsOneWidget);
+      expect(find.text('Send one back'), findsNothing);
+
+      // The real request actually reached api_client.dart's real POST path.
+      expect(seenUrl.toString(), 'http://api.test/v1/children/child-a/messages');
+      expect(seenBody?['durationMs'], isA<int>());
+      expect((seenBody?['durationMs'] as int) > 0, isTrue);
+      expect(seenBody?['storageKey'], isA<String>());
+      // Nothing here ever claims to have uploaded video bytes — only a
+      // locally-meaningful reference travels in the body (see this file's
+      // and receipt_screen.dart's own header on the object-storage gap).
+      expect(seenBody?['storageKey'], startsWith('device/'));
+    });
+
+    testWidgets('a real server rejection shows a real error, not a faked success',
+        (tester) async {
+      final MockClient mock = MockClient((http.Request req) async =>
+          http.Response(jsonEncode({'error': 'not_authorized'}), 403));
+
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad',
+        watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(),
+      )));
+
+      await tester.tap(find.text('Send one back'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sent!'), findsNothing);
+      expect(find.textContaining('403'), findsOneWidget);
+      expect(find.textContaining('not_authorized'), findsOneWidget);
+      // Recoverable — a real retry affordance, not a dead end.
+      expect(find.text('Try again'), findsOneWidget);
+    });
+
+    testWidgets('cancelling the camera picker returns to idle, no request sent', (tester) async {
+      bool requestMade = false;
+      final MockClient mock = MockClient((http.Request req) async {
+        requestMade = true;
+        return http.Response('{}', 201);
+      });
+
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad',
+        watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => null,
+      )));
+
+      await tester.tap(find.text('Send one back'));
+      await tester.pumpAndSettle();
+
+      expect(requestMade, isFalse);
+      expect(find.text('Send one back'), findsOneWidget);
+      expect(find.textContaining('error'), findsNothing);
     });
   });
 }

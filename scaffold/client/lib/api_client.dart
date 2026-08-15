@@ -314,6 +314,31 @@ class OliveApi {
   Future<Map<String, dynamic>> fetchRawExport(String childId) =>
       _get(export_, childId: childId);
 
+  /// POST .../messages — server/routes.mjs's real counterpart to
+  /// [fetchInbox], and the real backend for receipt_screen.dart's "Send one
+  /// back". Runs through captureMessage() server-side for validation before
+  /// anything is persisted (see that route's own header): a rejection —
+  /// wrong sender, an empty recording, a night already past — comes back as
+  /// a real [ApiException], not a fake 200. Returns the created intent's id,
+  /// its media artifact id, and its starting state ('pending').
+  Future<Map<String, dynamic>> sendMessage(
+    String childId, {
+    required String storageKey,
+    required int durationMs,
+    String? captionKey,
+    String? targetLocalDate,
+    String daypart = 'bedtime',
+    bool preserve = false,
+  }) =>
+      _post(messages, {
+        'storageKey': storageKey,
+        'durationMs': durationMs,
+        if (captionKey != null) 'captionKey': captionKey,
+        if (targetLocalDate != null) 'targetLocalDate': targetLocalDate,
+        'daypart': daypart,
+        'preserve': preserve,
+      }, childId: childId);
+
   void close() => _client.close();
 }
 
