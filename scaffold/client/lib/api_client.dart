@@ -85,6 +85,13 @@ class OliveApi {
   static const ping    = '/v1/children/:childId/ping';
   static const journal = '/v1/children/:childId/journal';
 
+  // --- archive (§7.9) ------------------------------------------------------
+  /// §16.1 #3, §2.11 — free, unlimited, every tier. Backs deletion_screen
+  /// .dart's "Download raw export" button. GET, matching MASTERFILE §7.9's
+  /// own documented shape (`GET .../export  full portable bundle`) and
+  /// server/routes.mjs's real registration.
+  static const export_ = '/v1/children/:childId/export';
+
   // --- coordination (§7.7) -----------------------------------------------
   static const medications   = '/v1/children/:childId/medications';
   static const emergencyCard = '/v1/children/:childId/emergency-card';
@@ -298,6 +305,14 @@ class OliveApi {
   /// same empty-map convention [requestWebauthnRegisterChallenge] already
   /// uses for a POST with nothing to carry.
   Future<Map<String, dynamic>> deleteAccount() => _post(deleteAccountPath, const {});
+
+  /// Response shape (server/routes.mjs, packages/db/src/pool.mjs's
+  /// rawExportBundleFor): `{bundle, bundleJson, exportRecordId, bundleHash}`.
+  /// `bundleJson` is the EXACT string `bundleHash` was computed over — a
+  /// caller that wants to verify the hash should hash/persist that field,
+  /// not re-encode `bundle` itself (see routes.mjs's own comment on why).
+  Future<Map<String, dynamic>> fetchRawExport(String childId) =>
+      _get(export_, childId: childId);
 
   void close() => _client.close();
 }

@@ -2358,6 +2358,20 @@ ethically indefensible and a reputational liability, and the free annual
 certified export covers the genuine single-hearing case. Sustained litigation use
 — which is where the real support cost sits — pays.
 
+> **Raw export — REAL end to end as of this pass.** `GET /v1/children/:id
+> /export` (§7.9's own already-documented shape) is registered for the first
+> time (`server/routes.mjs`), backed by `packages/db/src/pool.ts`'s
+> `rawExportBundleFor()` — the first writer to `export_record`
+> (0006_court_tier.sql) since that table was added. Scoped to a live
+> `guardian` edge (delivery_intent/media_artifact/message_log carry no RLS of
+> their own — see that function's header for exactly what closes the gap), a
+> real sha256 `bundle_hash`, `was_free: true`. `client/lib/deletion_screen
+> .dart`'s "Download raw export" button is wired to it for real: a network
+> round trip, a real file on disk, a client-side-verified hash. **Certified
+> export remains entirely unbuilt server-side** — `client/lib/court_export
+> .dart` is still its own standalone demo with no backend. See CHANGELOG.md's
+> "raw export" entry (Unreleased) for the full test/verification list.
+
 ### 16.1b Settled
 
 | # | Decision | Settled | Where |

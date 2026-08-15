@@ -51,7 +51,8 @@
     "test:db": "npm run build && node packages/db/test/pool.test.mjs",
     "test:auth-credentials": "npm run build && node packages/db/test/auth_credentials.test.mjs",
     "test:attestation": "npm run build && node packages/auth/test/attestation.test.mjs",
-    "test:contract": "npm run build && node packages/api/test/contract.test.mjs"
+    "test:contract": "npm run build && node packages/api/test/contract.test.mjs",
+    "test:db:export": "npm run build && node packages/db/test/raw_export.test.mjs"
   },
   "dependencies": {
     "chess.js": "^1.4.0",

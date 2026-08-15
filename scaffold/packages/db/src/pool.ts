@@ -4,6 +4,7 @@ import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
 import type { Edge } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
+import { sha256Hex } from '../../ledger/src/sha256.ts';
 
 /**
  * MASTERFILE §5.18 — session context, and §5.17 — the second lock.
@@ -801,6 +802,216 @@ export async function deactivateAccount(
       removedWebauthnCredentials: passkeys.length,
       removedWebauthnChallenges: challenges.length,
     };
+  });
+}
+
+/**
+ * §16.1 #3 / §2.11 — raw export. "Free, unlimited, every tier" (deletion_screen
+ * .dart's own button copy), backed for real for the first time here.
+ * db/migrations/0006_court_tier.sql's `export_record` table has existed since
+ * that migration landed with nothing writing to it; this is the first writer.
+ *
+ * SCOPING IS NOT DELEGATED ENTIRELY TO THE ROUTE LAYER. `packages/api/src/
+ * api.ts`'s A3 check (`can('export.raw', edgesFor(...), childId, ...)`)
+ * already refuses a caller with no live edge to `childId` before this
+ * function is ever reached -- but `delivery_intent` and `media_artifact`
+ * carry NO row-level security policy at all (see db/DEPLOYMENT.md's own
+ * inventory: only `child_journal_entry`, `pin_credential`, `expense`,
+ * `message_log`, `custody_order` have one), and `message_log`'s own policy
+ * (`log_no_child`, 0006) blocks the `child` ROLE but does not scope by
+ * `child_id` -- a guardian session that queried it directly for the WRONG
+ * child would get that child's real rows back. Postgres enforces P6/P7 here,
+ * never cross-child tenancy on these particular tables; that is the app's job.
+ * So this function re-derives "is the caller currently a live guardian of
+ * THIS child" itself, in SQL, mirroring `guardianship`'s own shape
+ * (`edgesFor()`'s query, `authorize.ts`'s `can()` semantics: not closed, not
+ * expired, inside its valid range, not restricted) rather than trusting the
+ * route already checked -- the second lock `authorize.ts`'s own header
+ * describes for `can()` itself, applied one layer deeper because these two
+ * tables have no first lock of their own. Role is pinned to `'guardian'`
+ * specifically (not any edge) because `authorize.ts`'s `ROLE_CAPS` only grants
+ * `'export.raw'` to that one role -- a live `step_parent`/`sitter`/etc. edge
+ * would fail `can()` at the route layer regardless, so this mirrors that
+ * exactly rather than being stricter for no documented reason. What this
+ * function deliberately does NOT re-check: per-edge `scope['export.raw']
+ * === false` overrides -- that fine-grained toggle stays solely the route's
+ * `can()` call's job; duplicating it here would drift the two checks apart
+ * silently the next time one of them changes.
+ *
+ * child_journal_entry IS queried below, unconditionally -- and for every
+ * caller of this function (which requires a non-child, guardian principal;
+ * see the throw just below) it returns ZERO rows, always, because
+ * `journal_owner_only` (0001) grants read access to the owning child alone.
+ * That is deliberately not special-cased away here: the guarantee comes from
+ * Postgres actually refusing the guardian session the row, not from this file
+ * remembering to leave the query out. P7 has no export-shaped exception.
+ *
+ * A CHILD PULLING HER OWN EXPORT (§21.2 rung 17, `authorizeExport()` in
+ * packages/maturation/src/rungs.ts) IS NOT IMPLEMENTED HERE. Two real
+ * blockers, not an oversight: (1) rungs.ts's own age gate
+ * (`p.age < 17 -> not_yet_seventeen`) has no wiring anywhere server-side --
+ * no route threads a child's age through, and `VerifiedPrincipal` does not
+ * carry one; (2) `export_record.requested_by` is `NOT NULL REFERENCES
+ * app_user(id)`, and a child principal has no `app_user` row at all (`auth.ts`
+ * `readSession()`: a child token's `userId` is always `null`) -- there is no
+ * honest id to write there. Faking either would be worse than refusing. A
+ * child principal reaching this function is a server bug (routes.mjs's
+ * handler is expected to reject it before this is ever called), so it throws
+ * rather than silently returning an empty bundle.
+ */
+export interface RawExportBundle {
+  childId: string;
+  childName: string | null;
+  generatedAt: string;
+  requestedByUserId: string;
+  /** Delivered/opened only — never a message still in flight or revoked. */
+  delivered: Array<{
+    id: string;
+    payloadKind: string;
+    senderId: string;
+    senderName: string | null;
+    state: string;
+    materializedAt: string | null;
+    /** null when payload_ref does not resolve to a media_artifact row. */
+    artifact: {
+      id: string;
+      kind: string;
+      storageKey: string;
+      durationMs: number | null;
+      captionKey: string | null;
+      capturedAt: string;
+      capturedTz: string;
+      eraTag: string | null;
+      preserved: boolean;
+    } | null;
+  }>;
+  /** Always [] for the guardian callers this function actually serves — see
+   *  the file-level comment on why the query still runs for real rather than
+   *  being hardcoded empty. */
+  journalEntries: Array<{ id: string; body: string | null; mediaRef: string | null; createdAt: string }>;
+  messageLog: Array<{ seq: number; authorId: string; at: string; body: string; prevHash: string; hash: string }>;
+}
+
+export type RawExportDenial = 'not_a_live_guardian';
+
+export async function rawExportBundleFor(
+  pool: pg.Pool,
+  principal: Pick<VerifiedPrincipal, 'roleName' | 'userId' | 'childId'>,
+  childId: string,
+): Promise<
+  | { ok: true; bundle: RawExportBundle; serialized: string; recordId: string; bundleHash: string }
+  | { ok: false; reason: RawExportDenial }
+> {
+  if (principal.roleName === 'child') {
+    // See the file-level comment above — a real, documented gap, not a
+    // silent one. routes.mjs's handler must refuse a child caller before
+    // this is ever reached.
+    throw new Error(
+      'rawExportBundleFor: child-self export is not implemented (no age gate ' +
+      'wired, and export_record.requested_by has no app_user row to name)');
+  }
+  if (!principal.userId) {
+    throw new Error('rawExportBundleFor: non-child principal missing userId');
+  }
+  const requesterId = principal.userId;
+
+  return withSession(pool, principal, async (q) => {
+    const live = await q(
+      `SELECT 1 FROM guardianship
+        WHERE child_id = $1 AND user_id = $2 AND role = 'guardian'
+          AND closed_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())
+          AND restricted = false
+          AND valid @> now()
+        LIMIT 1`,
+      [childId, requesterId],
+    );
+    if (!live.length) return { ok: false, reason: 'not_a_live_guardian' };
+
+    const childRows = await q(`SELECT display_name FROM child WHERE id = $1`, [childId]);
+
+    const deliveredRows = await q(
+      `SELECT di.id, di.payload_kind, di.sender_id, u.display_name AS sender_name,
+              di.state, di.materialized_at::text,
+              m.id AS artifact_id, m.kind AS artifact_kind, m.storage_key,
+              m.duration_ms, m.caption_key, m.captured_at::text, m.captured_tz,
+              m.era_tag, m.preserved
+         FROM delivery_intent di
+         JOIN app_user u ON u.id = di.sender_id
+         LEFT JOIN media_artifact m ON m.id = di.payload_ref
+        WHERE di.child_id = $1 AND di.state IN ('delivered', 'opened')
+        ORDER BY di.materialized_at ASC NULLS LAST`,
+      [childId],
+    );
+
+    // P7 — see the file-level comment. This is a real query against the real
+    // table, not a hardcoded [], and it is expected to return zero rows for
+    // every caller who can reach this line (a live guardian, never a child).
+    const journalRows = await q(
+      `SELECT id, body, media_ref, created_at::text
+         FROM child_journal_entry WHERE child_id = $1 ORDER BY created_at ASC`,
+      [childId],
+    );
+
+    const logRows = await q(
+      `SELECT seq, author_id, at::text, body, prev_hash, hash
+         FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
+      [childId],
+    );
+
+    const bundle: RawExportBundle = {
+      childId,
+      childName: childRows[0]?.display_name ?? null,
+      generatedAt: new Date().toISOString(),
+      requestedByUserId: requesterId,
+      delivered: deliveredRows.map((r: any) => ({
+        id: r.id,
+        payloadKind: r.payload_kind,
+        senderId: r.sender_id,
+        senderName: r.sender_name ?? null,
+        state: r.state,
+        materializedAt: r.materialized_at ?? null,
+        artifact: r.artifact_id ? {
+          id: r.artifact_id,
+          kind: r.artifact_kind,
+          storageKey: r.storage_key,
+          durationMs: r.duration_ms ?? null,
+          captionKey: r.caption_key ?? null,
+          capturedAt: r.captured_at,
+          capturedTz: r.captured_tz,
+          eraTag: r.era_tag ?? null,
+          preserved: r.preserved,
+        } : null,
+      })),
+      journalEntries: journalRows.map((r: any) => ({
+        id: r.id, body: r.body ?? null, mediaRef: r.media_ref ?? null, createdAt: r.created_at,
+      })),
+      messageLog: logRows.map((r: any) => ({
+        seq: Number(r.seq), authorId: r.author_id, at: r.at, body: r.body,
+        prevHash: r.prev_hash, hash: r.hash,
+      })),
+    };
+
+    // Real sha256 over the exact bytes a recipient would receive — the same
+    // discipline packages/ledger/src/ledger.ts's certify() already applies to
+    // the certified-export half of this feature, reused here rather than
+    // reinvented (see this file's own import of sha256Hex). `serialized` is
+    // returned alongside `bundle` (not just the hash) specifically so a
+    // caller can verify bundleHash against the EXACT bytes that were hashed
+    // — re-serializing the parsed `bundle` object independently (client_lib
+    // JSON encoders don't all agree on key order/number formatting the same
+    // way `JSON.stringify` does) would risk a false "tamper" reading that
+    // has nothing to do with tampering.
+    const serialized = JSON.stringify(bundle);
+    const bundleHash = sha256Hex(serialized);
+
+    const inserted = await q(
+      `INSERT INTO export_record (child_id, requested_by, kind, was_free, bundle_hash)
+       VALUES ($1, $2, 'raw', true, $3) RETURNING id::text`,
+      [childId, requesterId, bundleHash],
+    );
+
+    return { ok: true, bundle, serialized, recordId: inserted[0].id, bundleHash };
   });
 }
 

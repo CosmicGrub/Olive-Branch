@@ -19,6 +19,9 @@ dependencies:
   # ImageSource.camera end to end; `flutter analyze`/`flutter test` below
   # exercise everything except the literal on-device shutter press.
   image_picker: ^1.2.3
+  # deletion_screen.dart's raw-export button (§16.1 #3, §2.11) writes the
+  # downloaded bundle to the app's real documents directory.
+  path_provider: ^2.1.4
 
 # See third_party/PATCH.md. Compile-time-only fix for a hardcoded
 # compileSdkVersion 34 in the published package's own android/build.gradle,
