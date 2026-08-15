@@ -51,8 +51,20 @@ async function devLogin(rawBody) {
         { userId: null, roleName: 'child', childId, escalated: false }, Date.now());
       return { status: 200, body: { token } };
     }
-    const rows = await q(`SELECT id FROM app_user WHERE id = $1`, [userId]);
+    const rows = await q(`SELECT id, deactivated_at FROM app_user WHERE id = $1`, [userId]);
     if (!rows.length) return { status: 404, body: { error: 'user_not_found' } };
+    // MASTERFILE §2.10/§2.11/P8 — "what goes: the deleting guardian's
+    // login/session". This is the one real login/session-issuing path that
+    // exists in this codebase today (see this file's own header: no real
+    // PIN/WebAuthn login endpoint is implemented anywhere yet, so there is no
+    // second login path to gate the same way). pool.ts's deactivateAccount()
+    // already removes this user's pin_credential/webauthn_credential rows,
+    // which would make a REAL PIN/WebAuthn login fail on its own the moment
+    // one exists (nothing left to verify against) — this check is what closes
+    // the gap for the login path that actually exists right now.
+    if (rows[0].deactivated_at) {
+      return { status: 403, body: { error: 'account_deactivated' } };
+    }
     const token = issueSession(secret,
       { userId, roleName: 'guardian', childId: null, escalated: false }, Date.now());
     return { status: 200, body: { token } };

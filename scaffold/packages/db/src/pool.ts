@@ -680,6 +680,130 @@ export async function availabilityFor(pool: pg.Pool, childId: string): Promise<A
   });
 }
 
+/**
+ * db/migrations/0011_account_deletion.sql — account deletion, for real.
+ * MASTERFILE §2.10, §2.11, §9.8, prohibition P8.
+ * client/lib/deletion_screen.dart's `whatDeletionKeeps` / `whatDeletionRemoves`
+ * constants ARE the spec (see that file's own header); this is the one place
+ * that spec becomes a database transaction.
+ *
+ * Deactivation, never row deletion — the app_user row itself is left in
+ * place (message_log.author_id and a delivered delivery_intent.sender_id
+ * both reference it), only:
+ *   - delivery_intent rows this user AUTHORED that are NOT in a delivered
+ *     state ('pending' | 'ready' | 'expired' | 'revoked' — the schema's own
+ *     state CHECK, db/migrations/0001_phase0_init.sql) are removed. 'delivered'
+ *     and 'opened' both mean the child already has it (routes.mjs's own inbox
+ *     query treats them identically: `state IN ('delivered','opened')`), so
+ *     those, and only those, survive untouched.
+ *   - every pin_credential / webauthn_credential / webauthn_challenge row for
+ *     this user is removed (the login itself goes).
+ *   - app_user.deactivated_at is set.
+ * All four in ONE transaction (withSession's BEGIN/COMMIT/ROLLBACK) so a
+ * partial failure cannot half-delete an account.
+ *
+ * NOT done here, honestly: sessions in this codebase are signed, not stored
+ * (see auth.ts's own header) — there is no session table to invalidate, so an
+ * already-issued token remains cryptographically valid until its own short
+ * TTL (SESSION_TTL_MS, 1h) naturally expires, even after this call returns.
+ * Blocking a deactivated user's NEXT login is what server/index.mjs's
+ * devLogin does (the only real login/session-issuing path that exists in
+ * this codebase today — see that file's own header on why no real
+ * PIN/WebAuthn login endpoint exists yet to gate the same way). Revoking an
+ * already-issued live session before its TTL lapses would need a real
+ * server-side session/deny-list, which does not exist and is out of scope
+ * for this pass.
+ *
+ * `callerRoleName` defaults to 'guardian' — the only non-child, non-system
+ * top-level principal role this codepath can ever see (server/routes.mjs's
+ * POST /v1/me/delete handler rejects a null `principal.userId` before this
+ * is ever called, and readSession's own invariant means a 'child' principal
+ * never has a userId to pass here). It matters, not just documentation:
+ * pin_credential's own RLS (0004_auth_and_reaper.sql) hides
+ * 'guardian_escalation' rows from a session whose role reads as 'child', so
+ * running this under the wrong role would make the credential cleanup below
+ * silently delete nothing instead of failing loudly — hence the explicit
+ * guard just below rather than trusting every caller to pass it right.
+ */
+export interface DeactivationResult {
+  userId: string;
+  cancelledDeliveryIntents: number;
+  removedPinCredentials: number;
+  removedWebauthnCredentials: number;
+  removedWebauthnChallenges: number;
+}
+
+export async function deactivateAccount(
+  pool: pg.Pool,
+  userId: string,
+  callerRoleName: string = 'guardian',
+): Promise<DeactivationResult> {
+  if (!userId) throw new Error('deactivateAccount: userId required');
+  if (callerRoleName === 'child') {
+    throw new Error('deactivateAccount: a child role cannot deactivate an account — ' +
+      'children have no login of their own to delete (§11)');
+  }
+
+  return withSession(pool, { roleName: callerRoleName, userId, childId: null }, async (q) => {
+    // Row lock + existence/idempotency check first, `FOR UPDATE`: a
+    // concurrent second call for the same user (a double-tap on the confirm
+    // button) blocks on this row lock until the first transaction commits,
+    // then sees deactivated_at already set and fails cleanly rather than
+    // both transactions racing to "successfully" cancel the same rows.
+    const existing = await q(
+      `SELECT id, deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`, [userId]);
+    if (existing.length === 0) {
+      throw Object.assign(new Error('deactivateAccount: no such app_user'),
+        { code: 'account_not_found' });
+    }
+    if (existing[0].deactivated_at) {
+      throw Object.assign(new Error('deactivateAccount: already deactivated'),
+        { code: 'already_deactivated' });
+    }
+
+    // What goes: anything queued or banked but NOT YET DELIVERED.
+    const cancelled = await q(
+      `DELETE FROM delivery_intent
+        WHERE sender_id = $1 AND state NOT IN ('delivered', 'opened')
+        RETURNING id`, [userId]);
+
+    // What goes: the login itself. child_unlock PINs belong to a CHILD, not
+    // a user, so only this user's own guardian_escalation row (if any) is
+    // in scope — the WHERE clause makes that exact, not the kind filter.
+    const pins = await q(
+      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING id`, [userId]);
+    const passkeys = await q(
+      `DELETE FROM webauthn_credential WHERE user_id = $1 RETURNING credential_id`, [userId]);
+    const challenges = await q(
+      `DELETE FROM webauthn_challenge WHERE user_id = $1 RETURNING challenge`, [userId]);
+
+    // The row itself is NEVER deleted. RLS (0011_account_deletion.sql) has
+    // no DELETE policy on app_user at all, so a stray "DELETE FROM app_user"
+    // anywhere else in this codebase would be refused by Postgres itself,
+    // not merely by convention — this UPDATE is the only mutation available.
+    const deactivated = await q(
+      `UPDATE app_user SET deactivated_at = now()
+        WHERE id = $1 AND deactivated_at IS NULL
+        RETURNING id`, [userId]);
+    if (deactivated.length !== 1) {
+      // Should be unreachable given the FOR UPDATE existence check above —
+      // asserted anyway per this task's own "assert row counts" instruction.
+      // A silent 0-row UPDATE here would mean the guardian is told their
+      // account is gone while the database disagrees.
+      throw new Error(`deactivateAccount: expected to deactivate exactly 1 app_user row, ` +
+        `affected ${deactivated.length}`);
+    }
+
+    return {
+      userId,
+      cancelledDeliveryIntents: cancelled.length,
+      removedPinCredentials: pins.length,
+      removedWebauthnCredentials: passkeys.length,
+      removedWebauthnChallenges: challenges.length,
+    };
+  });
+}
+
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */
 export function dbPort(pool: pg.Pool): DbPort {
   return {

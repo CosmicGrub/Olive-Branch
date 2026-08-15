@@ -307,6 +307,64 @@ async function availabilityFor(pool, childId) {
     }));
   });
 }
+async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
+  if (!userId) throw new Error("deactivateAccount: userId required");
+  if (callerRoleName === "child") {
+    throw new Error("deactivateAccount: a child role cannot deactivate an account \u2014 children have no login of their own to delete (\xA711)");
+  }
+  return withSession(pool, { roleName: callerRoleName, userId, childId: null }, async (q) => {
+    const existing = await q(
+      `SELECT id, deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`,
+      [userId]
+    );
+    if (existing.length === 0) {
+      throw Object.assign(
+        new Error("deactivateAccount: no such app_user"),
+        { code: "account_not_found" }
+      );
+    }
+    if (existing[0].deactivated_at) {
+      throw Object.assign(
+        new Error("deactivateAccount: already deactivated"),
+        { code: "already_deactivated" }
+      );
+    }
+    const cancelled = await q(
+      `DELETE FROM delivery_intent
+        WHERE sender_id = $1 AND state NOT IN ('delivered', 'opened')
+        RETURNING id`,
+      [userId]
+    );
+    const pins = await q(
+      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING id`,
+      [userId]
+    );
+    const passkeys = await q(
+      `DELETE FROM webauthn_credential WHERE user_id = $1 RETURNING credential_id`,
+      [userId]
+    );
+    const challenges = await q(
+      `DELETE FROM webauthn_challenge WHERE user_id = $1 RETURNING challenge`,
+      [userId]
+    );
+    const deactivated = await q(
+      `UPDATE app_user SET deactivated_at = now()
+        WHERE id = $1 AND deactivated_at IS NULL
+        RETURNING id`,
+      [userId]
+    );
+    if (deactivated.length !== 1) {
+      throw new Error(`deactivateAccount: expected to deactivate exactly 1 app_user row, affected ${deactivated.length}`);
+    }
+    return {
+      userId,
+      cancelledDeliveryIntents: cancelled.length,
+      removedPinCredentials: pins.length,
+      removedWebauthnCredentials: passkeys.length,
+      removedWebauthnChallenges: challenges.length
+    };
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -324,6 +382,7 @@ export {
   createChallenge,
   createPool,
   dbPort,
+  deactivateAccount,
   edgesFor,
   guardiansOfChild,
   pinCredentialFor,
