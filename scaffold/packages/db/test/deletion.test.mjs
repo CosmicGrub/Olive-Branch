@@ -16,6 +16,12 @@
  * Four sections, matching the task's four required proofs:
  *   A. a delivered message and its message_log entry survive untouched
  *   B. queued/undelivered content (delivery_intent, credentials) is removed
+ *      — as of the round-2 audit's SEC-01, device_token rows too: a
+ *      deactivated guardian's already-registered devices are removed in the
+ *      same transaction, not left to linger until FCM/APNs happens to bounce
+ *      them. device_token.test.mjs's own section E covers the OTHER half of
+ *      SEC-01 (registerDeviceToken() refusing a NEW registration afterward),
+ *      which needs registerDeviceToken() itself and so belongs there, not here.
  *   C. RLS — a guardian cannot deactivate someone else's account
  *   D. a deactivated user's subsequent login attempt fails, over a REAL
  *      HTTP server (server/index.mjs spawned as a real child process) —
@@ -142,6 +148,26 @@ async function insertFixtures() {
     `INSERT INTO auth_challenge (user_id, challenge, purpose) VALUES ($1, $2, 'login')`,
     [GUARDIAN_A, `chal-${GUARDIAN_A}`]);
 
+  // SEC-01 (round-2 audit) — two of GUARDIAN_A's own registered devices,
+  // inserted directly rather than via registerDeviceToken() so this fixture
+  // stays independent of that function's own behavior under test elsewhere
+  // (device_token.test.mjs section E). deactivateAccount() below must remove
+  // both. GUARDIAN_B (the co-parent, never deactivated in this suite) gets a
+  // BYSTANDER row too — without it, GUARDIAN_A's two rows would be the only
+  // rows on the whole table at deactivation time, and the count/survival
+  // assertions below could not tell a correctly-scoped
+  // `WHERE owner_user_id = $1` apart from an unscoped full-table wipe (this
+  // table's RLS gives 'system' unrestricted DELETE with no owner predicate —
+  // db/migrations/0012_push_device_token.sql's device_token_system_prune —
+  // so the app-layer WHERE clause is the only thing actually preventing that).
+  await admin.query(
+    `INSERT INTO device_token (owner_user_id, platform, token) VALUES
+       ($1, 'ios', $2), ($1, 'android', $3)`,
+    [GUARDIAN_A, `tok-${GUARDIAN_A}-1`, `tok-${GUARDIAN_A}-2`]);
+  await admin.query(
+    `INSERT INTO device_token (owner_user_id, platform, token) VALUES ($1, 'ios', $2)`,
+    [GUARDIAN_B, `tok-${GUARDIAN_B}-bystander`]);
+
   await admin.query('COMMIT');
 }
 
@@ -190,6 +216,7 @@ await insertFixtures();
   check('AB deactivate', 'removes the 1 pin_credential row', result.removedPinCredentials, 1);
   check('AB deactivate', 'removes the 1 webauthn_credential row', result.removedWebauthnCredentials, 1);
   check('AB deactivate', 'removes the 1 webauthn_challenge row', result.removedWebauthnChallenges, 1);
+  check('AB deactivate', 'removes both device_token rows (SEC-01)', result.removedDeviceTokens, 2);
 
   const user = await admin.query(`SELECT deactivated_at FROM app_user WHERE id = $1`, [GUARDIAN_A]);
   check('AB deactivate', 'the app_user ROW still exists (never deleted)', user.rows.length, 1);
@@ -232,6 +259,13 @@ await insertFixtures();
   const ch = await admin.query(`SELECT challenge FROM auth_challenge WHERE user_id = $1`,
     [GUARDIAN_A]);
   check('B removed', 'auth_challenge is gone', ch.rows.length, 0);
+  const devices = await admin.query(`SELECT id FROM device_token WHERE owner_user_id = $1`,
+    [GUARDIAN_A]);
+  check('B removed', 'device_token is gone (SEC-01)', devices.rows.length, 0);
+  const bystanderDevice = await admin.query(
+    `SELECT token FROM device_token WHERE owner_user_id = $1`, [GUARDIAN_B]);
+  check('B removed', "GUARDIAN_B's bystander device_token row survives untouched (SEC-01 scoping)",
+    bystanderDevice.rows[0]?.token, `tok-${GUARDIAN_B}-bystander`);
 
   // Idempotency — a double-tap on the confirm button must fail loudly, not
   // silently "succeed" a second time or double-count.

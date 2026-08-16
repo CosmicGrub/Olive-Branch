@@ -230,8 +230,19 @@ export function registerRoutes(api, pool) {
       if (typeof token !== 'string' || token.length === 0) {
         return { status: 400, body: { error: 'token_required' } };
       }
-      const id = await registerDeviceToken(pool, c.principal, platform, token);
-      return { status: 200, body: { id } };
+      try {
+        const id = await registerDeviceToken(pool, c.principal, platform, token);
+        return { status: 200, body: { id } };
+      } catch (e) {
+        // SEC-01 fix — pool.ts's registerDeviceToken() refuses to mint new
+        // push capacity for an already-deactivated guardian/coordinator, same
+        // status/body shape as server/index.mjs's devLogin gate for the same
+        // error, so a client that already handles that response handles this one.
+        if (e?.code === 'account_deactivated') {
+          return { status: 403, body: { error: 'account_deactivated' } };
+        }
+        throw e; // -> Api.handle's catch-all -> 500, logged there
+      }
     },
   });
 
@@ -385,8 +396,17 @@ export function registerRoutes(api, pool) {
       // hashPin's own 4-8-digit validation throw surfaces as a 400, not a 500
       // — a malformed PIN is caller error, not server error.
       catch { return { status: 400, body: { error: 'invalid_pin_format' } }; }
-      await setPinCredential(pool, c.principal.userId, hash);
-      return { body: { ok: true } };
+      try {
+        await setPinCredential(pool, c.principal.userId, hash);
+        return { body: { ok: true } };
+      } catch (e) {
+        // SEC-01 follow-up — pool.ts's setPinCredential() refuses a
+        // deactivated guardian, same status/body shape as devLogin's own gate.
+        if (e?.code === 'account_deactivated') {
+          return { status: 403, body: { error: 'account_deactivated' } };
+        }
+        throw e; // -> Api.handle's catch-all -> 500, logged there
+      }
     },
   });
 
@@ -470,8 +490,17 @@ export function registerRoutes(api, pool) {
       try { ({ credentialId, publicKeyPem } = extractCredentialPublicKey(authData)); }
       catch { return { status: 400, body: { error: 'bad_public_key' } }; }
 
-      await storeWebauthnCredential(pool, c.principal.userId, credentialId, publicKeyPem);
-      return { body: { ok: true } };
+      try {
+        await storeWebauthnCredential(pool, c.principal.userId, credentialId, publicKeyPem);
+        return { body: { ok: true } };
+      } catch (e) {
+        // SEC-01 follow-up — pool.ts's storeWebauthnCredential() refuses a
+        // deactivated guardian, same status/body shape as devLogin's own gate.
+        if (e?.code === 'account_deactivated') {
+          return { status: 403, body: { error: 'account_deactivated' } };
+        }
+        throw e; // -> Api.handle's catch-all -> 500, logged there
+      }
     },
   });
 

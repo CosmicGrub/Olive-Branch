@@ -20,7 +20,10 @@
  *   C) deviceTokensFor()/removeDeviceTokenSystem() are reachable under the
  *      system role and ONLY the system role;
  *   D) the table's own CHECK constraints (exactly one owner, platform
- *      allowlist) and unique index (token) reject what they should.
+ *      allowlist) and unique index (token) reject what they should;
+ *   E) deactivateAccount() cascades to device_token, and a deactivated
+ *      guardian/coordinator cannot register a NEW device afterward — the
+ *      round-2 audit's SEC-01, closed in packages/db/src/pool.ts.
  *
  * 0008's own migration header documents a real defect this suite's earlier
  * drafts caught: a first design shipped with NO SELECT policy at all for
@@ -33,7 +36,7 @@
 import pg from 'pg';
 import {
   createPool, registerDeviceToken, unregisterDeviceToken,
-  deviceTokensFor, removeDeviceTokenSystem,
+  deviceTokensFor, removeDeviceTokenSystem, deactivateAccount,
 } from '../src/pool.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -213,6 +216,63 @@ const eliP = { roleName: 'child', userId: null, childId: ELI };
   check('D constraints', 'a raw duplicate token (no ON CONFLICT) violates the unique index',
     dupTokenFailed, 'true');
   await admin.query(`DELETE FROM device_token WHERE token = 'tok-unique-D'`);
+}
+
+// ===========================================================================
+// E · SEC-01 — deactivation cascades to device_token, and refuses to let a
+// still-valid session token register a NEW device afterward. Placed last:
+// this section deactivates DAD, so nothing after it may assume he's live.
+// ===========================================================================
+{
+  const beforeId = await registerDeviceToken(pool, dadP, 'ios', 'tok-dad-E-before');
+  check('E deactivation', 'Dad can register before deactivation', typeof beforeId, 'string');
+
+  // A BYSTANDER row, registered before Dad's deactivation: Mom's own device,
+  // still very much active. Without this, Dad's row would be the ONLY row on
+  // the whole table at deactivation time, and the assertions below could not
+  // tell a correctly-scoped `WHERE owner_user_id = $1` apart from an unscoped
+  // full-table wipe (device_token's RLS gives 'system' unrestricted DELETE —
+  // db/migrations/0012_push_device_token.sql's device_token_system_prune has
+  // no owner predicate — so the app-layer WHERE clause is the only thing
+  // preventing that, and this is what actually proves it holds).
+  const bystanderId = await registerDeviceToken(pool, momP, 'android', 'tok-mom-E-bystander');
+  check('E deactivation', "Mom's bystander device registers fine", typeof bystanderId, 'string');
+
+  const result = await deactivateAccount(pool, DAD);
+  check('E deactivation', "deactivateAccount cascades to Dad's device_token rows",
+    result.removedDeviceTokens, 1);
+
+  const bystanderSurvives = await deviceTokensFor(pool, { userId: MOM });
+  check('E deactivation', "Mom's bystander row survives Dad's deactivation untouched",
+    bystanderSurvives.some((d) => d.token === 'tok-mom-E-bystander'), 'true');
+  await unregisterDeviceToken(pool, momP, 'tok-mom-E-bystander');
+
+  const survivors = await deviceTokensFor(pool, { userId: DAD });
+  check('E deactivation', "Dad's pre-deactivation device row is really gone",
+    survivors.length, 0);
+
+  let deniedCode = null;
+  try {
+    await registerDeviceToken(pool, dadP, 'ios', 'tok-dad-E-after');
+  } catch (e) { deniedCode = e.code; }
+  check('E deactivation', 'a NEW registration attempt is refused, not silently accepted',
+    deniedCode, 'account_deactivated');
+
+  const afterAttempt = await deviceTokensFor(pool, { userId: DAD });
+  check('E deactivation', 'the refused attempt created no row', afterAttempt.length, 0);
+
+  // The gate is per-user, not a global kill switch — a DIFFERENT, still-active
+  // guardian (Mom) is completely unaffected by Dad's deactivation.
+  const momId = await registerDeviceToken(pool, momP, 'android', 'tok-mom-E');
+  check('E deactivation', 'a still-active guardian (Mom) can still register', typeof momId, 'string');
+  await unregisterDeviceToken(pool, momP, 'tok-mom-E');
+
+  // The gate only runs for non-child principals (registerDeviceToken's own
+  // header: children have no deactivated_at concept) — an unrelated child's
+  // own registration is untouched by Dad's deactivation.
+  const ivyId = await registerDeviceToken(pool, ivyP, 'android', 'tok-ivy-E');
+  check('E deactivation', "a child's (Ivy) own registration is unaffected", typeof ivyId, 'string');
+  await unregisterDeviceToken(pool, ivyP, 'tok-ivy-E');
 }
 
 await admin.query(`DELETE FROM device_token WHERE owner_user_id IN ($1,$2) OR owner_child_id IN ($3,$4)`,

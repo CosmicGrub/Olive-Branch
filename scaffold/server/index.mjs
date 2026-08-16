@@ -111,6 +111,28 @@ async function webauthnLoginVerify(rawBody) {
     return { status: 400, body: { error: 'bad_request' } };
   }
 
+  // SEC-01 follow-up (round-2 audit's adversarial verify) — devLogin() above
+  // has always checked deactivated_at before issuing a token; this, the
+  // OTHER real login path, did not. Checked early, before spending the
+  // single-use challenge (consumeChallenge below) or running the signature
+  // verification: on a deactivated account there is nothing further worth
+  // doing. An unrecognized userId falls through unchanged to the existing
+  // challenge-lookup failure below (401 challenge_expired) rather than a new
+  // branch here — a user_not_found leak this early would tell an
+  // unauthenticated caller something a login endpoint shouldn't. Complements
+  // storeWebauthnCredential()'s own atomic registration gate (pool.ts) — that
+  // one stops a NEW credential from being minted after deactivation; this one
+  // stops an OLDER credential, registered before deactivation, from still
+  // being usable to log in afterward. Either alone would close the exploit
+  // the round-2 audit found; both together match devLogin's own belt-and-
+  // suspenders posture (existence check AND deactivated_at check) rather
+  // than leaning on just one.
+  const existing = await withSystemSession(pool,
+    (q) => q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [userId]));
+  if (existing.length && existing[0].deactivated_at) {
+    return { status: 403, body: { error: 'account_deactivated' } };
+  }
+
   let clientData;
   try { clientData = JSON.parse(Buffer.from(clientDataJSON, 'base64url').toString('utf8')); }
   catch { return { status: 400, body: { error: 'type_mismatch' } }; }
