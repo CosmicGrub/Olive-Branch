@@ -14,6 +14,39 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.48.3] — 2026-08-16 — deactivateAccount() runs as `system`: auth_challenge's RLS is system-only, full stop
+
+v0.48.2's fix corrected `deactivateAccount()`'s column/table names
+(`RETURNING user_id`, `DELETE FROM auth_challenge`) but not its role: the
+transaction opened as `callerRoleName` (typically `guardian`), and
+`auth_challenge`'s RLS policy (`0008_auth_credentials.sql`) grants access
+to the `system` role only — a guardian-scoped `DELETE` against it silently
+affects 0 rows (RLS filters, doesn't error, so nothing short of actually
+running the suite against real Postgres in CI would catch it). Confirmed by
+the very next CI run: `removes the 1 webauthn_challenge row: expected 1,
+got 0` and `auth_challenge is gone: expected 0, got 1`.
+
+### Fixed
+- `deactivateAccount()` now runs its whole transaction as `roleName:
+  'system'` (keeping the real `userId`, not `withSystemSession`'s `null`),
+  once the existing child-caller guard clause has already run. Checked
+  against every RLS policy this transaction touches, not just the one that
+  failed: `auth_challenge_system_only` requires `role = system` (satisfied);
+  `app_user_self_update` (`0011_account_deletion.sql`) explicitly admits
+  `role = system OR id = current_actor()` (either arm already passed);
+  `pin_credential_owner_only`/`webauthn_credential_owner_only` check `role
+  != child AND current_actor() = user_id` — role-agnostic beyond excluding
+  `child`, and `current_actor()` is still the real `userId`, so still
+  satisfied; `delivery_intent` carries no RLS policy at all. The
+  guardian-vs-attacker RLS test (`GUARDIAN_B cannot deactivate GUARDIAN_A`)
+  exercises a separately-scoped raw session, never `deactivateAccount()`
+  itself — its own comment says so, and `deactivateAccount()` has no
+  separate "target" parameter: `userId` is always both `current_actor()`
+  and the `WHERE` target, and `routes.mjs` only ever passes the caller's
+  own `principal.userId`. Nothing this pass changes was a tested boundary.
+
+---
+
 ## [0.48.2] — 2026-08-16 — CI green pass: two real deactivateAccount() bugs, one latent test bug, one misplaced suite
 
 Rebasing v0.48.1 onto `main` and running CI for real (not just locally) surfaced
