@@ -700,7 +700,7 @@ export async function availabilityFor(pool: pg.Pool, childId: string): Promise<A
  *     and 'opened' both mean the child already has it (routes.mjs's own inbox
  *     query treats them identically: `state IN ('delivered','opened')`), so
  *     those, and only those, survive untouched.
- *   - every pin_credential / webauthn_credential / webauthn_challenge row for
+ *   - every pin_credential / webauthn_credential / auth_challenge row for
  *     this user is removed (the login itself goes).
  *   - app_user.deactivated_at is set.
  * All four in ONE transaction (withSession's BEGIN/COMMIT/ROLLBACK) so a
@@ -771,15 +771,18 @@ export async function deactivateAccount(
         WHERE sender_id = $1 AND state NOT IN ('delivered', 'opened')
         RETURNING id`, [userId]);
 
-    // What goes: the login itself. child_unlock PINs belong to a CHILD, not
-    // a user, so only this user's own guardian_escalation row (if any) is
-    // in scope — the WHERE clause makes that exact, not the kind filter.
+    // What goes: the login itself. pin_credential (0008_auth_credentials.sql)
+    // is keyed by user_id alone — one PIN per guardian, no per-child rows to
+    // exclude — so this WHERE clause already scopes to exactly this user's
+    // own row, if any.
     const pins = await q(
-      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING id`, [userId]);
+      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING user_id`, [userId]);
     const passkeys = await q(
       `DELETE FROM webauthn_credential WHERE user_id = $1 RETURNING credential_id`, [userId]);
+    // webauthn_challenge was dropped and replaced by auth_challenge
+    // (0008_auth_credentials.sql) — same "challenge" column, new table name.
     const challenges = await q(
-      `DELETE FROM webauthn_challenge WHERE user_id = $1 RETURNING challenge`, [userId]);
+      `DELETE FROM auth_challenge WHERE user_id = $1 RETURNING challenge`, [userId]);
 
     // The row itself is NEVER deleted. RLS (0011_account_deletion.sql) has
     // no DELETE policy on app_user at all, so a stray "DELETE FROM app_user"

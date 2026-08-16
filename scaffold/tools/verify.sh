@@ -54,7 +54,6 @@ for spec in \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "push: fcm sender (mocked)|packages/transport/test/fcm.test.mjs" \
   "push: apns sender (mocked)|packages/transport/test/apns.test.mjs" \
-  "push: notify dispatch (mocked)|packages/transport/test/notify.test.mjs" \
   "homework + real OCR|packages/homework/test/homework.test.mjs" \
   "capture button + screenshot scope|packages/homework/test/snapshot.test.mjs" \
   "homework ImageStats measurement|packages/homework/test/measure.test.mjs" \
@@ -298,7 +297,8 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db account deletion (real RLS)|packages/db/test/deletion.test.mjs" \
             "db raw export (real RLS)|packages/db/test/raw_export.test.mjs" \
             "db message capture (real RLS)|packages/db/test/message_capture.test.mjs" \
-            "db device token (real RLS)|packages/db/test/device_token.test.mjs" ; do
+            "db device token (real RLS)|packages/db/test/device_token.test.mjs" \
+            "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

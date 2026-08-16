@@ -89,7 +89,7 @@ await admin.query('COMMIT');
     { weekday: 5, startLocal: '10:00', endLocal: '11:00' },
   ]);
 
-  const guardianIds = (await guardiansOfChild(pool, CHILD_A)).sort();
+  const guardianIds = (await guardiansOfChild(pool, CHILD_A)).map(g => g.userId).sort();
   check('A loaders', 'guardiansOfChild finds exactly DAD and MOM', guardianIds.join(','),
     [DAD, MOM].sort().join(','));
 

@@ -337,7 +337,7 @@ async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
       [userId]
     );
     const pins = await q(
-      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING id`,
+      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING user_id`,
       [userId]
     );
     const passkeys = await q(
@@ -345,7 +345,7 @@ async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
       [userId]
     );
     const challenges = await q(
-      `DELETE FROM webauthn_challenge WHERE user_id = $1 RETURNING challenge`,
+      `DELETE FROM auth_challenge WHERE user_id = $1 RETURNING challenge`,
       [userId]
     );
     const deactivated = await q(
