@@ -313,7 +313,7 @@ async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
   if (callerRoleName === "child") {
     throw new Error("deactivateAccount: a child role cannot deactivate an account \u2014 children have no login of their own to delete (\xA711)");
   }
-  return withSession(pool, { roleName: callerRoleName, userId, childId: null }, async (q) => {
+  return withSession(pool, { roleName: "system", userId, childId: null }, async (q) => {
     const existing = await q(
       `SELECT id, deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`,
       [userId]

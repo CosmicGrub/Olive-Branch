@@ -748,7 +748,16 @@ export async function deactivateAccount(
       'children have no login of their own to delete (§11)');
   }
 
-  return withSession(pool, { roleName: callerRoleName, userId, childId: null }, async (q) => {
+  // Runs as 'system', not callerRoleName, once the child-caller precondition
+  // above is satisfied: this transaction spans four tables whose RLS
+  // policies don't agree on one non-system role. pin_credential/
+  // webauthn_credential are owner-scoped (current_actor() = userId, still
+  // satisfied — userId below is the real target, not null), app_user's own
+  // policy admits 'system' explicitly (0011_account_deletion.sql), and
+  // auth_challenge (0008_auth_credentials.sql) is system-only, full stop —
+  // no non-system role can touch it at all. A caller-scoped session here
+  // silently deletes 0 auth_challenge rows (RLS filters, doesn't error).
+  return withSession(pool, { roleName: 'system', userId, childId: null }, async (q) => {
     // Row lock + existence/idempotency check first, `FOR UPDATE`: a
     // concurrent second call for the same user (a double-tap on the confirm
     // button) blocks on this row lock until the first transaction commits,
