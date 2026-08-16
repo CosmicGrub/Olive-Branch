@@ -298,7 +298,8 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db raw export (real RLS)|packages/db/test/raw_export.test.mjs" \
             "db message capture (real RLS)|packages/db/test/message_capture.test.mjs" \
             "db device token (real RLS)|packages/db/test/device_token.test.mjs" \
-            "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" ; do
+            "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
+            "db certified export (real RLS)|packages/db/test/court_export.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

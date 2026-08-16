@@ -145,25 +145,39 @@ await admin.query(
 await admin.query('COMMIT');
 
 // A · THE RLS/SCOPING NEGATIVE
+//
+// Reasons below are can('export.raw', ...)'s own, real Deny values, not the
+// single generic 'not_a_live_guardian' this section asserted before this
+// pass: rawExportBundleFor() now runs edgesFor()+can() as a real, first-lock
+// RBAC check (see that function's own header for why -- closing the
+// per-edge scope['export.raw']===false gap that opened when the ROUTE
+// stopped running this same check). can()'s edge-matching is more precise
+// than the raw SQL query's single blanket denial ever was: it distinguishes
+// "no edge exists at all" from "an edge exists but is closed" from
+// "restricted" -- real, useful information the client never saw before.
+// The SQL check right after (kept, not removed -- see the function's own
+// header) still produces 'not_a_live_guardian' as its own fallback reason,
+// but none of these four scenarios reach it now; can() denies each of them
+// first.
 {
   const asStranger = await rawExportBundleFor(pool, { roleName: 'guardian', userId: DAD, childId: null }, IVY);
-  check('A scoping', 'a CLOSED former guardian of IVY gets not_a_live_guardian, not stale data',
-    asStranger.ok === false && asStranger.reason, 'not_a_live_guardian');
+  check('A scoping', 'a CLOSED former guardian of IVY is denied (edge_closed), not stale data',
+    asStranger.ok === false && asStranger.reason, 'edge_closed');
 
   const asWrongFamily = await rawExportBundleFor(pool, { roleName: 'guardian', userId: MOM, childId: null }, NEO);
-  check('A scoping', 'MOM (a real guardian, but not of NEO) gets not_a_live_guardian for NEO',
-    asWrongFamily.ok === false && asWrongFamily.reason, 'not_a_live_guardian');
+  check('A scoping', 'MOM (a real guardian, but not of NEO) gets no_edge for NEO',
+    asWrongFamily.ok === false && asWrongFamily.reason, 'no_edge');
   check('A scoping', 'the denial carries no bundle at all',
     'bundle' in asWrongFamily, 'false');
 
   const asRestricted = await rawExportBundleFor(pool, { roleName: 'guardian', userId: STEVE, childId: null }, NEO);
-  check('A scoping', 'a RESTRICTED (but otherwise live) guardian edge is still denied',
-    asRestricted.ok === false && asRestricted.reason, 'not_a_live_guardian');
+  check('A scoping', 'a RESTRICTED (but otherwise live) guardian edge is still denied (restricted)',
+    asRestricted.ok === false && asRestricted.reason, 'restricted');
 
   const asStrangerEntirely = await rawExportBundleFor(
     pool, { roleName: 'guardian', userId: '00000000-0000-4000-8000-000000000099', childId: null }, IVY);
-  check('A scoping', 'a userId with no guardianship row at all gets not_a_live_guardian',
-    asStrangerEntirely.ok === false && asStrangerEntirely.reason, 'not_a_live_guardian');
+  check('A scoping', 'a userId with no guardianship row at all gets no_edge',
+    asStrangerEntirely.ok === false && asStrangerEntirely.reason, 'no_edge');
 
   let threw = false;
   try { await rawExportBundleFor(pool, { roleName: 'child', userId: null, childId: IVY }, IVY); }

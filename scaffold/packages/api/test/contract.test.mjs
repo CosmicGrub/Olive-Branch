@@ -111,10 +111,25 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
   check('C A1', 'kiosk-pin/verify declares action:null', kioskRoute?.action, 'null');
   check('C A1', 'kiosk-pin/verify explicitly opts into identityScopedByHandler',
     kioskRoute?.identityScopedByHandler, 'true');
+  // Second, deliberate exception (§16.1 #3): GET .../export serves BOTH raw
+  // and certified export from one registration dispatched on ?kind=, and no
+  // single coarse action string can gate both -- 'export.raw' and
+  // 'export.certified' are different ROLE_CAPS entries (guardian holds
+  // both, coordinator holds only the latter), so a route registered under
+  // either one wrongly denies real callers of the other kind before the
+  // handler ever runs (see routes.mjs's own comment on this route for the
+  // real coordinator-lockout bug that shape caused). Each kind's REAL check
+  // now runs inside the pool function that serves it instead.
+  const exportRoute = api.routes.find((r) => r.path === '/v1/children/:childId/export');
+  check('C A1', 'GET .../export declares action:null', exportRoute?.action, 'null');
+  check('C A1', 'GET .../export explicitly opts into identityScopedByHandler',
+    exportRoute?.identityScopedByHandler, 'true');
   // The exception is narrow: no OTHER :childId route in this repo may use it
   // silently. now/inbox both declare a real Action, not null.
   const otherChildRoutes = api.routes.filter((r) =>
-    r.path.includes(':childId') && r.path !== '/v1/children/:childId/kiosk-pin/verify');
+    r.path.includes(':childId')
+    && r.path !== '/v1/children/:childId/kiosk-pin/verify'
+    && r.path !== '/v1/children/:childId/export');
   check('C A1', 'every OTHER :childId route still declares a real (non-null) action',
     otherChildRoutes.every((r) => r.action !== null), 'true');
   // And the underlying registration guard still refuses an undeclared

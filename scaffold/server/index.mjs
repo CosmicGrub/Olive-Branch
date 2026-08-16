@@ -174,7 +174,14 @@ const server = createServer((req, res) => {
   req.on('end', async () => {
     const send = (out) => {
       res.writeHead(out.status, {
-        'content-type': 'application/json',
+        // charset=utf-8 explicit, not implied: RFC 2616's default charset for
+        // an unlabelled response is ISO-8859-1/latin1, and at least one real
+        // client in this codebase (package:http, used by court_export.dart's
+        // live path) honors that default literally -- an em dash in a denial
+        // message (server/routes.mjs's EXPORT_DENIAL_MESSAGES) is exactly the
+        // kind of content that would otherwise round-trip corrupted, found
+        // while wiring the certified-export denial copy for real.
+        'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',
         'x-content-type-options': 'nosniff',
       });

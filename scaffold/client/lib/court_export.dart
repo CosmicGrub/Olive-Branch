@@ -3,6 +3,26 @@
 // Renders MARKUP screen 'export': "The archive assembled for the one reader
 // who must trust it; chunked under the transfer ceiling."
 //
+// Two widgets live in this file now. `CourtExportScreen` (below) is the
+// original, still-real preview build described in the rest of this header —
+// its synthetic demo chain is untouched, and every existing test of it still
+// passes unmodified. `LiveCourtExportScreen` (bottom of this file) is the
+// real backend wiring this header used to say didn't exist:
+// packages/db/src/pool.ts's certifiedExportBundleFor(), reached over
+// GET /v1/children/:childId/export?kind=certified (server/routes.mjs),
+// which reads the REAL message_log chain for a REAL child, runs it through
+// the REAL verifyChain()/certify()/authorizeExport() (packages/ledger/src/
+// ledger.ts), and returns either a real, verified Attestation or a real,
+// specific denial reason (tier_required / annual_allowance_used /
+// chain_broken / not-a-guardian-of-this-child) — never a silent failure,
+// never a fabricated success. `main.dart`'s offline preview build has no
+// reason to construct `LiveCourtExportScreen` (there is nothing live behind
+// it there); `guardian_more.dart` opens it instead of the demo screen only
+// when live config (baseUrl/guardianId/childId) is actually supplied,
+// mirroring child_home_live.dart's own "live only when configured, demo
+// otherwise" posture — see that file's header for the same pattern applied
+// to the child side.
+//
 // §2.11 is the one rule this whole screen exists to make visible in the UI,
 // not just in a pricing table: "the archive is never held hostage." RAW
 // export is free, unlimited, on every tier, INCLUDING after cancellation —
@@ -23,7 +43,9 @@
 // — the "preview a tampered copy" switch swaps between two READ-ONLY
 // precomputed chains, it does not expose a way to alter either one from the UI.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
+import 'api_client.dart';
 import 'sha256.dart';
 
 // ============================================================ ledger subset =
@@ -743,4 +765,193 @@ class _FootNote extends StatelessWidget {
       'Only the certified copy, and only past the first free one each year, ever asks for a plan.',
       style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: Theme.of(context).colorScheme.outline));
+}
+
+// ================================================================ live =====
+// The real network call. Mirrors child_home_live.dart's own shape exactly
+// (required baseUrl/childId, injectable httpClient, devLoginFor -> OliveApi,
+// loading/error/ready states with a retry affordance) with one addition this
+// screen actually needs and child_home_live.dart's endpoints don't: a
+// DENIED state, distinct from a network/server error, because
+// authorizeExport() saying no is an expected, correctly-functioning outcome
+// of this screen's own business rule — not a failure to render honestly
+// around.
+enum _LiveExportState { loading, error, denied, ready }
+
+class LiveCourtExportScreen extends StatefulWidget {
+  const LiveCourtExportScreen({
+    super.key,
+    required this.baseUrl,
+    required this.guardianId,
+    required this.childId,
+    this.httpClient,
+  });
+
+  final String baseUrl;
+  /// The app_user id logging in AS the requesting guardian — devLoginFor's
+  /// `userId`, distinct from [childId] (whose export is being requested).
+  final String guardianId;
+  final String childId;
+  /// Injectable for tests (e.g. package:http/testing.dart's MockClient).
+  final http.Client? httpClient;
+
+  @override
+  State<LiveCourtExportScreen> createState() => _LiveCourtExportScreenState();
+}
+
+class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
+  _LiveExportState _state = _LiveExportState.loading;
+  String _errorMessage = '';
+  String _denialReason = '';
+  String _denialMessage = '';
+  bool _free = false;
+  Attestation? _attestation;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _state = _LiveExportState.loading);
+    try {
+      final token = await devLoginFor(widget.baseUrl,
+          userId: widget.guardianId, client: widget.httpClient);
+      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+      final result = await api.fetchCertifiedExport(widget.childId);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      final Map<String, dynamic> att = result['attestation'] as Map<String, dynamic>;
+      setState(() {
+        _free = result['free'] as bool? ?? false;
+        _attestation = Attestation(
+          childId: att['childId'] as String,
+          generatedAt: att['generatedAt'] as String,
+          entryCount: att['entryCount'] as int,
+          firstSeq: att['firstSeq'] as int?,
+          lastSeq: att['lastSeq'] as int?,
+          headHash: att['headHash'] as String,
+          bundleHash: att['bundleHash'] as String,
+          chainVerified: att['chainVerified'] as bool,
+          statement: att['statement'] as String,
+        );
+        _state = _LiveExportState.ready;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.statusCode == 403) {
+        // A real, specific denial from authorizeExport() (or the
+        // guardianship check ahead of it) — honest, not a crash, not
+        // treated the same as an unreachable server.
+        setState(() {
+          _denialReason = e.error;
+          _denialMessage = e.message ?? 'Certified export was not authorized.';
+          _state = _LiveExportState.denied;
+        });
+      } else {
+        setState(() {
+          _errorMessage = '${e.statusCode}: ${e.error}';
+          _state = _LiveExportState.error;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '$e';
+        _state = _LiveExportState.error;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Court export')),
+      body: SafeArea(child: _buildBody(context, scheme, textTheme)),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, ColorScheme scheme, TextTheme textTheme) {
+    switch (_state) {
+      case _LiveExportState.loading:
+        return const Center(child: CircularProgressIndicator());
+      case _LiveExportState.error:
+        return Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(Icons.cloud_off, size: 40, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text("Couldn't reach the server",
+                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(_errorMessage, textAlign: TextAlign.center,
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Try again')),
+          ]),
+        ));
+      case _LiveExportState.denied:
+        return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+                color: scheme.errorContainer, borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              Row(children: <Widget>[
+                Icon(Icons.info_outline, color: scheme.onErrorContainer),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Certified export not authorized',
+                    style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600, color: scheme.onErrorContainer))),
+              ]),
+              const SizedBox(height: 12),
+              Text(_denialMessage,
+                  style: textTheme.bodyMedium?.copyWith(color: scheme.onErrorContainer)),
+              const SizedBox(height: 8),
+              Text('REASON: $_denialReason',
+                  style: textTheme.labelSmall?.copyWith(
+                      fontFamily: 'monospace', color: scheme.onErrorContainer)),
+            ]),
+          ),
+          const SizedBox(height: 16),
+          Text(
+              'Raw export is unaffected by this — it stays free, unlimited, on every '
+              'tier, whether or not this denial applies.',
+              style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+              onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Check again')),
+        ]);
+      case _LiveExportState.ready:
+        final Attestation att = _attestation!;
+        return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+          Container(width: double.infinity,
+              color: scheme.tertiaryContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                  'Live: this attestation is real, generated just now from her actual '
+                  'handover log.',
+                  style: textTheme.bodySmall?.copyWith(color: scheme.onTertiaryContainer))),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: _free ? scheme.secondaryContainer : scheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(12)),
+            child: Row(children: <Widget>[
+              Icon(_free ? Icons.check_circle_outline : Icons.workspace_premium_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(
+                  _free ? 'Included — this one is free.' : 'Included with Court tier.',
+                  style: textTheme.bodySmall)),
+            ]),
+          ),
+          const SizedBox(height: 16),
+          _AttestationPanel(att),
+        ]);
+    }
+  }
 }

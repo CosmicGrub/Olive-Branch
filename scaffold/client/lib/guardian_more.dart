@@ -68,18 +68,20 @@ class GuardianMoreScreen extends StatelessWidget {
   });
   final String childName;
   final int childAge;
-  /// Live-session wiring for AvailabilityScreen and the family-agreement
-  /// fetch below both key off this same child — baseUrl/guardianId stay
-  /// optional and default to null because nothing upstream of this hub
-  /// (guardian_home.dart, main.dart's static demo data) carries a real base
-  /// URL or guardian id yet; every other call site in this file is still the
-  /// same pre-backend demo build LiveChildHomeScreen's own header describes
-  /// for the child side. When baseUrl/guardianId ARE supplied, the
-  /// Availability tile opens the real AvailabilityScreen; otherwise it gives
-  /// the same honest not-connected feedback guardian_setup.dart's passkey
-  /// button gives when its own real dependency isn't wired in yet — never a
-  /// silent no-op, and never a screen pretending to have live data it
-  /// doesn't.
+  /// Live-session wiring for AvailabilityScreen, the family-agreement fetch,
+  /// AND the Court export tile below all key off this same child —
+  /// baseUrl/guardianId stay optional and default to null because nothing
+  /// upstream of this hub (guardian_home.dart, main.dart's static demo data)
+  /// carries a real base URL or guardian id yet; every other call site in
+  /// this file is still the same pre-backend demo build LiveChildHomeScreen's
+  /// own header describes for the child side. When baseUrl/guardianId ARE
+  /// supplied, the Availability and Court export tiles open their real
+  /// screens; otherwise each gives the same honest not-connected feedback
+  /// guardian_setup.dart's passkey button gives when its own real dependency
+  /// isn't wired in yet — never a silent no-op, and never a screen
+  /// pretending to have live data it doesn't. One shared (baseUrl,
+  /// guardianId, childId) triple, not a second `liveXxx` set per tile — see
+  /// the Court export HubTile's onTap below.
   final String? baseUrl;
   final String? guardianId;
   final String childId;
@@ -171,7 +173,11 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, const ExpiryDigestScreen())),
           HubTile(icon: Icons.gavel_outlined, title: 'Court export',
             subtitle: 'Chunked under the transfer ceiling',
-            onTap: () => _open(context, const CourtExportScreen())),
+            onTap: () => _open(context,
+              (baseUrl != null && guardianId != null)
+                ? LiveCourtExportScreen(
+                    baseUrl: baseUrl!, guardianId: guardianId!, childId: childId)
+                : const CourtExportScreen())),
           HubTile(icon: Icons.auto_stories_outlined, title: 'Year book',
             subtitle: "A year of $childName, preserved",
             onTap: () => _open(context, const YearBookScreen())),
