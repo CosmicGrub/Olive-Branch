@@ -278,17 +278,34 @@ const chain = await seedFamily();
   const hit = (method, path, tok) =>
     api.handle(method, path, tok ? { authorization: `Bearer ${tok}` } : {}, '');
 
+  // This route is shared with feature/raw-export's own already-shipped
+  // registration (both merged onto the same `GET .../export`, dispatched on
+  // `?kind=`, not two separate api.register() calls for the same
+  // method+path -- see server/routes.mjs's own comment on the merge). A
+  // missing `kind`, or `kind=raw` explicitly, is NOT this build's own 400 --
+  // it falls through to the pre-existing, already-tested raw-export path
+  // (packages/db/test/raw_export.test.mjs owns verifying THAT path's own
+  // behavior in full; this section only confirms the fallthrough reaches it
+  // rather than 400ing or 404ing).
   const missingKind = await hit('GET', `/v1/children/${IVY}/export`, dadTok);
-  check('D route', 'no kind= query param -> 400, not a silent 404', missingKind.status, 400);
-  check('D route', 'and names the real reason', missingKind.body.error, 'unsupported_kind');
+  check('D route', 'no kind= query param falls through to raw export, not a 400',
+    missingKind.status, 200);
+  check('D route', 'and it is genuinely the raw bundle shape, not a certified one',
+    typeof missingKind.body.bundle, 'object');
 
   const rawKind = await hit('GET', `/v1/children/${IVY}/export?kind=raw`, dadTok);
-  check('D route', 'kind=raw -> 400 (this build only serves certified here)', rawKind.status, 400);
+  check('D route', 'kind=raw is explicitly valid too -- the same raw-export fallthrough',
+    rawKind.status, 200);
 
   const childCall = await hit('GET', `/v1/children/${IVY}/export?kind=certified`, childTok);
-  check('D route', 'a child principal is refused -- guardian_only, not a crash',
-    childCall.status, 403);
-  check('D route', 'and the reason names it plainly', childCall.body.error, 'guardian_only');
+  // Same 501 the shared route already gives a child principal on the raw
+  // side (server/routes.mjs's own comment: neither kind has a child-caller
+  // path built) -- not a certified-specific 403/guardian_only this file's
+  // own first draft assumed before the route was merged with raw export's.
+  check('D route', 'a child principal is refused -- 501, not a crash',
+    childCall.status, 501);
+  check('D route', 'and the reason names it plainly',
+    childCall.body.error, 'child_self_export_not_implemented');
 
   const notAGuardian = await hit('GET', `/v1/children/${IVY}/export?kind=certified`, momTok);
   check('D route', 'a real guardian of a DIFFERENT child is refused over the real route too',
