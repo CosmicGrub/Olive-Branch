@@ -7,6 +7,7 @@ import type { Order } from '../../custody/src/schedule.ts';
 import { sha256Hex } from '../../ledger/src/sha256.ts';
 import type { ArtifactRow, IntentRow } from '../../messaging/src/pipeline.ts';
 import type { ChildCtx } from '../../delivery-engine/src/materialize.ts';
+import type { Platform } from '../../transport/src/push.ts';
 
 /**
  * MASTERFILE §5.18 — session context, and §5.17 — the second lock.
@@ -699,7 +700,7 @@ export async function availabilityFor(pool: pg.Pool, childId: string): Promise<A
  *     and 'opened' both mean the child already has it (routes.mjs's own inbox
  *     query treats them identically: `state IN ('delivered','opened')`), so
  *     those, and only those, survive untouched.
- *   - every pin_credential / webauthn_credential / webauthn_challenge row for
+ *   - every pin_credential / webauthn_credential / auth_challenge row for
  *     this user is removed (the login itself goes).
  *   - app_user.deactivated_at is set.
  * All four in ONE transaction (withSession's BEGIN/COMMIT/ROLLBACK) so a
@@ -747,7 +748,16 @@ export async function deactivateAccount(
       'children have no login of their own to delete (§11)');
   }
 
-  return withSession(pool, { roleName: callerRoleName, userId, childId: null }, async (q) => {
+  // Runs as 'system', not callerRoleName, once the child-caller precondition
+  // above is satisfied: this transaction spans four tables whose RLS
+  // policies don't agree on one non-system role. pin_credential/
+  // webauthn_credential are owner-scoped (current_actor() = userId, still
+  // satisfied — userId below is the real target, not null), app_user's own
+  // policy admits 'system' explicitly (0011_account_deletion.sql), and
+  // auth_challenge (0008_auth_credentials.sql) is system-only, full stop —
+  // no non-system role can touch it at all. A caller-scoped session here
+  // silently deletes 0 auth_challenge rows (RLS filters, doesn't error).
+  return withSession(pool, { roleName: 'system', userId, childId: null }, async (q) => {
     // Row lock + existence/idempotency check first, `FOR UPDATE`: a
     // concurrent second call for the same user (a double-tap on the confirm
     // button) blocks on this row lock until the first transaction commits,
@@ -770,15 +780,18 @@ export async function deactivateAccount(
         WHERE sender_id = $1 AND state NOT IN ('delivered', 'opened')
         RETURNING id`, [userId]);
 
-    // What goes: the login itself. child_unlock PINs belong to a CHILD, not
-    // a user, so only this user's own guardian_escalation row (if any) is
-    // in scope — the WHERE clause makes that exact, not the kind filter.
+    // What goes: the login itself. pin_credential (0008_auth_credentials.sql)
+    // is keyed by user_id alone — one PIN per guardian, no per-child rows to
+    // exclude — so this WHERE clause already scopes to exactly this user's
+    // own row, if any.
     const pins = await q(
-      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING id`, [userId]);
+      `DELETE FROM pin_credential WHERE user_id = $1 RETURNING user_id`, [userId]);
     const passkeys = await q(
       `DELETE FROM webauthn_credential WHERE user_id = $1 RETURNING credential_id`, [userId]);
+    // webauthn_challenge was dropped and replaced by auth_challenge
+    // (0008_auth_credentials.sql) — same "challenge" column, new table name.
     const challenges = await q(
-      `DELETE FROM webauthn_challenge WHERE user_id = $1 RETURNING challenge`, [userId]);
+      `DELETE FROM auth_challenge WHERE user_id = $1 RETURNING challenge`, [userId]);
 
     // The row itself is NEVER deleted. RLS (0011_account_deletion.sql) has
     // no DELETE policy on app_user at all, so a stray "DELETE FROM app_user"
@@ -1163,6 +1176,161 @@ export async function persistCapturedMessage(
     );
 
     return { artifactId, intentId: intentRows[0].id as string, batchId };
+  });
+}
+
+// --------------------------------------------------------- device tokens ---
+/**
+ * db/migrations/0012_push_device_token.sql — feeds packages/transport/src/
+ * notify.ts's notifyDevices(). See that migration's own header for the
+ * owner-column and dedupe-by-token reasoning; not repeated here.
+ */
+export type DeviceOwner = { userId: string; childId?: never }
+                         | { childId: string; userId?: never };
+
+export interface DeviceTokenRow {
+  id: string;
+  platform: Platform;
+  token: string;
+}
+
+/**
+ * Registers (or re-registers) a device for push. `principal` is the SAME
+ * shape withSession() takes — this function opens its own session scoped to
+ * that principal, exactly like activeCustodyOrderFor()'s own `pool` +
+ * separate-session pattern above, so RLS's device_token_insert_own /
+ * device_token_update_own / device_token_select_own policies (0008) are what
+ * actually enforce "a principal can only write, and see, their own device
+ * rows," not application logic here.
+ *
+ * UPSERT on the token itself (device_token_token_key, the migration's own
+ * unique index) — see that migration for why this, not a client device id,
+ * is the dedupe key.
+ *
+ * `RETURNING id` here (and in unregisterDeviceToken's DELETE below) relies on
+ * device_token_select_own existing — found the hard way, by testing against a
+ * real database rather than assuming: Postgres's row-security model does NOT
+ * let an INSERT/UPDATE/DELETE policy's own USING/WITH CHECK substitute for
+ * SELECT visibility. Locating an existing row (UPDATE/DELETE) or returning a
+ * freshly-written one (`RETURNING`) additionally requires that row to pass a
+ * SELECT policy — with none present, UPDATE/DELETE match nothing at all and
+ * INSERT...RETURNING hard-fails, regardless of what their own policy says.
+ * 0008's own header has the full empirical trail; the fix was adding that
+ * SELECT policy, scoped to own rows only, not routing around RETURNING here.
+ *
+ * CROSS-OWNER RE-REGISTRATION — a second real conflict found by testing, not
+ * assumed. `ON CONFLICT (token) DO UPDATE` re-attributing a row to a NEW
+ * owner (0008's own dedupe design: the physical device now belongs to
+ * whoever's app instance just presented this exact token) needs to UPDATE a
+ * row the CALLER does not own — and device_token_update_own's USING clause,
+ * correctly, refuses that: "a principal can only write their own rows" and
+ * "the same UPSERT can silently steal someone else's row" cannot both hold.
+ * The fix is NOT loosening that policy (that would be the actual security
+ * hole "own rows only" exists to prevent) — it's a two-step fallback, scoped
+ * so the CALLER still never touches another owner's row directly: if the
+ * caller-scoped upsert is blocked by RLS specifically (SQLSTATE 42501,
+ * "row-level security policy" in the message — not any other permission
+ * error), a SYSTEM-scoped step deletes the stale conflicting row (system's
+ * own device_token_system_prune policy, the same one removeDeviceTokenSystem
+ * uses), then the ORIGINAL caller-scoped insert is retried, now conflict-free.
+ * A race between the delete and the retry (another registration landing in
+ * between) surfaces as a real unique-constraint error on the retry rather
+ * than a silent wrong result — narrow, honest, not pretended away.
+ */
+export async function registerDeviceToken(
+  pool: pg.Pool,
+  principal: Pick<VerifiedPrincipal, 'roleName' | 'userId' | 'childId'>,
+  platform: Platform,
+  token: string,
+): Promise<string> {
+  if (principal.roleName === 'system') {
+    throw new Error('registerDeviceToken: system role cannot own a device');
+  }
+  const isChild = principal.roleName === 'child';
+  const ownerUserId = isChild ? null : principal.userId;
+  const ownerChildId = isChild ? principal.childId : null;
+
+  const upsert = () => withSession(pool, principal, async (q) => {
+    const rows = await q(
+      `INSERT INTO device_token (owner_user_id, owner_child_id, platform, token, last_seen_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (token) DO UPDATE
+         SET owner_user_id  = EXCLUDED.owner_user_id,
+             owner_child_id = EXCLUDED.owner_child_id,
+             platform       = EXCLUDED.platform,
+             last_seen_at   = now()
+       RETURNING id`,
+      [ownerUserId, ownerChildId, platform, token],
+    );
+    return rows[0].id as string;
+  });
+
+  try {
+    return await upsert();
+  } catch (e: any) {
+    const isRlsDenial = e?.code === '42501'
+      && String(e?.message ?? '').includes('row-level security policy');
+    if (!isRlsDenial) throw e;
+    // The conflicting row belongs to a DIFFERENT owner. Free it as system,
+    // then retry the exact same caller-scoped upsert — this time as a plain
+    // insert, since the conflict is gone.
+    await withSystemSession(pool, (q) => q(`DELETE FROM device_token WHERE token = $1`, [token]));
+    return upsert();
+  }
+}
+
+/**
+ * Deletes ONE device row belonging to the calling principal. RLS's
+ * device_token_delete_own policy (combined with device_token_select_own —
+ * see registerDeviceToken's own comment above for why both are needed) means
+ * a token belonging to someone else simply matches zero rows here —
+ * silently, safely, not an error — rather than this function needing to
+ * check ownership itself.
+ */
+export async function unregisterDeviceToken(
+  pool: pg.Pool,
+  principal: Pick<VerifiedPrincipal, 'roleName' | 'userId' | 'childId'>,
+  token: string,
+): Promise<boolean> {
+  return withSession(pool, principal, async (q) => {
+    const rows = await q(`DELETE FROM device_token WHERE token = $1 RETURNING id`, [token]);
+    return rows.length > 0;
+  });
+}
+
+/**
+ * SYSTEM-ROLE ONLY. The sender (packages/transport/src/notify.ts) is the only
+ * caller — device_token_system_read is the one RLS policy that admits this,
+ * and it admits nothing else. NEVER expose this over the API to any
+ * client-facing role: it is exactly the "list someone else's device tokens"
+ * capability the migration's RLS comment says nothing but system should have.
+ */
+export async function deviceTokensFor(
+  pool: pg.Pool, owner: DeviceOwner,
+): Promise<DeviceTokenRow[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = 'userId' in owner
+      ? await q(
+          `SELECT id, platform, token FROM device_token WHERE owner_user_id = $1`,
+          [owner.userId])
+      : await q(
+          `SELECT id, platform, token FROM device_token WHERE owner_child_id = $1`,
+          [owner.childId]);
+    return rows.map((r: any): DeviceTokenRow =>
+      ({ id: r.id, platform: r.platform, token: r.token }));
+  });
+}
+
+/**
+ * SYSTEM-ROLE ONLY. Reaps a token FCM/APNs has just told notify.ts is
+ * permanently dead (UNREGISTERED / Unregistered / BadDeviceToken) — the
+ * reactive half of the dedupe strategy 0008's own header documents. Never
+ * exposed over the API.
+ */
+export async function removeDeviceTokenSystem(pool: pg.Pool, id: string): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`DELETE FROM device_token WHERE id = $1 RETURNING id`, [id]);
+    return rows.length > 0;
   });
 }
 

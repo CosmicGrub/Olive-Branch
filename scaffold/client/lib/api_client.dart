@@ -132,6 +132,13 @@ class OliveApi {
   // --- login (dev-only — see server/index.mjs's own header comment) ------
   static const devLoginPath = '/v1/auth/dev-login';
 
+  // --- push notifications (MASTERFILE §11) --------------------------------
+  // Real routes as of this pass — scaffold/server/routes.mjs, backed by
+  // packages/db/src/pool.ts's registerDeviceToken/unregisterDeviceToken.
+  // Never carries content: just {platform, token}. See push_channel.dart for
+  // the real caller (permission request, token fetch, refresh listener).
+  static const deviceTokens = '/v1/me/device-tokens';
+
   Uri _uri(String path, [String? childId]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}');
 
@@ -159,6 +166,19 @@ class OliveApi {
   /// (replace-all semantics — see [setAvailability]).
   Future<Map<String, dynamic>> _put(String path, {String? childId, required Object body}) async {
     final res = await _client.put(_uri(path, childId),
+        headers: {
+          'authorization': 'Bearer $sessionToken',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(body));
+    return _decode(res);
+  }
+
+  /// Mirrors [_post]'s header/decode conventions for a JSON-body DELETE —
+  /// MASTERFILE §11's `DELETE /v1/me/device-tokens` (unregistering a device
+  /// on sign-out/uninstall), the one caller that needs it.
+  Future<Map<String, dynamic>> _delete(String path, Map<String, dynamic> body) async {
+    final res = await _client.delete(_uri(path),
         headers: {
           'authorization': 'Bearer $sessionToken',
           'content-type': 'application/json',
@@ -338,6 +358,28 @@ class OliveApi {
         'daypart': daypart,
         'preserve': preserve,
       }, childId: childId);
+
+  /// POST /v1/me/device-tokens — {platform, token} in, the new device_token
+  /// row's real id out. `platform` must be 'android' or 'ios' (server-side
+  /// DEVICE_PLATFORMS check, routes.mjs). Content-free by construction —
+  /// there is nothing else this call could carry.
+  Future<String> registerDeviceToken({
+    required String platform,
+    required String token,
+  }) async {
+    final body = await _post(deviceTokens, {'platform': platform, 'token': token});
+    return body['id'] as String;
+  }
+
+  /// DELETE /v1/me/device-tokens — {token} in, whether a row actually
+  /// existed to delete out. No call site in this client yet (no sign-out
+  /// flow exists in lib/ as of this pass — see push_channel.dart's own
+  /// `unregister()` doc comment); kept symmetric with the server route so
+  /// wiring a future sign-out is a one-line call, not a new endpoint.
+  Future<bool> unregisterDeviceToken(String token) async {
+    final body = await _delete(deviceTokens, {'token': token});
+    return body['deleted'] as bool;
+  }
 
   void close() => _client.close();
 }

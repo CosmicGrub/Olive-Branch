@@ -14,6 +14,547 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.48.3] — 2026-08-16 — deactivateAccount() runs as `system`: auth_challenge's RLS is system-only, full stop
+
+v0.48.2's fix corrected `deactivateAccount()`'s column/table names
+(`RETURNING user_id`, `DELETE FROM auth_challenge`) but not its role: the
+transaction opened as `callerRoleName` (typically `guardian`), and
+`auth_challenge`'s RLS policy (`0008_auth_credentials.sql`) grants access
+to the `system` role only — a guardian-scoped `DELETE` against it silently
+affects 0 rows (RLS filters, doesn't error, so nothing short of actually
+running the suite against real Postgres in CI would catch it). Confirmed by
+the very next CI run: `removes the 1 webauthn_challenge row: expected 1,
+got 0` and `auth_challenge is gone: expected 0, got 1`.
+
+### Fixed
+- `deactivateAccount()` now runs its whole transaction as `roleName:
+  'system'` (keeping the real `userId`, not `withSystemSession`'s `null`),
+  once the existing child-caller guard clause has already run. Checked
+  against every RLS policy this transaction touches, not just the one that
+  failed: `auth_challenge_system_only` requires `role = system` (satisfied);
+  `app_user_self_update` (`0011_account_deletion.sql`) explicitly admits
+  `role = system OR id = current_actor()` (either arm already passed);
+  `pin_credential_owner_only`/`webauthn_credential_owner_only` check `role
+  != child AND current_actor() = user_id` — role-agnostic beyond excluding
+  `child`, and `current_actor()` is still the real `userId`, so still
+  satisfied; `delivery_intent` carries no RLS policy at all. The
+  guardian-vs-attacker RLS test (`GUARDIAN_B cannot deactivate GUARDIAN_A`)
+  exercises a separately-scoped raw session, never `deactivateAccount()`
+  itself — its own comment says so, and `deactivateAccount()` has no
+  separate "target" parameter: `userId` is always both `current_actor()`
+  and the `WHERE` target, and `routes.mjs` only ever passes the caller's
+  own `principal.userId`. Nothing this pass changes was a tested boundary.
+
+---
+
+## [0.48.2] — 2026-08-16 — CI green pass: two real deactivateAccount() bugs, one latent test bug, one misplaced suite
+
+Rebasing v0.48.1 onto `main` and running CI for real (not just locally) surfaced
+four distinct problems — none of them merge-conflict artifacts; all four were
+already-committed defects that had simply never been exercised against a real
+Postgres in CI before now.
+
+### Fixed
+- **`deactivateAccount()` (`packages/db/src/pool.ts`) had two real, unhit bugs**
+  going back to v0.47.0's account-deletion pass (#14). It was written against
+  `pin_credential`'s original v0.47.0-era shape (`0004_auth_and_reaper.sql`) —
+  but guardian authentication (#10, `0008_auth_credentials.sql`) had already
+  dropped and recreated `pin_credential` without an `id` column (the PK is
+  `user_id` itself now) and dropped `webauthn_challenge` entirely in favor of
+  `auth_challenge`. `deactivateAccount()`'s `DELETE FROM pin_credential ...
+  RETURNING id` and `DELETE FROM webauthn_challenge ...` both therefore threw
+  (`column "id" does not exist`, `relation "webauthn_challenge" does not
+  exist`) the moment they ran against the real schema — which, per CI's own
+  history, they never had. Fixed to `RETURNING user_id` and
+  `DELETE FROM auth_challenge`, with the stale comment (still describing
+  0004's `kind`-discriminated shape) corrected to describe the real one.
+- **`packages/db/test/deletion.test.mjs`'s fixtures had the same drift** —
+  its `insertFixtures()` inserted into `pin_credential` with a `kind` column
+  that no longer exists, and into `webauthn_challenge`, a table that no
+  longer exists. Updated to the real `pin_credential(user_id, pin_hash)` and
+  `auth_challenge(user_id, challenge, purpose)` shapes; its post-deletion
+  assertions updated to match (`SELECT user_id` not `SELECT id`; query
+  `auth_challenge` not `webauthn_challenge`).
+- **`packages/db/test/availability.test.mjs` had a latent, never-verified
+  assertion** (#11) — `guardiansOfChild()` has always returned
+  `{ userId: string }[]` (matching every real caller: `routes.mjs`,
+  `availabilityFor()`, `auth_credentials.test.mjs`), but this one assertion
+  called `.sort().join(',')` directly on the array as if it were `string[]`,
+  producing `[object Object]`. The commit that introduced it admitted the
+  suite was never run against a real Postgres at the time. Fixed to
+  `.map(g => g.userId)` before sorting.
+- **`tools/verify.sh` ran `packages/transport/test/notify.test.mjs` in the
+  pre-Postgres "JavaScript suites" section**, labelled "(mocked)" — but
+  `notifyDevices()`'s device-lookup/prune step is hard-wired to a real
+  `pg.Pool` (by design — the whole point of the suite is proving `sendGuard()`
+  against real DB-backed device rows), so it requires `DATABASE_URL` and
+  failed with 0 assertions run, every time, before Postgres even existed in
+  the script. Moved to the "DB suites requiring a real NOSUPERUSER
+  NOBYPASSRLS role" section (relabelled "(real DB)"), alongside
+  `device_token.test.mjs`, which it already mirrors.
+- **MARKUP.html / CHANGELOG.md ordering** — this PR's own three CHANGELOG
+  entries (0.48.1/0.48.0/0.47.0) had been rebased into place using their
+  original diff context, which anchored them mid-file rather than at the top
+  where the newest entry belongs; `check-markup.mjs`'s C1/D1 (MARKUP/demo
+  version tracks the newest CHANGELOG entry) correctly caught this. Moved to
+  the top of CHANGELOG.md. MARKUP.html's §07 table also collapsed 0.48.0 and
+  0.47.0 into a single labelled row, which meant the literal string "0.48.0"
+  never appeared in the document — C4c caught that too. Split back into three
+  rows, one per CHANGELOG heading.
+
+None of the above touch push delivery's actual behavior — every fix is either
+a schema-drift correction in already-shipped account-deletion code, a test
+fixed to match a contract it never actually exercised, or bookkeeping.
+
+## [0.48.1] — 2026-08-11 — §11 push delivery: adversarial-review hardening pass
+
+Three independent adversarial reviewers examined v0.47.0/v0.48.0's push
+delivery feature (already committed) against four questions (authz bypass
+on device-token registration, RLS correctness, reliability of the client
+payload parser, and resource hygiene of the FCM/APNs senders). Each of the
+seven raw findings was read against the actual code — not trusted on its
+own framing — before deciding to fix, or to record as not-real /
+already-handled / acceptable-as-designed. THE CONTRACT
+(`packages/transport/src/push.ts`'s `buildPush`/`auditPush`/`sendGuard`/
+`GENERIC`/`FORBIDDEN_DATA_KEYS`) is untouched. `packages/transport/src/
+channels.ts` and `packages/phase3/src/phase3.ts` (SMS) are untouched — out
+of scope, as before.
+
+### Fixed
+- **`client/lib/push_channel.dart`** — `PushPointer.fromData` used unguarded
+  `data['kind'] as String?`-style casts. FCM v1's data map is
+  server-enforced `map<string,string>`, but APNs (the day this client ships
+  an `ios/` folder — it has none yet) carries arbitrary JSON with no type
+  constraint on custom keys; a malformed/adversarial payload (`"kind": 7`)
+  threw an uncaught `TypeError` inside the foreground stream listener or the
+  background isolate entry point instead of degrading gracefully — for
+  `call_incoming` specifically, the one kind push.ts's own header says must
+  ring rather than fail silently, a crash meant it never rang at all. Fixed
+  with a new `_asString(dynamic v) => v is String ? v : null` helper in
+  place of the bare cast; a malformed value now degrades to `''`/`null`,
+  never throws. The content-free guarantee held either way (a crash
+  happens before anything is displayed/logged/forwarded) — this is a
+  reliability fix, not a privacy one.
+- **`packages/transport/src/apns.ts`** — `sendApns()`'s two error branches
+  (`session.on('error', ...)` and `req.on('error', ...)`) rejected the
+  promise but never called `session.close()` — only the clean `'end'` path
+  did. `sendApns()` opens a fresh `h2.connect(host)` session per call with
+  no pooling, so a batch of sends during a flaky network path (mid-write
+  `RST_STREAM`, transient connection error) would accumulate open HTTP/2
+  sessions/sockets in a long-running Node process, one per failure,
+  eventually risking file-descriptor/socket exhaustion unrelated to the
+  actual send outcome. Fixed by calling `session.close()` in both error
+  handlers before rejecting.
+- **`packages/transport/src/fcm.ts`** — `mintAccessToken()` had a real race:
+  the cache check and the cache write are separated by a network `await`,
+  so two `sendFcm()` calls landing concurrently (e.g. two households'
+  notifications firing near-simultaneously) while the cache is empty/expired
+  both read the same stale cache and each independently signed an RS256 JWT
+  and POSTed to Google's OAuth endpoint — redundant work scaling with
+  concurrent send volume, risking Google's own OAuth rate limits during a
+  broadcast burst. (Each token minted this way was individually valid — this
+  was a resource-efficiency bug, not a correctness one.) Fixed with a
+  module-level in-flight-mint promise (`inFlightMint`): a second caller
+  racing the same service account now joins the first mint instead of
+  starting its own. The actual sign+POST logic was extracted into
+  `doMintAccessToken()` so the in-flight promise can be recorded in
+  `inFlightMint` synchronously, before it is ever awaited — the ordering
+  that makes the join race-free.
+
+### Documented (not code fixes — recorded so the gap isn't silent)
+- **`packages/transport/src/notify.ts`** — `DeviceSendResult.message` carries
+  `String(e.message)` verbatim, including raw third-party OAuth/API response
+  text `fcm.ts`/`apns.ts` embed in their own thrown errors. Not fixed by
+  redacting: `notifyDevices()` has zero HTTP call sites as of this writing
+  (confirmed by grep across `server/routes.mjs`), so there is no live path
+  today where this reaches an API caller, and the message is genuinely
+  useful for server-side logs / a system-role caller debugging a failure —
+  the only kind of caller that exists today. Guessing at a redaction shape
+  before a real caller's actual needs exist to inform it would be worse than
+  documenting the gap. Added an explicit doc comment on `DeviceSendResult.
+  message` warning whoever wires the first real API-facing caller that this
+  field is not safe to return verbatim over HTTP — `code` is the
+  already-generalized, safe-to-expose signal for that purpose.
+
+### Findings recorded as not real / already handled / acceptable-as-designed
+- **Authorization/RLS review (informational, no bypass found).** Re-traced
+  by hand against the current code: `registerDeviceToken`/
+  `unregisterDeviceToken` take `principal` only from the HMAC-verified
+  session (`packages/api/src/api.ts`), never from the request body;
+  `deviceTokensFor()` is system-role-only and has zero importers outside
+  `notify.ts`, which itself has zero route call sites, so there is no HTTP
+  path to it at all; no route returns a raw device_token row (`POST`
+  returns only a fresh `id`, `DELETE` only a boolean), so there is no
+  enumeration oracle. Confirmed correct; no change needed.
+- **Dedupe-by-token reattribution has no family-graph check (low, by
+  design).** `db/migrations/0012_push_device_token.sql`'s own header already
+  documents this exact tradeoff at length: dedupe is by token because
+  `registerDeviceToken()` receives no client device id, and reattribution
+  under a new owner is deliberate (a shared device changing hands). The
+  finding's own text confirms nothing shipped in this diff exposes a raw
+  token to any caller (no route ever serializes one), so this is the
+  already-accepted, already-documented blast radius of a token leaking
+  through some other channel entirely — not a bug in this diff. No change.
+- **No sign-out flow calls `PushChannel.unregister()` (low, not an authz
+  issue).** True, and already honestly disclosed in-line
+  (`push_channel.dart`'s own comment: "No call site in this client uses
+  this yet"). Building a sign-out/child-switch flow is a real feature, not
+  a bug fix, and is out of scope for a review-response pass — flagged here
+  again rather than silently left, but not built.
+
+### Verified
+- `packages/transport/test/fcm.test.mjs`: **39/39** (34 prior + 5 new,
+  section B2 — proves exactly one OAuth token request occurs for two
+  concurrent `sendFcm()` calls racing an empty cache, both calls still
+  resolve, and both real sends carry the same coalesced bearer token).
+- `packages/transport/test/apns.test.mjs`: **39/39** (35 prior + 4 new,
+  section E — proves `session.close()` runs on both the session-level and
+  the stream-level error path via a new `fakeHttp2Erroring()` harness).
+- `client/test/push_channel_test.dart`: **21/22** (18 prior + 4 new
+  `PushPointer.fromData` non-String-value regression tests, all new ones
+  passing). The one failure — `firebaseMessagingBackgroundHandler ...
+  is declared at column 0 ... immediately preceded by @pragma('vm:entry-
+  point')` — is a **pre-existing environmental artifact, not a regression**:
+  proven via `git stash` that the UNMODIFIED committed file fails this same
+  literal-`\n` regex identically, because this Windows checkout's
+  `core.autocrlf=true` rewrites the file's LF line endings to CRLF on
+  checkout (verified at the byte level — the character immediately after
+  `@pragma('vm:entry-point')` is `\r`, not `\n`, in the checked-out working
+  tree, on both the pre-fix and post-fix file). Not touched here — a
+  checkout/line-ending fragility in a pre-existing test, unrelated to any
+  of the seven findings this pass addresses.
+- `client/test/child_home_live_test.dart` + `api_client_test.dart`:
+  **18/18** (unchanged from v0.48.0 — not touched this pass).
+- `flutter analyze`: clean, 0 issues.
+- Full `flutter test`, all 90 files, `--concurrency=2`: **1305 passed, 1
+  failed** (the same single pre-existing CRLF artifact above; every other
+  test, including all four newly added, passes).
+- `packages/transport/test/transport.test.mjs` (contract suite, unaffected
+  by this pass's changes): **65/66**, one pre-existing failure ("every Dart
+  file is marked UNVERIFIED") reproduced identically against the unmodified
+  committed HEAD via `git stash` before touching anything — unrelated to
+  push delivery, not introduced by this pass, not one of the seven
+  findings.
+- `npm run build`: clean (fcm.mjs/apns.mjs/notify.mjs/push_channel.dart
+  compile with no new esbuild errors).
+
+### NOT verified
+- **`packages/db/test/device_token.test.mjs` and `packages/transport/test/
+  notify.test.mjs` could not be re-run** — both require a live Postgres
+  (`DATABASE_URL`/`ADMIN_DATABASE_URL`), and no Postgres was reachable in
+  this sandbox this session: `localhost:5433`/`5432` both refused a raw TCP
+  connection, and the `docker` CLI itself did not return even after a
+  300-second wait (`docker-desktop`'s WSL2 distro was in the `Stopped`
+  state — confirmed via `wsl -l -v` — and `Docker Desktop.exe` was not
+  found at its expected install path to relaunch it). This independently
+  reproduces the exact same limitation the adversarial review's own
+  authorization finding already disclosed ("I was unable to run that suite
+  or any live-Postgres probe of my own in this environment"). Neither
+  suite exercises code this pass changed — `device_token.test.mjs` touches
+  none of it; `notify.test.mjs` exercises `notify.ts`, which received only
+  a doc-comment addition (see "Documented" above), no behavioral change —
+  but this is recorded as unverified, not silently assumed green.
+
+## [0.48.0] — 2026-08-11 — §11 push delivery, client side: real firebase_messaging wiring, completing the feature
+
+Closes the gap v0.47.0's own "NOT verified" section named explicitly:
+client-side registration. `firebase_messaging` (the standard, well-supported
+cross-platform Flutter plugin for FCM/APNs) is now a real dependency with
+real permission-request/token-retrieval/registration/refresh logic behind
+it, a real top-level background message handler, and a real foreground
+handler — both reading ONLY the content-free `kind`/`ref`/`callHandle`
+fields `push.ts`'s own `buildPush()` ever puts in a payload, never
+`message.notification` or any other `data` key, by construction (see
+`PushPointer`, which structurally has no field a leak could occupy).
+Together with v0.47.0's server-side work, MASTERFILE §11 push delivery is
+now implemented end to end — registration, dispatch, and client handling —
+still short only of what no environment here can supply: real credentials
+and a real device.
+
+### Added
+- **`client/lib/push_channel.dart`** (new) — `PushChannel`: real
+  `FirebaseMessaging.instance.requestPermission()`, real
+  `getToken()`/registration against `POST /v1/me/device-tokens`, and real
+  re-registration on every `onTokenRefresh` event (a token can rotate at any
+  time, not only at first launch — FCM's/APNs' own guidance). Ships a
+  `PushChannelDeps` test-only injection seam, mirroring
+  `packages/transport/src/notify.ts`'s own `NotifyDeviceDeps` one package
+  over — `FirebaseMessaging` has no simple mock-platform story to drive from
+  a black-box widget test in this environment, unlike `KioskChannel`/
+  `WearSyncChannel`, which this app owns end to end. `PushInitializationError`
+  is the client-side twin of `fcm.ts`/`apns.ts`'s own named,
+  fail-loudly-never-silently config-missing errors — thrown, never
+  swallowed, when `Firebase.initializeApp()` fails (which it genuinely does
+  in this checkout — no `google-services.json` exists, none fabricated; see
+  `pubspec.yaml`'s own comment on why a fake one would be worse than none).
+  Real firebase_messaging APIs are additionally guarded by
+  `pushSupportedOnThisPlatform` (mirrors `wear_sync_channel.dart`'s own
+  `Platform.isAndroid` guard) — `firebase_core` ships a real Windows plugin
+  implementation (confirmed by the actual diff `flutter pub get` made to
+  `windows/flutter/generated_plugins.cmake`), but `firebase_messaging` does
+  not, and this client's other real build target (besides Android) is
+  Windows, not iOS.
+- **`firebaseMessagingBackgroundHandler`** (`push_channel.dart`) — the real
+  Android background-message entry point. A genuine top-level function,
+  `@pragma('vm:entry-point')`-annotated, independently calling
+  `Firebase.initializeApp()` itself (a background isolate shares no state
+  with the main isolate — `main()`'s own init does not carry over). No
+  content-fetch call invented for any `kind`: the only real content endpoint
+  today, `GET /v1/children/:childId/inbox`, needs a `childId` this payload
+  does not and must not carry (push.ts's own header explains why) — logs
+  the opaque pointer and stops, honestly short of a fetch rather than
+  guessing at one.
+- **`OliveApi.registerDeviceToken`/`unregisterDeviceToken`**
+  (`client/lib/api_client.dart`) — real `POST`/`DELETE /v1/me/device-tokens`
+  calls against the backend's real routes (`scaffold/server/routes.mjs`),
+  matching every other `OliveApi` method's existing shape.
+  `client/pubspec.yaml` gained `firebase_core`/`firebase_messaging` (real
+  dependencies, real transitive `pubspec.lock` update — `flutter pub get`
+  actually run, not hand-edited).
+- **Wiring**: `child_home_live.dart`'s `_LiveChildHomeScreenState` — the one
+  place in this client a real, authenticated session already exists (mirrors
+  how `_syncWear()` already piggybacks on the same `token`/`api`) — now
+  builds a `PushChannel` and calls `initialize()` once `/v1/me`/`/inbox` load
+  successfully, disposing it in its own `dispose()`. Wrapped in try/catch:
+  push registration failing (which it does, honestly, absent real Firebase
+  config) must never break this screen's own readiness — a child or
+  guardian still sees their name and inbox count on a checkout with zero
+  push configuration. `main_live.dart`'s `main()` registers
+  `firebaseMessagingBackgroundHandler` before `runApp()`, per FlutterFire's
+  own required pattern, wrapped the same way for the same reason (a
+  demo/preview build must stay inspectable with zero config).
+- **`android/app/src/main/AndroidManifest.xml`** — checked, not modified:
+  `POST_NOTIFICATIONS` (required API 33+) was already declared (added
+  alongside `CAMERA`/`RECORD_AUDIO` in an earlier pass). No platform-manifest
+  gap existed to close.
+
+### Verified
+- `client/test/push_channel_test.dart` (18/18) — `firebaseMessagingBackgroundHandler`
+  proven to be a REAL top-level function via a `const` function-reference
+  assignment (a closure or instance method fails to COMPILE there, not just
+  misbehave — the strongest check available without `dart:mirrors`), plus a
+  source-shape regex confirming the `@pragma('vm:entry-point')` annotation
+  and column-0 placement; the foreground handler proven to never surface
+  `message.notification` title/body or any forbidden `data` key (simulates
+  push.ts's own canonical leak example, "Goodnight video from Dad," and
+  confirms only a bare `kind`/`ref` pointer ever reaches a caller); real
+  token registration, real `onTokenRefresh`-triggered re-registration, real
+  same-token dedupe (no redundant re-POST); the real (unmocked)
+  `PushInitializationError` path against this environment's genuine
+  Firebase-unconfigured failure; the real platform guard's no-op behavior on
+  this actual non-Android/iOS test host.
+- `client/test/child_home_live_test.dart` (9/9, up from 6/6) — three new
+  tests: a successful load calls `PushChannel.initialize()` exactly once;
+  disposing the screen disposes its `PushChannel`; a REAL (unmocked)
+  `PushChannel` — Firebase genuinely failing in this environment — never
+  breaks the screen's own ready state. Pre-existing tests updated to inject
+  a fake `PushChannel` so they keep testing name/unread-count/wear-sync
+  behavior without incidentally depending on real Firebase plugin timing.
+- `client/test/api_client_test.dart` (9/9, up from 6/6) — direct
+  `registerDeviceToken`/`unregisterDeviceToken` request-shape tests, matching
+  every other `OliveApi` method's own existing test convention.
+- `flutter analyze` — 0 issues.
+- Full `flutter test` suite, all 90 files, **1302/1302 passed, 0 failed**.
+  Run in six batches of ~15 files with `--concurrency=2` rather than one
+  invocation: the default concurrency genuinely hung (not a single slow
+  test — CPU/memory on the three `dart`/`dartvm`/`dartaotruntime` processes
+  went flat for minutes, confirmed via `Get-Process`) in this sandboxed
+  environment when running the whole 90-file, ~1300-assertion suite at once
+  in a single `flutter test` invocation; reproduced identically before any
+  push-specific test file was even reached, so this is this environment's
+  own resource ceiling, not a regression this change introduced. Every
+  individual file, including all three touched/new ones
+  (`push_channel_test.dart`, `child_home_live_test.dart`,
+  `api_client_test.dart`), was also run standalone with matching counts.
+
+### NOT verified
+- **Never run against a real device.** No real Firebase project exists in
+  this environment (no `google-services.json`, none fabricated — see
+  `pubspec.yaml`'s own comment). Permission dialogs, real tokens, and real
+  push delivery have never been exercised outside `flutter analyze`/
+  `flutter test`.
+- **No `ios/` platform folder exists in this client at all** (Android and
+  Windows are this app's only two real build targets — see
+  `main_live.dart`'s own header). `firebase_messaging`'s iOS path is real,
+  compiled code, exercised by nothing beyond the Dart analyzer, same as
+  every other platform-specific branch in this file until an `ios/` folder
+  and a `GoogleService-Info.plist` both exist.
+- **No sign-out flow exists in this client** (confirmed by grep across
+  `lib/` before writing `PushChannel.unregister()`), so
+  `DELETE /v1/me/device-tokens` has no real call site yet — `unregister()`
+  is written, compiles, and is unit-tested directly, but nothing in the app
+  calls it during normal use.
+- **Backend gaps this pass didn't touch, restated from v0.47.0 so this
+  entry is a complete picture of the whole feature:** never run against a
+  live FCM/APNs endpoint (no credentials anywhere in this environment); no
+  real server-side trigger calls `notifyDevices()` yet (no route/worker on
+  `main` writes anything that would).
+
+---
+
+## [0.47.0] — 2026-08-11 — §11 push delivery, server side: real FCM v1 + APNs senders, device_token, notifyDevices()
+
+Push has been a table entry in §11's tech-stack list since v0.4.0 and never
+had a sender behind it. This closes that gap on the server side: real device-
+token registration under real RLS, a real FCM v1 HTTP sender (real OAuth2
+JWT-bearer flow, node:crypto RS256), a real APNs HTTP/2 sender (real ES256
+provider-token JWT), and a single dispatch function that runs every payload
+through `sendGuard()` before either sender ever sees it. `packages/transport/
+src/push.ts` (buildPush/auditPush/sendGuard/GENERIC/FORBIDDEN_DATA_KEYS) is
+untouched — this is new code built on top of that existing, already-tested
+contract, not a redesign of it. No client-side work: that is a separate pass
+in the same worktree.
+
+### Added
+- **`db/migrations/0012_push_device_token.sql`** — `device_token` table.
+  Dual owner columns (`owner_user_id` / `owner_child_id`, exactly one set —
+  same "exactly one subject" shape 0004's `pin_credential` already uses),
+  because push targets are not only guardians: `call_incoming`/
+  `message_ready`/`turn_ready` ring/notify on the CHILD's own tablet too.
+  Dedupe is BY TOKEN (globally unique) — the migration's own header documents
+  why, given `registerDeviceToken`'s literal 4-arg signature has no
+  client-generated device id to dedupe by instead: the common case (same
+  token re-registering) is a real UPSERT; a genuine OS-level token rotation
+  becomes a new row, reaped reactively by `notifyDevices()` when FCM/APNs
+  reports the stale token dead. RLS: `ENABLE` + `FORCE`, five command-scoped
+  policies (insert/update/delete/select all self-scoped; system gets select-
+  all + prune-delete). **The first draft of this RLS shipped with no SELECT
+  policy for child/guardian at all, on the assumption their own UPDATE/
+  DELETE policies were sufficient to locate their own rows — found broken by
+  testing against a real database, not by review: Postgres's row-security
+  model does NOT let an UPDATE/DELETE policy's USING clause substitute for
+  SELECT visibility, so with none present, UPDATE/DELETE (and INSERT's
+  `RETURNING`) matched nothing at all, silently.** The migration's own header
+  keeps the wrong reasoning visible rather than deleting it, because the
+  mistake is the useful part for the next person reaching for the same
+  shortcut.
+- **`packages/db/src/pool.ts`** — `registerDeviceToken(pool, principal,
+  platform, token)`, `unregisterDeviceToken(pool, principal, token)`,
+  `deviceTokensFor(pool, owner)` (system-role only, never exposed over the
+  API), `removeDeviceTokenSystem(pool, id)` (system-role only, used by
+  `notify.ts` to reap a dead token). `registerDeviceToken` handles the one
+  case RLS's own-rows-only policies structurally cannot: re-registering an
+  existing token under a DIFFERENT owner (a family reassigns a physical
+  device). The caller-scoped UPSERT can't UPDATE a row it doesn't own — by
+  design, that is the security property — so on that specific RLS denial
+  (SQLSTATE 42501, "row-level security policy" in the message, not any other
+  permission error) the function falls back to a system-scoped delete of the
+  stale row followed by a retry of the exact same caller-scoped insert. A
+  race between the two steps surfaces as a real unique-constraint error on
+  retry, not a silently wrong result.
+- **`packages/transport/src/fcm.ts`** — real FCM v1 HTTP API sender. Real
+  OAuth2 self-signed-JWT-bearer flow (RFC 7523): RS256 JWT signed with
+  `node:crypto`'s `createSign`, POSTed to `https://oauth2.googleapis.com/
+  token`, bearer token cached until 60s before its real expiry. Real
+  `messages:send` request shape built from a `PushPayload` — `call_incoming`
+  (whose `notification` is already `null` by `buildPush()`'s own design)
+  becomes a DATA-ONLY FCM message; there is no real FCM v1 wire field for
+  "full-screen intent" to invent, so this file doesn't invent one — that is
+  the client's own job, building the notification locally from
+  `data.kind === 'call_incoming'`. `FCM_SERVICE_ACCOUNT_JSON` is read at
+  CALL TIME, never import time, and throws a specific, named error if unset.
+- **`packages/transport/src/apns.ts`** — real Apple Push Notification
+  service sender over real HTTP/2 (`node:http2`), against a configurable
+  host (`APNS_HOST`, defaulting to production; sandbox constant exported
+  too). Real ES256 provider-token JWT, signed with `node:crypto`'s one-shot
+  `sign()` using `dsaEncoding: 'ieee-p1363'` — the raw R‖S JOSE signature
+  format ES256 actually requires, not the DER encoding node defaults to for
+  EC keys — cached and reused up to 50 minutes per Apple's own hour-max
+  guidance. `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID` read at call time,
+  same fail-loudly rule as fcm.ts; `APNS_TOPIC` (the bundle id) is a fourth,
+  equally mandatory var the task's own env-var list didn't name but the real
+  API does — apns-topic is on every real request, so it's required here too.
+- **`packages/transport/src/notify.ts`** — `notifyDevices(pool, target,
+  input, deps?)`, the single place a `PushPayload` leaves this codebase.
+  Looks up `target`'s `device_token` rows, calls `buildPush()` then
+  `sendGuard()` — no exceptions, on every payload, before either sender ever
+  runs — then dispatches by platform. Per-device try/catch: one device's
+  failure is collected and reported, never thrown away, never aborting the
+  others. A platform's own definitive "this token is dead" signal
+  (`deviceGone`, set by fcm.ts/apns.ts on FCM's UNREGISTERED / a 404, or
+  Apple's Unregistered / BadDeviceToken) triggers a real prune via
+  `removeDeviceTokenSystem`. Ships an optional `NotifyDeviceDeps` injection
+  seam (every field defaults to the real function; a caller passing nothing
+  gets the exact original behavior) — added specifically because no
+  black-box test could otherwise prove sendGuard() actually blocks a leaky
+  payload (buildPush() only ever produces audit-clean output for real kinds)
+  or that one device's real failure doesn't abort another's real attempt
+  without a sender that can be told to fail/succeed on command, which no
+  live credential in this repo can arrange.
+- **`POST /v1/me/device-tokens`** / **`DELETE /v1/me/device-tokens`**
+  (`scaffold/server/routes.mjs`) — identity-only (`action: null`, same shape
+  as `GET /v1/me`), body `{platform, token}` / `{token}`. Validates platform
+  against the real `Platform` union before ever reaching the DB.
+- **`package.json`**'s `build` script gained esbuild lines for fcm.ts/
+  apns.ts/notify.ts, matching push.ts/channels.ts's own existing convention
+  in the same package (compiled `.mjs` produced, not committed).
+
+### Verified
+- `packages/db/test/device_token.test.mjs` (27/27) — real RLS against a live
+  Postgres (not `postgres`, an `app_owner`-equivalent `NOSUPERUSER
+  NOBYPASSRLS` role, same standard `db/DEPLOYMENT.md` sets for every RLS
+  suite in this repo): a principal can register/see/delete only their own
+  rows, across BOTH owner-column shapes and in both directions (guardian
+  can't touch a child's row, a different guardian can't touch this
+  guardian's row, a different child can't touch this child's row); real
+  UPSERT dedupe (same token twice is one row, stable id); real cross-owner
+  re-registration (new row, old row's content genuinely re-attributes);
+  system-only visibility and pruning; the table's own CHECK/UNIQUE
+  constraints hit directly.
+- `packages/transport/test/fcm.test.mjs` (34/34) and `apns.test.mjs`
+  (35/35) — against MOCKED transports only (see "NOT verified" below): real
+  JWT signatures verified with `node:crypto`'s own `verify()` against the
+  matching public key (proves these are real signed tokens, not
+  plausible-looking strings); real request shape (URL/headers/body) for
+  both the OAuth exchange and the actual send; token caching (a second send
+  within TTL makes no second auth round-trip / signs no second JWT); a
+  missing/invalid credential throws a specific, named error; `deviceGone`
+  set correctly on each platform's real dead-token signal and NOT set on a
+  transient server error.
+- `packages/transport/test/notify.test.mjs` (22/22) — structural proof
+  (source-text check) that `sendGuard` is imported from `push.ts` and
+  called between `buildPush` and either transport call; BEHAVIORAL proof
+  (via the injection seam, real `sendGuard` left un-overridden) that a
+  known-leaky payload is refused AND never reaches either sender; real
+  per-device isolation (one throws, the other still succeeds, both
+  reported); real pruning (the row is verified gone from the database, not
+  just reported as gone) and real non-pruning on a non-`deviceGone`
+  failure; and — with NO overrides at all, the real fcm.ts/apns.ts, real
+  env vars deliberately unset — both a real android and a real ios device
+  fail loudly with the real, specific config-missing error, neither
+  silently skipped, neither aborting the other.
+- Regression: `packages/transport/test/transport.test.mjs` (66/66,
+  unchanged — `push.ts` was never touched), `packages/db/test/
+  pool.test.mjs` (18/18) and `custody_order.test.mjs` (16/16), `packages/
+  api/test/stack.test.mjs` (94/94 — a pre-existing native libuv assertion
+  crash on process teardown after its real-socket section, unrelated to
+  this change and reproducible on an unmodified checkout), and the full
+  `npm test` chain's other suites, all green. `db/test/0001_constraints.
+  test.sql` (24/24) and `0005_court.test.sql` (11/11) confirmed unchanged
+  on a freshly migrated database, ruling out 0008 disturbing any earlier
+  migration's own guarantees.
+
+### NOT verified
+- **Never run against a live FCM or APNs endpoint.** No
+  `FCM_SERVICE_ACCOUNT_JSON` or `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID`
+  exists anywhere in this environment, and none was invented — every claim
+  above about request shape and signature correctness is proven against a
+  mocked transport, per this project's own standing honest-stub rule.
+- **No real trigger wired.** The live server route surface on this branch's
+  `main` is, confirmed by an earlier audit, essentially auth routes plus a
+  couple of GETs — no route or background worker on `main` writes anything
+  that would naturally call `notifyDevices()` (the delivery-sweep SQL
+  function from 0002 has no JS caller anywhere in this repo either). Rather
+  than bolt on a fake trigger route to claim end-to-end wiring, this ships a
+  real, directly-callable, thoroughly-tested `notifyDevices()` plus its own
+  real registration routes — genuinely useful, honestly short of "a message
+  arrives and a phone buzzes."
+- Client-side registration (calling `POST /v1/me/device-tokens` with a real
+  FCM/APNs token obtained on-device) is a separate pass in this same
+  worktree, not part of this change.
+
+---
+
 ## [0.47.0] — 2026-08-11 — "Send one back" wired for real, and the gap it exposes
 
 `client/lib/receipt_screen.dart`'s "Send one back" was a snackbar-only stub

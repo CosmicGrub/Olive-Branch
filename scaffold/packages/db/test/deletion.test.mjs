@@ -133,14 +133,14 @@ async function insertFixtures() {
   await di('revoked');
 
   await admin.query(
-    `INSERT INTO pin_credential (kind, user_id, pin_hash) VALUES
-       ('guardian_escalation', $1, 'scrypt$32768$8$1$c2FsdA$a2V5')`, [GUARDIAN_A]);
+    `INSERT INTO pin_credential (user_id, pin_hash) VALUES
+       ($1, 'scrypt$32768$8$1$c2FsdA$a2V5')`, [GUARDIAN_A]);
   await admin.query(
     `INSERT INTO webauthn_credential (credential_id, user_id, public_key_pem) VALUES
        ($1, $2, 'not-a-real-pem')`, [`cred-${GUARDIAN_A}`, GUARDIAN_A]);
   await admin.query(
-    `INSERT INTO webauthn_challenge (challenge, user_id) VALUES ($1, $2)`,
-    [`chal-${GUARDIAN_A}`, GUARDIAN_A]);
+    `INSERT INTO auth_challenge (user_id, challenge, purpose) VALUES ($1, $2, 'login')`,
+    [GUARDIAN_A, `chal-${GUARDIAN_A}`]);
 
   await admin.query('COMMIT');
 }
@@ -224,14 +224,14 @@ await insertFixtures();
       AND state NOT IN ('delivered','opened')`, [CHILD, GUARDIAN_A]);
   check('B removed', 'every non-delivered delivery_intent row is actually gone', gone.rows.length, 0);
 
-  const pins = await admin.query(`SELECT id FROM pin_credential WHERE user_id = $1`, [GUARDIAN_A]);
+  const pins = await admin.query(`SELECT user_id FROM pin_credential WHERE user_id = $1`, [GUARDIAN_A]);
   check('B removed', 'pin_credential is gone', pins.rows.length, 0);
   const wa = await admin.query(`SELECT credential_id FROM webauthn_credential WHERE user_id = $1`,
     [GUARDIAN_A]);
   check('B removed', 'webauthn_credential is gone', wa.rows.length, 0);
-  const ch = await admin.query(`SELECT challenge FROM webauthn_challenge WHERE user_id = $1`,
+  const ch = await admin.query(`SELECT challenge FROM auth_challenge WHERE user_id = $1`,
     [GUARDIAN_A]);
-  check('B removed', 'webauthn_challenge is gone', ch.rows.length, 0);
+  check('B removed', 'auth_challenge is gone', ch.rows.length, 0);
 
   // Idempotency — a double-tap on the confirm button must fail loudly, not
   // silently "succeed" a second time or double-count.

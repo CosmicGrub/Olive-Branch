@@ -61,6 +61,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'child_home.dart';
+import 'push_channel.dart';
 import 'wear_sync_channel.dart';
 
 enum _LoadState { loading, error, ready }
@@ -72,6 +73,7 @@ class LiveChildHomeScreen extends StatefulWidget {
     required this.childId,
     this.httpClient,
     this.wearSync,
+    this.pushChannel,
   });
 
   final String baseUrl;
@@ -81,6 +83,14 @@ class LiveChildHomeScreen extends StatefulWidget {
   /// Injectable for tests, matching kiosk_shell.dart's `channel` param.
   /// Defaults to the real Android-only Data Layer client.
   final WearSyncChannel? wearSync;
+  /// Injectable for tests (see push_channel_test.dart). Defaults to a real
+  /// [PushChannel] built from the session token this screen fetches for
+  /// itself in [_LiveChildHomeScreenState._load] — MASTERFILE §11. This is
+  /// the one place in this client a real, authenticated session actually
+  /// exists (mirrors this file's own `api`/`token` for the same reason
+  /// `_syncWear` piggybacks on it), so push registration lives here rather
+  /// than inventing a second, parallel session concept.
+  final PushChannel? pushChannel;
 
   @override
   State<LiveChildHomeScreen> createState() => _LiveChildHomeScreenState();
@@ -102,11 +112,18 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // separate dev-login call.
   String? _sessionToken;
   late final WearSyncChannel _wearSync = widget.wearSync ?? WearSyncChannel();
+  PushChannel? _pushChannel;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _pushChannel?.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -129,6 +146,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         _state = _LoadState.ready;
       });
       await _syncWear();
+      await _initPush(token);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -146,6 +164,27 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   Future<void> _syncWear() async {
     final sleeps = _sleepsUntilHandover;
     if (sleeps != null) await _wearSync.syncSleepsUntilHandover(sleeps);
+  }
+
+  // Real permission request + token registration (§11) using the exact
+  // session token this screen just fetched for itself above -- the only
+  // place this client currently holds a live, authenticated session. Never
+  // allowed to fail this screen's own readiness: PushChannel.initialize()
+  // throws a real, named PushInitializationError (push_channel.dart) the
+  // overwhelming majority of the time this runs, because no real Firebase
+  // project config exists in this repo (see pubspec.yaml) -- that failure
+  // is real and logged, not hidden, but it stays confined to push. A child
+  // or guardian opening this screen must still see their name and inbox
+  // count even on a checkout with zero push configuration.
+  Future<void> _initPush(String token) async {
+    final channel = widget.pushChannel ??
+        PushChannel(OliveApi(widget.baseUrl, token, client: widget.httpClient));
+    _pushChannel = channel;
+    try {
+      await channel.initialize();
+    } catch (e) {
+      debugPrint('[olive.push] not registered this run: $e');
+    }
   }
 
   @override
