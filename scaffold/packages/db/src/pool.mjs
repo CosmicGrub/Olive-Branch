@@ -411,6 +411,9 @@ async function rawExportBundleFor(pool, principal, childId) {
     throw new Error("rawExportBundleFor: non-child principal missing userId");
   }
   const requesterId = principal.userId;
+  const edges = await edgesFor(pool, requesterId);
+  const rbac = can("export.raw", edges, childId, /* @__PURE__ */ new Date());
+  if (!rbac.allow) return { ok: false, reason: rbac.reason };
   return withSession(pool, principal, async (q) => {
     const live = await q(
       `SELECT 1 FROM guardianship

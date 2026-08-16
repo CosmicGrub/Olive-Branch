@@ -93,20 +93,29 @@ SELECT * FROM (
          'Tables that must enforce RLS but do not FORCE it.'
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
    WHERE n.nspname='public'
-     -- 0008_auth_credentials.sql's own list (child_journal_entry, pin_credential,
-     -- expense, message_log, webauthn_credential, auth_challenge) plus
-     -- export_record, this migration's own addition — carried forward in
-     -- full, not just appended to, since CREATE OR REPLACE VIEW replaces the
-     -- whole definition and a narrower list here would silently drop
-     -- monitoring coverage 0008 already established. Also adds device_token
-     -- (0012_push_device_token.sql, FORCE ROW LEVEL SECURITY) — a pre-
-     -- existing gap on main independent of this migration's own purpose:
-     -- 0012 added the table and forced RLS on it but never extended this
-     -- check to cover it. Found while rewriting this list for export_record;
-     -- fixed here rather than left for whoever next touches health_check to
-     -- rediscover.
+     -- The FULL, independently re-verified set of every table in this
+     -- schema with FORCE ROW LEVEL SECURITY (grepped across every migration
+     -- file, not assumed from 0008's own list) — carried forward in full,
+     -- not just appended to, since CREATE OR REPLACE VIEW replaces the whole
+     -- definition and a narrower list here would silently drop monitoring
+     -- coverage already established elsewhere:
+     --   child_journal_entry (0001), pin_credential (0004/0008), expense
+     --   (0006), message_log (0006), custody_order (0007), webauthn_credential
+     --   (0008), auth_challenge (0008), guardian_availability_window (0010),
+     --   app_user (0011), device_token (0012), export_record (0013, this
+     --   migration's own addition).
+     -- Four real, pre-existing gaps closed here, none this migration's own
+     -- doing: device_token (0012), app_user (0011), custody_order (0007),
+     -- and guardian_availability_window (0010) all force RLS but were never
+     -- added to this check when their own migrations landed — 0008's own
+     -- version of this list (the one this migration started from) was
+     -- itself incomplete, missing all four. Caught by grepping every real
+     -- FORCE ROW LEVEL SECURITY statement in db/migrations/ directly rather
+     -- than trusting 0008's list was already exhaustive. Fixed here rather
+     -- than left for whoever next touches health_check to rediscover.
      AND c.relname IN ('child_journal_entry','pin_credential','expense','message_log',
-                        'webauthn_credential','auth_challenge','device_token',
+                        'custody_order','webauthn_credential','auth_challenge',
+                        'guardian_availability_window','app_user','device_token',
                         'export_record')
      AND (c.relrowsecurity=false OR c.relforcerowsecurity=false)
   UNION ALL

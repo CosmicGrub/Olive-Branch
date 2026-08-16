@@ -571,22 +571,35 @@ export function registerRoutes(api, pool) {
     // call for the identical method+path -- api.ts's register() has no
     // duplicate-route guard (it just pushes onto an array and match() takes
     // the first hit), so a second registration here would be silently
-    // unreachable dead code behind this one, not an error. Registered under
-    // `export.raw` rather than `export.certified` DELIBERATELY -- see
-    // packages/db/src/pool.ts's certifiedExportBundleFor() header for the
-    // full reasoning: authorize.ts's can() hard-requires tier.court for
-    // 'export.certified' with no awareness of the annual free allowance, so
-    // declaring this route under that action would make api.ts's own coarse
-    // dispatch-layer check (which never passes a real tier into can() at
-    // all) deny every non-court-tier guardian's very first, legitimately-
-    // free certified export before this handler ever ran. 'export.raw' is
-    // in exactly the same guardian/coordinator ROLE_CAPS list and carries no
-    // tier gate, so it gives this route the SAME coarse "does this edge
-    // exist, live, unrestricted" check every other route gets -- the actual,
-    // precise, tier/allowance-aware decision is made below by
-    // certifiedExportBundleFor() itself (which independently re-derives the
-    // caller's edges via can() with the real 'export.certified' action name).
-    method: 'GET', path: '/v1/children/:childId/export', action: 'export.raw',
+    // unreachable dead code behind this one, not an error.
+    //
+    // `action: null, identityScopedByHandler: true` -- same escape hatch
+    // kiosk-pin/verify uses (api.ts's own comment on that field), for a
+    // different reason: no single coarse action string can correctly gate
+    // BOTH kinds this route now serves. `export.raw` and `export.certified`
+    // are DIFFERENT ROLE_CAPS entries (authorize.ts) -- guardian holds both,
+    // but coordinator holds ONLY 'export.certified', not 'export.raw'. An
+    // earlier version of this route registered under `export.raw` on the
+    // (wrong) assumption that it covered both roles for both kinds; it did
+    // not, and silently 403'd every coordinator's certified-export request
+    // with role_lacks_capability before the handler -- and therefore
+    // certifiedExportBundleFor()'s own correct, permissive check below --
+    // ever ran. (`export.certified` alone isn't usable as the coarse action
+    // either, for the OTHER half of the same problem: can()'s
+    // 'export.certified' branch hard-requires tier.court with no awareness
+    // of the annual free allowance, so it would 403 every non-court-tier
+    // guardian's legitimately-free first export before the handler could
+    // apply the real allowance rule.) Since neither single action string is
+    // correct for both kinds, this route owns its authorization entirely:
+    // the child-role block below applies to both, and each kind's REAL,
+    // independent check runs inside the pool function that serves it --
+    // rawExportBundleFor()'s own live-guardianship query (deliberately
+    // guardian-only, unchanged), and certifiedExportBundleFor()'s own
+    // edgesFor()+can('export.certified', ...) call, which now actually
+    // reaches a coordinator caller instead of being unreachable behind a
+    // coarse gate that already denied them.
+    method: 'GET', path: '/v1/children/:childId/export', action: null,
+    identityScopedByHandler: true,
     handler: async (c, _q) => {
       // packages/db/src/pool.mjs's rawExportBundleFor()/certifiedExportBundleFor()
       // each run their OWN withSession/withSystemSession, independent of the

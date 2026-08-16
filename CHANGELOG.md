@@ -14,6 +14,91 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.2] — 2026-08-16 — merge review: a real coordinator lockout, an RLS monitoring gap, two stale claims
+
+Before merging v0.49.0/v0.49.1's rebase onto `main`, this pass ran an
+independent adversarial review of the merge-resolution work itself (the
+route-merge with feature/raw-export, the renumbered `0013_court_tier_flag.sql`
+migration, and the renumbered CHANGELOG/MASTERFILE entries) — not a re-review
+of the original PR's own already-reviewed content. Four findings, all
+confirmed real on independent verification against the actual code.
+
+### Fixed
+- **A real, pre-existing authorization bug: `coordinator` was unconditionally
+  locked out of certified export (High).** `server/routes.mjs`'s merged
+  `GET .../export` route was registered under the single coarse action
+  `'export.raw'`, on the claim (in that route's own comment, inherited from
+  before the rebase) that `'export.raw'` "is in exactly the same
+  guardian/coordinator `ROLE_CAPS` list" as `'export.certified'`. It is not:
+  `authorize.ts`'s `ROLE_CAPS.coordinator` holds `'export.certified'` but NOT
+  `'export.raw'`. Every `?kind=certified` request from a coordinator was
+  therefore 403'd by `api.ts`'s coarse A3 check (`role_lacks_capability`)
+  before the handler — and therefore `certifiedExportBundleFor()`'s own
+  correct, permissive `can('export.certified', ...)` check — ever ran,
+  regardless of court tier or the annual allowance. Not introduced by this
+  merge: this was the original PR's own design, present since `v0.49.0`,
+  never exercised by a test (`graph.test.mjs`'s own H8 section and
+  `court_export.test.mjs` both only ever tested `'guardian'`). Fixed by
+  registering the route `action: null, identityScopedByHandler: true`
+  (the same escape hatch `kiosk-pin/verify` already uses, for a different
+  reason: no single action string can gate two kinds with different
+  `ROLE_CAPS`) and moving real, independent authorization into each pool
+  function: `rawExportBundleFor()` now runs its own
+  `edgesFor()`+`can('export.raw', ...)` check up front — closing a second,
+  related gap this same fix would otherwise have opened, since removing the
+  route's coarse check also removed the ONLY place that was enforcing
+  per-edge `scope['export.raw'] === false` overrides (that function's own
+  SQL check never covered them; its own header comment said so explicitly).
+  `certifiedExportBundleFor()`'s own `can('export.certified', ...)` call was
+  always correct — it is now actually reachable. New regression test:
+  `court_export.test.mjs` section D seeds a real `coordinator` guardianship
+  edge and asserts `GET .../export?kind=certified` returns 200 for it
+  (previously 403 `role_lacks_capability`), and `packages/api/test/contract.test.mjs`'s
+  A1 section now explicitly allowlists this route's `action: null` alongside
+  `kiosk-pin/verify`'s, rather than blanket-excluding it.
+- **`0013_court_tier_flag.sql`'s `health_check.rls_unforced` monitoring list
+  was itself missing 3 of the 11 real `FORCE ROW LEVEL SECURITY` tables in
+  this schema (High).** The migration's own comment claimed its list was
+  "carried forward in full" from `0008_auth_credentials.sql`'s version — but
+  `0008`'s own list was itself incomplete, and `custody_order` (0007),
+  `guardian_availability_window` (0010), and `app_user` (0011) — the latter
+  guarding `court_tier` itself — were silently unmonitored. `health_check`'s
+  `rls_unforced` check is `'critical'` severity and read by
+  `tools/health-alert.mjs`; a future regression dropping `FORCE ROW LEVEL
+  SECURITY` from any of these three would have produced a false-clean
+  report, not an alert. Fixed by grepping every real `FORCE ROW LEVEL
+  SECURITY` statement across `db/migrations/` directly rather than trusting
+  `0008`'s list was already exhaustive — the list now names all 11 tables.
+- **Two stale claims in the v0.49.0 CHANGELOG entry**, both artifacts of
+  renumbering this branch's own version numbers to fit after `main`'s actual
+  latest — neither caught by the renumbering pass itself: (1) its own "NOT
+  verified" TODO instructed a future reader to bump `MARKUP.html` to
+  version `0.46.3` — the entry's OWN pre-renumbering number, not its real,
+  current `0.49.0`, and `0.46.3` was already in use by a real, different,
+  unrelated entry elsewhere in this file; (2) its own description of
+  `court_export.test.mjs` section D claimed it covers "400/403/200" status
+  shapes, but the merged route never returns 400 (the SAME entry's own
+  "Merge note" a few lines above already discloses that the original
+  400-for-bad-`kind` behavior was replaced by a fallthrough at merge time) —
+  the real shapes are 501/403/200, now corrected to say so.
+
+### Verified
+- `packages/api/test/contract.test.mjs`: 27 passed, 0 failed (was 24 — 3
+  new assertions for the export route's `action: null` allowlisting).
+- Every non-DB JS suite `tools/verify.sh` runs, re-run individually: all
+  green, 0 failures (the same pre-existing Windows `stack.test.mjs` libuv
+  teardown race and `homework.test.mjs` missing-ImageMagick gap this
+  session's prior entries already documented — neither touched by this
+  pass, neither counted as a failure).
+- `npm run build`: succeeds; `packages/db/src/pool.mjs` regenerated.
+- `court_export.test.mjs`'s new coordinator regression assertions were
+  read back against the real, independently-verified RBAC/allowance code
+  path rather than assumed — this dev environment has no working local
+  Postgres (same gap this session's prior entries already recorded), so
+  actually running them is CI's job.
+
+---
+
 ## [0.49.1] — 2026-08-11 — certified export: adversarial review fixes
 
 An adversarial review examined v0.49.0's certified-export backend and raised
@@ -289,7 +374,10 @@ own scope, a sibling branch not present in this checkout.
   impossible — is refused with `chain_broken`, not exported, and leaves no
   `export_record` row; (D) a route contract test against the REAL `Api` +
   REAL `dbPort(pool)` + REAL `registerRoutes()`, hit over `api.handle()`
-  with real signed sessions, covering the 400/403/200 shapes above.
+  with real signed sessions, covering the 501/403/200 shapes above (a `kind`
+  other than `certified` isn't a 400 here — it falls through to the
+  already-shipped raw-export path on the same route, see the "Merge note"
+  above).
 - **`client/test/court_export_test.dart`** — `LiveCourtExportScreen` group:
   loading, a real successful export (free and not-free), each real denial
   reason rendered honestly and distinctly from a network/server error, and
@@ -386,11 +474,16 @@ on this same broken environment, and writing in a guessed number would be
 exactly the kind of unverified claim of correspondence this project's own
 `check-markup.mjs` exists to catch. Once a working Postgres is available:
 run `tools/verify.sh` for the real `TOTAL_PASS`, bump MARKUP.html's
-`version`/`spec` tags to `0.46.3`, add this version's §07
-changelog-correspondence row, mirror `version`/`spec`/`assertions` in
-`shell.html`, regenerate `DEMO.html` (`npm run demo`), then
-`node tools/check-markup.mjs --total <N>` until clean — the exact sequence
-already established this session for prior entries, just not run here.
+`version`/`spec` tags to this entry's own version (renumbered to `0.49.0`
+during the rebase onto main that added the entries above this one — not
+`0.46.3`, this entry's original, now-superseded number, which is also
+already in use by a real, different, already-merged entry elsewhere in this
+file), add this version's §07 changelog-correspondence row, mirror
+`version`/`spec`/`assertions` in `shell.html`, regenerate `DEMO.html`
+(`npm run demo`), then `node tools/check-markup.mjs --total <N>` until clean
+— the exact sequence already established this session for prior entries,
+just not run here. (Done as part of the same rebase — see the v0.49.1 CI
+green pass entry above.)
 
 ---
 

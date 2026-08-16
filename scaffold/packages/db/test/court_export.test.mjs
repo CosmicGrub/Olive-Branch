@@ -66,10 +66,20 @@ await admin.connect();
 // and a real 2-entry message_log chain; a second, unrelated guardian (MOM)
 // with NO edge to IVY at all; a second child (SOLO) with no message_log
 // rows, for the empty-chain edge case.
-const IVY  = '77777777-7777-4777-8777-777777777777';
-const SOLO = '88888888-8888-4888-8888-888888888888';
-const DAD  = '99999999-9999-4999-8999-999999999999';
-const MOM  = 'aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa';
+const IVY   = '77777777-7777-4777-8777-777777777777';
+const SOLO  = '88888888-8888-4888-8888-888888888888';
+const DAD   = '99999999-9999-4999-8999-999999999999';
+const MOM   = 'aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa';
+// Section D only -- a real coordinator edge, regression coverage for the
+// route-merge finding this pass fixed: registering the shared GET .../export
+// route under a single coarse `action: 'export.raw'` locked out coordinator
+// entirely, because ROLE_CAPS.coordinator (authorize.ts) holds
+// 'export.certified' but not 'export.raw' -- the exact opposite of what an
+// earlier version of that route's own comment claimed. See routes.mjs's
+// current comment and pool.ts's certifiedExportBundleFor()/rawExportBundleFor()
+// for the real fix (action: null, identityScopedByHandler: true; each pool
+// function now runs its own can() check for its own action).
+const COORD = 'bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb';
 
 /**
  * message_log's `at` column round-trips through pool.ts's own
@@ -265,6 +275,22 @@ const chain = await seedFamily();
 // No fake DbPort anywhere in this section.
 {
   await admin.query(`DELETE FROM export_record WHERE child_id = $1`, [IVY]);
+  // COORD fixture, local to this section -- see the const's own comment.
+  // Deleted-then-inserted here (not folded into seedFamily()) since no
+  // other section needs it; ON CONFLICT keeps a second run of this file
+  // idempotent without a DELETE FROM app_user this user's own guardianship
+  // row already implicitly needs (guardianship rows for IVY are cleared by
+  // seedFamily()'s own `DELETE FROM guardianship WHERE child_id IN (...)`,
+  // which already covers COORD's edge; the app_user row itself does not).
+  await admin.query(
+    `INSERT INTO app_user (id, display_name, home_tz, court_tier) VALUES
+       ($1,'Coordinator','America/Chicago', false)
+     ON CONFLICT (id) DO NOTHING`,
+    [COORD]);
+  await admin.query(
+    `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+     VALUES ($1, $2, 'coordinator', '{}', tstzrange(now() - interval '1 year', null))`,
+    [IVY, COORD]);
   const secret = Buffer.from('test-secret-32-bytes-minimum-ok', 'utf8');
   const api = new Api(secret, dbPort(pool));
   registerRoutes(api, pool);
@@ -274,6 +300,8 @@ const chain = await seedFamily();
   const momTok = issueSession(secret, { userId: MOM, roleName: 'guardian', childId: null,
     escalated: false }, NOW);
   const childTok = issueSession(secret, { userId: null, roleName: 'child', childId: IVY,
+    escalated: false }, NOW);
+  const coordTok = issueSession(secret, { userId: COORD, roleName: 'coordinator', childId: null,
     escalated: false }, NOW);
   const hit = (method, path, tok) =>
     api.handle(method, path, tok ? { authorization: `Bearer ${tok}` } : {}, '');
@@ -326,6 +354,19 @@ const chain = await seedFamily();
     denied.body.error, 'tier_required');
   check('D route', 'the denial message never claims a payment flow exists in this build',
     /no payment flow/i.test(denied.body.message ?? ''), 'true');
+
+  // Regression test for the route-merge finding this pass fixed -- see
+  // COORD's own comment. A coordinator with a real, live edge to IVY must
+  // reach certifiedExportBundleFor()'s own RBAC check (which DOES admit
+  // coordinator, per ROLE_CAPS) rather than being 403'd by a coarse
+  // action-string gate before the handler ever runs. Own fresh userId, so
+  // this has its own independent annual allowance -- not free-riding on or
+  // interfering with DAD's own usage above.
+  const coordOk = await hit('GET', `/v1/children/${IVY}/export?kind=certified`, coordTok);
+  check('D route', 'a coordinator with a real edge to IVY -> 200, not 403 role_lacks_capability',
+    coordOk.status, 200);
+  check('D route', 'and it is a real certified bundle, not an empty placeholder',
+    coordOk.body.attestation?.entryCount, 2);
 }
 
 // E · concurrency — the TOCTOU regression. N genuinely concurrent calls (not

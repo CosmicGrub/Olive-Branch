@@ -878,32 +878,34 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
  * db/migrations/0006_court_tier.sql's `export_record` table has existed since
  * that migration landed with nothing writing to it; this is the first writer.
  *
- * SCOPING IS NOT DELEGATED ENTIRELY TO THE ROUTE LAYER. `packages/api/src/
- * api.ts`'s A3 check (`can('export.raw', edgesFor(...), childId, ...)`)
- * already refuses a caller with no live edge to `childId` before this
- * function is ever reached -- but `delivery_intent` and `media_artifact`
- * carry NO row-level security policy at all (see db/DEPLOYMENT.md's own
- * inventory: only `child_journal_entry`, `pin_credential`, `expense`,
- * `message_log`, `custody_order` have one), and `message_log`'s own policy
- * (`log_no_child`, 0006) blocks the `child` ROLE but does not scope by
- * `child_id` -- a guardian session that queried it directly for the WRONG
- * child would get that child's real rows back. Postgres enforces P6/P7 here,
- * never cross-child tenancy on these particular tables; that is the app's job.
- * So this function re-derives "is the caller currently a live guardian of
- * THIS child" itself, in SQL, mirroring `guardianship`'s own shape
- * (`edgesFor()`'s query, `authorize.ts`'s `can()` semantics: not closed, not
- * expired, inside its valid range, not restricted) rather than trusting the
- * route already checked -- the second lock `authorize.ts`'s own header
- * describes for `can()` itself, applied one layer deeper because these two
- * tables have no first lock of their own. Role is pinned to `'guardian'`
- * specifically (not any edge) because `authorize.ts`'s `ROLE_CAPS` only grants
- * `'export.raw'` to that one role -- a live `step_parent`/`sitter`/etc. edge
- * would fail `can()` at the route layer regardless, so this mirrors that
- * exactly rather than being stricter for no documented reason. What this
- * function deliberately does NOT re-check: per-edge `scope['export.raw']
- * === false` overrides -- that fine-grained toggle stays solely the route's
- * `can()` call's job; duplicating it here would drift the two checks apart
- * silently the next time one of them changes.
+ * SCOPING IS NOT DELEGATED ENTIRELY TO THE ROUTE LAYER -- and, as of the
+ * certified-export merge, not delegated to it AT ALL: routes.mjs's
+ * `GET .../export` registration serves both raw and certified export from
+ * one handler and runs no coarse api.ts-layer `can()` check for either (see
+ * that route's own comment for why one action string can't gate both kinds).
+ * So this function runs the REAL, first-lock RBAC check itself, right below
+ * -- `edgesFor()` + `can('export.raw', ...)`, the exact same call the route
+ * layer used to make, now made here instead, so the per-edge
+ * `scope['export.raw'] === false` override stays honored rather than
+ * silently stopping being checked. `delivery_intent` and `media_artifact`
+ * carry NO row-level security policy at all on top of that (see
+ * db/DEPLOYMENT.md's own inventory: only `child_journal_entry`,
+ * `pin_credential`, `expense`, `message_log`, `custody_order` have one), and
+ * `message_log`'s own policy (`log_no_child`, 0006) blocks the `child` ROLE
+ * but does not scope by `child_id` -- a guardian session that queried it
+ * directly for the WRONG child would get that child's real rows back.
+ * Postgres enforces P6/P7 here, never cross-child tenancy on these
+ * particular tables; that is the app's job. So this function ALSO
+ * re-derives "is the caller currently a live guardian of THIS child" a
+ * second way, in SQL below, mirroring `guardianship`'s own shape rather than
+ * trusting the `can()` check above alone -- the second lock `authorize.ts`'s
+ * own header describes for `can()` itself, applied one layer deeper because
+ * these two tables have no first lock of their own. Role is pinned to
+ * `'guardian'` specifically in that SQL (not any edge) because
+ * `authorize.ts`'s `ROLE_CAPS` only grants `'export.raw'` to that one role
+ * -- a live `step_parent`/`sitter`/etc. or `coordinator` edge already fails
+ * the `can()` check above for the same reason, so this mirrors that exactly
+ * rather than being stricter for no documented reason.
  *
  * child_journal_entry IS queried below, unconditionally -- and for every
  * caller of this function (which requires a non-child, guardian principal;
@@ -959,7 +961,7 @@ export interface RawExportBundle {
   messageLog: Array<{ seq: number; authorId: string; at: string; body: string; prevHash: string; hash: string }>;
 }
 
-export type RawExportDenial = 'not_a_live_guardian';
+export type RawExportDenial = Deny | 'not_a_live_guardian';
 
 export async function rawExportBundleFor(
   pool: pg.Pool,
@@ -981,6 +983,21 @@ export async function rawExportBundleFor(
     throw new Error('rawExportBundleFor: non-child principal missing userId');
   }
   const requesterId = principal.userId;
+
+  // RBAC — the "first lock," same can()-based check certifiedExportBundleFor()
+  // runs for its own action, and for the same reason this function's own SQL
+  // check below (kept as-is, not removed) does NOT by itself cover: routes.mjs
+  // no longer runs a coarse api.ts-layer can() check for this route at all
+  // (both raw and certified export are served from one registration that
+  // can't be gated by a single action string — see that route's own comment),
+  // so per-edge `scope['export.raw'] === false` overrides — real, and
+  // previously enforced ONLY by that now-removed coarse check — would
+  // otherwise silently stop being honored. can() is the single source of
+  // truth for that toggle; re-implementing it in raw SQL here would risk the
+  // exact drift this function's own header already warns against.
+  const edges = await edgesFor(pool, requesterId);
+  const rbac = can('export.raw', edges, childId, new Date());
+  if (!rbac.allow) return { ok: false, reason: rbac.reason };
 
   return withSession(pool, principal, async (q) => {
     const live = await q(
