@@ -212,6 +212,67 @@ only.
   isolation, per this session's own instructions.
 - The Fold5/physical-device state from v0.46.1/v0.46.2 above is untouched by
   this pass and remains exactly as unverified as those entries already say.
+- **2026-08-11 — §20.2b: `orphan_risk`/`retention_breach` alerting, closed
+  further.** The MASTERFILE line this closes ("orphan_risk and
+  retention_breach are also still views with no alerting") was already
+  half-stale before this round: `tools/healthcheck.mjs` (pre-existing)
+  already turns the `health_check` view into a non-zero exit inside
+  `tools/verify.sh`. Audited first, per the task: this repository has no
+  `db/migrations/0008_auth_credentials.sql` (`0004_auth_and_reaper.sql` is
+  the real auth/credentials migration), and `health_check` is not an inline
+  query duplicated per migration — `0005_observability.sql` and
+  `0006_court_tier.sql` both use `CREATE OR REPLACE VIEW health_check`, the
+  same technique this repo already uses to evolve `orphan_risk` and
+  `retention_breach` themselves, so 0006's definition was already the single
+  canonical source (0007_custody_order.sql does not touch it). Nothing to
+  consolidate into a new `system_health_check` view; building one anyway
+  would have been the second competing copy the task was trying to prevent.
+  New:
+  - **`scaffold/tools/health-alert.mjs`** — connects with `pg` directly over
+    `DATABASE_URL` (falling back to `ADMIN_DATABASE_URL`), the split used by
+    `packages/db/test/*.mjs`, so no `psql` binary is required. Queries
+    `health_check`; for any row where `observed > threshold` prints one
+    structured `ALERT check_name=… severity=… count=… threshold=…
+    description="…"` line per breach to **stderr** and exits non-zero. When
+    clean, prints a one-line `all clear — N health check(s), 0 breaches` to
+    stdout and exits 0. An unreachable database or a missing `health_check`
+    view is a separate ABORT (exit 2). Its own header comment states plainly
+    that it does **not** send an email, Slack message, or page anyone — no
+    such integration exists anywhere in this repository; wiring the exit
+    code into a real cron job and a real notification channel is future
+    work.
+  - **`scaffold/db/migrations/0009_health_check_canonical.sql`** — an audit
+    finding recorded as a migration, not a schema redefinition. Changes no
+    table and no view *definition*; adds `COMMENT ON VIEW` documentation to
+    `health_check`, `orphan_risk`, and `retention_breach` in the catalog
+    itself, naming `health_check` as canonical so the next added check
+    extends one view instead of choosing between two. Numbered `0009`, not
+    `0008` — `0008` was independently claimed by a sibling branch
+    (`feature/account-deletion`'s `0008_account_deletion.sql`) built in
+    parallel off the same `main`; renumbered here to keep both branches'
+    migrations mergeable in sequence.
+  - **`scaffold/tools/verify.sh`** — new "Health alert" step, right after
+    the existing "Health" step, running `tools/health-alert.mjs` against the
+    same freshly migrated `$DB`. Only a hard ABORT counts against the
+    suite's `PROBLEMS` total; an unexpected breach on a freshly seeded
+    database is reported but does not gate the exit code, per this task's
+    own scope. `scaffold/package.json` gained a matching `health:alert`
+    script alongside the existing `health` one.
+  - **`scaffold/packages/db/test/health_alert.test.mjs`** — real Postgres,
+    real `health_check` view. Seeds the exact
+    `db/test/0004_e2e_message.test.sql` §7 "ORPHAN DETECTION" fixture shape
+    (a `media_artifact` expiring before the pending `delivery_intent`
+    pointing at it), spawns the real script as a subprocess, and asserts a
+    non-zero exit whose stderr names `check_name=orphan_risk` with
+    `severity=high`; compares against a captured baseline rather than
+    assuming the database started at zero, so the assertion holds even on a
+    database another suite has already touched. Separately asserts a clean
+    exit 0 with an `all clear` line — but only when the whole database is
+    independently confirmed to have zero rows across every `health_check`
+    row first; reports an honest SKIP instead of a false pass or a false
+    failure otherwise. 10/10 passing against a freshly migrated, isolated
+    database (`verify_gap_health_alerting`), not the shared
+    `verify_run`/`olive` databases other suites use.
 
 ### Reversed
 - **§16.2 #6 — call/video infrastructure, reversed at the owner's direction.**
