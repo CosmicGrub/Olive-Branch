@@ -31,6 +31,19 @@ class KioskChannel {
   Future<bool> isFullyLocked() async =>
       await methodChannel.invokeMethod<bool>(mIsOwner) ?? false;
 
+  /// Releases the native lock entirely — the real action behind guardian
+  /// escalation's "exit kiosk mode" (guardian_escalation_screen.dart). A
+  /// no-op, not a crash, on a platform/test context with no native handler
+  /// (mirrors [beginCallHandoff]'s own MissingPluginException handling).
+  Future<void> stop() async {
+    try {
+      await methodChannel.invokeMethod<void>(mStop);
+    } on MissingPluginException {
+      // No native kiosk bridge (Windows without the bridge wired, `flutter
+      // test`) — nothing was locked to begin with from this channel's view.
+    }
+  }
+
   /// Call right before launching the Jitsi call Activity when [mode] is not
   /// 'none'. Unpins this Activity (so the launch isn't itself a lock-task
   /// violation) and tells the native side to treat the coming backgrounding

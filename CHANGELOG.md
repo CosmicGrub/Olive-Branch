@@ -14,6 +14,137 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.8] — 2026-08-17 — Gap-fill batch 2, part 2: escalateSession() resolved, not built on
+
+v0.49.7's "Found, not fixed" note below claimed `escalateSession()` had "no
+test file at all." That was a miss made by grepping only
+`packages/auth/test/` — the function is real, correct, and already tested,
+just from `packages/api/test/stack.test.mjs`, which owns all of `auth.ts`'s
+session/PIN coverage (alongside `packages/auth/test/attestation.test.mjs`,
+which owns the WebAuthn half). This entry corrects that record, closes the
+one branch that turned out to be genuinely uncovered, and answers the real
+open question — whether escalation should mint a live guardian API session
+— by declining to invent a consumer for it.
+
+### Corrected
+- MASTERFILE §7.1's status note and the top-of-document Status line both
+  said `escalateSession()` had no test coverage. It does:
+  `packages/api/test/stack.test.mjs`'s "C sessions" section already covers
+  both-factors-required, either factor alone refused (with the correct
+  `pin`/`biometric` reason each), a child role refused outright, and its own
+  15-minute TTL (`ESCALATION_TTL_MS`) distinct from an ordinary session's
+  60-minute one (`SESSION_TTL_MS`); "F api" section covers the real target —
+  a synthetic `escalated: true` test route proving `packages/api/src/api.ts`'s
+  `Api.handle()` actually enforces `Route.escalated`
+  (`m.route.escalated && !principal.escalated` → `403 escalation_required`)
+  before authorization even runs. What remains true and unchanged: no real
+  production route sets `escalated: true` — the synthetic route above exists
+  only in the test file, to prove the mechanism works, not because a real
+  feature calls it.
+
+### Tests
+- `packages/api/test/stack.test.mjs` — 3 new assertions closing the one
+  genuine gap this review found: `readSession()`'s malformed-token branches
+  (no `.` separator at all; a `.` at position 0, i.e. an empty payload; and
+  a payload that carries a valid HMAC over non-JSON bytes, hand-signed with
+  the test's own secret since that branch is only reachable past signature
+  verification) had no coverage anywhere in the repo. All three now assert
+  `reason: 'malformed'`.
+
+### Decided, not built
+Whether client-side kiosk escalation should also mint a live elevated
+guardian API session — v0.49.7's own open question — is answered by
+declining to invent a route to answer it. Nothing in §7.1's real API
+surface or §8.3 currently needs PIN+biometric step-up beyond what an
+ordinary authenticated guardian session already grants via `can()`'s
+guardianship-edge authorization; wiring `escalateSession()` to a route
+built only to give it a caller would be a fabricated product decision, the
+same class of thing §19's other declined-not-deferred items decline to be.
+`escalateSession()` and `Api`'s `Route.escalated` field stay in place,
+together, as real, tested, working groundwork for whichever future
+guardian action turns out to need it. One boundary on that future is
+permanent: **P7** (§2.1) names "guardian escalation" explicitly as a
+forbidden path to the child's journal, at any tier — no future route may
+spend this mechanism on the one thing graduated privacy exists to have no
+override for.
+
+---
+
+## [0.49.7] — 2026-08-17 — Gap-fill batch 2, part 1: guardian escalation has a real screen
+
+The first of gap-fill batch 2's three substantial items. `escalate()`
+(`lock_controller.dart`, real and unit-tested since day one — §8.3's
+PIN+biometric guardian-scope ceremony) had nowhere to go: `kiosk_shell.dart`'s
+own header explained it stayed unwired on purpose, because wiring it to
+nothing would be exactly the "declaration with nothing behind it" MASTERFILE
+§0 warns against. This gives it a real destination.
+
+### Fixed
+- **`guardian_escalation_screen.dart`** — the "guardian settings reachable
+  from the child's device" surface that used to not exist. Shows the
+  verified state and its expiry, and offers exactly one real action:
+  releasing the native kiosk lock (`KioskChannel.stop()`, a new method
+  wrapping the already-declared `mStop` platform-channel constant). No
+  voluntary "step back down without exiting" action exists, because
+  `lock_controller.dart` has no such state transition — inventing one was
+  out of scope for "wire escalate() to a screen."
+- **`kiosk_shell.dart`** gains a small, unobtrusive escalation trigger
+  (`_EscalationTrigger`) over the locked child surface — never inside
+  `widget.child` itself, keeping §8.1's "no settings affordance in the
+  child surface" intact. Tapping it: PIN entry (reusing `PinGate` as-is),
+  then — only if the PIN was right — the biometric factor, then
+  `lock.escalate()`. A denial (either factor, or cooldown) shows one
+  deliberately generic message; the child watching (§8.3's own framing)
+  never learns which factor failed.
+- **`webauthn_channel.dart`'s new `buildVerifyBiometricCallback`** — the real
+  biometric factor. Reuses the exact same real WebAuthn LOGIN round trip
+  (`webauthnLoginChallenge` → platform ceremony → `webauthnLoginVerify`)
+  already proven for guardian sign-in, against the device's configured
+  guardian `userId`. A real platform-authenticator assertion, checked
+  server-side — not a device-local biometric prompt taken on faith. The
+  resulting session token is intentionally discarded this pass: closing
+  "escalate() has nowhere to go" is not the same claim as "escalation grants
+  a live guardian API session" (see Found, not fixed below).
+- Two stale header claims in `kiosk_shell.dart`, corrected in passing since
+  this pass was already deep in the file: "there is no backend to check a
+  real guardian PIN against yet" (untrue since v0.47.0/`main_live.dart`'s
+  `_verifyGuardianPin`) and the render comment claiming exactly three
+  reachable surfaces (now four).
+
+### Tests
+- `kiosk_shell_test.dart` (new — this file had no dedicated test coverage
+  before this pass) — 6 cases: trigger presence, the full PIN+biometric
+  success path, PIN-only failure, biometric-only failure, the generic
+  denial message, and exiting kiosk mode calling the real native method.
+- `guardian_escalation_screen_test.dart` (new) — 8 cases including a
+  responsive audit at Fold5 cover/main, phone, and tablet/desktop widths.
+- `webauthn_channel_test.dart` (new — `buildRegisterPasskeyCallback` had no
+  dedicated test file either; out of scope to backfill here, only the new
+  function) — 5 cases covering the full round trip, a server-side
+  rejection, an unavailable platform authenticator, a cancelled ceremony,
+  and a network failure — all resolving to `false`, never a thrown
+  exception.
+- `kiosk_channel_test.dart` — 3 new cases for `stop()`, mirroring
+  `beginCallHandoff()`'s existing coverage pattern exactly.
+- `invariants_test.dart`'s existing kiosk-shell group updated for the new
+  required `verifyBiometric` parameter; all pre-existing cases still pass
+  unchanged.
+- `flutter analyze` clean across the whole client. Full `flutter test` green
+  except the same pre-existing, unrelated `push_channel_test.dart` failure
+  noted in v0.49.6 — confirmed still present on `main`, still untouched by
+  this pass.
+
+### Found, not fixed this pass
+`packages/auth/src/auth.ts` also exports `escalateSession()` — a real,
+separate server-side primitive that mints an independently-TTL'd escalated
+session token — with no caller anywhere in `server/` and no test file at
+all. Whether client-side kiosk escalation should also mint one of these
+(a live elevated guardian API session, not just a released kiosk lock) is
+an open question, not answered here — flagged as a follow-up, not silently
+left for someone to rediscover.
+
+---
+
 ## [0.49.6] — 2026-08-17 — Gap-fill batch 1: five real gaps closed, one corrected as stale
 
 A full engine-capacity scoping pass (12 parallel batches over every real

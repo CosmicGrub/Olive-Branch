@@ -36,6 +36,14 @@ void main() {
 const _demoGuardianPin = '1273';
 Future<bool> _demoVerifyGuardianPin(String pin) async => pin == _demoGuardianPin;
 
+/// Demo-only stand-in for the real WebAuthn ceremony
+/// (webauthn_channel.dart's `buildVerifyBiometricCallback`) — no backend and
+/// no platform authenticator exist to check in this preview build, so this
+/// always succeeds rather than pretending to reach either. Honest about what
+/// it is: nothing here proves this build resists a stolen device the way the
+/// live build's real PIN+biometric ceremony does.
+Future<bool> _demoVerifyBiometric() async => true;
+
 class OliveDemo extends StatelessWidget {
   const OliveDemo({super.key});
 
@@ -49,6 +57,7 @@ class OliveDemo extends StatelessWidget {
     home: const EntryGate(
       childDestination: KioskShell(
         verifyPin: _demoVerifyGuardianPin,
+        verifyBiometric: _demoVerifyBiometric,
         child: childHomeDemo,
       ),
       grownupDestination: guardianHomeDemo,

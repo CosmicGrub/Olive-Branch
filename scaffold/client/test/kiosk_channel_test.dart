@@ -67,4 +67,35 @@ void main() {
       );
     });
   });
+
+  group('stop — the real action behind guardian escalation exiting kiosk mode', () {
+    test('invokes the exact method name native code expects (mStop)', () async {
+      MethodCall? seen;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        seen = call;
+        return null;
+      });
+
+      await KioskChannel().stop();
+
+      expect(seen, isNotNull);
+      expect(seen!.method, 'stopLockTask');
+      expect(seen!.method, KioskChannel.mStop);
+    });
+
+    test('does not throw with no native handler registered', () async {
+      await expectLater(KioskChannel().stop(), completes);
+    });
+
+    test('a thrown platform exception other than MissingPluginException still propagates',
+        () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'boom', message: 'native side blew up');
+      });
+
+      await expectLater(KioskChannel().stop(), throwsA(isA<PlatformException>()));
+    });
+  });
 }

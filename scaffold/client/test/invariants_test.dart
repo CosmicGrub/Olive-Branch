@@ -301,6 +301,7 @@ void main() {
     Widget shellWith(_FakeKioskChannel ch, {String pin = '1234'}) => wrap(KioskShell(
           channel: ch,
           verifyPin: (String p) async => p == pin,
+          verifyBiometric: () async => true,
           child: child,
         ));
 
