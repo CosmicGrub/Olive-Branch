@@ -1,4 +1,6 @@
-// OLIVE BRANCH — hangman / guess-the-word. MASTERFILE §9.2.
+// OLIVE BRANCH — hangman / guess-the-word. UNVERIFIED (no Flutter toolchain
+// in tools/verify.sh's automated pipeline — manually built and run via
+// `flutter analyze` / `flutter test` this session). MASTERFILE §9.2.
 //
 // The one game §9.2's own roster names that had a real, tested engine
 // (packages/games/src/games2.ts's newHangman/guessLetter/hangmanMask/

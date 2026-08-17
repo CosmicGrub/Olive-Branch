@@ -1,4 +1,6 @@
-// OLIVE BRANCH — who is here. MASTERFILE §17.1, §8.5.3.
+// OLIVE BRANCH — who is here. UNVERIFIED (no Flutter toolchain in
+// tools/verify.sh's automated pipeline — manually built and run via
+// `flutter analyze` / `flutter test` this session). MASTERFILE §17.1, §8.5.3.
 //
 // Closes the one line in MASTERFILE's own status table that named a real
 // gap: "Single-guardian mode (§17.1) | PREDICATE | isSingleGuardianViable()
