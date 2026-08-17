@@ -84,7 +84,10 @@ for spec in \
   "webauthn attestation (CBOR/COSE parsing)|packages/auth/test/attestation.test.mjs" \
   "route contract (client/server drift)|packages/api/test/contract.test.mjs" \
   "availability route contract|packages/api/test/availability_contract.test.mjs" \
-  "child lock state machine|packages/child-lock/test/lock.test.mjs" ; do
+  "child lock state machine|packages/child-lock/test/lock.test.mjs" \
+  "school layer|packages/school/test/school.test.mjs" \
+  "print fulfilment|packages/print/test/print.test.mjs" \
+  "filesystem storage adapter|packages/storage/test/storage.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

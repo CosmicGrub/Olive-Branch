@@ -14,6 +14,106 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.6] — 2026-08-17 — Gap-fill batch 1: five real gaps closed, one corrected as stale
+
+A full engine-capacity scoping pass (12 parallel batches over every real
+package) catalogued 24 named gaps against `demo/src/bridge.ts`'s own
+`UNDER_CONSTRUCTION` list and MASTERFILE §19/§20.2. Most are genuinely
+outside what this environment can build — a real device, a running
+LiveKit/Jitsi server, a print-fulfilment business partner, or an open
+product decision this pass declined to invent on the owner's behalf (a
+child-initiated "send a hug," curriculum-standard tagging, and insurance/
+benefits coordination were all explicitly *declined*, not deferred, and
+stay that way). This entry closes the five that were genuinely
+code-buildable with no external blocker, and corrects one catalogued gap
+that turned out to already be built.
+
+### Fixed
+- **`who_is_here_screen.dart` closes §17.1's last open line** —
+  "`isSingleGuardianViable()` tested; no UI to exercise it." Ports the
+  predicate 1:1 from `packages/family-graph/src/authorize.ts` and builds
+  §8.5.3's full spec on top: a solo live guardian is stated, never chosen
+  between; a guardian who hasn't accepted her invitation yet appears
+  greyed, with no nudge; nobody-here-yet is a supported, neutral state; and
+  where two have joined, both are selected by default and the *last*
+  selected guardian refuses to be deselected — she may never end up with
+  nobody. 18 test cases (widget + pure-logic), including a responsive audit
+  at Fold5 cover/main, phone, and tablet/desktop widths.
+- **`game_hangman.dart`** gives `packages/games/src/games2.ts`'s
+  `newHangman`/`guessLetter`/`hangmanMask`/`hangmanOutcome` (real, tested
+  since `games2.test.mjs`, `HANGMAN_LIVES = 8`) the one client widget it
+  was missing — `games_hub.dart`'s tile catalogue named it as a gap by
+  omission, unlike checkers/battleship/word search/chess, which all
+  already had one. Guardian-facing setup (word + optional hint) and
+  child-facing play (tap-only alphabet keyboard, TAP_ALWAYS_SUFFICES
+  §8.13.2) follow `game_wordsearch.dart`'s established split. A loss
+  reveals the word warmly, never as a scored defeat — the engine's own
+  "generous by default; this is not a game about a child failing" carried
+  into the copy. 22 test cases total: 7 pure-engine (ported directly from
+  `games2.test.mjs`'s own assertions) plus widget and responsive coverage.
+- **`FilesystemStorage` gives `StoragePort` a second, real implementation**
+  (`packages/storage/src/storage.ts`, §10.1/§5.6/§20.2b). Until now the
+  port had exactly one implementation, and `MemoryStorage`'s own docstring
+  said so explicitly: "test-only." `FilesystemStorage` does real disk I/O —
+  `put`/`get`/`delete`/`exists`/`list`/`signedUrl` all against real bytes on
+  a real (or mounted) volume, with path-traversal refused rather than
+  trusted. This is honestly scoped: a cloud provider (S3/GCS/Azure Blob)
+  still needs a real account and real credentials, neither of which exist
+  in this environment. What it closes is the narrower half of the gap —
+  self-hosted deployment no longer has zero non-test options.
+- **`school.test.mjs` and `print.test.mjs`** — the school layer (§11.5) and
+  print fulfilment (§9.15) were both already real, shipped logic, already
+  wired into `demo/src/play.ts`'s probe harness, and both had zero
+  dedicated automated coverage. 22 and 27 assertions respectively, wired
+  into `tools/verify.sh`'s JavaScript suites.
+
+### Corrected
+- **`siblings_aging_out_surface` was catalogued as a gap and isn't one.**
+  The scoping pass's own package-batch boundaries missed
+  `client/lib/siblings_screen.dart`, which already implements exactly this
+  — `StaggerNotice`/`_StaggerBanner` render "Ivy's archive has transferred
+  to her. Wren is still here" the moment one sibling's guardianship closes
+  while another's stays open, per §21.7. The browser demo has its own
+  independent, already-wired 'siblings' screen (`T.siblingView()`,
+  `T.siblingClose()`) proving the same thing. Recorded here rather than
+  rebuilt.
+
+### Tests
+- 18 test cases, `who_is_here_screen_test.dart` (new).
+- 22 test cases, `game_hangman_test.dart` (new).
+- 18 assertions, `packages/storage/test/storage.test.mjs` (new) — real
+  disk I/O against a throwaway temp directory, not mocked.
+- 22 assertions, `packages/school/test/school.test.mjs` (new).
+- 27 assertions, `packages/print/test/print.test.mjs` (new).
+- `flutter analyze` clean across the whole client; full `flutter test`
+  suite green except one pre-existing, unrelated failure
+  (`push_channel_test.dart`'s static-shape check on
+  `firebaseMessagingBackgroundHandler`) confirmed present on `main` before
+  this change and untouched by it — not fixed here, out of this pass's
+  scope.
+
+### Not built this pass — recorded, not silently dropped
+19 of the 24 catalogued gaps: `guardian_setup` (new invite/escalate
+routes), `child_async_video_sender_identity` and `child_account_take_and_go`
+(schema changes — held for their own reviewed PRs, same posture as SEC-01),
+`kiosk_device_bridges`→Wear OS phone↔watch sync and Windows/iOS halves
+(the latter two are environment/OS-blocked, not merely untested),
+`captions_and_translation` (no STT/translation exists at all; no API key
+exists in this repo either), `live_video_and_calls` (needs a real
+device-to-device session and a trusted TLS cert), `print_fulfilment`'s
+actual vendor integration (a business relationship), `ci_and_alerting_integration`
+(blocked on a GitHub token missing `workflow` scope — a 30-second fix for
+a human, not code), `foster_kinship_placement` (gated on counsel opinion
+and an agency partner), `therapist_role_visibility_scope`,
+`dispute_tiebreak_escalation`, `sibling_to_sibling_contact_ux`,
+`group_call_scheduling_ux`, and `child_device_reality` (five open
+product/UX decisions this pass declined to invent unilaterally), and three
+explicitly *declined* features that were never gaps to begin with —
+`child_initiated_affection_signal`, `curriculum_standard_tagging`,
+`insurance_benefits_coordination`.
+
+---
+
 ## [0.49.5] — 2026-08-17 — RENDER-01/02: two demo screens threw since the repo's first commit
 
 `Every Door, Opened` (a full click-through rendering pass of the shipped
