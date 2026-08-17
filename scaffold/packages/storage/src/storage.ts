@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { promises as fsp } from 'node:fs';
+import * as path from 'node:path';
 
 /**
  * MASTERFILE §10.1, §5.6 — object storage and the retention reaper.
@@ -58,6 +60,100 @@ export class MemoryStorage implements StoragePort {
     return `/media/${encodeURIComponent(key)}?exp=${exp}&sig=${signKey(this.secret, key, exp)}`;
   }
   get size() { return this.m.size; }
+}
+
+/**
+ * Filesystem-backed adapter — the "filesystem/S3 adapter" MemoryStorage's own
+ * docstring above named as the intended next implementer of this port. Real,
+ * not test-only: bytes actually land on disk, `get()` actually reads them
+ * back, `delete()` actually removes them. Meant for self-hosted deployment,
+ * where the app owns a local or mounted volume rather than a cloud account.
+ *
+ * A cloud provider (S3/GCS/Azure Blob) still needs a real account and real
+ * credentials, neither of which exist in this environment — see MASTERFILE
+ * §20.2b. This does not pretend to be that; it closes the narrower, honest
+ * half of the gap: `StoragePort` having exactly one implementation
+ * (MemoryStorage), and that implementation being explicitly test-only.
+ */
+export class FilesystemStorage implements StoragePort {
+  constructor(private root: string, private secret: Buffer = randomBytes(32)) {}
+
+  /**
+   * A storage key is built from artifact ids elsewhere in the system, not
+   * typed by a stranger — but a path-traversal key (`../../etc/passwd`)
+   * reaching this far would be a severe bug, not a remote attack, and the
+   * cost of checking is one `path.relative` call. Refuse rather than trust.
+   */
+  private resolve(key: string): string {
+    const full = path.join(this.root, key);
+    const rel = path.relative(this.root, full);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new Error(`storage key escapes root: ${key}`);
+    }
+    return full;
+  }
+
+  async put(key: string, bytes: Buffer) {
+    const full = this.resolve(key);
+    await fsp.mkdir(path.dirname(full), { recursive: true });
+    await fsp.writeFile(full, bytes);
+    return { key, etag: createHash('md5').update(bytes).digest('hex') };
+  }
+
+  async get(key: string) {
+    try {
+      return await fsp.readFile(this.resolve(key));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw e;
+    }
+  }
+
+  async delete(key: string) {
+    try {
+      await fsp.unlink(this.resolve(key));
+      return true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw e;
+    }
+  }
+
+  async exists(key: string) {
+    try {
+      await fsp.access(this.resolve(key));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async list(prefix: string) {
+    const out: string[] = [];
+    const walk = async (dir: string) => {
+      let entries: import('node:fs').Dirent[];
+      try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+      } catch {
+        return; // root not created yet — an empty store, not an error
+      }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) await walk(full);
+        else {
+          const rel = path.relative(this.root, full).split(path.sep).join('/');
+          if (rel.startsWith(prefix)) out.push(rel);
+        }
+      }
+    };
+    await walk(this.root);
+    return out.sort();
+  }
+
+  signedUrl(key: string, ttlSeconds: number, now: number) {
+    const exp = Math.floor(now / 1000) + ttlSeconds;
+    return `/media/${encodeURIComponent(key)}?exp=${exp}&sig=${signKey(this.secret, key, exp)}`;
+  }
 }
 
 // Retention policy lives in `retention.ts` — it must not require a Node runtime.

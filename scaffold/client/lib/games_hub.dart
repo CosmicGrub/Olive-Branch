@@ -7,8 +7,9 @@
 // falls back to "not built yet" for anything else — by its own file header,
 // per-game boards for the other kinds are "other groups' builds". This hub
 // is the second door that makes those boards (checkers, chess, battleship,
-// word search, Kim's game, word chain, scavenger hunt, find the thing)
-// actually reachable, without game_picker.dart ever needing to import them.
+// word search, Kim's game, word chain, guess-the-word, scavenger hunt, find
+// the thing) actually reachable, without game_picker.dart ever needing to
+// import them.
 //
 // child_home.dart's "Play together" tile still goes straight to
 // GamePickerScreen, per the wiring brief; "More games" opens this instead.
@@ -18,6 +19,7 @@ import 'game_chain.dart';
 import 'game_checkers.dart';
 import 'game_chess.dart';
 import 'game_findthing.dart';
+import 'game_hangman.dart';
 import 'game_hunt.dart';
 import 'game_kim.dart';
 import 'game_logic.dart';
@@ -61,6 +63,9 @@ class GamesHubScreen extends StatelessWidget {
           HubTile(icon: Icons.link, title: 'Word chain',
             subtitle: 'A game that grows across custody weeks',
             onTap: () => _open(context, GameChainScreen(childName: childName, parentName: parentName))),
+          HubTile(icon: Icons.abc, title: 'Guess the word',
+            subtitle: 'A word chosen by you, and personal',
+            onTap: () => _open(context, HangmanSetupScreen(childName: childName))),
           HubTile(icon: Icons.auto_stories_outlined, title: 'Story game',
             subtitle: 'A turn-by-turn tale between them',
             onTap: () => _open(context, GameStoryScreen(childName: childName, parentName: parentName))),
