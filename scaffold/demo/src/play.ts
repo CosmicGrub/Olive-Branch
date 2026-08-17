@@ -994,7 +994,45 @@ export function deviceView(): Any {
 export { Devices };
 
 
-S.a11ySet = { captions: false, reducedMotion: false, textScale: 1 };
+S.a11ySet = { captions: false, reducedMotion: false, dyslexiaFriendly: false,
+  highContrast: false, textScale: 1 };
+
+/**
+ * RENDER-02 fix (round-2 rendering pass, "Every Door, Opened") — the
+ * "Accessibility" screens (interactive and engine-room writeup) have always
+ * called T.a11yView(), which never existed. The click handlers that toggle
+ * a setting or change text scale already called T.a11ySet(key, value)
+ * expecting a SETTER, matching every other piece of toggleable state in this
+ * file (motionReduce, budgetTier, paneDock, ...) — but only the state object
+ * itself (S.a11ySet, above) was ever declared. No setter function existed
+ * either, so a toggle tap would have thrown the identical class of error the
+ * moment the screen rendered at all.
+ */
+export function a11yView(): Any {
+  const settings = S.a11ySet;
+  // The Fold's own 673px main screen, at the exact 1.5x example a11y.ts's own
+  // §8.8.3 comment already works through by hand ("effective width is
+  // 449px") — picking these numbers makes this view's live output match that
+  // comment's own worked example whenever textScale is left at its default.
+  const deviceW = 673, scale = settings.textScale || 1;
+  const layout = A11y.layoutFor(scale, deviceW);
+  return {
+    settings,
+    device: { w: deviceW },
+    effectiveWidth: Math.round(deviceW / scale),
+    columns: layout.columns, target: layout.minTapPx, minTarget: A11y.BASE_TAP_PX,
+    policy: A11y.captionPolicy(settings.captions ? 'live' : 'off'),
+    // "auditCaptions() on a persisted stream" (the screen's own copy) — the
+    // real property this demonstrates is captionsSurviveCall's retention-
+    // follows-call rule, shown against a captured, recorded stream.
+    badPolicy: A11y.captionsSurviveCall(A11y.captionPolicy('live_and_saved'), true),
+    audit: A11y.auditLabel('tap the blue button below'),
+  };
+}
+export function a11ySet(key: string, value: Any): Any {
+  S.a11ySet[key] = value;
+  return a11yView();
+}
 
 const call = (fn: Any, ...args: Any[]) => {
   try { return typeof fn === 'function' ? fn(...args) : fn; }
