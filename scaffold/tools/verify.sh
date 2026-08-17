@@ -78,6 +78,12 @@ for spec in \
   "a11y read-aloud|packages/a11y/test/a11y.test.mjs" \
   "maturation ladder|packages/maturation/test/maturation.test.mjs" \
   "games|packages/games/test/games.test.mjs" \
+  "games (checkers, battleship, hangman, chess)|packages/games/test/games2.test.mjs" \
+  "games (kim's game, scavenger hunt, the chain)|packages/games/test/games3.test.mjs" \
+  "live (latency floor, pictionary)|packages/live/test/live.test.mjs" \
+  "webauthn attestation (CBOR/COSE parsing)|packages/auth/test/attestation.test.mjs" \
+  "route contract (client/server drift)|packages/api/test/contract.test.mjs" \
+  "availability route contract|packages/api/test/availability_contract.test.mjs" \
   "child lock state machine|packages/child-lock/test/lock.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
@@ -261,7 +267,10 @@ echo "── DB suites requiring a real NOSUPERUSER NOBYPASSRLS role ───�
 # passing locally by their own PRs, but never actually added to this list —
 # a real, silent gap across four already-merged PRs, closed here rather than
 # left for a future rebase to notice by accident. device_token is this PR's
-# own addition, following the identical pattern.
+# own addition, following the identical pattern. health_alert/messages_route
+# were the same gap again, caught by a round-2 post-merge audit
+# ("Merge Aftermath") rather than by this list ever being re-checked against
+# the actual `test/` directories on disk — TEST-01/TEST-02 in that report.
 APP_OWNER_PW="verify_run_app_owner_pw"
 $PSQL -d "$DB" -q -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
@@ -299,7 +308,9 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db message capture (real RLS)|packages/db/test/message_capture.test.mjs" \
             "db device token (real RLS)|packages/db/test/device_token.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
-            "db certified export (real RLS)|packages/db/test/court_export.test.mjs" ; do
+            "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
+            "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \
+            "messages route (real DB)|packages/api/test/messages_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

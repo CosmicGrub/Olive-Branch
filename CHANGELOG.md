@@ -14,6 +14,62 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.4] — 2026-08-16 — CI housekeeping: 8 real test files were never actually running
+
+`Merge Aftermath`'s TEST-01 through TEST-07 findings, all closed here — not
+code fixes, `tools/verify.sh` coverage fixes. Every file below already
+existed, already had real, well-formed assertions, and already passed
+standalone (confirmed before wiring, not assumed) — `npm test`/CI simply
+never invoked any of them, so a real regression in any one would have shipped
+silently.
+
+### Fixed
+- **`packages/db/test/health_alert.test.mjs`** — the one suite that proves
+  `tools/health-alert.mjs`'s orphan-risk alerting actually fires on a real
+  breach and stays quiet on a healthy database. Wired into the "DB suites
+  requiring a real NOSUPERUSER NOBYPASSRLS role" section (same
+  `DATABASE_URL`/`ADMIN_DATABASE_URL` split as its siblings there).
+- **`packages/api/test/messages_route.test.mjs`** — the only suite that
+  proves a `captureMessage()` REJECTION is honoured by the HTTP layer end to
+  end (no row written), not just by the pure pipeline function in isolation.
+  Same DB-role section.
+- **`packages/games/test/games2.test.mjs`** / **`games3.test.mjs`** —
+  checkers (mandatory captures, multi-jump, crowning), battleship, hangman,
+  chess, Kim's game, the scavenger hunt, and "the chain" all had real rule
+  logic under test with zero CI coverage.
+- **`packages/live/test/live.test.mjs`** — a genuine name collision hid this
+  one: `packages/session-runtime/test/live.test.mjs` (a different file, the
+  LiveKit integration suite) IS invoked, conditionally, in the "Live
+  LiveKit" section. This one — the latency-floor constant and Pictionary
+  round logic for the ten live async-degrading games — was never referenced
+  by its own full path anywhere and silently never ran.
+- **`packages/auth/test/attestation.test.mjs`** — the WebAuthn CBOR/COSE
+  key-parsing round trip: a real EC P-256 key pair, a hand-encoded synthetic
+  `COSE_Key` buffer from an independent encoder (not `attestation.ts`'s own
+  machinery, so the test can't just prove the two agree with each other),
+  through `parseAttestationObject()` + `extractCredentialPublicKey()`, then a
+  real signed assertion verified against the PEM this suite produced.
+- **`packages/api/test/contract.test.mjs`** — the exact, unambiguous
+  client/server route-contract check: every server-registered path must
+  appear word-for-word in `api_client.dart`'s path constants. Supersedes a
+  weaker, pre-existing check elsewhere whose own "unspecified route" logic
+  reduces to `String.includes('')`, which is always true — this is the one
+  that would actually catch a route renamed without updating the Dart
+  client.
+- **`packages/api/test/availability_contract.test.mjs`** — real
+  `registerRoutes()` through a real `Api` instance (only the `pg.Pool` is
+  faked), proving the availability route's real action requirement, real
+  `can()`/`edgesFor()` authorization, real body validation, and the real SQL
+  text/parameter order, without needing a live Postgres for this one.
+
+None of the eight needed a code change — every one already passed. All
+re-run for real (local Postgres 16 + Node 22, matching CI) before wiring:
+`games2.test.mjs` 72/72, `games3.test.mjs` 58/58, `live.test.mjs` 59/59,
+`attestation.test.mjs` 34/34, `contract.test.mjs` 27/27,
+`availability_contract.test.mjs` 26/26, `health_alert.test.mjs` 10/10,
+`messages_route.test.mjs` 20/20 — 306 passed, 0 failed. New total vs 0.49.3:
+4401 → 4707.
+
 ## [0.49.3] — 2026-08-16 — SEC-01: deactivation left credentials live and re-registerable
 
 A round-2 post-merge audit (`Merge Aftermath`, scoping PRs #14–#19's shipped
