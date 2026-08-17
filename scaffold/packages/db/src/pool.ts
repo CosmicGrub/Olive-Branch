@@ -256,11 +256,29 @@ export async function pinCredentialFor(
 /** Upsert. Setting a NEW pin clears any standing lockout/counter from the OLD
  * one — a guardian who just proved she can authenticate well enough to reach
  * this endpoint (it requires an existing guardian session) should not stay
- * locked out under a PIN she is actively replacing. */
+ * locked out under a PIN she is actively replacing.
+ *
+ * SEC-01 follow-up — same `account_deactivated` gate as
+ * storeWebauthnCredential() below, same atomic shape (`FOR UPDATE` inside
+ * the same transaction as the write, not a separate pre-check): a
+ * deactivated guardian's still-valid session should not be able to set a
+ * FRESH kiosk PIN. Lower stakes than the WebAuthn case (this credential only
+ * ever produces `{ok: matched}` for kiosk-escalation, per attemptPinFor()
+ * below — it never issues a new session) but the same root cause, and the
+ * atomic version costs nothing extra to write once the pattern exists, so it
+ * gets the same treatment rather than the narrower accepted-race one. */
 export async function setPinCredential(
   pool: pg.Pool, userId: string, pinHash: string,
 ): Promise<void> {
   await withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    const [row] = await q(
+      `SELECT deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`, [userId]);
+    if (row?.deactivated_at) {
+      throw Object.assign(
+        new Error('setPinCredential: account is deactivated'),
+        { code: 'account_deactivated' },
+      );
+    }
     await q(
       `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
        VALUES ($1, $2, 0, NULL, now())
@@ -370,6 +388,13 @@ export async function recordPinAttempt(
  * (PIN_MAX_ATTEMPTS/PIN_LOCKOUT_MS) were designed around, now also true when
  * every guess arrives at once. Proven live in
  * packages/db/test/auth_credentials.test.mjs's "F concurrency" section.
+ *
+ * No deactivated_at check here, deliberately, unlike setPinCredential()
+ * above (SEC-01 follow-up): deactivateAccount() already DELETEs this user's
+ * pin_credential row entirely, so a deactivated guardian's own PIN fails
+ * this function's own `!rows.length` branch on its own — nothing left to
+ * verify against. Same reasoning deletion.test.mjs's own header already
+ * documents for why a real PIN/WebAuthn login "fails on its own."
  */
 export async function attemptPinFor(
   pool: pg.Pool, userId: string, candidatePin: string,
@@ -471,10 +496,37 @@ export async function consumeChallenge(
   });
 }
 
+/**
+ * SEC-01 follow-up (round-2 audit's adversarial verify, not the original
+ * finding) — a real, WORSE variant of the same bug class: unlike a
+ * device_token, a WebAuthn credential minted here is not TTL-bound at all.
+ * Without this gate, a deactivated guardian's still-valid session could
+ * register a brand-new passkey, then use it via `webauthnLoginVerify()`
+ * (server/index.mjs, gated to match, same pass) to re-authenticate
+ * indefinitely — full standing guardian access, never expiring on its own,
+ * not merely outliving one session's 1h TTL. That severity is why this gate
+ * is ATOMIC, unlike registerDeviceToken()'s own accepted narrow race
+ * (above): `app_user_read_all` (0011_account_deletion.sql) is `USING (true)`
+ * — any role can read any row — so the check runs `FOR UPDATE` INSIDE the
+ * same guardian-scoped transaction as the INSERT, taking the identical row
+ * lock deactivateAccount() itself takes first. A concurrent
+ * deactivateAccount() call for this exact userId and this registration
+ * genuinely serialize against each other: whichever commits first is the
+ * only outcome the other can observe — not two independent round trips with
+ * a gap between them.
+ */
 export async function storeWebauthnCredential(
   pool: pg.Pool, userId: string, credentialId: string, publicKeyPem: string,
 ): Promise<void> {
   await withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    const [row] = await q(
+      `SELECT deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`, [userId]);
+    if (row?.deactivated_at) {
+      throw Object.assign(
+        new Error('storeWebauthnCredential: account is deactivated'),
+        { code: 'account_deactivated' },
+      );
+    }
     await q(
       `INSERT INTO webauthn_credential (user_id, credential_id, public_key_pem)
        VALUES ($1, $2, $3)`,
@@ -706,21 +758,37 @@ export async function availabilityFor(pool: pg.Pool, childId: string): Promise<A
  *     those, and only those, survive untouched.
  *   - every pin_credential / webauthn_credential / auth_challenge row for
  *     this user is removed (the login itself goes).
+ *   - every device_token row this user OWNS (owner_user_id = userId,
+ *     0012_push_device_token.sql) is removed too — added after the round-2
+ *     audit's SEC-01: without this, a deactivated guardian's already-
+ *     registered devices kept receiving push indefinitely, since nothing
+ *     else in the system ever revisits device_token once a row is written.
+ *     Run as 'system' (see below), which device_token_system_prune already
+ *     grants unrestricted DELETE for — the same policy removeDeviceTokenSystem()
+ *     uses to reap dead tokens.
  *   - app_user.deactivated_at is set.
- * All four in ONE transaction (withSession's BEGIN/COMMIT/ROLLBACK) so a
+ * All five in ONE transaction (withSession's BEGIN/COMMIT/ROLLBACK) so a
  * partial failure cannot half-delete an account.
  *
  * NOT done here, honestly: sessions in this codebase are signed, not stored
  * (see auth.ts's own header) — there is no session table to invalidate, so an
  * already-issued token remains cryptographically valid until its own short
  * TTL (SESSION_TTL_MS, 1h) naturally expires, even after this call returns.
- * Blocking a deactivated user's NEXT login is what server/index.mjs's
- * devLogin does (the only real login/session-issuing path that exists in
- * this codebase today — see that file's own header on why no real
- * PIN/WebAuthn login endpoint exists yet to gate the same way). Revoking an
- * already-issued live session before its TTL lapses would need a real
- * server-side session/deny-list, which does not exist and is out of scope
- * for this pass.
+ * deletion.test.mjs's own section D asserts this as a KNOWN GAP rather than
+ * leaving it untested: a pre-deactivation token still authenticates ordinary
+ * reads (GET /v1/me, 200) for the rest of its TTL, and that is unchanged by
+ * anything below — building a real server-side session/deny-list to close it
+ * generally is still out of scope for this pass, same as before.
+ *
+ * What IS newly closed (SEC-01's other half): a deactivated guardian could
+ * previously use that same still-valid token to REGISTER A NEW device_token
+ * during the TTL window — not just keep an old one, but grow fresh push
+ * surface after deactivating. registerDeviceToken() below now checks
+ * deactivated_at itself and refuses, mirroring server/index.mjs's devLogin
+ * gate rather than waiting on a general session revocation mechanism that
+ * doesn't exist. Narrower than "block every action a stale token can take,"
+ * but it's the one action that matters here: creating new delivery capacity,
+ * not merely retaining old capacity for a bounded hour.
  *
  * `callerRoleName` defaults to 'guardian' — the only non-child, non-system
  * top-level principal role this codepath can ever see (server/routes.mjs's
@@ -739,6 +807,7 @@ export interface DeactivationResult {
   removedPinCredentials: number;
   removedWebauthnCredentials: number;
   removedWebauthnChallenges: number;
+  removedDeviceTokens: number;
 }
 
 export async function deactivateAccount(
@@ -797,6 +866,14 @@ export async function deactivateAccount(
     const challenges = await q(
       `DELETE FROM auth_challenge WHERE user_id = $1 RETURNING challenge`, [userId]);
 
+    // SEC-01 fix — a deactivated guardian's already-registered devices stop
+    // being valid push targets the moment this transaction commits, not
+    // whenever notifyDevices() next happens to hit a dead-token error for
+    // each one individually. device_token_system_prune (0012) grants
+    // unrestricted DELETE to 'system', the role this whole call runs as.
+    const deviceTokens = await q(
+      `DELETE FROM device_token WHERE owner_user_id = $1 RETURNING id`, [userId]);
+
     // The row itself is NEVER deleted. RLS (0011_account_deletion.sql) has
     // no DELETE policy on app_user at all, so a stray "DELETE FROM app_user"
     // anywhere else in this codebase would be refused by Postgres itself,
@@ -820,6 +897,7 @@ export async function deactivateAccount(
       removedPinCredentials: pins.length,
       removedWebauthnCredentials: passkeys.length,
       removedWebauthnChallenges: challenges.length,
+      removedDeviceTokens: deviceTokens.length,
     };
   });
 }
@@ -1257,6 +1335,39 @@ export interface DeviceTokenRow {
  * A race between the delete and the retry (another registration landing in
  * between) surfaces as a real unique-constraint error on the retry rather
  * than a silent wrong result — narrow, honest, not pretended away.
+ *
+ * SEC-01 fix — a `deactivated_at` gate, adult callers only. deactivateAccount()
+ * (this file) now removes an already-registered device the moment an account
+ * deactivates, but that alone leaves the OTHER half of the round-2 audit's
+ * finding open: the same still-valid session token (signed, not stored — see
+ * that function's own header) could keep registering brand-new devices for
+ * the rest of its TTL, growing fresh push surface after deactivation instead
+ * of merely retaining old surface. Checked here, not centrally, because no
+ * general session-revocation mechanism exists in this codebase to check it
+ * FROM (deletion.test.mjs's own section D asserts that gap as known, not
+ * silently assumed) — this mirrors server/index.mjs's devLogin gate exactly:
+ * one sensitive mutation, one explicit check, same shape, same reasoning.
+ * A child principal is skipped entirely: children have no login and no
+ * deactivated_at concept of their own (deactivateAccount's own guard already
+ * refuses a 'child' caller for the same reason).
+ *
+ * HONEST GAP, asserted not silently left implicit (round-2 audit's
+ * adversarial verify caught this omission): the check below and the upsert
+ * it guards are TWO SEPARATE transactions (this SELECT runs inside its own
+ * withSystemSession; the upsert opens a fresh withSession further down) — no
+ * lock is held across the gap between them. Unlike every OTHER check-then-act
+ * sequence in this file (attemptPinFor's FOR UPDATE lock, consumeChallenge's
+ * single atomic UPDATE, updateWebauthnSignCount's compare-in-the-WHERE-clause
+ * below), this one is NOT closed. A deactivateAccount() call that commits in
+ * the narrow window between this SELECT and the INSERT below is not observed
+ * by either transaction, and a device_token row can still land for an
+ * account that is deactivated by the time it commits. Left this way rather
+ * than folded into one transaction: the exposure is one lingering token
+ * until the next dead-token bounce (packages/transport/src/notify.ts's own
+ * reap-on-send-failure path), not a session or standing-access grant — the
+ * same order of magnitude as the already-accepted cross-owner-conflict race
+ * a few lines above, not the WebAuthn case above in this file, which a
+ * one-transaction fix WAS worth the complexity for.
  */
 export async function registerDeviceToken(
   pool: pg.Pool,
@@ -1270,6 +1381,17 @@ export async function registerDeviceToken(
   const isChild = principal.roleName === 'child';
   const ownerUserId = isChild ? null : principal.userId;
   const ownerChildId = isChild ? principal.childId : null;
+
+  if (!isChild) {
+    const [row] = await withSystemSession(pool,
+      (q) => q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [ownerUserId]));
+    if (row?.deactivated_at) {
+      throw Object.assign(
+        new Error('registerDeviceToken: account is deactivated'),
+        { code: 'account_deactivated' },
+      );
+    }
+  }
 
   const upsert = () => withSession(pool, principal, async (q) => {
     const rows = await q(

@@ -24,8 +24,15 @@
  *      report success.
  *   D) auth_challenge is system-role-only — neither a guardian nor a child
  *      session can read or write it at all.
+ *   G/H) SEC-01 follow-up (round-2 audit's adversarial verify) —
+ *      setPinCredential()/storeWebauthnCredential() refuse a deactivated
+ *      guardian, and webauthnLoginVerify()'s own gate (server/index.mjs)
+ *      refuses one too, over a real HTTP server.
  */
 import pg from 'pg';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
   createPool, withSession, guardiansOfChild, pinCredentialFor, setPinCredential,
   recordPinAttempt, attemptPinFor, PIN_MAX_ATTEMPTS, createChallenge, consumeChallenge,
@@ -418,6 +425,108 @@ await admin.query('COMMIT');
   const nowMatches = await attemptPinFor(pool, MOM, realPin);
   check('F concurrency', 'once unlocked, the real PIN matches normally',
     `${nowMatches.matched}/${nowMatches.locked}`, 'true/false');
+}
+
+// ===========================================================================
+// G · SEC-01 follow-up (round-2 audit's adversarial verify) — a deactivated
+// guardian cannot register a NEW pin_credential or webauthn_credential.
+// STRANGER, deliberately: no other section gives this account credentials,
+// so a refusal here can only be this gate, nothing left over from earlier.
+// ===========================================================================
+{
+  await admin.query(`UPDATE app_user SET deactivated_at = now() WHERE id = $1`, [STRANGER]);
+
+  let pinDenied = null;
+  try { await setPinCredential(pool, STRANGER, hashPin('4321')); }
+  catch (e) { pinDenied = e.code; }
+  check('G deactivation', 'setPinCredential refuses a deactivated guardian',
+    pinDenied, 'account_deactivated');
+
+  let webauthnDenied = null;
+  try {
+    await storeWebauthnCredential(pool, STRANGER, 'stranger-cred-denied',
+      '-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----');
+  } catch (e) { webauthnDenied = e.code; }
+  check('G deactivation', 'storeWebauthnCredential refuses a deactivated guardian',
+    webauthnDenied, 'account_deactivated');
+
+  const strangerPins = await admin.query(
+    `SELECT user_id FROM pin_credential WHERE user_id = $1`, [STRANGER]);
+  check('G deactivation', 'the refused PIN write created no row', strangerPins.rows.length, 0);
+  const strangerCreds = await admin.query(
+    `SELECT credential_id FROM webauthn_credential WHERE user_id = $1`, [STRANGER]);
+  check('G deactivation', 'the refused webauthn write created no row', strangerCreds.rows.length, 0);
+
+  await admin.query(`UPDATE app_user SET deactivated_at = NULL WHERE id = $1`, [STRANGER]);
+}
+
+// ===========================================================================
+// H · SEC-01 follow-up — webauthnLoginVerify()'s own deactivated_at gate
+// (server/index.mjs), over a REAL HTTP server spawned as a real child
+// process, the same pattern deletion.test.mjs section D uses for devLogin's
+// gate. Deliberately minimal, well-formed-enough-to-pass-input-validation
+// garbage for the credential fields — the point is proving the gate fires
+// BEFORE any challenge/signature work runs, not re-exercising the crypto
+// itself (stack.test.mjs's own "B WebAuthn" section already does that
+// directly against the pure auth.ts functions).
+// ===========================================================================
+{
+  const here = dirname(fileURLToPath(import.meta.url));
+  const serverEntry = join(here, '..', '..', '..', 'server', 'index.mjs');
+  const port = 23000 + (process.pid % 4000);
+  const secret = 'auth-credentials-test-session-secret-not-for-production-use';
+
+  const child = spawn(process.execPath, [serverEntry], {
+    env: { ...process.env, DATABASE_URL, SESSION_SECRET: secret, DEV_LOGIN: '1', PORT: String(port) },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d.toString(); });
+  child.stderr.on('data', (d) => { out += d.toString(); });
+  const deadline = Date.now() + 8000;
+  while (!out.includes('listening on') && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const booted = out.includes('listening on');
+  check('H webauthn login gate', 'server/index.mjs actually boots against this database', booted, 'true');
+
+  if (booted) {
+    const base = `http://127.0.0.1:${port}`;
+    await admin.query(`UPDATE app_user SET deactivated_at = now() WHERE id = $1`, [STRANGER]);
+
+    const res = await fetch(`${base}/v1/auth/webauthn/login/verify`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userId: STRANGER, credentialId: 'whatever',
+        clientDataJSON: Buffer.from(JSON.stringify({ challenge: 'x' })).toString('base64url'),
+        authenticatorData: 'AAAA', signature: 'AAAA',
+      }),
+    });
+    const body = await res.json();
+    check('H webauthn login gate', 'a deactivated account is refused BEFORE any crypto runs',
+      res.status, 403);
+    check('H webauthn login gate', 'refused with the real reason', body.error, 'account_deactivated');
+
+    // Sanity control — the SAME malformed body against a NEVER-deactivated
+    // account must NOT be refused by this gate (it will still fail later,
+    // for an unrelated reason: no real challenge was ever issued). Proves
+    // the 403 above is really about deactivation, not a body-shape reject
+    // that would fire for anyone.
+    await admin.query(`UPDATE app_user SET deactivated_at = NULL WHERE id = $1`, [STRANGER]);
+    const control = await fetch(`${base}/v1/auth/webauthn/login/verify`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userId: STRANGER, credentialId: 'whatever',
+        clientDataJSON: Buffer.from(JSON.stringify({ challenge: 'x' })).toString('base64url'),
+        authenticatorData: 'AAAA', signature: 'AAAA',
+      }),
+    });
+    check('H webauthn login gate', 'the SAME request against an active account never gets THIS 403',
+      control.status !== 403, 'true');
+  }
+
+  child.kill();
+  await new Promise((r) => setTimeout(r, 200));
 }
 
 await admin.query(`DELETE FROM auth_challenge WHERE user_id IN ($1,$2,$3)`, [DAD, MOM, STRANGER]);

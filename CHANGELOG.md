@@ -14,6 +14,114 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.3] — 2026-08-16 — SEC-01: deactivation left credentials live and re-registerable
+
+A round-2 post-merge audit (`Merge Aftermath`, scoping PRs #14–#19's shipped
+features plus repeat instances of already-caught bug classes) found a real,
+previously-shipped gap in account deactivation: `deactivateAccount()` never
+touched `device_token`, and nothing gated new device-token registration
+against `deactivated_at`. An independent adversarial-verify pass on that
+fix, before merge, then found the identical gap in two OTHER credential
+paths — WebAuthn passkeys and kiosk PINs — one of them materially worse
+than the original finding. All closed here.
+
+### Fixed
+- **A deactivated guardian's already-registered devices kept receiving push
+  indefinitely (High).** `deactivateAccount()` (`packages/db/src/pool.ts`)
+  removes `pin_credential`/`webauthn_credential`/`auth_challenge` rows for
+  the deactivating user but never touched `device_token` — the only cleanup
+  those rows ever got was reactive, one at a time, whenever FCM/APNs
+  happened to bounce a send with `UNREGISTERED`/`BadDeviceToken`. Fixed:
+  the same transaction now also `DELETE`s every `device_token` row this user
+  owns (`owner_user_id = userId`), returning a new `removedDeviceTokens`
+  count on `DeactivationResult`. `device_token_system_prune`
+  (`0012_push_device_token.sql`) already grants the `system` role this
+  transaction runs as unrestricted `DELETE`, so no RLS change was needed.
+- **The same still-valid session could register a BRAND-NEW device after
+  deactivating, not just retain an old one (High).** Sessions in this
+  codebase are signed, not stored (`auth.ts`'s own header) — an
+  already-issued token stays cryptographically valid until its own 1h TTL,
+  a documented, tested limitation (`deletion.test.mjs` section D's own
+  "KNOWN GAP" assertion: `GET /v1/me` returns 200 on a pre-deactivation
+  token, by design, and still does). What was NOT documented or intended:
+  that same stale token could keep growing fresh push surface, not merely
+  retain what it already had. Fixed with a targeted gate, not a general
+  session deny-list (which does not exist in this codebase and stays out
+  of scope) — `registerDeviceToken()` now checks `app_user.deactivated_at`
+  for non-child principals before the upsert and refuses with a new
+  `account_deactivated` error code, mirroring `server/index.mjs`'s existing
+  `devLogin` gate exactly. `server/routes.mjs`'s `POST /v1/me/device-tokens`
+  handler maps the new code to `403 {error: "account_deactivated"}`.
+  This one check-then-act gate is a narrow, accepted, documented race
+  (see its own comment in `pool.ts`) rather than a single atomic
+  transaction — low impact (one lingering token until the next dead-token
+  bounce), same order of magnitude as an already-accepted race a few lines
+  above it in the same file.
+- **A deactivated guardian could mint a brand-new WebAuthn passkey and
+  re-authenticate INDEFINITELY — not TTL-bound at all, worse than the
+  device-token case above (High).** Found by this fix's own pre-merge
+  adversarial review, not the original audit pass.
+  `storeWebauthnCredential()` had no `deactivated_at` check, and neither did
+  the real login path that consumes it, `webauthnLoginVerify()`
+  (`server/index.mjs`) — unlike `devLogin()` right above it in the same
+  file, which has always checked. A credential registered during the TTL
+  window survives past it: nothing else in this codebase ever revisits
+  `webauthn_credential`, and `can()` (`family-graph/authorize.ts`) never
+  checks `deactivated_at` either, so a session obtained this way carried
+  full, standing guardian access to every child the account still had a
+  live guardianship edge for. Fixed on both ends: `storeWebauthnCredential()`
+  now takes a real `FOR UPDATE` lock on the `app_user` row and checks
+  `deactivated_at` INSIDE the same transaction as the `INSERT` — atomic,
+  not a separate pre-check, since `app_user_read_all`
+  (`0011_account_deletion.sql`) is `USING (true)` and needs no system-role
+  workaround to read. `webauthnLoginVerify()` now checks `deactivated_at`
+  before spending the single-use challenge or running any signature
+  verification. Either fix alone would have closed the exploit; both
+  together match `devLogin`'s own belt-and-suspenders posture.
+- **The same gap in kiosk-PIN registration (Medium).** `setPinCredential()`
+  had no `deactivated_at` check either — same root cause, lower stakes
+  (this credential only ever produces `{ok: matched}` for kiosk escalation,
+  never issues a session — see `attemptPinFor()`'s own updated comment for
+  why THAT function needs no separate check: `deactivateAccount()` already
+  deletes the `pin_credential` row it would verify against). Fixed with the
+  same atomic `FOR UPDATE` shape as the WebAuthn fix above, since it cost
+  nothing extra to write once the pattern existed.
+
+### Housekeeping
+- MASTERFILE's own closing line still read "v0.49.1" while the header table
+  above it already said 0.49.2 — a §0 rule violation this pass's own version
+  bump made trivial to fix in the same edit. Fixed; both now agree.
+
+### Tests
+- `device_token.test.mjs` section E, `deletion.test.mjs` sections AB/B —
+  registration/deactivation cascade and the per-user gate, each extended
+  with a BYSTANDER row (a different, still-active guardian's own token)
+  that must survive untouched — `device_token`'s RLS gives `system`
+  unrestricted `DELETE` with no owner predicate, so only a fixture that
+  puts a second owner's row on the table at deactivation time can actually
+  prove the app-layer `WHERE owner_user_id = $1` scoping holds, rather than
+  being indistinguishable from an unscoped wipe.
+- `auth_credentials.test.mjs` — two new sections: **G** proves
+  `setPinCredential()`/`storeWebauthnCredential()` both refuse a deactivated
+  guardian and create no row; **H** spawns a real HTTP server
+  (`server/index.mjs`, the same pattern `deletion.test.mjs` section D uses)
+  and proves `webauthnLoginVerify()`'s gate fires — `403
+  account_deactivated` — before any challenge/signature work runs, with a
+  same-request positive control against a never-deactivated account proving
+  the 403 is really about deactivation, not a body-shape reject.
+- All touched suites re-run for real against local Postgres 16 with Node 22
+  (matching CI's declared `node-version: 22` — this codebase's `.mjs` build
+  output imports sibling modules by their literal `.ts` path, relying on
+  Node 22's type-stripping to run at all; noted here since it means these
+  suites cannot run locally on Node <22 despite passing on CI):
+  `device_token.test.mjs` 36/36, `deletion.test.mjs` 32/32,
+  `auth_credentials.test.mjs` 65/65, `availability.test.mjs` 23/23,
+  `message_capture.test.mjs` 33/33, `pool.test.mjs` 18/18,
+  `raw_export.test.mjs` 26/26, `court_export.test.mjs` 41/41,
+  `stack.test.mjs` 98/98, `routes.test.mjs` 19/19, `notify.test.mjs` 22/22,
+  `contract.test.mjs` 27/27 — 440 passed, 0 failed. 20 new assertions vs.
+  `main` (4381 → 4401), computed by diff, not guessed.
+
 ## [0.49.2] — 2026-08-16 — merge review: a real coordinator lockout, an RLS monitoring gap, two stale claims
 
 Before merging v0.49.0/v0.49.1's rebase onto `main`, this pass ran an

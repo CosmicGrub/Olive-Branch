@@ -120,6 +120,16 @@ async function pinCredentialFor(pool, userId) {
 }
 async function setPinCredential(pool, userId, pinHash) {
   await withSession(pool, { roleName: "guardian", userId, childId: null }, async (q) => {
+    const [row] = await q(
+      `SELECT deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`,
+      [userId]
+    );
+    if (row?.deactivated_at) {
+      throw Object.assign(
+        new Error("setPinCredential: account is deactivated"),
+        { code: "account_deactivated" }
+      );
+    }
     await q(
       `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
        VALUES ($1, $2, 0, NULL, now())
@@ -221,6 +231,16 @@ async function consumeChallenge(pool, userId, purpose, challenge) {
 }
 async function storeWebauthnCredential(pool, userId, credentialId, publicKeyPem) {
   await withSession(pool, { roleName: "guardian", userId, childId: null }, async (q) => {
+    const [row] = await q(
+      `SELECT deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`,
+      [userId]
+    );
+    if (row?.deactivated_at) {
+      throw Object.assign(
+        new Error("storeWebauthnCredential: account is deactivated"),
+        { code: "account_deactivated" }
+      );
+    }
     await q(
       `INSERT INTO webauthn_credential (user_id, credential_id, public_key_pem)
        VALUES ($1, $2, $3)`,
@@ -354,6 +374,10 @@ async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
       `DELETE FROM auth_challenge WHERE user_id = $1 RETURNING challenge`,
       [userId]
     );
+    const deviceTokens = await q(
+      `DELETE FROM device_token WHERE owner_user_id = $1 RETURNING id`,
+      [userId]
+    );
     const deactivated = await q(
       `UPDATE app_user SET deactivated_at = now()
         WHERE id = $1 AND deactivated_at IS NULL
@@ -368,7 +392,8 @@ async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
       cancelledDeliveryIntents: cancelled.length,
       removedPinCredentials: pins.length,
       removedWebauthnCredentials: passkeys.length,
-      removedWebauthnChallenges: challenges.length
+      removedWebauthnChallenges: challenges.length,
+      removedDeviceTokens: deviceTokens.length
     };
   });
 }
@@ -582,6 +607,18 @@ async function registerDeviceToken(pool, principal, platform, token) {
   const isChild = principal.roleName === "child";
   const ownerUserId = isChild ? null : principal.userId;
   const ownerChildId = isChild ? principal.childId : null;
+  if (!isChild) {
+    const [row] = await withSystemSession(
+      pool,
+      (q) => q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [ownerUserId])
+    );
+    if (row?.deactivated_at) {
+      throw Object.assign(
+        new Error("registerDeviceToken: account is deactivated"),
+        { code: "account_deactivated" }
+      );
+    }
+  }
   const upsert = () => withSession(pool, principal, async (q) => {
     const rows = await q(
       `INSERT INTO device_token (owner_user_id, owner_child_id, platform, token, last_seen_at)
