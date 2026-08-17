@@ -16,6 +16,7 @@
 // are different facts guardian_setup.dart's PasskeyOutcome enum
 // (success/declined/unavailable) needs to tell apart honestly.
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
 import 'guardian_setup.dart' show PasskeyOutcome;
@@ -185,6 +186,64 @@ Future<PasskeyOutcome> Function() buildRegisterPasskeyCallback({
       // Anything else unanticipated (e.g. no network reaching the server at
       // all) -- still never an unhandled exception reaching the widget.
       return PasskeyOutcome.declined;
+    }
+  };
+}
+
+/// Builds a real `Future<bool> Function()` for kiosk_shell.dart's
+/// `verifyBiometric` — the "biometric" half of §8.3's PIN + biometric
+/// guardian escalation ceremony (`escalate()`, lock_controller.dart). Runs
+/// the exact same real LOGIN round trip webauthnLoginChallenge/
+/// webauthnLoginVerify already prove elsewhere (api_client.dart) against the
+/// device's own configured guardian [userId] -- a real platform-authenticator
+/// assertion, checked server-side, not a device-local biometric prompt taken
+/// on faith. The resulting session token is intentionally discarded: this
+/// pass closes "escalate() has nowhere to go," not "escalation grants a live
+/// guardian API session" -- a real, separate follow-up if that's ever needed,
+/// not silently assumed here.
+///
+/// Never throws, matching [buildRegisterPasskeyCallback]'s own posture: a
+/// cancelled ceremony, no platform authenticator, a network failure, or a
+/// server-side rejection (expired/consumed challenge, wrong credential, a
+/// deactivated account) are all real "no" answers, not exceptions escaping
+/// to `escalate()`'s caller -- `false` here always means the PIN factor
+/// alone must not be enough, exactly per §8.3.
+Future<bool> Function() buildVerifyBiometricCallback({
+  required String baseUrl,
+  required String userId,
+  WebAuthnChannel? channel,
+  /// Injectable for tests of the HTTP half (e.g. package:http/testing.dart's
+  /// MockClient) -- matches every other real-callback-builder's own
+  /// convention in this codebase (capture_gate.dart's httpClient, etc.)
+  /// rather than leaving this round trip only exercisable end to end.
+  http.Client? httpClient,
+}) {
+  final ch = channel ?? WebAuthnChannel();
+  return () async {
+    try {
+      final challengeBody = await webauthnLoginChallenge(baseUrl, userId, client: httpClient);
+      final assertion = await ch.authenticate(
+        challenge: challengeBody['challenge'] as String,
+        rpId: challengeBody['rpId'] as String,
+      );
+      await webauthnLoginVerify(
+        baseUrl,
+        userId: userId,
+        credentialId: assertion.credentialId,
+        clientDataJSON: assertion.clientDataJSON,
+        authenticatorData: assertion.authenticatorData,
+        signature: assertion.signature,
+        client: httpClient,
+      );
+      return true;
+    } on WebAuthnUnavailable {
+      return false;
+    } on WebAuthnException {
+      return false; // cancelled / no authenticator / any real ceremony failure
+    } on ApiException {
+      return false; // server rejected the challenge/verify round trip
+    } catch (_) {
+      return false; // e.g. no network reaching the server at all
     }
   };
 }

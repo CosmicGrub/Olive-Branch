@@ -61,6 +61,23 @@ Future<bool> _verifyGuardianPin(String pin) async {
   }
 }
 
+/// The biometric half of §8.3 guardian escalation
+/// (webauthn_channel.dart's `buildVerifyBiometricCallback`) needs a KNOWN
+/// guardian `userId` to request a login challenge for — unlike
+/// [_verifyGuardianPin] above, which deliberately checks a PIN against every
+/// live guardian rather than one. This entry point has no such identity to
+/// give it: `devLoginFor()` is a stateless DEV_LOGIN=1 shortcut with no
+/// signed-in guardian behind it, by design (see this file's own header) —
+/// there is nothing here playing the role a real onboarded device's stored
+/// guardian identity would. Rather than invent one (which would prove
+/// nothing real, since `buildVerifyBiometricCallback`'s own WebAuthn
+/// round trip would just be exercised against a guessed/hardcoded id, not a
+/// device's actual configured guardian), this stays an honest stand-in —
+/// same posture as `_demoVerifyGuardianPin` in main.dart, one layer down.
+/// `buildVerifyBiometricCallback` itself is real and ready for whichever
+/// real entry point ends up knowing its own guardian's userId.
+Future<bool> _liveVerifyBiometricStub() async => true;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // MASTERFILE §11 -- registers the real top-level background handler
@@ -101,6 +118,7 @@ class OliveLive extends StatelessWidget {
     ),
     home: const KioskShell(
       verifyPin: _verifyGuardianPin,
+      verifyBiometric: _liveVerifyBiometricStub,
       child: LiveChildHomeScreen(
         baseUrl: _defaultBaseUrl,
         childId: _defaultChildId,
