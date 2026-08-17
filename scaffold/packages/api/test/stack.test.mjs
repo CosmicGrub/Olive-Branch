@@ -2,7 +2,7 @@
  * auth + storage + api — adversarial suite.
  * MASTERFILE §7, §8.3, §10.1, §20.5 items 1-3.
  */
-import { createHash, createSign, generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createHash, createHmac, createSign, generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
   hashPin, verifyPin, verifyAssertion, newChallenge,
   issueSession, readSession, escalateSession,
@@ -134,6 +134,24 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
     readSession(randomBytes(32), t, NOW).reason, 'bad_signature');
   check('C sessions', 'not escalated by default',
     readSession(SECRET, t, NOW).principal.escalated, 'false');
+
+  // Token-shape branches — previously reached by nothing anywhere in the repo
+  // (readSession's own `dot < 1` guard and its JSON.parse catch), found while
+  // reviewing escalateSession() for MASTERFILE §7.1's open question below.
+  check('C sessions', 'no dot at all → malformed',
+    readSession(SECRET, 'nodothere', NOW).reason, 'malformed');
+  check('C sessions', 'dot at position 0 (empty payload) → malformed',
+    readSession(SECRET, '.abc', NOW).reason, 'malformed');
+  {
+    // A validly-signed payload that isn't JSON at all — the ONLY way to reach
+    // readSession's JSON.parse catch branch is a MAC that actually verifies,
+    // so this hand-signs with the real secret rather than tampering with a
+    // real token's payload (which would fail at bad_signature first, above).
+    const badPayload = Buffer.from('not json').toString('base64url');
+    const badMac = createHmac('sha256', SECRET).update(badPayload).digest('base64url');
+    check('C sessions', 'validly-signed non-JSON payload → malformed',
+      readSession(SECRET, `${badPayload}.${badMac}`, NOW).reason, 'malformed');
+  }
 
   // A forged principal shape must not slip through even with a valid MAC.
   const forged = issueSession(SECRET, { userId: null, roleName: 'guardian',

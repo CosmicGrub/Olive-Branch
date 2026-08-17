@@ -14,6 +14,62 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.8] — 2026-08-17 — Gap-fill batch 2, part 2: escalateSession() resolved, not built on
+
+v0.49.7's "Found, not fixed" note below claimed `escalateSession()` had "no
+test file at all." That was a miss made by grepping only
+`packages/auth/test/` — the function is real, correct, and already tested,
+just from `packages/api/test/stack.test.mjs`, which owns all of `auth.ts`'s
+session/PIN coverage (alongside `packages/auth/test/attestation.test.mjs`,
+which owns the WebAuthn half). This entry corrects that record, closes the
+one branch that turned out to be genuinely uncovered, and answers the real
+open question — whether escalation should mint a live guardian API session
+— by declining to invent a consumer for it.
+
+### Corrected
+- MASTERFILE §7.1's status note and the top-of-document Status line both
+  said `escalateSession()` had no test coverage. It does:
+  `packages/api/test/stack.test.mjs`'s "C sessions" section already covers
+  both-factors-required, either factor alone refused (with the correct
+  `pin`/`biometric` reason each), a child role refused outright, and its own
+  15-minute TTL (`ESCALATION_TTL_MS`) distinct from an ordinary session's
+  60-minute one (`SESSION_TTL_MS`); "F api" section covers the real target —
+  a synthetic `escalated: true` test route proving `packages/api/src/api.ts`'s
+  `Api.handle()` actually enforces `Route.escalated`
+  (`m.route.escalated && !principal.escalated` → `403 escalation_required`)
+  before authorization even runs. What remains true and unchanged: no real
+  production route sets `escalated: true` — the synthetic route above exists
+  only in the test file, to prove the mechanism works, not because a real
+  feature calls it.
+
+### Tests
+- `packages/api/test/stack.test.mjs` — 3 new assertions closing the one
+  genuine gap this review found: `readSession()`'s malformed-token branches
+  (no `.` separator at all; a `.` at position 0, i.e. an empty payload; and
+  a payload that carries a valid HMAC over non-JSON bytes, hand-signed with
+  the test's own secret since that branch is only reachable past signature
+  verification) had no coverage anywhere in the repo. All three now assert
+  `reason: 'malformed'`.
+
+### Decided, not built
+Whether client-side kiosk escalation should also mint a live elevated
+guardian API session — v0.49.7's own open question — is answered by
+declining to invent a route to answer it. Nothing in §7.1's real API
+surface or §8.3 currently needs PIN+biometric step-up beyond what an
+ordinary authenticated guardian session already grants via `can()`'s
+guardianship-edge authorization; wiring `escalateSession()` to a route
+built only to give it a caller would be a fabricated product decision, the
+same class of thing §19's other declined-not-deferred items decline to be.
+`escalateSession()` and `Api`'s `Route.escalated` field stay in place,
+together, as real, tested, working groundwork for whichever future
+guardian action turns out to need it. One boundary on that future is
+permanent: **P7** (§2.1) names "guardian escalation" explicitly as a
+forbidden path to the child's journal, at any tier — no future route may
+spend this mechanism on the one thing graduated privacy exists to have no
+override for.
+
+---
+
 ## [0.49.7] — 2026-08-17 — Gap-fill batch 2, part 1: guardian escalation has a real screen
 
 The first of gap-fill batch 2's three substantial items. `escalate()`
