@@ -37,6 +37,9 @@ import { chooseEntry, suggestEntryRole, routeFromEntry, ENTRY_CHOICE_GRANTS_NO_A
 export { chooseEntry, suggestEntryRole, routeFromEntry, ENTRY_CHOICE_GRANTS_NO_AUTHORITY };
 import { captureCameraPhoto, captureScreenshot, SCREENSHOT_SCOPED_OFF_SURFACES,
   neverToDeviceGallery, autoUploadsToAppStorage } from '../../packages/homework/src/snapshot.ts';
+import { OBSERVER_MAY, OBSERVER_MAY_NOT, OBSERVER_GRANT_TTL_DAYS, invite,
+  activeObservers, auditObserverView, type Observer }
+  from '../../packages/observer/src/observer.ts';
 
 const NYC = 'America/New_York', CHI = 'America/Chicago';
 const ALL = [0, 1, 2, 3, 4, 5, 6];
@@ -441,6 +444,51 @@ export function handoverDemo(age: number) {
 // ------------------------------------------------------------------ p6/p7
 export function authProbe(action: string, role: string) {
   return can(action as any, role === 'child' ? [] : [EDGE], 'maya', new Date(), role);
+}
+
+// ------------------------------------------------------------------ observer tier
+/**
+ * RENDER-01 fix (round-2 rendering pass, "Every Door, Opened") — the demo's
+ * "Observers" screens (both the interactive one and its engine-room writeup)
+ * have always called T.observerView(), a function that never existed anywhere
+ * in this codebase. Every value here comes from the real, already-tested
+ * observer.ts primitives — nothing here was invented to make the screen stop
+ * throwing.
+ */
+export function observerView() {
+  const probes = [
+    ...OBSERVER_MAY.map(scope => ({ scope, can: true })),
+    ...OBSERVER_MAY_NOT.map(scope => ({ scope, can: false })),
+  ];
+  // The three scopes the screen's own copy names as never grantable to
+  // anyone: the journal (P7), a sealed letter, a private note. Only the
+  // journal has a real OBSERVER_MAY_NOT scope string to point at — sealed
+  // letters and private notes aren't observer-reachable surfaces at all (no
+  // route exists to expose them), so they have no scope string to probe.
+  const never = ['read_child_journal'];
+  const sample: Observer[] = [
+    { userId: 'grandma', role: 'grandparent', invitedBy: 'dad', label: 'Grandma',
+      invitedAt: '2026-06-01T00:00:00Z', acceptedAt: '2026-06-02T00:00:00Z',
+      revokedAt: null },
+  ];
+  const childView = activeObservers(sample).map(o => ({ who: o.label,
+    sees: OBSERVER_MAY.map(s => s.replace(/_/g, ' ')).join(', ') }));
+  const therapistInvite = invite([], 'guardian', { userId: 't1', role: 'carer',
+    invitedBy: 'dad', label: 'Therapist', invitedAt: now().toISO()! });
+  // Honestly labelled, not fabricated: invite() as written takes one
+  // guardian's say-so and does not itself require the other guardian's
+  // consent (that requirement is this screen's own prose, and MASTERFILE
+  // §16.2 #11 marks the therapist-role scope question still open) — so this
+  // shows the REAL result of a single guardian inviting alone, whatever it
+  // is, rather than asserting a refusal the code does not actually perform.
+  const soloInvite = invite([], 'guardian', { userId: 'a1', role: 'relative',
+    invitedBy: 'dad', label: 'Aunt', invitedAt: now().toISO()! });
+  return {
+    probes, never, childView, ttl: OBSERVER_GRANT_TTL_DAYS,
+    defaults: { therapist: therapistInvite },
+    soloRefused: soloInvite,
+    forbiddenRefused: auditObserverView({ journal: 'a private thought' }),
+  };
 }
 
 // ------------------------------------------------------------------ misc

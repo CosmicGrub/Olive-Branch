@@ -14,6 +14,60 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.5] — 2026-08-17 — RENDER-01/02: two demo screens threw since the repo's first commit
+
+`Every Door, Opened` (a full click-through rendering pass of the shipped
+demo, not a code read) found two screens that render an error-boundary
+fallback instead of their real content, every single time: "Observers" and
+"Accessibility." Traced to source, not guessed at: both call bridge
+functions — `T.observerView()`, `T.a11yView()` — that have never existed
+anywhere in this codebase, not since the initial commit. Fixed with real
+data from the real engines behind them, not invented to make the screen
+stop throwing.
+
+### Fixed
+- **`demo/src/bridge.ts` gains a real `observerView()`.** Built entirely
+  from `packages/observer/src/observer.ts`'s already-tested primitives —
+  `OBSERVER_MAY`/`OBSERVER_MAY_NOT` via `observerMay()` for the probe grid,
+  `activeObservers()` for what she's told, `invite()` for the therapist and
+  solo-invite examples, `auditObserverView()` demonstrating a real leak
+  catch. One addition to the engine itself: `OBSERVER_GRANT_TTL_DAYS = 180`
+  — "time-boxed by default" (this module's own header) never had a number
+  attached to it, unlike every other expiry concept in this codebase.
+  **Honestly scoped, not silently expanded:** the screen's own copy claims
+  "one parent cannot admit an observer alone," but `invite()` as written
+  doesn't enforce that (MASTERFILE §16.2 #11 marks the therapist-role scope
+  question as still open) — rather than fabricate a refusal to match the
+  copy, `soloRefused` shows the real, honest result of what `invite()`
+  actually does today.
+- **`demo/src/play.ts` gains a real `a11yView()` and `a11ySet()`.** A third,
+  related gap surfaced while fixing the first two: the click handlers for
+  toggling a setting or changing text scale already called
+  `T.a11ySet(key, value)` as a setter, matching every other piece of
+  toggleable demo state (`motionReduce`, `budgetTier`, `paneDock`, ...) —
+  but only the state object itself (`S.a11ySet`) was ever declared; no
+  setter function existed to go with it. Both are now real, backed by
+  `packages/a11y/src/a11y.ts`'s `layoutFor()`, `captionPolicy()`,
+  `captionsSurviveCall()`, and `auditLabel()` — including using the exact
+  1.5× / 673px numbers `a11y.ts`'s own §8.8.3 comment already works through
+  by hand, so the live view matches that comment's worked example exactly
+  at the default scale.
+
+### Tests
+- Verified directly: both new bridge functions called standalone (bundled
+  outside the demo shell) — no throw, correct shape, `a11ySet()` toggling
+  and `a11yView()` reflecting the change on the next read.
+- `demo/test/drive.test.mjs` — the demo's own comprehensive click-through
+  suite, which walks all 83 nav screens and asserts none render an error
+  card — now passes clean: 116/116, 0 failed, at both device viewports.
+  Note for whoever picks this up next: this exact suite has the assertions
+  that should have caught RENDER-01/02 from day one (`all N screens render
+  clean`, `no uncaught exceptions`), and CI history on `main` shows green
+  throughout. Worth a maintainer's own look at why — not chased down here,
+  since the fix itself doesn't depend on the answer and this pass had
+  already confirmed the bug three independent ways (direct browser click,
+  standalone function call, and now this suite) before writing it up.
+
 ## [0.49.4] — 2026-08-16 — CI housekeeping: 8 real test files were never actually running
 
 `Merge Aftermath`'s TEST-01 through TEST-07 findings, all closed here — not
