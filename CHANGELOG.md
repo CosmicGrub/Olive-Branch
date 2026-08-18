@@ -14,6 +14,148 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.11] — 2026-08-18 — §8.11.4 channel awareness, and the bug two copies of it hid
+
+This codebase's own prior engine-room audit ranked `push_channel.dart`'s
+`CHANNELS`/`admitDevice()`/`channelAdvice()` wiring as its **top finding**:
+real, fully unit-tested pure logic (`packages/devices/src/devices.ts`
+§8.11.4) with zero production callers anywhere — server or client. Scoping
+this pass properly (a 4-agent research fan-out + synthesis, before any code
+was written) surfaced something the original finding didn't know about: a
+**second, independent, drifted copy** of the same channel facts in
+`packages/transport/src/channels.ts`, which had silently diverged from
+`devices.ts` and could route a `web` device to an SMS fallback `devices.ts`
+has never declared it eligible for. Both problems are fixed together, not
+separately — reconciling the duplication is what surfaced and fixed the bug.
+
+### Fixed
+- **The web/SMS bug.** `devices.ts`'s `CHANNELS` declares `web`'s fallback
+  as `foreground_socket` only, never SMS. `channels.ts`'s `route()` and
+  `reachability()` each independently re-derived SMS eligibility instead of
+  reading `devices.ts`'s own facts, and neither actually checked it — a
+  `web` device with an adult number on file and a long enough wait would
+  route straight to `sms_to_adult`, and `reachability()`'s guardian-facing
+  copy would promise "we can text the grown-up there" for a channel that
+  cannot. `channels.test.mjs`'s new §C ("the web/sms bug") proves this fails
+  before the fix and passes after it — not just that the happy path works.
+- **`channels.ts` now imports `Channel`/`CHANNELS`/`capability` from
+  `devices.ts`** rather than redeclaring them — one source of truth for a
+  channel's push/fallback facts, not two hand-maintained copies. `route()`'s
+  `sms_to_adult` branch and `reachability()`'s SMS mention both now gate on
+  `capability(channel).fallback === 'foreground_socket_and_sms'`.
+- **Two wrong MASTERFILE citations, present since `channels.ts`'s first
+  commit**, corrected: its header cited §10.5 ("Recording consent," unrelated
+  call-recording-consent law) for what is actually §8.11.4 ("The silent
+  device") — `devices.ts` already self-cited correctly; and its `ADULT_SMS`
+  section cited §10.4 (unrelated state-design-code/AADC law) for what is
+  actually §10.8 ("SMS bridge"). `postures.test.mjs`'s own header carried
+  the same wrong §10.5, copy-pasted from `channels.ts`; fixed there too.
+
+### Added
+- **`packages/transport/test/channels.test.mjs`** (new, 52 assertions) —
+  `channels.ts` had ZERO test coverage in its own package before this pass.
+  Its only prior exposure was transitive: `postures.test.mjs`, in the
+  DIFFERENT `devices` package, happened to import and exercise it alongside
+  unrelated tabletop/landscape/court-export coverage — verify.sh's own
+  suite label ("channels + postures + pending") is misleading; it is not
+  channels.ts's own suite. The new file covers `route()`'s full cascade,
+  `senderStatus()`/`auditStatus()`, `auditAdultSms()`, `socketPolicy()`,
+  `reachability()`, and the web/sms bug specifically (section C).
+- **`db/migrations/0015_device_token_channel.sql`** — `device_token` gains a
+  nullable `channel` column, CHECK-constrained to the six real §8.11.4
+  values. Nullable, not defaulted: nothing client-side can yet distinguish
+  `android_play`/`android_amazon`/`android_bare`, and writing a guessed
+  default into storage would be exactly the fabrication MASTERFILE §0
+  forbids. `NULL` means "unknown," honestly.
+- **`packages/db/src/pool.ts`** — `DeviceTokenRow.channel`,
+  `registerDeviceToken()`'s new optional `channel` parameter, and
+  `deviceTokensFor()`'s `channel` column read. The upsert's `channel`
+  column uses `COALESCE(EXCLUDED.channel, device_token.channel)`, not a
+  bare overwrite — a re-registration call that doesn't know the channel
+  (e.g. a token-refresh event) can never clobber a previously-known value.
+- **`server/routes.mjs`** — `POST /v1/me/device-tokens` accepts an optional
+  `channel` field, validated against `devices.ts`'s own `CHANNELS` (a third
+  hand-typed copy of the six-value enum was deliberately avoided).
+- **`packages/transport/src/notify.ts`** — `notifyDevices()`'s per-device
+  loop now resolves a channel (`device.channel`, or a conservative,
+  explicitly-commented `android_play` default for an Android device that
+  hasn't reported one yet — the OPTIMISTIC direction, not the safe one; see
+  `resolveChannel()`'s own doc comment for why) and calls `admitDevice()`
+  before attempting a send. A device that cannot push is now SKIPPED —
+  never handed to `fcm.ts`/`apns.ts` — and the result carries
+  `code: 'no_push_capability'` plus `channelAdvice()`'s real guardian-facing
+  copy in a new `advice` field, ready for whatever future caller surfaces
+  `notifyDevices()`'s results to a client (that caller still doesn't exist —
+  a separate, pre-existing, unchanged gap).
+- **`client/lib/device_channels.dart`** (new) — a deliberately PARTIAL 1:1
+  Dart port of `devices.ts`'s `Channel`/`ChannelCapability`/`CHANNELS`/
+  `capability()`/`channelAdvice()`. Partial on purpose: `admitDevice()` is
+  not ported, because nothing in this client calls it.
+- **`client/lib/push_channel.dart`** — `registerToken()` now reports
+  `channel: 'ios'` on iOS (omitted, never a guessed value, on Android — this
+  client cannot yet tell Play/Amazon/bare Android apart) and gains a real
+  `registrationAdvice` getter. Functionally inert on a real device today
+  (the only channel this client can currently report is always
+  push-capable, and no screen surfaces it yet either) but real and tested,
+  not a stub — the day Android channel detection lands, this needs no
+  changes to start mattering.
+
+### Tests
+- `channels.test.mjs` (new, 52 assertions), `device_channels_test.dart`
+  (new, 15 assertions).
+- `notify.test.mjs` — new §F ("channel awareness"): a FireOS device is
+  skipped and carries real advice text, `sendFcm` is proven never called
+  for it; a Play Services device still sends normally. New §F2: a device
+  that never reported a channel falls back to the documented optimistic
+  default rather than being skipped.
+- `device_token.test.mjs` — new §F: a channel is really stored, a
+  channel-less re-registration does not clobber a known one, a genuinely
+  new channel value does overwrite.
+- `push_channel_test.dart` — 2 new cases: no `channel` key sent on a
+  non-iOS host; `channel: 'ios'` sent and `registrationAdvice` is null on
+  iOS (established via `debugDefaultTargetPlatformOverride`, reset via
+  `addTearDown` — no prior test file in this client used that override, so
+  this pass was careful not to leak it across tests).
+- `flutter analyze` clean. Full `flutter test` (1481 cases) green except the
+  same pre-existing, unrelated `push_channel_test.dart` failure noted since
+  v0.49.6 — one new instance of it caught and fixed mid-pass: this file's
+  own header disclosure convention ("UNVERIFIED — no Flutter toolchain")
+  had been omitted from `device_channels.dart`, which `transport.test.mjs`'s
+  own repo-wide convention check correctly failed on until fixed.
+- Full JS suite green: `channels.test.mjs`, `devices.test.mjs`,
+  `postures.test.mjs`, `notify.test.mjs`, `device_token.test.mjs`,
+  `transport.test.mjs`, `stack.test.mjs`, `contract.test.mjs` all re-run
+  against a freshly migrated database (15/15 migrations applied) after this
+  pass's changes, all green.
+
+### Found, not fixed this pass
+Real, credential-free Android APIs exist to detect a device's actual
+§8.11.4 channel — `GoogleApiAvailability.isGooglePlayServicesAvailable()`
+for Play Services presence, `PackageManager.getInstallSourceInfo()`/
+`getInstallerPackageName()` for store attribution (`com.android.vending` =
+Play, `com.amazon.venezia` = Amazon Appstore) — and a real MethodChannel
+bridge for it would follow the exact precedent `KioskBridge.kt`/
+`WearSyncBridge.kt` already set (see `devices.ts`'s own §8.11.4 header for
+the full account). Scoped and explicitly declined this pass, same reasoning
+as the already-deferred `LOCK_METHODS`/`childShellAllowed()` gap (v0.49.10):
+every existing MethodChannel bridge in this repo is `UNVERIFIED (no Flutter
+toolchain)` by its own header, and shipping a brand-new, uncompilable native
+bridge while calling channel detection "solved" would be exactly the
+fabrication MASTERFILE §0 forbids. Building it once would unblock BOTH this
+gap and `LOCK_METHODS`'s — they are blocked on the identical missing piece.
+
+A real foreground-socket delivery server (the `foreground_socket`/
+`foreground_socket_and_sms` fallback `channels.ts`'s own `route()`/
+`SocketPolicy` decide *for*) and real SMS sending (`ADULT_SMS`,
+`auditAdultSms()`) remain pure, tested decision/content-audit logic with no
+transport behind them — confirmed by grep across `server/`, `packages/
+session-runtime/`, and the whole repo: no WebSocket/socket-server
+implementation and no SMS-provider credential exist anywhere. Both are
+genuinely new subsystems, not present-but-unwired code, and are sized as
+their own future passes, not part of this one.
+
+---
+
 ## [0.49.10] — 2026-08-18 — Read-aloud is real: on-device, tap-gated, verbatim
 
 §8.8.5's own spec (settled v0.39.0) had a full pure-logic implementation in

@@ -24,6 +24,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -293,6 +294,72 @@ void main() {
       final body = jsonDecode(requests.single.body) as Map<String, dynamic>;
       expect(body['token'], 'token-abc');
       expect(body['platform'], anyOf('android', 'ios'));
+
+      channel.dispose();
+    });
+
+    test('§8.11.4 (v0.49.11): on a non-iOS test host, no channel key is '
+        'sent at all -- omitted, not a guessed value', () async {
+      // This test host is not forced to iOS, so defaultTargetPlatform here
+      // reflects flutter test's own default -- android, per this file's
+      // established anyOf('android','ios') platform assertion above. That
+      // is exactly the case device_channels.dart's own header says this
+      // client cannot yet resolve a real channel for.
+      final requests = <http.Request>[];
+      final mock = MockClient((req) async {
+        requests.add(req);
+        return http.Response(jsonEncode({'id': 'dt-1'}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok', client: mock);
+      final channel = PushChannel(
+        api,
+        deps: PushChannelDeps(
+          initializeFirebase: () async {},
+          requestPermission: () async {},
+          getToken: () async => 'token-abc',
+          onTokenRefresh: const Stream<String>.empty(),
+          onMessage: const Stream<RemoteMessage>.empty(),
+        ),
+      );
+
+      await channel.initialize();
+
+      final body = jsonDecode(requests.single.body) as Map<String, dynamic>;
+      expect(body.containsKey('channel'), isFalse);
+      expect(channel.registrationAdvice, isNull,
+        reason: 'no known channel means nothing to advise on');
+
+      channel.dispose();
+    });
+
+    test('§8.11.4 (v0.49.11): on iOS, the real channel is reported, and '
+        'registrationAdvice is null (iOS always pushes)', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      final requests = <http.Request>[];
+      final mock = MockClient((req) async {
+        requests.add(req);
+        return http.Response(jsonEncode({'id': 'dt-1'}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok', client: mock);
+      final channel = PushChannel(
+        api,
+        deps: PushChannelDeps(
+          initializeFirebase: () async {},
+          requestPermission: () async {},
+          getToken: () async => 'token-abc',
+          onTokenRefresh: const Stream<String>.empty(),
+          onMessage: const Stream<RemoteMessage>.empty(),
+        ),
+      );
+
+      await channel.initialize();
+
+      final body = jsonDecode(requests.single.body) as Map<String, dynamic>;
+      expect(body['channel'], 'ios');
+      expect(channel.registrationAdvice, isNull,
+        reason: 'iOS is always push-capable, so channelAdvice(ios) is null');
 
       channel.dispose();
     });

@@ -600,7 +600,7 @@ async function persistCapturedMessage(pool, capture, opts = {}) {
     return { artifactId, intentId: intentRows[0].id, batchId };
   });
 }
-async function registerDeviceToken(pool, principal, platform, token) {
+async function registerDeviceToken(pool, principal, platform, token, channel) {
   if (principal.roleName === "system") {
     throw new Error("registerDeviceToken: system role cannot own a device");
   }
@@ -621,15 +621,24 @@ async function registerDeviceToken(pool, principal, platform, token) {
   }
   const upsert = () => withSession(pool, principal, async (q) => {
     const rows = await q(
-      `INSERT INTO device_token (owner_user_id, owner_child_id, platform, token, last_seen_at)
-       VALUES ($1, $2, $3, $4, now())
+      `INSERT INTO device_token (owner_user_id, owner_child_id, platform, token, channel, last_seen_at)
+       VALUES ($1, $2, $3, $4, $5, now())
        ON CONFLICT (token) DO UPDATE
          SET owner_user_id  = EXCLUDED.owner_user_id,
              owner_child_id = EXCLUDED.owner_child_id,
              platform       = EXCLUDED.platform,
+             -- COALESCE, not a bare overwrite: a re-registration call that
+             -- doesn't know the channel (channel arg omitted -> NULL here)
+             -- must never clobber an already-known value from an earlier
+             -- call that did. Every current call site is deterministic per
+             -- device (push_channel.dart always passes the same value for
+             -- the same platform), so this is a no-op today \u2014 it's future
+             -- defense for the day a real native-detection caller exists
+             -- and might not always resolve one.
+             channel        = COALESCE(EXCLUDED.channel, device_token.channel),
              last_seen_at   = now()
        RETURNING id`,
-      [ownerUserId, ownerChildId, platform, token]
+      [ownerUserId, ownerChildId, platform, token, channel ?? null]
     );
     return rows[0].id;
   });
@@ -651,13 +660,13 @@ async function unregisterDeviceToken(pool, principal, token) {
 async function deviceTokensFor(pool, owner) {
   return withSystemSession(pool, async (q) => {
     const rows = "userId" in owner ? await q(
-      `SELECT id, platform, token FROM device_token WHERE owner_user_id = $1`,
+      `SELECT id, platform, token, channel FROM device_token WHERE owner_user_id = $1`,
       [owner.userId]
     ) : await q(
-      `SELECT id, platform, token FROM device_token WHERE owner_child_id = $1`,
+      `SELECT id, platform, token, channel FROM device_token WHERE owner_child_id = $1`,
       [owner.childId]
     );
-    return rows.map((r) => ({ id: r.id, platform: r.platform, token: r.token }));
+    return rows.map((r) => ({ id: r.id, platform: r.platform, token: r.token, channel: r.channel ?? null }));
   });
 }
 async function removeDeviceTokenSystem(pool, id) {

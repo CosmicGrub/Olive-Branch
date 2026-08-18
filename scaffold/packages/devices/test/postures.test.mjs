@@ -1,5 +1,8 @@
 /**
- * The ten items. MASTERFILE §10.5, §8.12, §12.8–§12.11.
+ * The ten items. MASTERFILE §8.11.4, §8.12, §12.8–§12.11. (Corrected
+ * v0.49.11 — this cited §10.5, which is unrelated "Recording consent" law;
+ * the channels.mjs group below actually tests §8.11.4's "silent device"
+ * behavior, copy-pasted from channels.ts's own now-fixed header.)
  */
 import { PUSH_CHANNELS, SMS_ESCALATE_AFTER_MINUTES, route, senderStatus,
   auditStatus, ADULT_SMS, auditAdultSms, socketPolicy, reachability }
