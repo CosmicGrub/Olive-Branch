@@ -1,12 +1,23 @@
 // OLIVE BRANCH — emergency card. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.6.3, §8.13.5.
+// tools/verify.sh's automated pipeline — manually built and run via
+// `flutter analyze` / `flutter test` this session). MASTERFILE §9.6.3,
+// §8.13.5, §8.8.5.
 //
 // One screen, no navigation, no motion. §8.13.5 calls this a "still" surface:
 // read once, in a hurry, possibly by a frightened child or a sitter who has
 // never opened this app before. Allergies sit in a bordered card above every
 // other section (§9.6.3) so the single fact that can kill someone is the
 // first thing a scanning eye lands on, not the last thing found by scrolling.
+//
+// §8.8.5 read-aloud: the AppBar's speaker action reads this exact card back
+// in the same allergy-first order a scanning eye would read it, verbatim —
+// no summarizing, no rephrasing. Tap-gated only (admitSpeech(tap), never
+// autonomous — see a11y_speech.dart's own header for why), because a sitter
+// under real pressure benefits from hearing it, not from it talking at her
+// unprompted. Absent [speak], the button reports itself honestly rather than
+// pretending — same posture as the Call buttons below.
 import 'package:flutter/material.dart';
+import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 
 /// Same "recorded, not glossed over" pattern as child_home.dart's helper —
 /// copied locally since it's private to that file.
@@ -15,12 +26,49 @@ void _notBuiltYet(BuildContext context, String what) {
     SnackBar(content: Text('$what — not built yet.'), duration: const Duration(seconds: 2)));
 }
 
+/// Every fact on this screen, concatenated in the exact allergy-first reading
+/// order the layout already enforces — a single source of truth so the
+/// spoken version can never drift from what's actually shown on screen.
+const String _cardSpokenText =
+    'Allergies: Peanuts. Carries an EpiPen, in her backpack side pocket. '
+    'Blood type: O positive. '
+    'Current medications: Cetirizine, 5 milligrams, once daily in the evening. '
+    'Albuterol inhaler, 2 puffs, as needed for wheezing. '
+    "Guardians: Mom, Claire Solomon, (617) 555-0142. "
+    "Dad, Marcus Solomon, (617) 555-0198. "
+    'Pediatrician: Doctor Priya Nair, Riverbend Pediatrics, (617) 555-0177. '
+    'Insurance: BlueBridge Family Health. Member ID: BBH-7734-2201.';
+
 class EmergencyCardScreen extends StatelessWidget {
-  const EmergencyCardScreen({super.key});
+  const EmergencyCardScreen({super.key, this.speak});
+
+  /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null means no
+  /// read-aloud affordance exists — an honest absence, not a silent no-op.
+  final Future<void> Function(String text)? speak;
+
+  void _readAloud(BuildContext context) {
+    if (speak == null) {
+      _notBuiltYet(context, 'Read aloud');
+      return;
+    }
+    // Real check, not just documentation: every speak() call in this
+    // codebase routes through admitSpeech() first, so a future caller that
+    // ever passes SpeechTrigger.autonomous here is refused for real, not
+    // just by convention.
+    if (admitSpeech(SpeechTrigger.tap) != null) return;
+    speak!(_cardSpokenText);
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Emergency card — Ivy')),
+    appBar: AppBar(title: const Text('Emergency card — Ivy'), actions: [
+      IconButton(
+        key: const Key('readAloudButton'),
+        icon: const Icon(Icons.volume_up_outlined),
+        tooltip: 'Read this card aloud',
+        onPressed: () => _readAloud(context),
+      ),
+    ]),
     // ListView, not a fixed Column: generous text at this size can exceed a
     // small phone's viewport. The allergy card is still first in the tree, so
     // it's on screen before any scrolling on every device this ships to.

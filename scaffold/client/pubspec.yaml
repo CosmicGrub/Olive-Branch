@@ -45,6 +45,14 @@ dependencies:
   # errors).
   firebase_core: ^4.13.0
   firebase_messaging: ^16.5.0
+  # §8.8.5 — on-device read-aloud (tts_channel.dart). Federated across
+  # android/ios/linux/macos/web/windows, same posture as image_picker above.
+  # No cloud TTS API is ever called — see a11y.ts's own
+  # READ_ALOUD_ON_DEVICE_ONLY/READ_ALOUD_NEVER_LOGGED, which this package's
+  # real usage in tts_channel.dart is built to honor: flutter_tts wraps each
+  # platform's native, offline speech synthesizer (AVSpeechSynthesizer,
+  # android.speech.tts.TextToSpeech, ...), never a network call.
+  flutter_tts: ^4.2.0
 
 # See third_party/PATCH.md. Compile-time-only fix for a hardcoded
 # compileSdkVersion 34 in the published package's own android/build.gradle,
