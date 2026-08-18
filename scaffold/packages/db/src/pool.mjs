@@ -732,6 +732,71 @@ async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__
     };
   });
 }
+const INVITABLE_ROLES = [
+  "guardian",
+  "trusted_adult",
+  "step_parent",
+  "sitter",
+  "coordinator"
+];
+function rowToInvite(r) {
+  return {
+    id: r.id,
+    childId: r.child_id,
+    invitedBy: r.invited_by,
+    invitedEmail: r.invited_email,
+    role: r.role,
+    label: r.label,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    acceptedAt: r.accepted_at,
+    revokedAt: r.revoked_at
+  };
+}
+async function createGuardianInvite(pool, invitedBy, childId, role, label, invitedEmail) {
+  if (!INVITABLE_ROLES.includes(role)) {
+    return { ok: false, reason: "invalid_role" };
+  }
+  return withSession(pool, { roleName: "guardian", userId: invitedBy, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO guardian_invite (child_id, invited_by, invited_email, role, label)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [childId, invitedBy, invitedEmail, role, label]
+    );
+    return { ok: true, invite: rowToInvite(rows[0]) };
+  });
+}
+async function getGuardianInvite(pool, inviteId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1`, [inviteId]);
+    return rows.length ? rowToInvite(rows[0]) : null;
+  });
+}
+async function acceptGuardianInvite(pool, inviteId, now) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
+    if (!rows.length) return { ok: false, reason: "not_found" };
+    const row = rows[0];
+    if (row.revoked_at) return { ok: false, reason: "revoked" };
+    if (row.accepted_at) return { ok: false, reason: "already_accepted" };
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: "expired" };
+    const updated = await q(
+      `UPDATE guardian_invite SET accepted_at = $2 WHERE id = $1 RETURNING *`,
+      [inviteId, now.toISOString()]
+    );
+    return { ok: true, invite: rowToInvite(updated[0]) };
+  });
+}
+async function revokeGuardianInvite(pool, inviteId, byUserId, now) {
+  return withSession(pool, { roleName: "guardian", userId: byUserId, childId: null }, async (q) => {
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
+    if (!rows.length) return { ok: false, reason: "not_found" };
+    if (rows[0].accepted_at) return { ok: false, reason: "already_accepted" };
+    await q(`UPDATE guardian_invite SET revoked_at = $2 WHERE id = $1`, [inviteId, now.toISOString()]);
+    return { ok: true };
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -740,8 +805,10 @@ function dbPort(pool) {
 }
 export {
   CHALLENGE_TTL_MS,
+  INVITABLE_ROLES,
   PIN_LOCKOUT_MS,
   PIN_MAX_ATTEMPTS,
+  acceptGuardianInvite,
   activeCustodyOrderFor,
   attemptPinFor,
   availabilityFor,
@@ -749,11 +816,13 @@ export {
   childCtxFor,
   consumeChallenge,
   createChallenge,
+  createGuardianInvite,
   createPool,
   dbPort,
   deactivateAccount,
   deviceTokensFor,
   edgesFor,
+  getGuardianInvite,
   guardiansOfChild,
   persistCapturedMessage,
   pinCredentialFor,
@@ -761,6 +830,7 @@ export {
   recordPinAttempt,
   registerDeviceToken,
   removeDeviceTokenSystem,
+  revokeGuardianInvite,
   setAvailabilityWindows,
   setPinCredential,
   storeWebauthnCredential,

@@ -124,12 +124,24 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
   check('C A1', 'GET .../export declares action:null', exportRoute?.action, 'null');
   check('C A1', 'GET .../export explicitly opts into identityScopedByHandler',
     exportRoute?.identityScopedByHandler, 'true');
+  // Third, deliberate exception (§11, §8.5): no Action exists in
+  // authorize.ts's enum for "invite a new guardian" -- can() was built to
+  // answer "does this edge permit this action against a child I already
+  // have an edge to", not "may this caller create a brand-new edge for
+  // someone else". Adding an Action for one caller would widen that shared
+  // surface; the handler checks edgesFor() directly instead (routes.mjs's
+  // own comment on this route).
+  const guardianshipsRoute = api.routes.find((r) => r.path === '/v1/children/:childId/guardianships');
+  check('C A1', 'POST .../guardianships declares action:null', guardianshipsRoute?.action, 'null');
+  check('C A1', 'POST .../guardianships explicitly opts into identityScopedByHandler',
+    guardianshipsRoute?.identityScopedByHandler, 'true');
   // The exception is narrow: no OTHER :childId route in this repo may use it
   // silently. now/inbox both declare a real Action, not null.
   const otherChildRoutes = api.routes.filter((r) =>
     r.path.includes(':childId')
     && r.path !== '/v1/children/:childId/kiosk-pin/verify'
-    && r.path !== '/v1/children/:childId/export');
+    && r.path !== '/v1/children/:childId/export'
+    && r.path !== '/v1/children/:childId/guardianships');
   check('C A1', 'every OTHER :childId route still declares a real (non-null) action',
     otherChildRoutes.every((r) => r.action !== null), 'true');
   // And the underlying registration guard still refuses an undeclared

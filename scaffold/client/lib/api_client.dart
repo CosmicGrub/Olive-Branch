@@ -150,6 +150,15 @@ class OliveApi {
   // the real caller (permission request, token fetch, refresh listener).
   static const deviceTokens = '/v1/me/device-tokens';
 
+  // --- guardian invitation (§11, §8.5) -------------------------------------
+  // Create requires a real guardian session (this class's own [_post]);
+  // the invited party has none yet, so read/accept below are free functions
+  // matching webauthnLoginChallenge/Verify's own shape, not instance methods.
+  static const guardianships = '/v1/children/:childId/guardianships';
+  static const guardianInvite = '/v1/guardian-invites/:inviteId';
+  static const guardianInviteAccept = '/v1/guardian-invites/:inviteId/accept';
+  static const guardianInviteRevoke = '/v1/guardian-invites/:inviteId/revoke';
+
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
           .replace(queryParameters: query);
@@ -250,6 +259,23 @@ class OliveApi {
   Future<void> setGuardianPin(String pin) async {
     await _post(guardianPinPath, {'pin': pin});
   }
+
+  /// Invites a new guardian/adult into [childId]'s family graph -- POST
+  /// guardianships, server/routes.mjs's real handler. Requires a live
+  /// guardian session already holding a guardian edge to this exact child
+  /// (checked server-side; a 403 not_a_guardian_of_child or
+  /// child_cannot_invite comes back as [ApiException] like any other
+  /// non-2xx response here). Does NOT create a guardianship row for the
+  /// invited party -- see 0014_guardian_invite.sql's own header for why:
+  /// this route closes invite creation, not account creation, which this
+  /// codebase has never built for a brand-new guardian.
+  Future<Map<String, dynamic>> createGuardianInvite(
+    String childId, {
+    required String role,
+    required String label,
+    required String invitedEmail,
+  }) => _post(guardianships, {'role': role, 'label': label, 'invitedEmail': invitedEmail},
+      childId: childId);
 
   /// Requests a real WebAuthn REGISTRATION challenge -- POST the
   /// [webauthnRegisterChallenge] path, server/routes.mjs's real handler.
@@ -473,6 +499,81 @@ Future<String> webauthnLoginVerify(
     throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body['token'] as String;
+}
+
+/// Reads a pending guardian invitation by its own id -- GET guardianInvite,
+/// server/routes.mjs's real handler. No session: the invite's own long,
+/// random id is what authorizes reading it (mirrors [webauthnLoginChallenge]'s
+/// single-use-challenge posture for a not-yet-authenticated caller). Returns
+/// `null` for a 404 (never existed) rather than throwing, since "no such
+/// invite" is an ordinary, expected outcome here -- invitation_screen.dart's
+/// real path reads this the same honest way [OliveApi.verifyKioskPin] treats
+/// its own "false" as data, not an error.
+Future<Map<String, dynamic>?> fetchGuardianInvite(
+  String baseUrl,
+  String inviteId, {
+  http.Client? client,
+}) async {
+  final c = client ?? http.Client();
+  final res = await c.get(
+    Uri.parse('$baseUrl${OliveApi.guardianInvite.replaceFirst(':inviteId', inviteId)}'));
+  if (res.statusCode == 404) return null;
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body['invite'] as Map<String, dynamic>;
+}
+
+/// Records the real accept decision -- POST guardianInvite/accept, server/
+/// routes.mjs's real handler. No session, same reasoning as
+/// [fetchGuardianInvite]. Does NOT create a guardianship row -- see
+/// 0014_guardian_invite.sql's own header. Throws [ApiException] on any
+/// non-2xx response (expired/already_accepted/revoked/not_found are all
+/// real, distinguishable failures a caller needs, not an opaque bool).
+Future<Map<String, dynamic>> acceptGuardianInvite(
+  String baseUrl,
+  String inviteId, {
+  http.Client? client,
+}) async {
+  final c = client ?? http.Client();
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.guardianInviteAccept.replaceFirst(':inviteId', inviteId)}'),
+    headers: {'content-type': 'application/json'},
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body['invite'] as Map<String, dynamic>;
+}
+
+/// Cancels a pending invite before it's accepted -- POST guardianInviteRevoke,
+/// server/routes.mjs's real handler. Requires a guardian session (only the
+/// inviting guardian may revoke, checked server-side via RLS -- see
+/// 0014_guardian_invite.sql's own header). No client screen calls this yet
+/// (no "manage sent invites" surface exists) -- the route and this wiring
+/// are real and tested regardless, ready for whenever one does, matching
+/// this codebase's own convention of a real client constant sometimes
+/// arriving ahead of the screen that will use it.
+Future<void> revokeGuardianInvite(
+  String baseUrl,
+  String inviteId,
+  String sessionToken, {
+  http.Client? client,
+}) async {
+  final c = client ?? http.Client();
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.guardianInviteRevoke.replaceFirst(':inviteId', inviteId)}'),
+    headers: {
+      'authorization': 'Bearer $sessionToken',
+      'content-type': 'application/json',
+    },
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
 }
 
 /// Dev-only login helper wrapping [OliveApi.devLoginPath] — see

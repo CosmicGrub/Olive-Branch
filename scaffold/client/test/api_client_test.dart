@@ -133,6 +133,101 @@ void main() {
     });
   });
 
+  group('OliveApi.createGuardianInvite — real POST, needs a guardian session', () {
+    test('posts role/label/invitedEmail and decodes a real 201', () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.toString(), 'http://api.test/v1/children/child-a/guardianships');
+        expect(jsonDecode(req.body),
+          {'role': 'step_parent', 'label': 'Baba', 'invitedEmail': 'baba@example.com'});
+        return http.Response(jsonEncode({'ok': true, 'invite': {'id': 'inv-1'}}), 201);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final body = await api.createGuardianInvite('child-a',
+        role: 'step_parent', label: 'Baba', invitedEmail: 'baba@example.com');
+      expect((body['invite'] as Map)['id'], 'inv-1');
+    });
+
+    test('a 403 not_a_guardian_of_child throws ApiException carrying the real reason',
+        () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'not_a_guardian_of_child'}), 403));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.createGuardianInvite('child-a', role: 'guardian', label: 'X', invitedEmail: 'x@x.com'),
+        throwsA(isA<ApiException>()
+          .having((e) => e.statusCode, 'statusCode', 403)
+          .having((e) => e.error, 'error', 'not_a_guardian_of_child')),
+      );
+    });
+  });
+
+  group('fetchGuardianInvite — real GET, no session (the invited party has none yet)', () {
+    test('a real 200 returns the invite, no Authorization header sent', () async {
+      final mock = MockClient((req) async {
+        expect(req.headers.containsKey('authorization'), isFalse);
+        expect(req.url.toString(), 'http://api.test/v1/guardian-invites/inv-1');
+        return http.Response(jsonEncode({'invite': {'id': 'inv-1', 'role': 'sitter'}}), 200);
+      });
+      final invite = await fetchGuardianInvite('http://api.test', 'inv-1', client: mock);
+      expect(invite?['role'], 'sitter');
+    });
+
+    test('a 404 returns null, not a throw — "no such invite" is ordinary here', () async {
+      final mock = MockClient((req) async => http.Response('', 404));
+      final invite = await fetchGuardianInvite('http://api.test', 'inv-1', client: mock);
+      expect(invite, isNull);
+    });
+  });
+
+  group('acceptGuardianInvite (free function) — real POST, no session', () {
+    test('a real 200 returns the accepted invite', () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.toString(), 'http://api.test/v1/guardian-invites/inv-1/accept');
+        return http.Response(jsonEncode({'ok': true, 'invite': {'id': 'inv-1', 'acceptedAt': 'now'}}), 200);
+      });
+      final invite = await acceptGuardianInvite('http://api.test', 'inv-1', client: mock);
+      expect(invite['acceptedAt'], 'now');
+    });
+
+    test('a 410 expired throws ApiException carrying the real reason', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'expired'}), 410));
+      await expectLater(
+        () => acceptGuardianInvite('http://api.test', 'inv-1', client: mock),
+        throwsA(isA<ApiException>()
+          .having((e) => e.statusCode, 'statusCode', 410)
+          .having((e) => e.error, 'error', 'expired')),
+      );
+    });
+  });
+
+  group('revokeGuardianInvite (free function) — real POST, needs the inviting '
+      'guardian\'s session', () {
+    test('a real 200 completes normally', () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.toString(), 'http://api.test/v1/guardian-invites/inv-1/revoke');
+        expect(req.headers['authorization'], 'Bearer tok-123');
+        return http.Response(jsonEncode({'ok': true}), 200);
+      });
+      await expectLater(
+        revokeGuardianInvite('http://api.test', 'inv-1', 'tok-123', client: mock), completes);
+    });
+
+    test('a 409 already_accepted throws ApiException carrying the real reason', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'already_accepted'}), 409));
+      await expectLater(
+        () => revokeGuardianInvite('http://api.test', 'inv-1', 'tok-123', client: mock),
+        throwsA(isA<ApiException>()
+          .having((e) => e.statusCode, 'statusCode', 409)
+          .having((e) => e.error, 'error', 'already_accepted')),
+      );
+    });
+  });
+
   group('captureHomework — real homework OCR capture (§9.1, §20.2b)', () {
     test('posts base64 image bytes and decodes a 200 success body', () async {
       Uri? seenUrl;

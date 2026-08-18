@@ -1,6 +1,11 @@
-// OLIVE BRANCH — invitation_screen.dart tests. §8.5.
+// OLIVE BRANCH — invitation_screen.dart tests. §8.5, §11.
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/invitation_screen.dart';
 
 void main() {
@@ -57,6 +62,79 @@ void main() {
       of: find.text('Accept invitation'), matching: find.byType(FilledButton));
     final size = tester.getSize(acceptButton);
     expect(size.height, greaterThanOrEqualTo(48));
+  });
+
+  group('the real path — baseUrl + inviteId supplied', () {
+    testWidgets('a genuine 200 fires onAccept, and calls the real endpoint (not a guess)',
+        (tester) async {
+      var accepted = false;
+      String? calledPath;
+      final client = MockClient((req) async {
+        calledPath = req.url.path;
+        return http.Response(jsonEncode({'ok': true, 'invite': {'id': 'inv-1'}}), 200);
+      });
+      await tester.pumpWidget(MaterialApp(home: InvitationScreen(
+        childName: 'Ivy', inviterLabel: 'Dad', yourLabel: 'Mom',
+        onAccept: () => accepted = true,
+        baseUrl: 'http://olive.test', inviteId: 'inv-1', httpClient: client)));
+      await tester.tap(find.byKey(const Key('acceptInvitationButton')));
+      await tester.pumpAndSettle();
+      expect(calledPath, '/v1/guardian-invites/inv-1/accept');
+      expect(accepted, isTrue);
+    });
+
+    testWidgets('shows a loading state while the request is in flight', (tester) async {
+      // A Completer, not an instantly-resolving MockClient callback, so the
+      // in-flight frame is actually observable rather than racing a single
+      // pump() against a microtask that may already be done by then.
+      final completer = Completer<http.Response>();
+      final client = MockClient((req) => completer.future);
+      await tester.pumpWidget(MaterialApp(home: InvitationScreen(
+        childName: 'Ivy', inviterLabel: 'Dad', yourLabel: 'Mom', onAccept: () {},
+        baseUrl: 'http://olive.test', inviteId: 'inv-1', httpClient: client)));
+      await tester.tap(find.byKey(const Key('acceptInvitationButton')));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      completer.complete(http.Response(jsonEncode({'ok': true, 'invite': {'id': 'inv-1'}}), 200));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('an expired invite shows the real reason, never fires onAccept', (tester) async {
+      var accepted = false;
+      final client = MockClient((req) async =>
+        http.Response(jsonEncode({'error': 'expired'}), 410));
+      await tester.pumpWidget(MaterialApp(home: InvitationScreen(
+        childName: 'Ivy', inviterLabel: 'Dad', yourLabel: 'Mom',
+        onAccept: () => accepted = true,
+        baseUrl: 'http://olive.test', inviteId: 'inv-1', httpClient: client)));
+      await tester.tap(find.byKey(const Key('acceptInvitationButton')));
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(find.textContaining('expired'), findsOneWidget);
+    });
+
+    testWidgets('a network failure shows an honest message, never fires onAccept', (tester) async {
+      var accepted = false;
+      final client = MockClient((req) async => throw Exception('no route to host'));
+      await tester.pumpWidget(MaterialApp(home: InvitationScreen(
+        childName: 'Ivy', inviterLabel: 'Dad', yourLabel: 'Mom',
+        onAccept: () => accepted = true,
+        baseUrl: 'http://olive.test', inviteId: 'inv-1', httpClient: client)));
+      await tester.tap(find.byKey(const Key('acceptInvitationButton')));
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(find.textContaining("Couldn't reach the server"), findsOneWidget);
+    });
+
+    testWidgets('missing either baseUrl or inviteId falls back to the simulated tap', (tester) async {
+      var accepted = false;
+      await tester.pumpWidget(MaterialApp(home: InvitationScreen(
+        childName: 'Ivy', inviterLabel: 'Dad', yourLabel: 'Mom',
+        onAccept: () => accepted = true, baseUrl: 'http://olive.test' /* no inviteId */)));
+      await tester.tap(find.byKey(const Key('acceptInvitationButton')));
+      await tester.pump();
+      expect(accepted, isTrue, reason: 'no network call should be attempted at all');
+    });
   });
 
   group('responsive — required audit viewports', () {
