@@ -14,6 +14,94 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.10] — 2026-08-18 — Read-aloud is real: on-device, tap-gated, verbatim
+
+§8.8.5's own spec (settled v0.39.0) had a full pure-logic implementation in
+`packages/a11y/src/a11y.ts` — `speakableText()`/`admitSpeech()`/the
+on-device-only, never-autonomous, default-on-below-8 posture — and zero
+client wiring. `flutter_tts` wasn't even a declared dependency. This closes
+that gap on the two screens where it matters most under real pressure: the
+emergency card (§9.6.3) and the parent-to-parent handover log (§21.7, P8).
+
+Built per an explicit user directive to deepen Galaxy Z Fold 5/tablet
+fidelity and add a cost-free, fully-wired, rule-based assistant layer for the
+child's (and possibly the adult's) live navigation of the app, spanning
+calls, games, learning, and observation tools. That directive was scoped
+first — a full review against every P1–P9 prohibition (§2.1) before any code
+was written — landing on read-aloud as the first slice: it is not
+generative, it reads real, already-displayed text back verbatim, and it
+never composes, summarizes, ranks, or infers anything.
+
+### Added
+- **`a11y_speech.dart`** (new) — a 1:1 semantic port of `a11y.ts`'s
+  `speakableText()`/`admitSpeech()`/`LABELS`, same function names and shapes
+  as the original, the same discipline `lock_controller.dart` already
+  applies porting `lock.ts`. No plugin dependency at all — testable with
+  zero mocking.
+- **`tts_channel.dart`** (new) — the real platform half, wrapping
+  `package:flutter_tts` (newly declared in `pubspec.yaml`, federated across
+  android/ios/linux/macos/web/windows, the same "real, federated plugin, no
+  fabricated native config" posture `image_picker`/`path_provider` already
+  use). Every platform speaks through its own **offline** synthesizer
+  (`AVSpeechSynthesizer` on iOS, `android.speech.tts.TextToSpeech` on
+  Android, ...) — never a cloud API. `buildSpeakCallback()` follows this
+  codebase's established real-callback-builder convention
+  (`buildRegisterPasskeyCallback`, `buildVerifyBiometricCallback`).
+- **`emergency_card.dart`** gains a speaker action in its `AppBar`, reading
+  the whole card back verbatim in the same allergy-first order the layout
+  already enforces — a single `_cardSpokenText` constant, so the spoken and
+  displayed versions can never drift apart.
+- **`handover_notes.dart`** gains one read-aloud button per entry, reading
+  that entry's author/timestamp/text only.
+- Both screens fall back to an honest `'Read aloud — not built yet.'`
+  SnackBar when no `speak` callback is supplied — the same "recorded, not
+  glossed over" posture `emergency_card.dart`'s own Call buttons already use
+  — rather than a silent no-op or a faked success.
+
+### Tests
+- `a11y_speech_test.dart` (new) — pure logic, proving the port matches
+  `a11y.ts`'s own behavior label-for-label.
+- `tts_channel_test.dart` (new) — mocks the real `MethodChannel('flutter_tts')`
+  (`kiosk_channel_test.dart`'s own mocking pattern for a different plugin),
+  proving stop-before-speak ordering, no queueing across repeated calls, and
+  `buildSpeakCallback`'s real integration.
+- `emergency_card_test.dart` — 3 new cases: the honest fallback message, a
+  real `speak` called exactly once with allergy-first verbatim text, and no
+  false-positive fallback message when a real callback exists.
+- `handover_notes_test.dart` — 3 new cases, plus two fixes surfaced by
+  adding a real `IconButton` to a screen with a pre-existing, too-broad
+  invariant test: the old `'NO delete or edit affordance'` test asserted no
+  `IconButton` existed anywhere on the tree at all — a broader proxy than
+  its actual intent — replaced with a precise per-button icon/tooltip check
+  that still fails if a real delete/edit button ever appears. Separately,
+  the taller rows the new buttons produce pushed a 5th card outside the
+  default (unsized) test viewport's built range — the identical class of
+  bug `emergency_card_test.dart`'s own `pump()` helper already guards
+  against — fixed with a `pumpTall()` helper
+  (`setSurfaceSize(Size(800, 1600))`).
+- `flutter analyze` clean across all 4 new/edited lib files and 4
+  new/edited test files. Full `flutter test` (1465 cases) green except the
+  same pre-existing, unrelated `push_channel_test.dart` failure noted since
+  v0.49.6.
+
+### Found, not fixed this pass
+The scoping pass that preceded this work also ranked
+`LOCK_METHODS`/`childShellAllowed()` wiring (device-distribution-channel-
+aware kiosk enforcement) as a candidate. On closer inspection it was
+deprioritized, not built: it depends on real distribution-channel detection
+infrastructure (Play Store track / sideload / MDM identification) that does
+not exist anywhere in this codebase yet, which makes it a materially larger
+effort than the scoping pass's own first read — recorded here rather than
+silently dropped. The remaining ranked candidates from the same scoping pass
+— a Dart port of `FORM_FACTORS`/`postureFor()`/`columnsAt()`,
+`push_channel.dart`'s `CHANNELS`/`admitDevice()`/`channelAdvice()` wiring
+(this codebase's own top-ranked finding from the prior engine-room audit), a
+knock/waiting-room canned-copy reader, and `CourtExportScreen`'s breakpoint
+rebuild around `REQUEST_MIN_WIDTH`/`REVIEW_MIN_WIDTH` — remain queued, not
+built this pass.
+
+---
+
 ## [0.49.9] — 2026-08-17 — Gap-fill batch 2: the guardian invitation route, honestly incomplete
 
 The second real item built in gap-fill batch 2 (after v0.49.7's escalation

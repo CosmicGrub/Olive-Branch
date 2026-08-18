@@ -1,5 +1,7 @@
 // OLIVE BRANCH — parent-to-parent handover log. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE P8, §21.7.
+// toolchain in tools/verify.sh's automated pipeline — manually built and
+// run via `flutter analyze` / `flutter test` this session). MASTERFILE P8,
+// §21.7, §8.8.5.
 //
 // P8: "Deletion or editing of parent<->parent log entries [is prohibited].
 // Court-tier integrity (§12 Phase 3). A log with an unsend button is not
@@ -11,7 +13,14 @@
 // delete/edit IconButton — not hidden, not disabled, just absent. "This will
 // be the hardest button anyone builds here. If it is not real, §2.10 is
 // decoration." (§21.7)
+//
+// §8.8.5 read-aloud: each entry gets its own speaker action, reading that
+// entry's author and text verbatim — no summarizing across entries, no
+// composed digest. Tap-gated per entry (admitSpeech(tap)), never
+// autonomous — a parent scanning a long handover log on a bad day should
+// never have entries start reading themselves.
 import 'package:flutter/material.dart';
+import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 
 class _HandoverEntry {
   const _HandoverEntry({required this.author, required this.when, required this.text});
@@ -19,7 +28,16 @@ class _HandoverEntry {
 }
 
 class HandoverNotesScreen extends StatefulWidget {
-  const HandoverNotesScreen({super.key});
+  const HandoverNotesScreen({super.key, this.speak});
+
+  /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null reports
+  /// itself honestly on tap (same "recorded, not glossed over" posture as
+  /// the Call buttons on emergency_card.dart) rather than rendering nothing —
+  /// unlike the deliberately-absent delete/edit buttons above, read-aloud is
+  /// a real, working feature that's only ever missing its platform wiring,
+  /// not a capability this screen refuses to offer.
+  final Future<void> Function(String text)? speak;
+
   @override
   State<HandoverNotesScreen> createState() => _HandoverNotesScreenState();
 }
@@ -79,7 +97,7 @@ class _HandoverNotesScreenState extends State<HandoverNotesScreen> {
         Expanded(child: ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
           itemCount: newestFirst.length,
-          itemBuilder: (context, i) => _EntryTile(newestFirst[i]),
+          itemBuilder: (context, i) => _EntryTile(newestFirst[i], index: i, speak: widget.speak),
         )),
         const Divider(height: 1),
         Padding(padding: const EdgeInsets.all(12),
@@ -100,8 +118,21 @@ class _HandoverNotesScreenState extends State<HandoverNotesScreen> {
 }
 
 class _EntryTile extends StatelessWidget {
-  const _EntryTile(this.entry);
+  const _EntryTile(this.entry, {required this.index, this.speak});
   final _HandoverEntry entry;
+  final int index;
+  final Future<void> Function(String text)? speak;
+
+  void _readAloud(BuildContext context) {
+    if (speak == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Read aloud — not built yet.'), duration: Duration(seconds: 2)));
+      return;
+    }
+    if (admitSpeech(SpeechTrigger.tap) != null) return;
+    speak!('${entry.author}, ${entry.when}: ${entry.text}');
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Widget> rows = <Widget>[
@@ -109,6 +140,14 @@ class _EntryTile extends StatelessWidget {
         Text(entry.author, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
         const SizedBox(width: 8),
         Text(entry.when, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+        const Spacer(),
+        SizedBox(width: 36, height: 36, child: IconButton(
+          key: Key('readAloudButton_$index'),
+          padding: EdgeInsets.zero,
+          iconSize: 18,
+          icon: const Icon(Icons.volume_up_outlined),
+          tooltip: 'Read this entry aloud',
+          onPressed: () => _readAloud(context))),
       ]),
       const SizedBox(height: 6),
       Text(entry.text, style: const TextStyle(fontSize: 14)),

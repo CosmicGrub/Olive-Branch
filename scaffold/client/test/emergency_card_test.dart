@@ -107,6 +107,44 @@ void main() {
     expect(find.byType(AnimatedPositioned), findsNothing);
   });
 
+  group('read aloud — §8.8.5', () {
+    testWidgets('absent speak reports itself honestly, exactly like the Call buttons',
+        (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: EmergencyCardScreen()));
+      await tester.tap(find.byKey(const Key('readAloudButton')));
+      await tester.pump();
+      expect(find.textContaining('Read aloud — not built yet.'), findsOneWidget);
+    });
+
+    testWidgets('a real speak callback is called once, allergy-first, verbatim',
+        (tester) async {
+      final List<String> spoken = [];
+      await tester.pumpWidget(MaterialApp(home: EmergencyCardScreen(
+        speak: (text) async => spoken.add(text))));
+      await tester.tap(find.byKey(const Key('readAloudButton')));
+      await tester.pump();
+
+      expect(spoken, hasLength(1));
+      final String text = spoken.single;
+      expect(text.indexOf('Allergies'), lessThan(text.indexOf('Blood type')),
+        reason: 'allergy-first, matching the on-screen reading order');
+      expect(text, contains('Peanuts'));
+      expect(text, contains('EpiPen'));
+      expect(text, contains('Claire Solomon'));
+      expect(text, contains('Marcus Solomon'));
+      expect(text, contains('BBH-7734-2201'));
+    });
+
+    testWidgets('does not fire the not-built-yet message when a real speak exists',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(home: EmergencyCardScreen(
+        speak: (text) async {})));
+      await tester.tap(find.byKey(const Key('readAloudButton')));
+      await tester.pump();
+      expect(find.textContaining('not built yet'), findsNothing);
+    });
+  });
+
   testWidgets('allergy card uses theme error roles, not raw red literals — '
       'so it stays legible in dark theme', (tester) async {
     await pump(tester);
