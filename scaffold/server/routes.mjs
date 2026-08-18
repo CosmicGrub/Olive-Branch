@@ -19,7 +19,10 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          rawExportBundleFor, edgesFor, childCtxFor,
          persistCapturedMessage, registerDeviceToken,
          unregisterDeviceToken,
-         certifiedExportBundleFor } from '../packages/db/src/pool.mjs';
+         certifiedExportBundleFor,
+         createGuardianInvite, getGuardianInvite,
+         acceptGuardianInvite, revokeGuardianInvite,
+         INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
@@ -162,6 +165,104 @@ export function registerRoutes(api, pool) {
         }
         throw e; // -> Api.handle's catch-all -> 500, logged there
       }
+    },
+  });
+
+  // ===========================================================================
+  // GUARDIAN INVITATION — real create/read/accept-decision/revoke. §11, §8.5.
+  // Closes half of invitation_screen.dart's own named gap: "the API surface
+  // names POST /v1/children/:id/guardianships, but no such route exists."
+  // Does NOT create a `guardianship` row — see 0014_guardian_invite.sql's own
+  // header for why that would fabricate an account-creation security step
+  // this codebase has never built.
+  // ===========================================================================
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/guardianships',
+    // No dedicated Action exists for "invite" in authorize.ts's Action union
+    // (same real gap this file's own /now route already names for a
+    // different action) — checked directly below rather than widening that
+    // shared enum for one caller.
+    action: null, identityScopedByHandler: true,
+    // createGuardianInvite() opens its own correctly-scoped session; the
+    // outer default would be an unused connection, same "dead weight" the
+    // kiosk-pin/verify route above already documents.
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_invite' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+
+      // The first lock: does this caller actually hold a LIVE, unrestricted
+      // guardian edge to this exact child? edgesFor() returns every edge —
+      // closed, expired, restricted included, per its own doc comment — so
+      // every one of those is checked explicitly, not assumed away.
+      const now = new Date();
+      const edges = await edgesFor(pool, c.principal.userId);
+      const isLiveGuardian = edges.some((e) =>
+        e.childId === c.childId && e.role === 'guardian' && !e.restricted &&
+        !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
+      if (!isLiveGuardian) return { status: 403, body: { error: 'not_a_guardian_of_child' } };
+
+      const { role, label, invitedEmail } = c.body ?? {};
+      if (typeof role !== 'string' || !INVITABLE_ROLES.includes(role)) {
+        return { status: 400, body: { error: 'invalid_role' } };
+      }
+      if (typeof label !== 'string' || !label.trim()) {
+        return { status: 400, body: { error: 'label_required' } };
+      }
+      if (typeof invitedEmail !== 'string' || !invitedEmail.includes('@')) {
+        return { status: 400, body: { error: 'invited_email_required' } };
+      }
+
+      const result = await createGuardianInvite(
+        pool, c.principal.userId, c.childId, role, label.trim(), invitedEmail);
+      if (!result.ok) return { status: 400, body: { error: result.reason } };
+      return { status: 201, body: { ok: true, invite: result.invite } };
+    },
+  });
+
+  // The invited party has no app_user row and therefore no session — see
+  // 0014's own header and getGuardianInvite()'s doc comment. The invite's
+  // own long, random `id` (handed out of band: a link or code, not this
+  // route's concern) is what authorizes reading it. Never lists invites.
+  api.register({
+    method: 'GET', path: '/v1/guardian-invites/:inviteId', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      const invite = await getGuardianInvite(pool, c.params.inviteId);
+      if (!invite) return { status: 404, body: { error: 'not_found' } };
+      return { status: 200, body: { invite } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/accept', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      const result = await acceptGuardianInvite(pool, c.params.inviteId, new Date());
+      if (!result.ok) {
+        const status = result.reason === 'not_found' ? 404
+          : result.reason === 'expired' ? 410 : 409;
+        return { status, body: { error: result.reason } };
+      }
+      return { status: 200, body: { ok: true, invite: result.invite } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/revoke', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const result = await revokeGuardianInvite(
+        pool, c.params.inviteId, c.principal.userId, new Date());
+      if (!result.ok) {
+        const status = result.reason === 'not_found' ? 404 : 409;
+        return { status, body: { error: result.reason } };
+      }
+      return { status: 200, body: { ok: true } };
     },
   });
 

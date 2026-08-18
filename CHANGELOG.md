@@ -14,6 +14,94 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.9] — 2026-08-17 — Gap-fill batch 2: the guardian invitation route, honestly incomplete
+
+The second real item built in gap-fill batch 2 (after v0.49.7's escalation
+screen; v0.49.8 was a correction to that item's own testing claim, not a
+third item). `invitation_screen.dart`'s own
+header named the missing piece precisely: "the API surface names
+`POST /v1/children/:id/guardianships`, but no such route exists in
+`server/routes.mjs`." This closes that route — and, in doing so, surfaces a
+real, deeper, still-open gap this pass does not invent an answer to.
+
+### Fixed
+- **`db/migrations/0014_guardian_invite.sql`** — a new `guardian_invite`
+  table, deliberately separate from `guardianship` (0001): create/read/
+  accept-decision/revoke, real RLS (`FORCE ROW LEVEL SECURITY`, an
+  `invited_by = current_actor()` policy), a `CHECK` that accepted and
+  revoked can never both be set, and `health_check`'s `rls_unforced` probe
+  extended to monitor it (carried the full list forward, same discipline
+  0013 already restated for `export_record`).
+- **`packages/db/src/pool.ts`** — `createGuardianInvite()`,
+  `getGuardianInvite()`, `acceptGuardianInvite()`, `revokeGuardianInvite()`.
+  The invited party has no `app_user` row and therefore no session; reading
+  and accepting a specific invite runs as `system`, with the invite's own
+  long, random id standing in for a credential — the same posture a
+  single-use WebAuthn challenge already uses for a not-yet-authenticated
+  caller.
+- **Four real routes** in `server/routes.mjs`: `POST
+  /v1/children/:childId/guardianships` (create — checks the caller holds a
+  live guardian edge to the child directly, since no `Action` exists in
+  `authorize.ts`'s enum for "invite"), `GET /v1/guardian-invites/:inviteId`,
+  `POST .../accept`, `POST .../revoke` (only the inviting guardian, RLS-
+  enforced — a stranger's attempt is indistinguishable from `not_found`,
+  proven by querying under their own session and finding zero rows, not by
+  trusting the function's return value alone).
+- **`invitation_screen.dart`** gains a real accept path (`baseUrl`/
+  `inviteId` supplied) alongside its existing simulated one (either
+  missing) — capture_gate.dart's own dual-path convention. A real failure
+  (expired/already_accepted/revoked/network) shows honestly instead of
+  optimistically firing `onAccept` anyway.
+- **`api_client.dart`** — `OliveApi.createGuardianInvite()` (needs a
+  guardian session) plus three free functions (`fetchGuardianInvite`,
+  `acceptGuardianInvite`, `revokeGuardianInvite`) matching
+  `webauthnLoginChallenge`/`Verify`'s own no-session shape. `revoke` has no
+  UI caller yet — no "manage sent invites" screen exists — the route and
+  wiring are real and tested regardless.
+
+### Found, not fixed this pass — a real, foundational gap
+No `guardianship` row is created anywhere in this flow, and can't be:
+closing that loop needs an app_user row for the invited party, and this
+codebase has never built an account-creation route for one — not for an
+invited second guardian, not even for the FIRST guardian.
+`guardian_setup.dart`'s passkey registration
+(`webauthn_channel.dart`'s `buildRegisterPasskeyCallback`) requires an
+already-authenticated `OliveApi` session before it can call
+`/v1/auth/webauthn/register/challenge` — and nowhere does a brand-new
+guardian ever acquire that first session. "How does a passwordless account
+get created at all" is a real, separate, foundational question this
+codebase has left unanswered since `guardian_setup.dart` was written
+("null in every build today," per that file's own header) — not something
+this migration's `accepted_at` should be read as having silently solved.
+
+### Tests
+- `packages/db/test/guardian_invite.test.mjs` (new) — 32 assertions
+  against real Postgres/real RLS: create, read (found + honest null),
+  accept (success/idempotency/expired/revoked), revoke (owner succeeds, a
+  non-owner's attempt is genuinely invisible under RLS not just refused by
+  app logic, already-accepted blocks revoke), the DB-level `CHECK` itself
+  (bypassing every function via a raw admin `UPDATE`), and `health_check`
+  confirming `FORCE ROW LEVEL SECURITY` actually took.
+- `packages/api/test/contract.test.mjs` — extended with a third, documented
+  A1 `identityScopedByHandler` exception (`POST .../guardianships`,
+  alongside the existing `kiosk-pin/verify` and `GET .../export`) and the
+  new routes' Dart-constant coverage.
+- `invitation_screen_test.dart` — 5 new cases for the real path (success,
+  loading state via a controlled `Completer` rather than a racy instant
+  mock, expired, network failure, missing-config fallback); all 10
+  pre-existing cases pass completely unchanged.
+- `api_client_test.dart` — 8 new cases across `createGuardianInvite`,
+  `fetchGuardianInvite`, `acceptGuardianInvite`, `revokeGuardianInvite`.
+- `flutter analyze` clean across the whole client. Full `flutter test`
+  green except the same pre-existing, unrelated `push_channel_test.dart`
+  failure noted since v0.49.6.
+- Real Postgres verification note: this WSL Postgres instance had stale
+  schema state from a much earlier session (0008 disagreed with the
+  applied copy) — dropped and recreated fresh rather than chased, matching
+  what CI's own `verify.sh` does on every run.
+
+---
+
 ## [0.49.8] — 2026-08-17 — Gap-fill batch 2, part 2: escalateSession() resolved, not built on
 
 v0.49.7's "Found, not fixed" note below claimed `escalateSession()` had "no

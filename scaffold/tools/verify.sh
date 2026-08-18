@@ -310,6 +310,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db raw export (real RLS)|packages/db/test/raw_export.test.mjs" \
             "db message capture (real RLS)|packages/db/test/message_capture.test.mjs" \
             "db device token (real RLS)|packages/db/test/device_token.test.mjs" \
+            "db guardian invite (real RLS)|packages/db/test/guardian_invite.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \

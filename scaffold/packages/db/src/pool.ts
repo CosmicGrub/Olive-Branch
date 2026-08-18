@@ -1660,6 +1660,142 @@ export async function certifiedExportBundleFor(
   });
 }
 
+/**
+ * MASTERFILE §11, §8.5 — the guardian invitation flow, real create/read/
+ * accept-decision/revoke. See `0014_guardian_invite.sql`'s own header for
+ * the honest scope limit: this does NOT create a `guardianship` row and
+ * cannot, because closing that loop needs an account-creation route this
+ * codebase has never built for a brand-new guardian. `acceptGuardianInvite`
+ * records a real decision; it is not, and must not become, a silent stand-in
+ * for "and now she has access."
+ */
+export const INVITABLE_ROLES = [
+  'guardian', 'trusted_adult', 'step_parent', 'sitter', 'coordinator',
+] as const;
+export type InvitableRole = typeof INVITABLE_ROLES[number];
+
+export interface GuardianInvite {
+  id: string;
+  childId: string;
+  invitedBy: string;
+  invitedEmail: string;
+  role: InvitableRole;
+  label: string;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+}
+
+function rowToInvite(r: any): GuardianInvite {
+  return {
+    id: r.id, childId: r.child_id, invitedBy: r.invited_by, invitedEmail: r.invited_email,
+    role: r.role, label: r.label, createdAt: r.created_at, expiresAt: r.expires_at,
+    acceptedAt: r.accepted_at, revokedAt: r.revoked_at,
+  };
+}
+
+/**
+ * Trusts the caller (the route, `server/routes.mjs`) to have already
+ * confirmed `invitedBy` holds a LIVE, unrestricted guardian edge to
+ * `childId` — the same "route does the `can()`-shaped first lock, this
+ * function is the second" split every other pool.ts function uses. There is
+ * no `Action` for "invite" in `authorize.ts`'s enum (adding one would widen
+ * that shared surface for a single caller), so this route checks the edge
+ * directly rather than through `can()` — mirroring `kiosk-pin/verify`'s own
+ * identity-scoped-handler posture in routes.mjs.
+ */
+export async function createGuardianInvite(
+  pool: pg.Pool, invitedBy: string, childId: string,
+  role: InvitableRole, label: string, invitedEmail: string,
+): Promise<{ ok: true; invite: GuardianInvite } | { ok: false; reason: 'invalid_role' }> {
+  if (!(INVITABLE_ROLES as readonly string[]).includes(role)) {
+    return { ok: false, reason: 'invalid_role' };
+  }
+  return withSession(pool, { roleName: 'guardian', userId: invitedBy, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO guardian_invite (child_id, invited_by, invited_email, role, label)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [childId, invitedBy, invitedEmail, role, label],
+    );
+    return { ok: true, invite: rowToInvite(rows[0]) };
+  });
+}
+
+/**
+ * The invited party has no session — no app_user row exists for them yet
+ * (see 0014's header). Runs as `system`; the invite's own long, random,
+ * single-purpose `id` is what stands in for a credential here, exactly as
+ * `webauthnLoginChallenge`'s single-use challenge does for a not-yet-
+ * authenticated login attempt. Never lists invites; only ever looks one up
+ * by the id the caller was handed out of band.
+ */
+export async function getGuardianInvite(
+  pool: pg.Pool, inviteId: string,
+): Promise<GuardianInvite | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1`, [inviteId]);
+    return rows.length ? rowToInvite(rows[0]) : null;
+  });
+}
+
+export type AcceptInviteError = 'not_found' | 'expired' | 'already_accepted' | 'revoked';
+
+/**
+ * Records a real decision. Does NOT create a `guardianship` row — see this
+ * file's own header and 0014's migration header for why that would be
+ * fabricating a security step (account creation) that does not exist.
+ */
+export async function acceptGuardianInvite(
+  pool: pg.Pool, inviteId: string, now: Date,
+): Promise<{ ok: true; invite: GuardianInvite } | { ok: false; reason: AcceptInviteError }> {
+  return withSystemSession(pool, async (q) => {
+    // FOR UPDATE: a double-tap on "accept" must not race two transactions
+    // into both reading accepted_at IS NULL — same shape as
+    // deactivateAccount()'s own idempotency lock above.
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const row = rows[0];
+    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (row.accepted_at) return { ok: false, reason: 'already_accepted' };
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: 'expired' };
+
+    const updated = await q(
+      `UPDATE guardian_invite SET accepted_at = $2 WHERE id = $1 RETURNING *`,
+      [inviteId, now.toISOString()],
+    );
+    return { ok: true, invite: rowToInvite(updated[0]) };
+  });
+}
+
+/**
+ * Only 'not_found' and 'already_accepted' — NOT 'not_your_invitation'. RLS
+ * scopes the SELECT below to `invited_by = byUserId` before this function
+ * ever sees a row, so a different guardian's invite is indistinguishable
+ * from no invite at all — the same non-distinguishing shape kiosk-pin/verify
+ * already uses (there, for a different reason: not leaking which factor
+ * failed). Unlike observer.ts's in-memory revoke(), which sees every
+ * observer and so CAN return a real 'not_your_invitation', this one
+ * genuinely cannot — declaring that reason here would be an unreachable
+ * type, not an honest one.
+ */
+export type RevokeInviteError = 'not_found' | 'already_accepted';
+
+/** Only the guardian who sent it may revoke — same rule as observer.ts's revoke(). */
+export async function revokeGuardianInvite(
+  pool: pg.Pool, inviteId: string, byUserId: string, now: Date,
+): Promise<{ ok: true } | { ok: false; reason: RevokeInviteError }> {
+  return withSession(pool, { roleName: 'guardian', userId: byUserId, childId: null }, async (q) => {
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    if (rows[0].accepted_at) return { ok: false, reason: 'already_accepted' };
+
+    await q(`UPDATE guardian_invite SET revoked_at = $2 WHERE id = $1`, [inviteId, now.toISOString()]);
+    return { ok: true };
+  });
+}
+
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */
 export function dbPort(pool: pg.Pool): DbPort {
   return {
