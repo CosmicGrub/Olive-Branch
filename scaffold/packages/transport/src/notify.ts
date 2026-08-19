@@ -10,6 +10,18 @@
  * this code and a lock-screen family-structure disclosure — see push.ts's
  * own header. This file never calls buildPush() without immediately calling
  * sendGuard() on the result.
+ *
+ * v0.49.11 — §8.11.4 channel awareness is now real here, closing this
+ * codebase's own top-ranked prior-audit finding. Before this pass,
+ * `notifyDevices()` attempted FCM against EVERY `platform:'android'` row
+ * unconditionally — exactly the "constructed, dispatched, and silently
+ * discarded" failure mode `devices.ts`'s own §8.11.4 header describes for a
+ * FireOS tablet with no Google Play Services. Now: `admitDevice()`
+ * (devices.ts) runs per device before a send is attempted; a device whose
+ * channel is known to be push-incapable is skipped, not fired into the
+ * void, and the result carries `channelAdvice()`'s guardian-facing copy so
+ * a future caller has it ready. See the per-device loop below for the exact
+ * channel-resolution rule and its honesty caveat.
  */
 import type pg from 'pg';
 import { buildPush, sendGuard, type PushInput, type PushPayload, type PushKind } from './push.ts';
@@ -19,6 +31,7 @@ import {
   deviceTokensFor, removeDeviceTokenSystem,
   type DeviceOwner, type DeviceTokenRow,
 } from '../../db/src/pool.ts';
+import { type Channel, admitDevice, channelAdvice } from '../../devices/src/devices.ts';
 
 export interface NotifyInput {
   kind: PushKind;
@@ -61,6 +74,17 @@ export interface DeviceSendResult {
   /** True when the device's row was reaped because the platform told us the
    * token is permanently dead (see fcm.ts/apns.ts's `deviceGone`). */
   pruned?: boolean;
+  /**
+   * Present only when the device was skipped for lacking push capability
+   * (`code: 'no_push_capability'`) — `channelAdvice()`'s guardian-facing
+   * copy (devices.ts), ready for whatever future caller surfaces
+   * `notifyDevices()`'s results to a client. That caller does not exist yet
+   * (`notifyDevices()` has zero HTTP call sites as of this writing, same
+   * pre-existing gap this comment block already noted above `message`) —
+   * this field exists so the copy is correct and tested the day one does,
+   * not invented then.
+   */
+  advice?: string;
 }
 
 /**
@@ -86,6 +110,32 @@ export interface NotifyDeviceDeps {
 }
 
 /**
+ * Resolves a device's real §8.11.4 channel for the `admitDevice()` check
+ * below. `device.channel` (0015) is used when the client reported one;
+ * otherwise this falls back to a conservative, EXPLICITLY-NAMED assumption
+ * — never a value written into storage (0015's own migration comment
+ * explains why NULL, not a guess, is what's persisted there).
+ *
+ * The assumption: an unknown Android device is assumed 'android_play'. This
+ * is the OPTIMISTIC direction, not the safe one — a real FireOS/bare-Android
+ * device that has not yet reported a channel still gets FCM attempted
+ * against it, exactly the pre-v0.49.11 behavior, until it reports a real
+ * one. That is a genuine, known limitation, not a fix posing as complete:
+ * closing it needs the native install-source detection `devices.ts`'s own
+ * §8.11.4 header names and explicitly defers this pass. The alternative —
+ * defaulting pessimistically and skipping every unknown Android device —
+ * would trade one real failure mode (push attempted, might silently fail on
+ * the FireOS minority) for a worse one (push withheld from the Play-
+ * Services-capable majority on pure precaution). iOS/Windows/Web need no
+ * such guess: nothing is ambiguous about "this is iOS," and push_channel.dart
+ * reports it for real as of v0.49.11.
+ */
+function resolveChannel(device: DeviceTokenRow): Channel {
+  if (device.channel) return device.channel;
+  return device.platform === 'ios' ? 'ios' : 'android_play';
+}
+
+/**
  * Looks up `target`'s device_token rows (deviceTokensFor — system-role only,
  * never reachable from a client-facing route) and sends one push per device.
  *
@@ -94,6 +144,11 @@ export interface NotifyDeviceDeps {
  * itself never throws for a per-device failure — only for a genuinely
  * unrecoverable input (see the `target` validation below, which mirrors
  * withSession()'s own "reject nonsense rather than match nothing").
+ *
+ * v0.49.11: a device resolved to a push-incapable channel is now SKIPPED
+ * here — never handed to fcm.ts/apns.ts at all — rather than fired into the
+ * void and left for the platform to (maybe) report back as a failure. See
+ * `resolveChannel()` above for the exact, honestly-limited resolution rule.
  */
 export async function notifyDevices(
   pool: pg.Pool, target: DeviceOwner, input: NotifyInput, deps: NotifyDeviceDeps = {},
@@ -107,6 +162,18 @@ export async function notifyDevices(
   const results: DeviceSendResult[] = [];
 
   for (const device of devices) {
+    const channel = resolveChannel(device);
+    const admission = admitDevice(channel);
+    const canPush = admission.ok && admission.capability.push;
+    if (!canPush) {
+      results.push({
+        deviceTokenId: device.id, platform: device.platform, ok: false,
+        code: 'no_push_capability',
+        advice: admission.ok ? (channelAdvice(channel) ?? undefined) : admission.note,
+      });
+      continue;
+    }
+
     try {
       const payload = _buildPush({
         kind: input.kind,

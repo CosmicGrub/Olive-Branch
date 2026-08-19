@@ -12,6 +12,7 @@ import { sha256Hex } from '../../ledger/src/sha256.ts';
 import type { ArtifactRow, IntentRow } from '../../messaging/src/pipeline.ts';
 import type { ChildCtx } from '../../delivery-engine/src/materialize.ts';
 import type { Platform } from '../../transport/src/push.ts';
+import type { Channel } from '../../devices/src/devices.ts';
 
 /**
  * MASTERFILE §5.18 — session context, and §5.17 — the second lock.
@@ -1291,6 +1292,13 @@ export interface DeviceTokenRow {
   id: string;
   platform: Platform;
   token: string;
+  /**
+   * §8.11.4's real delivery channel, when the client reported one (0015).
+   * NULL means unknown — see that migration's own comment for why this is
+   * never defaulted to a guess at the storage layer. notify.ts resolves a
+   * conservative, explicitly-commented fallback at SEND time instead.
+   */
+  channel: Channel | null;
 }
 
 /**
@@ -1374,6 +1382,13 @@ export async function registerDeviceToken(
   principal: Pick<VerifiedPrincipal, 'roleName' | 'userId' | 'childId'>,
   platform: Platform,
   token: string,
+  /**
+   * Optional (0015) — a caller that genuinely knows its own real §8.11.4
+   * channel passes it; a caller that doesn't (still every Android client as
+   * of v0.49.11 — see devices.ts's own header) omits it, and this stays
+   * NULL rather than being guessed at here.
+   */
+  channel?: Channel | null,
 ): Promise<string> {
   if (principal.roleName === 'system') {
     throw new Error('registerDeviceToken: system role cannot own a device');
@@ -1395,15 +1410,24 @@ export async function registerDeviceToken(
 
   const upsert = () => withSession(pool, principal, async (q) => {
     const rows = await q(
-      `INSERT INTO device_token (owner_user_id, owner_child_id, platform, token, last_seen_at)
-       VALUES ($1, $2, $3, $4, now())
+      `INSERT INTO device_token (owner_user_id, owner_child_id, platform, token, channel, last_seen_at)
+       VALUES ($1, $2, $3, $4, $5, now())
        ON CONFLICT (token) DO UPDATE
          SET owner_user_id  = EXCLUDED.owner_user_id,
              owner_child_id = EXCLUDED.owner_child_id,
              platform       = EXCLUDED.platform,
+             -- COALESCE, not a bare overwrite: a re-registration call that
+             -- doesn't know the channel (channel arg omitted -> NULL here)
+             -- must never clobber an already-known value from an earlier
+             -- call that did. Every current call site is deterministic per
+             -- device (push_channel.dart always passes the same value for
+             -- the same platform), so this is a no-op today — it's future
+             -- defense for the day a real native-detection caller exists
+             -- and might not always resolve one.
+             channel        = COALESCE(EXCLUDED.channel, device_token.channel),
              last_seen_at   = now()
        RETURNING id`,
-      [ownerUserId, ownerChildId, platform, token],
+      [ownerUserId, ownerChildId, platform, token, channel ?? null],
     );
     return rows[0].id as string;
   });
@@ -1454,13 +1478,13 @@ export async function deviceTokensFor(
   return withSystemSession(pool, async (q) => {
     const rows = 'userId' in owner
       ? await q(
-          `SELECT id, platform, token FROM device_token WHERE owner_user_id = $1`,
+          `SELECT id, platform, token, channel FROM device_token WHERE owner_user_id = $1`,
           [owner.userId])
       : await q(
-          `SELECT id, platform, token FROM device_token WHERE owner_child_id = $1`,
+          `SELECT id, platform, token, channel FROM device_token WHERE owner_child_id = $1`,
           [owner.childId]);
     return rows.map((r: any): DeviceTokenRow =>
-      ({ id: r.id, platform: r.platform, token: r.token }));
+      ({ id: r.id, platform: r.platform, token: r.token, channel: r.channel ?? null }));
   });
 }
 

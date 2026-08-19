@@ -36,6 +36,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import 'api_client.dart';
+import 'device_channels.dart';
 
 /// Thrown by [PushChannel.initialize] (and, independently, by the top-level
 /// background handler below) when `Firebase.initializeApp()` itself fails —
@@ -297,12 +298,40 @@ class PushChannel {
   /// itself.
   Future<void> registerToken(String token) async {
     if (token == _lastRegisteredToken) return; // avoid a redundant re-POST
-    await api.registerDeviceToken(platform: _platform(), token: token);
+    await api.registerDeviceToken(
+      platform: _platform(), token: token, channel: _channel()?.wireValue);
     _lastRegisteredToken = token;
   }
 
   String _platform() =>
       defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
+
+  /// §8.11.4 (v0.49.11) — the real channel THIS device can honestly report,
+  /// or null when it can't. iOS is unambiguous, so it always reports one;
+  /// Android omits the field entirely (see api_client.dart's own
+  /// registerDeviceToken doc comment for why omission, not a guessed
+  /// value) — this client cannot yet distinguish Play/Amazon/bare Android
+  /// (device_channels.dart's own header explains the real, credential-free
+  /// native APIs that would, and why building that bridge is out of scope
+  /// this pass).
+  Channel? _channel() =>
+      defaultTargetPlatform == TargetPlatform.iOS ? Channel.ios : null;
+
+  /// §8.11.4 guardian-facing advice for THIS device's own self-reported
+  /// channel — real `channelAdvice()` (device_channels.dart), not a stub.
+  /// Functionally inert today: the only channel this client can currently
+  /// report ('ios') is always push-capable, so this always returns null on
+  /// a real device right now. No caller surfaces it in any screen yet
+  /// either — there is no settings/notifications screen anywhere in
+  /// `client/lib/` as of this pass (checked directly, not assumed). Kept
+  /// real and tested rather than omitted so the day Android channel
+  /// detection lands, this getter needs no changes to start mattering —
+  /// see this file's own registerToken()/_channel() for why 'today' is
+  /// narrower than 'always'.
+  String? get registrationAdvice {
+    final c = _channel();
+    return c == null ? null : channelAdvice(c);
+  }
 
   void _handleForeground(RemoteMessage message) {
     final pointer = PushPointer.fromData(message.data);

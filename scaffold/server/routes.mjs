@@ -28,6 +28,7 @@ import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
 import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
+import { CHANNELS } from '../packages/devices/src/devices.mjs';
 
 /**
  * LOCAL DEV/TEST ONLY — same honesty convention server/index.mjs's own
@@ -65,6 +66,12 @@ function invalidAvailabilityBody(body) {
 }
 
 const DEVICE_PLATFORMS = new Set(['android', 'ios']);
+
+// §8.11.4 (v0.49.11) — validated against devices.ts's own CHANNELS rather
+// than a third hand-typed list of the same six values; see channels.ts's
+// header for what happened the last time this codebase kept two copies of
+// this enum in sync by hand.
+const DEVICE_CHANNELS = new Set(CHANNELS.map((c) => c.channel));
 
 /**
  * Plain-language companions to packages/db/src/pool.ts's
@@ -325,14 +332,23 @@ export function registerRoutes(api, pool) {
     handler: async (c) => {
       const platform = c.body?.platform;
       const token = c.body?.token;
+      // §8.11.4 (v0.49.11) — optional. Omitted entirely (undefined, not a
+      // bogus value) means "this client doesn't know its real channel yet"
+      // and stays that way -- registerDeviceToken()/0015 store NULL, never
+      // a guessed default, for exactly that case. Only a PRESENT-but-invalid
+      // value is rejected below; omission is not an error.
+      const channel = c.body?.channel;
       if (!DEVICE_PLATFORMS.has(platform)) {
         return { status: 400, body: { error: 'platform_must_be_android_or_ios' } };
       }
       if (typeof token !== 'string' || token.length === 0) {
         return { status: 400, body: { error: 'token_required' } };
       }
+      if (channel !== undefined && channel !== null && !DEVICE_CHANNELS.has(channel)) {
+        return { status: 400, body: { error: 'channel_not_recognized' } };
+      }
       try {
-        const id = await registerDeviceToken(pool, c.principal, platform, token);
+        const id = await registerDeviceToken(pool, c.principal, platform, token, channel ?? null);
         return { status: 200, body: { id } };
       } catch (e) {
         // SEC-01 fix — pool.ts's registerDeviceToken() refuses to mint new

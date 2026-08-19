@@ -54,6 +54,7 @@ for spec in \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "push: fcm sender (mocked)|packages/transport/test/fcm.test.mjs" \
   "push: apns sender (mocked)|packages/transport/test/apns.test.mjs" \
+  "push: device-channel routing (§8.11.4)|packages/transport/test/channels.test.mjs" \
   "homework + real OCR|packages/homework/test/homework.test.mjs" \
   "capture button + screenshot scope|packages/homework/test/snapshot.test.mjs" \
   "homework ImageStats measurement|packages/homework/test/measure.test.mjs" \

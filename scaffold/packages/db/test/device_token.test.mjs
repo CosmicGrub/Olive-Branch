@@ -275,6 +275,45 @@ const eliP = { roleName: 'child', userId: null, childId: ELI };
   await unregisterDeviceToken(pool, ivyP, 'tok-ivy-E');
 }
 
+// ===========================================================================
+// F · §8.11.4 channel column (0015/v0.49.11) — real INSERT/UPSERT/SELECT,
+// not just the CHECK constraint's shape (that's covered structurally by
+// migration application itself; this proves the actual read/write path).
+//
+// Uses Mom, not Dad — section E above deactivates Dad's account, and this
+// section needs a still-active guardian, not a re-test of deactivation.
+// ===========================================================================
+{
+  const id = await registerDeviceToken(pool, momP, 'android', 'tok-mom-F', 'android_amazon');
+  const [row] = await deviceTokensFor(pool, { userId: MOM });
+  check('F channel column', 'a channel passed at registration is really stored',
+    row?.channel, 'android_amazon');
+
+  // Re-registering the SAME token WITHOUT a channel must not erase the one
+  // already on file (pool.ts's own COALESCE fix, proven end to end here).
+  const id2 = await registerDeviceToken(pool, momP, 'android', 'tok-mom-F');
+  check('F channel column', 're-registration reuses the same row (still an upsert)', id2, id);
+  const [row2] = await deviceTokensFor(pool, { userId: MOM });
+  check('F channel column', 'a channel-less re-registration does NOT clobber the known channel',
+    row2?.channel, 'android_amazon');
+
+  // A genuinely new channel value DOES overwrite — this is an update, not a
+  // one-way ratchet.
+  await registerDeviceToken(pool, momP, 'android', 'tok-mom-F', 'android_bare');
+  const [row3] = await deviceTokensFor(pool, { userId: MOM });
+  check('F channel column', 'a real new channel value does overwrite the old one',
+    row3?.channel, 'android_bare');
+
+  await unregisterDeviceToken(pool, momP, 'tok-mom-F');
+
+  // No channel supplied at all -> stored as NULL, never guessed.
+  const id4 = await registerDeviceToken(pool, momP, 'ios', 'tok-mom-F-ios');
+  const [row4] = (await deviceTokensFor(pool, { userId: MOM })).filter(r => r.id === id4);
+  check('F channel column', 'omitting channel entirely stores NULL, not a guessed default',
+    row4?.channel, 'null');
+  await unregisterDeviceToken(pool, momP, 'tok-mom-F-ios');
+}
+
 await admin.query(`DELETE FROM device_token WHERE owner_user_id IN ($1,$2) OR owner_child_id IN ($3,$4)`,
   [DAD, MOM, IVY, ELI]);
 await admin.query(`DELETE FROM child WHERE id IN ($1,$2)`, [IVY, ELI]);

@@ -413,15 +413,27 @@ class OliveApi {
         'preserve': preserve,
       }, childId: childId);
 
-  /// POST /v1/me/device-tokens — {platform, token} in, the new device_token
-  /// row's real id out. `platform` must be 'android' or 'ios' (server-side
-  /// DEVICE_PLATFORMS check, routes.mjs). Content-free by construction —
-  /// there is nothing else this call could carry.
+  /// POST /v1/me/device-tokens — {platform, token[, channel]} in, the new
+  /// device_token row's real id out. `platform` must be 'android' or 'ios'
+  /// (server-side DEVICE_PLATFORMS check, routes.mjs). Content-free by
+  /// construction — there is nothing else this call could carry.
+  ///
+  /// `channel` (§8.11.4, v0.49.11) is OPTIONAL and OMITTED from the request
+  /// body entirely when null — never sent as a literal `"channel": null`.
+  /// The server's own 0015 migration treats omission and an explicit null
+  /// identically (NULL, "unknown," never a guessed default), but omitting
+  /// the key is the more honest wire shape: this call genuinely does not
+  /// know the value, rather than asserting a null fact about it.
   Future<String> registerDeviceToken({
     required String platform,
     required String token,
+    String? channel,
   }) async {
-    final body = await _post(deviceTokens, {'platform': platform, 'token': token});
+    final body = await _post(deviceTokens, {
+      'platform': platform,
+      'token': token,
+      if (channel != null) 'channel': channel,
+    });
     return body['id'] as String;
   }
 

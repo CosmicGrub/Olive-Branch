@@ -186,6 +186,64 @@ const dadP = { roleName: 'guardian', userId: DAD, childId: null };
   await admin.query(`DELETE FROM device_token WHERE id = $1 OR id = $2`, [androidId, iosId]);
 }
 
+// ===========================================================================
+// F · §8.11.4 channel awareness (v0.49.11) — a device resolved to a
+// push-incapable channel is SKIPPED, never handed to fcm.ts/apns.ts at all.
+// This is the one genuinely new, observable behavior change this pass makes.
+// ===========================================================================
+{
+  const fireId = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-F-fireos', 'android_amazon');
+  const playId = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-F-play', 'android_play');
+
+  const calls = [];
+  const results = await notifyDevices(pool, { userId: DAD },
+    { kind: 'message_ready', ref: 'r6' },
+    {
+      sendFcm: async (p) => { calls.push(p.token); return { ok: true }; },
+      sendApns: async () => { calls.push('apns-should-not-happen'); return { ok: true }; },
+    });
+
+  check('F channels', 'both rows appear in the results (the FireOS one is reported, not silently dropped)',
+    results.length, 2);
+  const fireResult = results.find(r => r.deviceTokenId === fireId);
+  const playResult = results.find(r => r.deviceTokenId === playId);
+
+  check('F channels', 'the FireOS device is skipped, not sent to', fireResult?.ok, 'false');
+  check('F channels', 'and carries the no_push_capability code', fireResult?.code, 'no_push_capability');
+  check('F channels', 'and carries real guardian-facing advice text',
+    /text the grown-up/.test(fireResult?.advice ?? ''), 'true');
+  check('F channels', 'sendFcm was NEVER called for the FireOS device — this is the actual fix',
+    calls.includes('tok-notify-F-fireos'), 'false');
+
+  check('F channels', 'the Play Services device still sends normally', playResult?.ok, 'true');
+  check('F channels', 'and has no advice attached (nothing to advise about)', playResult?.advice, 'undefined');
+  check('F channels', 'sendFcm WAS called for the Play Services device',
+    calls.includes('tok-notify-F-play'), 'true');
+
+  await admin.query(`DELETE FROM device_token WHERE id = $1 OR id = $2`, [fireId, playId]);
+}
+
+// F2 · a device that never reported a channel at all falls back to the
+// documented optimistic default (android -> android_play, so push is still
+// attempted) — proving resolveChannel()'s fallback, not just the happy path
+// where a channel was already known.
+{
+  const unknownId = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-F2-unknown');
+
+  const calls = [];
+  const results = await notifyDevices(pool, { userId: DAD },
+    { kind: 'message_ready', ref: 'r7' },
+    { sendFcm: async (p) => { calls.push(p.token); return { ok: true }; } });
+
+  const r = results.find(x => x.deviceTokenId === unknownId);
+  check('F2 unknown channel', 'a device with no reported channel is NOT skipped (optimistic default)',
+    r?.ok, 'true');
+  check('F2 unknown channel', 'sendFcm was attempted for it',
+    calls.includes('tok-notify-F2-unknown'), 'true');
+
+  await admin.query(`DELETE FROM device_token WHERE id = $1`, [unknownId]);
+}
+
 await admin.query(`DELETE FROM device_token WHERE owner_user_id = $1`, [DAD]);
 await admin.query(`DELETE FROM app_user WHERE id = $1`, [DAD]);
 await admin.end();
