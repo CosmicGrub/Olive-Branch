@@ -46,7 +46,32 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
+import 'form_factors.dart' as ff;
 import 'sha256.dart';
+
+// ===================================================== posture width rule =
+// Ported from packages/devices/src/postures.ts's §8.12.3 "the degraded
+// court export" section. Real spec this screen never actually implemented:
+// before this pass, `CourtExportScreen` rendered the full certified-export
+// review UI (tamper preview, "Generate certified export," the attestation
+// panel) at ANY width, including a 344px Fold-cover phone screen —
+// directly contradicting `requestConfirmation()`'s own copy below, which
+// tells the guardian reviewing needs "a computer or a tablet." The old
+// `constraints.maxWidth >= 760` toggle only ever chose Row-vs-Column
+// arrangement for the two cards; it never actually gated the review
+// capability the spec describes. This is that gate, for real.
+const int requestMinWidth = 320;
+const int reviewMinWidth = 600;
+
+bool reviewableAt(double width) => width >= reviewMinWidth;
+bool requestableAt(double width) => width >= requestMinWidth;
+
+/// What he is told on a phone. It does not pretend he can review it there —
+/// the honest version is better than a cramped one.
+const String requestConfirmation =
+    'We are putting it together. It needs a bigger screen to check through, '
+    'so open Olive on a computer or a tablet when you are ready — it will be '
+    'waiting.';
 
 // ============================================================ ledger subset =
 // Ported from packages/ledger/src/ledger.ts.
@@ -374,7 +399,15 @@ class _CourtExportScreenState extends State<CourtExportScreen> {
       appBar: AppBar(title: const Text('Court export')),
       body: SafeArea(
         child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
-          final bool wide = constraints.maxWidth >= 760;
+          // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+          // number: the two cards sit side by side once the viewport can
+          // genuinely afford two real columns at the current text scale.
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool wide = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+          // The real §8.12.3 rule (postures.ts, ported above): reviewing a
+          // certified export needs real width. Requesting one never did.
+          final bool reviewable = reviewableAt(constraints.maxWidth);
           final TextTheme textTheme = Theme.of(context).textTheme;
           final ColorScheme scheme = Theme.of(context).colorScheme;
           final Widget rawCard = _RawExportCard(
@@ -383,6 +416,7 @@ class _CourtExportScreenState extends State<CourtExportScreen> {
             onPrepare: () => setState(() => _rawPrepared = true),
           );
           final Widget certifiedCard = _CertifiedExportCard(
+            reviewable: reviewable,
             courtTier: _courtTier,
             certifiedUsed: _certifiedUsed,
             previewTampered: _previewTampered,
@@ -523,6 +557,7 @@ class _RawExportCard extends StatelessWidget {
 
 class _CertifiedExportCard extends StatelessWidget {
   const _CertifiedExportCard({
+    required this.reviewable,
     required this.courtTier,
     required this.certifiedUsed,
     required this.previewTampered,
@@ -533,6 +568,13 @@ class _CertifiedExportCard extends StatelessWidget {
     required this.onTamperedChanged,
     required this.onGenerate,
   });
+
+  /// §8.12.3's real width rule (`reviewableAt()`, ported above). Below it,
+  /// this card shows ONLY the description and the honest
+  /// `requestConfirmation` copy — no preview controls, no generate button,
+  /// no attestation panel. Rendering the full review UI on a 344px Fold-
+  /// cover screen would directly contradict that copy's own promise.
+  final bool reviewable;
 
   final bool courtTier;
   final int certifiedUsed;
@@ -567,27 +609,43 @@ class _CertifiedExportCard extends StatelessWidget {
               'can verify without taking our word for it. One free copy per guardian every rolling '
               'year; Court tier covers any more than that.',
               style: textTheme.bodyMedium),
-          const SizedBox(height: 16),
-          _PreviewControls(
-            courtTier: courtTier, certifiedUsed: certifiedUsed, previewTampered: previewTampered,
-            onTierChanged: onTierChanged, onUsedChanged: onUsedChanged,
-            onTamperedChanged: onTamperedChanged,
-          ),
-          const SizedBox(height: 16),
-          _AuthorizationBanner(authorization),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: FilledButton.icon(
-              onPressed: authorization.ok ? onGenerate : null,
-              icon: const Icon(Icons.fact_check_outlined),
-              label: const Text('Generate certified export'),
-            ),
-          ),
-          if (attestation != null) ...<Widget>[
+          if (reviewable) ...<Widget>[
             const SizedBox(height: 16),
-            _AttestationPanel(attestation!),
+            _PreviewControls(
+              courtTier: courtTier, certifiedUsed: certifiedUsed, previewTampered: previewTampered,
+              onTierChanged: onTierChanged, onUsedChanged: onUsedChanged,
+              onTamperedChanged: onTamperedChanged,
+            ),
+            const SizedBox(height: 16),
+            _AuthorizationBanner(authorization),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: authorization.ok ? onGenerate : null,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('Generate certified export'),
+              ),
+            ),
+            if (attestation != null) ...<Widget>[
+              const SizedBox(height: 16),
+              _AttestationPanel(attestation!),
+            ],
+          ] else ...<Widget>[
+            const SizedBox(height: 16),
+            Container(
+              key: const Key('needsBiggerScreenNotice'),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                Icon(Icons.desktop_windows_outlined, size: 20, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(child: Text(requestConfirmation, style: textTheme.bodySmall)),
+              ]),
+            ),
           ],
         ]),
       ),
@@ -870,11 +928,22 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
     final TextTheme textTheme = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Court export')),
-      body: SafeArea(child: _buildBody(context, scheme, textTheme)),
+      // LayoutBuilder, not MediaQuery.sizeOf — the ACTUAL available width
+      // for this widget subtree is what §8.12.3's review gate cares about,
+      // matching CourtExportScreen's own already-correct approach above.
+      // (MediaQuery.sizeOf reflects the whole app window, which happens to
+      // equal this most of the time but is a different, less precise
+      // question — and, found the hard way while testing this exact gate,
+      // does not reliably track a test's own `setSurfaceSize` the way a
+      // real device rotation/resize would; LayoutBuilder's constraints do.)
+      body: SafeArea(child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) =>
+            _buildBody(context, scheme, textTheme, constraints.maxWidth)),
+      ),
     );
   }
 
-  Widget _buildBody(BuildContext context, ColorScheme scheme, TextTheme textTheme) {
+  Widget _buildBody(BuildContext context, ColorScheme scheme, TextTheme textTheme, double width) {
     switch (_state) {
       case _LiveExportState.loading:
         return const Center(child: CircularProgressIndicator());
@@ -950,7 +1019,27 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
             ]),
           ),
           const SizedBox(height: 16),
-          _AttestationPanel(att),
+          // Same real §8.12.3 width rule as the demo build's
+          // _CertifiedExportCard above — this is the production-wired
+          // screen, so it is the one that actually matters. A real
+          // attestation was already fetched by the time this state is
+          // reached (see _load()); it is just not RENDERED narrow, per
+          // requestConfirmation's own honest copy.
+          if (reviewableAt(width))
+            _AttestationPanel(att)
+          else
+            Container(
+              key: const Key('needsBiggerScreenNotice'),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                Icon(Icons.desktop_windows_outlined, size: 20, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(child: Text(requestConfirmation, style: textTheme.bodySmall)),
+              ]),
+            ),
         ]);
     }
   }

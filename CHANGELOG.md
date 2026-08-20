@@ -14,6 +14,82 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.13] — 2026-08-20 — The device matrix, ported; the court export finally honors its own promise
+
+Two queued items from the same original scoping pass as v0.49.12, both
+about responsive layout, closed together because they turned out to be
+genuinely related: a `FORM_FACTORS` Dart port, and `CourtExportScreen`'s
+breakpoint rebuild around `REQUEST_MIN_WIDTH`/`REVIEW_MIN_WIDTH`.
+
+### Added
+- **`client/lib/form_factors.dart`** (new) — a deliberately partial 1:1
+  port of `devices.ts`'s §8.11.1 section (`Posture`, `Orientation`,
+  `Viewport`, `FormFactor`, `FORM_FACTORS`, `NARROWEST`, `factor()`,
+  `postureFor()`, `columnsAt()`). §8.11.2's input/stylus subsection is not
+  ported — no client caller identified for it yet.
+- **`court_export.dart`**: `CourtExportScreen`'s Row-vs-Column layout
+  toggle for its two cards now uses `columnsAt()`'s real, tested 660px
+  effective-width threshold instead of an unexplained bare `760`.
+
+### Fixed — the real find of this pass
+`packages/devices/src/postures.ts`'s §8.11.7 rule ("requesting a certified
+export must work on a phone even if reviewing it does not") existed as
+real, tested pure logic (`REQUEST_MIN_WIDTH`, `REVIEW_MIN_WIDTH`,
+`reviewableAt()`, `requestableAt()`) since before this pass — with **zero**
+client enforcement. Both `CourtExportScreen` (the demo build) and
+`LiveCourtExportScreen` (the real, backend-wired one) rendered the FULL
+certified-export review UI — preview controls, "Generate certified
+export," the attestation panel — at any width, including a 344px Fold-
+cover screen. This directly contradicted the screen's own
+`requestConfirmation()` copy, which promises reviewing needs "a computer
+or a tablet." Both screens now show that honest message below 600px
+instead of the review UI; raw export, never gated by this rule, stays
+fully available at any width.
+
+Building this surfaced a second real bug, not just a missing feature:
+`LiveCourtExportScreen`'s first draft read the gate from
+`MediaQuery.sizeOf(context).width`. An isolated repro test proved that API
+does not reliably track a test's `tester.binding.setSurfaceSize()` — it
+reported the flutter_test default (800px) regardless of the actual surface
+size, while a sibling `LayoutBuilder`'s `constraints.maxWidth` correctly
+tracked it. Rather than work around this in the test, the production code
+was rebuilt on `LayoutBuilder`, matching `CourtExportScreen`'s own already-
+correct approach — more precise in production too, since it reflects the
+actual available width for this widget subtree, not the whole app window.
+
+A third wrong MASTERFILE citation (after the two `channels.ts` found in
+v0.49.11) was found and fixed in the same pass: `postures.ts`'s own header
+cited "§8.12.3" for this section — §8.12 does not exist anywhere in
+MASTERFILE, skipped entirely between §8.11 and §8.13. The real match is
+§8.11.7, "The audit, and honest exceptions," whose own closing line —
+"Requesting it must work there even if reviewing it does not" — is this
+section's exact spec.
+
+### Tests
+- `form_factors_test.dart` (new, 20 assertions) — proves the port matches
+  `devices.ts`'s own behavior, including the effective-width equivalence
+  (`columnsAt` at 2.0x text scale on a 1320px viewport equals 1.0x on
+  660px).
+- `court_export_test.dart` — new group "§8.12.3 review-width gate" (5
+  cases: below/at/one-pixel-below `reviewMinWidth`, raw export unaffected)
+  plus one new `LiveCourtExportScreen` case proving the same gate applies
+  to a REAL fetched attestation, not just the demo chain. All pre-existing
+  cases (including the 344px "no overflow" sweep) still pass unmodified.
+- `flutter analyze` clean. Full `flutter test` (1532 cases) green except
+  the same pre-existing, unrelated `push_channel_test.dart` failure noted
+  since v0.49.6. `transport.test.mjs`'s repo-wide Dart-source-scanning
+  checks pass on the new files.
+
+### Found, not fixed this pass
+`packages/devices/test/postures.test.mjs`'s own header separately cites a
+bare "§8.12" for this file's OTHER sections (tabletop placement, landscape,
+rotation, web-call access) — also unverified against a real MASTERFILE
+heading, and left alone this pass: tracing each of those sections to its
+real match is a larger, separate audit than this one narrowly-scoped
+citation fix.
+
+---
+
 ## [0.49.12] — 2026-08-19 — Knocking, not ringing: §5.25.2's first real screen
 
 Queued as "a knock/waiting-room canned-copy reader — near-zero risk, reuses

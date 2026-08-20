@@ -92,13 +92,22 @@ export const ROTATION_PRESERVES_STATE = true;
 
 export function onRotate<T>(state: T): T { return state; }
 
-// ================================= §8.12.3 the degraded court export ========
+// ================================= §8.11.7 the degraded court export ========
 /**
  * The audit demanded this by name and it did not exist.
  *
  * A certified export is a document-production task and genuinely wants width. But
  * **requesting** one is three fields, and the real case is a parent in a
  * solicitor's waiting room with a phone.
+ *
+ * (Corrected v0.49.13 — this cited "§8.12.3," which does not exist anywhere
+ * in MASTERFILE; §8.12 is skipped entirely between §8.11 and §8.13. The
+ * real match is §8.11.7 "The audit, and honest exceptions," whose own
+ * closing lines are this section's exact spec: "Requesting it must work
+ * there even if reviewing it does not." `client/lib/court_export.dart`
+ * finally implements that rule as of v0.49.13 — REQUEST_MIN_WIDTH/
+ * REVIEW_MIN_WIDTH existed here, real and tested, since before that pass
+ * with zero client enforcement.)
  */
 export type ExportPurpose = 'court' | 'solicitor' | 'mediation' | 'own_records';
 
