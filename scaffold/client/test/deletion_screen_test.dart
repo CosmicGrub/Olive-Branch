@@ -125,12 +125,43 @@ void main() {
       // whether the SnackBar happens to still be visible when this runs.
       expect(find.descendant(of: find.byType(Card), matching: find.text(deletionConfirmationCopy)),
         findsOneWidget);
+      // v0.49.15: the real cancelledDeliveryIntents count (2, from this
+      // mock's own response body) is now actually read and shown — it was
+      // fetched by this exact call before and silently discarded.
+      expect(find.text('2 queued or banked messages were cancelled with it.'),
+        findsOneWidget);
 
       // The confirm control retires once the account is actually gone —
       // it must not be re-tappable.
       final FilledButton confirm =
         t.widget(find.widgetWithText(FilledButton, 'Account deleted'));
       expect(confirm.onPressed, isNull);
+    });
+
+    testWidgets('a singular cancelled count reads "1 ... was", not "1 ... were"',
+        (t) async {
+      final mock = MockClient((req) async => http.Response(jsonEncode({
+        'ok': true, 'userId': 'u1', 'cancelledDeliveryIntents': 1,
+      }), 200));
+      await pump(t, DeletionScreen(
+        baseUrl: 'http://api.test', sessionToken: 'tok-123', httpClient: mock));
+      await ackAndConfirm(t);
+      await t.pumpAndSettle();
+
+      expect(find.text('1 queued or banked message was cancelled with it.'), findsOneWidget);
+    });
+
+    testWidgets('a zero cancelled count shows no cancellation line at all — '
+        'not a confusing "0 messages were cancelled"', (t) async {
+      final mock = MockClient((req) async => http.Response(jsonEncode({
+        'ok': true, 'userId': 'u1', 'cancelledDeliveryIntents': 0,
+      }), 200));
+      await pump(t, DeletionScreen(
+        baseUrl: 'http://api.test', sessionToken: 'tok-123', httpClient: mock));
+      await ackAndConfirm(t);
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('cancelled with it'), findsNothing);
     });
 
     testWidgets('shows a real progress state while the request is in flight', (t) async {

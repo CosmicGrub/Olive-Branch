@@ -14,6 +14,139 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.15] — 2026-08-20 — Dead wire: real data, fetched, then thrown away
+
+A dedicated sweep for one recurring bug shape found across this codebase's
+earlier audits: a screen makes a real HTTP call, the backend genuinely
+computes and returns real data, and the screen either ignores part of the
+response or never calls the endpoint that already exists to serve it. Every
+candidate was re-verified fresh against current source before being touched
+— several from an earlier scoping pass turned out to already be fixed or
+were never real (see "Investigated, not changed" below); six were confirmed
+real and are fixed here, each a small, surgical read of a response this
+client was already receiving (or, in one case, a fetch call that existed on
+`OliveApi` with zero callers anywhere in this client).
+
+### Fixed — `child_home_live.dart` (§8.2, §8.2.5, §21.5)
+- **The Messages badge counted watched messages as unread.** `/inbox`
+  deliberately returns BOTH `'delivered'` (unwatched) and `'opened'`
+  (already watched) rows (server/routes.mjs's own query), but `_load()`
+  counted the raw list length — a child who had watched every message still
+  saw a badge claiming all of them were new. Now filtered to
+  `state == 'delivered'` before counting.
+- **`sleepsUntilHandover` was hardcoded `null` despite a real, working
+  endpoint.** `OliveApi.fetchNow()` — contract-checked against
+  `GET /v1/children/:childId/now`, which genuinely computes this via
+  `activeCustodyOrderFor()`/`sleepsUntilSideChange()` — existed with zero
+  callers anywhere in this client (an earlier pass's own header explained
+  why, correctly, at the time it was written; the endpoint has since landed
+  and stayed landed, and this pass is what finally called it). `_load()` now
+  fetches it alongside `/v1/me` and `/inbox`; ChildHome's "sleeps until the
+  handover" counter and the phone→watch sync this screen already had wired
+  (`_syncWear()`, §21.5) both go live off the same real value, still an
+  honest `null` when a child has no active custody order.
+
+### Fixed — `court_export.dart` / `api_client.dart` (§2.11, §16.1 #3)
+- **A `chain_broken` certified-export denial's real diagnostics were fetched
+  and silently dropped.** `server/routes.mjs` spreads a real `faults` array
+  (packages/ledger's `verifyChain()` output, forwarded by
+  `certifiedExportBundleFor()`) onto the 403 body, but `api_client.dart`'s
+  `_decode()` only ever read `error`/`message` — the array was in the HTTP
+  response and nowhere else. `ApiException` now carries `faults`, and
+  `LiveCourtExportScreen`'s denied state renders each one (`content_altered
+  @3`, `bad_genesis`, ...) when present.
+- **A successful export's whole-bundle hash and record id were fetched and
+  never shown.** The route's 200 body carries `bundleHash` (a hash over
+  `{chain, attestation}` together) and `exportRecordId` alongside
+  `attestation` — genuinely different from `attestation.bundleHash` (which
+  hashes the chain alone). `_load()` read only `attestation`; the other two
+  keys were parsed by nothing. Both now render in the ready state, gated by
+  the same §8.11.7 review-width rule as the attestation panel itself.
+
+### Fixed — `deletion_screen.dart` (§2.10, §2.11, §9.8, P8)
+- **`POST /v1/me/delete`'s real response body was discarded outright** —
+  `_confirm()` awaited `api.deleteAccount()` without even assigning the
+  result to a variable. `deactivateAccount()` (packages/db/src/pool.ts)
+  returns real counts of what it actually did — `cancelledDeliveryIntents`
+  chief among them, the exact thing `whatDeletionRemoves` already promises
+  abstractly ("Messages you had queued or banked but not yet delivered").
+  The success card now states the real count when it's nonzero, and shows
+  nothing at zero (this app's own "null/0 renders nothing" convention,
+  matching `child_home.dart`'s badge). The other counts returned
+  (`removedPinCredentials`/`removedWebauthnCredentials`/
+  `removedWebauthnChallenges`/`removedDeviceTokens`) stay unshown on
+  purpose — internal security bookkeeping, not something a guardian reading
+  a deletion confirmation has a use for.
+
+### Fixed — `family_agreement_screen.dart` (§5.4, §9.4)
+- **A holiday rule's real `priority` field was parsed and never read.**
+  `HolidayRuleView.priority` came straight off the wire but was never
+  rendered, and the holiday list was shown in raw wire order — even though
+  `priority` is the actual tie-break `schedule.ts`'s own `holidayOn()` uses
+  when two rules overlap ("Ties break on `priority`, then on the later
+  start"). A screen whose entire job is showing the real order on file was
+  silently showing the wrong one. New `sortedByPriority()` orders the list
+  exactly the way the engine does; each card now states its own priority
+  number, and a short explanatory line appears whenever more than one
+  holiday exists.
+
+### Investigated, not changed
+- **`child_home.dart`'s Messages badge itself** — already correctly wired
+  (`badgeCount: unreadCount`, rendered by `_Tile`/`_UnreadBadge`). The
+  scoping pass's "hardcoded literal `3`" candidate does not exist in current
+  source; discarded as already fixed.
+- **`GuardianHome` has no live-data screen at all** — confirmed genuinely
+  true (no `guardian_home_live.dart`, and `GuardianHome` itself takes every
+  field as a plain constructor argument with no fetch anywhere). This is not
+  a dead wire — there is no wire to begin with. Building one is a real,
+  screen-sized feature (mirroring `child_home_live.dart`'s own shape against
+  `/now`/`/ribbon`-equivalent guardian data that doesn't exist yet either) —
+  explicitly out of scope for a dead-wire sweep and NOT built here. Recorded
+  as a real product gap for a future pass to scope deliberately.
+- **`receipt_screen.dart`'s "Send one back"** — POST `/v1/children/:childId
+  /messages`'s real response (`id`/`artifactId`/`state`) is fetched and not
+  displayed, but this is not a dead wire: an internal delivery-intent id has
+  no use on a child-facing "Sent!" confirmation (this app never shows a
+  child an id — see `child_home.dart`'s own "her name not an id"
+  invariant), and the route's own comment already discloses a bigger,
+  pre-existing gap this pass did not create and is not scoped to close: a
+  `child` principal has no `app_user` row, so this route 403s
+  `not_authorized` for its only realistic caller today. A real schema
+  change, not a display fix.
+- **Every other real network call site** (`availability_screen.dart`,
+  `capture_gate.dart`, `guardian_more.dart`, `main_live.dart`,
+  `webauthn_channel.dart`) — read every field of every response it
+  receives; no drops found.
+
+### Tests
+- `child_home_live_test.dart` — the existing unread-count test now mixes
+  `'delivered'`/`'opened'` messages and asserts the real filtered count (2,
+  not the raw row count of 3); a new test proves a real, distinctive
+  `sleepsUntilHandover` (5) reaches both ChildHome's counter and the paired
+  Wear channel; every mock in this file gained a `/now` arm.
+- `court_export_test.dart` — the successful-export test now asserts the
+  real whole-bundle hash and record id render as DISTINCT values from the
+  attestation's own bundle hash; two new tests cover a `chain_broken` denial
+  that does/doesn't carry `faults`; the narrow-surface test asserts the new
+  fields stay gated too.
+- `api_client_test.dart` — two new tests prove `ApiException.faults` is
+  populated from a real 403 body and stays `null` (not an empty-list guess)
+  when the server sends none.
+- `deletion_screen_test.dart` — the existing success test now asserts the
+  real cancelled-count line; two new tests cover the singular ("1 ... was")
+  and zero (no line at all) cases.
+- `family_agreement_screen_test.dart` — three new pure-logic tests on
+  `sortedByPriority()` (higher priority first, tie-break on later start
+  matching `schedule.ts` exactly, does not mutate its input) plus a new
+  widget test proving two overlapping, deliberately wire-misordered holidays
+  render in real priority order (checked by vertical position, not just
+  presence).
+- `flutter analyze` clean. `flutter test`: 1547 cases (11 new), all green
+  except the same pre-existing, unrelated `push_channel_test.dart` failure
+  noted since v0.49.6.
+
+---
+
 ## [0.49.14] — 2026-08-20 — An adversarial audit of gap-fill batch 2, and what it actually found
 
 Before merging PR #30 (v0.49.13), this pass ran a genuinely adversarial
