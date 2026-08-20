@@ -22,7 +22,15 @@ import { can, type Edge, type Action } from '../../family-graph/src/authorize.ts
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 export interface Ctx {
-  principal: VerifiedPrincipal;
+  /**
+   * Null ONLY for a route that sets `noSessionRequired: true` below — every
+   * other route is guaranteed a real, verified principal by the time its
+   * handler runs (A2). A `noSessionRequired` handler must not assume it is
+   * ever non-null; it authorizes the caller some other way entirely (e.g.
+   * a random id in the path standing in for a credential, matching
+   * `identityScopedByHandler`'s "the handler does its own check" posture).
+   */
+  principal: VerifiedPrincipal | null;
   childId: string | null;
   params: Record<string, string>;
   body: any;
@@ -96,6 +104,31 @@ export interface Route {
    * there is no third, implicit way to reach the database from a handler.
    */
   skipOuterSession?: boolean;
+  /**
+   * Escape hatch #3 (after identityScopedByHandler and skipOuterSession):
+   * this route is reachable by a caller with NO session at all. Real,
+   * narrow need it closes — a genuine, adversarially-audited bug, not a
+   * hypothetical one: the guardian-invite accept flow's whole point (see
+   * routes.mjs's own comment on `GET /v1/guardian-invites/:inviteId` and
+   * `POST .../accept`) is that the invited party has no `app_user` row yet,
+   * so there is nothing for them to hold a session token TO — the invite's
+   * own long, random path id is what authorizes reading/accepting it, the
+   * same "no pre-existing session for api.handle() to authenticate" shape
+   * server/index.mjs's webauthn-login endpoints already have, EXCEPT those
+   * two are fixed-path and dispatched entirely outside this class, before
+   * `api.handle()` is ever called. A route with a real path PARAMETER (an
+   * `:inviteId`, not a bare string) still wants `Api`'s own path-matching
+   * rather than a second, hand-rolled router, which is what this flag is
+   * for: `handle()` skips authentication AND authorization for it
+   * entirely (there is no principal to authorize FROM), then dispatches
+   * straight to the handler with `ctx.principal: null`.
+   *
+   * Registration-time enforced: a route with this set MUST also set
+   * `skipOuterSession: true` — there is no verified principal here to scope
+   * `db.withSession()` with, so the handler must open its own session(s),
+   * exactly like every other `skipOuterSession` route already does.
+   */
+  noSessionRequired?: boolean;
   handler: (c: Ctx, q: Query) => Promise<{ status?: number; body?: any }>;
 }
 
@@ -119,6 +152,10 @@ export class Api {
     if (!('action' in r)) throw new Error(`route ${r.path} must declare an action`);
     if (r.path.includes(':childId') && r.action === null && !r.identityScopedByHandler) {
       throw new Error(`route ${r.path} is child-scoped but declares no action`);
+    }
+    if (r.noSessionRequired && !r.skipOuterSession) {
+      throw new Error(`route ${r.path} sets noSessionRequired but not skipOuterSession -- ` +
+        `there is no verified principal here to scope db.withSession() with`);
     }
     this.routes.push(r);
     return this;
@@ -147,6 +184,36 @@ export class Api {
     const u = new URL(url, 'http://x');
     const m = this.match(method, u.pathname);
     if (!m) return { status: 404, body: { error: 'not_found' } };
+
+    // ---- pre-session routes ---------------------------------------------------
+    // noSessionRequired -- see the Route field's own doc comment. No Bearer
+    // token to check and no principal to authorize FROM (the authorize block
+    // below is keyed on a verified principal that does not exist for this
+    // caller), so both are skipped structurally, not by convention. Body
+    // parsing and error handling below otherwise mirror the normal path
+    // exactly -- this is the same dispatch, minus the two steps that assume
+    // a session.
+    if (m.route.noSessionRequired) {
+      let noSessionBody: any = null;
+      if (rawBody) {
+        try { noSessionBody = JSON.parse(rawBody); }
+        catch { return { status: 400, body: { error: 'bad_json' } }; }
+      }
+      const ctx: Ctx = { principal: null, childId: m.params.childId ?? null,
+                          params: m.params, body: noSessionBody, query: u.searchParams,
+                          db: this.db };
+      try {
+        // Registration already refused this route if skipOuterSession were
+        // not also true (register()'s own check above), so unusedQuery is
+        // always the correct thing to hand it here -- there is no principal
+        // to open db.withSession() with even if the route wanted one.
+        const out = await m.route.handler(ctx, unusedQuery);
+        return { status: out.status ?? 200, body: out.body ?? null };
+      } catch (e: any) {
+        if (e?.status) return { status: e.status, body: { error: e.code ?? 'error' } };
+        return { status: 500, body: { error: 'internal' } };
+      }
+    }
 
     // ---- authenticate -------------------------------------------------------
     const auth = headers['authorization'] ?? '';

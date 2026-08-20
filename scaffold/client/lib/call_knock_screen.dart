@@ -35,9 +35,16 @@
 // Both are real, separate, already-disclosed gaps this pass does not close.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'call_knock.dart';
 import 'call_screen.dart';
 import 'push_channel.dart' show PushPointer;
+
+/// The on-screen reassurance line, read aloud verbatim below — a single
+/// source of truth, same convention emergency_card.dart's own
+/// `_cardSpokenText` header describes, so the spoken and displayed copy can
+/// never drift apart.
+const String _notNowHelperText = 'Not now is okay too.';
 
 class CallKnockScreen extends StatefulWidget {
   const CallKnockScreen({
@@ -95,8 +102,17 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
 
   String get _promptText => '${widget.from} would like to talk.';
 
+  /// Genuinely verbatim: the prompt, the on-screen reassurance line, and the
+  /// three real button labels (`answerWords`) — nothing composed or
+  /// paraphrased. v0.49.14 fix: this used to append a hand-written
+  /// instructional sentence ("You can answer, say you are just talking, or
+  /// say not now.") that appeared nowhere on screen, breaking the exact
+  /// "never composes, always reads back verbatim" guarantee this feature
+  /// exists to make — see a11y_speech.dart's own header and MASTERFILE
+  /// §5.25.2/§8.8.5's "reads the prompt and every answer option back
+  /// verbatim" claim, which the shipped code did not actually honor.
   String get _spokenText =>
-      '$_promptText You can answer, say you are just talking, or say not now.';
+      '$_promptText $_notNowHelperText ${answerWords.join(". ")}.';
 
   void _handleTimeout() {
     // knockUnanswered() — never reported as missed, declined, or ignored.
@@ -126,6 +142,14 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
         content: Text('Read aloud — not built yet.'), duration: Duration(seconds: 2)));
       return;
     }
+    // v0.49.14 fix: every other real speak() call site in this client
+    // (emergency_card.dart, handover_notes.dart) routes through
+    // admitSpeech() first — a structural guarantee that an autonomous
+    // trigger is refused for real, not just by convention, the moment one
+    // is ever passed here. This screen shipped without it; harmless today
+    // (the only call site is this real tap), but the safety net every
+    // sibling screen relies on was silently absent.
+    if (admitSpeech(SpeechTrigger.tap) != null) return;
     widget.speak!(_spokenText);
   }
 
@@ -158,7 +182,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     Text(_promptText, textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.headlineSmall),
     const SizedBox(height: 8),
-    const Text('Not now is okay too.', textAlign: TextAlign.center),
+    const Text(_notNowHelperText, textAlign: TextAlign.center),
     const SizedBox(height: 32),
     ...answerWords.map((word) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),

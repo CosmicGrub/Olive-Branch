@@ -107,6 +107,31 @@ export interface NotifyDeviceDeps {
   sendGuard?: (p: PushPayload) => PushPayload;
   sendFcm?: (p: PushPayload) => Promise<unknown>;
   sendApns?: (p: PushPayload) => Promise<unknown>;
+  /**
+   * Test-only injection seam, added v0.49.14. `admitDevice()`'s `ok:false`
+   * ("silent_device") branch cannot currently be reached with real data —
+   * every channel devices.ts's own `CHANNELS` table declares has either
+   * `push:true` or a real (non-`'none'`) fallback — but it is live code in
+   * the exact path devices.ts's own header calls "the worst class of
+   * defect this product can have," and an adversarial audit found it had
+   * never executed once under test. Same shape as buildPush/sendGuard/
+   * sendFcm/sendApns above: defaults to the real `admitDevice`, so a
+   * caller that passes nothing gets exactly the original, non-overridable
+   * behavior.
+   */
+  admitDevice?: typeof admitDevice;
+  /**
+   * Test-only injection seam, added v0.49.14, same reasoning as
+   * `admitDevice` above: the `catch { }` around `removeDeviceTokenSystem()`
+   * below (best-effort prune-on-deviceGone cleanup) had never been
+   * exercised with a THROWING prune — an adversarial audit found it
+   * untested, not that it was wrong; JS try/catch semantics already
+   * guarantee `pruned` stays `false` and the outer result still pushes
+   * correctly if this throws, but "guaranteed by language semantics" and
+   * "proven by a real test" are not the same claim, and this codebase does
+   * not treat them as interchangeable elsewhere.
+   */
+  removeDeviceTokenSystem?: typeof removeDeviceTokenSystem;
 }
 
 /**
@@ -157,13 +182,15 @@ export async function notifyDevices(
   const _sendGuard = deps.sendGuard ?? sendGuard;
   const _sendFcm = deps.sendFcm ?? sendFcm;
   const _sendApns = deps.sendApns ?? sendApns;
+  const _admitDevice = deps.admitDevice ?? admitDevice;
+  const _removeDeviceTokenSystem = deps.removeDeviceTokenSystem ?? removeDeviceTokenSystem;
 
   const devices: DeviceTokenRow[] = await deviceTokensFor(pool, target);
   const results: DeviceSendResult[] = [];
 
   for (const device of devices) {
     const channel = resolveChannel(device);
-    const admission = admitDevice(channel);
+    const admission = _admitDevice(channel);
     const canPush = admission.ok && admission.capability.push;
     if (!canPush) {
       results.push({
@@ -199,7 +226,7 @@ export async function notifyDevices(
       // the row — never a config/transport error, which says nothing about
       // whether the DEVICE is still real.
       if (e?.deviceGone === true) {
-        try { pruned = await removeDeviceTokenSystem(pool, device.id); }
+        try { pruned = await _removeDeviceTokenSystem(pool, device.id); }
         catch { /* best-effort cleanup; the send failure is still reported below */ }
       }
       results.push({ deviceTokenId: device.id, platform: device.platform, ok: false, code, message, pruned });

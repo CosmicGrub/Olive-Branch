@@ -455,6 +455,65 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
     calls.length, 1);
 }
 
+// ===========================================================================
+// H · noSessionRequired — the guardian-invite 401 fix
+// ===========================================================================
+// Real, adversarially-found bug (audit of gap-fill batch 2's guardian-invite
+// feature): api.handle() required a Bearer token unconditionally, before
+// ever consulting a route's own flags — so GET/POST .../accept, both
+// explicitly built for a caller with NO session at all (the invited party
+// has no app_user row yet), 401'd every real call. packages/db/test/
+// guardian_invite.test.mjs's own new "G real route" section proves the fix
+// against the actual guardian-invite routes end to end, against real
+// Postgres; this section proves the underlying Api MECHANISM generically,
+// the same way "G skipOuterSession" above proves its own mechanism against
+// a synthetic route rather than only a real-feature call site.
+{
+  const calls = [];
+  const db = {
+    edgesFor: async () => [],
+    withSession: async (p, fn) => { calls.push(p); return fn(async () => []); },
+  };
+  const api = new Api(SECRET, db, () => NOW);
+
+  check('H noSessionRequired', 'registration refuses noSessionRequired without '
+    + 'skipOuterSession — there is no principal to scope db.withSession() with', (() => {
+      try {
+        api.register({ method: 'GET', path: '/v1/no-session-bad-test', action: null,
+          noSessionRequired: true, handler: async () => ({ body: {} }) });
+        return 'did not throw';
+      } catch (e) { return e.message.includes('noSessionRequired') ? 'threw correctly' : 'threw wrong error'; }
+    })(), 'threw correctly');
+
+  let handlerCtx = null;
+  api.register({
+    method: 'GET', path: '/v1/no-session-test/:inviteId', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => { handlerCtx = c; return { body: { ok: true, id: c.params.inviteId } }; },
+  });
+
+  calls.length = 0;
+  const res = await api.handle('GET', '/v1/no-session-test/abc-123', {}, '');
+  check('H noSessionRequired', 'the handler runs with NO Authorization header at all — '
+    + 'the exact call shape api_client.dart\'s fetchGuardianInvite() makes',
+    `${res.status}/${res.body?.id}`, '200/abc-123');
+  check('H noSessionRequired', 'ctx.principal is null, not a fabricated identity',
+    handlerCtx?.principal, 'null');
+  check('H noSessionRequired', 'the path param is still correctly extracted',
+    handlerCtx?.params?.inviteId, 'abc-123');
+  check('H noSessionRequired', 'db.withSession() is never called — same guarantee as '
+    + 'skipOuterSession, since noSessionRequired implies it', calls.length, 0);
+
+  // Sanity: an ordinary route right next to it is completely unaffected —
+  // the bypass is per-route, not global.
+  api.register({ method: 'GET', path: '/v1/still-needs-session-test', action: null,
+    handler: async () => ({ body: { ok: true } }) });
+  const stillGated = await api.handle('GET', '/v1/still-needs-session-test', {}, '');
+  check('H noSessionRequired', 'a sibling route with no explicit flag still 401s '
+    + 'with no session — the bypass never leaks to routes that did not ask for it',
+    `${stillGated.status}/${stillGated.body?.error}`, '401/no_session');
+}
+
 // ---------------------------------------------------------------------------
 let g = '';
 for (const r of rows) {
