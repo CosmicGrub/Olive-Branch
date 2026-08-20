@@ -14,6 +14,84 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.12] — 2026-08-19 — Knocking, not ringing: §5.25.2's first real screen
+
+Queued as "a knock/waiting-room canned-copy reader — near-zero risk, reuses
+the now-real TTS infrastructure." That framing turned out to be wrong on
+inspection: `grep`-ing the client for any existing incoming-call UI found
+none at all — `packages/live/src/lifecycle.ts`'s §5.25.2 "knocking" section
+had zero client wiring, not an existing screen missing a speaker button.
+This entry corrects that scope honestly and builds the real thing: the
+first incoming-call experience this client has ever had.
+
+The "waiting room" half of the same source file (its own comment labels it
+"§5.25.5" — no matching MASTERFILE section exists for it) is explicitly
+NOT built here: it needs a supervisor-facing admission UI, and this
+codebase's own engine-capacity scoping pass already declined to invent
+`therapist_role_visibility_scope` and its sibling supervisor-UX questions
+unilaterally. Building the waiting room would mean re-opening exactly that
+declined territory — left alone, not silently expanded into.
+
+### Added
+- **`client/lib/call_knock.dart`** (new) — a deliberately PARTIAL 1:1 port
+  of `lifecycle.ts`'s §5.25.2 section only (`Knock`, `knockUnanswered()`,
+  `ANSWER_WORDS`, `ANSWER_BANNED`, `auditAnswerWords()`, `notNowOutcome()`).
+  Not ported: §5.25.1 (Fold posture-change — a different concern, belongs
+  with a future `FORM_FACTORS` port), §5.25.3 (device handoff — a session
+  concern), §5.25.4 (both-free windows — a guardian-side suggestion, not
+  this screen), and the waiting room (see above).
+- **`client/lib/call_knock_screen.dart`** (new) — the real UI. Deliberately
+  calm: no numeric countdown, no urgent color, no escalation — matching
+  §5.25.2's own "a knock waits" framing. Three real answer buttons sourced
+  from `ANSWER_WORDS`: "Answer" and "Just talking" both navigate to the
+  real, already-shipped `CallScreen` (the TS source names no technical
+  difference between the two words, and none is invented here); "Not now"
+  shows the real `notNowOutcome().line` ("Alright. He knows you are busy.")
+  then dismisses itself. An unanswered knock times out after the real 90
+  seconds (`knockWaitsSeconds`) and dismisses QUIETLY — no error, no red,
+  no "missed call" anywhere, per §9.13.4's already-settled rule applied
+  here for the first time. A speaker action (§8.8.5) reads the prompt and
+  every answer option back verbatim, falling back to the same honest "not
+  built yet" message as every other optionally-wired read-aloud button in
+  this client when no `speak` callback is supplied.
+- **`buildCallIncomingHandler()`** (same file) — the real, tested
+  integration point for `PushChannel.onForegroundPointer`. Honestly
+  disclosed as not yet wired to anything live: a real `call_incoming` push
+  carries no caller identity at all (`push.ts`'s own content-free
+  `PushInput` — only `kind`/`ref`/`callHandle`), so `from`/`who`/
+  `displayName` are supplied by whoever eventually calls this, the same
+  fixed-identity assumption `CallScreen`'s own existing call sites
+  (`child_home.dart`, `guardian_home.dart`) already make. Two more,
+  separate, pre-existing gaps stand between this and a live incoming call:
+  no `GlobalKey<NavigatorState>` exists in this client's root widget to
+  navigate from a background push tap, and no server route actually
+  triggers a `call_incoming` push yet (`notify.ts`'s own header:
+  `notifyDevices()` has zero HTTP call sites). Neither is fabricated here.
+
+### Tests
+- `call_knock_test.dart` (new, 16 assertions) — proves the port matches
+  `lifecycle.ts`'s own behavior label-for-label, including that every
+  banned word is actually caught, case-insensitively.
+- `call_knock_screen_test.dart` (new, 10 assertions) — the prompt and all
+  three answer options render verbatim; Answer and "Just talking" both
+  genuinely reach `CallScreen` (proven the same way `widget_test.dart`'s
+  own "reaches the real CallScreen" tests already do — through the real
+  fetch-failure error state, not a widget-type check); "Not now" shows the
+  real line then dismisses on its own; an unanswered knock times out after
+  a REAL 90 seconds (fast-forwarded via `tester.pump(Duration(seconds:
+  90))`, no injected fake clock) and leaves cleanly with no "missed"/
+  "Missed" text anywhere; the read-aloud button's honest fallback and real
+  speak path; `buildCallIncomingHandler()`'s three cases (navigates on a
+  real `call_incoming` pointer, ignores every other kind, no-ops safely on
+  an unmounted navigator).
+- `flutter analyze` clean. Full `flutter test` (1507 cases) green except
+  the same pre-existing, unrelated `push_channel_test.dart` failure noted
+  since v0.49.6. `transport.test.mjs`'s repo-wide Dart-source-scanning
+  checks (UNVERIFIED header present, no TODOs, balanced braces/parens) both
+  pass on the new files.
+
+---
+
 ## [0.49.11] — 2026-08-18 — §8.11.4 channel awareness, and the bug two copies of it hid
 
 This codebase's own prior engine-room audit ranked `push_channel.dart`'s
