@@ -135,13 +135,24 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
   check('C A1', 'POST .../guardianships declares action:null', guardianshipsRoute?.action, 'null');
   check('C A1', 'POST .../guardianships explicitly opts into identityScopedByHandler',
     guardianshipsRoute?.identityScopedByHandler, 'true');
+  // Fourth, deliberate exception (§2.10, §9.8.4, §21.2 rung 17, §21.7): the
+  // child's own take-and-go export+closure. Same reasoning as kiosk-pin/
+  // verify above -- a child holds no guardianship edge to HERSELF, so
+  // `can()` was never the right tool to gate "is this session literally
+  // this exact child" in the first place (routes.mjs's own comment on this
+  // route).
+  const handoverRoute = api.routes.find((r) => r.path === '/v1/children/:childId/handover');
+  check('C A1', 'take-and-go/handover declares action:null', handoverRoute?.action, 'null');
+  check('C A1', 'take-and-go/handover explicitly opts into identityScopedByHandler',
+    handoverRoute?.identityScopedByHandler, 'true');
   // The exception is narrow: no OTHER :childId route in this repo may use it
   // silently. now/inbox both declare a real Action, not null.
   const otherChildRoutes = api.routes.filter((r) =>
     r.path.includes(':childId')
     && r.path !== '/v1/children/:childId/kiosk-pin/verify'
     && r.path !== '/v1/children/:childId/export'
-    && r.path !== '/v1/children/:childId/guardianships');
+    && r.path !== '/v1/children/:childId/guardianships'
+    && r.path !== '/v1/children/:childId/handover');
   check('C A1', 'every OTHER :childId route still declares a real (non-null) action',
     otherChildRoutes.every((r) => r.action !== null), 'true');
   // And the underlying registration guard still refuses an undeclared

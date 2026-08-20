@@ -22,6 +22,7 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          certifiedExportBundleFor,
          createGuardianInvite, getGuardianInvite,
          acceptGuardianInvite, revokeGuardianInvite,
+         takeAndGo,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -773,11 +774,27 @@ export function registerRoutes(api, pool) {
       if (c.principal.roleName === 'child') {
         // §21.2 rung 17 ("her own export") is real in
         // packages/maturation/src/rungs.ts's authorizeExport() but has no
-        // age gate wired to any route, and export_record.requested_by has no
-        // app_user row a child principal could honestly be attributed to
-        // (see rawExportBundleFor's own header for the full reasoning).
-        // Applies to both kinds -- neither has a child-caller path built. A
-        // clear 501, not a silent empty bundle or a fabricated ledger row.
+        // age gate wired to THIS route, and export_record.requested_by
+        // alone could not honestly name a child caller (see
+        // rawExportBundleFor's own header for the full reasoning) --
+        // applies to both kinds this route serves, neither of which has a
+        // standalone, ad-hoc child-caller path wired HERE. A clear 501, not
+        // a silent empty bundle or a fabricated ledger row.
+        //
+        // NO LONGER THE WHOLE STORY, as of this pass: a child's own export
+        // IS real now, at majority, bundled with the guardianship closure
+        // §9.8.4 requires alongside it -- POST /v1/children/:childId/
+        // handover, below (§7.9's own long-named-but-unbuilt route), backed
+        // by packages/db/src/pool.mjs's takeAndGo() and
+        // 0016_child_take_and_go.sql's requested_by_child_id.
+        // Deliberately a SEPARATE route rather than a child branch bolted
+        // on here: an ad-hoc pull through THIS route would need to either
+        // fabricate a majority check this route has no reason to run on
+        // every call, or hand back a bundle with no export_record row at
+        // all (silently dropping the audit trail every other export gets)
+        // -- neither is honest. See takeAndGo()'s own header for the full
+        // reasoning on why export and closure are one atomic action for her,
+        // unlike the guardian's independently-optional two-button UX.
         return { status: 501, body: { error: 'child_self_export_not_implemented' } };
       }
       const kind = c.query.get('kind');
@@ -820,6 +837,57 @@ export function registerRoutes(api, pool) {
         exportRecordId: result.recordId,
         bundleHash: result.bundleHash,
       } };
+    },
+  });
+
+  api.register({
+    // MASTERFILE §2.10, §2.11, §9.8/§9.8.4, §7.9, §21.2 rung 17, §21.6/§21.7
+    // -- the child's OWN export + majority closure, real for the first time.
+    // The path itself is not new here -- `POST /v1/children/:id/handover`
+    // ("majority transfer. Irreversible. §9.8.4") has been named in §7.9's
+    // own API surface listing since before this pass; this registration is
+    // its first real implementation, not a new path invented for it. (The
+    // product-facing NAME, "take and go" -- §21.6's own row title -- is what
+    // client/lib/take_and_go_screen.dart and packages/db/src/pool.mjs's
+    // takeAndGo() are named after; the route itself keeps §7.9's spec name.)
+    //
+    // A genuine mirror of POST /v1/me/delete above: same "identity, not an
+    // edge" shape as kiosk-pin/verify (a child holds no guardianship edge to
+    // HERSELF, so `can()` was never the right tool here either) --
+    // `action: null, identityScopedByHandler: true`, same as kiosk-pin/
+    // verify and GET .../export -- and `skipOuterSession: true`, because
+    // takeAndGo() (packages/db/src/pool.mjs) opens its OWN two sessions (a
+    // real child-role session to read her journal, a system-role session
+    // for the actual, atomic mutation -- see that function's own header for
+    // why neither the outer session api.handle() would open by default, nor
+    // a single session, is the right shape here).
+    method: 'POST', path: '/v1/children/:childId/handover', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName !== 'child' || c.principal.childId !== c.childId) {
+        return { status: 403, body: { error: 'not_this_child' } };
+      }
+      try {
+        const result = await takeAndGo(pool, c.childId);
+        if (!result.ok) {
+          // not_yet_of_age / already_handed_over / child_deceased -- a real,
+          // ordinary business-rule denial (packages/archive/src/archive.ts's
+          // own handover(), reused, not reimplemented), same 403 shape
+          // rawExportBundleFor()/certifiedExportBundleFor() already use for
+          // their own {ok:false, reason} denials just above in this file.
+          return { status: 403, body: { error: result.reason } };
+        }
+        return { status: 200, body: { ok: true, ...result.result } };
+      } catch (e) {
+        // child_not_found -- genuinely should never happen for a session
+        // readSession() already verified names a real child row (the same
+        // "should be unreachable, asserted anyway" posture deactivateAccount()
+        // takes on its own account_not_found).
+        if (e?.code === 'child_not_found') {
+          return { status: 404, body: { error: 'child_not_found' } };
+        }
+        throw e; // -> Api.handle's catch-all -> 500, logged there
+      }
     },
   });
 

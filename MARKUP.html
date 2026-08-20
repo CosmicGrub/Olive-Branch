@@ -16,7 +16,7 @@
 </style></head><body>
 
 <h1>OLIVE BRANCH — MARKUP</h1>
-<p class="meta">version <strong>0.49.14</strong> · spec <strong>0.49.14</strong> ·
+<p class="meta">version <strong>0.49.15</strong> · spec <strong>0.49.15</strong> ·
 screens <strong>72</strong> · <strong>5072 assertions</strong> green at this version.</p>
 
 <h2>§01 What this document is</h2>
@@ -65,6 +65,7 @@ built at all, for the same reason `school.ts` already declined SIS integration.<
 <h2>§07 Changelog correspondence</h2>
 <p>Every version, and what it did to this document. Visual era begins at 0.8.0.</p>
 <table><tr><th>version</th><th>date</th><th>entry</th></tr>
+<tr><td>0.49.15</td><td>2026-08-20</td><td>§9.8.4 gets its first real backend — POST /v1/children/:id/handover (§7.9's own long-specified, never-built path), reusing rawExportBundleFor()'s bundle machinery and archive.ts's already-tested handover() business rule; take_and_go_screen.dart mirrors deletion_screen.dart's own rigor</td></tr>
 <tr><td>0.49.14</td><td>2026-08-20</td><td>adversarial audit of PRs #26-#30 (5 dimensions, every finding independently re-verified): 15 raised, 13 confirmed real, all fixed — including a CRITICAL bug where the entire guardian-invitation accept flow 401'd its only intended caller since v0.49.9</td></tr>
 <tr><td>0.49.13</td><td>2026-08-20</td><td>form_factors.dart ports §8.11.1's device matrix; CourtExportScreen/LiveCourtExportScreen finally implement §8.11.7's own "requesting works on a phone, reviewing needs 600px" rule — previously real, tested, and completely unenforced</td></tr>
 <tr><td>0.49.12</td><td>2026-08-19</td><td>§5.25.2 "knocking, not ringing" gets its first real screen — call_knock_screen.dart, Answer/Just talking/Not now, a real 90-second unanswered timeout with zero missed-call framing, read-aloud wired in; the waiting-room half stays out of scope (undeclared supervisor UX)</td></tr>
