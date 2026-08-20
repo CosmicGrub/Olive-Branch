@@ -64,8 +64,8 @@ void main() {
       await t.pumpAndSettle();
     });
 
-    testWidgets('renders real fetched name and unread count through the real ChildHome',
-        (t) async {
+    testWidgets('renders real fetched name and a real UNREAD-ONLY count '
+        'through the real ChildHome', (t) async {
       final mock = MockClient((req) async {
         if (req.url.path == '/v1/auth/dev-login') {
           return http.Response(jsonEncode({'token': 'tok'}), 200);
@@ -74,9 +74,21 @@ void main() {
           return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
         }
         if (req.url.path.endsWith('/inbox')) {
+          // v0.49.15: /inbox for real returns BOTH 'delivered' (unwatched)
+          // and 'opened' (already watched) messages — this mix is the exact
+          // shape that used to make the badge overcount. Two delivered, one
+          // already opened: the real unread count is 2, not 3.
           return http.Response(jsonEncode({'messages': [
-            {'id': '1'}, {'id': '2'}, {'id': '3'},
+            {'id': '1', 'state': 'delivered'},
+            {'id': '2', 'state': 'delivered'},
+            {'id': '3', 'state': 'opened'},
           ]}), 200);
+        }
+        if (req.url.path.endsWith('/now')) {
+          return http.Response(jsonEncode({
+            'childLocalTime': '4:15 PM', 'zoneAbbr': 'EDT', 'zone': 'America/New_York',
+            'sleepsUntilHandover': null,
+          }), 200);
         }
         return http.Response('not found', 404);
       });
@@ -86,16 +98,51 @@ void main() {
       await t.pumpAndSettle();
 
       expect(find.text('Hi Ivy'), findsOneWidget);
-      expect(find.text('3'), findsOneWidget); // the unread badge on Messages
-      // Honest absence, not a guess. A real custody-schedule endpoint was
-      // built and independently verified elsewhere (packages/db/test/
-      // custody_order.test.mjs, 16/16), but was found reverted out of this
-      // shared repo tree before child_home_live.dart could be wired to it —
-      // see that file's header. /v1/children/:id/now as actually deployed
-      // right now doesn't return sleepsUntilHandover, and this screen doesn't
-      // even call /now yet, so this must keep asserting absence.
+      // The real unread badge: 2 delivered, not the raw row count of 3 —
+      // proves opened messages are excluded, not just that SOME number shows.
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('3'), findsNothing);
+      // No active custody order in this fixture (/now's own honest null) —
+      // still an absence, but now a REAL fetched one, not an unfetched field.
       expect(find.textContaining('sleeps until'), findsNothing);
       expect(find.textContaining('sleep until'), findsNothing);
+    });
+
+    testWidgets('renders a real, fetched sleepsUntilHandover — and forwards '
+        'that exact value to the paired Wear companion', (t) async {
+      // v0.49.15: OliveApi.fetchNow() existed, contract-checked, with zero
+      // callers anywhere in this client — this proves both halves of closing
+      // that gap: the real /now count actually reaches ChildHome's "sleeps
+      // until the handover" counter, AND the same real value reaches
+      // WearSyncChannel, not a guess and not a leftover null.
+      final fakeWear = _FakeWearSyncChannel();
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path == '/v1/me') {
+          return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
+        }
+        if (req.url.path.endsWith('/inbox')) {
+          return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+        }
+        if (req.url.path.endsWith('/now')) {
+          return http.Response(jsonEncode({
+            'childLocalTime': '4:15 PM', 'zoneAbbr': 'EDT', 'zone': 'America/New_York',
+            'sleepsUntilHandover': 5, // distinctive, non-default value
+          }), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await t.pumpWidget(wrap(LiveChildHomeScreen(
+        baseUrl: 'http://api.test', childId: 'child-a',
+        httpClient: mock, wearSync: fakeWear, pushChannel: _FakePushChannel())));
+      await t.pumpAndSettle();
+
+      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('5'), findsOneWidget);
+      expect(find.textContaining('sleeps until'), findsOneWidget);
+      expect(fakeWear.calls, [5]);
     });
 
     testWidgets('shows a retry affordance when the server is unreachable, never a crash',
@@ -139,6 +186,12 @@ void main() {
         if (req.url.path.endsWith('/inbox')) {
           return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
         }
+        if (req.url.path.endsWith('/now')) {
+          return http.Response(jsonEncode({
+            'childLocalTime': '4:15 PM', 'zoneAbbr': 'EDT', 'zone': 'America/New_York',
+            'sleepsUntilHandover': null,
+          }), 200);
+        }
         return http.Response('not found', 404);
       });
       await t.pumpWidget(wrap(LiveChildHomeScreen(
@@ -153,18 +206,17 @@ void main() {
     });
 
     testWidgets(
-        'never syncs a placeholder to the Wear companion while '
-        'sleepsUntilHandover is still null', (t) async {
-      // §21.5 — child_home_live.dart now has a real call site
-      // (`_syncWear()`) that would forward `sleepsUntilHandover` to a
-      // paired watch. Today that field always resolves to null (custody
-      // endpoint reverted out of the shared tree -- see the file's own
-      // header), so this asserts the new wiring's guard actually holds:
-      // loading and settling a real, successful fetch must NOT call the
-      // wear channel at all, let alone with a guessed/demo value. Without
-      // the `if (sleeps != null)` guard in `_syncWear()`, this would call
-      // through with `null`, which a real MethodChannel int argument
-      // cannot represent honestly anyway.
+        'never syncs a placeholder to the Wear companion when /now honestly '
+        'reports no active custody order', (t) async {
+      // §21.5 — child_home_live.dart's `_syncWear()` forwards a real
+      // sleepsUntilHandover to a paired watch. /now itself returns an honest
+      // `null` when the child has no active custody_order row (its own
+      // documented absence, not a fetch that never happened) — this proves
+      // the wiring's guard still holds against a REAL null response, not
+      // just an unfetched field: loading and settling must NOT call the wear
+      // channel at all. Without the `if (sleeps != null)` guard in
+      // `_syncWear()`, this would call through with `null`, which a real
+      // MethodChannel int argument cannot represent honestly anyway.
       final fakeWear = _FakeWearSyncChannel();
       final mock = MockClient((req) async {
         if (req.url.path == '/v1/auth/dev-login') {
@@ -175,6 +227,12 @@ void main() {
         }
         if (req.url.path.endsWith('/inbox')) {
           return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+        }
+        if (req.url.path.endsWith('/now')) {
+          return http.Response(jsonEncode({
+            'childLocalTime': '4:15 PM', 'zoneAbbr': 'EDT', 'zone': 'America/New_York',
+            'sleepsUntilHandover': null,
+          }), 200);
         }
         return http.Response('not found', 404);
       });
@@ -199,6 +257,12 @@ void main() {
       }
       if (req.url.path.endsWith('/inbox')) {
         return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+      }
+      if (req.url.path.endsWith('/now')) {
+        return http.Response(jsonEncode({
+          'childLocalTime': '4:15 PM', 'zoneAbbr': 'EDT', 'zone': 'America/New_York',
+          'sleepsUntilHandover': null,
+        }), 200);
       }
       return http.Response('not found', 404);
     });

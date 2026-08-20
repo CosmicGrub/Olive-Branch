@@ -21,6 +21,13 @@
 // still have no custody_order row at all (never entered, or mid-transition)
 // — that shows a plain "no agreement on file" state, not a crash and not a
 // guessed schedule.
+//
+// v0.49.15: each holiday's real `priority` field (parsed into
+// HolidayRuleView below, straight off the wire) was never read anywhere —
+// the tie-break schedule.ts's own `holidayOn()` actually uses when two
+// rules overlap, silently absent from a screen whose entire job is showing
+// the real order on file. `sortedByPriority()` now orders the list the same
+// way the engine does, and each card states its own priority number.
 import 'dart:async';
 import 'package:flutter/material.dart';
 
@@ -86,6 +93,25 @@ class HolidayRuleView {
       );
 
   String get oddYearSide => evenYearSide == 'A' ? 'B' : 'A';
+}
+
+/// `priority` was parsed off the wire (above) but never read anywhere in
+/// this screen — a real field the actual schedule engine uses to decide
+/// which rule wins when two holidays overlap (schedule.ts's `holidayOn()`:
+/// "Ties break on `priority`, then on the later start — a rule that begins
+/// inside another is the more specific one"), silently dropped from a
+/// screen whose whole job is showing the real order on file. This sorts
+/// [holidays] the SAME way `holidayOn()` does — highest priority first, the
+/// later start date as the tie-break — so the list a guardian reads is in
+/// the order these rules would actually apply, not just wire order.
+List<HolidayRuleView> sortedByPriority(List<HolidayRuleView> holidays) {
+  final List<HolidayRuleView> sorted = List<HolidayRuleView>.of(holidays);
+  sorted.sort((HolidayRuleView a, HolidayRuleView b) {
+    final int byPriority = b.priority.compareTo(a.priority);
+    if (byPriority != 0) return byPriority;
+    return b.startMonthDay.compareTo(a.startMonthDay);
+  });
+  return sorted;
 }
 
 // ======================================================= plain language ===
@@ -345,8 +371,16 @@ class _ReadyView extends StatelessWidget {
               'year-round.',
               style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
         ))
-      else
-        for (final HolidayRuleView h in order.holidays)
+      else ...[
+        if (order.holidays.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+                'Shown in the order they would actually apply if two ever overlap — '
+                'highest priority first, then the later start date.',
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          ),
+        for (final HolidayRuleView h in sortedByPriority(order.holidays))
           Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: Padding(
@@ -359,9 +393,13 @@ class _ReadyView extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text('Side ${h.evenYearSide} in even years · Side ${h.oddYearSide} in odd years',
                     style: textTheme.bodySmall),
+                const SizedBox(height: 2),
+                Text('Priority ${h.priority}',
+                    style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
               ]),
             ),
           ),
+      ],
       const SizedBox(height: 8),
       Container(
         padding: const EdgeInsets.all(12),

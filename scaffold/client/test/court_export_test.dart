@@ -385,6 +385,14 @@ void main() {
       expect(find.text('Chain verified'), findsOneWidget);
       expect(find.textContaining('Live:'), findsOneWidget);
       expect(find.text('a' * 64), findsOneWidget); // the real head hash, not a demo one
+      // v0.49.15: the whole-bundle hash and export record id were fetched
+      // right alongside the attestation above but never read out of the
+      // response at all. 'c'*64 is deliberately a DIFFERENT string from the
+      // attestation's own 'b'*64 bundleHash — proving this is the real,
+      // distinct top-level field, not a re-render of the attestation's own.
+      expect(find.text('b' * 64), findsOneWidget); // attestation's own chain-only hash
+      expect(find.text('c' * 64), findsOneWidget); // the real whole-bundle hash
+      expect(find.text('rec-1'), findsOneWidget); // the real export record id
     });
 
     testWidgets('§8.11.7: on a narrow surface, a real attestation is fetched but '
@@ -411,6 +419,10 @@ void main() {
       expect(find.text('Chain verified'), findsNothing);
       expect(find.text('a' * 64), findsNothing, reason: 'the raw hash must not be '
         'squeezed onto a phone screen just because it was already fetched');
+      // v0.49.15's new bundleHash/exportRecordId block is gated by the exact
+      // same §8.11.7 rule as the attestation itself.
+      expect(find.text('c' * 64), findsNothing);
+      expect(find.text('rec-narrow'), findsNothing);
     });
 
     testWidgets('a paid (not-free) certified export says so, not "free"',
@@ -501,6 +513,54 @@ void main() {
       // denial message AND this screen's own static reassurance footer —
       // so "at least one", not "exactly one", is the real property.
       expect(find.textContaining('Raw export is unaffected'), findsWidgets);
+    });
+
+    testWidgets('a chain_broken denial that DOES carry real verifyChain() '
+        'faults renders them, not just the generic denial banner',
+        (WidgetTester tester) async {
+      // v0.49.15: server/routes.mjs spreads `result.faults` onto a
+      // chain_broken 403 body (packages/db/src/pool.ts's
+      // certifiedExportBundleFor(), which forwards ledger.ts's own
+      // verifyChain() diagnostics) — previously fetched by this exact
+      // request and silently dropped inside api_client.dart's _decode().
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        return jsonRes(<String, dynamic>{
+          'error': 'chain_broken',
+          'message': "This child's handover log did not verify as an unbroken chain.",
+          'faults': <Map<String, dynamic>>[
+            {'kind': 'content_altered', 'seq': 3},
+            {'kind': 'bad_genesis'},
+          ],
+        }, 403);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Certified export not authorized'), findsOneWidget);
+      expect(find.textContaining('WHAT VERIFICATION FOUND'), findsOneWidget);
+      expect(find.textContaining('content_altered @3'), findsOneWidget);
+      expect(find.textContaining('bad_genesis'), findsOneWidget);
+    });
+
+    testWidgets('a denial with no faults key (every non-chain_broken denial) '
+        'shows no faults section at all', (WidgetTester tester) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return jsonRes(<String, String>{'token': 'tok'}, 200);
+        }
+        return jsonRes(<String, dynamic>{
+          'error': 'annual_allowance_used', 'message': 'already used',
+        }, 403);
+      });
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+          baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('WHAT VERIFICATION FOUND'), findsNothing);
     });
 
     testWidgets('shows a retry affordance on a real network/server error, distinct from a denial',

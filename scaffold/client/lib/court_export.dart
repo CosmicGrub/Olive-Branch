@@ -884,13 +884,40 @@ class LiveCourtExportScreen extends StatefulWidget {
   State<LiveCourtExportScreen> createState() => _LiveCourtExportScreenState();
 }
 
+/// One `chain_broken` fault, as the wire sends it: `{'kind': ..., 'seq': ...}`
+/// (packages/ledger/src/ledger.ts's `ChainFault` — `seq` is absent for
+/// `bad_genesis`, present for the other four kinds). Rendered plainly rather
+/// than re-parsed into `ChainFaultKind` — this is a raw server diagnostic
+/// shown verbatim, not re-verified client-side (the client has no chain to
+/// re-check against; the server already did that work).
+String _formatFault(Map<String, dynamic> f) {
+  final String kind = (f['kind'] as String?) ?? 'unknown';
+  final Object? seq = f['seq'];
+  return seq == null ? kind : '$kind @$seq';
+}
+
 class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
   _LiveExportState _state = _LiveExportState.loading;
   String _errorMessage = '';
   String _denialReason = '';
   String _denialMessage = '';
+  // The real, per-entry chain-verification diagnostics a `chain_broken`
+  // denial carries (see ApiException.faults's own doc comment) — empty for
+  // every other denial reason, which never sends this key.
+  List<Map<String, dynamic>> _denialFaults = <Map<String, dynamic>>[];
   bool _free = false;
   Attestation? _attestation;
+  // Real, backend-computed, and DIFFERENT from `_attestation.bundleHash`:
+  // the attestation's own bundleHash is a hash over the chain alone
+  // (ledger.ts's `certify()`); this is a hash over `{chain, attestation}`
+  // together (packages/db/src/pool.ts's `certifiedExportBundleFor()`) — the
+  // actual signature of the whole exported bundle a reader would verify the
+  // delivered file against, not a duplicate of the attestation's own field.
+  String? _bundleHash;
+  // The real export_record row id this export was persisted under — a
+  // reader's reference number for this exact certified export, same idea as
+  // deletion_screen.dart's raw-export filename carrying its own record id.
+  String? _exportRecordId;
 
   @override
   void initState() {
@@ -921,6 +948,10 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
           chainVerified: att['chainVerified'] as bool,
           statement: att['statement'] as String,
         );
+        // Real, fetched alongside the attestation, and previously discarded
+        // here — see these fields' own doc comments above.
+        _bundleHash = result['bundleHash'] as String?;
+        _exportRecordId = result['exportRecordId'] as String?;
         _state = _LiveExportState.ready;
       });
     } on ApiException catch (e) {
@@ -932,6 +963,10 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
         setState(() {
           _denialReason = e.error;
           _denialMessage = e.message ?? 'Certified export was not authorized.';
+          // Real per-entry diagnostics on a chain_broken denial — see
+          // ApiException.faults's own doc comment. Empty for every other
+          // denial, which never sends this key.
+          _denialFaults = (e.faults ?? const <dynamic>[]).cast<Map<String, dynamic>>();
           _state = _LiveExportState.denied;
         });
       } else {
@@ -1012,6 +1047,19 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
               Text('REASON: $_denialReason',
                   style: textTheme.labelSmall?.copyWith(
                       fontFamily: 'monospace', color: scheme.onErrorContainer)),
+              // Real, per-entry verifyChain() diagnostics — server/routes.mjs
+              // sends these on a chain_broken denial specifically (see
+              // ApiException.faults's own doc comment); previously fetched
+              // and silently dropped by _decode()'s error path.
+              if (_denialFaults.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                Text('WHAT VERIFICATION FOUND', style: textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700, letterSpacing: 0.5,
+                    color: scheme.onErrorContainer)),
+                for (final Map<String, dynamic> f in _denialFaults)
+                  Text('• ${_formatFault(f)}', style: textTheme.labelSmall?.copyWith(
+                      fontFamily: 'monospace', color: scheme.onErrorContainer)),
+              ],
             ]),
           ),
           const SizedBox(height: 16),
@@ -1070,6 +1118,39 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
                 Expanded(child: Text(requestConfirmation, style: textTheme.bodySmall)),
               ]),
             ),
+          // The real record id and whole-bundle hash — fetched alongside the
+          // attestation above but, before this pass, never read out of the
+          // response at all. `_bundleHash` is NOT the same value as
+          // `att.bundleHash` above (that one hashes the chain alone; this one
+          // hashes `{chain, attestation}` together — see these fields' own
+          // doc comments) — gated behind the same §8.11.7 review-width rule
+          // as the attestation itself, since both are review detail, not the
+          // honest-notice copy.
+          if (reviewableAt(width, textScale) &&
+              (_bundleHash != null || _exportRecordId != null)) ...<Widget>[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: scheme.surface, borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.outlineVariant)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                if (_exportRecordId != null) ...<Widget>[
+                  Text('EXPORT RECORD ID', style: textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                  SelectableText(_exportRecordId!,
+                      style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+                ],
+                if (_bundleHash != null) ...<Widget>[
+                  if (_exportRecordId != null) const SizedBox(height: 8),
+                  Text('EXPORT BUNDLE HASH', style: textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                  SelectableText(_bundleHash!,
+                      style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+                ],
+              ]),
+            ),
+          ],
         ]);
     }
   }

@@ -37,6 +37,16 @@
 // values and every one of the widget tests in deletion_screen_test.dart
 // that mock a 200 already prove the success path works end to end.
 //
+// v0.49.15: `deactivateAccount()`'s real response body — `cancelledDeliveryIntents`,
+// `removedPinCredentials`, etc. — was fetched by `_confirm()` and discarded
+// outright (the call wasn't even assigned to a variable). The success card
+// now reads `cancelledDeliveryIntents` and states it, making "Messages you
+// had queued or banked" (the "What goes" list above) a real number instead
+// of an abstract promise. The other counts (removed credentials/challenges/
+// device tokens) stay unshown — internal security bookkeeping a guardian
+// reading a deletion confirmation has no use for, unlike a count of her own
+// messages.
+//
 // RAW EXPORT IS ALSO REAL (server/routes.mjs's `GET /v1/children/:childId
 // /export`, packages/db/src/pool.mjs's rawExportBundleFor — see that file's
 // own header for the RLS/scoping this button relies on). `_export()` below
@@ -159,13 +169,20 @@ class _DeletionScreenState extends State<DeletionScreen> {
   bool _deleting = false;
   bool _done = false;
   bool _exporting = false;
+  // Real, fetched from POST /v1/me/delete's own response body
+  // (packages/db/src/pool.ts's deactivateAccount()) and, before this pass,
+  // discarded entirely — `_confirm()` awaited the call and never read what
+  // came back. This is the exact count `whatDeletionRemoves` already
+  // promises abstractly ("Messages you had queued or banked but not yet
+  // delivered") made concrete with the real number this account actually had.
+  int? _cancelledDeliveryIntents;
 
   Future<void> _confirm(BuildContext context) async {
     setState(() => _deleting = true);
     final OliveApi api =
         OliveApi(widget.baseUrl, widget.sessionToken, client: widget.httpClient);
     try {
-      await api.deleteAccount();
+      final Map<String, dynamic> result = await api.deleteAccount();
       if (widget.httpClient == null) api.close();
       if (!context.mounted) return;
       // The confirmation copy is itself subject to the same audit as
@@ -173,7 +190,11 @@ class _DeletionScreenState extends State<DeletionScreen> {
       // §2.10/§2.11/P8 forbid any more than the stub did.
       final ({bool ok, List<String> found}) audit = auditDeletionCopy(deletionConfirmationCopy);
       assert(audit.ok, 'deletion confirmation copy contradicts §2.10/§2.11/P8: ${audit.found}');
-      setState(() { _deleting = false; _done = true; });
+      setState(() {
+        _deleting = false;
+        _done = true;
+        _cancelledDeliveryIntents = (result['cancelledDeliveryIntents'] as num?)?.toInt();
+      });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text(deletionConfirmationCopy), duration: Duration(seconds: 6)));
     } catch (e) {
@@ -342,10 +363,26 @@ class _DeletionScreenState extends State<DeletionScreen> {
           const SizedBox(height: 8),
           Card(color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Padding(padding: const EdgeInsets.all(12),
-              child: Row(children: [
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Icon(Icons.check_circle_outline, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 8),
-                const Expanded(child: Text(deletionConfirmationCopy)),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text(deletionConfirmationCopy),
+                  // Real, from the server's own response — see
+                  // _cancelledDeliveryIntents's own doc comment. Omitted
+                  // entirely at 0, matching this app's own "null/0 renders
+                  // nothing" convention (e.g. child_home.dart's badgeCount)
+                  // rather than a confusing "0 messages were cancelled."
+                  if ((_cancelledDeliveryIntents ?? 0) > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _cancelledDeliveryIntents == 1
+                        ? '1 queued or banked message was cancelled with it.'
+                        : '$_cancelledDeliveryIntents queued or banked messages were cancelled with it.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ],
+                ])),
               ]))),
         ],
       ])),
