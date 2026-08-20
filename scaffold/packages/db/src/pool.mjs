@@ -1,4 +1,5 @@
 import pg from "pg";
+import { DateTime } from "luxon";
 import { newChallenge, verifyPin } from "../../auth/src/auth.ts";
 import { can } from "../../family-graph/src/authorize.ts";
 import {
@@ -7,6 +8,9 @@ import {
   authorizeExport
 } from "../../ledger/src/ledger.ts";
 import { sha256Hex } from "../../ledger/src/sha256.ts";
+import {
+  handover
+} from "../../archive/src/archive.ts";
 function createPool(connectionString) {
   return new pg.Pool({ connectionString });
 }
@@ -426,10 +430,74 @@ async function childCtxFor(pool, childId) {
     };
   });
 }
+async function assembleRawExportBundle(q, childId, requester, journalRows) {
+  const childRows = await q(`SELECT display_name FROM child WHERE id = $1`, [childId]);
+  const deliveredRows = await q(
+    `SELECT di.id, di.payload_kind, di.sender_id, u.display_name AS sender_name,
+            di.state, di.materialized_at::text,
+            m.id AS artifact_id, m.kind AS artifact_kind, m.storage_key,
+            m.duration_ms, m.caption_key, m.captured_at::text, m.captured_tz,
+            m.era_tag, m.preserved
+       FROM delivery_intent di
+       JOIN app_user u ON u.id = di.sender_id
+       LEFT JOIN media_artifact m ON m.id = di.payload_ref
+      WHERE di.child_id = $1 AND di.state IN ('delivered', 'opened')
+      ORDER BY di.materialized_at ASC NULLS LAST`,
+    [childId]
+  );
+  const logRows = await q(
+    `SELECT seq, author_id, at::text, body, prev_hash, hash
+       FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
+    [childId]
+  );
+  const bundle = {
+    childId,
+    childName: childRows[0]?.display_name ?? null,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    requestedByUserId: "userId" in requester ? requester.userId : null,
+    requestedByChildId: "childId" in requester ? requester.childId : null,
+    delivered: deliveredRows.map((r) => ({
+      id: r.id,
+      payloadKind: r.payload_kind,
+      senderId: r.sender_id,
+      senderName: r.sender_name ?? null,
+      state: r.state,
+      materializedAt: r.materialized_at ?? null,
+      artifact: r.artifact_id ? {
+        id: r.artifact_id,
+        kind: r.artifact_kind,
+        storageKey: r.storage_key,
+        durationMs: r.duration_ms ?? null,
+        captionKey: r.caption_key ?? null,
+        capturedAt: r.captured_at,
+        capturedTz: r.captured_tz,
+        eraTag: r.era_tag ?? null,
+        preserved: r.preserved
+      } : null
+    })),
+    journalEntries: journalRows.map((r) => ({
+      id: r.id,
+      body: r.body ?? null,
+      mediaRef: r.media_ref ?? null,
+      createdAt: r.created_at
+    })),
+    messageLog: logRows.map((r) => ({
+      seq: Number(r.seq),
+      authorId: r.author_id,
+      at: r.at,
+      body: r.body,
+      prevHash: r.prev_hash,
+      hash: r.hash
+    }))
+  };
+  const serialized = JSON.stringify(bundle);
+  const bundleHash = sha256Hex(serialized);
+  return { bundle, serialized, bundleHash };
+}
 async function rawExportBundleFor(pool, principal, childId) {
   if (principal.roleName === "child") {
     throw new Error(
-      "rawExportBundleFor: child-self export is not implemented (no age gate wired, and export_record.requested_by has no app_user row to name)"
+      "rawExportBundleFor: child-self export is not implemented here (see takeAndGo() for the real, majority-gated child export path)"
     );
   }
   if (!principal.userId) {
@@ -451,77 +519,104 @@ async function rawExportBundleFor(pool, principal, childId) {
       [childId, requesterId]
     );
     if (!live.length) return { ok: false, reason: "not_a_live_guardian" };
-    const childRows = await q(`SELECT display_name FROM child WHERE id = $1`, [childId]);
-    const deliveredRows = await q(
-      `SELECT di.id, di.payload_kind, di.sender_id, u.display_name AS sender_name,
-              di.state, di.materialized_at::text,
-              m.id AS artifact_id, m.kind AS artifact_kind, m.storage_key,
-              m.duration_ms, m.caption_key, m.captured_at::text, m.captured_tz,
-              m.era_tag, m.preserved
-         FROM delivery_intent di
-         JOIN app_user u ON u.id = di.sender_id
-         LEFT JOIN media_artifact m ON m.id = di.payload_ref
-        WHERE di.child_id = $1 AND di.state IN ('delivered', 'opened')
-        ORDER BY di.materialized_at ASC NULLS LAST`,
-      [childId]
-    );
     const journalRows = await q(
       `SELECT id, body, media_ref, created_at::text
          FROM child_journal_entry WHERE child_id = $1 ORDER BY created_at ASC`,
       [childId]
     );
-    const logRows = await q(
-      `SELECT seq, author_id, at::text, body, prev_hash, hash
-         FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
-      [childId]
-    );
-    const bundle = {
-      childId,
-      childName: childRows[0]?.display_name ?? null,
-      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      requestedByUserId: requesterId,
-      delivered: deliveredRows.map((r) => ({
-        id: r.id,
-        payloadKind: r.payload_kind,
-        senderId: r.sender_id,
-        senderName: r.sender_name ?? null,
-        state: r.state,
-        materializedAt: r.materialized_at ?? null,
-        artifact: r.artifact_id ? {
-          id: r.artifact_id,
-          kind: r.artifact_kind,
-          storageKey: r.storage_key,
-          durationMs: r.duration_ms ?? null,
-          captionKey: r.caption_key ?? null,
-          capturedAt: r.captured_at,
-          capturedTz: r.captured_tz,
-          eraTag: r.era_tag ?? null,
-          preserved: r.preserved
-        } : null
-      })),
-      journalEntries: journalRows.map((r) => ({
-        id: r.id,
-        body: r.body ?? null,
-        mediaRef: r.media_ref ?? null,
-        createdAt: r.created_at
-      })),
-      messageLog: logRows.map((r) => ({
-        seq: Number(r.seq),
-        authorId: r.author_id,
-        at: r.at,
-        body: r.body,
-        prevHash: r.prev_hash,
-        hash: r.hash
-      }))
-    };
-    const serialized = JSON.stringify(bundle);
-    const bundleHash = sha256Hex(serialized);
+    const { bundle, serialized, bundleHash } = await assembleRawExportBundle(q, childId, { userId: requesterId }, journalRows);
     const inserted = await q(
       `INSERT INTO export_record (child_id, requested_by, kind, was_free, bundle_hash)
        VALUES ($1, $2, 'raw', true, $3) RETURNING id::text`,
       [childId, requesterId, bundleHash]
     );
     return { ok: true, bundle, serialized, recordId: inserted[0].id, bundleHash };
+  });
+}
+async function takeAndGo(pool, childId, now = /* @__PURE__ */ new Date()) {
+  if (!childId) throw new Error("takeAndGo: childId required");
+  const journalRows = await withSession(
+    pool,
+    { roleName: "child", userId: null, childId },
+    (q) => q(
+      `SELECT id, body, media_ref, created_at::text
+                 FROM child_journal_entry WHERE child_id = $1 ORDER BY created_at ASC`,
+      [childId]
+    )
+  );
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, birth_date::text, majority_age, handed_over_at::text, deceased_at::text
+         FROM child WHERE id = $1 FOR UPDATE`,
+      [childId]
+    );
+    if (!rows.length) {
+      throw Object.assign(new Error("takeAndGo: no such child"), { code: "child_not_found" });
+    }
+    const c = rows[0];
+    const artifactRows = await q(
+      `SELECT id, kind, storage_key AS "storageKey", captured_at::text AS "capturedAt",
+              captured_tz AS "capturedTz", preserved, era_tag AS "eraTag", author_id AS "authorId"
+         FROM media_artifact WHERE child_id = $1 AND preserved = true`,
+      [childId]
+    );
+    const artifacts = artifactRows.map((r) => ({
+      id: r.id,
+      childId,
+      kind: r.kind,
+      storageKey: r.storageKey,
+      capturedAt: r.capturedAt,
+      capturedTz: r.capturedTz,
+      preserved: r.preserved,
+      eraTag: r.eraTag,
+      authorId: r.authorId
+    }));
+    const child = {
+      id: c.id,
+      birthDate: c.birth_date,
+      majorityAge: c.majority_age,
+      handedOverAt: c.handed_over_at,
+      deceasedAt: c.deceased_at
+    };
+    const h = handover(child, artifacts, journalRows.length, DateTime.fromJSDate(now));
+    if (!h.ok) return { ok: false, reason: h.reason };
+    const { bundle, serialized, bundleHash } = await assembleRawExportBundle(q, childId, { childId }, journalRows);
+    const inserted = await q(
+      `INSERT INTO export_record (child_id, requested_by_child_id, kind, was_free, bundle_hash)
+       VALUES ($1, $2, 'raw', true, $3) RETURNING id::text`,
+      [childId, childId, bundleHash]
+    );
+    const closed = await q(
+      `UPDATE guardianship SET closed_at = $2, closed_reason = 'majority'
+        WHERE child_id = $1 AND closed_at IS NULL
+        RETURNING id`,
+      [childId, now.toISOString()]
+    );
+    const updated = await q(
+      `UPDATE child SET handed_over_at = $2 WHERE id = $1 AND handed_over_at IS NULL
+        RETURNING id`,
+      [childId, now.toISOString()]
+    );
+    if (updated.length !== 1) {
+      throw new Error(`takeAndGo: expected to hand over exactly 1 child row, affected ${updated.length}`);
+    }
+    return { ok: true, result: {
+      childId,
+      // `now.toISOString()` directly, not a round trip through Postgres's
+      // own `::text` cast — matching every other client-facing timestamp
+      // this file produces (rawExportBundleFor()'s `generatedAt`,
+      // certifiedExportBundleFor()'s `attestation.at`), never Postgres's own
+      // `timestamptz::text` format (space-separated, no 'T'), which nothing
+      // else in this codebase hands to a client and no client here parses.
+      handedOverAt: now.toISOString(),
+      guardianshipsClosed: closed.length,
+      artifactsTransferred: h.result.transferred.artifacts,
+      journalEntriesTransferred: h.result.transferred.journalEntries,
+      exportRecordId: inserted[0].id,
+      bundle,
+      serialized,
+      bundleHash
+    } };
   });
 }
 async function persistCapturedMessage(pool, capture, opts = {}) {
@@ -843,6 +938,7 @@ export {
   setAvailabilityWindows,
   setPinCredential,
   storeWebauthnCredential,
+  takeAndGo,
   unregisterDeviceToken,
   updateWebauthnSignCount,
   webauthnCredentialById,

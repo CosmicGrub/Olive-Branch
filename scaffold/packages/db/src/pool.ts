@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { DateTime } from 'luxon';
 import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
 import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
 import { can, type Edge, type Deny } from '../../family-graph/src/authorize.ts';
@@ -13,6 +14,10 @@ import type { ArtifactRow, IntentRow } from '../../messaging/src/pipeline.ts';
 import type { ChildCtx } from '../../delivery-engine/src/materialize.ts';
 import type { Platform } from '../../transport/src/push.ts';
 import type { Channel } from '../../devices/src/devices.ts';
+import {
+  handover, type Child as HandoverChild, type Artifact as HandoverArtifact,
+  type HandoverDenial,
+} from '../../archive/src/archive.ts';
 
 /**
  * MASTERFILE §5.18 — session context, and §5.17 — the second lock.
@@ -1011,7 +1016,15 @@ export interface RawExportBundle {
   childId: string;
   childName: string | null;
   generatedAt: string;
-  requestedByUserId: string;
+  /**
+   * Exactly one of requestedByUserId / requestedByChildId is non-null —
+   * mirroring export_record's own requested_by / requested_by_child_id
+   * split (0016_child_take_and_go.sql). A guardian-requested bundle
+   * (rawExportBundleFor() below) carries requestedByUserId; the child's own
+   * take-and-go bundle (takeAndGo() below) carries requestedByChildId.
+   */
+  requestedByUserId: string | null;
+  requestedByChildId: string | null;
   /** Delivered/opened only — never a message still in flight or revoked. */
   delivered: Array<{
     id: string;
@@ -1033,11 +1046,119 @@ export interface RawExportBundle {
       preserved: boolean;
     } | null;
   }>;
-  /** Always [] for the guardian callers this function actually serves — see
+  /** Always [] for the GUARDIAN callers this function actually serves — see
    *  the file-level comment on why the query still runs for real rather than
-   *  being hardcoded empty. */
+   *  being hardcoded empty. NOT always [] in general: takeAndGo() below is a
+   *  second, child-facing caller of the shared assembleRawExportBundle()
+   *  helper this interface also serves, and a child reading her OWN journal
+   *  is exactly what journal_owner_only (0001) exists to allow — see that
+   *  function's own header. */
   journalEntries: Array<{ id: string; body: string | null; mediaRef: string | null; createdAt: string }>;
   messageLog: Array<{ seq: number; authorId: string; at: string; body: string; prevHash: string; hash: string }>;
+}
+
+/**
+ * Shared by BOTH real callers of this bundle shape — rawExportBundleFor()
+ * (a guardian pulling her child's export) and takeAndGo() (a child pulling
+ * her OWN, further down this file) — so the actual assembly, serialization
+ * and hashing logic exists in exactly one place, per this task's own
+ * "reuse the export machinery, don't reinvent it" instruction. `q` is
+ * whatever session the CALLER already opened (a guardian-scoped session for
+ * rawExportBundleFor(); a system-scoped session for takeAndGo(), see that
+ * function's own header for why) — this helper is not itself session-aware,
+ * exactly like every other `q`-taking helper in this file.
+ *
+ * `journalRows` is supplied by the CALLER, not queried in here, because the
+ * one table that differs between the two callers (child_journal_entry) needs
+ * a DIFFERENT session role than everything else this helper reads:
+ * journal_owner_only (0001) is satisfied only by an actual 'child'-role
+ * session matching this exact child_id — 'system' does not satisfy it (it
+ * checks `current_setting('app.role') = 'child'` literally, not "any
+ * non-guardian role"), so a caller that wants real rows here must query them
+ * itself, under its own short-lived child-scoped session, and hand the
+ * result in. rawExportBundleFor() passes its own guardian-scoped query
+ * result (always [], by construction — P7, see this file's header); it is
+ * not special-cased away here, so the guarantee stays "Postgres actually
+ * refused this," never "this code remembered to leave it out."
+ *
+ * message_log, unlike the journal, is NOT split this way: log_no_child
+ * (0006_court_tier.sql) blocks the 'child' role specifically and admits
+ * every OTHER role unconditionally — 'system' passes it exactly like
+ * 'guardian' already does — so a single query against whatever `q` the
+ * caller passed in is correct for both callers with no branching needed.
+ * §21.7's own NOT_HERS_TO_DELETE comment (packages/maturation/src/rungs.ts)
+ * is the reasoning this leans on for including it in the CHILD's own bundle
+ * too, not just the guardian's: "She can have a copy of everything; she
+ * cannot erase somebody else's record of their own conduct" — a copy, not
+ * deletion rights, which is exactly what an export bundle is.
+ */
+async function assembleRawExportBundle(
+  q: Query, childId: string,
+  requester: { userId: string } | { childId: string },
+  journalRows: any[],
+): Promise<{ bundle: RawExportBundle; serialized: string; bundleHash: string }> {
+  const childRows = await q(`SELECT display_name FROM child WHERE id = $1`, [childId]);
+
+  const deliveredRows = await q(
+    `SELECT di.id, di.payload_kind, di.sender_id, u.display_name AS sender_name,
+            di.state, di.materialized_at::text,
+            m.id AS artifact_id, m.kind AS artifact_kind, m.storage_key,
+            m.duration_ms, m.caption_key, m.captured_at::text, m.captured_tz,
+            m.era_tag, m.preserved
+       FROM delivery_intent di
+       JOIN app_user u ON u.id = di.sender_id
+       LEFT JOIN media_artifact m ON m.id = di.payload_ref
+      WHERE di.child_id = $1 AND di.state IN ('delivered', 'opened')
+      ORDER BY di.materialized_at ASC NULLS LAST`,
+    [childId],
+  );
+
+  const logRows = await q(
+    `SELECT seq, author_id, at::text, body, prev_hash, hash
+       FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
+    [childId],
+  );
+
+  const bundle: RawExportBundle = {
+    childId,
+    childName: childRows[0]?.display_name ?? null,
+    generatedAt: new Date().toISOString(),
+    requestedByUserId: 'userId' in requester ? requester.userId : null,
+    requestedByChildId: 'childId' in requester ? requester.childId : null,
+    delivered: deliveredRows.map((r: any) => ({
+      id: r.id,
+      payloadKind: r.payload_kind,
+      senderId: r.sender_id,
+      senderName: r.sender_name ?? null,
+      state: r.state,
+      materializedAt: r.materialized_at ?? null,
+      artifact: r.artifact_id ? {
+        id: r.artifact_id,
+        kind: r.artifact_kind,
+        storageKey: r.storage_key,
+        durationMs: r.duration_ms ?? null,
+        captionKey: r.caption_key ?? null,
+        capturedAt: r.captured_at,
+        capturedTz: r.captured_tz,
+        eraTag: r.era_tag ?? null,
+        preserved: r.preserved,
+      } : null,
+    })),
+    journalEntries: journalRows.map((r: any) => ({
+      id: r.id, body: r.body ?? null, mediaRef: r.media_ref ?? null, createdAt: r.created_at,
+    })),
+    messageLog: logRows.map((r: any) => ({
+      seq: Number(r.seq), authorId: r.author_id, at: r.at, body: r.body,
+      prevHash: r.prev_hash, hash: r.hash,
+    })),
+  };
+
+  // Real sha256 over the exact bytes a recipient would receive — see this
+  // function's callers for why `serialized` (not just the hash) is what a
+  // caller should persist/re-hash to verify.
+  const serialized = JSON.stringify(bundle);
+  const bundleHash = sha256Hex(serialized);
+  return { bundle, serialized, bundleHash };
 }
 
 export type RawExportDenial = Deny | 'not_a_live_guardian';
@@ -1051,12 +1172,19 @@ export async function rawExportBundleFor(
   | { ok: false; reason: RawExportDenial }
 > {
   if (principal.roleName === 'child') {
-    // See the file-level comment above — a real, documented gap, not a
-    // silent one. routes.mjs's handler must refuse a child caller before
-    // this is ever reached.
+    // A CHILD PULLING HER OWN EXPORT THIS WAY (an ad-hoc, standalone pull,
+    // independent of majority) is still not implemented — no route wires a
+    // child caller into THIS function, and none should: rung 17's "her own
+    // export, no guardian approval, from seventeen" is a narrower, separate
+    // grant this pass does not build a standalone endpoint for. Her export
+    // AT MAJORITY (§9.8.4) is real, as of this pass — see takeAndGo() below,
+    // a deliberately separate function/route, not a child branch bolted onto
+    // this guardian-shaped one (which still runs a live-GUARDIAN SQL check
+    // a child can never satisfy — see below). routes.mjs's handler must
+    // refuse a child caller before this exact function is ever reached.
     throw new Error(
-      'rawExportBundleFor: child-self export is not implemented (no age gate ' +
-      'wired, and export_record.requested_by has no app_user row to name)');
+      'rawExportBundleFor: child-self export is not implemented here (see ' +
+      'takeAndGo() for the real, majority-gated child export path)');
   }
   if (!principal.userId) {
     throw new Error('rawExportBundleFor: non-child principal missing userId');
@@ -1091,82 +1219,19 @@ export async function rawExportBundleFor(
     );
     if (!live.length) return { ok: false, reason: 'not_a_live_guardian' };
 
-    const childRows = await q(`SELECT display_name FROM child WHERE id = $1`, [childId]);
-
-    const deliveredRows = await q(
-      `SELECT di.id, di.payload_kind, di.sender_id, u.display_name AS sender_name,
-              di.state, di.materialized_at::text,
-              m.id AS artifact_id, m.kind AS artifact_kind, m.storage_key,
-              m.duration_ms, m.caption_key, m.captured_at::text, m.captured_tz,
-              m.era_tag, m.preserved
-         FROM delivery_intent di
-         JOIN app_user u ON u.id = di.sender_id
-         LEFT JOIN media_artifact m ON m.id = di.payload_ref
-        WHERE di.child_id = $1 AND di.state IN ('delivered', 'opened')
-        ORDER BY di.materialized_at ASC NULLS LAST`,
-      [childId],
-    );
-
     // P7 — see the file-level comment. This is a real query against the real
     // table, not a hardcoded [], and it is expected to return zero rows for
-    // every caller who can reach this line (a live guardian, never a child).
+    // every caller who can reach this line (a live guardian, never a child)
+    // — journal_owner_only (0001) admits only an actual 'child'-role session
+    // matching this child_id, which this guardian-scoped session is not.
     const journalRows = await q(
       `SELECT id, body, media_ref, created_at::text
          FROM child_journal_entry WHERE child_id = $1 ORDER BY created_at ASC`,
       [childId],
     );
 
-    const logRows = await q(
-      `SELECT seq, author_id, at::text, body, prev_hash, hash
-         FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
-      [childId],
-    );
-
-    const bundle: RawExportBundle = {
-      childId,
-      childName: childRows[0]?.display_name ?? null,
-      generatedAt: new Date().toISOString(),
-      requestedByUserId: requesterId,
-      delivered: deliveredRows.map((r: any) => ({
-        id: r.id,
-        payloadKind: r.payload_kind,
-        senderId: r.sender_id,
-        senderName: r.sender_name ?? null,
-        state: r.state,
-        materializedAt: r.materialized_at ?? null,
-        artifact: r.artifact_id ? {
-          id: r.artifact_id,
-          kind: r.artifact_kind,
-          storageKey: r.storage_key,
-          durationMs: r.duration_ms ?? null,
-          captionKey: r.caption_key ?? null,
-          capturedAt: r.captured_at,
-          capturedTz: r.captured_tz,
-          eraTag: r.era_tag ?? null,
-          preserved: r.preserved,
-        } : null,
-      })),
-      journalEntries: journalRows.map((r: any) => ({
-        id: r.id, body: r.body ?? null, mediaRef: r.media_ref ?? null, createdAt: r.created_at,
-      })),
-      messageLog: logRows.map((r: any) => ({
-        seq: Number(r.seq), authorId: r.author_id, at: r.at, body: r.body,
-        prevHash: r.prev_hash, hash: r.hash,
-      })),
-    };
-
-    // Real sha256 over the exact bytes a recipient would receive — the same
-    // discipline packages/ledger/src/ledger.ts's certify() already applies to
-    // the certified-export half of this feature, reused here rather than
-    // reinvented (see this file's own import of sha256Hex). `serialized` is
-    // returned alongside `bundle` (not just the hash) specifically so a
-    // caller can verify bundleHash against the EXACT bytes that were hashed
-    // — re-serializing the parsed `bundle` object independently (client_lib
-    // JSON encoders don't all agree on key order/number formatting the same
-    // way `JSON.stringify` does) would risk a false "tamper" reading that
-    // has nothing to do with tampering.
-    const serialized = JSON.stringify(bundle);
-    const bundleHash = sha256Hex(serialized);
+    const { bundle, serialized, bundleHash } =
+      await assembleRawExportBundle(q, childId, { userId: requesterId }, journalRows);
 
     const inserted = await q(
       `INSERT INTO export_record (child_id, requested_by, kind, was_free, bundle_hash)
@@ -1175,6 +1240,186 @@ export async function rawExportBundleFor(
     );
 
     return { ok: true, bundle, serialized, recordId: inserted[0].id, bundleHash };
+  });
+}
+
+/**
+ * §21.2 rung 17 / §9.8.4 / §21.7 — the child's OWN export, and the closure
+ * that comes with it at majority. MASTERFILE calls this "the hardest button
+ * anyone builds here" (§21.7) for the guardian-deletion feature this
+ * function is a genuine mirror of — deactivateAccount() above is its closest
+ * relative in this file: same shape (a `FOR UPDATE` idempotency lock, one
+ * transaction, real row-count assertions, denial reasons returned rather
+ * than guessed), same posture (never fake a success, never invent a softer
+ * rail than the one this codebase already ships).
+ *
+ * WHAT THIS IS NOT, deliberately, and why it differs from deactivateAccount():
+ * a guardian's account is DEACTIVATED (soft — her login dies, her queued
+ * content is cancelled, but nothing of the CHILD's is touched, because it
+ * was never the guardian's to lose). A child at majority is not "logging
+ * out" of a family she is leaving unchanged behind her — §9.8.4 is explicit
+ * that guardian READ ACCESS ENDS: every one of HER guardianship edges closes
+ * (reason 'majority', already a valid value in guardianship's own
+ * closed_reason CHECK since 0001 — this is the first writer of that value).
+ * That is the "closure" half of "export + closure"; it is real custody
+ * ending, not a login being revoked, because in this schema a child never
+ * had a login to revoke in the first place (deactivateAccount()'s own guard,
+ * a few functions up, says so for guardians; the symmetric fact for a child
+ * is that there is no pin_credential/webauthn_credential/device_token
+ * *login* row of hers to remove either — device_token rows she owns
+ * (owner_child_id) are left untouched here, on purpose: they are HER
+ * device's push registration, not a credential, and nothing about turning
+ * eighteen makes her stop wanting her own tablet to notify her).
+ *
+ * REUSES the raw-export machinery rather than reinventing it, per this
+ * feature's own brief: assembleRawExportBundle() above is the SAME function
+ * rawExportBundleFor() calls for a guardian's pull — this is not a second,
+ * parallel bundle-shaping implementation. Certified export is deliberately
+ * NOT reused here: certifiedExportBundleFor()'s entire business rule
+ * (annual free allowance vs. Court tier, §16.1 #3) is about a GUARDIAN's
+ * legal-proceedings entitlement, has no meaning for a child taking her own
+ * archive, and export_record.kind's own CHECK (0006) only ever admits
+ * 'raw'|'certified' — this writes 'raw', matching what she is actually
+ * getting: the same free, unlimited, full bundle a guardian's raw pull gets,
+ * never gated by an allowance that was never about her.
+ *
+ * TWO SESSIONS, not one — an accepted, DOCUMENTED non-atomicity, same
+ * posture registerDeviceToken()'s own cross-owner-conflict comment already
+ * takes in this file, not a new kind of gap: journal_owner_only (0001) is
+ * satisfied ONLY by an actual 'child'-role session matching this exact
+ * child_id (see assembleRawExportBundle()'s own header) — 'system' cannot
+ * read her journal — so her journal is read here, first, under a real
+ * 'child'-role session, BEFORE the main 'system'-role transaction that does
+ * the actual idempotency-checked mutation opens. A crash in the gap between
+ * the two leaves nothing inconsistent on disk (the first session only ever
+ * reads), at the cost of the bundle's journalEntries theoretically
+ * reflecting a moment slightly before the rest of the bundle — the same
+ * order of magnitude of honesty-over-perfection this file already accepts
+ * elsewhere, not a security concern (nothing here decides WHETHER to grant
+ * anything based on the journal read).
+ *
+ * export_record.requested_by_child_id (0016_child_take_and_go.sql) is what
+ * makes the WRITE half of this possible at all — see that migration's own
+ * header for why `requested_by` alone (NOT NULL REFERENCES app_user) could
+ * never honestly name a child caller, and why export_record_no_child's RLS
+ * is left untouched rather than loosened.
+ */
+export interface TakeAndGoResult {
+  childId: string;
+  handedOverAt: string;
+  guardianshipsClosed: number;
+  artifactsTransferred: number;
+  journalEntriesTransferred: number;
+  exportRecordId: string;
+  bundle: RawExportBundle;
+  serialized: string;
+  bundleHash: string;
+}
+
+export async function takeAndGo(
+  pool: pg.Pool, childId: string, now: Date = new Date(),
+): Promise<{ ok: true; result: TakeAndGoResult } | { ok: false; reason: HandoverDenial }> {
+  if (!childId) throw new Error('takeAndGo: childId required');
+
+  // Her journal, read as HER — see this function's own header on why this
+  // cannot be folded into the 'system' transaction below. Real rows, not the
+  // always-[] a guardian caller of assembleRawExportBundle() gets — she is
+  // the one caller who legitimately reaches journal_owner_only's own grant.
+  const journalRows = await withSession(pool, { roleName: 'child', userId: null, childId },
+    (q) => q(`SELECT id, body, media_ref, created_at::text
+                 FROM child_journal_entry WHERE child_id = $1 ORDER BY created_at ASC`,
+              [childId]));
+
+  return withSystemSession(pool, async (q) => {
+    // FOR UPDATE first, exactly deactivateAccount()'s own idempotency shape:
+    // a double-tap on the confirm button blocks here until the first
+    // transaction commits, then observes handed_over_at already set and
+    // fails cleanly rather than two transactions racing to both "succeed" —
+    // closing the same guardianship edges twice, or writing two export_record
+    // rows for one irreversible event.
+    const rows = await q(
+      `SELECT id, birth_date::text, majority_age, handed_over_at::text, deceased_at::text
+         FROM child WHERE id = $1 FOR UPDATE`, [childId]);
+    if (!rows.length) {
+      throw Object.assign(new Error('takeAndGo: no such child'), { code: 'child_not_found' });
+    }
+    const c = rows[0];
+
+    // Real PRESERVED artifacts, queried — not estimated — for handover()'s
+    // own `transferred.artifacts` count. `preserved = true` only, mirroring
+    // compileYearBook()'s own reasoning (packages/archive/src/archive.ts):
+    // "an unpreserved artifact is on a retention clock and may already be
+    // gone" -- §9.8.4 is about her PRESERVED archive transferring, not a
+    // count that includes ephemeral, still-in-flight media. media_artifact
+    // carries no RLS (see rawExportBundleFor's own header on this table), so
+    // a plain SELECT under this 'system' session sees every real row.
+    const artifactRows = await q(
+      `SELECT id, kind, storage_key AS "storageKey", captured_at::text AS "capturedAt",
+              captured_tz AS "capturedTz", preserved, era_tag AS "eraTag", author_id AS "authorId"
+         FROM media_artifact WHERE child_id = $1 AND preserved = true`, [childId]);
+    const artifacts: HandoverArtifact[] = artifactRows.map((r: any) => ({
+      id: r.id, childId, kind: r.kind, storageKey: r.storageKey, capturedAt: r.capturedAt,
+      capturedTz: r.capturedTz, preserved: r.preserved, eraTag: r.eraTag, authorId: r.authorId,
+    }));
+
+    // packages/archive/src/archive.ts's handover() — the real, already-
+    // tested (packages/ledger/test/phase3.test.mjs "P archive") business
+    // rule: not_yet_of_age / already_handed_over / child_deceased, computed
+    // from the SAME birth_date/majority_age this schema has carried since
+    // 0001_phase0_init.sql. Reused, not reimplemented — this function does
+    // not compare ages or diff dates itself anywhere.
+    const child: HandoverChild = {
+      id: c.id, birthDate: c.birth_date, majorityAge: c.majority_age,
+      handedOverAt: c.handed_over_at, deceasedAt: c.deceased_at,
+    };
+    const h = handover(child, artifacts, journalRows.length, DateTime.fromJSDate(now));
+    if (!h.ok) return { ok: false, reason: h.reason };
+
+    const { bundle, serialized, bundleHash } =
+      await assembleRawExportBundle(q, childId, { childId }, journalRows);
+
+    const inserted = await q(
+      `INSERT INTO export_record (child_id, requested_by_child_id, kind, was_free, bundle_hash)
+       VALUES ($1, $2, 'raw', true, $3) RETURNING id::text`,
+      [childId, childId, bundleHash],
+    );
+
+    // The closure itself. closure_has_reason (0001) requires closed_at and
+    // closed_reason to be set together — this UPDATE always sets both, so
+    // that CHECK is satisfied by construction, never raced.
+    const closed = await q(
+      `UPDATE guardianship SET closed_at = $2, closed_reason = 'majority'
+        WHERE child_id = $1 AND closed_at IS NULL
+        RETURNING id`,
+      [childId, now.toISOString()]);
+
+    const updated = await q(
+      `UPDATE child SET handed_over_at = $2 WHERE id = $1 AND handed_over_at IS NULL
+        RETURNING id`,
+      [childId, now.toISOString()]);
+    if (updated.length !== 1) {
+      // Should be unreachable given the FOR UPDATE existence/idempotency
+      // check above — asserted anyway, matching deactivateAccount()'s own
+      // "never let the database silently disagree with what she was told."
+      throw new Error(`takeAndGo: expected to hand over exactly 1 child row, ` +
+        `affected ${updated.length}`);
+    }
+
+    return { ok: true, result: {
+      childId,
+      // `now.toISOString()` directly, not a round trip through Postgres's
+      // own `::text` cast — matching every other client-facing timestamp
+      // this file produces (rawExportBundleFor()'s `generatedAt`,
+      // certifiedExportBundleFor()'s `attestation.at`), never Postgres's own
+      // `timestamptz::text` format (space-separated, no 'T'), which nothing
+      // else in this codebase hands to a client and no client here parses.
+      handedOverAt: now.toISOString(),
+      guardianshipsClosed: closed.length,
+      artifactsTransferred: h.result.transferred.artifacts,
+      journalEntriesTransferred: h.result.transferred.journalEntries,
+      exportRecordId: inserted[0].id,
+      bundle, serialized, bundleHash,
+    } };
   });
 }
 

@@ -14,6 +14,135 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.16] — 2026-08-20 — Take and go: §9.8.4 gets its first real backend
+
+§21.7's own status note has said, since v0.47.0, exactly what was still
+missing: "the GUARDIAN half is real, the child's own §21.6 'take and go' is
+not yet... an eighteen-year-old exporting and closing out her OWN account,
+guardians losing access to her archive per §9.8.4, is a different,
+still-unbuilt operation." `POST /v1/children/:id/handover` — named in §7.9's
+own API surface listing since before this pass, never implemented — is that
+operation, now real, built as a genuine mirror of `deactivateAccount()`
+(same rigor: `FOR UPDATE` idempotency lock, one transaction, real row-count
+assertions, denial reasons returned rather than guessed) and reusing, not
+reinventing, both the export machinery and the maturation business rule
+this codebase already had, fully tested, sitting unwired.
+
+### Added
+- **`db/migrations/0016_child_take_and_go.sql`** — `export_record.requested_by`
+  is now nullable; a new `requested_by_child_id uuid REFERENCES child(id)`
+  column plus an `export_record_has_exactly_one_requester` CHECK mirror
+  `device_token`'s existing owner-column split (`owner_user_id`/
+  `owner_child_id`), the same shape for the same underlying reason — a row
+  may belong to a guardian OR a child, never both, never neither.
+  `export_record_no_child`'s RLS (0013) is left untouched: a child-initiated
+  row is written under a `system`-scoped session, after the route's own
+  identity check, not by loosening a policy written to admit no child
+  session at all.
+- **`packages/db/src/pool.ts`'s `takeAndGo(pool, childId, now?)`** — one
+  transaction: `packages/archive/src/archive.ts`'s `handover()` (real, unit-
+  tested since before this pass via `phase3.test.mjs`, never wired to
+  anything) is the unmodified source of truth for the age/deceased/
+  idempotency gate and the closure semantics — this function writes no
+  age-comparison logic of its own. On success: every live `guardianship`
+  edge for the child closes (`closed_reason = 'majority'`, a value the
+  schema's own CHECK has accepted since `0001_phase0_init.sql`),
+  `child.handed_over_at` is set, and a real, full export bundle is
+  assembled and hashed. `assembleRawExportBundle()` — extracted from
+  `rawExportBundleFor()`, the SAME code a guardian's own raw-export pull
+  already used, not a second implementation — additionally carries her REAL
+  journal (read under an actual `'child'`-role session, the one table
+  `journal_owner_only`'s RLS requires that specific role for — `'system'`
+  does not satisfy it) and a real copy of the parent-to-parent log (never
+  present in a guardian's own bundle for a different reason: nothing scopes
+  it away from a guardian session; it is simply never denied to her own,
+  per rungs.ts's own `NOT_HERS_TO_DELETE`: "she can have a copy of
+  everything; she cannot erase somebody else's record of their own
+  conduct"). Only PRESERVED artifacts count toward the returned
+  `artifactsTransferred`, mirroring `compileYearBook()`'s own reasoning
+  for the same distinction.
+- **`POST /v1/children/:childId/handover`** (`server/routes.mjs`) —
+  `action: null, identityScopedByHandler: true, skipOuterSession: true`,
+  the same "identity, not an edge" shape as `kiosk-pin/verify`: a child
+  holds no guardianship edge to HERSELF, so `can()` was never the right
+  tool. Certified export's own tier/allowance rule (§16.1 #3) is
+  deliberately NOT reused — it is a guardian legal-proceedings concept with
+  no meaning for a child taking her own archive; this writes `kind: 'raw'`,
+  same as a guardian's free, unlimited pull.
+- **`OliveApi.takeAndGo()`** (`client/lib/api_client.dart`) and
+  **`client/lib/take_and_go_screen.dart`** (new) — a genuine mirror of
+  `deletion_screen.dart`'s own rigor: states what she takes and what closes
+  BEFORE any destructive control is reachable, an acknowledge-before-enable
+  gate, an audited-copy discipline (`takeAndGoForbiddenCopy`, leaning on
+  `rungs.ts`'s `DELETION_FORBIDDEN_COPY` as its tone precedent — no "are you
+  sure," no offered delay, no guilt), and NO cooling-off period (§21.7's own
+  words: "a delay is a soft refusal dressed as care"). On success it writes
+  the real export bundle to a file and verifies the hash against it, same
+  shape as `deletion_screen.dart`'s own raw-export button. Reached from a
+  new, always-visible tile in `client/lib/child_more.dart` — the SCREEN, not
+  the hub, tells her honestly if she is not yet of age; this hub does not
+  gate its own visibility on a client-side age guess, matching every other
+  tile in it.
+
+### Verified
+- **`packages/db/test/take_and_go.test.mjs`** (new, 47 assertions) — real
+  Postgres, real RLS, real server, mirroring `deletion.test.mjs`'s own
+  structure: (A) `export_record_no_child` really refuses a child-role
+  session both ways (a filtered SELECT, a thrown 42501 on INSERT), and
+  `journal_owner_only` admits the exact matching child and refuses both a
+  different child AND `'system'`; (B) `not_yet_of_age`/`child_deceased`
+  denials touch nothing; (C) a real success closes both real guardianship
+  edges, counts only the preserved artifact, carries her real journal (2
+  entries) and a real copy of the log (1 entry, hash-verified), writes
+  `requested_by_child_id` (never `requested_by`), and a second call is
+  refused, not repeated; (D) a bystander guardian and the closed-out
+  guardian's own account are untouched, and her own `device_token` survives
+  (unlike a guardian's on deactivation); (E) a real HTTP server refuses a
+  wrong child's session, refuses a guardian's session, refuses no session at
+  all, and a genuine call over her own real dev-login session succeeds and
+  is refused on replay. **Not run this session — no Postgres available in
+  this environment** (consistent with every other `(real RLS)` suite in this
+  repo's own CHANGELOG history); wired into `tools/verify.sh`'s real-RLS
+  loop for CI to run for real.
+- **`packages/api/test/contract.test.mjs`** — extended with the fourth
+  `identityScopedByHandler` exception (31/31, up from 29/29).
+  **`server/test/routes.test.mjs`** (19/19), **`packages/api/test/
+  stack.test.mjs`** (107/107), **`packages/ledger/test/phase3.test.mjs`**
+  (95/95, `handover()`'s own pure-logic coverage, unchanged by this pass) —
+  all re-run locally after the `assembleRawExportBundle()` refactor, no
+  regressions.
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full suite, **1563 run, 1562 passed locally**
+  (**0 failed on CI**, which does not carry the platform-specific failure
+  below), including 16 new in `take_and_go_screen_test.dart` (copy audit,
+  disabled-until-acknowledged, a genuine success round trip with a real
+  file write and hash verification, `not_yet_of_age`/`already_handed_over`/
+  unreachable-server failures, and the same Fold5/phone/desktop responsive
+  sweep `deletion_screen_test.dart` already carries) and `child_more_test.dart`
+  unchanged (7/7). The one local failure is the same pre-existing, unrelated
+  `push_channel_test.dart` failure noted since v0.49.6 — nothing this pass
+  touched.
+
+### Declined this pass, honestly
+- **Rung 18's separate, more drastic action** — `packages/maturation/src/
+  rungs.ts`'s `requestDeletion()`/`deletionConfirmation()`, a full deletion
+  of every scope she owns (media, messages, journal, games, letters...) —
+  is NOT wired to anything here. §21.6 lists "take and go" as exporting
+  AND deleting the account; what is real now is the shared §9.8.4 mechanism
+  underlying all three of §21.6's paths (take-and-go, keep-as-archive,
+  becomes-a-parent) — guardian access ending, with a full export in hand.
+  A subsequent, full self-deletion of her own historical data is a
+  separate, heavier, and more consequential grant this pass declines to
+  invent unilaterally, consistent with this repo's own standing practice
+  of not shipping a guessed answer to an open product decision.
+- **A standalone, ad-hoc child export** (rung 17, "her own export, no
+  guardian approval, from seventeen," independent of majority) is still not
+  wired — `GET /v1/children/:childId/export` still 501s for a child
+  principal, now with an honest comment pointing at `takeAndGo()` instead
+  of the previous claim that no child-caller path exists anywhere.
+
+---
+
 ## [0.49.15] — 2026-08-20 — Dead wire: real data, fetched, then thrown away
 
 A dedicated sweep for one recurring bug shape found across this codebase's

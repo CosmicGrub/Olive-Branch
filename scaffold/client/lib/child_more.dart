@@ -23,6 +23,7 @@ import 'shared_gallery.dart';
 import 'shared_reading.dart';
 import 'snapshot_button.dart' show AppGalleryScreen;
 import 'story_library.dart';
+import 'take_and_go_screen.dart';
 import 'teach_me.dart';
 import 'weeks_screen.dart';
 
@@ -97,6 +98,17 @@ class ChildMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.replay_circle_filled_outlined, title: 'Redo the welcome tour',
             subtitle: 'The first-run screens, walked through again',
             onTap: () => _open(context, OnboardingFlowScreen(fallbackName: childName))),
+        ]),
+        // §9.8.4, §21.2 rung 17, §21.7 — always reachable, same posture every
+        // other tile here takes: the SCREEN states the real, honest outcome
+        // (including "not yet" for an under-age tap), never this hub deciding
+        // in advance whether she is "allowed to see the button". See
+        // take_and_go_screen.dart's own header for why hiding this behind a
+        // client-side age check would be the wrong kind of gate.
+        HubSection(title: 'When you are ready', children: [
+          HubTile(icon: Icons.outbox_outlined, title: 'Take your data and go',
+            subtitle: 'At eighteen: a full copy of everything, and guardian access closes',
+            onTap: () => _open(context, TakeAndGoScreen(childName: childName))),
         ]),
       ]),
     )),

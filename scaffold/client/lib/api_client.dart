@@ -138,6 +138,16 @@ class OliveApi {
   static const homeworkCapture = '/v1/children/:childId/homework/capture';
   // --- account lifecycle (§2.10, §2.11, §9.8, P8) -------------------------
   static const deleteAccountPath = '/v1/me/delete';
+  // --- child-initiated take-and-go (§9.8.4, §7.9, §21.2 rung 17, §21.6/
+  // §21.7) -----------------------------------------------------------------
+  // The child's OWN export + majority guardianship closure -- server/
+  // routes.mjs's real handler, packages/db/src/pool.mjs's takeAndGo(). A
+  // genuine mirror of deleteAccountPath above, for the child side. The path
+  // itself is §7.9's own long-specified-but-unbuilt `.../handover` route
+  // ("majority transfer. Irreversible. §9.8.4") -- "take and go" (§21.6's
+  // own row title) is this feature's PRODUCT name, kept for the Dart
+  // constant/screen/pool-function names; the wire path matches the spec.
+  static const takeAndGoPath = '/v1/children/:childId/handover';
   // --- court export (§2.11, §16.1 #3) -------------------------------------
   // Certified export reuses `export_` above (same route, `?kind=certified`)
   // rather than a second path constant for the identical URL — server/
@@ -374,6 +384,28 @@ class OliveApi {
   /// same empty-map convention [requestWebauthnRegisterChallenge] already
   /// uses for a POST with nothing to carry.
   Future<Map<String, dynamic>> deleteAccount() => _post(deleteAccountPath, const {});
+
+  /// POST /v1/children/:childId/handover — §9.8.4, §7.9, §21.2 rung 17,
+  /// §21.6/§21.7.
+  /// The CALLING CHILD's own export + majority guardianship closure, in one
+  /// atomic action — server/routes.mjs resolves and re-verifies the target
+  /// from the verified child session (`c.principal.childId`), the same A3
+  /// discipline every other identity-scoped route here follows; [childId] is
+  /// sent only to select the path, never trusted over the session.
+  ///
+  /// Unlike [deleteAccount] this is not a "how much survives" question —
+  /// nothing of hers is destroyed. On success the response carries a real,
+  /// full raw-export bundle (same shape [fetchRawExport] returns —
+  /// `bundle`/`bundleJson`/`bundleHash`/`exportRecordId`, PLUS
+  /// `handedOverAt`/`guardianshipsClosed`/`artifactsTransferred`/
+  /// `journalEntriesTransferred`) and every one of her guardianship edges is
+  /// now closed. On failure this throws [ApiException] with the server's
+  /// real reason — `not_yet_of_age`, `already_handed_over`, `child_deceased`,
+  /// or `not_this_child`/a transport failure — take_and_go_screen.dart's
+  /// `_takeAndGo()` is the caller responsible for turning that into honest
+  /// on-screen copy, exactly like [deleteAccount]'s own caller does.
+  Future<Map<String, dynamic>> takeAndGo(String childId) =>
+      _post(takeAndGoPath, const {}, childId: childId);
 
   /// Response shape (server/routes.mjs, packages/db/src/pool.mjs's
   /// rawExportBundleFor): `{bundle, bundleJson, exportRecordId, bundleHash}`.

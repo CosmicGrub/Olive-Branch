@@ -309,6 +309,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db availability (real RLS)|packages/db/test/availability.test.mjs" \
             "db account deletion (real RLS)|packages/db/test/deletion.test.mjs" \
             "db raw export (real RLS)|packages/db/test/raw_export.test.mjs" \
+            "db take-and-go (real RLS)|packages/db/test/take_and_go.test.mjs" \
             "db message capture (real RLS)|packages/db/test/message_capture.test.mjs" \
             "db device token (real RLS)|packages/db/test/device_token.test.mjs" \
             "db guardian invite (real RLS)|packages/db/test/guardian_invite.test.mjs" \
