@@ -234,9 +234,21 @@ export function registerRoutes(api, pool) {
   // 0014's own header and getGuardianInvite()'s doc comment. The invite's
   // own long, random `id` (handed out of band: a link or code, not this
   // route's concern) is what authorizes reading it. Never lists invites.
+  //
+  // noSessionRequired (fixed post-merge, found by an adversarial audit of
+  // this whole pass): registering this with only `action: null,
+  // skipOuterSession: true` — as this route originally did — still left it
+  // behind api.handle()'s unconditional Bearer-token gate, which 401'd
+  // every call from the invited party this route was built for (they have
+  // no session to send one from) and from api_client.dart's own
+  // fetchGuardianInvite(), which deliberately sends no Authorization header
+  // to match. Verified empirically before this fix: calling api.handle()
+  // directly on this exact route shape returned 401 no_session, the
+  // handler never reached. See api.ts's own noSessionRequired doc comment
+  // for the fix and why it mirrors the webauthn-login bypass.
   api.register({
     method: 'GET', path: '/v1/guardian-invites/:inviteId', action: null,
-    skipOuterSession: true,
+    skipOuterSession: true, noSessionRequired: true,
     handler: async (c) => {
       const invite = await getGuardianInvite(pool, c.params.inviteId);
       if (!invite) return { status: 404, body: { error: 'not_found' } };
@@ -244,9 +256,13 @@ export function registerRoutes(api, pool) {
     },
   });
 
+  // Same noSessionRequired fix, same reason — acceptGuardianInvite() is the
+  // other half of the flow an unauthenticated invited party must be able to
+  // reach; api_client.dart's acceptGuardianInvite() also sends no
+  // Authorization header.
   api.register({
     method: 'POST', path: '/v1/guardian-invites/:inviteId/accept', action: null,
-    skipOuterSession: true,
+    skipOuterSession: true, noSessionRequired: true,
     handler: async (c) => {
       const result = await acceptGuardianInvite(pool, c.params.inviteId, new Date());
       if (!result.ok) {

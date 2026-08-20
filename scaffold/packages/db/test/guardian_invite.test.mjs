@@ -9,7 +9,7 @@
  * a NOSUPERUSER NOBYPASSRLS role (db/DEPLOYMENT.md's app_owner) — a probe of
  * RLS run as `postgres` measures nothing.
  *
- * Six sections:
+ * Seven sections:
  *   A. create — a real row lands, scoped correctly
  *   B. read — getGuardianInvite() finds a real invite by id, and honestly
  *      returns null for one that never existed
@@ -24,11 +24,24 @@
  *      even via a raw admin UPDATE that bypasses every function above
  *   F. health_check's rls_unforced — guardian_invite reports 0, proving
  *      FORCE ROW LEVEL SECURITY actually took
+ *   G. THE REAL HTTP ROUTE, no session — added post-merge after an
+ *      adversarial audit found A-F above all call pool.mjs functions
+ *      directly, bypassing api.handle() entirely, so nothing anywhere had
+ *      ever proven the actual HTTP route an unauthenticated invited party
+ *      calls (GET .../accept sending no Authorization header, matching
+ *      api_client.dart's own fetchGuardianInvite()/acceptGuardianInvite())
+ *      was reachable. It was not: api.handle() 401'd both, unconditionally,
+ *      before noSessionRequired existed (see api.ts's own doc comment on
+ *      that fix). This section drives the REAL Api + registerRoutes wiring
+ *      against this same real Postgres — the route layer AND the query
+ *      layer together, which is exactly the boundary the bug lived on.
  */
 import pg from 'pg';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { createPool, createGuardianInvite, getGuardianInvite,
-  acceptGuardianInvite, revokeGuardianInvite, withSession } from '../src/pool.mjs';
+  acceptGuardianInvite, revokeGuardianInvite, withSession, dbPort } from '../src/pool.mjs';
+import { Api } from '../../api/src/api.mjs';
+import { registerRoutes } from '../../../server/routes.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? DATABASE_URL;
@@ -200,6 +213,54 @@ let liveInviteId;
     `SELECT observed FROM health_check WHERE check_name = 'rls_unforced'`);
   check('F health', 'rls_unforced reports zero unforced tables '
     + '(guardian_invite genuinely has FORCE ROW LEVEL SECURITY)', r.rows[0]?.observed, '0');
+}
+
+// G · THE REAL HTTP ROUTE — no session, exactly as an invited party (or
+// api_client.dart's own fetchGuardianInvite()/acceptGuardianInvite(), which
+// send no Authorization header on purpose) actually calls it. This is the
+// section that would have failed loudly before the noSessionRequired fix:
+// api.handle() 401'd both routes unconditionally, before ever reaching
+// getGuardianInvite()/acceptGuardianInvite() below.
+{
+  const api = new Api(randomBytes(32), dbPort(pool), () => Date.now());
+  registerRoutes(api, pool);
+
+  const created = await createGuardianInvite(
+    pool, GUARDIAN_A, CHILD, 'sitter', 'Real HTTP Route Check', 'sitter@example.com');
+  const inviteId = created.invite.id;
+
+  // GET, no Authorization header at all.
+  const getRes = await api.handle('GET', `/v1/guardian-invites/${inviteId}`, {}, '');
+  check('G real route', 'GET with no session reaches the handler (not a 401)',
+    getRes.status, '200');
+  check('G real route', 'and returns the real invite', getRes.body?.invite?.id, inviteId);
+
+  // POST accept, no Authorization header at all.
+  const acceptRes = await api.handle(
+    'POST', `/v1/guardian-invites/${inviteId}/accept`, {}, '');
+  check('G real route', 'POST accept with no session reaches the handler (not a 401)',
+    acceptRes.status, '200');
+  check('G real route', 'and the invite is really accepted',
+    Boolean(acceptRes.body?.invite?.acceptedAt), 'true');
+
+  // GET on a genuinely nonexistent id still 404s through the same
+  // no-session path — the bypass doesn't turn "not found" into something else.
+  const missingRes = await api.handle(
+    'GET', `/v1/guardian-invites/${randomUUID()}`, {}, '');
+  check('G real route', 'GET on a nonexistent id still 404s, not 200 or 401',
+    missingRes.status, '404');
+
+  // Control: revoke must NOT have gotten the same bypass — only create/read/
+  // accept were ever meant to be reachable without a session; revoke needs
+  // the inviting guardian's own real identity (c.principal.userId).
+  const secondInvite = await createGuardianInvite(
+    pool, GUARDIAN_A, CHILD, 'sitter', 'Revoke Control', 'revoke-control@example.com');
+  const revokeRes = await api.handle(
+    'POST', `/v1/guardian-invites/${secondInvite.invite.id}/revoke`, {}, '');
+  check('G real route', 'POST revoke with no session is correctly still refused',
+    revokeRes.status, '401');
+  check('G real route', 'refused for the real reason (no_session), not a coincidence',
+    revokeRes.body?.error, 'no_session');
 }
 
 await admin.end();

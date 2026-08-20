@@ -54,8 +54,14 @@ export interface RoutingInput {
 
 export interface RoutingDecision {
   route: Route;
-  /** Every route that was tried and why it was not taken. Auditable. */
-  rejected: { route: Route; because: string }[];
+  /**
+   * Every route that was tried and why it was not taken. Auditable.
+   * `code`, on the `sms_to_adult` entry only, is a structured reason
+   * `senderStatus()` reads instead of pattern-matching `because`'s prose —
+   * see that function's own v0.49.14 fix for why prose-matching would have
+   * been the wrong fix for the bug that motivated adding this field.
+   */
+  rejected: { route: Route; because: string; code?: string }[];
   /** Set when nothing can reach her, which must never be silent. */
   unreachable: boolean;
 }
@@ -101,6 +107,9 @@ export function route(i: RoutingInput): RoutingDecision {
     return { route: 'sms_to_adult', rejected, unreachable: false };
   }
   rejected.push({ route: 'sms_to_adult',
+    code: !smsEligible ? 'not_sms_eligible'
+      : !i.adultNumberOnFile ? 'no_number'
+      : 'not_yet_time',
     because: !smsEligible ? `${i.channel} has no SMS fallback declared`
       : !i.adultNumberOnFile ? 'no adult number on file at that house'
       : `only ${i.minutesWaiting} minutes waited, escalates at ${SMS_ESCALATE_AFTER_MINUTES}` });
@@ -135,6 +144,35 @@ export function senderStatus(d: RoutingDecision, childName: string): SenderStatu
       line: `${childName}'s tablet can't show alerts, so we've texted the grown-up `
           + 'there to let her know something is waiting.' };
   }
+
+  // route === 'none'. v0.49.14 fix: this used to return the SAME "no number
+  // on file" line for every 'none' case, regardless of why nothing could be
+  // sent — false whenever that was not the real reason (an adult number
+  // genuinely on file, SMS just hasn't escalated yet; or the channel has no
+  // SMS fallback at all, so a number would not help either way). Directly
+  // violated this module's own stated purpose ("the sender is told what
+  // actually happened") and evaded auditStatus()/STATUS_BANNED, which only
+  // checks for false DELIVERY claims, not a false CAUSE for non-delivery.
+  // Reads route()'s own structured `code` (added for this fix) rather than
+  // pattern-matching `because`'s prose, which would only be as reliable as
+  // the wording happens to stay.
+  const smsCode = d.rejected.find(r => r.route === 'sms_to_adult')?.code;
+  if (smsCode === 'not_yet_time') {
+    return { delivered: false, actionable: false,
+      line: `It's saved, and ${childName} will see it the moment she opens Olive. `
+          + "Her tablet can't alert her right now, but we'll text the grown-up there "
+          + "automatically once it's been waiting a little longer." };
+  }
+  if (smsCode === 'not_sms_eligible') {
+    return { delivered: false, actionable: false,
+      line: `It's saved, and ${childName} will see it the moment she opens Olive. `
+          + "This device can't show pop-up alerts, and we can't text the grown-up "
+          + "there either — she'll see it next time she opens Olive." };
+  }
+  // smsCode === 'no_number' (or absent — a channel that never reached the
+  // sms_to_adult check at all still lands here safely, same as before this
+  // fix). The one case this line was actually written for, and the only one
+  // where adding a number is a real, useful action for the sender to take.
   return { delivered: false, actionable: true,
     line: `It's saved, and ${childName} will see it the moment she opens Olive. `
         + 'Her tablet can\'t alert her and we don\'t have a number for the house — '

@@ -244,6 +244,65 @@ const dadP = { roleName: 'guardian', userId: DAD, childId: null };
   await admin.query(`DELETE FROM device_token WHERE id = $1`, [unknownId]);
 }
 
+// F3 · admitDevice()'s ok:false ("silent_device") branch — unreachable with
+// any real shipped channel (devices.ts's own CHANNELS table has none that
+// combine push:false with fallback:'none'), but live code in a path this
+// codebase's own header calls "the worst class of defect this product can
+// have." An adversarial audit found it had never executed under test.
+// Injected via the new admitDevice seam (v0.49.14) rather than left
+// unreachable — proving the `: admission.note` ternary arm produces the
+// right shape, not just that it type-checks.
+{
+  const id = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-F3-silent');
+
+  const results = await notifyDevices(pool, { userId: DAD },
+    { kind: 'message_ready', ref: 'r8' },
+    {
+      admitDevice: () => ({ ok: false, reason: 'silent_device',
+        note: 'Manufactured for this test: a channel with neither push nor a fallback.' }),
+    });
+
+  const r = results.find(x => x.deviceTokenId === id);
+  check('F3 silent device', 'the device is skipped, not sent to', r?.ok, 'false');
+  check('F3 silent device', 'carries the same no_push_capability code as the real refusal path',
+    r?.code, 'no_push_capability');
+  check('F3 silent device', "advice is admitDevice()'s own note, not channelAdvice() "
+    + '(there is no capability to ask channelAdvice() about)',
+    r?.advice, 'Manufactured for this test: a channel with neither push nor a fallback.');
+
+  await admin.query(`DELETE FROM device_token WHERE id = $1`, [id]);
+}
+
+// F4 · the device-prune catch, when removeDeviceTokenSystem() itself throws
+// during a deviceGone cleanup — the exact scenario the file's own comment
+// describes ("best-effort cleanup; the send failure is still reported
+// below") but had never actually been driven through a real throw.
+// Injected via the new removeDeviceTokenSystem seam (v0.49.14).
+{
+  const id = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-F4-prune-fails');
+
+  const results = await notifyDevices(pool, { userId: DAD },
+    { kind: 'message_ready', ref: 'r9' },
+    {
+      sendFcm: async () => { throw Object.assign(new Error('gone'),
+        { code: 'fcm_send_failed', deviceGone: true }); },
+      removeDeviceTokenSystem: async () => { throw new Error('transient db failure during prune'); },
+    });
+
+  const r = results.find(x => x.deviceTokenId === id);
+  check('F4 prune throws', 'the send failure is still reported (outer result unaffected '
+    + 'by the inner catch)', r?.ok, 'false');
+  check('F4 prune throws', 'pruned correctly stays false — the throw never reached the assignment',
+    r?.pruned, 'false');
+  check('F4 prune throws', 'the original send failure code passes through untouched',
+    r?.code, 'fcm_send_failed');
+  const stillThere = await admin.query(`SELECT 1 FROM device_token WHERE id = $1`, [id]);
+  check('F4 prune throws', 'the row genuinely still exists — the failed prune did not '
+    + 'somehow still delete it', stillThere.rows.length, '1');
+
+  await admin.query(`DELETE FROM device_token WHERE id = $1`, [id]);
+}
+
 await admin.query(`DELETE FROM device_token WHERE owner_user_id = $1`, [DAD]);
 await admin.query(`DELETE FROM app_user WHERE id = $1`, [DAD]);
 await admin.end();

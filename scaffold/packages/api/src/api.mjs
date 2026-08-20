@@ -18,6 +18,9 @@ class Api {
     if (r.path.includes(":childId") && r.action === null && !r.identityScopedByHandler) {
       throw new Error(`route ${r.path} is child-scoped but declares no action`);
     }
+    if (r.noSessionRequired && !r.skipOuterSession) {
+      throw new Error(`route ${r.path} sets noSessionRequired but not skipOuterSession -- there is no verified principal here to scope db.withSession() with`);
+    }
     this.routes.push(r);
     return this;
   }
@@ -43,6 +46,31 @@ class Api {
     const u = new URL(url, "http://x");
     const m = this.match(method, u.pathname);
     if (!m) return { status: 404, body: { error: "not_found" } };
+    if (m.route.noSessionRequired) {
+      let noSessionBody = null;
+      if (rawBody) {
+        try {
+          noSessionBody = JSON.parse(rawBody);
+        } catch {
+          return { status: 400, body: { error: "bad_json" } };
+        }
+      }
+      const ctx2 = {
+        principal: null,
+        childId: m.params.childId ?? null,
+        params: m.params,
+        body: noSessionBody,
+        query: u.searchParams,
+        db: this.db
+      };
+      try {
+        const out = await m.route.handler(ctx2, unusedQuery);
+        return { status: out.status ?? 200, body: out.body ?? null };
+      } catch (e) {
+        if (e?.status) return { status: e.status, body: { error: e.code ?? "error" } };
+        return { status: 500, body: { error: "internal" } };
+      }
+    }
     const auth = headers["authorization"] ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     if (!token) return { status: 401, body: { error: "no_session" } };

@@ -14,6 +14,193 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.14] — 2026-08-20 — An adversarial audit of gap-fill batch 2, and what it actually found
+
+Before merging PR #30 (v0.49.13), this pass ran a genuinely adversarial
+audit of everything gap-fill batch 2 shipped — PRs #26 through #30 —
+across five independent dimensions (security/RLS, P1–P9 child-safety
+compliance, null-safety/edge cases, spec-conformance against this
+codebase's own CHANGELOG/MASTERFILE claims, and test-coverage gaps), with
+every raised finding independently re-verified by a second pass whose job
+was to try to refute it. 15 findings were raised; 13 survived adversarial
+verification. All 13 are fixed here. Separately, mutation testing (7
+deliberate mutants reintroducing real bugs this session already fixed once,
+across PRs #26–#30) confirmed 7/7 killed by the existing test suites before
+this audit even started — recorded here for completeness, not because it
+found anything new.
+
+### Fixed — CRITICAL, would have shipped broken
+**The entire guardian-invitation accept flow (PR #26, v0.49.9) was
+completely non-functional for its only intended caller.** `Api.handle()`
+(`packages/api/src/api.ts`) required a valid `Bearer` session token
+unconditionally, before ever consulting a route's own flags. But
+`GET /v1/guardian-invites/:inviteId` and `POST .../accept` are explicitly
+designed to be reachable by an unauthenticated invited party — someone with
+no `app_user` row and therefore no session — using the invite's own random
+id as its credential, exactly like this codebase's WebAuthn-login routes
+(which get the identical bypass by being dispatched entirely outside
+`Api`, in `server/index.mjs`, before `api.handle()` is ever called).
+`api_client.dart`'s `fetchGuardianInvite()`/`acceptGuardianInvite()`
+deliberately send no `Authorization` header, exactly matching the intended
+design — so every real call from the client these functions were built for
+would 401 in production. Empirically confirmed against the real compiled
+`api.mjs` before writing the fix: `api.handle('GET', '/v1/guardian-invites/
+abc-123-def', {}, '')` returned `{"status":401,"body":{"error":
+"no_session"}}`, the handler never reached. No test caught this:
+`guardian_invite.test.mjs` calls `pool.mjs` functions directly, bypassing
+HTTP entirely; `contract.test.mjs` only checks route registration metadata;
+`routes.test.mjs` had zero guardian-invite coverage at all.
+
+**Fix:** a new `Route.noSessionRequired` flag on `Api` (a third escape
+hatch, after `identityScopedByHandler` and `skipOuterSession`, registration-
+time enforced to require `skipOuterSession` alongside it — there is no
+verified principal to scope `db.withSession()` with). `Ctx.principal`
+becomes `VerifiedPrincipal | null`, null only for these routes.
+`GET`/`POST .../accept` — the two routes that never touch `c.principal` at
+all — now set it; `POST .../revoke` and `POST .../guardianships` (which
+correctly need the caller's real identity) do not. Verified both ways: the
+bypassed routes now work end to end with no session, and revoke still
+correctly 401s with no session, proving the bypass is scoped to exactly
+the two routes that need it.
+
+### Fixed — HIGH
+**`channels.ts`'s `senderStatus()` gave the sender a false reason for
+non-delivery.** When a channel was SMS-eligible, a real adult number WAS on
+file, but the 90-minute escalation wait simply hadn't elapsed yet, the
+sender was told *"we don't have a number for the house — add one and we
+can let someone know next time"* — false on both counts: a number is on
+file, and SMS fires automatically once enough time passes. This directly
+violated the module's own stated purpose ("the sender is told what
+actually happened") and evaded `auditStatus()`/`STATUS_BANNED`, which only
+checks for false *delivery* claims, not a false *cause* for non-delivery.
+The same generic line was also wrong for a channel with no SMS fallback at
+all (e.g. `web`) — "add one" implies adding a number would help, when the
+channel itself is the limit. **Fix:** `route()`'s `rejected` entries gain a
+structured `code` (`'not_sms_eligible' | 'no_number' | 'not_yet_time'`),
+and `senderStatus()` branches on it instead of returning one hardcoded
+line for every `route:'none'` case. Three honest, distinct lines now exist
+for the three real reasons nothing could be sent.
+
+### Fixed — MEDIUM (child-safety / contract-integrity)
+- **`call_knock_screen.dart`'s read-aloud text was not verbatim.**
+  `_spokenText` appended a hand-composed instructional sentence — "You can
+  answer, say you are just talking, or say not now." — that appeared
+  nowhere on screen, contradicting both MASTERFILE §5.25.2/CHANGELOG
+  v0.49.12's own "reads ... back verbatim" claim and the read-aloud
+  feature's entire reason for existing (a11y_speech.dart's own "never
+  composes" design). Fixed: `_spokenText` is now the real prompt, the real
+  on-screen reassurance line, and the three real button labels
+  (`answerWords`), joined — nothing paraphrased. A new exact-match test
+  proves it word for word.
+- **`call_knock_screen.dart` bypassed the `admitSpeech()` gate** every
+  other real `speak()` call site (`emergency_card.dart`,
+  `handover_notes.dart`) uses — those two call `admitSpeech(SpeechTrigger
+  .tap)` before every `speak!(...)`, a structural guarantee that an
+  autonomous trigger is refused for real. This screen called `widget.
+  speak!(...)` directly, with no gate at all. Harmless today (the only call
+  site is a real tap) but the safety net every sibling screen relies on was
+  silently absent. Fixed: now imports `a11y_speech.dart` and gates
+  identically.
+- **`court_export.dart`'s `reviewableAt()` ignored text scale** while its
+  sibling `columnsAt()` — two lines away, same `build()` method — correctly
+  divided by it, exactly the mistake MASTERFILE §8.11.1 names by name:
+  "computing from device width is the mistake that makes accessible
+  layouts break on small screens." A guardian at 2.0x accessibility text on
+  a ~650px-wide screen (raw width above `reviewMinWidth`) has an
+  *effective* width of ~325px — narrower than the 344px Fold-cover case
+  this same pass already guards against overflow for — and would have
+  gotten the full certified-export review UI squeezed into that space.
+  Fixed: `reviewableAt()`/`requestableAt()` both take the same optional
+  `textScale` `columnsAt()` already does. Two new tests prove the exact
+  scenario the audit described, plus that a genuinely wide screen still
+  passes at the same text scale (the fix narrows correctly, it doesn't
+  just always refuse once any scaling is present).
+- **A stale "§8.12.3" citation (already corrected once, in `postures.ts`
+  itself, earlier in this same v0.49.13 pass) was reintroduced into every
+  file that pass touched to consume it** — five times in `court_export.
+  dart`, plus the brand-new test group name and a test title in
+  `court_export_test.dart`. The pass that fixed the citation at its origin
+  didn't propagate the fix to its own new consumer code. All eight
+  instances corrected to §8.11.7, the real match.
+
+### Fixed — coverage gaps (real, undisclosed, now closed)
+- **`notify.ts`'s `admission.ok === false` advice branch** — unreachable
+  with any real shipped channel (none in `devices.ts`'s `CHANNELS` combine
+  `push:false` with `fallback:'none'`), but live code in the exact path
+  this codebase's own header calls "the worst class of defect this product
+  can have," and it had never executed once under test. A new `admitDevice`
+  injection seam on `NotifyDeviceDeps` (same shape as the existing
+  `buildPush`/`sendGuard`/`sendFcm`/`sendApns` seams) lets a test force it;
+  a new test proves the `: admission.note` ternary arm produces the right
+  shape.
+- **`notify.ts`'s device-prune failure catch** (`try { pruned = await
+  removeDeviceTokenSystem(...) } catch { /* best-effort */ }`) had never
+  been exercised with a throwing prune. Deterministic by JS semantics, so
+  no live bug — but "guaranteed by language semantics" and "proven by a
+  real test" aren't the same claim, and this codebase doesn't treat them as
+  interchangeable elsewhere. Same injection-seam treatment; a new test
+  forces the throw and proves `pruned` stays `false`, the row survives, and
+  the original send failure is still reported correctly.
+- **`LiveCourtExportScreen`'s generic `catch (e)` block** (distinct from
+  its `on ApiException` branch) had zero coverage — every existing test
+  drives well-formed JSON at some status code, which `api_client.dart`
+  always wraps as `ApiException`. A real, reachable gap: `devLoginFor()`
+  calls `jsonDecode(res.body)` unconditionally, with no guard, before
+  checking the status code — a malformed dev-login response throws a raw
+  `FormatException` only the generic catch handles. A new test proves it:
+  the fallback error UI renders correctly and nothing escapes uncaught.
+- **`call_knock_screen.dart`'s real production timeout path** — the only
+  existing test that lets the real 90-second timer elapse supplies a
+  non-null `onTimedOut` test-seam callback, but that parameter's own doc
+  comment says production never supplies one. A new test proves the actual
+  production configuration (null callback, real timer, real
+  `Navigator.maybePop()`) dismisses correctly.
+
+### Fixed — documentation accuracy
+- `device_channels_test.dart`'s CHANGELOG entry (v0.49.11) claimed 15
+  assertions; the file has 14. Corrected.
+- `court_export_test.dart`'s new review-width-gate test group is now
+  accurately described below (it gained two more cases in this same pass,
+  for the text-scale fix above).
+
+### Also disclosed, deliberately not built this pass
+`court_export.dart`'s `requestableAt()`/`requestMinWidth` remains real,
+ported, and uncalled — now explicitly disclosed in its own doc comment
+(matching `form_factors.dart`'s own precedent for exactly this situation)
+rather than left silent. Concretely: `requestMinWidth` is 320px, and
+MASTERFILE §8.11.1's own floor for this entire app is 344px — every real
+width this screen can ever be given on a supported device already
+satisfies it, so no UI branch that consulted it could ever produce a
+different outcome. Wiring it in for real would mean inventing a
+sub-320px UI state no supported device can reach.
+
+### Tests
+- `stack.test.mjs` — new "H noSessionRequired" section (6 assertions)
+  proving the `Api` mechanism generically, alongside `guardian_invite.
+  test.mjs`'s new "G real route" section (7 assertions) proving the actual
+  guardian-invite routes end to end against real Postgres.
+- `channels.test.mjs` — section D extended/fixed (8 new/corrected
+  assertions) proving `senderStatus()`'s three real reasons.
+- `call_knock_screen_test.dart` — strengthened the read-aloud test to an
+  exact match (not substring containment) and added the production-timeout
+  case (2 new/strengthened assertions).
+- `court_export_test.dart` — 2 new text-scale cases plus 1 new generic-catch
+  case (3 new assertions); the review-width-gate group is now 6 cases, not
+  4 as first shipped.
+- `notify.test.mjs` — new "F3 silent device" and "F4 prune throws" sections
+  (7 new assertions) using the two new injection seams.
+- `flutter analyze` clean. Full `flutter test` (1536 cases) green except
+  the same pre-existing, unrelated `push_channel_test.dart` failure noted
+  since v0.49.6. Full JS suite (JS + real-Postgres) green.
+- A stale compiled artifact (`notify.mjs`) briefly reintroduced one of the
+  mutation-testing mutants after an incomplete revert during that pass —
+  caught by the regression sweep immediately after, not by assumption;
+  rebuilt from the real source and reconfirmed clean. Recorded because
+  this codebase's own discipline is to say so, not because it shipped
+  anywhere real.
+
+---
+
 ## [0.49.13] — 2026-08-20 — The device matrix, ported; the court export finally honors its own promise
 
 Two queued items from the same original scoping pass as v0.49.12, both
@@ -256,7 +443,8 @@ separately — reconciling the duplication is what surfaced and fixed the bug.
 
 ### Tests
 - `channels.test.mjs` (new, 52 assertions), `device_channels_test.dart`
-  (new, 15 assertions).
+  (new, 14 assertions — corrected v0.49.14; an adversarial audit found this
+  entry originally overcounted by one).
 - `notify.test.mjs` — new §F ("channel awareness"): a FireOS device is
   skipped and carries real advice text, `sendFcm` is proven never called
   for it; a Play Services device still sends normally. New §F2: a device

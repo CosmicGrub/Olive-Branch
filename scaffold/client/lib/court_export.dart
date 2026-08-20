@@ -50,7 +50,7 @@ import 'form_factors.dart' as ff;
 import 'sha256.dart';
 
 // ===================================================== posture width rule =
-// Ported from packages/devices/src/postures.ts's §8.12.3 "the degraded
+// Ported from packages/devices/src/postures.ts's §8.11.7 "the degraded
 // court export" section. Real spec this screen never actually implemented:
 // before this pass, `CourtExportScreen` rendered the full certified-export
 // review UI (tamper preview, "Generate certified export," the attestation
@@ -63,8 +63,33 @@ import 'sha256.dart';
 const int requestMinWidth = 320;
 const int reviewMinWidth = 600;
 
-bool reviewableAt(double width) => width >= reviewMinWidth;
-bool requestableAt(double width) => width >= requestMinWidth;
+// v0.49.14 fix: both now take the SAME optional textScale form_factors.dart's
+// own columnsAt() already does, and divide by it before comparing — a
+// guardian at 2.0x accessibility text on a ~650px-wide screen has the
+// EFFECTIVE width of a ~325px phone (narrower than the 344px Fold-cover
+// case this same file already guards against overflow for), and rendering
+// the full review UI into that space at raw width was exactly the mistake
+// MASTERFILE §8.11.1 names by name: "computing from device width is the
+// mistake that makes accessible layouts break on small screens." Before
+// this fix, columnsAt() (the sibling layout decision two lines away in the
+// same build() method) correctly divided by text scale and reviewableAt()
+// did not — two adjacent decisions in the same method, one accessibility-
+// aware and one not.
+bool reviewableAt(double width, [double textScale = 1]) => (width / textScale) >= reviewMinWidth;
+
+/// Ported faithfully from postures.ts, and deliberately NOT consulted by any
+/// branch in this file — disclosed explicitly (found by an adversarial
+/// audit as an undisclosed gap; form_factors.dart's own "not ported, no
+/// client caller identified" note for §8.11.2 is the precedent this follows
+/// rather than staying silent about it). Why it's inert here, concretely:
+/// `requestMinWidth` is 320px, and MASTERFILE §8.11.1's own floor for this
+/// entire app — "344 px is the floor for everything" — is ABOVE that. Every
+/// real width this screen can ever be given on a supported device already
+/// satisfies `requestableAt()`, so no UI branch that consulted it could ever
+/// produce a different outcome than "yes, always." Kept, tested, and real —
+/// the day this app's own supported floor ever drops below 320px, this is
+/// what would need wiring in, not new code to write from scratch.
+bool requestableAt(double width, [double textScale = 1]) => (width / textScale) >= requestMinWidth;
 
 /// What he is told on a phone. It does not pretend he can review it there —
 /// the honest version is better than a cramped one.
@@ -405,9 +430,11 @@ class _CourtExportScreenState extends State<CourtExportScreen> {
           final double textScale = MediaQuery.textScalerOf(context).scale(1);
           final bool wide = ff.columnsAt(
               ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
-          // The real §8.12.3 rule (postures.ts, ported above): reviewing a
+          // The real §8.11.7 rule (postures.ts, ported above): reviewing a
           // certified export needs real width. Requesting one never did.
-          final bool reviewable = reviewableAt(constraints.maxWidth);
+          // textScale-aware as of v0.49.14 — see reviewableAt()'s own
+          // comment for the accessibility bug this closes.
+          final bool reviewable = reviewableAt(constraints.maxWidth, textScale);
           final TextTheme textTheme = Theme.of(context).textTheme;
           final ColorScheme scheme = Theme.of(context).colorScheme;
           final Widget rawCard = _RawExportCard(
@@ -569,7 +596,7 @@ class _CertifiedExportCard extends StatelessWidget {
     required this.onGenerate,
   });
 
-  /// §8.12.3's real width rule (`reviewableAt()`, ported above). Below it,
+  /// §8.11.7's real width rule (`reviewableAt()`, ported above). Below it,
   /// this card shows ONLY the description and the honest
   /// `requestConfirmation` copy — no preview controls, no generate button,
   /// no attestation panel. Rendering the full review UI on a 344px Fold-
@@ -929,7 +956,7 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Court export')),
       // LayoutBuilder, not MediaQuery.sizeOf — the ACTUAL available width
-      // for this widget subtree is what §8.12.3's review gate cares about,
+      // for this widget subtree is what §8.11.7's review gate cares about,
       // matching CourtExportScreen's own already-correct approach above.
       // (MediaQuery.sizeOf reflects the whole app window, which happens to
       // equal this most of the time but is a different, less precise
@@ -937,13 +964,15 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
       // does not reliably track a test's own `setSurfaceSize` the way a
       // real device rotation/resize would; LayoutBuilder's constraints do.)
       body: SafeArea(child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) =>
-            _buildBody(context, scheme, textTheme, constraints.maxWidth)),
+        builder: (BuildContext context, BoxConstraints constraints) => _buildBody(
+            context, scheme, textTheme, constraints.maxWidth,
+            MediaQuery.textScalerOf(context).scale(1))),
       ),
     );
   }
 
-  Widget _buildBody(BuildContext context, ColorScheme scheme, TextTheme textTheme, double width) {
+  Widget _buildBody(BuildContext context, ColorScheme scheme, TextTheme textTheme,
+      double width, double textScale) {
     switch (_state) {
       case _LiveExportState.loading:
         return const Center(child: CircularProgressIndicator());
@@ -1019,13 +1048,14 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
             ]),
           ),
           const SizedBox(height: 16),
-          // Same real §8.12.3 width rule as the demo build's
+          // Same real §8.11.7 width rule as the demo build's
           // _CertifiedExportCard above — this is the production-wired
           // screen, so it is the one that actually matters. A real
           // attestation was already fetched by the time this state is
           // reached (see _load()); it is just not RENDERED narrow, per
-          // requestConfirmation's own honest copy.
-          if (reviewableAt(width))
+          // requestConfirmation's own honest copy. textScale-aware as of
+          // v0.49.14 — see reviewableAt()'s own comment.
+          if (reviewableAt(width, textScale))
             _AttestationPanel(att)
           else
             Container(

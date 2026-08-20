@@ -102,6 +102,37 @@ void main() {
     expect(find.textContaining('Missed'), findsNothing);
   });
 
+  // v0.49.14: an adversarial audit found the test above only ever exercises
+  // the timeout with a non-null onTimedOut supplied -- but that parameter's
+  // own doc comment says "No real caller needs this," meaning production
+  // never supplies one. This proves the ACTUAL production configuration:
+  // null callback, the real 90-second timer elapsing, and a real
+  // Navigator.maybePop() dismissal, with nothing to observe but the
+  // dismissal itself.
+  testWidgets('the real production configuration -- no onTimedOut at all -- '
+      'still dismisses quietly when the real 90-second timer elapses',
+      (tester) async {
+    await tester.pumpWidget(wrap(Scaffold(body: Builder(
+      builder: (context) => Center(child: TextButton(
+        onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => const CallKnockScreen(from: 'Dad', who: 'ivy', displayName: 'Ivy'))),
+        child: const Text('open'),
+      )),
+    ))));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('Dad would like to talk.'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: knockWaitsSeconds));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dad would like to talk.'), findsNothing);
+    expect(find.text('open'), findsOneWidget,
+      reason: 'dismissed back via the real Navigator.maybePop(), no test seam involved');
+    expect(find.textContaining('missed'), findsNothing);
+    expect(find.textContaining('Missed'), findsNothing);
+  });
+
   group('read aloud — §8.8.5', () {
     testWidgets('absent speak reports itself honestly', (tester) async {
       await tester.pumpWidget(wrap(const CallKnockScreen(
@@ -123,10 +154,21 @@ void main() {
 
       expect(spoken, hasLength(1));
       expect(spoken.single, contains('Dad would like to talk.'));
+      expect(spoken.single, contains('Not now is okay too.'),
+        reason: 'the real on-screen reassurance line, verbatim');
       for (final word in answerWords) {
-        expect(spoken.single.toLowerCase(), contains(word.toLowerCase()),
-          reason: '"$word" should be read, not silently dropped');
+        expect(spoken.single, contains(word),
+          reason: '"$word" should be the real button label, verbatim, not a paraphrase');
       }
+      // v0.49.14: exact match, not just substring containment -- a
+      // composed sentence that happens to mention each word somewhere
+      // (the bug this fixes) would have passed the looser checks above too.
+      expect(spoken.single,
+        'Dad would like to talk. Not now is okay too. Answer. Just talking. Not now.',
+        reason: 'genuinely verbatim: prompt + reassurance line + the three real button '
+          'labels, nothing composed or paraphrased in between');
+      expect(spoken.single, isNot(contains('You can answer')),
+        reason: 'the old, non-verbatim composed instruction must be gone entirely');
     });
   });
 

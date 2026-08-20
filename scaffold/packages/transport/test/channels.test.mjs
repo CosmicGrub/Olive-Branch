@@ -118,13 +118,40 @@ const check = (g, n, a, e) => { const ok = String(a) === String(e);
 
   const s4 = senderStatus(route({ channel: 'android_amazon', appForeground: false, socketConnected: false,
     adultNumberOnFile: false, minutesWaiting: 0 }), childName);
-  check('D sender', 'none route: not delivered, actionable',
+  check('D sender', 'none route, genuinely no number on file: not delivered, actionable',
     `${s4.delivered},${s4.actionable}`, 'false,true');
+  check('D sender', 'and the line correctly says a number would help',
+    /add one/.test(s4.line), 'true');
 
+  // v0.49.14 fix: web is not SMS-eligible at all (devices.ts declares its
+  // fallback as foreground_socket only) — a number on file would not help,
+  // so this must NOT be told "add a number" the way s4 correctly is.
   const s5 = senderStatus(route({ channel: 'web', appForeground: false, socketConnected: false,
     adultNumberOnFile: true, minutesWaiting: 500 }), childName);
-  check('D sender', 'the web/sms-bug case: not delivered, actionable (never falsely claims delivery)',
-    `${s5.delivered},${s5.actionable}`, 'false,true');
+  check('D sender', 'web (not sms-eligible at all): not delivered, NOT actionable — '
+    + 'adding a number would not help this channel', `${s5.delivered},${s5.actionable}`, 'false,false');
+  check('D sender', 'and the line never says "add one" for a channel that cannot be texted',
+    /add one/.test(s5.line), 'false');
+  check('D sender', 'and never falsely claims no number is on file, either — '
+    + 'the real reason is the channel, not the number', /don't have a number/.test(s5.line), 'false');
+
+  // THE BUG THIS PASS FIXES: SMS-eligible, a real adult number IS on file,
+  // but the escalation wait (90 min) has not elapsed yet. Before the fix,
+  // senderStatus() told the sender "we don't have a number for the house —
+  // add one" here, which was flatly false: a number IS on file, and SMS
+  // will fire automatically once enough time has passed. No action is
+  // needed from the sender at all.
+  const s6 = senderStatus(route({ channel: 'android_amazon', appForeground: false, socketConnected: false,
+    adultNumberOnFile: true, minutesWaiting: 5 }), childName);
+  check('D sender', 'v0.49.14: SMS pending (real number on file, not enough time yet) -- '
+    + 'not delivered, and NOT actionable (nothing for the sender to do)',
+    `${s6.delivered},${s6.actionable}`, 'false,false');
+  check('D sender', 'the line never falsely claims no number is on file',
+    /don't have a number/.test(s6.line), 'false');
+  check('D sender', 'the line never wrongly asks the sender to add one',
+    /add one/.test(s6.line), 'false');
+  check('D sender', 'the line honestly says the text will happen automatically',
+    /automatically/.test(s6.line), 'true');
 }
 
 // E · auditStatus() — banned words only forbidden when NOT actually delivered =
