@@ -9,54 +9,36 @@
 // asserts (her name not an id, no settings affordance, sleeps not hours,
 // HER frame first) still holds for the live path with zero duplicated logic.
 //
-// Two of ChildHome's four fields have no real data source wired up yet:
+// One of ChildHome's four fields still has no real data source wired up:
 //   presence             -- no day-part/overlap endpoint exists server-side,
 //                           so this is `null` (ChildHome already renders
 //                           nothing when presence is null -- an honest
 //                           absence, not a guess).
-//   sleepsUntilHandover  -- still `null`, but as of this pass not because no
-//                           endpoint exists. A separate session landed a real
-//                           one (db/migrations/0007_custody_order.sql,
-//                           packages/db/src/pool.mjs's activeCustodyOrderFor,
-//                           routes.mjs's /now calling schedule.mjs's real
-//                           sleepsUntilSideChange) and this pass independently
-//                           re-verified it against a real Postgres --
-//                           `node packages/db/test/custody_order.test.mjs`:
-//                           16/16, plus regressions `pool.test.mjs` (18/18)
-//                           and `custody.test.mjs` (42/42), all green. But by
-//                           the time this pass reached routes.mjs/index.mjs to
-//                           wire the client to it, re-reading the files (this
-//                           repo directory is shared with other concurrently
-//                           running sessions) showed all four of that
-//                           session's tracked edits -- pool.ts, routes.mjs,
-//                           index.mjs, seed-dev.mjs -- silently reverted back
-//                           to their pre-custody committed state, confirmed
-//                           stable across repeated checks and matching
-//                           `git status` showing no diff at all. A real HTTP
-//                           call to /v1/children/:id/now against the server
-//                           actually running from disk right now confirms it:
-//                           no `sleepsUntilHandover` key in the response.
-//                           Wiring this screen to a field the currently-
-//                           deployed server doesn't serve would just always
-//                           read null anyway, and re-authoring the missing
-//                           server-side wiring from memory, unasked, into an
-//                           already-contested shared tree would risk making
-//                           the conflict worse rather than fixing it. So this
-//                           stays exactly what it was: `null`, honestly,
-//                           blocked on that dependency landing and staying
-//                           landed, not on the absence of a design for it.
-// unreadCount and childName ARE real, fetched from /v1/me and /inbox.
+// sleepsUntilHandover, unreadCount, and childName are ALL real now.
+// sleepsUntilHandover (v0.49.15): a prior pass found the real custody
+// endpoint (db/migrations/0007_custody_order.sql, packages/db/src/pool.mjs's
+// activeCustodyOrderFor, routes.mjs's /now calling schedule.mjs's real
+// sleepsUntilSideChange) had landed and stayed landed, but this screen never
+// called it -- OliveApi.fetchNow() existed, contract-checked, with zero
+// callers anywhere in this client. `_load()` now calls it alongside
+// fetchMe()/fetchInbox() and reads its real `sleepsUntilHandover` key
+// (honestly `null` when the child has no active custody_order row -- /now's
+// own documented absence, not this screen inventing a second one).
+// unreadCount (v0.49.15): was counting EVERY row /inbox returns, but that
+// route deliberately includes both `'delivered'` (unwatched) and `'opened'`
+// (already watched) messages (server/routes.mjs's own query) -- a child who
+// had watched every message still saw a badge claiming all of them were new.
+// Now filtered to `state == 'delivered'` before counting.
 //
-// Phone -> watch sync (§21.5): this screen is now the one real place a live
-// `sleepsUntilHandover` would reach wear_sync_channel.dart's
-// WearSyncChannel, which pushes it to a paired Wear OS companion via the
-// Data Layer API (android/app/.../WearSyncBridge.kt on the native side).
-// `_syncWear()` below only ever forwards `_sleepsUntilHandover` itself — the
-// same field that stays `null` per the paragraph above — so today this is
-// wiring with nothing yet to carry: the guard means no sync call is ever
-// actually made until the custody endpoint lands for real. That is
-// deliberate, not an oversight; see wear_sync_channel.dart's own doc comment
-// on why a placeholder must never be sent.
+// Phone -> watch sync (§21.5): this screen is the one real place a live
+// `sleepsUntilHandover` reaches wear_sync_channel.dart's WearSyncChannel,
+// which pushes it to a paired Wear OS companion via the Data Layer API
+// (android/app/.../WearSyncBridge.kt on the native side). `_syncWear()`
+// below only ever forwards `_sleepsUntilHandover` itself, so as of v0.49.15
+// this is a real sync of a real value whenever an active custody order
+// exists, and correctly still a no-op (never a placeholder) when it doesn't
+// -- see wear_sync_channel.dart's own doc comment on why a guess must never
+// be sent.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
@@ -134,14 +116,22 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final me = await api.fetchMe();
       final inbox = await api.fetchInbox(widget.childId);
+      final now = await api.fetchNow(widget.childId);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
+      final List<dynamic> messages = inbox['messages'] as List;
       setState(() {
         _childName = (me['displayName'] as String?) ?? 'there';
-        _unreadCount = (inbox['messages'] as List).length;
-        // custody endpoint exists but is currently reverted out of the
-        // shared tree -- see header. No fetch call for it exists yet either.
-        _sleepsUntilHandover = null;
+        // Only 'delivered' (unwatched) messages count toward the badge --
+        // /inbox itself returns BOTH 'delivered' and 'opened' rows (see
+        // server/routes.mjs's own query, `state IN ('delivered','opened')`),
+        // so counting the raw list length double-counted every message
+        // she had already watched as still unread. See file header.
+        _unreadCount = messages.where(
+            (dynamic m) => (m as Map<String, dynamic>)['state'] == 'delivered').length;
+        // Real, fetched from /now -- see file header. Honestly null when
+        // the child has no active custody_order row (/now's own absence).
+        _sleepsUntilHandover = (now['sleepsUntilHandover'] as num?)?.toInt();
         _sessionToken = token;
         _state = _LoadState.ready;
       });
@@ -157,10 +147,11 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   }
 
   // Forwards a real sleepsUntilHandover to a paired Wear OS companion
-  // (§21.5) once one exists to forward. A no-op today because
-  // _sleepsUntilHandover is still null (see header) -- WearSyncChannel
-  // itself has no validation against being handed a placeholder, so the
-  // "never send a guess" guarantee lives here, at the one call site.
+  // (§21.5). Real as of v0.49.15 whenever the child has an active custody
+  // order (see file header); still correctly a no-op when she doesn't --
+  // WearSyncChannel itself has no validation against being handed a
+  // placeholder, so the "never send a guess" guarantee lives here, at the
+  // one call site.
   Future<void> _syncWear() async {
     final sleeps = _sleepsUntilHandover;
     if (sleeps != null) await _wearSync.syncSleepsUntilHandover(sleeps);

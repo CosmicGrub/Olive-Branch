@@ -15,13 +15,19 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
-  ApiException(this.statusCode, this.error, {this.message});
+  ApiException(this.statusCode, this.error, {this.message, this.faults});
   final int statusCode;
   final String error;
   /// Plain-language explanation, when the server sent one (e.g. a certified
   /// export denial reason — see server/routes.mjs's EXPORT_DENIAL_MESSAGES).
   /// Null for endpoints that don't send one.
   final String? message;
+  /// The real, per-entry chain-verification diagnostics (kind + seq) a
+  /// `chain_broken` certified-export denial carries — server/routes.mjs's
+  /// `GET .../export` spreads `result.faults` onto the 403 body whenever
+  /// `certifiedExportBundleFor()` returns one (packages/db/src/pool.ts).
+  /// Null for every other denial/error, which never sends this key.
+  final List<dynamic>? faults;
   @override
   String toString() => 'ApiException($statusCode, $error)';
 }
@@ -227,7 +233,7 @@ class OliveApi {
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode >= 400) {
       throw ApiException(res.statusCode, body['error'] as String? ?? 'error',
-          message: body['message'] as String?);
+          message: body['message'] as String?, faults: body['faults'] as List<dynamic>?);
     }
     return body;
   }

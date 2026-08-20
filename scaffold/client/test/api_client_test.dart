@@ -43,6 +43,42 @@ void main() {
       );
     });
 
+    test('a 403 chain_broken response carries the real faults array on '
+        'ApiException, not just the reason string', () async {
+      // v0.49.15 — server/routes.mjs spreads a real `faults` array onto a
+      // certified-export chain_broken 403 (packages/db/src/pool.ts's
+      // certifiedExportBundleFor()). Previously _decode() only ever read
+      // `error`/`message`, so this key was fetched over the wire and
+      // silently discarded before any caller could see it.
+      final mock = MockClient((req) async => http.Response(jsonEncode({
+        'error': 'chain_broken',
+        'message': 'did not verify',
+        'faults': [
+          {'kind': 'content_altered', 'seq': 3},
+          {'kind': 'bad_genesis'},
+        ],
+      }), 403));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.fetchCertifiedExport('child-a'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.error, 'error', 'chain_broken')
+            .having((e) => e.faults, 'faults', hasLength(2))
+            .having((e) => e.faults?[0], 'faults[0]', {'kind': 'content_altered', 'seq': 3})),
+      );
+    });
+
+    test('a 403 with no faults key leaves ApiException.faults null, not an '
+        'empty-list guess', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'annual_allowance_used'}), 403));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.fetchCertifiedExport('child-a'),
+        throwsA(isA<ApiException>().having((e) => e.faults, 'faults', isNull)),
+      );
+    });
+
     test('a 401 with no session throws ApiException(401, no_session)', () async {
       final mock = MockClient((req) async =>
           http.Response(jsonEncode({'error': 'no_session'}), 401));

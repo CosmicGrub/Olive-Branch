@@ -31,7 +31,41 @@ const populatedOrderJson = <String, dynamic>{
   },
 };
 
+const overlappingHolidayA = HolidayRuleView(
+  name: 'Winter Break', startMonthDay: '12-20', endMonthDay: '01-02',
+  evenYearSide: 'A', priority: 3,
+);
+const overlappingHolidayB = HolidayRuleView(
+  name: 'Christmas Day', startMonthDay: '12-24', endMonthDay: '12-26',
+  evenYearSide: 'B', priority: 10,
+);
+
 void main() {
+  group('sortedByPriority — the real tie-break schedule.ts\'s holidayOn() uses', () {
+    test('higher priority sorts first, regardless of wire order', () {
+      final sorted = sortedByPriority([overlappingHolidayA, overlappingHolidayB]);
+      expect(sorted.map((h) => h.name), ['Christmas Day', 'Winter Break']);
+    });
+
+    test('a tie on priority breaks on the later start date, matching '
+        'schedule.ts exactly', () {
+      const earlyStart = HolidayRuleView(
+        name: 'Early', startMonthDay: '12-20', endMonthDay: '12-23',
+        evenYearSide: 'A', priority: 5);
+      const laterStart = HolidayRuleView(
+        name: 'Later, more specific', startMonthDay: '12-24', endMonthDay: '12-26',
+        evenYearSide: 'B', priority: 5);
+      final sorted = sortedByPriority([earlyStart, laterStart]);
+      expect(sorted.map((h) => h.name), ['Later, more specific', 'Early']);
+    });
+
+    test('does not mutate the list it was given', () {
+      final original = [overlappingHolidayA, overlappingHolidayB];
+      sortedByPriority(original);
+      expect(original, [overlappingHolidayA, overlappingHolidayB]);
+    });
+  });
+
   group('FamilyAgreementScreen — populated state', () {
     testWidgets('shows a loading indicator before the fetch resolves', (t) async {
       await t.pumpWidget(wrap(FamilyAgreementScreen(
@@ -85,6 +119,45 @@ void main() {
       expect(find.textContaining('Jan 2'), findsOneWidget);
       expect(find.textContaining('Side A in even years'), findsOneWidget);
       expect(find.textContaining('Side B in odd years'), findsOneWidget);
+      // v0.49.15: priority was parsed off the wire and never shown — the
+      // real tie-break schedule.ts's own holidayOn() uses when rules overlap.
+      expect(find.text('Priority 5'), findsOneWidget);
+    });
+
+    testWidgets('two overlapping holidays render highest-priority first, '
+        'the same order the real engine would apply them in', (t) async {
+      final orderWithOverlap = <String, dynamic>{
+        'order': <String, dynamic>{
+          ...populatedOrderJson['order'] as Map<String, dynamic>,
+          'holidays': <Map<String, dynamic>>[
+            // Deliberately wire-ordered LOWER priority first, so a passing
+            // "renders in wire order" implementation would fail this.
+            <String, dynamic>{
+              'name': 'Winter Break', 'startMonthDay': '12-20', 'endMonthDay': '01-02',
+              'evenYearSide': 'A', 'priority': 3,
+            },
+            <String, dynamic>{
+              'name': 'Christmas Day', 'startMonthDay': '12-24', 'endMonthDay': '12-26',
+              'evenYearSide': 'B', 'priority': 10,
+            },
+          ],
+        },
+      };
+      await t.pumpWidget(wrap(FamilyAgreementScreen(
+        childId: 'child-a',
+        fetchOrder: (id) async => orderWithOverlap,
+      )));
+      await t.pumpAndSettle();
+
+      expect(find.text('Priority 10'), findsOneWidget);
+      expect(find.text('Priority 3'), findsOneWidget);
+      expect(find.textContaining('highest priority first'), findsOneWidget);
+      // The real order these rules would actually apply in: Christmas (10)
+      // before Winter Break (3) — proved by vertical position, not just
+      // presence, since both cards exist in the tree either way.
+      final double christmasY = t.getTopLeft(find.text('Christmas Day')).dy;
+      final double winterBreakY = t.getTopLeft(find.text('Winter Break')).dy;
+      expect(christmasY, lessThan(winterBreakY));
     });
 
     testWidgets('is read-only — no editing affordance anywhere on the ready state', (t) async {
