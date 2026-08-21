@@ -66,9 +66,21 @@ Mirror `game_story_test.dart`'s depth per activity: real state-machine correctne
 
 Same lockstep requirement as every PR this session: `MASTERFILE.md` (§9.2 status note extended to list all activities, noting which are content-driven vs board-based), `CHANGELOG.md`, `MARKUP.html` (the `gamePicker` screen entry), `scaffold/demo/shell.html`.
 
+## Batching plan
+
+Three batches, grouped by shared-code affinity, built **sequentially, not in parallel** — deliberately, not for lack of capacity. Batch A is where the device-adaptive pattern (the side-panel-at-wide-postures convention above) gets proven for the first time; Batches B and C should follow that PROVEN pattern rather than each inventing their own version of it in parallel, which risks three subtly different "side panel" conventions drifting apart the way `court_export.dart`'s and `game_picker.dart`'s breakpoints already drifted from each other before `form_factors.dart` unified them. Each batch is its own PR, merged before the next starts.
+
+**Batch A — canvas games (2 activities): Draw Together, Guess the Doodle.**
+Built first, on purpose: shares the `AnnotationCanvas` reuse work (a common canvas-hosting wrapper both screens use) and is where the device-adaptive tools-panel-vs-bottom-sheet pattern gets established. Also carries the small `game_picker.dart` breakpoint-migration fix, since it's the hub both these screens launch from and belongs alongside the first posture-driven screens rather than as an unrelated drive-by. Highest integration risk of the three batches (first real second consumer of `AnnotationCanvas` outside `doodle_desk.dart`), so it goes first while there's the most attention to spend on it.
+
+**Batch B — curated-prompt games (4 activities): Silly Sentence Maker, Would You Rather, Two Truths and a Tall Tale, 20 Questions.**
+Largest batch, but mechanically the simplest once Batch A has proven the device-adaptive pattern — all four share the same real shape (curated prompt/category list, turn-taking, a running-history side panel at wide postures) and can plausibly share a small common base (a "curated turn-taking activity" widget or mixin) built once here rather than four times with drift risk. The actual work here is mostly **content**: drafting real, warm, genuinely funny prompt/word lists for all four — not a small task, and worth its own review pass on tone before merge, separate from the code review.
+
+**Batch C — younger-age, visual (2 activities): Copy the Pattern, Find It.**
+Smallest, last, lowest risk — icon/color/shape-based, pre-reader-friendly, self-scaling, no text-heavy content to draft. Benefits from both prior batches' patterns already being established and merged.
+
 ## Open questions / explicitly out of scope for this phase
 
-- **Content lists** (actual prompt/word/scene text) are not drafted in this spec — real content needs real drafting, not a stub, before merge.
+- **Content lists** (actual prompt/word/scene text) are not drafted in this spec — real content needs real drafting, not a stub, before merge, concentrated mostly in Batch B.
 - **Memory (photo-based)** remains explicitly deferred pending the separate photo-source product decision — untouched by this phase.
 - **Async/live network play** for any of these — separate Phase 2/3 spec, not designed here.
-- Whether to batch these 8 into one PR or ship in smaller batches (e.g., Draw Together + Guess the Doodle together since they share the canvas engine, then the content-driven ones as a second batch) — recommend batching by shared-code affinity rather than one giant PR; open to your preference.
