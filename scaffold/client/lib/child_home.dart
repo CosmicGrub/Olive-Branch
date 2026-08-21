@@ -14,6 +14,8 @@ import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
+import 'game_draw_together.dart';
+import 'game_guess_doodle.dart';
 import 'game_logic.dart';
 import 'game_picker.dart';
 import 'game_story.dart';
@@ -99,11 +101,27 @@ class ChildHome extends StatelessWidget {
               builder: (_) => GamePickerScreen(
                 childName: childName,
                 onPlay: (playContext, kind) {
-                  if (kind == GameKind.story) {
-                    Navigator.of(playContext).push(MaterialPageRoute<void>(
-                      builder: (_) => GameStoryScreen(childName: childName)));
-                  } else {
-                    _notBuiltYet(playContext, 'That game');
+                  // Real cases only for the games this session has actually
+                  // built a board for. Every other GameKind — including any
+                  // a parallel build wires in later (tictactoe/dotsboxes) —
+                  // stays on the honest not-built-yet fallback until its own
+                  // group adds its own case here; this switch never assumes
+                  // ownership of a case it did not add.
+                  switch (kind) {
+                    case GameKind.story:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => GameStoryScreen(childName: childName)));
+                      break;
+                    case GameKind.drawTogether:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => DrawTogetherScreen(childName: childName)));
+                      break;
+                    case GameKind.guessDoodle:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => GuessDoodleScreen(childName: childName)));
+                      break;
+                    default:
+                      _notBuiltYet(playContext, 'That game');
                   }
                 },
               )))),

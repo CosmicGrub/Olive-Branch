@@ -7,12 +7,24 @@ import 'package:olive_client/game_logic.dart';
 
 void main() {
   group('CATALOGUE — §9.2', () {
-    test('four games, matching the ported source', () {
-      expect(catalogue.length, 4);
+    test('six games — the ported four plus batch A\'s two canvas activities', () {
+      expect(catalogue.length, 6);
       for (final g in catalogue) {
         expect(g.title, isNotEmpty);
         expect(g.blurb, isNotEmpty);
       }
+    });
+
+    test('draw together and guess the doodle are real, co-op catalogue entries', () {
+      final drawTogether = catalogueFor(GameKind.drawTogether);
+      expect(drawTogether.competitive, isFalse);
+      expect(drawTogether.handicaps, isEmpty);
+      expect(drawTogether.minAge, 4);
+
+      final guessDoodle = catalogueFor(GameKind.guessDoodle);
+      expect(guessDoodle.competitive, isFalse);
+      expect(guessDoodle.handicaps, isEmpty);
+      expect(guessDoodle.minAge, 5);
     });
 
     test('the co-op game (story) carries no handicaps — nothing to be behind at', () {
@@ -29,7 +41,7 @@ void main() {
 
     test('forAge filters by minAge without reordering or duplicating', () {
       final atFour = forAge(4).map((g) => g.kind).toSet();
-      expect(atFour, {GameKind.tictactoe, GameKind.memory});
+      expect(atFour, {GameKind.tictactoe, GameKind.memory, GameKind.drawTogether});
       final atSix = forAge(6).map((g) => g.kind).toSet();
       expect(atSix, GameKind.values.toSet());
     });

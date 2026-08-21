@@ -22,6 +22,7 @@
 // press-in, driven 1:1 by her finger and settling well under the 400ms
 // "consequence" budget. Nothing here loops or moves on its own.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'game_logic.dart';
 
 class GamePickerScreen extends StatelessWidget {
@@ -48,16 +49,23 @@ class GamePickerScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Games')),
       body: SafeArea(
         child: LayoutBuilder(builder: (context, constraints) {
-          // Breakpoints, not a hard pixel width: one column on the Fold5
-          // cover screen (344 CSS px) so a card's blurb never has to
-          // squeeze, two on its ~673px-wide unfolded main screen (which
-          // also lines up with §0's note that the crease wants a two-column
-          // gutter down the centre), three once there is room to spare.
-          final cross = constraints.maxWidth >= 680
-              ? 3
-              : constraints.maxWidth >= 420
-                  ? 2
-                  : 1;
+          // v0.49.17 — migrated off a hand-rolled 420/680px breakpoint onto
+          // form_factors.dart's real, tested posture system (columnsAt()),
+          // the same fix court_export.dart already got and this exact file's
+          // own header used to cite as the anti-pattern still standing here.
+          // One real, intentional behavior change this migration carries:
+          // the old breakpoint gave 3 columns from 680px (any Fold-unfolded
+          // or tablet width); columnsAt() reserves 3 for genuine desktop
+          // width (>=1024px, matching FORM_FACTORS' own `desktop` row) and
+          // gives a 10-inch tablet (800px, `tabletLarge`) 2 columns, same as
+          // the Fold5's unfolded main screen — which also gives each card
+          // more real width for its blurb, not less. textScale-aware for the
+          // same §8.8 reason court_export.dart's columnsAt() call already is:
+          // a large accessibility text size on a nominally-wide screen should
+          // still degrade toward fewer columns.
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final int cross = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale);
           return ListView(padding: const EdgeInsets.all(16), children: [
             Text(
               childName == null ? 'What do you want to play?' : 'What do you want to play, $childName?',
@@ -75,12 +83,21 @@ class GamePickerScreen extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               // Explicit mainAxisExtent, not an aspect ratio — see
               // child_home.dart's note on GridView.count scaling tile
-              // height with device width on this engine build.
+              // height with device width on this engine build. Found while
+              // adding this same migration's textScale-aware column test: a
+              // FIXED 182 regardless of textScale is a real, pre-existing
+              // §8.8 bug — at 1 column / 2.0x text the five lines of card
+              // content (icon, title up to 2 lines, blurb up to 2 lines, the
+              // competitive/co-op row) genuinely need more vertical room
+              // than 1x text does, and a bigger accessibility text size is
+              // exactly the case columnsAt() already degrades WIDTH for two
+              // lines above — this closes the matching HEIGHT gap rather
+              // than leaving it half-fixed.
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: cross,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,
-                mainAxisExtent: 182,
+                mainAxisExtent: 182 * textScale.clamp(1.0, 2.0),
               ),
               children: [
                 for (final g in games)
@@ -106,6 +123,8 @@ Color _cardColor(ColorScheme cs, GameKind kind) => switch (kind) {
       GameKind.dotsboxes => cs.tertiaryContainer,
       GameKind.memory => cs.secondaryContainer,
       GameKind.story => cs.surfaceContainerHighest,
+      GameKind.drawTogether => cs.primaryContainer,
+      GameKind.guessDoodle => cs.tertiaryContainer,
     };
 
 Color _onCardColor(ColorScheme cs, GameKind kind) => switch (kind) {
@@ -113,6 +132,8 @@ Color _onCardColor(ColorScheme cs, GameKind kind) => switch (kind) {
       GameKind.dotsboxes => cs.onTertiaryContainer,
       GameKind.memory => cs.onSecondaryContainer,
       GameKind.story => cs.onSurfaceVariant,
+      GameKind.drawTogether => cs.onPrimaryContainer,
+      GameKind.guessDoodle => cs.onTertiaryContainer,
     };
 
 const _kindIcon = {
@@ -120,6 +141,8 @@ const _kindIcon = {
   GameKind.dotsboxes: Icons.border_all_rounded,
   GameKind.memory: Icons.photo_library_rounded,
   GameKind.story: Icons.auto_stories_rounded,
+  GameKind.drawTogether: Icons.brush_rounded,
+  GameKind.guessDoodle: Icons.psychology_alt_rounded,
 };
 
 class _GameCard extends StatefulWidget {
