@@ -14,6 +14,143 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.23] — 2026-08-21 — A documentation-staleness pass: one more wrong citation, one stale branch claim, one stale footer
+
+Second of two audit-style passes run tonight (the first, a 6-dimension
+adversarial code-quality audit over PRs #34–#41, landed as v0.49.22). This
+one is not about code correctness — it is a full staleness/citation sweep
+of `MASTERFILE.md`, this file, `MARKUP.html`/`scaffold/demo/shell.html`,
+both `docs/superpowers/specs/` design docs, `README.md`/`BRANCHES.md`, and
+every spec/migration/test-file citation carried by the fourteen Dart files
+Play Together and the theme suite added this session
+(`game_tictactoe.dart`, `game_dotsboxes.dart`, `game_draw_together.dart`,
+`game_guess_doodle.dart`, `game_silly_sentence.dart`,
+`game_would_you_rather.dart`, `game_two_truths.dart`,
+`game_twenty_questions.dart`, `game_copy_pattern.dart`, `game_find_it.dart`,
+`game_curated_activity.dart`, `annotation_canvas_view.dart`, `theme.dart`,
+`theme_picker_screen.dart`).
+
+### Fixed
+- **`theme_picker_screen.dart` cited the wrong test filename.** Its own
+  header said the child shell's no-settings-affordance contract was proven
+  by `child_no_settings_test.dart`; the real file — matching §8.16's own,
+  already-correct citation of the same test — is
+  `child_no_settings_contract_test.dart`. Same class of bug as the two
+  citation errors PR #41 already fixed (`game_two_truths.dart`'s fabricated
+  spec quote, `theme.dart`'s wrong migration filename); this pass swept all
+  fourteen new Dart files' citations against the real filesystem looking
+  for more instances of the same pattern and found exactly one.
+- **`BRANCHES.md` overstated how current the four `device/*` branches
+  are.** It said they were "sitting at the same commit as `main`" as of
+  2026-08-08 — true on that date, but read today it implies current parity.
+  `main` has since moved 37 commits ahead while the device branches
+  (correctly, by design — see that file's own "Working with a device
+  branch" section) have not. Reworded to state plainly that the branches
+  are still identical to *each other*, not to `main`, and that falling
+  behind `main` between deliberate merges is expected, not a sign anything
+  is broken.
+- **`MASTERFILE.md`'s own footer said "End of MASTERFILE v0.49.21"** —
+  stale since the v0.49.22 audit-fix pass bumped the document header two
+  versions past it without updating the matching line at the bottom.
+  Corrected, and now kept in the same edit as the header bump going
+  forward.
+
+### Verified, not changed
+- **§9.2's Play Together status notes** (Batches A/B/C, and the v0.49.22
+  audit-fix correction disclosing Batch A's shared-canvas-wrapper gap) were
+  read in full against the current source and already accurately describe
+  the FINAL, fully-corrected state — nothing here was an intermediate
+  snapshot left behind.
+- **§8.16's theme-customization status note** and both
+  `docs/superpowers/specs/` design docs were read in full: the Play
+  Together spec's own "common canvas-hosting wrapper" line (~74) matches
+  the real spec text verbatim (already correctly cited by MASTERFILE,
+  CHANGELOG v0.49.22, and `annotation_canvas_view.dart`'s own header); the
+  intuitivism spec correctly still lists screen-level simplification and
+  navigation/density as separate, not-yet-scoped later sub-projects — no
+  false "done" claim, no silently-dropped pending item.
+- **`MARKUP.html`/`scaffold/demo/shell.html`** — both already declared
+  5447 assertions and version 0.49.22, matching the real, independently
+  recomputed total (this pass added no test assertions, so the total does
+  not move). The `gamePicker` screen entry's text and its `amended
+  0.49.17` tag are correct AS WRITTEN: `packages/games/src/games.ts`'s own
+  `CATALOGUE` still has exactly the original four entries
+  (`tictactoe`/`dotsboxes`/`memory`/`story`) — Play Together Batches A–C
+  only ever touched the Flutter client's own `game_logic.dart` catalogue,
+  never the JS demo, exactly as v0.49.18–v0.49.21's own entries in this
+  file already state. Not stale; deliberately unchanged.
+- **Migration and source-file citations** across MASTERFILE and this file
+  were checked against the real filesystem. Two near-misses turned out to
+  be correct on inspection: `0002_seed.sql` is a real file, just under
+  `db/test/` rather than `db/migrations/`; `0008_account_deletion.sql`
+  (v0.49.4 era text) is a correct historical reference to a sibling
+  branch's migration that was renumbered to `0011` before merge, not a
+  citation of a file that was ever supposed to exist under that name on
+  `main`.
+- **`push_channel_test.dart`'s CRLF issue** — grepped for every mention in
+  this file. The many historical entries correctly describing it as an
+  open, pre-existing, unrelated failure are accurate AS OF THEIR OWN DATE
+  (the failure was real until PR #38); nothing describes it as still open
+  today, and v0.49.22's own entry already states plainly that it was fixed
+  for real ahead of that pass.
+
+### Found, deliberately not fixed here (out of scope for a citation pass)
+- **This file's own early version history, roughly `0.46.3` through
+  `0.48.0`, carries the version number `0.47.0` on five separate,
+  substantively different entries** (guardian authentication, real
+  homework OCR, account deletion, "send one back," and push delivery's
+  server side), plus one entry that was never assigned a version number at
+  all and still reads `## [Unreleased]` (the guardian-availability entry).
+  This is real, and it does mean this file's version numbers are not
+  globally unique across that stretch. It is left alone here because it is
+  pre-existing history from well before this session (dated 2026-08-08
+  through 2026-08-11) that MASTERFILE.md already cites correctly and
+  consistently AS WRITTEN — including a literal, working citation to
+  `` CHANGELOG's `[Unreleased]` → "Guardian availability" entry `` (§9,
+  guardian availability's own status note). Renumbering now would require
+  rewriting every one of those existing MASTERFILE cross-references too,
+  is a large, high-risk change with real potential to introduce new
+  breakage, and does not match this pass's scope (citation accuracy
+  against current reality, not a historical-record rewrite). Flagged here
+  for a human decision, not silently left undocumented.
+- **`VISUAL.html` is stuck at version `0.39.1`** while `MASTERFILE.md`,
+  this file, and `MARKUP.html` are all at `0.49.23` — roughly ten minor
+  versions of drift. This is a long-standing, self-acknowledged pattern in
+  this project (see this file's own `0.4.x`–`0.5.x`-era entries describing
+  VISUAL as periodically "refreshed," not updated every release) and is
+  not enforced by `check-markup.mjs`/`verify.sh`, which check MARKUP and
+  the demo against each other and against this file, never VISUAL. Bringing
+  it current would mean authoring roughly ten versions' worth of new visual
+  panels — genuine content/design work, not a citation fix — so it is
+  reported here rather than attempted blind in an unsupervised pass.
+
+### Verified
+- No code was changed. `flutter analyze` (client/): clean. `flutter test`
+  (client/): **1842 passed, 0 failed** — unchanged from v0.49.22, run
+  directly against a native Windows Flutter 3.44.8 install (matching CI's
+  own `subosito/flutter-action` pin).
+- `bash tools/verify.sh` run for real (not assumed): WSL2 Ubuntu 24.04,
+  Node 22.23.2 (matching CI's `actions/setup-node` pin — this environment's
+  default Node 18 cannot load this repo's `.ts` re-exports at all, an
+  environment gap, not a code bug), a real local Postgres 16 cluster on
+  port 5433, and a real `livekit-server` v1.8.0 binary fetched the same way
+  `.github/workflows/verify.yml` does. Every suite green, **3605 passed, 0
+  failed** for the JS/DB/demo/livekit portion; combined with the 1842 Dart
+  cases above, **5447 total** — exactly matching `MARKUP.html`'s and
+  `scaffold/demo/shell.html`'s already-declared count, confirmed rather
+  than assumed. C7/D2 fail only in a JS-only local run that has no Flutter
+  toolchain wired to `verify.sh` (the same "MISSING TOOLCHAIN, not a skip"
+  gap this file's own `tools/verify.sh` already names honestly) — not a
+  real drift.
+- Per this project's standing assertion-count-drift rule: no test
+  assertions were added or removed by this pass, so `MARKUP.html` and
+  `scaffold/demo/shell.html` keep their existing `5447`/`0.49.22` values as
+  the base and are bumped to `0.49.23` alongside every other canonical
+  document in this same pass; `DEMO.html` rebuilt; `check-markup.mjs
+  --total 5447` reconfirmed clean locally.
+
+---
+
 ## [0.49.22] — 2026-08-21 — An adversarial audit of PRs #34–#40, and what it actually found
 
 Before this pass, tonight's run of work (PRs #34 through #40 — tic-tac-toe/
