@@ -14,7 +14,7 @@ Silent deletion is a process failure.
 
 ---
 
-## [0.49.17] — 2026-08-20 — Play Together, Batch A: two real canvas games, two real actors on one shared engine
+## [0.49.18] — 2026-08-20 — Play Together, Batch A: two real canvas games, two real actors on one shared engine
 
 Batch A of the Play Together Phase 1 spec (`docs/superpowers/specs/
 2026-08-20-play-together-phase1-design.md`, merged just ahead of this PR) —
@@ -116,6 +116,134 @@ pattern Batches B and C will follow rather than each inventing their own.
   Tale, 20 Questions) and C (Copy the Pattern, Find It)** are not built —
   scoped, sequenced, and explicitly deferred by the spec's own batching
   plan, one PR each, in order.
+## [0.49.17] — 2026-08-20 — Two more boards, and a real side panel instead of a hand-rolled breakpoint
+
+`GamePickerScreen` has offered four games since v0.17.0 — tic-tac-toe,
+dots-and-boxes, memory, and the co-op story — but only `story` ever reached a
+real screen; the other three fell through to an honest not-built-yet
+acknowledgment. `packages/games/src/games.ts`'s tic-tac-toe and dots-and-boxes
+branches have been real and tested since before this pass with zero client
+callers. This pass gives those two a real Dart client, ported directly from
+that engine rather than reinvented, matching `game_chess.dart`'s/
+`game_checkers.dart`'s established ENGINE-then-WIDGET pattern. `memory` is
+deliberately left untouched — a separate, still-open product decision about
+where real photos for that game come from, out of scope here.
+
+A scope addition mid-pass asked both new screens to genuinely adapt their
+layout by real device posture (`form_factors.dart`, v0.49.13) rather than a
+single no-overflow breakpoint, the same anti-pattern `court_export.dart` used
+to have — both screens now render a persistent side panel next to the board
+at `foldMain`/`tabletLarge`+ instead of the same stacked layout merely given
+more room.
+
+### Added
+- **`client/lib/game_tictactoe.dart`** (new) — `TttState`/`tttPlay()`/
+  `tttSetHandicap()`/`tttTakeBack()` port games.ts's tic-tac-toe branch
+  directly: real row/column/diagonal win detection, real draw detection, and
+  the `no_centre` handicap refused at `tttPlay()` itself (`handicap_forbids`),
+  not just a UI affordance the parent's simulated moves happen to avoid —
+  `tttLegalMoves()` (the simulated opponent's own candidate pool) excludes the
+  centre independently, so the refusal is enforced twice, not assumed once.
+  `GameTicTacToe` starts immediately with no handicap active (no setup gate,
+  the same simplicity `game_story.dart` already has) and opens the existing,
+  reusable `HandicapScreen` from a "Make it fair" AppBar action rather than a
+  second bespoke setup screen — tic-tac-toe is already a real
+  `game_logic.dart` catalogue entry. A handicap applies to the CURRENT game
+  state (board and move history untouched), honoring `HandicapScreen`'s own
+  "even mid-game" promise literally instead of restarting.
+- **`client/lib/game_dotsboxes.dart`** (new) — `DbState`/`dbPlay()`/
+  `dbSetHandicap()`/`dbTakeBack()` port games.ts's dots-and-boxes branch,
+  including `claimBoxes()`'s cascade rule (completing a box grants the SAME
+  side another move, verified for both a single box and a "double-cross" — one
+  edge completing two boxes at once) and the turn-still-flips-on-the-
+  game-ending-move quirk the source itself carries (harmless: `outcome` is
+  already non-null the instant that happens, so no further move is ever
+  accepted either way — ported as-is rather than "corrected"). `start_behind`
+  is ported exactly as games.ts wrote it too: the CHILD starts two boxes
+  AHEAD, not the parent behind, despite the handicap's own label text
+  ("Dad starts two boxes behind") describing it the other way around — both
+  phrasings name the same material two-box gap, so this is left standing
+  rather than reinterpreted, per the assignment's explicit instruction.
+- **Both screens' simulated parent** is a uniformly random legal move after a
+  short "thinking" delay, exactly matching `game_chess.dart`'s/
+  `game_checkers.dart`'s own precedent — no smarter AI, no deliberate losing.
+  For dots-and-boxes, the simulated parent keeps taking its own "thinking"
+  turn for as long as ITS moves keep completing boxes, the same recursive-
+  continuation shape `game_checkers.dart`'s `_applyBotMove` already uses for a
+  simulated multi-jump chain.
+- **A voice-note mic icon** on both AppBars shows the same honest
+  not-built-yet snackbar `game_chess.dart`/`game_checkers.dart` already show —
+  no audio-capture infrastructure exists in this codebase yet.
+- **`child_home.dart`**'s "Play together" `onPlay` converted from an
+  `if`/`else` to a `switch` on `GameKind`, adding real cases for
+  `.tictactoe`/`.dotsboxes`; `.memory` still falls through to the honest
+  not-built-yet path, `.story` unchanged.
+- **Posture-driven layout (mid-pass scope addition)** — both screens now read
+  `form_factors.dart`'s real `columnsAt()` instead of a hand-rolled
+  `constraints.maxWidth` check, the same technique `court_export.dart`
+  established (v0.49.13). At `foldCover`/`phone`/`tabletSmall` (1 column) the
+  board is the only thing on screen, full width, banners/buttons stacked
+  below it in a `Wrap`. At `foldMain`/`tabletLarge`+ (2+ columns) the board
+  shares the screen with a persistent side panel — the same banners plus a
+  real `Column` of full-width buttons, not the narrow layout's `Wrap` merely
+  given room to stop reflowing.
+
+### Verified
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full client suite, 1635 run, 1634 passed locally (the
+  one local failure is the same pre-existing, unrelated
+  `push_channel_test.dart` failure noted since v0.49.6 — nothing this pass
+  touched). 70 new assertions across `game_tictactoe_test.dart` (36) and
+  `game_dotsboxes_test.dart` (34): win/draw detection, `no_centre` refused
+  directly against the engine (never inferred from UI state alone),
+  `start_behind`/`child_first` mid-game side effects, free takebacks —
+  including dots-and-boxes' extra-turn edge case by name: undoing a
+  box-completing move's own follow-up move hands the extra turn BACK to the
+  same side, and undoing the box-completing move itself correctly restores
+  whichever side's turn it was immediately before that move — a Fold5
+  cover-width (344px) no-overflow sweep for both the ordinary and the
+  finished (two-button) control row, real navigation reachability from
+  `child_home.dart` (`widget_test.dart`), and — for the mid-pass scope
+  addition — a side-panel-present-vs-absent structural check at `foldCover`
+  vs. `foldMain`/tablet/desktop, mirroring `court_export_test.dart`'s
+  `reviewableAt()`/`requestableAt()` width tests rather than only asserting
+  no overflow.
+
+### Fixed — found during this pass's own adversarial self-verify
+- **A stale "is thinking…" banner could survive a mid-game `child_first`
+  handicap.** `_applyHandicap()` updated `_state` (correctly handing the turn
+  back to her) but never reset `_parentThinking`, so if she opened "Make it
+  fair" and chose `child_first` while the simulated parent's own delayed
+  reply was still pending, the turn banner kept reading "Dad is thinking…"
+  until that now-stale timer eventually fired and self-corrected — up to one
+  full `botThinkDelay` of visibly wrong state. Fixed by clearing
+  `_parentThinking` in the same `setState` that applies the handicap; a
+  regression test drives exactly this sequence in both screens.
+- **A defensive guard, not a bug found in the wild but added on the same
+  reasoning:** both screens' `_scheduleParentMove()` re-checks `outcome`/
+  `turn` before acting when its delayed callback finally fires, so a stale
+  timer left over from a take-back or a mid-game handicap change (both of
+  which can hand the turn away from the parent without cancelling an
+  already-scheduled "thinking" reply) is a safe no-op instead of an invalid
+  bot move. Verified directly: the take-back tests deliberately let a
+  day-long simulated "thinking" timer go stale, then fast-forward past it and
+  assert nothing breaks.
+- **Not a code bug, flagged honestly instead of silently working around it:**
+  dots-and-boxes' `outcome: 'draw'` branch is ported faithfully from
+  games.ts, but at this game's fixed `n = 4` (nine total boxes, an odd
+  number) a real tied game is mathematically impossible — the branch exists
+  for the general case the source itself models and is simply unreachable at
+  this specific board size. Left exactly as games.ts wrote it, since
+  "fixing" it would mean deviating from the source rather than porting it.
+
+### Verification note
+`flutter_test`'s `Future.delayed`-backed bot timers do not resolve themselves
+on teardown — a widget test that taps a move with a long `botThinkDelay` and
+never lets it fire fails with "A Timer is still pending" rather than the
+overflow it was meant to check. Both new test files' responsive-audit groups
+use `Duration.zero` + `pumpAndSettle()` for exactly this reason, and the
+take-back tests explicitly fast-forward past the deliberately-stale delay
+before the test ends.
 
 ---
 
