@@ -22,7 +22,7 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          certifiedExportBundleFor,
          createGuardianInvite, getGuardianInvite,
          acceptGuardianInvite, revokeGuardianInvite,
-         takeAndGo,
+         takeAndGo, themeFor, setChildTheme,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -63,6 +63,22 @@ function invalidAvailabilityBody(body) {
     if (w.endLocal <= w.startLocal) return 'endLocal_before_startLocal';
     if (w.note !== undefined && w.note !== null && typeof w.note !== 'string') return 'bad_note';
   }
+  return null;
+}
+
+// client/lib/theme.dart's ThemePalette/ThemeBrightness enums, by `.name` —
+// the exact wire values db/migrations/0017_child_theme_preference.sql's own
+// CHECK constraints already admit; kept here too so a bad body gets a real
+// 400 with a specific reason rather than surfacing as a bare Postgres
+// constraint-violation 500 (same reasoning invalidAvailabilityBody gives).
+const THEME_PALETTES = new Set(
+  ['classic', 'calmModern', 'warmGrounded', 'softPlayful', 'deepCozy', 'brightBold']);
+const THEME_BRIGHTNESSES = new Set(['light', 'dark']);
+
+function invalidThemeBody(body) {
+  if (!body || typeof body !== 'object') return 'body_must_be_object';
+  if (!THEME_PALETTES.has(body.themePalette)) return 'bad_themePalette';
+  if (!THEME_BRIGHTNESSES.has(body.themeBrightness)) return 'bad_themeBrightness';
   return null;
 }
 
@@ -656,6 +672,45 @@ export function registerRoutes(api, pool) {
         weekday: w.weekday, startLocal: w.startLocal, endLocal: w.endLocal,
         note: w.note ?? null,
       })));
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // MASTERFILE §8.1, docs/superpowers/specs/2026-08-21-intuitivism-visual-
+  // foundation-design.md — the theme customization suite's real backend.
+  // `action: 'settings'` reuses the Action already declared for exactly this
+  // ("a guardian configures something for this child") in family-graph/src/
+  // authorize.ts's ROLE_CAPS — real, but never wired to any route until now
+  // (see api_client.dart's own pre-existing, unused `settings` path
+  // constant's header for the DIFFERENT, escalation-gated future use of that
+  // same Action string this is NOT). Neither route sets `escalated: true`:
+  // reached from guardian_more.dart's normal, already-authenticated guardian
+  // navigation, not §8.3's PIN+biometric escalation flow.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/theme', action: 'settings',
+    handler: async (c) => {
+      const theme = await themeFor(pool, c.childId);
+      return { body: { theme } };
+    },
+  });
+
+  api.register({
+    // `action: 'settings'` is in authorize.ts's WRITES list, so an
+    // observer-only guardian's edge is denied here (§17.3) the same way
+    // every other write already is — deliberate, not incidental: see
+    // 0017_child_theme_preference.sql's own policy comment for why this
+    // table's RLS stays coarser (any 'guardian'-role session with a live
+    // edge) while THIS app-layer check is the finer-grained gate.
+    method: 'PUT', path: '/v1/children/:childId/theme', action: 'settings',
+    handler: async (c) => {
+      if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_only' } };
+      }
+      const reason = invalidThemeBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      await setChildTheme(pool, c.principal.userId, c.childId, {
+        themePalette: c.body.themePalette, themeBrightness: c.body.themeBrightness,
+      });
       return { status: 200, body: { ok: true } };
     },
   });

@@ -32,6 +32,8 @@ import 'show_guardian.dart';
 import 'siblings_screen.dart';
 import 'storyteller_screen.dart' show StorytellerSafetyScreen;
 import 'the_book.dart';
+import 'theme.dart';
+import 'theme_picker_screen.dart';
 import 'webauthn_channel.dart';
 import 'year_book.dart';
 
@@ -65,6 +67,8 @@ class GuardianMoreScreen extends StatelessWidget {
     this.childId = 'aaaaaaaa-0000-4000-8000-000000000001',
     this.availabilityHttpClient,
     this.fetchAgreementOrder,
+    this.currentTheme = defaultAppTheme,
+    this.onThemeApplied,
   });
   final String childName;
   final int childAge;
@@ -96,6 +100,21 @@ class GuardianMoreScreen extends StatelessWidget {
   /// agreement screen shows a REAL, honest "can't load" state rather than
   /// faking one. See [_noLiveBackendWired].
   final Future<Map<String, dynamic>> Function(String childId)? fetchAgreementOrder;
+
+  /// Best-known currently-active theme, so the picker's own preview and
+  /// initial selection start from reality rather than always reopening at
+  /// [defaultAppTheme] — see theme_picker_screen.dart's own [initial] field.
+  /// Defaults to [defaultAppTheme] for the same reason [childName]/[childAge]
+  /// default rather than requiring every existing (mostly offline-demo)
+  /// call site to supply one.
+  final AppTheme currentTheme;
+
+  /// Fires when a live Apply succeeds — this hub has no `ThemeController` of
+  /// its own (nothing upstream of it, in ANY current call site, holds one
+  /// yet; see main_live.dart's own `_OliveLiveState` for the one that
+  /// exists today and the gap in reaching it from here), so this is left
+  /// optional and additive, exactly like [fetchAgreementOrder] above.
+  final void Function(AppTheme)? onThemeApplied;
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -159,6 +178,23 @@ class GuardianMoreScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text("Availability needs a live session — not connected in this preview build."),
       duration: Duration(seconds: 3)));
+  }
+
+  /// Unlike [_openAvailability] above, this ALWAYS opens the real screen —
+  /// browsing/previewing a theme has no side effect (theme_picker_screen
+  /// .dart's own live-preview-before-Apply design), so there is nothing to
+  /// gate behind a live session the way a screen that fetches real data on
+  /// open (AvailabilityScreen) needs to be. Only Apply itself needs
+  /// baseUrl/guardianId/childId, and ThemePickerScreen already gives its own
+  /// honest "not connected" feedback there when they're null — passed
+  /// through as-is rather than duplicating that gate here.
+  void _openThemePicker(BuildContext context) {
+    _open(context, ThemePickerScreen(
+      initial: currentTheme,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient,
+      onApplied: onThemeApplied,
+    ));
   }
 
   @override
@@ -265,6 +301,11 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.event_available_outlined, title: 'Availability',
             subtitle: 'When he can actually be reached, honestly rendered',
             onTap: () => _openAvailability(context)),
+        ]),
+        HubSection(title: 'Preferences', children: [
+          HubTile(icon: Icons.palette_outlined, title: 'Theme',
+            subtitle: 'A real palette, guardian-only, synced across your devices',
+            onTap: () => _openThemePicker(context)),
         ]),
       ]),
     )),

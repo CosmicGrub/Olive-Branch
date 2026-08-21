@@ -747,6 +747,79 @@ export async function availabilityFor(pool: pg.Pool, childId: string): Promise<A
 }
 
 /**
+ * db/migrations/0017_child_theme_preference.sql. Wire names match
+ * client/lib/theme.dart's `AppTheme.toWire()`/`fromWire()` exactly (both
+ * enums' own `.name`) -- `null` on either field means no guardian has ever
+ * Applied a theme for this child (the migration's own `theme_preference_
+ * complete_or_absent` CHECK guarantees these two are never independently
+ * null/non-null). Collapsing that absence to `classic`/`light` is
+ * deliberately NOT this function's job -- server/routes.mjs's handler
+ * returns the raw `{themePalette, themeBrightness} | null` shape as-is, and
+ * client/lib/theme.dart's `AppTheme.fromWire()` is the one place that
+ * fail-closed default is applied, so a family that has genuinely never
+ * chosen stays honestly distinguishable from one that chose classic/light
+ * on purpose.
+ */
+export interface ChildTheme {
+  themePalette: string;
+  themeBrightness: string;
+}
+
+/**
+ * GET /v1/children/:childId/theme -- system role, mirroring
+ * activeCustodyOrderFor()/availabilityFor()'s own reasoning: the route
+ * handler's real A3 childId-from-path + can('settings', ...) check already
+ * gated this call before it runs (0017's own child_theme_system_read policy
+ * exists for exactly this call).
+ */
+export async function themeFor(pool: pg.Pool, childId: string): Promise<ChildTheme | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT theme_palette, theme_brightness
+         FROM child_theme_preference
+        WHERE child_id = $1 AND theme_palette IS NOT NULL`,
+      [childId],
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { themePalette: r.theme_palette, themeBrightness: r.theme_brightness };
+  });
+}
+
+/**
+ * PUT /v1/children/:childId/theme -- upsert, one row per child. Deliberately
+ * opens its OWN guardian-scoped session (`withSession`, not
+ * `withSystemSession`) with `userId: guardianId`, the exact same reasoning
+ * setAvailabilityWindows() above already documents: 0017's own
+ * child_theme_guardian_edge policy is keyed on `actor_has_edge(child_id)`,
+ * evaluated against `current_actor()` -- running this as `system` would
+ * leave that NULL and the INSERT's WITH CHECK would fail outright for
+ * every caller, guardian or not. Opening the session as the real guardian
+ * makes RLS the thing actually enforcing "a guardian with a live edge can
+ * write", not just a comment claiming it.
+ *
+ * `guardianId` MUST be the authenticated caller's own principal.userId,
+ * never anything from the request body -- routes.mjs passes
+ * `c.principal.userId`, the same A3 discipline childId gets from the path.
+ */
+export async function setChildTheme(
+  pool: pg.Pool, guardianId: string, childId: string, theme: ChildTheme,
+): Promise<void> {
+  await withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null },
+    async (q) => {
+      await q(
+        `INSERT INTO child_theme_preference (child_id, theme_palette, theme_brightness, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (child_id) DO UPDATE
+           SET theme_palette = EXCLUDED.theme_palette,
+               theme_brightness = EXCLUDED.theme_brightness,
+               updated_at = now()`,
+        [childId, theme.themePalette, theme.themeBrightness],
+      );
+    });
+}
+
+/**
  * db/migrations/0011_account_deletion.sql — account deletion, for real.
  * MASTERFILE §2.10, §2.11, §9.8, prohibition P8.
  * client/lib/deletion_screen.dart's `whatDeletionKeeps` / `whatDeletionRemoves`
