@@ -11,8 +11,8 @@
 // (see that file's own header). Nothing in this file is imported by
 // child_home.dart or anything it reaches — §8.1's "no settings affordance
 // exists at any depth" is a property of THAT file's own import graph, and
-// this screen is not part of it. child_no_settings_test.dart proves that
-// directly, mirroring transport.test.mjs's own "child shell has no settings
+// this screen is not part of it. child_no_settings_contract_test.dart proves
+// that directly, mirroring transport.test.mjs's own "child shell has no settings
 // affordance" contract check as a client-side Dart test too.
 //
 // SELECTING HAS NO SIDE EFFECT. Tapping a palette card or the light/dark

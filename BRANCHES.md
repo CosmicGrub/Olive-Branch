@@ -26,11 +26,16 @@ appear on `device/phone` unless someone explicitly brings it over (merge,
 rebase, or cherry-pick) — and the reverse is equally true. Treat a push to
 one of these branches as scoped to that branch alone.
 
-As of 2026-08-08 all four are sitting at the same commit as `main`
-(`18ec8cdf`) — they were cut fresh off `main` and haven't diverged yet.
-That's expected: they'll pick up their first real device-specific commits
-as that work comes in, at which point they'll genuinely stop being
-identical to each other.
+They were cut from `main` on 2026-08-08 at `18ec8cdf` and, as of this
+writing, still sit at that same commit — identical to each other, but no
+longer identical to `main` itself, which has since moved well ahead (37
+commits, as of 2026-08-21) on ordinary trunk work that never had a reason to
+touch a device branch. That's expected: these branches pick up shared work
+only via a deliberate merge/rebase (see "Working with a device branch"
+below), not automatically, so drifting behind `main` is normal, not a sign
+of anything broken. They'll pick up their first real device-specific
+commits as that work comes in, at which point they'll genuinely stop being
+identical to each other too.
 
 ### Why this isn't four separate apps
 
