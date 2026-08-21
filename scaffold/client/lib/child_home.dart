@@ -14,9 +14,11 @@ import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
+import 'game_dotsboxes.dart';
 import 'game_logic.dart';
 import 'game_picker.dart';
 import 'game_story.dart';
+import 'game_tictactoe.dart';
 import 'games_hub.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
@@ -99,11 +101,18 @@ class ChildHome extends StatelessWidget {
               builder: (_) => GamePickerScreen(
                 childName: childName,
                 onPlay: (playContext, kind) {
-                  if (kind == GameKind.story) {
-                    Navigator.of(playContext).push(MaterialPageRoute<void>(
-                      builder: (_) => GameStoryScreen(childName: childName)));
-                  } else {
-                    _notBuiltYet(playContext, 'That game');
+                  switch (kind) {
+                    case GameKind.story:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => GameStoryScreen(childName: childName)));
+                    case GameKind.tictactoe:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => GameTicTacToe(childName: childName)));
+                    case GameKind.dotsboxes:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => GameDotsBoxes(childName: childName)));
+                    case GameKind.memory:
+                      _notBuiltYet(playContext, 'That game');
                   }
                 },
               )))),

@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:olive_client/exchange_screen.dart';
 import 'package:olive_client/expenses_screen.dart';
+import 'package:olive_client/game_dotsboxes.dart';
+import 'package:olive_client/game_tictactoe.dart';
 import 'package:olive_client/main.dart';
 
 void main() {
@@ -161,6 +163,32 @@ void main() {
     await tester.tap(find.text('Play together'));
     await tester.pumpAndSettle();
     expect(find.text('Games'), findsOneWidget);
+  });
+
+  testWidgets("the game picker's Three in a row card reaches the real GameTicTacToe screen",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play together'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Three in a row'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameTicTacToe), findsOneWidget);
+    expect(find.textContaining('not built yet'), findsNothing);
+  });
+
+  testWidgets("the game picker's Dots and boxes card reaches the real GameDotsBoxes screen",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play together'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dots and boxes'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameDotsBoxes), findsOneWidget);
+    expect(find.textContaining('not built yet'), findsNothing);
   });
 
   testWidgets("ChildHome's Messages tile reaches the real inbox",
