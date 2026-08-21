@@ -20,6 +20,8 @@ void main() {
       expect(find.text('Dots and boxes'), findsOneWidget);
       expect(find.text('Our photos'), findsOneWidget);
       expect(find.text('Make up a story'), findsOneWidget);
+      expect(find.text('Draw together'), findsOneWidget);
+      expect(find.text('Guess the doodle'), findsOneWidget);
     });
 
     testWidgets('a younger child sees fewer boards, never harder ones', (t) async {
@@ -27,8 +29,10 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('Three in a row'), findsOneWidget);
       expect(find.text('Our photos'), findsOneWidget);
+      expect(find.text('Draw together'), findsOneWidget);
       expect(find.text('Dots and boxes'), findsNothing);
       expect(find.text('Make up a story'), findsNothing);
+      expect(find.text('Guess the doodle'), findsNothing);
     });
 
     testWidgets('she is greeted by her own name, not an id, when given one', (t) async {
@@ -50,6 +54,22 @@ void main() {
       await t.tap(find.text('Make up a story'));
       await t.pump();
       expect(tapped, GameKind.story);
+    });
+
+    testWidgets('a wired onPlay callback reaches draw together and guess the doodle too', (t) async {
+      // Tall enough that all 6 cards are on-screen without scrolling — the
+      // wiring is what's under test, not scroll mechanics.
+      await t.binding.setSurfaceSize(const Size(800, 1200));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      GameKind? tapped;
+      await t.pumpWidget(wrap(GamePickerScreen(childAge: 8, onPlay: (context, kind) => tapped = kind)));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Draw together'));
+      await t.pump();
+      expect(tapped, GameKind.drawTogether);
+      await t.tap(find.text('Guess the doodle'));
+      await t.pump();
+      expect(tapped, GameKind.guessDoodle);
     });
 
     testWidgets('NO settings affordance exists at any depth', (t) async {
@@ -131,6 +151,51 @@ void main() {
       await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8)));
       await t.pumpAndSettle();
       expect(t.takeException(), isNull);
+    });
+  });
+
+  group('game picker — column count is driven by form_factors.dart\'s columnsAt(), '
+      'not a hand-rolled breakpoint', () {
+    Future<int> crossAxisCountAt(WidgetTester t, Size size) async {
+      await t.binding.setSurfaceSize(size);
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8)));
+      await t.pumpAndSettle();
+      final delegate = t.widget<GridView>(find.byType(GridView)).gridDelegate
+          as SliverGridDelegateWithFixedCrossAxisCount;
+      return delegate.crossAxisCount;
+    }
+
+    testWidgets('Fold5 cover (344px) — one column', (t) async {
+      expect(await crossAxisCountAt(t, const Size(344, 882)), 1);
+    });
+
+    testWidgets('Fold5 unfolded main (~673px) — two columns, same as before this migration', (t) async {
+      expect(await crossAxisCountAt(t, const Size(673, 841)), 2);
+    });
+
+    testWidgets('a 10-inch tablet (800px, tabletLarge) — two columns, not three: a real, '
+        'intentional change from the old 680px breakpoint, matching FORM_FACTORS\' own '
+        'tabletLarge.columns=2', (t) async {
+      expect(await crossAxisCountAt(t, const Size(800, 1280)), 2);
+    });
+
+    testWidgets('genuine desktop width (1100px) — three columns', (t) async {
+      expect(await crossAxisCountAt(t, const Size(1100, 800)), 3);
+    });
+
+    testWidgets('a large accessibility text scale narrows the effective width, same as '
+        'court_export.dart\'s columnsAt() call', (t) async {
+      await t.binding.setSurfaceSize(const Size(800, 1280));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(const MaterialApp(home: MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(2.0)),
+        child: GamePickerScreen(childAge: 8),
+      )));
+      await t.pumpAndSettle();
+      final delegate = t.widget<GridView>(find.byType(GridView)).gridDelegate
+          as SliverGridDelegateWithFixedCrossAxisCount;
+      expect(delegate.crossAxisCount, 1);
     });
   });
 }

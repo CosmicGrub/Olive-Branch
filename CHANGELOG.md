@@ -14,6 +14,108 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.18] — 2026-08-20 — Play Together, Batch A: two real canvas games, two real actors on one shared engine
+
+Batch A of the Play Together Phase 1 spec (`docs/superpowers/specs/
+2026-08-20-play-together-phase1-design.md`, merged just ahead of this PR) —
+built first, on purpose: it shares `annotation_canvas.dart`'s `AnnotationCanvas`
+reuse work and establishes the device-adaptive tools-panel-vs-bottom-sheet
+pattern Batches B and C will follow rather than each inventing their own.
+
+### Added
+- **`client/lib/game_draw_together.dart`** (new) — a shared, always-on canvas
+  co-op activity (minAge 4, `competitive: false`, no handicaps — nothing to
+  be behind at, `story`'s own catalogue shape). The second real consumer of
+  `annotation_canvas.dart`'s `AnnotationCanvas` outside `doodle_desk.dart`,
+  and the first with TWO real actors ('child'/'parent') drawing on it at
+  once. Both may draw whenever they like — no turn gate, this is
+  collaborative, not turn-based — but undo is scoped to whichever actor is
+  currently selected via a small switch, exactly matching the engine's own
+  per-actor undo guarantee: a parent's undo can never erase the child's
+  stroke. Reuses `doodle_desk.dart`'s existing, public `kBrushColors`/
+  `kBrushWidths` palette rather than re-authoring a second one; does NOT
+  reuse its six-stamp tray (out of scope for a first version) or its private
+  `_InkPainter`/`_Swatch`/`_BrushDot` (Dart library privacy is per-file, so
+  this file has its own small, independent copies of the same shape). Ships
+  no stroke count, no timer, no "finished" state — a shared blank canvas has
+  no finish line either, per `doodle_desk.dart`'s own explicit P2 precedent.
+- **`client/lib/game_guess_doodle.dart`** (new) — co-op-FRAMED (minAge 5,
+  `competitive: false`, no handicaps), the third real `AnnotationCanvas`
+  consumer. Only ONE actor's strokes are ever live — the guesser never
+  draws, and there is exactly one `GestureDetector` on the whole screen,
+  attributed to whichever person is currently "the artist" (swappable any
+  time via the same actor switch, never a turn lock). Includes a real,
+  drafted, in-repo curated word bank — `guessDoodleWords`, 86 words across
+  seven categories (animals, food, everyday objects, nature, places/
+  vehicles, actions, and a little gentle fantasy), no duplicates, every word
+  reviewed for warmth and age fit — the actual content-safety mechanism per
+  the spec's own "fixed, in-repo, curated constants, never free text"
+  discipline. A "New word — no penalty" button swaps the word freely
+  (matches this codebase's established free-takeback ethos) and starts a
+  fresh `AnnotationCanvas` for the new round — the engine has no bulk-clear
+  operation by design, so a new round gets a new instance rather than a
+  wipe. The outcome is deliberately soft — "did you get it?", surfaced by
+  either "I got it!" (the guesser) or "Reveal the word" (either person) —
+  and never counted: `_revealed`/`_gotIt` are per-round UI state only, reset
+  by every new word, the same "transient, not tallied" shape
+  `game_story.dart`'s own `_readingAsOne` toggle already uses.
+- **`game_logic.dart`** — `GameKind` gains `drawTogether` and `guessDoodle`;
+  `catalogue` gains their `GameMeta` entries in `story`'s exact shape
+  (`competitive: false, handicaps: []`), real titles and blurbs matching the
+  existing four entries' warm, unscored tone.
+- **`child_home.dart`** — `GamePickerScreen`'s `onPlay` callback is now a real
+  `switch` with cases for `story`, `drawTogether`, and `guessDoodle`; every
+  other `GameKind` (including `tictactoe`/`dotsboxes`, in flight on a
+  parallel branch) still falls through to the existing honest
+  not-built-yet acknowledgment via `default:` — this pass adds cases, it
+  does not touch or assume ownership of anyone else's.
+- **`game_picker.dart`** — migrated its own hand-rolled `constraints.maxWidth
+  >= 680 ? 3 : >= 420 ? 2 : 1` breakpoint onto `form_factors.dart`'s real,
+  tested `columnsAt()` — the exact anti-pattern that file's own header
+  already named as fixed elsewhere (`court_export.dart`, v0.49.13) but never
+  migrated here. textScale-aware, same §8.8 reason `court_export.dart`'s own
+  `columnsAt()` call already is. **One real, intentional column-count
+  change, not silent behavior drift:** the old breakpoint gave 3 columns
+  from 680px (any Fold-unfolded or tablet width); `columnsAt()` reserves 3
+  for genuine desktop width (>=1024px) and gives a 10-inch tablet (800px,
+  `tabletLarge`) 2 columns — matching `FORM_FACTORS`' own
+  `tabletLarge.columns` value, and giving each card more real width for its
+  blurb rather than less. No existing test asserted an exact column count
+  (only "no overflow" at four widths), so this is a genuine improvement
+  within the existing test contract, not a break of it — new tests below
+  assert the exact counts directly. **A second, real, pre-existing bug this
+  same migration's own new textScale test surfaced and this pass also
+  fixes:** `_GameCard`'s grid tile used a FIXED `mainAxisExtent: 182`
+  regardless of text scale — a genuine §8.8 accessibility overflow at large
+  text sizes, unrelated to which breakpoint chose the column count. Now
+  scales with `textScale` (clamped 1.0–2.0).
+
+### Verified
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full suite, **1597 run, 1596 passed locally** (0
+  failed on CI, which does not carry the platform-specific failure below),
+  **34 new**: 12 in `game_draw_together_test.dart` (per-actor stroke
+  attribution and undo scoping mirroring `annotation_canvas_test.dart`'s own
+  assertions, P2 vocabulary checks, a real structural Row-vs-Column layout
+  test via a keyed layout root, real navigation reachability from
+  `child_home.dart`), 15 in `game_guess_doodle_test.dart` (the same
+  per-actor/undo shape for the solo-drawer case, word-bank variety
+  assertions — minimum count, no duplicates — the soft reveal's two paths,
+  device-adaptive layout, navigation reachability), 6 more in
+  `game_picker_test.dart` (both new cards render and are age-gated
+  correctly, the wired `onPlay` reaches both new kinds, and a dedicated
+  group asserting the exact `columnsAt()`-driven column count at Fold5
+  cover/main, tablet, and desktop widths, including the textScale case),
+  and 1 more in `game_logic_test.dart` asserting the two new catalogue
+  entries' shape directly. The one local failure is the same pre-existing,
+  unrelated `push_channel_test.dart` failure noted since v0.49.6 — nothing
+  this pass touched.
+
+### Declined this pass, honestly
+- **Batches B (Silly Sentence Maker, Would You Rather, Two Truths and a Tall
+  Tale, 20 Questions) and C (Copy the Pattern, Find It)** are not built —
+  scoped, sequenced, and explicitly deferred by the spec's own batching
+  plan, one PR each, in order.
 ## [0.49.17] — 2026-08-20 — Two more boards, and a real side panel instead of a hand-rolled breakpoint
 
 `GamePickerScreen` has offered four games since v0.17.0 — tic-tac-toe,

@@ -32,7 +32,7 @@
 /// A = child, B = parent, always. Mirrors games.ts's `Side`.
 enum Side { a, b }
 
-enum GameKind { tictactoe, dotsboxes, memory, story }
+enum GameKind { tictactoe, dotsboxes, memory, story, drawTogether, guessDoodle }
 
 /// One condition the child may impose on the parent for a given game.
 class Handicap {
@@ -101,6 +101,25 @@ const List<GameMeta> catalogue = [
     minAge: 5,
     competitive: false,
     blurb: 'One line each. Nobody wins.',
+    handicaps: [],
+  ),
+  // Batch A (Play Together phase 1) — both reuse annotation_canvas.dart's
+  // AnnotationCanvas, both co-op, both carry no handicap for the same reason
+  // 'story' does: nothing to be behind at.
+  GameMeta(
+    kind: GameKind.drawTogether,
+    title: 'Draw together',
+    minAge: 4,
+    competitive: false,
+    blurb: 'One shared page. Draw whatever you like.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.guessDoodle,
+    title: 'Guess the doodle',
+    minAge: 5,
+    competitive: false,
+    blurb: 'One of you draws it, the other guesses.',
     handicaps: [],
   ),
 ];

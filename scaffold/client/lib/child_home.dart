@@ -15,6 +15,8 @@ import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
 import 'game_dotsboxes.dart';
+import 'game_draw_together.dart';
+import 'game_guess_doodle.dart';
 import 'game_logic.dart';
 import 'game_picker.dart';
 import 'game_story.dart';
@@ -101,6 +103,12 @@ class ChildHome extends StatelessWidget {
               builder: (_) => GamePickerScreen(
                 childName: childName,
                 onPlay: (playContext, kind) {
+                  // Real cases for every game this codebase has actually
+                  // built a board for — both this pass's (drawTogether/
+                  // guessDoodle) and a parallel build's (tictactoe/
+                  // dotsboxes), merged rather than either dropping the
+                  // other's work. Everything else (currently just memory)
+                  // stays on the honest not-built-yet fallback.
                   switch (kind) {
                     case GameKind.story:
                       Navigator.of(playContext).push(MaterialPageRoute<void>(
@@ -111,6 +119,12 @@ class ChildHome extends StatelessWidget {
                     case GameKind.dotsboxes:
                       Navigator.of(playContext).push(MaterialPageRoute<void>(
                         builder: (_) => GameDotsBoxes(childName: childName)));
+                    case GameKind.drawTogether:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => DrawTogetherScreen(childName: childName)));
+                    case GameKind.guessDoodle:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => GuessDoodleScreen(childName: childName)));
                     case GameKind.memory:
                       _notBuiltYet(playContext, 'That game');
                   }
