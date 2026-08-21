@@ -1,4 +1,5 @@
-// OLIVE BRANCH — three in a row (tic-tac-toe). MASTERFILE §9.2, P2.
+// OLIVE BRANCH — three in a row (tic-tac-toe). UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.2, P2.
 //
 // A 1:1 semantic port of the 'tictactoe' branch of packages/games/src/
 // games.ts's generic game engine (newGame()'s tictactoe base, play()'s
