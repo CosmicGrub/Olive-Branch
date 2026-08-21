@@ -20,6 +20,7 @@ import 'api_client.dart';
 import 'child_home_live.dart';
 import 'kiosk_shell.dart';
 import 'push_channel.dart';
+import 'theme.dart';
 
 const _defaultBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
     defaultValue: 'http://10.0.2.2:8123'); // Android emulator's host-loopback alias
@@ -78,6 +79,34 @@ Future<bool> _verifyGuardianPin(String pin) async {
 /// real entry point ends up knowing its own guardian's userId.
 Future<bool> _liveVerifyBiometricStub() async => true;
 
+/// The theme half of session bootstrap (MASTERFILE §8.1, the intuitivism
+/// visual-foundation design spec) — fetched and resolved BEFORE `runApp()`,
+/// same posture as Firebase init above, so the very first frame this build
+/// draws already carries the real, backend-synced theme rather than
+/// flashing [defaultAppTheme] and swapping a moment later.
+///
+/// FAILS CLOSED, deliberately, the same discipline [_verifyGuardianPin]
+/// above already applies: a devLoginFor()/fetchTheme() failure of ANY kind
+/// (unreachable server, malformed body, an unset row) must resolve to
+/// [defaultAppTheme] (`classic`/`light` — this app's own former stock
+/// look), never a broken/partial theme state and never a thrown exception
+/// that would crash this isolate before it ever draws a frame (main.dart's
+/// own Firebase try/catch reasoning, applied here to the same boot phase).
+/// `AppTheme.fromWire` is ALSO fail-closed on a malformed body — this
+/// try/catch is the outer layer, catching a network/auth failure reaching
+/// the server at all.
+Future<AppTheme> _fetchInitialTheme() async {
+  try {
+    final token = await devLoginFor(_defaultBaseUrl, childId: _defaultChildId);
+    final api = OliveApi(_defaultBaseUrl, token);
+    final wire = await api.fetchTheme(_defaultChildId);
+    api.close();
+    return AppTheme.fromWire(wire['theme'] as Map<String, dynamic>?);
+  } catch (_) {
+    return defaultAppTheme;
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // MASTERFILE §11 -- registers the real top-level background handler
@@ -103,26 +132,84 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('[olive.push] background handler not registered at boot: $e');
   }
-  runApp(const OliveLive());
+  // Resolved BEFORE runApp() -- see _fetchInitialTheme()'s own doc comment.
+  final initialTheme = await _fetchInitialTheme();
+  runApp(OliveLive(initialTheme: initialTheme));
 }
 
-class OliveLive extends StatelessWidget {
-  const OliveLive({super.key});
+class OliveLive extends StatefulWidget {
+  const OliveLive({super.key, this.initialTheme = defaultAppTheme});
+
+  /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
+  /// fail-closed to [defaultAppTheme] on any failure -- this widget never
+  /// re-derives that fallback itself.
+  final AppTheme initialTheme;
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Olive (live)',
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      useMaterial3: true,
-    ),
-    home: const KioskShell(
-      verifyPin: _verifyGuardianPin,
-      verifyBiometric: _liveVerifyBiometricStub,
-      child: LiveChildHomeScreen(
-        baseUrl: _defaultBaseUrl,
-        childId: _defaultChildId,
-      ),
-    ),
+  State<OliveLive> createState() => _OliveLiveState();
+}
+
+class _OliveLiveState extends State<OliveLive> {
+  // The spec's own suggested shape: a ValueNotifier<AppTheme> held above
+  // MaterialApp, matching this codebase's plain StatefulWidget/setState
+  // style rather than a new state-management dependency (theme.dart's own
+  // ThemeController is exactly this, extended by nothing but a default).
+  // Nothing in this build's current navigation graph updates it yet --
+  // theme_picker_screen.dart is reached from guardian_more.dart, which is
+  // not (yet) wired into this live entry point's own tree, the same
+  // pre-existing gap every other guardian_more.dart tile has today
+  // (Message banking, Handover notes, Availability's own optional
+  // baseUrl/guardianId/childId wiring, ...) -- see this PR's final report.
+  // This controller exists now so that gap is the ONLY thing left to close,
+  // not a second rewrite of the propagation mechanism itself.
+  late final ThemeController _themeController = ThemeController(widget.initialTheme);
+
+  @override
+  void dispose() {
+    _themeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _themeController,
+    builder: (context, _) {
+      final scheme = colorSchemeFor(_themeController.value);
+      final themeData = ThemeData(colorScheme: scheme, useMaterial3: true);
+      return MaterialApp(
+        title: 'Olive (live)',
+        // theme: and darkTheme: are intentionally the SAME resolved scheme,
+        // with themeMode PINNED to the guardian's own explicit brightness
+        // choice (never ThemeMode.system) -- an AppTheme's brightness is a
+        // real selection, not "follow the OS," so MaterialApp must never
+        // resolve brightness from anywhere else.
+        theme: themeData,
+        darkTheme: themeData,
+        themeMode: _themeController.value.brightness == ThemeBrightness.dark
+            ? ThemeMode.dark
+            : ThemeMode.light,
+        // A real, brief, user-initiated crossfade whenever _themeController
+        // changes (i.e. only on a guardian's own Apply, never autonomously)
+        // -- §8.13 permits consequence motion; MaterialApp's own theme: swap
+        // is otherwise instant with no transition at all. AnimatedTheme
+        // wraps app CONTENT, one layer inside MaterialApp's own Theme, so
+        // every descendant's Theme.of(context) resolves to this animated
+        // value during the crossfade.
+        builder: (context, child) => AnimatedTheme(
+          data: themeData,
+          duration: const Duration(milliseconds: 380),
+          curve: Curves.easeInOut,
+          child: child!,
+        ),
+        home: const KioskShell(
+          verifyPin: _verifyGuardianPin,
+          verifyBiometric: _liveVerifyBiometricStub,
+          child: LiveChildHomeScreen(
+            baseUrl: _defaultBaseUrl,
+            childId: _defaultChildId,
+          ),
+        ),
+      );
+    },
   );
 }

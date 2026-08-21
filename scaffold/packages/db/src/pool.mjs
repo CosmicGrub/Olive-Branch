@@ -338,6 +338,36 @@ async function availabilityFor(pool, childId) {
     }));
   });
 }
+async function themeFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT theme_palette, theme_brightness
+         FROM child_theme_preference
+        WHERE child_id = $1 AND theme_palette IS NOT NULL`,
+      [childId]
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { themePalette: r.theme_palette, themeBrightness: r.theme_brightness };
+  });
+}
+async function setChildTheme(pool, guardianId, childId, theme) {
+  await withSession(
+    pool,
+    { roleName: "guardian", userId: guardianId, childId: null },
+    async (q) => {
+      await q(
+        `INSERT INTO child_theme_preference (child_id, theme_palette, theme_brightness, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (child_id) DO UPDATE
+           SET theme_palette = EXCLUDED.theme_palette,
+               theme_brightness = EXCLUDED.theme_brightness,
+               updated_at = now()`,
+        [childId, theme.themePalette, theme.themeBrightness]
+      );
+    }
+  );
+}
 async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
   if (!userId) throw new Error("deactivateAccount: userId required");
   if (callerRoleName === "child") {
@@ -936,9 +966,11 @@ export {
   removeDeviceTokenSystem,
   revokeGuardianInvite,
   setAvailabilityWindows,
+  setChildTheme,
   setPinCredential,
   storeWebauthnCredential,
   takeAndGo,
+  themeFor,
   unregisterDeviceToken,
   updateWebauthnSignCount,
   webauthnCredentialById,

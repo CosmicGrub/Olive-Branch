@@ -520,8 +520,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
 </script>
 <script type="application/json" id="tl-manifest">
 {
-  "version": "0.49.18",
-  "spec": "0.49.18",
+  "version": "0.49.19",
+  "spec": "0.49.19",
   "nodeOnly": [
     { "module": "api/api", "dep": "node:http" },
     { "module": "auth/auth", "dep": "node:crypto" },
@@ -534,7 +534,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 5254,
+  "assertions": 5304,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -569,7 +569,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
   },
   "notDemoed": {
     "invitation": "Onboarding flow — the demo starts from an established family, so there is no invitation to accept.",
-    "lockAdvisory": "Setup flow on a physical device; the browser has no kiosk to advise about."
+    "lockAdvisory": "Setup flow on a physical device; the browser has no kiosk to advise about.",
+    "themePicker": "Guardian-only Flutter theme customization suite (client/lib/theme_picker_screen.dart) — no JS-demo engine counterpart; the demo has no guardian-configurable ColorScheme concept to render."
   }
 }
 </script>

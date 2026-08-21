@@ -14,6 +14,129 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.19] — 2026-08-20 — A real theme, at last: six palettes, guardian-only, backend-synced
+
+`docs/superpowers/specs/2026-08-21-intuitivism-visual-foundation-design.md`,
+sub-project 1 — the design-token foundation only. Root cause found during
+scoping: the entire app's color identity had been
+`ColorScheme.fromSeed(seedColor: Colors.deepPurple)` in `main.dart`/
+`main_live.dart` since the very first build, never once customized. Every
+screen already builds on `Theme.of(context).colorScheme`, so this is the
+single highest-leverage place to start — fixing the seed catalog improves
+everything downstream without touching a single screen's own layout.
+
+### Added
+- **`client/lib/theme.dart`** (new) — `ThemePalette` (six real hue
+  identities: `classic`, `calmModern` [suggested default], `warmGrounded`,
+  `softPlayful`, `deepCozy`, `brightBold`) x `ThemeBrightness` (light/dark),
+  composed via a real `colorSchemeFor(AppTheme)` catalog function — each
+  palette its own real seed color through `ColorScheme.fromSeed()`, not 12
+  hand-tuned schemes. `classic` keeps `Colors.deepPurple` as an explicit
+  reset option. `AppTheme.toWire()`/`fromWire()` round-trip the server's
+  `theme_palette`/`theme_brightness` columns by enum name; `fromWire` FAILS
+  CLOSED to `defaultAppTheme` (`classic`/`light`) on a null, malformed, or
+  unrecognized value, the same discipline `verifyKioskPin`'s own doc comment
+  describes. `ThemeController` is a one-line `ValueNotifier<AppTheme>`
+  subclass — the spec's own suggested propagation shape, no new
+  state-management dependency.
+- **`client/lib/theme_picker_screen.dart`** (new) — the customization suite
+  itself. Palette cards are this file's own small local copy of
+  `game_picker.dart`'s `_GameCard` shape (Dart library privacy is per-file,
+  the same reason `game_draw_together.dart` already keeps its own small
+  copies of `doodle_desk.dart`'s private shapes), adapted for single-select.
+  A light/dark `SegmentedButton`. Selecting a card or the brightness toggle
+  updates only this screen's own local pending state and a scoped preview
+  `Theme` override — NEVER the ambient app theme and never a network call;
+  only the explicit Apply button writes anywhere (`PUT .../theme` when this
+  screen has a live session, plus an optional `onApplied` callback for a
+  caller with a real `ThemeController` in scope). Column count is driven by
+  `form_factors.dart`'s real `columnsAt()` (device-adaptive LAYOUT); the
+  color identity itself is device-independent by construction — the same
+  `AppTheme` renders identically on the Fold5 and a tablet. No score, rank,
+  or "you've tried N themes" tally of any kind — P2.
+- **`db/migrations/0017_child_theme_preference.sql`** (new) — a NEW,
+  narrowly-scoped table, not two new columns on `child` itself: `child` has
+  never had row-level security enabled at any point in this schema's
+  history (independently re-grepped, not assumed), and enabling it here as a
+  side effect of two preference columns would be exactly the undeclared
+  widening of an existing table's contract §0 warns against. One row per
+  child, both columns nullable (an unset row is a real, honest absence, not
+  a fabricated default), a `theme_preference_complete_or_absent` CHECK. RLS:
+  ANY guardian with a live edge to the child (`actor_has_edge()`,
+  0003_session_context.sql — the same helper `exportable_artifacts()`
+  already uses, reused rather than re-derived) may read and write; the child
+  reads her own row; nobody else can do either — real DB tests prove all of
+  it, including the negative case. `health_check`'s own `rls_unforced` audit
+  list is extended, carried forward in full per 0013/0014's own standing
+  discipline.
+- **`packages/db/src/pool.ts`** — `themeFor()`/`setChildTheme()`. The write
+  path deliberately opens its OWN session as the real calling guardian
+  (`withSession`, not `withSystemSession`) so 0017's own
+  `actor_has_edge()`-keyed RLS policy is the thing actually enforcing "a
+  guardian with a live edge can write" — the same "second lock" reasoning
+  `setAvailabilityWindows()` already documents.
+- **`server/routes.mjs`** — `GET`/`PUT /v1/children/:childId/theme`, both
+  registered with `action: 'settings'` — reusing, for the first time, the
+  Action `family-graph/src/authorize.ts` has declared since early in this
+  project and never wired to any real route (see `api_client.dart`'s own
+  pre-existing, unused `settings` path constant's header for the DIFFERENT,
+  escalation-gated future use of that same Action string this is NOT — a
+  normal authenticated guardian session, no `escalated: true`). PUT
+  explicitly rejects a non-guardian caller (`guardian_only`, mirroring
+  `PUT /v1/me/availability`'s own guard) ahead of the RLS layer that would
+  reject it anyway — two independent gates, not one.
+- **`packages/db/test/theme_preference.test.mjs`** (new, real RLS, real
+  Postgres) — round-trip, upsert-replace-not-append, a never-set child reads
+  back `null` honestly, and the full RLS matrix: both co-guardians of the
+  SAME child read AND write the SAME row (unlike
+  `guardian_availability_window`'s own per-guardian-owns-her-row shape, this
+  table is per-CHILD); a guardian/child with no live edge reads and writes
+  ZERO rows; the child reads her own row but can never write, even her own.
+- **`client/lib/guardian_more.dart`** — a new "Preferences" `HubSection`,
+  one `HubTile` opening `ThemePickerScreen`, wired the same optional
+  `baseUrl`/`guardianId`/`childId` way every other tile in this file already
+  is. Unlike `_openAvailability`, `_openThemePicker` always opens the real
+  screen — browsing/previewing a theme has no side effect, so there is
+  nothing to gate behind a live session the way a screen that fetches real
+  data on open needs to be; only Apply itself needs one, and the screen
+  already gives its own honest "not connected" feedback there.
+- **`main_live.dart`** — `_fetchInitialTheme()` resolves the active theme
+  BEFORE `runApp()` (same posture as this file's own Firebase init), failing
+  closed to `defaultAppTheme` on any devLogin/fetch failure. `OliveLive` is
+  now a `StatefulWidget` holding a `ThemeController` above `MaterialApp`;
+  `theme:`/`darkTheme:` are intentionally the SAME resolved `ColorScheme`,
+  with `themeMode` PINNED to the guardian's own explicit brightness choice
+  (never `ThemeMode.system` — an `AppTheme`'s brightness is a real
+  selection, not "follow the OS"). `MaterialApp.builder` wraps content in a
+  real `AnimatedTheme` (380ms) so a `_themeController` change (i.e. only a
+  guardian's own Apply) plays a brief, real crossfade — §8.13 permits
+  user-initiated consequence motion; nothing here loops or moves on its own.
+- **`client/test/theme_test.dart`**, **`theme_picker_screen_test.dart`**,
+  **`child_no_settings_contract_test.dart`** (new) — all 12 palette x
+  brightness `ColorScheme`s pairwise distinct (not a broken seed function
+  silently producing near-identical results), wire round-trip and
+  fail-closed fallback, the picker's own posture-driven column count at
+  Fold5 cover vs. a wide desktop-scale width, live-preview-vs-Apply behavior
+  proven directly (selecting ≠ writing), and — mirroring
+  `transport.test.mjs`'s own "child shell has no settings affordance"
+  contract check as a REAL client-side Dart test, not just a JS one reading
+  a Dart file from outside its own toolchain — `child_home.dart`'s own
+  source still contains zero "settings" references anywhere, comments
+  stripped, read from the actual file.
+
+### Known gap, stated honestly
+- `GuardianHome`/`GuardianMoreScreen` are not yet threaded into
+  `main_live.dart`'s own live navigation tree — the same pre-existing gap
+  every other `guardian_more.dart` tile already has today (Message banking,
+  Handover notes, Availability's own optional live wiring, …). This pass
+  closes the READ half of cross-device sync for real (session bootstrap
+  fetch-and-apply, verified locally); the WRITE UI is wired the same
+  optional, forward-compatible way every other guardian feature in this
+  codebase already is — ready the moment a live guardian session is threaded
+  into that tree, a separate, not-yet-done piece of navigation work.
+
+---
+
 ## [0.49.18] — 2026-08-20 — Play Together, Batch A: two real canvas games, two real actors on one shared engine
 
 Batch A of the Play Together Phase 1 spec (`docs/superpowers/specs/
