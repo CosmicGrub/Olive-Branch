@@ -26,3 +26,4 @@ Thumbs.db
 *.zip
 /budget.ts
 /stream.ts
+.superpowers/
