@@ -47,6 +47,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'annotation_canvas.dart';
+import 'annotation_canvas_view.dart';
 import 'form_factors.dart' as ff;
 import 'game_draw_together.dart' show InkPainterStrokes;
 
@@ -205,9 +206,14 @@ class _GuessDoodleScreenState extends State<GuessDoodleScreen> {
                 ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >=
               2;
 
-          final Widget canvas = _Canvas(
-            visible: _canvas.visible(),
-            live: _liveStroke,
+          // Only the current artist ever draws, and only before the word is
+          // revealed — the guesser never gets a live gesture at all, this
+          // being the one and only GestureDetector on the whole screen.
+          // `drawingEnabled: !_revealed` is what `AnnotationCanvasView`
+          // gates its pan callbacks on.
+          final Widget canvas = AnnotationCanvasView(
+            canvasKey: const Key('guessDoodleCanvas'),
+            painter: _SoloInkPainter(strokes: _canvas.visible(), live: _liveStroke),
             drawingEnabled: !_revealed,
             onPanStart: _onPanStart,
             onPanUpdate: _onPanUpdate,
@@ -259,51 +265,6 @@ class _GuessDoodleScreenState extends State<GuessDoodleScreen> {
       ),
     );
   }
-}
-
-class _Canvas extends StatelessWidget {
-  const _Canvas({
-    required this.visible,
-    required this.live,
-    required this.drawingEnabled,
-    required this.onPanStart,
-    required this.onPanUpdate,
-    required this.onPanEnd,
-  });
-
-  final List<Stroke> visible;
-  final List<StrokePoint> live;
-  final bool drawingEnabled;
-  final GestureDragStartCallback onPanStart;
-  final GestureDragUpdateCallback onPanUpdate;
-  final GestureDragEndCallback onPanEnd;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFDF6),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant, width: 1.5),
-          boxShadow: <BoxShadow>[
-            BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 6)),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: GestureDetector(
-          key: const Key('guessDoodleCanvas'),
-          behavior: HitTestBehavior.opaque,
-          // Only the current artist ever draws, and only before the word is
-          // revealed — the guesser never gets a live gesture at all, this
-          // being the one and only GestureDetector on the whole screen.
-          onPanStart: drawingEnabled ? onPanStart : null,
-          onPanUpdate: drawingEnabled ? onPanUpdate : null,
-          onPanEnd: drawingEnabled ? onPanEnd : null,
-          child: CustomPaint(
-            painter: _SoloInkPainter(strokes: visible, live: live),
-            size: Size.infinite,
-          ),
-        ),
-      );
 }
 
 /// Follows doodle_desk.dart's own private _InkPainter shape (see

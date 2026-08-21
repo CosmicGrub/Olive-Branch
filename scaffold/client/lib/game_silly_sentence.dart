@@ -121,7 +121,7 @@ const List<SentenceTemplate> sentenceTemplates = <SentenceTemplate>[
   ),
   SentenceTemplate(
     id: 'decidedTo',
-    textParts: <String>['', ' decided to go ', '. Then, ', ' — ', '!'],
+    textParts: <String>['', ' decided to go ', '. Then they ', ' — ', '!'],
     categories: <String>['character', 'place', 'action', 'reason'],
   ),
   SentenceTemplate(

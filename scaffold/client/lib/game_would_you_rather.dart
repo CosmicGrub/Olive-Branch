@@ -56,7 +56,7 @@ const List<WouldYouRatherPrompt> wouldYouRatherPrompts = <WouldYouRatherPrompt>[
   WouldYouRatherPrompt('power-invisible', 'be invisible whenever you wanted', 'be able to freeze time for one minute'),
   WouldYouRatherPrompt('power-tiny', 'be able to shrink to the size of a bug', 'be able to grow as tall as a house'),
   WouldYouRatherPrompt('power-fly-car', 'have a flying bicycle', 'have a car that drives underwater'),
-  WouldYouRatherPrompt('power-read', 'be able to talk to any animal', 'be able to understand every language in the world'),
+  WouldYouRatherPrompt('power-animal-language', 'be able to talk to any animal', 'be able to understand every language in the world'),
   WouldYouRatherPrompt('power-jump', 'be able to jump as high as a house', 'be able to run as fast as a cheetah'),
   WouldYouRatherPrompt('power-weather', 'control the weather for a day', 'control what everyone dreams about'),
   WouldYouRatherPrompt('silly-laugh', 'laugh like a hyena every time you were happy', 'sneeze confetti every time you sneezed'),

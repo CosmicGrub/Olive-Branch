@@ -336,7 +336,6 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
         ],
       ),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 420;
         // Real §8.11.1 posture logic (form_factors.dart), not a made-up
         // number — same technique court_export.dart already established:
         // two genuine layout columns available at the current text scale
@@ -349,13 +348,12 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
         final boardView = AspectRatio(aspectRatio: 1, child: _TttBoardView(
           state: _state, onTapCell: _tapCell, scheme: scheme,
         ));
-        // Only the narrow, single-column layout caps the board's width —
-        // inside the wide layout's Expanded it should simply fill whatever
-        // room the side panel leaves it.
-        final board = Center(child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: narrow ? constraints.maxWidth : 460),
-          child: boardView,
-        ));
+        // The narrow, single-column layout has no second breakpoint of its
+        // own to honor — it simply fills the width it's given (the wide
+        // layout below builds its own independently-capped boardView
+        // inside its Expanded, so there is nothing this Center needs to
+        // cap either).
+        final board = Center(child: boardView);
 
         if (!wide) {
           // foldCover/phone/tabletSmall (1 column): the board is the only

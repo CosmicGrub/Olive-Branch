@@ -16,10 +16,13 @@
 // the classic party game has each PLAYER invent their own two true facts and
 // one lie about themselves, which is exactly the open-text, real-personal-
 // information risk the spec's "Content strategy" section exists to close.
-// The spec's own worked examples for a category — "a place you've been,"
-// "something you're good at" — are still personal-fact categories; naming
-// them was the prompt illustrating the SHAPE of the classic game, not
-// blessing that shape as safe. It is not safe here: even with no `TextField`
+// The spec itself gives no worked examples for this activity — just a
+// one-line catalogue row ("co-op, curated prompt categories (not open
+// text)") — so the read that a category like "a place you've been" or
+// "something you're good at" is still a personal-fact category, and
+// therefore still in scope of the spec's broader no-personal-data intent,
+// is this file's own judgment applying that intent, not a claim the spec
+// spells out anywhere. It is not safe here: even with no `TextField`
 // anywhere, a category like "a place you've been" still pressures a child to
 // think of and say a real true fact about her own life on camera-adjacent
 // shared-device play, and a "tall tale" alongside it still implies the
@@ -298,8 +301,13 @@ class _TwoTruthsScreenState extends State<TwoTruthsScreen> {
     setState(() {
       final TallTaleRound revealed = round.withGuess(index);
       _round = revealed;
-      final String outcome = revealed.guessedCorrectly! ? 'spotted the tall tale!' : 'was fooled — nicely done.';
-      _history.add('${revealed.category}: "${revealed.statements[revealed.tallTaleIndex].text}" — $outcome');
+      // Content only — no outcome judgment. The transient per-round banner
+      // ("spotted!" / "got past them") is allowed softer wording because it
+      // resets every round and is never persisted; this list IS persisted
+      // for the whole session, so it must never encode a correct/incorrect
+      // verdict — see the file header and the audit-fix CHANGELOG entry
+      // that corrected this (P2: "no record" of who got what right).
+      _history.add('${revealed.category}: the tall tale was "${revealed.statements[revealed.tallTaleIndex].text}"');
     });
   }
 

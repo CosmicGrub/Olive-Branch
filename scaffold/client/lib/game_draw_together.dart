@@ -50,9 +50,11 @@
 // precedent this follows.
 import 'package:flutter/material.dart';
 import 'annotation_canvas.dart';
+import 'annotation_canvas_view.dart';
 import 'doodle_desk.dart' show kBrushColors, kBrushWidths;
 import 'form_factors.dart' as ff;
 
+// ================================================================ state ===
 class DrawTogetherScreen extends StatefulWidget {
   const DrawTogetherScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad'});
   final String childName;
@@ -130,11 +132,14 @@ class _DrawTogetherScreenState extends State<DrawTogetherScreen> {
                 ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >=
               2;
 
-          final Widget canvas = _Canvas(
-            visible: _canvas.visible(),
-            live: _liveStroke,
-            liveColor: _brushColor,
-            liveWidth: _brushWidth,
+          final Widget canvas = AnnotationCanvasView(
+            canvasKey: const Key('drawTogetherCanvas'),
+            painter: _SharedInkPainter(
+              strokes: _canvas.visible(),
+              live: _liveStroke,
+              liveColor: _brushColor,
+              liveWidth: _brushWidth,
+            ),
             onPanStart: _onPanStart,
             onPanUpdate: _onPanUpdate,
             onPanEnd: _onPanEnd,
@@ -192,49 +197,7 @@ class _DrawTogetherScreenState extends State<DrawTogetherScreen> {
   }
 }
 
-class _Canvas extends StatelessWidget {
-  const _Canvas({
-    required this.visible,
-    required this.live,
-    required this.liveColor,
-    required this.liveWidth,
-    required this.onPanStart,
-    required this.onPanUpdate,
-    required this.onPanEnd,
-  });
-
-  final List<Stroke> visible;
-  final List<StrokePoint> live;
-  final Color liveColor;
-  final double liveWidth;
-  final GestureDragStartCallback onPanStart;
-  final GestureDragUpdateCallback onPanUpdate;
-  final GestureDragEndCallback onPanEnd;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFFDF6),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant, width: 1.5),
-          boxShadow: <BoxShadow>[
-            BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 6)),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: GestureDetector(
-          key: const Key('drawTogetherCanvas'),
-          behavior: HitTestBehavior.opaque,
-          onPanStart: onPanStart,
-          onPanUpdate: onPanUpdate,
-          onPanEnd: onPanEnd,
-          child: CustomPaint(
-            painter: _SharedInkPainter(strokes: visible, live: live, liveColor: liveColor, liveWidth: liveWidth),
-            size: Size.infinite,
-          ),
-        ),
-      );
-}
+// ================================================================ widget ===
 
 /// A minimal, typed test seam: lets a widget test read what was actually
 /// painted (multi-actor stroke attribution, per-actor undo) without a
