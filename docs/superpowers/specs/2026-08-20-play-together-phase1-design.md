@@ -32,7 +32,23 @@
 - `game_silly_sentence.dart`, `game_would_you_rather.dart`, `game_two_truths.dart`, `game_twenty_questions.dart` — content-driven: a curated, in-repo constant list of prompts/categories/word-banks (no free-text input anywhere — this is the concrete mechanism behind "safe without parental advisory"), a simple turn-taking state machine, no persistent state beyond the current session.
 - `game_copy_pattern.dart`, `game_find_it.dart` — younger-age, icon/color/shape based, minimal-to-no text, self-scaling (pattern length grows; I-Spy scene difficulty is fixed per curated scene, not parent-adjustable) so §9.2 doesn't apply (nothing for a parent to set).
 
-**Wiring:** `child_home.dart`'s `onPlay` switch gets 8 more cases, each pushing its screen. `GamePickerScreen`'s existing age-gating (`forAge()`) and breakpoint grid already handle the new catalogue entries with no changes needed there.
+**Wiring:** `child_home.dart`'s `onPlay` switch gets 8 more cases, each pushing its screen. `GamePickerScreen`'s existing age-gating (`forAge()`) already handles the new catalogue entries with no changes needed there.
+
+## Device-adaptive behavior (Fold5 / tablet), real not cosmetic
+
+Added per explicit request: these activities must genuinely adapt to the device they're running on — not just avoid overflowing at 344px, but actually present differently at different postures. `form_factors.dart` already exists for exactly this (`postureFor(Viewport)` → a real `Posture`; `columnsAt(Viewport, textScale)` → 1/2/3 real layout columns) and is real, tested (`form_factors_test.dart`), and specifically built to replace ad hoc per-screen pixel breakpoints — its own header names that anti-pattern directly. **Every one of the 8 new screens must drive its layout from `postureFor()`/`columnsAt()`, not a hand-rolled width check.**
+
+Concrete, per-activity difference between `foldCover` (344px, 1 column — this app's narrowest supported posture) and `foldMain`/`tabletLarge` (2-3 columns) — genuine content/layout change, not just resizing the same thing smaller:
+
+- **Draw Together / Guess the Doodle**: single column → canvas fills the screen, tools in a bottom sheet. 2+ columns → tools sit in a persistent side panel (using `foldMain`'s own documented crease-gutter convention — "two-column gutters are placed there deliberately"), giving more actual canvas area, not just a bigger canvas.
+- **Silly Sentence Maker / Would You Rather / Two Truths**: single column → one prompt at a time, full width. 2+ columns → prompt on one side, a running history of what's been played this session on the other — genuinely more content shown, not enlarged text.
+- **20 Questions**: single column → question input only. 2+ columns → the running question log alongside the input, so neither of you has to remember what's already been asked.
+- **Find It**: single column → fewer simultaneous hidden objects (a 344px scene has real room limits). 2+ columns → a richer scene with more objects — actual difficulty/content scaling by available space, matching `columnsAt`'s own effective-width-after-text-scale calculation (§8.8) so a large accessibility text size correctly degrades a wide device toward the simpler layout too.
+- **Copy the Pattern**: single column → pattern and tap-grid stacked vertically. 2+ columns → side-by-side, so the parent narrating "what comes next" and the child's tap target are both visible without scrolling.
+
+**Related fix, same area, found while doing this:** `game_picker.dart` itself (the hub these all launch from) still has exactly the hand-rolled breakpoint (`constraints.maxWidth >= 680 ? 3 : ... >= 420 ? 2 : 1`) `form_factors.dart`'s own header describes fixing elsewhere — never migrated when `form_factors.dart` was added, matching `court_export.dart`'s pre-fix bug from earlier this session. Migrating it to `columnsAt()` is small and belongs in this same PR wave for consistency, since every screen it launches will now be posture-driven.
+
+**Testing addition:** each new screen needs a real widget test proving DIFFERENT rendered structure at `foldCover` width vs. a wide posture (e.g. `tabletLarge`'s ~800px+) — not just "doesn't overflow" — mirroring `court_export_test.dart`'s `reviewableAt()`/`requestableAt()` precedent from this session's own recent work.
 
 ## Content strategy (the actual safety mechanism)
 
