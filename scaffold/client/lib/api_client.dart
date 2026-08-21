@@ -134,6 +134,15 @@ class OliveApi {
   // setAvailabilityWindows()/availabilityFor(), db/migrations/0010_availability.sql.
   static const childAvailability = '/v1/children/:childId/availability';
   static const meAvailability    = '/v1/me/availability';
+  // --- theme customization (§8.1, MARKUP screen 'themePicker') -----------
+  // Real as of this pass — server/routes.mjs, packages/db/src/pool.mjs's
+  // themeFor()/setChildTheme(), db/migrations/0017_child_theme_preference.sql.
+  // A DIFFERENT, dedicated path from the `settings` constant already declared
+  // above under "guarded by escalation" -- that one is reserved for a future
+  // real settings surface reached via §8.3 PIN+biometric escalation on the
+  // child's own device; this one is guardian-side navigation (guardian_more
+  // .dart), a normal authenticated guardian session, no escalation required.
+  static const childTheme = '/v1/children/:childId/theme';
   // --- homework OCR capture (§9.1, §20.2b) --------------------------------
   static const homeworkCapture = '/v1/children/:childId/homework/capture';
   // --- account lifecycle (§2.10, §2.11, §9.8, P8) -------------------------
@@ -338,6 +347,29 @@ class OliveApi {
   /// could redirect.
   Future<Map<String, dynamic>> setAvailability(List<Map<String, dynamic>> windows) =>
       _put(meAvailability, body: windows);
+
+  /// `{theme: {themePalette, themeBrightness} | null}` — server/routes.mjs's
+  /// GET .../theme. `null` means no row has ever been set for this child
+  /// (never seen a guardian Apply) -- decoding a null/malformed value into a
+  /// real, fail-closed [AppTheme] is theme.dart's `AppTheme.fromWire`'s job,
+  /// left to the caller exactly like [getAvailability] above leaves shape
+  /// decoding to its own caller.
+  Future<Map<String, dynamic>> fetchTheme(String childId) =>
+      _get(childTheme, childId: childId);
+
+  /// The caller's own guardian identity writes [childId]'s active theme --
+  /// server/routes.mjs's PUT .../theme, guardian-write/child-read, real RLS
+  /// (a live guardian edge to [childId] required; enforced at the DB layer,
+  /// not just here). `themePalette`/`themeBrightness` are the wire enum
+  /// names theme.dart's `AppTheme.toWire()` produces (`ThemePalette`/
+  /// `ThemeBrightness`'s own `.name`), passed as plain strings here so this
+  /// transport-layer class stays independent of that domain type, the same
+  /// separation [getAvailability]/[setAvailability] already keep.
+  Future<Map<String, dynamic>> putTheme(String childId,
+          {required String themePalette, required String themeBrightness}) =>
+      _put(childTheme,
+          childId: childId,
+          body: {'themePalette': themePalette, 'themeBrightness': themeBrightness});
 
   /// Posts a raw homework photo (PNG or JPEG bytes — server/routes.mjs's
   /// handler sniffs real magic bytes, not a filename or content-type) as
