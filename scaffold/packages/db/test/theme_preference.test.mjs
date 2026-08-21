@@ -149,7 +149,7 @@ await admin.query('COMMIT');
   const strangerReads = await asStranger(q => q(`SELECT theme_palette FROM child_theme_preference WHERE child_id = $1`, [CHILD_A]));
   check('B RLS', 'STRANGER (no edge to CHILD_A) reads ZERO rows', strangerReads.length, 0);
   const strangerWrite = await asStranger(q => q(
-    `UPDATE child_theme_preference SET theme_palette = 'classic' WHERE child_id = $1 RETURNING id`, [CHILD_A]));
+    `UPDATE child_theme_preference SET theme_palette = 'classic' WHERE child_id = $1 RETURNING child_id`, [CHILD_A]));
   check('B RLS', "STRANGER's UPDATE affects ZERO rows (no error — just invisible)", strangerWrite.length, 0);
   const stillCalmModern = await asDad(q => q(`SELECT theme_palette FROM child_theme_preference WHERE child_id = $1`, [CHILD_A]));
   check('B RLS', "CHILD_A's row is provably untouched by STRANGER's attempted UPDATE",
@@ -194,7 +194,7 @@ await admin.query('COMMIT');
   // ---- the child can NEVER write, even her own row — guardian-only by
   // design (the spec's own "resolved, confirmed directly" line). -----------
   const childUpdateAttempt = await asChildA(q => q(
-    `UPDATE child_theme_preference SET theme_palette = 'brightBold' WHERE child_id = $1 RETURNING id`, [CHILD_A]));
+    `UPDATE child_theme_preference SET theme_palette = 'brightBold' WHERE child_id = $1 RETURNING child_id`, [CHILD_A]));
   check('B RLS', "CHILD_A's own UPDATE of her own row affects ZERO rows — guardian-only", childUpdateAttempt.length, 0);
   let childInsertThrew = false;
   try {
