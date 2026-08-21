@@ -125,6 +125,12 @@ Color _cardColor(ColorScheme cs, GameKind kind) => switch (kind) {
       GameKind.story => cs.surfaceContainerHighest,
       GameKind.drawTogether => cs.primaryContainer,
       GameKind.guessDoodle => cs.tertiaryContainer,
+      // Batch B — cycles the same four house container roles above rather
+      // than introducing new ones.
+      GameKind.sillySentence => cs.primaryContainer,
+      GameKind.wouldYouRather => cs.tertiaryContainer,
+      GameKind.twoTruths => cs.secondaryContainer,
+      GameKind.twentyQuestions => cs.surfaceContainerHighest,
     };
 
 Color _onCardColor(ColorScheme cs, GameKind kind) => switch (kind) {
@@ -134,6 +140,10 @@ Color _onCardColor(ColorScheme cs, GameKind kind) => switch (kind) {
       GameKind.story => cs.onSurfaceVariant,
       GameKind.drawTogether => cs.onPrimaryContainer,
       GameKind.guessDoodle => cs.onTertiaryContainer,
+      GameKind.sillySentence => cs.onPrimaryContainer,
+      GameKind.wouldYouRather => cs.onTertiaryContainer,
+      GameKind.twoTruths => cs.onSecondaryContainer,
+      GameKind.twentyQuestions => cs.onSurfaceVariant,
     };
 
 const _kindIcon = {
@@ -143,6 +153,10 @@ const _kindIcon = {
   GameKind.story: Icons.auto_stories_rounded,
   GameKind.drawTogether: Icons.brush_rounded,
   GameKind.guessDoodle: Icons.psychology_alt_rounded,
+  GameKind.sillySentence: Icons.emoji_emotions_rounded,
+  GameKind.wouldYouRather: Icons.compare_arrows_rounded,
+  GameKind.twoTruths: Icons.visibility_off_rounded,
+  GameKind.twentyQuestions: Icons.live_help_rounded,
 };
 
 class _GameCard extends StatefulWidget {

@@ -14,6 +14,137 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.20] — 2026-08-21 — Play Together, Batch B: four curated-prompt activities, one shared layout base
+
+Batch B of the Play Together Phase 1 spec (`docs/superpowers/specs/
+2026-08-20-play-together-phase1-design.md`) — the largest batch by activity
+count but, per the spec's own words, "mechanically the simplest once Batch A
+has proven the device-adaptive pattern": all four share the exact same real
+shape (a curated prompt/category, a simple turn-taking state machine, a
+running-history side panel at wide postures) and the actual work here was
+content — drafting real, warm, genuinely varied prompt/word/category banks,
+not a placeholder anywhere.
+
+### Added
+- **`client/lib/game_curated_activity.dart`** (new) — the small shared layout
+  base the spec's batching plan floated as optional for this batch
+  specifically, built once rather than re-derived four times. Exposes
+  `CuratedActivityLayout` (splits the current prompt from a running session
+  history using the exact same `form_factors.dart` `columnsAt()` math every
+  other Play Together screen uses) and `SessionHistoryPanel` (a real,
+  scrolling — not `shrinkWrap`/frozen — list of this session's history,
+  newest first). The narrow-width shape is genuinely different from Batch
+  A's tools panel, not a copy: at `foldCover` there is NO history panel at
+  all (nothing to move to a bottom bar — a session history is extra content,
+  not a relocated control), only appearing once there is real room for it at
+  two-plus columns. Each of the four game files below owns its own state
+  machine and curated content in full; only this layout shell is shared,
+  matching this codebase's "each group ports only what it needs" discipline.
+- **`client/lib/game_silly_sentence.dart`** (new) — Silly Sentence Maker,
+  minAge 4. Mad-libs: 80 curated words across four categories (`character`,
+  `place`, `action`, `reason` — 20 each) and five curated sentence templates,
+  every template's first blank fixed to `character` with an empty leading
+  text part so a capitalized phrase never lands mid-sentence. Each blank in
+  turn presents 4 random options from its category (a real choice for a
+  five-year-old, never a 20-item scroll, never typed) and alternates strictly
+  between 'child' and 'parent' starting with 'child' — `game_story.dart`'s
+  own "the CHILD starts." A finished sentence joins the session history;
+  reveal is "read it aloud" (text on screen, not actual TTS — no audio infra
+  exists for this).
+- **`client/lib/game_would_you_rather.dart`** (new) — Would You Rather,
+  minAge 4. 50 curated either/or pairs, reviewed for tone (silly and warm,
+  never a values judgment, nothing scary or gross beyond harmless kid-silly).
+  Both people answer the SAME prompt independently (an actor-switch toggle,
+  `game_guess_doodle.dart`'s artist-toggle shape, never a turn lock) before
+  either answer reveals — `WouldYouRatherRound` has no concept of a correct
+  or "better" answer at all, only two independently recorded picks, so P2's
+  "no scoring which answer was better" is structural, not a UI choice.
+- **`client/lib/game_two_truths.dart`** (new) — Two Truths and a Tall Tale,
+  minAge 6. **The one activity the spec flagged by name as needing real
+  design judgment** — see its own extensive header comment for the full
+  reasoning, summarized in "Design decision" below. Ships 30 curated round
+  sets across five trivia categories (Animal facts, Space & sky, Ocean life,
+  Food & cooking, Around the world — 90 statements total, two true + one
+  false per set), a curated category-chip picker (never open text), and the
+  same honor-system private reveal `game_guess_doodle.dart`'s secret word
+  and `game_twenty_questions.dart`'s secret both use for local pass-and-play
+  ("keep this facing you" — there is no way to hide pixels from someone
+  sharing the same physical screen). The guess is scored against the REAL
+  shuffled tall-tale position every round, never a fixed slot.
+- **`client/lib/game_twenty_questions.dart`** (new) — 20 Questions, minAge 5.
+  100 curated secrets across five categories (An animal, A food, Something in
+  this room, A job, A place to go), dealt from a curated category-chip picker
+  — never a free-text field for the secret. The app never tries to parse the
+  spoken QUESTIONS themselves (that would mean either free text or a
+  natural-language engine this codebase doesn't have); instead either person
+  taps 'Yes'/'No' after each question is asked out loud, which both
+  increments the tally AND builds a real per-round Q&A log ("Q1: Yes", "Q2:
+  No", ...) — the actual answer to the spec's own device-adaptive note for
+  this activity ("the running question log alongside the input"), since the
+  questions themselves were never capturable without reopening the free-text
+  risk. Twenty is a gentle, dismissible nudge, never a hard stop — P2 forbids
+  a punitive cutoff, and nothing here blocks a 21st question.
+- **`game_logic.dart`** — `GameKind` gains `sillySentence`, `wouldYouRather`,
+  `twoTruths`, `twentyQuestions`; `catalogue` gains their `GameMeta` entries
+  in `story`'s exact shape (`competitive: false, handicaps: []`), real
+  titles and blurbs matching the existing entries' warm, unscored tone.
+- **`child_home.dart`** — `GamePickerScreen`'s `onPlay` switch gains four more
+  cases; `story`/`tictactoe`/`dotsboxes`/`drawTogether`/`guessDoodle` and the
+  `memory` not-built-yet fallback are untouched.
+- **`game_picker.dart`** — `_cardColor`/`_onCardColor`/`_kindIcon` extended
+  for the four new kinds (Dart's exhaustive-switch check requires this the
+  moment `GameKind` grows; cycles the same four house container roles
+  already in use rather than introducing new ones).
+
+### Design decision — Two Truths and a Tall Tale's safe-content mechanism
+The classic party game has each player invent their own two true facts and
+one lie about themselves. The spec's own worked examples for a category (`"a
+place you've been," "something you're good at"`) are still that shape —
+naming them illustrated the classic game, not blessed it as safe here. It
+isn't: even with zero `TextField`s anywhere, a personal-fact category still
+pressures a child to think of and say something real and true about her own
+life — the same risk the spec's "never free text" rule targets, just moved
+from typing to speaking. Closing the typed channel while leaving the spoken
+one open would be a technicality, not actual safety, so this pass declined
+that shape entirely rather than build a version that only *looked* safe.
+Shipped instead: every statement in every round — both truths and the tall
+tale — is fixed, in-repo trivia the app itself authored, about the world
+(animals, space, the ocean, food, geography), never about either player.
+`TallTaleRoundSet` has no field a personal fact could even be entered into,
+structurally, not just by convention. This is the safest, most conservative
+reading of the spec's mandate available, keeping the "spot the fib" mechanic
+the activity is named for while making "safe without a hovering adult" true
+by construction — the same standard `game_guess_doodle.dart`'s curated word
+bank already set for this whole batch. The category itself is also a
+curated, tappable choice (five fixed labels), not chance alone —
+`game_twenty_questions.dart`'s own secret-category picker converged on the
+identical pattern independently, for the identical reason.
+
+### Verified
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full suite, 1756 run, 1755 passed locally (the one
+  failure is the same pre-existing, unrelated `push_channel_test.dart`
+  column-0 check noted since v0.49.6 — nothing this pass touched; flagged
+  separately for its own root-cause pass since this Windows checkout may be
+  hitting a CRLF-sensitive column count CI's Linux runner won't). **87 new**
+  test cases: 23 in `game_silly_sentence_test.dart`, 17 in
+  `game_would_you_rather_test.dart`, 22 in `game_two_truths_test.dart`, 23 in
+  `game_twenty_questions_test.dart` (curated-bank variety — minimum counts,
+  no duplicates, no stray whitespace — real state-machine correctness per
+  activity, the P2 forbidden-vocabulary sweep, a real device-adaptive
+  structural test asserting the layout ROOT's actual runtime type differs
+  between postures and that the history panel is genuinely absent at
+  `foldCover`, and real navigation reachability from `child_home.dart`), 1
+  more in `game_picker_test.dart` (the wired `onPlay` reaches all four new
+  kinds), and 1 more in `game_logic_test.dart` (the four new catalogue
+  entries' shape asserted directly, alongside updating the existing
+  catalogue-count and `forAge` assertions from six/pre-Batch-B to the real
+  ten-entry catalogue).
+
+### Declined this pass, honestly
+- **Batch C (Copy the Pattern, Find It)** is not built — scoped, sequenced,
+  and explicitly deferred by the spec's own batching plan, its own PR.
+
 ## [0.49.19] — 2026-08-20 — A real theme, at last: six palettes, guardian-only, backend-synced
 
 `docs/superpowers/specs/2026-08-21-intuitivism-visual-foundation-design.md`,
