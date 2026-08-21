@@ -404,7 +404,6 @@ class _GameDotsBoxesState extends State<GameDotsBoxes> {
         ],
       ),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 420;
         // Real §8.11.1 posture logic (form_factors.dart), not a made-up
         // number — see game_tictactoe.dart's own build() for the fuller
         // comment (same technique, same court_export.dart precedent).
@@ -415,10 +414,12 @@ class _GameDotsBoxesState extends State<GameDotsBoxes> {
         final boardView = AspectRatio(aspectRatio: 1, child: _DotsBoxesBoardView(
           state: _state, onTapEdge: _tapEdge, scheme: scheme,
         ));
-        final board = Center(child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: narrow ? constraints.maxWidth : 460),
-          child: boardView,
-        ));
+        // The narrow, single-column layout has no second breakpoint of its
+        // own to honor — see game_tictactoe.dart's identical note: it
+        // simply fills the width it's given, and the wide layout below
+        // builds its own independently-capped boardView inside its
+        // Expanded regardless.
+        final board = Center(child: boardView);
 
         // Present only while play continues, mirroring games.ts's own
         // childView()'s `boxesEach` — an in-game tally, not a scoreboard,

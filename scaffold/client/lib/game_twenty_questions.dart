@@ -183,9 +183,16 @@ class _TwentyQuestionsScreenState extends State<TwentyQuestionsScreen> {
     setState(() {
       final TwentyQuestionsRound revealed = round.withReveal(gotIt: gotIt);
       _round = revealed;
+      // Content only — no outcome judgment, and deliberately the SAME
+      // phrasing regardless of `gotIt`. The transient per-round banner
+      // ("Nice — it was..." vs "It was...") is allowed softer wording
+      // because it resets every round and is never persisted; this list IS
+      // persisted for the whole session, so it must never encode whether
+      // the guess succeeded — see the file header and the audit-fix
+      // CHANGELOG entry that corrected this (P2: "no record" of outcomes).
       _history.add(
         '${categoryById(revealed.categoryId).label}: it was "${revealed.secret}" '
-        '— ${revealed.gotIt ? 'guessed it!' : 'revealed'} after ${revealed.questionsAsked} question'
+        '— revealed after ${revealed.questionsAsked} question'
         '${revealed.questionsAsked == 1 ? '' : 's'}',
       );
     });

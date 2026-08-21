@@ -223,6 +223,50 @@ void main() {
         expect(find.textContaining(RegExp(word, caseSensitive: false)), findsNothing, reason: word);
       }
     });
+
+    // Audit-fix (v0.49.22): the persisted session history is a de facto
+    // win/loss tally if it encodes whether a round was guessed correctly —
+    // exactly what P2 forbids, even with no literal number shown. The
+    // per-round transient banner (`secretReveal`, exercised above) is
+    // allowed to keep "Nice — it was..." wording since it resets every
+    // round and is never persisted; this test instead reads the PERSISTED
+    // `sessionHistoryList` content directly, across a gotIt round AND a
+    // revealed round, and proves the outcome vocabulary never reaches it —
+    // checking presence alone (as the pre-existing "session history" test
+    // above already did) would have missed this.
+    testWidgets('the persisted session history never carries an outcome judgment — content, '
+        'not just presence, checked across a "got it" round AND a "revealed" round', (t) async {
+      await t.binding.setSurfaceSize(const Size(900, 700));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(TwentyQuestionsScreen(random: Random(1))));
+      await t.pumpAndSettle();
+
+      // Round 1: they guessed it.
+      await t.tap(find.text(twentyQuestionsCategories.first.label));
+      await t.pumpAndSettle();
+      await t.tap(find.text('They guessed it!'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('New round'));
+      await t.pumpAndSettle();
+
+      // Round 2: the secret was revealed instead of guessed.
+      await t.tap(find.text(twentyQuestionsCategories.first.label));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Reveal the secret'));
+      await t.pumpAndSettle();
+
+      final Iterable<Text> entries = t.widgetList<Text>(
+        find.descendant(of: find.byKey(const Key('sessionHistoryList')), matching: find.byType(Text)),
+      );
+      expect(entries.length, 2, reason: 'both the "got it" and the "revealed" round should have joined the history');
+      for (final Text entry in entries) {
+        final String lower = entry.data!.toLowerCase();
+        for (final String outcomeWord in <String>['guessed it', 'nice —', 'nice -']) {
+          expect(lower, isNot(contains(outcomeWord)),
+              reason: 'session history entry carries an outcome judgment: "${entry.data}"');
+        }
+      }
+    });
   });
 
   group('device-adaptive layout — a genuine structural difference, not a resize', () {

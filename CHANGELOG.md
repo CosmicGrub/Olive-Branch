@@ -14,6 +14,152 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.22] — 2026-08-21 — An adversarial audit of PRs #34–#40, and what it actually found
+
+Before this pass, tonight's run of work (PRs #34 through #40 — tic-tac-toe/
+dots-and-boxes, the six-palette theme suite, Play Together Batches A/B/C, and
+the `push_channel_test.dart` CRLF fix) went through a genuinely adversarial
+6-dimension audit, with every raised finding independently re-verified by a
+second pass whose job was to try to refute it. 9 findings were raised; all 9
+survived adversarial verification and are fixed here: 1 HIGH (a real P2
+child-safety gap), 4 MEDIUM, 4 LOW.
+
+### Fixed — HIGH (P2 child-safety)
+**`game_two_truths.dart`'s and `game_twenty_questions.dart`'s session history
+panels were a de facto win/loss tally.** Both build a session-persistent
+`_history` list, rendered in the shared `SessionHistoryPanel`
+(`game_curated_activity.dart`), where every entry encoded whether that
+round's guess was CORRECT or WRONG — "spotted the tall tale!" vs "was
+fooled — nicely done." in `game_two_truths.dart`; "guessed it!" vs "revealed"
+in `game_twenty_questions.dart`. That is a running correct/incorrect record
+— exactly what P2 ("no scores, streaks, ranks... no record") exists to
+prevent, even with no literal number ever shown. The batch's own sibling
+files, `game_would_you_rather.dart` and `game_silly_sentence.dart`, prove
+this was avoidable: they already populate the same shared history with
+CONTENT ONLY (what was chosen or written), never an outcome judgment.
+**Fix:** both files' `_history.add(...)` calls now record content only —
+`game_two_truths.dart`'s `_guess()` no longer branches on
+`revealed.guessedCorrectly!` for the persisted string, and
+`game_twenty_questions.dart`'s `_reveal()` no longer branches on
+`revealed.gotIt` for it — one neutral phrasing either way. The per-round
+TRANSIENT banner (`tallTaleResult`/`secretReveal`, reset every round, never
+persisted) keeps its softer "spotted"/"got past them"/"Nice — it was"
+wording deliberately; only the persisted list needed to lose the verdict.
+Both files' existing "P2 — nothing here counts anything" test groups gained
+a new test that reads the PERSISTED `sessionHistoryList`'s actual rendered
+content (not just its presence) across a mixed pair of rounds — one
+correct/gotIt, one incorrect/revealed — and asserts the outcome vocabulary
+never reaches it. This is a deliberately narrower sweep than the existing
+whole-screen forbidden-vocabulary test (which still correctly finds
+"spotted" in the transient banner and must keep doing so): checking
+PRESENCE of a history panel, not its content, is exactly the class of gap
+that let this ship uncaught the first time, so the new tests check content
+specifically, scoped to the one part of the screen where an outcome word
+would actually be a problem.
+
+### Fixed — MEDIUM
+- **`game_silly_sentence.dart`'s `decidedTo` template was grammatically
+  broken.** `textParts` inserted the action word directly after a period
+  with no subject: `['', ' decided to go ', '. Then, ', ' — ', '!']`
+  produced sentences like "...decided to go into the bathtub. Then, started
+  singing opera — because the moon told them to!" — a comma splice with no
+  subject for the second clause. Fixed: `'. Then, '` → `'. Then they '`,
+  reintroducing the subject pronoun, matching the convention the other four
+  templates already use. Verified against several real word-bank
+  combinations by hand; every resulting sentence now reads grammatically.
+- **`game_curated_activity.dart`'s shared `SessionHistoryPanel` had no
+  dedicated test for its own "newest-first" ordering contract.**
+  `entries[entries.length - 1 - i]` in its `itemBuilder` was exercised only
+  indirectly, by four consumer tests that each checked the panel EXISTS
+  after one round — never its content or order, and one entry can't
+  distinguish "newest first" from "append order" anyway. New file
+  `game_curated_activity_test.dart` (4 new test cases) pumps the widget
+  directly with `entries: ['first', 'second', 'third']` and asserts the
+  rendered order is `['third', 'second', 'first']`, plus the single-entry,
+  empty-list, and title-rendering cases the four indirect consumer tests
+  never isolated either.
+- **Batch A shipped without the spec's own required shared canvas wrapper.**
+  The approved spec (`docs/superpowers/specs/
+  2026-08-20-play-together-phase1-design.md`, line ~74) explicitly required
+  Batch A to share "a common canvas-hosting wrapper both screens use."
+  `game_draw_together.dart`'s `_Canvas` and `game_guess_doodle.dart`'s
+  `_Canvas` were near-identical, independently duplicated private widgets
+  instead (same Container/BoxDecoration/GestureDetector/CustomPaint
+  structure) — a silent omission against the batch's own approved design.
+  **Fix:** a new file, `annotation_canvas_view.dart`, exports
+  `AnnotationCanvasView` — the Container/decoration/GestureDetector/
+  CustomPaint boilerplate, parameterized by a caller-supplied `CustomPainter`
+  (so each screen keeps its own fixed-ink-color vs per-stroke-color painting
+  logic) and a `drawingEnabled` flag (`game_guess_doodle.dart` gates it on
+  `!revealed`; `game_draw_together.dart` leaves it always-on). Deliberately
+  a separate file from `annotation_canvas.dart` itself, which stays pure
+  Dart logic with no Flutter import by its own header's design. Both
+  screens' own private `_Canvas` classes are gone; both build on the shared
+  wrapper instead. A behavior-preserving refactor, not a rewrite — both
+  screens' full existing test suites (`game_draw_together_test.dart`,
+  `game_guess_doodle_test.dart`) pass unchanged against it. MASTERFILE's
+  Batch A status note now carries a correction disclosing this.
+- **`game_draw_together.dart` was missing the established `// ==== section
+  ====` divider convention** every other new game file — including its own
+  batch-mate `game_guess_doodle.dart` — uses. Fixed as part of the same
+  refactor above: a `state` divider above `DrawTogetherScreen`/
+  `_DrawTogetherScreenState`, a `widget` divider (byte-identical to
+  `game_guess_doodle.dart`'s own) above the painter/panel classes.
+
+### Fixed — LOW
+- **A hand-rolled 420px breakpoint survived in `game_tictactoe.dart` and
+  `game_dotsboxes.dart`.** Both had `final narrow = constraints.maxWidth <
+  420;` — not a real `form_factors.dart` posture boundary — capping the
+  single-column board at 460px. The capped `board` variable is only ever
+  used in the single-column (`!wide`) branch; the `wide` branch already
+  builds its own independently-capped `boardView` inside its `Expanded`. No
+  second breakpoint was doing any real work. Fixed: `narrow` and the
+  420/460 magic numbers are gone; the single-column board is simply
+  `Center(child: boardView)`.
+- **`game_two_truths.dart`'s header cited spec language that doesn't
+  exist.** It attributed "a place you've been"/"something you're good at"
+  to "the spec's own worked examples" — the actual spec gives this activity
+  no worked examples at all, just a one-line catalogue row (`"co-op, curated
+  prompt categories (not open text)"`). Reworded to attribute the reasoning
+  to this file's own judgment applying the spec's broader no-personal-data
+  intent, not to examples the spec never gave. The same fabricated
+  attribution in this CHANGELOG's own v0.49.20 "Design decision" entry is
+  corrected identically.
+- **`game_would_you_rather.dart`'s "power-read" prompt was mislabeled.**
+  Its id, `power-read`, named nothing the prompt was actually about (it
+  overlapped in theme with the separate `animal-talk` prompt: "be able to
+  talk to any animal" / "be able to understand every language in the
+  world"). Renamed to `power-animal-language`, matching its real content;
+  the options themselves are unchanged.
+- **`theme.dart` cited the wrong migration filename.** Its doc comment said
+  `db/migrations/0017_theme_preference.sql`; the real file (as every other
+  citation of it in this codebase — `routes.mjs`, `pool.ts`, `api_client.
+  dart`, the theme_preference test — already correctly says) is
+  `db/migrations/0017_child_theme_preference.sql`. Fixed.
+
+### Tests
+- `game_two_truths_test.dart` — 1 new test case, reading `sessionHistoryList`
+  content across a correct-then-incorrect pair of rounds.
+- `game_twenty_questions_test.dart` — 1 new test case, reading
+  `sessionHistoryList` content across a gotIt-then-revealed pair of rounds.
+- `game_curated_activity_test.dart` — new file, 4 test cases proving
+  `SessionHistoryPanel`'s newest-first ordering, single-entry, empty-list,
+  and title-rendering behavior directly, none of which any indirect
+  consumer test isolated before.
+- `flutter analyze` clean. Full `flutter test`: 1842 cases, all green (no
+  known-failing suite remains — `push_channel_test.dart`'s CRLF issue,
+  tracked since v0.49.6, was fixed for real in PR #38, ahead of this pass).
+- Per this project's standing assertion-count-drift rule: this entry
+  initially carried the v0.49.21 total forward unchanged (5441) pending the
+  real CI-computed total. CI ran, confirmed every suite green (`COMPUTED
+  TOTAL 5447 passed 0 failed`) and correctly failed C7/D2 on the stale
+  declared count — the six new Dart test cases above account for the
+  difference. `MARKUP.html`/`scaffold/demo/shell.html` are synced to 5447
+  in this same pass, `DEMO.html` rebuilt, and `check-markup.mjs --total
+  5447` reconfirmed clean locally.
+
+---
+
 ## [0.49.21] — 2026-08-21 — Play Together, Batch C: two younger-age visual activities — Phase 1 complete
 
 Batch C of the Play Together Phase 1 spec (`docs/superpowers/specs/
@@ -218,10 +364,12 @@ not a placeholder anywhere.
 
 ### Design decision — Two Truths and a Tall Tale's safe-content mechanism
 The classic party game has each player invent their own two true facts and
-one lie about themselves. The spec's own worked examples for a category (`"a
-place you've been," "something you're good at"`) are still that shape —
-naming them illustrated the classic game, not blessed it as safe here. It
-isn't: even with zero `TextField`s anywhere, a personal-fact category still
+one lie about themselves. The spec itself gives no worked examples for this
+activity — just a one-line catalogue row — so reading a category like `"a
+place you've been," "something you're good at"` as still that same
+personal-fact shape is this pass's own judgment applying the spec's broader
+no-personal-data intent, not a claim the spec spells out anywhere. It
+isn't safe: even with zero `TextField`s anywhere, a personal-fact category still
 pressures a child to think of and say something real and true about her own
 life — the same risk the spec's "never free text" rule targets, just moved
 from typing to speaking. Closing the typed channel while leaving the spoken

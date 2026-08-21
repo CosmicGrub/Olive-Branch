@@ -52,7 +52,7 @@ class AppTheme {
   String toString() => 'AppTheme(${palette.name}, ${brightness.name})';
 
   /// Wire encoding — matches server/routes.mjs's `theme_palette`/
-  /// `theme_brightness` columns exactly (db/migrations/0017_theme_
+  /// `theme_brightness` columns exactly (db/migrations/0017_child_theme_
   /// preference.sql), enum `.name` on both sides, never a numeric index
   /// (an index silently renumbers if this enum is ever reordered; a name
   /// does not).
