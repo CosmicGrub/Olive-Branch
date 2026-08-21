@@ -149,12 +149,14 @@ would actually be a problem.
 - `flutter analyze` clean. Full `flutter test`: 1842 cases, all green (no
   known-failing suite remains — `push_channel_test.dart`'s CRLF issue,
   tracked since v0.49.6, was fixed for real in PR #38, ahead of this pass).
-- Per this project's standing assertion-count-drift rule: the total this
-  entry and `MARKUP.html`/`scaffold/demo/shell.html` declare is carried
-  forward unchanged from v0.49.21 pending the real CI-computed total, which
-  will differ now that six new Dart test cases exist; synced in a follow-up
-  commit once CI reports the true number, per standing rule 5 (the
-  reporting is part of the test surface).
+- Per this project's standing assertion-count-drift rule: this entry
+  initially carried the v0.49.21 total forward unchanged (5441) pending the
+  real CI-computed total. CI ran, confirmed every suite green (`COMPUTED
+  TOTAL 5447 passed 0 failed`) and correctly failed C7/D2 on the stale
+  declared count — the six new Dart test cases above account for the
+  difference. `MARKUP.html`/`scaffold/demo/shell.html` are synced to 5447
+  in this same pass, `DEMO.html` rebuilt, and `check-markup.mjs --total
+  5447` reconfirmed clean locally.
 
 ---
 
