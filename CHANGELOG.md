@@ -88,11 +88,11 @@ more room.
 
 ### Verified
 - **`flutter analyze`** — clean (0 issues) on every new/changed file.
-- **`flutter test`** — full client suite, 1633 run, 1632 passed locally (the
+- **`flutter test`** — full client suite, 1635 run, 1634 passed locally (the
   one local failure is the same pre-existing, unrelated
   `push_channel_test.dart` failure noted since v0.49.6 — nothing this pass
-  touched). 68 new assertions across `game_tictactoe_test.dart` (35) and
-  `game_dotsboxes_test.dart` (33): win/draw detection, `no_centre` refused
+  touched). 70 new assertions across `game_tictactoe_test.dart` (36) and
+  `game_dotsboxes_test.dart` (34): win/draw detection, `no_centre` refused
   directly against the engine (never inferred from UI state alone),
   `start_behind`/`child_first` mid-game side effects, free takebacks —
   including dots-and-boxes' extra-turn edge case by name: undoing a
