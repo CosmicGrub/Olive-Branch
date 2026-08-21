@@ -59,10 +59,20 @@ void main() {
       // enough here (Android's engine looks up this specific entry-point
       // annotation on registration). Reading the source is the only way to
       // confirm BOTH the annotation and the true top-level placement.
+      // `\r?\n` -- NOT a bare `\n` -- deliberately, so this check stays
+      // about the STRUCTURE (top-level, pragma directly above) and not
+      // about which line-ending convention the checkout happens to use.
+      // A bare `\n` here false-fails on any Windows checkout with
+      // core.autocrlf on: git converts this file's LF to CRLF on checkout
+      // (no .gitattributes rule pins *.dart to LF), so the byte right
+      // after the pragma's `)` is `\r`, not `\n`, and a literal `\n`
+      // regex never matches even though the declaration is genuinely
+      // correct. Confirmed CI (ubuntu-latest, LF checkout) was never
+      // affected -- this was a local-only false negative.
       final source =
           File('lib/push_channel.dart').readAsStringSync();
       final declaration = RegExp(
-        r"@pragma\('vm:entry-point'\)\n"
+        r"@pragma\('vm:entry-point'\)\r?\n"
         r'Future<void> firebaseMessagingBackgroundHandler\(RemoteMessage message\) async \{',
       );
       expect(declaration.hasMatch(source), isTrue,
