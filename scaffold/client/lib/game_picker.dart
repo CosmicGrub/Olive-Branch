@@ -131,6 +131,9 @@ Color _cardColor(ColorScheme cs, GameKind kind) => switch (kind) {
       GameKind.wouldYouRather => cs.tertiaryContainer,
       GameKind.twoTruths => cs.secondaryContainer,
       GameKind.twentyQuestions => cs.surfaceContainerHighest,
+      // Batch C — cycles the same four house container roles once more.
+      GameKind.copyPattern => cs.primaryContainer,
+      GameKind.findIt => cs.tertiaryContainer,
     };
 
 Color _onCardColor(ColorScheme cs, GameKind kind) => switch (kind) {
@@ -144,6 +147,8 @@ Color _onCardColor(ColorScheme cs, GameKind kind) => switch (kind) {
       GameKind.wouldYouRather => cs.onTertiaryContainer,
       GameKind.twoTruths => cs.onSecondaryContainer,
       GameKind.twentyQuestions => cs.onSurfaceVariant,
+      GameKind.copyPattern => cs.onPrimaryContainer,
+      GameKind.findIt => cs.onTertiaryContainer,
     };
 
 const _kindIcon = {
@@ -157,6 +162,8 @@ const _kindIcon = {
   GameKind.wouldYouRather: Icons.compare_arrows_rounded,
   GameKind.twoTruths: Icons.visibility_off_rounded,
   GameKind.twentyQuestions: Icons.live_help_rounded,
+  GameKind.copyPattern: Icons.grid_view_rounded,
+  GameKind.findIt: Icons.search_rounded,
 };
 
 class _GameCard extends StatefulWidget {

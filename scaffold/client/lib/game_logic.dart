@@ -35,6 +35,7 @@ enum Side { a, b }
 enum GameKind {
   tictactoe, dotsboxes, memory, story, drawTogether, guessDoodle,
   sillySentence, wouldYouRather, twoTruths, twentyQuestions,
+  copyPattern, findIt,
 }
 
 /// One condition the child may impose on the parent for a given game.
@@ -162,6 +163,30 @@ const List<GameMeta> catalogue = [
     minAge: 5,
     competitive: false,
     blurb: 'Yes, no, and a secret only one of you knows.',
+    handicaps: [],
+  ),
+  // Batch C (Play Together phase 1, the closing batch) — two younger-age,
+  // icon/color/shape-based activities, minAge 2, in exactly 'story's own
+  // co-op shape: competitive: false, handicaps: [] — self-scaling
+  // difficulty (a growing pattern length; a curated scene's own fixed
+  // object count) means there is nothing for a parent-set handicap to
+  // apply to, the same reasoning every other Batch A/B entry above already
+  // states. See game_copy_pattern.dart / game_find_it.dart for the real,
+  // curated content and the zero-text-gameplay mechanism both rest on.
+  GameMeta(
+    kind: GameKind.copyPattern,
+    title: 'Copy the pattern',
+    minAge: 2,
+    competitive: false,
+    blurb: 'Watch it light up, then tap it back — it grows one more every time.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.findIt,
+    title: 'Find it',
+    minAge: 2,
+    competitive: false,
+    blurb: 'A picture full of little things to spot — point, and she taps it.',
     handicaps: [],
   ),
 ];

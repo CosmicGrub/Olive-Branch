@@ -27,6 +27,9 @@ void main() {
       expect(find.text('Would you rather'), findsOneWidget);
       expect(find.text('Two truths and a tall tale'), findsOneWidget);
       expect(find.text('20 questions'), findsOneWidget);
+      // Batch C — the two younger-age visual activities, closing Phase 1.
+      expect(find.text('Copy the pattern'), findsOneWidget);
+      expect(find.text('Find it'), findsOneWidget);
     });
 
     testWidgets('a younger child sees fewer boards, never harder ones', (t) async {
@@ -35,9 +38,22 @@ void main() {
       expect(find.text('Three in a row'), findsOneWidget);
       expect(find.text('Our photos'), findsOneWidget);
       expect(find.text('Draw together'), findsOneWidget);
+      expect(find.text('Copy the pattern'), findsOneWidget);
+      expect(find.text('Find it'), findsOneWidget);
       expect(find.text('Dots and boxes'), findsNothing);
       expect(find.text('Make up a story'), findsNothing);
       expect(find.text('Guess the doodle'), findsNothing);
+    });
+
+    testWidgets('at age 2, only the two younger-age visual activities show — the youngest gate '
+        'this hub has ever had', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 2)));
+      await t.pumpAndSettle();
+      expect(find.text('Copy the pattern'), findsOneWidget);
+      expect(find.text('Find it'), findsOneWidget);
+      expect(find.text('Three in a row'), findsNothing);
+      expect(find.text('Our photos'), findsNothing);
+      expect(find.text('Draw together'), findsNothing);
     });
 
     testWidgets('she is greeted by her own name, not an id, when given one', (t) async {
@@ -101,6 +117,23 @@ void main() {
       await t.tap(find.text('20 questions'));
       await t.pump();
       expect(tapped, GameKind.twentyQuestions);
+    });
+
+    testWidgets('a wired onPlay callback reaches both of batch C\'s younger-age visual '
+        'activities too — the closing batch of Play Together Phase 1', (t) async {
+      await t.binding.setSurfaceSize(const Size(800, 2400));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      GameKind? tapped;
+      await t.pumpWidget(wrap(GamePickerScreen(childAge: 8, onPlay: (context, kind) => tapped = kind)));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Copy the pattern'));
+      await t.pump();
+      expect(tapped, GameKind.copyPattern);
+
+      await t.tap(find.text('Find it'));
+      await t.pump();
+      expect(tapped, GameKind.findIt);
     });
 
     testWidgets('NO settings affordance exists at any depth', (t) async {

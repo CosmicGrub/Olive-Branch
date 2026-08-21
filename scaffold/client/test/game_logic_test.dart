@@ -7,9 +7,10 @@ import 'package:olive_client/game_logic.dart';
 
 void main() {
   group('CATALOGUE — §9.2', () {
-    test('ten games — the ported four, batch A\'s two canvas activities, and '
-        'batch B\'s four curated-prompt activities', () {
-      expect(catalogue.length, 10);
+    test('twelve games — the ported four, batch A\'s two canvas activities, '
+        'batch B\'s four curated-prompt activities, and batch C\'s two '
+        'younger-age visual activities (Play Together Phase 1, complete)', () {
+      expect(catalogue.length, 12);
       for (final g in catalogue) {
         expect(g.title, isNotEmpty);
         expect(g.blurb, isNotEmpty);
@@ -43,6 +44,20 @@ void main() {
       }
     });
 
+    test('batch C\'s two younger-age visual activities are real, co-op, minAge-2 catalogue '
+        'entries — self-scaling difficulty means nothing for a handicap to apply to', () {
+      final expectations = <GameKind, int>{
+        GameKind.copyPattern: 2,
+        GameKind.findIt: 2,
+      };
+      for (final entry in expectations.entries) {
+        final meta = catalogueFor(entry.key);
+        expect(meta.competitive, isFalse, reason: '${entry.key} must be co-op — nothing to be behind at');
+        expect(meta.handicaps, isEmpty, reason: '${entry.key} must carry no handicap');
+        expect(meta.minAge, entry.value, reason: '${entry.key} minAge mismatch');
+      }
+    });
+
     test('the co-op game (story) carries no handicaps — nothing to be behind at', () {
       final story = catalogueFor(GameKind.story);
       expect(story.competitive, isFalse);
@@ -60,9 +75,16 @@ void main() {
       expect(atFour, {
         GameKind.tictactoe, GameKind.memory, GameKind.drawTogether,
         GameKind.sillySentence, GameKind.wouldYouRather,
+        GameKind.copyPattern, GameKind.findIt,
       });
       final atSix = forAge(6).map((g) => g.kind).toSet();
       expect(atSix, GameKind.values.toSet());
+    });
+
+    test('at age 2, only batch C\'s two younger-age visual activities are old enough to show — '
+        'the youngest gate this catalogue has ever had', () {
+      final atTwo = forAge(2).map((g) => g.kind).toSet();
+      expect(atTwo, {GameKind.copyPattern, GameKind.findIt});
     });
   });
 

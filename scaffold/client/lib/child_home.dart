@@ -14,8 +14,10 @@ import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
+import 'game_copy_pattern.dart';
 import 'game_dotsboxes.dart';
 import 'game_draw_together.dart';
+import 'game_find_it.dart';
 import 'game_guess_doodle.dart';
 import 'game_logic.dart';
 import 'game_picker.dart';
@@ -108,13 +110,16 @@ class ChildHome extends StatelessWidget {
                 childName: childName,
                 onPlay: (playContext, kind) {
                   // Real cases for every game this codebase has actually
-                  // built a board for — this pass's own four (Batch B:
-                  // sillySentence/wouldYouRather/twoTruths/
+                  // built a board for — Batch C's own two (copyPattern/
+                  // findIt, the closing batch of Play Together Phase 1),
+                  // Batch B's four (sillySentence/wouldYouRather/twoTruths/
                   // twentyQuestions), Batch A's two (drawTogether/
                   // guessDoodle), and a parallel build's (tictactoe/
                   // dotsboxes), merged rather than any pass dropping
-                  // another's work. Everything else (currently just memory)
-                  // stays on the honest not-built-yet fallback.
+                  // another's work. `memory` alone stays on the honest
+                  // not-built-yet fallback — a separate, still-open
+                  // photo-source product decision, deliberately out of
+                  // scope for this phase (see game_logic.dart's own note).
                   switch (kind) {
                     case GameKind.story:
                       Navigator.of(playContext).push(MaterialPageRoute<void>(
@@ -143,6 +148,12 @@ class ChildHome extends StatelessWidget {
                     case GameKind.twentyQuestions:
                       Navigator.of(playContext).push(MaterialPageRoute<void>(
                         builder: (_) => TwentyQuestionsScreen(childName: childName)));
+                    case GameKind.copyPattern:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => CopyPatternScreen(childName: childName)));
+                    case GameKind.findIt:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => const FindItScreen()));
                     case GameKind.memory:
                       _notBuiltYet(playContext, 'That game');
                   }
