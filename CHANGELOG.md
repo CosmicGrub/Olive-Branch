@@ -14,6 +14,126 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.21] — 2026-08-21 — Play Together, Batch C: two younger-age visual activities — Phase 1 complete
+
+Batch C of the Play Together Phase 1 spec (`docs/superpowers/specs/
+2026-08-20-play-together-phase1-design.md`) — the last of three sequential
+batches. Smallest and lowest-risk by design (icon/color/shape-based,
+pre-reader-friendly, self-scaling, no text-heavy content to draft), and it
+closes the whole initiative: every activity the spec named across Batch A,
+Batch B, and Batch C now has a real board or screen. **The catalogue's
+local pass-and-play roster grows from ten `GameKind`s to twelve.**
+
+### Added
+- **`client/lib/game_copy_pattern.dart`** (new) — Copy the Pattern, minAge
+  2. A genuine Simon-says: `firstPattern()`/`growPattern()` build a growing
+  sequence of tile indices (four color-AND-icon tiles — `patternTiles`),
+  played back visually one tile at a time (a real §8.13 consequence-
+  animation chain, 180ms transitions, never a loop), then tapped back on
+  the same four-tile grid. A correct full round grows the pattern by
+  exactly one and plays again — the pattern LENGTH is the entire difficulty
+  curve, with no parent-set dial, matching the spec's own reasoning that
+  this co-op activity has nothing to be "behind" at. Zero-text gameplay is
+  structural, not a claim: every tile's reference `name` exists only for a
+  `Semantics` label and a `Tooltip`, never rendered as on-screen text (a
+  widget test asserts this directly). A wrong tap resets INPUT PROGRESS
+  ONLY — the exact same pattern replays from its first tile, never
+  shrinking or restarting at length 1 — a conservative, explicitly-reasoned
+  open design decision (the spec didn't specify wrong-tap handling) made
+  per this run's overnight-autonomous instructions, matching this
+  codebase's existing house style for a child's mistakes (word search's
+  eight lives, checkers' no punishment) even more gently, since this
+  activity is co-op AND minAge 2. Device-adaptive per the spec's own words:
+  a single column stacks the pattern-display panel above the tap-grid; two-
+  plus columns sit them side by side, so a parent narrating "what comes
+  next" and the child's tap target are both visible without scrolling —
+  proven by the same layout-ROOT-type widget test (`Column` vs `Row`)
+  every prior batch established.
+- **`client/lib/game_find_it.dart`** (new) — Find It (I-Spy), minAge 2. A
+  curated scene (a fixed, in-repo arrangement of icon "objects" — never a
+  photo, never fetched, never generated at runtime) with tappable hidden
+  objects; the parent describes one out loud, the child taps it. Ships
+  three genuinely distinct curated scenes — `yardScene`, `kitchenScene`,
+  `toyBoxScene` — each with its own real icon set (Flutter's built-in
+  `Icons`, zero image assets, matching this codebase's icon-forward visual
+  style) AND its own hand-placed layout (a grid, an organic scatter, a
+  corners-plus-quadrants arrangement), never one scene re-skinned three
+  times with different icons at the same coordinates — asserted directly
+  by a test comparing every scene pair's icon sets and object positions.
+  **The one activity in the whole Phase 1 spec where device posture
+  changes real CONTENT, not just layout**: `visibleObjectsFor()` renders a
+  scene's first five hand-placed objects at a single-column posture and
+  its full curated set (nine per scene) at two-plus columns, text-scale-
+  aware exactly like `columnsAt()`'s own effective-width math (§8.8) so a
+  large accessibility text size correctly degrades a nominally-wide device
+  back toward the narrower object count too — proven by a widget test
+  asserting the actual rendered object COUNT differs between postures, not
+  just presence/absence of a panel. Icon-forward per this pass's own open
+  design decision: an object's plain-language `name` exists only for a
+  `Semantics` label and a `Tooltip`, never static on-screen text, matching
+  `game_copy_pattern.dart`'s identical choice for the identical reason. "X
+  of Y found" and the "New scene" action are both live gameplay state only
+  — reset on every new scene, never persisted or tallied across sessions
+  (P2).
+- **`game_logic.dart`** — `GameKind` gains `copyPattern`, `findIt`;
+  `catalogue` gains their `GameMeta` entries in `story`'s exact shape
+  (`competitive: false, handicaps: []`), real titles and warm, gentle
+  blurbs matching `minAge: 2`'s youngest audience.
+- **`child_home.dart`** — `GamePickerScreen`'s `onPlay` switch gains two
+  more cases. `memory` is now the ONLY `GameKind` still on the honest
+  not-built-yet fallback — every other case in the switch is real.
+- **`game_picker.dart`** — `_cardColor`/`_onCardColor`/`_kindIcon` extended
+  for the two new kinds (Dart's exhaustive-switch check requires this the
+  moment `GameKind` grows; cycles the same house container roles already
+  in use).
+
+### Verified
+- **`flutter analyze`** — clean (0 issues), full project.
+- **`flutter test`** — full suite, 1836 run, 1836 passed locally (the
+  `push_channel_test.dart` failure noted in v0.49.20's own entry is gone —
+  already fixed on `main` by PR #38's CRLF regex fix before this branch was
+  cut). **50 new** test cases: 20 in `game_copy_pattern_test.dart` (pure
+  pattern-growth/tap-checking correctness including the wrong-tap
+  input-progress-reset case, zero-text-gameplay assertions, the P2
+  forbidden-vocabulary sweep, the device-adaptive layout-ROOT structural
+  test, and real navigation reachability from `child_home.dart`), 26 in
+  `game_find_it_test.dart` (curated-scene variety — distinct icon sets AND
+  distinct layouts across all three scenes, real found/not-found
+  state-machine correctness including the already-found no-op case, the
+  device-posture object-COUNT test at narrow/wide/large-text-scale, P2, and
+  reachability), 2 more in `game_logic_test.dart` (the two new catalogue
+  entries' shape, and a new age-2 `forAge` gating test — the youngest gate
+  this catalogue has ever had), and 2 more in `game_picker_test.dart` (the
+  age-2 gating render check, and the wired `onPlay` reaching both new
+  kinds).
+
+### Design decision — wrong-tap handling in Copy the Pattern
+The spec describes the growth mechanic ("get it right → the pattern grows
+by one and plays again") but is silent on what a WRONG tap should do — a
+genuine open product question, and this run is unattended overnight with
+no one to ask. The conservative reading taken: a wrong tap resets input
+progress only, and the identical pattern (same length, same tiles) plays
+again — never shrinking the pattern, never restarting at length 1, never
+framed with any "wrong" color or word. This is the safest option available:
+it can't be read as punitive (nothing is lost — she just watches and tries
+again), it costs only a few seconds, and it matches this codebase's
+existing pattern for handling a child's mistakes gently rather than as a
+setback (word search's eight lives "because this is not a game about a
+child failing"; `game_dotsboxes.dart`'s "a competitive game closes with a
+plain factual line, never a verdict") — applied here even more
+conservatively, since this activity is co-op and the youngest minAge this
+catalogue has ever shipped.
+
+### Phase 1, complete
+Every activity `docs/superpowers/specs/2026-08-20-play-together-phase1-
+design.md` named is now real: Batch A's two canvas activities (Draw
+Together, Guess the Doodle — v0.49.18), Batch B's four curated-prompt
+activities (Silly Sentence Maker, Would You Rather, Two Truths and a Tall
+Tale, 20 Questions — v0.49.20), and this pass's two younger-age visual
+activities (Copy the Pattern, Find It). `GameKind.memory` remains the one
+deliberate, explicitly out-of-scope exception across all three batches — a
+separate, still-open photo-source product decision, not forgotten.
+
 ## [0.49.20] — 2026-08-21 — Play Together, Batch B: four curated-prompt activities, one shared layout base
 
 Batch B of the Play Together Phase 1 spec (`docs/superpowers/specs/

@@ -16,7 +16,7 @@
 </style></head><body>
 
 <h1>OLIVE BRANCH — MARKUP</h1>
-<p class="meta">version <strong>0.49.20</strong> · spec <strong>0.49.20</strong> ·
+<p class="meta">version <strong>0.49.21</strong> · spec <strong>0.49.21</strong> ·
 screens <strong>73</strong> · <strong>5391 assertions</strong> green at this version.</p>
 
 <h2>§01 What this document is</h2>
@@ -65,6 +65,7 @@ built at all, for the same reason `school.ts` already declined SIS integration.<
 <h2>§07 Changelog correspondence</h2>
 <p>Every version, and what it did to this document. Visual era begins at 0.8.0.</p>
 <table><tr><th>version</th><th>date</th><th>entry</th></tr>
+<tr><td>0.49.21</td><td>2026-08-21</td><td>Play Together Batch C — the closing batch of Play Together Phase 1: two younger-age visual activities (game_copy_pattern.dart, game_find_it.dart), minAge 2, zero-text gameplay. Copy the Pattern is a Simon-says whose growing pattern length is the entire difficulty curve; Find It is the one activity in the whole phase where device posture changes real object COUNT, not just layout, across three genuinely distinct curated icon scenes. Both new GameKind catalogue entries wired into child_home.dart's onPlay, which now has a real case for every kind except memory. Flutter-client-only — the JS demo's gamePicker screen still reads packages/games/src/games.ts's own CATALOGUE, untouched by this pass, so its MARKUP entry is unchanged.</td></tr>
 <tr><td>0.49.20</td><td>2026-08-21</td><td>Play Together Batch B — four curated-prompt activities (game_silly_sentence.dart, game_would_you_rather.dart, game_two_truths.dart, game_twenty_questions.dart) sharing a new game_curated_activity.dart layout base, all four new GameKind catalogue entries wired into child_home.dart's onPlay. game_two_truths.dart ships the batch's real safe-content design decision: every statement (both truths and the tall tale) is fixed, in-repo trivia the app authored, never personal to either player. Flutter-client-only — the JS demo's gamePicker screen still reads packages/games/src/games.ts's own CATALOGUE, untouched by this pass, so its MARKUP entry is unchanged.</td></tr>
 <tr><td>0.49.19</td><td>2026-08-20</td><td>A real theme, at last — six palettes x light/dark (client/lib/theme.dart's colorSchemeFor()), replacing the stock ColorScheme.fromSeed(seedColor: Colors.deepPurple) untouched since the first build; new guardian-only picker (theme_picker_screen.dart, reached from guardian_more.dart) and a real RLS-backed backend (db/migrations/0017_child_theme_preference.sql, GET/PUT /v1/children/:childId/theme). §8.1's no-settings-affordance for the child shell re-verified, now also proven by a client-side Dart test mirroring transport.test.mjs's own contract check. New MARKUP screen 'themePicker' §03.</td></tr>
 <tr><td>0.49.18</td><td>2026-08-20</td><td>Play Together Batch A — game_draw_together.dart and game_guess_doodle.dart, the second and third real consumers of annotation_canvas.dart's AnnotationCanvas, both new GameKind catalogue entries wired into child_home.dart's onPlay; game_picker.dart's own hand-rolled breakpoint migrated onto form_factors.dart's columnsAt(). Flutter-client-only — the JS demo's gamePicker screen still reads packages/games/src/games.ts's own CATALOGUE, untouched by this pass, so its MARKUP entry is unchanged.</td></tr>
