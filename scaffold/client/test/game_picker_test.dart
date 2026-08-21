@@ -22,6 +22,11 @@ void main() {
       expect(find.text('Make up a story'), findsOneWidget);
       expect(find.text('Draw together'), findsOneWidget);
       expect(find.text('Guess the doodle'), findsOneWidget);
+      // Batch B — the four curated-prompt activities.
+      expect(find.text('Silly sentence maker'), findsOneWidget);
+      expect(find.text('Would you rather'), findsOneWidget);
+      expect(find.text('Two truths and a tall tale'), findsOneWidget);
+      expect(find.text('20 questions'), findsOneWidget);
     });
 
     testWidgets('a younger child sees fewer boards, never harder ones', (t) async {
@@ -70,6 +75,32 @@ void main() {
       await t.tap(find.text('Guess the doodle'));
       await t.pump();
       expect(tapped, GameKind.guessDoodle);
+    });
+
+    testWidgets('a wired onPlay callback reaches all four of batch B\'s curated-prompt activities too', (t) async {
+      // Tall enough that all ten cards are on-screen without scrolling —
+      // the wiring is what's under test, not scroll mechanics.
+      await t.binding.setSurfaceSize(const Size(800, 2200));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      GameKind? tapped;
+      await t.pumpWidget(wrap(GamePickerScreen(childAge: 8, onPlay: (context, kind) => tapped = kind)));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Silly sentence maker'));
+      await t.pump();
+      expect(tapped, GameKind.sillySentence);
+
+      await t.tap(find.text('Would you rather'));
+      await t.pump();
+      expect(tapped, GameKind.wouldYouRather);
+
+      await t.tap(find.text('Two truths and a tall tale'));
+      await t.pump();
+      expect(tapped, GameKind.twoTruths);
+
+      await t.tap(find.text('20 questions'));
+      await t.pump();
+      expect(tapped, GameKind.twentyQuestions);
     });
 
     testWidgets('NO settings affordance exists at any depth', (t) async {

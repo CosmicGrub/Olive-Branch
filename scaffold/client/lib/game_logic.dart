@@ -32,7 +32,10 @@
 /// A = child, B = parent, always. Mirrors games.ts's `Side`.
 enum Side { a, b }
 
-enum GameKind { tictactoe, dotsboxes, memory, story, drawTogether, guessDoodle }
+enum GameKind {
+  tictactoe, dotsboxes, memory, story, drawTogether, guessDoodle,
+  sillySentence, wouldYouRather, twoTruths, twentyQuestions,
+}
 
 /// One condition the child may impose on the parent for a given game.
 class Handicap {
@@ -120,6 +123,45 @@ const List<GameMeta> catalogue = [
     minAge: 5,
     competitive: false,
     blurb: 'One of you draws it, the other guesses.',
+    handicaps: [],
+  ),
+  // Batch B (Play Together phase 1) — four curated-prompt activities, all
+  // in the same co-op shape as 'story'/'drawTogether'/'guessDoodle': a
+  // fixed, in-repo, curated content bank instead of free text, no handicap
+  // because there is nothing to be behind at. See game_curated_activity.dart
+  // for the shared layout base all four use, and each game file's own
+  // header for its curated content and (for game_two_truths.dart) the
+  // safe-content design reasoning the spec singled out by name.
+  GameMeta(
+    kind: GameKind.sillySentence,
+    title: 'Silly sentence maker',
+    minAge: 4,
+    competitive: false,
+    blurb: 'Build the silliest sentence you can, one word at a time.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.wouldYouRather,
+    title: 'Would you rather',
+    minAge: 4,
+    competitive: false,
+    blurb: 'Impossible choices, no wrong answers.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.twoTruths,
+    title: 'Two truths and a tall tale',
+    minAge: 6,
+    competitive: false,
+    blurb: 'Two are true. Can she guess the made-up one?',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.twentyQuestions,
+    title: '20 questions',
+    minAge: 5,
+    competitive: false,
+    blurb: 'Yes, no, and a secret only one of you knows.',
     handicaps: [],
   ),
 ];

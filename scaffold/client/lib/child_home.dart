@@ -19,8 +19,12 @@ import 'game_draw_together.dart';
 import 'game_guess_doodle.dart';
 import 'game_logic.dart';
 import 'game_picker.dart';
+import 'game_silly_sentence.dart';
 import 'game_story.dart';
 import 'game_tictactoe.dart';
+import 'game_twenty_questions.dart';
+import 'game_two_truths.dart';
+import 'game_would_you_rather.dart';
 import 'games_hub.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
@@ -104,10 +108,12 @@ class ChildHome extends StatelessWidget {
                 childName: childName,
                 onPlay: (playContext, kind) {
                   // Real cases for every game this codebase has actually
-                  // built a board for — both this pass's (drawTogether/
-                  // guessDoodle) and a parallel build's (tictactoe/
-                  // dotsboxes), merged rather than either dropping the
-                  // other's work. Everything else (currently just memory)
+                  // built a board for — this pass's own four (Batch B:
+                  // sillySentence/wouldYouRather/twoTruths/
+                  // twentyQuestions), Batch A's two (drawTogether/
+                  // guessDoodle), and a parallel build's (tictactoe/
+                  // dotsboxes), merged rather than any pass dropping
+                  // another's work. Everything else (currently just memory)
                   // stays on the honest not-built-yet fallback.
                   switch (kind) {
                     case GameKind.story:
@@ -125,6 +131,18 @@ class ChildHome extends StatelessWidget {
                     case GameKind.guessDoodle:
                       Navigator.of(playContext).push(MaterialPageRoute<void>(
                         builder: (_) => GuessDoodleScreen(childName: childName)));
+                    case GameKind.sillySentence:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => SillySentenceScreen(childName: childName)));
+                    case GameKind.wouldYouRather:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => WouldYouRatherScreen(childName: childName)));
+                    case GameKind.twoTruths:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => TwoTruthsScreen(childName: childName)));
+                    case GameKind.twentyQuestions:
+                      Navigator.of(playContext).push(MaterialPageRoute<void>(
+                        builder: (_) => TwentyQuestionsScreen(childName: childName)));
                     case GameKind.memory:
                       _notBuiltYet(playContext, 'That game');
                   }
