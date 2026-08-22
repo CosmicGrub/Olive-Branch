@@ -30,6 +30,7 @@
 // way the engine does, and each card states its own priority number.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================================ the model ===
 /// Mirrors packages/custody/src/schedule.ts's `Order`, field for field, as
@@ -301,12 +302,23 @@ class _ReadyView extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    // SingleChildScrollView + Column, NOT ListView: same fix guardian_home.dart's
-    // own comment documents — a sliver-backed list drops children scrolled
-    // below the fold from the element tree, which this screen's own widget
-    // tests (holiday rules, the trailing "does not itself record" notice)
-    // caught directly.
-    return SingleChildScrollView(
+    // Read-only document render (see file header) — no editing UI is added by
+    // this wrapper, purely a width constraint. Only the READY state (this
+    // widget) is wrapped: loading/error/empty above are already Center-based
+    // and untouched. On a wide tablet/desktop viewport the single column is
+    // only ever capped to a comfortable reading width and centered, never
+    // split. Same real columnsAt() gate every other width decision in the
+    // app uses.
+    return LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+      final double textScale = MediaQuery.textScalerOf(context).scale(1);
+      final bool capWidth = ff.columnsAt(
+          ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+      // SingleChildScrollView + Column, NOT ListView: same fix guardian_home.dart's
+      // own comment documents — a sliver-backed list drops children scrolled
+      // below the fold from the element tree, which this screen's own widget
+      // tests (holiday rules, the trailing "does not itself record" notice)
+      // caught directly.
+      final Widget content = SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Container(
@@ -418,7 +430,15 @@ class _ReadyView extends StatelessWidget {
           ),
         ]),
       ),
-    ]));
+        ]),
+      );
+      return capWidth
+          ? Center(
+              child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                  child: content))
+          : content;
+    });
   }
 }
 

@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/exchange_screen.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
@@ -181,6 +182,34 @@ void main() {
         (t) async {
       await atSize(t, const Size(1100, 700), const ExchangeScreen(childName: 'Ivy'));
       expect(t.takeException(), isNull);
+    });
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // Guardian-side, five stacked sections in a fixed order (see file
+    // header). On a wide tablet/desktop viewport the single column is only
+    // ever capped to a comfortable reading width and centered, never split
+    // — section order and the manifest rows' fixed-width checkbox columns
+    // are untouched either way. The Fold5 cover and phone widths are
+    // completely untouched by this cap.
+    testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (t) async {
+      Future<void> pumpAt(Size size) async {
+        await t.binding.setSurfaceSize(size);
+        await t.pumpWidget(wrap(const ExchangeScreen(childName: 'Ivy')));
+        await t.pump();
+      }
+
+      addTearDown(() => t.binding.setSurfaceSize(null));
+
+      await pumpAt(const Size(1100, 1800));
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 1800)); // Fold5 cover
+      expect(t.getSize(find.byType(ListView)).width, 344);
+
+      await pumpAt(const Size(390, 1800)); // standard phone
+      expect(t.getSize(find.byType(ListView)).width, 390);
     });
   });
 }

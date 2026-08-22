@@ -18,6 +18,7 @@
 // nothing loops, ever. The only animation in this file is a single sub-400ms
 // fade-in on the entry she just saved — consequence motion, not autonomous.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ================= ported from packages/agency/src/agency.ts (readJournal) =
 class JournalEntry {
@@ -132,55 +133,73 @@ class _JournalScreenState extends State<JournalScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('My journal')),
-      // SingleChildScrollView + Column, NOT ListView: a ListView's sliver
-      // list only realizes children near the current viewport, so entries
-      // scrolled below the fold would not exist in the widget/element tree
-      // at all — see message_banking.dart's identical note for the same
-      // fix on the same class of bug.
-      body: SafeArea(child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _PrivacyBanner(childName: widget.childName, scheme: scheme),
-          const SizedBox(height: 16),
-          Card(child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Write something', style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _controller,
-                minLines: 3,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  hintText: 'Whatever you want. Nobody sees this but you.',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(width: double.infinity, height: 48,
-                child: FilledButton.icon(
-                  onPressed: _controller.text.trim().isEmpty ? null : _save,
-                  icon: const Icon(Icons.lock_outline),
-                  label: const Text('Keep it, just for me'))),
-            ]),
-          )),
-          const SizedBox(height: 24),
-          if (_entries.isEmpty)
-            Padding(padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Column(children: [
-                Icon(Icons.edit_note_outlined, size: 40, color: scheme.onSurfaceVariant),
+      // §8.13.5: this is a permanently STILL surface — no ambient motion,
+      // ever (see file header). On a wide tablet/desktop viewport the single
+      // column is only ever capped to a comfortable reading width and
+      // centered, never split, and nothing below is animated by this cap
+      // itself — a pure width-constraint wrapper around the same unchanged
+      // content. Same real columnsAt() gate every other width decision in
+      // the app uses.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        // SingleChildScrollView + Column, NOT ListView: a ListView's sliver
+        // list only realizes children near the current viewport, so entries
+        // scrolled below the fold would not exist in the widget/element tree
+        // at all — see message_banking.dart's identical note for the same
+        // fix on the same class of bug.
+        final Widget content = SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _PrivacyBanner(childName: widget.childName, scheme: scheme),
+            const SizedBox(height: 16),
+            Card(child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Write something', style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
                 const SizedBox(height: 12),
-                Text('Nothing written yet. Whenever you feel like it.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-              ])))
-          else
-            for (final e in _entries)
-              _JournalTile(key: ValueKey(e.id), entry: e, justAdded: e.id == _justAddedId),
-        ]),
-      )),
+                TextField(
+                  controller: _controller,
+                  minLines: 3,
+                  maxLines: 8,
+                  decoration: const InputDecoration(
+                    hintText: 'Whatever you want. Nobody sees this but you.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(width: double.infinity, height: 48,
+                  child: FilledButton.icon(
+                    onPressed: _controller.text.trim().isEmpty ? null : _save,
+                    icon: const Icon(Icons.lock_outline),
+                    label: const Text('Keep it, just for me'))),
+              ]),
+            )),
+            const SizedBox(height: 24),
+            if (_entries.isEmpty)
+              Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Column(children: [
+                  Icon(Icons.edit_note_outlined, size: 40, color: scheme.onSurfaceVariant),
+                  const SizedBox(height: 12),
+                  Text('Nothing written yet. Whenever you feel like it.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: scheme.onSurfaceVariant)),
+                ])))
+            else
+              for (final e in _entries)
+                _JournalTile(key: ValueKey(e.id), entry: e, justAdded: e.id == _justAddedId),
+          ]),
+        );
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }

@@ -19,6 +19,7 @@
 //     already uses. His screen, which she never sees, may say "line 3 of 11"
 //     plainly, because he is not the one this rule protects.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'storyteller_logic.dart' as story;
 
 enum _Perspective { her, him }
@@ -62,51 +63,71 @@ class _SharedReadingScreenState extends State<SharedReadingScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(_read.title)),
-      body: SafeArea(child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const _PreviewBanner(),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: Text('$readerLabel is reading tonight',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
-              TextButton(
-                onPressed: _swapReader,
-                child: Text(_sheIsReading
-                  ? 'Swap: let ${widget.readerName} read'
-                  : 'Swap: let ${widget.childName} read')),
-            ]),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<_Perspective>(
-                segments: const [
-                  ButtonSegment(value: _Perspective.her, label: Text('Her screen'),
-                    icon: Icon(Icons.child_care_rounded)),
-                  ButtonSegment(value: _Perspective.him, label: Text('His screen'),
-                    icon: Icon(Icons.person_rounded)),
-                ],
-                selected: {_view},
-                onSelectionChanged: (s) => setState(() => _view = s.first),
-              ),
-            ),
-          ]),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: _view == _Perspective.her
-              ? _HerScreen(
-                  key: const Key('herScreen'), block: block, total: _lastIndex + 1,
-                  index: _index, canGoBack: _index > 0, canGoForward: _index < _lastIndex,
-                  onNext: _next, onPrev: _prev, finished: _index == _lastIndex, onNewBook: _newBook,
-                )
-              : _HisScreen(
-                  key: const Key('hisScreen'), block: block, index: _index, total: _lastIndex + 1,
-                  readerLabel: readerLabel,
+      // CRITICAL — child-reachable (see file header). This wrapper only
+      // constrains width around the WHOLE existing toggle-driven body below,
+      // unchanged: exactly one of _HerScreen/_HisScreen is ever built, gated
+      // by _view, at every viewport width — a two-pane split was
+      // deliberately rejected for this exact screen precisely because it
+      // would put both on screen at once on a wide viewport (see file
+      // header), so this cap centers a single column instead of splitting
+      // it. Same real columnsAt() gate every other width decision in the
+      // app uses.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = Column(key: const Key('sharedReadingBody'), children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const _PreviewBanner(),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: Text('$readerLabel is reading tonight',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+                TextButton(
+                  onPressed: _swapReader,
+                  child: Text(_sheIsReading
+                    ? 'Swap: let ${widget.readerName} read'
+                    : 'Swap: let ${widget.childName} read')),
+              ]),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<_Perspective>(
+                  segments: const [
+                    ButtonSegment(value: _Perspective.her, label: Text('Her screen'),
+                      icon: Icon(Icons.child_care_rounded)),
+                    ButtonSegment(value: _Perspective.him, label: Text('His screen'),
+                      icon: Icon(Icons.person_rounded)),
+                  ],
+                  selected: {_view},
+                  onSelectionChanged: (s) => setState(() => _view = s.first),
                 ),
-        ),
-      ])),
+              ),
+            ]),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _view == _Perspective.her
+                ? _HerScreen(
+                    key: const Key('herScreen'), block: block, total: _lastIndex + 1,
+                    index: _index, canGoBack: _index > 0, canGoForward: _index < _lastIndex,
+                    onNext: _next, onPrev: _prev, finished: _index == _lastIndex, onNewBook: _newBook,
+                  )
+                : _HisScreen(
+                    key: const Key('hisScreen'), block: block, index: _index, total: _lastIndex + 1,
+                    readerLabel: readerLabel,
+                  ),
+          ),
+        ]);
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }
