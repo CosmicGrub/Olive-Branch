@@ -27,6 +27,7 @@
 // — see siblings_screen_test.dart, which proves exactly that with a sibling
 // the demo viewer is NOT authorized for.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // =========================================================== family.ts ====
 class Child {
@@ -195,34 +196,49 @@ class _SiblingsScreenState extends State<SiblingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Siblings')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('Horizontal swipe between the children you actually have access to. '
-          'A sibling link never grants access to a child you are not a guardian of.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 12),
-        // 48dp minimum tap target — this row was capped at 44dp (finding #3).
-        SizedBox(height: 48, child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: tabs.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 8),
-          itemBuilder: (BuildContext context, int i) {
-            final ShellTab t = tabs[i];
-            return ChoiceChip(
-              label: Text('${t.name} · ${t.age}'),
-              avatar: CircleAvatar(radius: 8,
-                backgroundColor: t.colourId ?? Theme.of(context).colorScheme.surfaceContainerHighest),
-              selected: t.id == _selected,
-              onSelected: (_) => setState(() => _selected = t.id));
-          })),
-        const SizedBox(height: 20),
-        if (current != null) _ChildCard(tab: current) else
-          const Text('No children on this account.'),
-        const SizedBox(height: 16),
-        for (final Child c in closedChildren(widget.siblingSet))
-          if (widget.authorizedChildIds.contains(c.id))
-            _StaggerBanner(notice: staggerNotice(widget.siblingSet, c.id)!),
-      ])),
+      // Not child-facing (see file header). On a wide tablet/desktop
+      // viewport the single column is only ever capped to a comfortable
+      // reading width and centered, never split. Same real columnsAt() gate
+      // every other width decision in the app uses.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          Text('Horizontal swipe between the children you actually have access to. '
+            'A sibling link never grants access to a child you are not a guardian of.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          // 48dp minimum tap target — this row was capped at 44dp (finding #3).
+          SizedBox(height: 48, child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: tabs.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (BuildContext context, int i) {
+              final ShellTab t = tabs[i];
+              return ChoiceChip(
+                label: Text('${t.name} · ${t.age}'),
+                avatar: CircleAvatar(radius: 8,
+                  backgroundColor: t.colourId ?? Theme.of(context).colorScheme.surfaceContainerHighest),
+                selected: t.id == _selected,
+                onSelected: (_) => setState(() => _selected = t.id));
+            })),
+          const SizedBox(height: 20),
+          if (current != null) _ChildCard(tab: current) else
+            const Text('No children on this account.'),
+          const SizedBox(height: 16),
+          for (final Child c in closedChildren(widget.siblingSet))
+            if (widget.authorizedChildIds.contains(c.id))
+              _StaggerBanner(notice: staggerNotice(widget.siblingSet, c.id)!),
+        ]);
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }

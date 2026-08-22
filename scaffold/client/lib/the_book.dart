@@ -21,6 +21,7 @@
 // would do anything.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'form_factors.dart' as ff;
 import 'library_logic.dart';
 import 'storyteller_logic.dart' as story;
 
@@ -112,47 +113,63 @@ class _CompiledBook extends StatelessWidget {
   final VoidCallback onToggleExport;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    // A Column here, NOT ListView — a book can run to a hundred-plus pages,
-    // and ListView's sliver machinery only mounts what's near the viewport.
-    // A guardian scrolling straight to an export button at the bottom, or a
-    // test asserting page 7 exists, needs every page to genuinely be in the
-    // tree — the same lesson message_banking.dart's own header already
-    // documents for its (much shorter) queue.
-    padding: const EdgeInsets.all(20),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text("${book.childName}'s Stories",
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-      const SizedBox(height: 8),
-      Text(book.dedication, style: Theme.of(context).textTheme.bodyMedium
-        ?.copyWith(fontStyle: FontStyle.italic)),
-      const SizedBox(height: 16),
-      _MetaRow(meta: book.meta),
-      const SizedBox(height: 16),
-      Card(
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
-        child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
-          const Icon(Icons.info_outline_rounded, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(book.readerNote, style: Theme.of(context).textTheme.bodySmall
-            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
-        ])),
-      ),
-      const SizedBox(height: 20),
-      Text('Contents — oldest first', style: Theme.of(context).textTheme.titleSmall
-        ?.copyWith(fontWeight: FontWeight.w700)),
-      Text("Ordered as a year, not a leaderboard.", style: Theme.of(context).textTheme.bodySmall
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      const SizedBox(height: 12),
-      for (final p in book.pages) _PageRow(page: p),
-      const SizedBox(height: 20),
-      SizedBox(width: double.infinity, child: OutlinedButton.icon(
-        onPressed: onToggleExport,
-        icon: Icon(showExport ? Icons.expand_less_rounded : Icons.ios_share_rounded),
-        label: Text(showExport ? 'Hide plain-text export' : 'Export as plain text'))),
-      if (showExport) _ExportPanel(book: book),
-    ]),
-  );
+  Widget build(BuildContext context) => LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
+    final bool capWidth = ff.columnsAt(
+        ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+    // On a wide tablet/desktop viewport the single column is only ever
+    // capped to a comfortable reading width and centered, never split; the
+    // empty (_TooFew) state is already centered/minimal and is not wrapped
+    // here. Same real columnsAt() gate every other width decision in the
+    // app uses.
+    final Widget content = SingleChildScrollView(
+      // A Column here, NOT ListView — a book can run to a hundred-plus pages,
+      // and ListView's sliver machinery only mounts what's near the viewport.
+      // A guardian scrolling straight to an export button at the bottom, or a
+      // test asserting page 7 exists, needs every page to genuinely be in the
+      // tree — the same lesson message_banking.dart's own header already
+      // documents for its (much shorter) queue.
+      padding: const EdgeInsets.all(20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text("${book.childName}'s Stories",
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        Text(book.dedication, style: Theme.of(context).textTheme.bodyMedium
+          ?.copyWith(fontStyle: FontStyle.italic)),
+        const SizedBox(height: 16),
+        _MetaRow(meta: book.meta),
+        const SizedBox(height: 16),
+        Card(
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+          child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [
+            const Icon(Icons.info_outline_rounded, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(book.readerNote, style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+          ])),
+        ),
+        const SizedBox(height: 20),
+        Text('Contents — oldest first', style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(fontWeight: FontWeight.w700)),
+        Text("Ordered as a year, not a leaderboard.", style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 12),
+        for (final p in book.pages) _PageRow(page: p),
+        const SizedBox(height: 20),
+        SizedBox(width: double.infinity, child: OutlinedButton.icon(
+          onPressed: onToggleExport,
+          icon: Icon(showExport ? Icons.expand_less_rounded : Icons.ios_share_rounded),
+          label: Text(showExport ? 'Hide plain-text export' : 'Export as plain text'))),
+        if (showExport) _ExportPanel(book: book),
+      ]),
+    );
+    return capWidth
+        ? Center(
+            child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                child: content))
+        : content;
+  });
 }
 
 class _MetaRow extends StatelessWidget {

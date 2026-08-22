@@ -19,6 +19,7 @@
 import 'package:flutter/material.dart';
 
 import 'archive_models.dart';
+import 'form_factors.dart' as ff;
 
 // ==================================================================== demo =
 // In-memory only — see api_client.dart: there is no /v1/children/:id/yearbook
@@ -111,48 +112,64 @@ class _YearBookScreenState extends State<YearBookScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Year book')),
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered, never split —
+      // the wrapper goes OUTSIDE the AnimatedSwitcher below, which keeps its
+      // existing transition completely untouched. Same real columnsAt()
+      // gate every other width decision in the app uses.
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: <Widget>[
-            Text('A year of her, preserved.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: <Widget>[
-                for (final int y in _years)
-                  ChoiceChip(
-                    label: Text('$y'),
-                    selected: _selectedYear == y,
-                    onSelected: (_) => setState(() => _selectedYear = y),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: Column(
-                key: ValueKey<int>(_selectedYear),
-                crossAxisAlignment: CrossAxisAlignment.start,
+        child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool capWidth = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+          final Widget content = ListView(
+            padding: const EdgeInsets.all(16),
+            children: <Widget>[
+              Text('A year of her, preserved.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
                 children: <Widget>[
-                  _CoverCard(book: book, childName: _childName),
-                  const SizedBox(height: 16),
-                  if (book.places.isNotEmpty) ...<Widget>[
-                    _PlacesCard(book.places),
-                    const SizedBox(height: 16),
-                  ],
-                  for (final YearBookSection section in book.sections) ...<Widget>[
-                    _SectionCard(section: section, artifacts: _all),
-                    const SizedBox(height: 12),
-                  ],
-                  const SizedBox(height: 4),
-                  _PrintableCard(book: book, scheme: scheme),
+                  for (final int y in _years)
+                    ChoiceChip(
+                      label: Text('$y'),
+                      selected: _selectedYear == y,
+                      onSelected: (_) => setState(() => _selectedYear = y),
+                    ),
                 ],
               ),
-            ),
-          ],
-        ),
+              const SizedBox(height: 16),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Column(
+                  key: ValueKey<int>(_selectedYear),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _CoverCard(book: book, childName: _childName),
+                    const SizedBox(height: 16),
+                    if (book.places.isNotEmpty) ...<Widget>[
+                      _PlacesCard(book.places),
+                      const SizedBox(height: 16),
+                    ],
+                    for (final YearBookSection section in book.sections) ...<Widget>[
+                      _SectionCard(section: section, artifacts: _all),
+                      const SizedBox(height: 12),
+                    ],
+                    const SizedBox(height: 4),
+                    _PrintableCard(book: book, scheme: scheme),
+                  ],
+                ),
+              ),
+            ],
+          );
+          return capWidth
+              ? Center(
+                  child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                      child: content))
+              : content;
+        }),
       ),
     );
   }

@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/the_book.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -134,5 +135,30 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // The compiled-book body is what's wrapped; the too-few empty state is
+    // already centered/minimal and left untouched. On a wide tablet/desktop
+    // viewport the single column is only ever capped to a comfortable
+    // reading width and centered, never split. The Fold5 cover and phone
+    // widths are completely untouched by this cap.
+    testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (tester) async {
+      Future<void> pumpAt(Size size) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(TheBookScreen.demo(childName: 'Ivy')));
+        await tester.pump();
+      }
+
+      await pumpAt(const Size(1100, 900));
+      expect(tester.getSize(find.byType(SingleChildScrollView)).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 820)); // Fold5 cover
+      expect(tester.getSize(find.byType(SingleChildScrollView)).width, 344);
+
+      await pumpAt(const Size(390, 844)); // standard phone
+      expect(tester.getSize(find.byType(SingleChildScrollView)).width, 390);
+    });
   });
 }

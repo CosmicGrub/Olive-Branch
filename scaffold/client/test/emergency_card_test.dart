@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/emergency_card.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 
 void main() {
   // Tall surface so every section is actually laid out by the ListView's
@@ -161,5 +162,33 @@ void main() {
 
     final Text allergiesLabel = tester.widget(find.text('ALLERGIES'));
     expect(allergiesLabel.style!.color, scheme.onErrorContainer);
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // §8.13.5 "still" surface, read once, possibly in a hurry (see file
+    // header). On a wide tablet/desktop viewport the single column is only
+    // ever capped to a comfortable reading width and centered, never split —
+    // the allergy-first scan order is untouched either way. The Fold5 cover
+    // and phone widths are completely untouched by this cap.
+    testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (tester) async {
+      Future<void> pumpAt(Size size) async {
+        await tester.binding.setSurfaceSize(size);
+        await tester.pumpWidget(const MaterialApp(home: EmergencyCardScreen()));
+        await tester.pump();
+      }
+
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await pumpAt(const Size(1100, 1600));
+      expect(tester.getSize(find.byKey(const Key('emergencyCardList'))).width,
+          ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 1600)); // Fold5 cover
+      expect(tester.getSize(find.byKey(const Key('emergencyCardList'))).width, 344);
+
+      await pumpAt(const Size(390, 1600)); // standard phone
+      expect(tester.getSize(find.byKey(const Key('emergencyCardList'))).width, 390);
+    });
   });
 }
