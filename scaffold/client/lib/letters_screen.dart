@@ -24,6 +24,7 @@
 // directly on the Dart Letter object instead — an honest simplification for
 // a screen with no backend yet, not a silent behavior change.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============ ported from packages/maturation/src/maturation.ts (letters) ==
 enum SealError { tooSoon, tooFar, notYet, alreadyOpen }
@@ -195,78 +196,114 @@ class _LettersScreenState extends State<LettersScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final avail = _availableAges;
+
+    // Pane A — compose: the whole 'Dear future me…' Card, verbatim (field,
+    // age chips, and the Seal it button all together, unsplit). Only ever
+    // pulled into a named list so the wide/narrow branches below can share
+    // it verbatim rather than diverging — same discipline message_banking.dart
+    // uses for its own two panes.
+    final List<Widget> composeChildren = <Widget>[
+      Card(child: Padding(padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Dear future me…', style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
+          const SizedBox(height: 12),
+          TextField(controller: _controller, minLines: 4, maxLines: 10,
+            decoration: const InputDecoration(
+              hintText: 'Say whatever you want. This is between you and future you.',
+              border: OutlineInputBorder())),
+          const SizedBox(height: 12),
+          Text('Open it when I turn:', style: Theme.of(context).textTheme.labelMedium
+            ?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          if (avail.isEmpty)
+            Text("There's no age left that's far enough away to seal one right now.",
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))
+          else
+            Wrap(spacing: 8, runSpacing: 8, children: [for (final age in avail)
+              ChoiceChip(
+                label: SizedBox(height: 32, child: Center(child: Text('$age'))),
+                selected: _selectedOpenAge == age,
+                onSelected: (_) => setState(() => _selectedOpenAge = age)),
+            ]),
+          const SizedBox(height: 16),
+          SizedBox(width: double.infinity, height: 48,
+            child: FilledButton.icon(
+              onPressed: (avail.isEmpty || _controller.text.trim().isEmpty) ? null : _seal,
+              icon: const Icon(Icons.lock_outline),
+              label: const Text('Seal it'))),
+        ]))),
+    ];
+
+    // Pane B — the letters region: either the empty state or every
+    // _LetterTile, same widgets and same order as this screen always
+    // rendered.
+    final List<Widget> listChildren = <Widget>[
+      if (_letters.isEmpty)
+        Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: Column(children: [
+            Icon(Icons.mail_outline, size: 40, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text('No letters yet. Write one whenever you feel like it.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant)),
+          ])))
+      else
+        for (final l in _letters)
+          _LetterTile(key: ValueKey(l.id), letter: l, currentAge: widget.currentAge,
+            onOpen: () => _open(l), onDelete: () => _confirmDelete(l)),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: const Text('Letters to future you')),
       // SingleChildScrollView + Column, NOT ListView — a sliver list only
       // realizes children near the viewport, which would silently drop
       // letters scrolled below the fold from the widget tree. Same fix
       // message_banking.dart already documents for the same bug class.
-      body: SafeArea(child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // 12, matching the compact inline info-banner role used elsewhere
-          // (expenses_screen.dart, meds_care.dart, morning_briefing.dart,
-          // care_note.dart, guardian_setup.dart) — was 16, a leftover from
-          // before the radius sweep.
-          Container(padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.mail_lock_outlined, color: scheme.onSecondaryContainer),
-              const SizedBox(width: 8),
-              Expanded(child: Text(
-                "Write to the you who's older. Once it's sealed, nobody can open it early — "
-                'not you, and not anyone else. It gets kept forever.',
-                style: Theme.of(context).textTheme.bodyMedium
-                  ?.copyWith(color: scheme.onSecondaryContainer))),
-            ])),
-          const SizedBox(height: 16),
-          Card(child: Padding(padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Dear future me…', style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
-              const SizedBox(height: 12),
-              TextField(controller: _controller, minLines: 4, maxLines: 10,
-                decoration: const InputDecoration(
-                  hintText: 'Say whatever you want. This is between you and future you.',
-                  border: OutlineInputBorder())),
-              const SizedBox(height: 12),
-              Text('Open it when I turn:', style: Theme.of(context).textTheme.labelMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              if (avail.isEmpty)
-                Text("There's no age left that's far enough away to seal one right now.",
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))
-              else
-                Wrap(spacing: 8, runSpacing: 8, children: [for (final age in avail)
-                  ChoiceChip(
-                    label: SizedBox(height: 32, child: Center(child: Text('$age'))),
-                    selected: _selectedOpenAge == age,
-                    onSelected: (_) => setState(() => _selectedOpenAge = age)),
-                ]),
-              const SizedBox(height: 16),
-              SizedBox(width: double.infinity, height: 48,
-                child: FilledButton.icon(
-                  onPressed: (avail.isEmpty || _controller.text.trim().isEmpty) ? null : _seal,
-                  icon: const Icon(Icons.lock_outline),
-                  label: const Text('Seal it'))),
-            ]))),
-          const SizedBox(height: 24),
-          if (_letters.isEmpty)
-            Padding(padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Column(children: [
-                Icon(Icons.mail_outline, size: 40, color: scheme.onSurfaceVariant),
-                const SizedBox(height: 12),
-                Text('No letters yet. Write one whenever you feel like it.',
-                  textAlign: TextAlign.center,
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — same threshold message_banking.dart uses for its own
+        // two-pane split.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // 12, matching the compact inline info-banner role used elsewhere
+            // (expenses_screen.dart, meds_care.dart, morning_briefing.dart,
+            // care_note.dart, guardian_setup.dart) — was 16, a leftover from
+            // before the radius sweep.
+            Container(padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.mail_lock_outlined, color: scheme.onSecondaryContainer),
+                const SizedBox(width: 8),
+                Expanded(child: Text(
+                  "Write to the you who's older. Once it's sealed, nobody can open it early — "
+                  'not you, and not anyone else. It gets kept forever.',
                   style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-              ])))
-          else
-            for (final l in _letters)
-              _LetterTile(key: ValueKey(l.id), letter: l, currentAge: widget.currentAge,
-                onOpen: () => _open(l), onDelete: () => _confirmDelete(l)),
-        ]),
-      )),
+                    ?.copyWith(color: scheme.onSecondaryContainer))),
+              ])),
+            const SizedBox(height: 16),
+            wide
+              ? Row(key: const Key('lettersTwoPaneRow'),
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: composeChildren)),
+                    const SizedBox(width: 24),
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: listChildren)),
+                  ])
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ...composeChildren,
+                  const SizedBox(height: 24),
+                  ...listChildren,
+                ]),
+          ]),
+        );
+      })),
     );
   }
 }
