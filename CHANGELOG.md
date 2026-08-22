@@ -93,6 +93,105 @@ close it for real.
   next crash just leaves the other one stuck). Not part of this repo — a
   one-time machine fix, `C:\Users\Obliv\bin\Fix-DockerDesktop.ps1`.
 
+## [0.49.27] — 2026-08-22 — Device-adaptive backlog, batch A of 3: nine more screens get the comfortable-reading-width cap
+
+Continues v0.49.25's per-screen judgment discipline, not a mechanical sweep:
+a dedicated, read-only investigation read each of sixteen still-backlogged
+nav-reachable content screens individually and split them by their actual
+content shape into two treatments. Nine screens whose body is genuinely a
+single scrollable column — this release, "batch A" — get the same
+`comfortableReadingWidth` cap v0.49.25 introduced, wrapped around each
+screen's existing body completely unchanged. The other seven this
+investigation named (`letters_screen.dart`, `wants_needs.dart`,
+`expenses_screen.dart`, `care_note.dart` — batch B; `handover_notes.dart`,
+`availability_screen.dart`, `show_guardian.dart` — batch C) have a genuine
+list-selects-detail or compose-plus-list shape and were queued for the
+two-pane `Row`/`Expanded` treatment in separate upcoming batches, not this
+one — but three of them landed sooner than planned: **v0.49.26** (PR #46,
+merged first, built concurrently and independently of this investigation)
+gave `letters_screen.dart`, `wants_needs.dart`, and `expenses_screen.dart`
+that exact two-pane treatment already, on its own separate read of each
+screen. This entry — rebased onto that merge, renumbered from a same-day
+`0.49.26` version collision to `0.49.27` — corrects its own original count
+accordingly rather than leaving a stale "not touched in this release" claim
+against files that, by the time this lands, already were.
+
+### Changed — comfortable reading-width cap (batch A of 3, not a two-pane split)
+- **`journal_screen.dart`** — a permanently STILL surface (§8.13.5, P7): the
+  width cap is a pure `LayoutBuilder`-gated wrapper around the existing
+  `SingleChildScrollView`, adding zero new motion. The one entry-save fade
+  (consequence motion, not autonomous) is untouched.
+- **`siblings_screen.dart`** — not child-facing; standard application of the
+  established pattern.
+- **`emergency_card.dart`** — §8.13.5 "still" surface, read once, possibly in
+  a hurry, by a frightened child or a sitter who has never opened the app
+  before; the allergy card's first-in-scan-order position (§9.6.3) is
+  preserved byte for byte — the wrapper only constrains width, the vertical
+  sequence is untouched.
+- **`exchange_screen.dart`** — guardian-side; five stacked sections (hero
+  handoff card, bag manifest, running late, arrival, coming up) keep their
+  fixed order, and the manifest rows' fixed-width sent/returned checkbox
+  columns are untouched.
+- **`meds_care.dart`** — guardian-only, never a surface the child carries,
+  confirmed not reachable from `child_home.dart`.
+- **`family_agreement_screen.dart`** — read-only custody-order render; only
+  the READY state is wrapped — loading/error/empty stay `Center`-based and
+  untouched — and no editing UI is added.
+- **`the_book.dart`** — only the compiled-book state is wrapped; the
+  too-few-favourites empty state is already centered/minimal and untouched.
+- **`year_book.dart`** — the wrapper sits OUTSIDE the existing
+  `AnimatedSwitcher`, whose own year-switch transition is completely
+  untouched.
+- **`shared_reading.dart`** — CHILD-REACHABLE (pushed from `child_more.dart`'s
+  "Read together" tile) and the highest-care file in this batch: §9.13.2's
+  own invariant ("no page count and no percentage reach her... His screen...
+  may say line 3 of 11 plainly") is exactly why this screen gets the
+  reading-width cap INSTEAD OF a two-pane split — a split would have put both
+  `_HerScreen` and `_HisScreen` on screen at once on a wide viewport,
+  permanently exposing his screen's line-count digits next to hers instead of
+  gating them behind the existing toggle. The wrapper goes around the whole
+  toggle-driven body; the toggle logic itself, and the fact that exactly one
+  of `_HerScreen`/`_HisScreen` is ever built at a time, are both completely
+  unchanged.
+
+### Tests
+- One new test per screen (ten total — `shared_reading_test.dart` gets two)
+  confirming: at a wide test width (1100px) the wrapped content's width is
+  capped at `comfortableReadingWidth` (640px); at the Fold5 cover width
+  (344px) and a standard phone width (390px) the content renders at full
+  width, unchanged from before this pass.
+  `shared_reading_test.dart`'s second new test additionally asserts that at
+  the wide capped width exactly one of `_HerScreen`/`_HisScreen`'s content
+  (found by key) is present in the tree, never both — a structural proof the
+  width cap did not accidentally reintroduce a simultaneous two-pane view.
+- Every pre-existing test in all nine files re-verified passing unchanged.
+  Several already exercise a >=660px-effective width
+  (`emergency_card_test.dart`/`exchange_screen_test.dart`/
+  `meds_care_test.dart`'s own 800px-wide `pump()` helper, and
+  `family_agreement_screen_test.dart`'s default 800x600 test surface), so the
+  new cap is genuinely active during those runs — confirmed none of their
+  assertions depend on horizontal width or position, only on content
+  presence and vertical order, so the cap changes nothing they check.
+
+### Backlog
+- Closes 9 of the ~56 screens remaining after v0.49.25 (all nine are
+  nav-reachable content screens). The nav-reachable content-screen subset,
+  previously estimated at 11–15, is a precise 16 per this batch's own
+  investigation, split 9 (batch A, here) + 7 (batch B/C, originally queued
+  separately). Of that 7, `letters_screen.dart`/`wants_needs.dart`/
+  `expenses_screen.dart` were independently closed by the concurrent v0.49.26
+  tier — see that correction above — leaving only `care_note.dart` from batch
+  B plus all of batch C (`handover_notes.dart`/`availability_screen.dart`/
+  `show_guardian.dart`): **4 nav-reachable screens remaining, not 7.**
+  Overall: roughly 56 − 9 (here) − 3 (v0.49.26, concurrently) ≈ **44
+  screens remaining**. See MASTERFILE.md §8.11.1's own status note for the
+  updated count.
+
+### Verification
+- `flutter analyze` clean. `flutter test` — every Dart widget test green
+  (1859 passed, 0 failed), including the ten new tests, every pre-existing
+  test in the nine touched files, and the full client suite run together.
+
 ---
 
 ## [0.49.26] — 2026-08-22 — Device-adaptive priority tier, continued: wants_needs.dart, expenses_screen.dart, letters_screen.dart get message_banking.dart's real two-pane split
@@ -257,6 +356,19 @@ per-screen judgment, not a mechanical apply-to-all.
   tier closes 4 — all nav-reachable content screens. Roughly 56 remain
   overall; the nav-reachable content-screen subset drops from 15–19 to
   11–15. See MASTERFILE.md §8.11.1's own status note for the updated count.
+
+---
+
+## [0.49.24] — 2026-08-22 — Compatibility/dependency-audit fix pass: 11 mechanical fixes across dependency resolution, device-adaptive coverage, and canvas performance
+
+**Header restored — a real, confirmed regression, not touched up cosmetically.**
+This entry's own header line was silently deleted by v0.49.25's merge commit
+(`c457a52`), leaving this body orphaned directly under v0.49.25's own
+`### Backlog` section with no heading of its own — exactly the class of
+silent deletion this file's own preamble calls a process failure. Found
+incidentally while resolving the v0.49.26/v0.49.27 rebase below (both land
+in this same region of the file); restored here rather than left, since nothing
+about the rebase this entry accompanies depends on leaving it broken.
 
 A 3-dimension compatibility audit (dependency-resolution, device-adaptive
 coverage, performance) ran over the whole app, every finding independently

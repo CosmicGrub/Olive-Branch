@@ -4292,6 +4292,38 @@ effort's judgment call, deferred to rather than duplicated or overridden. This
 closes 3 more of the remaining backlog, leaving roughly 53 (before whatever
 `journal_screen.dart`'s own landing closes separately). See CHANGELOG v0.49.26.
 
+**v0.49.27 is batch A of 3 continuing that backlog**, opened by a dedicated
+read-only investigation that read each still-named nav-reachable content
+screen individually rather than assigning it a treatment from the generic
+label — the investigation itself sharpened the previously-estimated 11–15
+subset to a precise 16, split by actual content shape into two treatments.
+Nine screens whose body is genuinely one scrollable column —
+`journal_screen.dart`, `siblings_screen.dart`, `emergency_card.dart`,
+`exchange_screen.dart`, `meds_care.dart`, `family_agreement_screen.dart`,
+`the_book.dart`, `year_book.dart`, `shared_reading.dart` — get this section's
+own `comfortableReadingWidth` cap, batch A, done here; the other seven this
+investigation originally named (`letters_screen.dart`, `wants_needs.dart`,
+`expenses_screen.dart`, `care_note.dart` — batch B; `handover_notes.dart`,
+`availability_screen.dart`, `show_guardian.dart` — batch C) have a genuine
+list-selects-detail or compose-plus-list shape and were queued for the
+two-pane `Row`/`Expanded` pattern above in two further batches — but three of
+batch B (`letters_screen.dart`, `wants_needs.dart`, `expenses_screen.dart`)
+landed sooner than planned, via v0.49.26 above: a separate, concurrent pass
+built and merged first, independently reaching the same two-pane treatment
+for those three files from its own per-screen read, before this batch
+rebased onto it. `shared_reading.dart` is the one file in batch A given the
+cap specifically INSTEAD OF a two-pane split for a safety reason, not a
+mechanical one: §9.13.2 requires that no page count or percentage ever reach
+her screen, and a two-pane split would have put her screen and his (which
+may plainly show a line count) on view simultaneously on a wide viewport —
+the cap keeps the existing toggle, and a dedicated widget test proves
+exactly one of `_HerScreen`/`_HisScreen` is ever in the tree at once, at
+every tested width. This closes 9 more of the ~56 screens remaining after
+v0.49.25; combined with v0.49.26's 3, roughly 44 remain overall. Of the
+nav-reachable content-screen subset (a precise 16 per this investigation),
+9 close here and 3 closed via v0.49.26, leaving 4 — `care_note.dart` (the
+remainder of batch B) plus all of batch C. See CHANGELOG v0.49.27.
+
 ### 8.11.2 The half-open Fold
 
 Half-open, the Fold stands by itself with the camera at roughly eye level. **It is

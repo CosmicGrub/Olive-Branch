@@ -14,6 +14,7 @@
 // names the other parent and the local time, and NOTHING else — no blame
 // framing, no notification to the child (§9.6.1).
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ================================================================ care.ts ===
 enum DoseStatus { given, skipped, refused, missed }
@@ -162,68 +163,83 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Meds & care')),
-    body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-      Text('Between guardians only — ${widget.childName} never sees this screen.',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      const SizedBox(height: 16),
-      if (_banner != null)
-        Container(margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
-            borderRadius: BorderRadius.circular(12)),
-          child: Row(children: [
-            Icon(Icons.info_outline, size: 18,
-              color: Theme.of(context).colorScheme.onSecondaryContainer),
-            const SizedBox(width: 8),
-            Expanded(child: Text(_banner!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSecondaryContainer))),
-          ])),
-      const _SectionLabel('Scheduled medications'),
-      const SizedBox(height: 8),
-      for (final _Medication med in _meds.where((_Medication m) => !m.isPrn))
-        Card(margin: const EdgeInsets.only(bottom: 8), child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${med.name} · ${med.dose}', style: const TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            for (final String slot in med.slots)
-              Padding(padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(children: [
-                  Expanded(child: Text(slot[0].toUpperCase() + slot.substring(1))),
-                  if (_givenToday(med, slot))
-                    const Chip(label: Text('Given today'))
-                  else
-                    // 48dp minimum tap target — was 44dp (finding #3).
-                    SizedBox(height: 48, child: FilledButton(
-                      onPressed: () => _logDose(med, slot, status: DoseStatus.given),
-                      child: const Text('Log dose'))),
-                ])),
-          ]))),
-      const SizedBox(height: 12),
-      const _SectionLabel('As needed'),
-      const SizedBox(height: 8),
-      for (final _Medication med in _meds.where((_Medication m) => m.isPrn))
+    // Guardian-only (see file header). On a wide tablet/desktop viewport the
+    // single column is only ever capped to a comfortable reading width and
+    // centered, never split. Same real columnsAt() gate every other width
+    // decision in the app uses.
+    body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+      final double textScale = MediaQuery.textScalerOf(context).scale(1);
+      final bool capWidth = ff.columnsAt(
+          ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+      final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+        Text('Between guardians only — ${widget.childName} never sees this screen.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 16),
+        if (_banner != null)
+          Container(margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              Icon(Icons.info_outline, size: 18,
+                color: Theme.of(context).colorScheme.onSecondaryContainer),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_banner!, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSecondaryContainer))),
+            ])),
+        const _SectionLabel('Scheduled medications'),
+        const SizedBox(height: 8),
+        for (final _Medication med in _meds.where((_Medication m) => !m.isPrn))
+          Card(margin: const EdgeInsets.only(bottom: 8), child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${med.name} · ${med.dose}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              for (final String slot in med.slots)
+                Padding(padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(children: [
+                    Expanded(child: Text(slot[0].toUpperCase() + slot.substring(1))),
+                    if (_givenToday(med, slot))
+                      const Chip(label: Text('Given today'))
+                    else
+                      // 48dp minimum tap target — was 44dp (finding #3).
+                      SizedBox(height: 48, child: FilledButton(
+                        onPressed: () => _logDose(med, slot, status: DoseStatus.given),
+                        child: const Text('Log dose'))),
+                  ])),
+            ]))),
+        const SizedBox(height: 12),
+        const _SectionLabel('As needed'),
+        const SizedBox(height: 8),
+        for (final _Medication med in _meds.where((_Medication m) => m.isPrn))
+          Card(child: Padding(padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Expanded(child: Text('${med.name} · ${med.dose}',
+                style: const TextStyle(fontWeight: FontWeight.w600))),
+              // 48dp minimum tap target — was 44dp (finding #3).
+              SizedBox(height: 48, child: OutlinedButton(
+                onPressed: () => _logDose(med, 'prn', status: DoseStatus.given),
+                child: const Text('Log PRN dose'))),
+            ]))),
+        const SizedBox(height: 20),
+        const _SectionLabel('Shared medical record'),
+        const SizedBox(height: 8),
         Card(child: Padding(padding: const EdgeInsets.all(12),
-          child: Row(children: [
-            Expanded(child: Text('${med.name} · ${med.dose}',
-              style: const TextStyle(fontWeight: FontWeight.w600))),
-            // 48dp minimum tap target — was 44dp (finding #3).
-            SizedBox(height: 48, child: OutlinedButton(
-              onPressed: () => _logDose(med, 'prn', status: DoseStatus.given),
-              child: const Text('Log PRN dose'))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Allergies', style: TextStyle(fontWeight: FontWeight.w600)),
+            for (final String a in _allergies) Text(a),
+            const SizedBox(height: 12),
+            const Text('Conditions', style: TextStyle(fontWeight: FontWeight.w600)),
+            for (final String c in _conditions) Text(c),
           ]))),
-      const SizedBox(height: 20),
-      const _SectionLabel('Shared medical record'),
-      const SizedBox(height: 8),
-      Card(child: Padding(padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Allergies', style: TextStyle(fontWeight: FontWeight.w600)),
-          for (final String a in _allergies) Text(a),
-          const SizedBox(height: 12),
-          const Text('Conditions', style: TextStyle(fontWeight: FontWeight.w600)),
-          for (final String c in _conditions) Text(c),
-        ]))),
-    ])),
+      ]);
+      return capWidth
+          ? Center(
+              child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                  child: content))
+          : content;
+    })),
   );
 }
 

@@ -18,6 +18,7 @@
 // pretending — same posture as the Call buttons below.
 import 'package:flutter/material.dart';
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
+import 'form_factors.dart' as ff;
 
 /// Same "recorded, not glossed over" pattern as child_home.dart's helper —
 /// copied locally since it's private to that file.
@@ -69,46 +70,63 @@ class EmergencyCardScreen extends StatelessWidget {
         onPressed: () => _readAloud(context),
       ),
     ]),
-    // ListView, not a fixed Column: generous text at this size can exceed a
-    // small phone's viewport. The allergy card is still first in the tree, so
-    // it's on screen before any scrolling on every device this ships to.
-    body: SafeArea(child: ListView(
-      key: const Key('emergencyCardList'),
-      padding: const EdgeInsets.all(16),
-      children: const [
-        _AllergyCard(),
-        SizedBox(height: 20),
-        _Section(title: 'Blood type', child: Text('O positive',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
-        SizedBox(height: 20),
-        _Section(title: 'Current medications', child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _MedLine('Cetirizine', '5 mg — once daily, evening'),
-            SizedBox(height: 8),
-            _MedLine('Albuterol inhaler', '2 puffs — as needed for wheezing'),
-          ])),
-        SizedBox(height: 20),
-        _Section(title: 'Guardians', child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _ContactLine(name: 'Mom — Claire Solomon', phone: '(617) 555-0142'),
-            SizedBox(height: 10),
-            _ContactLine(name: 'Dad — Marcus Solomon', phone: '(617) 555-0198'),
-          ])),
-        SizedBox(height: 20),
-        _Section(title: 'Pediatrician', child:
-          _ContactLine(name: 'Dr. Priya Nair — Riverbend Pediatrics', phone: '(617) 555-0177')),
-        SizedBox(height: 20),
-        _Section(title: 'Insurance', child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('BlueBridge Family Health', style: TextStyle(fontSize: 18)),
-            SizedBox(height: 4),
-            Text('Member ID: BBH-7734-2201', style: TextStyle(fontSize: 18)),
-          ])),
-        SizedBox(height: 12),
-      ])),
+    // §8.13.5 "still" surface, read once, possibly in a hurry (see file
+    // header). On a wide tablet/desktop viewport the single column is only
+    // ever capped to a comfortable reading width and centered, never split —
+    // the allergy-first scan order below is completely untouched, byte for
+    // byte, by this width-only wrapper. Same real columnsAt() gate every
+    // other width decision in the app uses.
+    body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+      final double textScale = MediaQuery.textScalerOf(context).scale(1);
+      final bool capWidth = ff.columnsAt(
+          ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+      // ListView, not a fixed Column: generous text at this size can exceed a
+      // small phone's viewport. The allergy card is still first in the tree, so
+      // it's on screen before any scrolling on every device this ships to.
+      final Widget content = ListView(
+        key: const Key('emergencyCardList'),
+        padding: const EdgeInsets.all(16),
+        children: const [
+          _AllergyCard(),
+          SizedBox(height: 20),
+          _Section(title: 'Blood type', child: Text('O positive',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
+          SizedBox(height: 20),
+          _Section(title: 'Current medications', child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _MedLine('Cetirizine', '5 mg — once daily, evening'),
+              SizedBox(height: 8),
+              _MedLine('Albuterol inhaler', '2 puffs — as needed for wheezing'),
+            ])),
+          SizedBox(height: 20),
+          _Section(title: 'Guardians', child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ContactLine(name: 'Mom — Claire Solomon', phone: '(617) 555-0142'),
+              SizedBox(height: 10),
+              _ContactLine(name: 'Dad — Marcus Solomon', phone: '(617) 555-0198'),
+            ])),
+          SizedBox(height: 20),
+          _Section(title: 'Pediatrician', child:
+            _ContactLine(name: 'Dr. Priya Nair — Riverbend Pediatrics', phone: '(617) 555-0177')),
+          SizedBox(height: 20),
+          _Section(title: 'Insurance', child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('BlueBridge Family Health', style: TextStyle(fontSize: 18)),
+              SizedBox(height: 4),
+              Text('Member ID: BBH-7734-2201', style: TextStyle(fontSize: 18)),
+            ])),
+          SizedBox(height: 12),
+        ]);
+      return capWidth
+          ? Center(
+              child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                  child: content))
+          : content;
+    })),
   );
 }
 

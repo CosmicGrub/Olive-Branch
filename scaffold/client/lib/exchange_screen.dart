@@ -24,6 +24,7 @@
 // run against every event this screen ever constructs, so a future edit that
 // tries to smuggle a coordinate back in fails loudly instead of silently.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================================ schedule.ts ===
 // §4, §9.4 — the custody rotation. A faithful port of the pure calendar-date
@@ -271,73 +272,90 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Exchange')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        if (next != null) _HandoffCard(childName: widget.childName, sleeps: next.sleeps,
-          nextSideName: _sideNames[next.nextSide]!, orderTimeLabel: _demoOrder.orderTimeLabel),
-        const SizedBox(height: 20),
-        const _SectionHeader('Bag manifest'),
-        const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(children: [
-            for (final BagItem item in _manifest)
-              _BagRow(item: item, onSent: () => _toggleSent(item),
-                onReturned: () => _toggleReturned(item)),
-          ]))),
-        const SizedBox(height: 20),
-        const _SectionHeader('Running late'),
-        const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('One tap logs it — the log cannot be edited afterward.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final int m in <int>[10, 20, 30])
-                SizedBox(height: 48, child: OutlinedButton(
-                  onPressed: () => _logRunningLate(m),
-                  child: Text('Running $m min late'))),
-            ]),
-            if (_lateLog.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              for (final RunningLateEntry e in _lateLog.reversed)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text('Logged ${_clock(e.loggedAt)} · ETA +${e.etaMinutes} min',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant))),
-            ],
-          ]))),
-        const SizedBox(height: 20),
-        const _SectionHeader('Arrival'),
-        const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('An event, never a place. No location is ever recorded — P3.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 8),
-            if (_arrival == null)
-              SizedBox(height: 48, child: FilledButton(
-                onPressed: _logArrival, child: const Text('Log arrival')))
-            else
-              Text(_arrival!.delayMinutes == 0
-                ? '${widget.childName} arrived — right on time.'
-                : '${widget.childName} arrived — ${_arrival!.delayMinutes} min after '
-                  'the scheduled time.',
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-          ]))),
-        const SizedBox(height: 20),
-        const _SectionHeader('Coming up'),
-        const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(children: [
-            for (final Block b in upcoming.take(4))
-              ListTile(dense: true,
-                title: Text(childCalendarLabel(b, _sideNames)),
-                subtitle: Text('${_date(b.startLocalDate)} – ${_date(b.endLocalDate)}')),
-          ]))),
-        const SizedBox(height: 12),
-      ])),
+      // Guardian-side, five stacked sections in a fixed order (see file
+      // header). On a wide tablet/desktop viewport the single column is
+      // only ever capped to a comfortable reading width and centered, never
+      // split — section order and the manifest rows' fixed-width checkbox
+      // columns are completely untouched. Same real columnsAt() gate every
+      // other width decision in the app uses.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          if (next != null) _HandoffCard(childName: widget.childName, sleeps: next.sleeps,
+            nextSideName: _sideNames[next.nextSide]!, orderTimeLabel: _demoOrder.orderTimeLabel),
+          const SizedBox(height: 20),
+          const _SectionHeader('Bag manifest'),
+          const SizedBox(height: 8),
+          Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(children: [
+              for (final BagItem item in _manifest)
+                _BagRow(item: item, onSent: () => _toggleSent(item),
+                  onReturned: () => _toggleReturned(item)),
+            ]))),
+          const SizedBox(height: 20),
+          const _SectionHeader('Running late'),
+          const SizedBox(height: 8),
+          Card(child: Padding(padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('One tap logs it — the log cannot be edited afterward.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final int m in <int>[10, 20, 30])
+                  SizedBox(height: 48, child: OutlinedButton(
+                    onPressed: () => _logRunningLate(m),
+                    child: Text('Running $m min late'))),
+              ]),
+              if (_lateLog.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final RunningLateEntry e in _lateLog.reversed)
+                  Padding(padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text('Logged ${_clock(e.loggedAt)} · ETA +${e.etaMinutes} min',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant))),
+              ],
+            ]))),
+          const SizedBox(height: 20),
+          const _SectionHeader('Arrival'),
+          const SizedBox(height: 8),
+          Card(child: Padding(padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('An event, never a place. No location is ever recorded — P3.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              if (_arrival == null)
+                SizedBox(height: 48, child: FilledButton(
+                  onPressed: _logArrival, child: const Text('Log arrival')))
+              else
+                Text(_arrival!.delayMinutes == 0
+                  ? '${widget.childName} arrived — right on time.'
+                  : '${widget.childName} arrived — ${_arrival!.delayMinutes} min after '
+                    'the scheduled time.',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            ]))),
+          const SizedBox(height: 20),
+          const _SectionHeader('Coming up'),
+          const SizedBox(height: 8),
+          Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(children: [
+              for (final Block b in upcoming.take(4))
+                ListTile(dense: true,
+                  title: Text(childCalendarLabel(b, _sideNames)),
+                  subtitle: Text('${_date(b.startLocalDate)} – ${_date(b.endLocalDate)}')),
+            ]))),
+          const SizedBox(height: 12),
+        ]);
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }
