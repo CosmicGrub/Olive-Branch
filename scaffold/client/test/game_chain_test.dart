@@ -5,6 +5,7 @@
 // cooperatively, with no score, streak, badge, or blame ever surfaced (P2).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/game_chain.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -177,6 +178,33 @@ void main() {
           expect(tester.takeException(), isNull);
         });
       }
+    });
+
+    group('responsive — comfortable reading width cap (form_factors.dart)', () {
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered; the Fold5 cover
+      // and phone widths are completely untouched by this cap. The
+      // AnimatedContainer's own 280ms duration is unrelated to this cap and
+      // is not exercised here.
+      testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+          'never at the Fold5 cover or phone width', (tester) async {
+        Future<void> pumpAt(Size size) async {
+          await tester.binding.setSurfaceSize(size);
+          await tester.pumpWidget(wrap(const GameChainScreen()));
+          await tester.pump();
+        }
+
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await pumpAt(const Size(1100, 900));
+        expect(tester.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+        await pumpAt(const Size(344, 882)); // Fold5 cover
+        expect(tester.getSize(find.byType(ListView)).width, 344);
+
+        await pumpAt(const Size(390, 844)); // standard phone
+        expect(tester.getSize(find.byType(ListView)).width, 390);
+      });
     });
   });
 }

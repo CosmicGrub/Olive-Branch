@@ -7,6 +7,7 @@
 // the widget level.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/game_hangman.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -151,5 +152,60 @@ void main() {
         expect(t.takeException(), isNull);
       });
     }
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // On a wide tablet/desktop viewport the single column is only ever
+    // capped to a comfortable reading width and centered, never split. The
+    // Fold5 cover and phone widths are completely untouched by the cap.
+    testWidgets('setup screen — the cap engages only on a wide tablet/desktop '
+        'viewport, never at the Fold5 cover or phone width', (t) async {
+      Future<void> pumpAt(Size size) async {
+        await t.binding.setSurfaceSize(size);
+        await t.pumpWidget(wrap(const HangmanSetupScreen()));
+        await t.pump();
+      }
+
+      addTearDown(() => t.binding.setSurfaceSize(null));
+
+      await pumpAt(const Size(1100, 900));
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 882)); // Fold5 cover
+      expect(t.getSize(find.byType(ListView)).width, 344);
+
+      await pumpAt(const Size(390, 844)); // standard phone
+      expect(t.getSize(find.byType(ListView)).width, 390);
+    });
+
+    testWidgets('play screen — the previously-dead LayoutBuilder constraints '
+        'parameter now genuinely drives the cap, engaging only on a wide '
+        'tablet/desktop viewport, never at the Fold5 cover or phone width',
+        (t) async {
+      Future<void> pumpAt(Size size) async {
+        await t.binding.setSurfaceSize(size);
+        await t.pumpWidget(wrap(HangmanScreen(game: newHangman('GRANDMA', hint: 'Sundays'))));
+        await t.pump();
+      }
+
+      addTearDown(() => t.binding.setSurfaceSize(null));
+
+      await pumpAt(const Size(1100, 900));
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 882)); // Fold5 cover
+      expect(t.getSize(find.byType(ListView)).width, 344);
+
+      await pumpAt(const Size(390, 844)); // standard phone
+      expect(t.getSize(find.byType(ListView)).width, 390);
+
+      // The game itself must still play correctly under the cap — a single
+      // LayoutBuilder now doing double duty (layout data AND the cap), not a
+      // second one shadowing it.
+      await pumpAt(const Size(1100, 900));
+      await t.tap(find.byKey(const Key('hangmanKey_G')));
+      await t.pump();
+      expect(find.text('G _ _ _ _ _ _'), findsOneWidget);
+    });
   });
 }

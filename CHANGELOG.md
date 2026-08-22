@@ -14,6 +14,95 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.31] — 2026-08-22 — Device-adaptive backlog, legacy-games tier: game_kim.dart, game_hunt.dart, game_chain.dart, game_battleship.dart, game_hangman.dart get the comfortable-reading-width cap
+
+Closes the compatibility audit's other named device-adaptive gap alongside
+the 16-screen investigation v0.49.29 finished: **the pre-existing games**,
+five older titles that predate this whole backlog effort and had never had
+any device-adaptive treatment at all — `game_kim.dart`, `game_hunt.dart`,
+`game_chain.dart`, `game_battleship.dart`, `game_hangman.dart`. Each file's
+actual layout structure was read individually before deciding a treatment,
+the same discipline every tier in this backlog has held to. All five get
+the SAME treatment — `form_factors.dart`'s `comfortableReadingWidth` cap —
+for the same reason: none has a genuine simultaneous form+list or
+list+detail shape, so none gets a two-pane split.
+
+### Changed — reading-width cap
+- **`game_kim.dart`**, **`game_hunt.dart`**, **`game_chain.dart`** — each a
+  single `Scaffold > SafeArea > ListView` play screen with no separate
+  setup screen in the file. Wrapped in a `LayoutBuilder` computing
+  `columnsAt() >= 2` exactly like every other capped screen; the unchanged
+  `ListView` is centered and capped at `comfortableReadingWidth` (640) only
+  when it engages. `game_chain.dart`'s own 280ms `AnimatedContainer` is
+  untouched — only the outer width constraint changes.
+- **`game_kim.dart`**'s own real fix, found building this: capping the
+  outer width to 640 shrinks `_ItemGrid`'s `Wrap` cross-axis enough that its
+  two item grids can need an extra row for the same item count — genuinely
+  taller content, not a layout bug, and exactly the kind of thing a real
+  short-and-wide viewport (a Fold half-open in landscape, 673×420, is the
+  real §8.11.1 example) would hit for real. At the default 800×600 test
+  viewport this pushed the wrong-guess callout below the render window,
+  breaking a **pre-existing** widget test (`a wrong guess is gentle,
+  ungraded, and allows another try`) that asserts the callout is visible
+  without scrolling — confirmed by reproducing the same failure against the
+  ORIGINAL, unmodified file at a 600×600 surface size, proving this is a
+  latent fragility the cap exposes, not one it introduces. `_ItemGrid` now
+  takes a `compact` flag (wired to the screen's own `capWidth`): tiles stay
+  the pre-existing 88px floor whenever the cap is NOT engaged — byte-for-
+  byte identical to every posture that existed before this change — and
+  drop to a still-generous 72px floor only in the capped state this same
+  change introduces, restoring the original row count and closing the gap
+  with no scrolling required. `cacheExtent` was tried first and rejected:
+  Flutter's `SliverMultiBoxAdaptorElement.debugVisitOnstageChildren` gates
+  on `remainingPaintExtent` (the viewport's actual paint region), not
+  `cacheExtent` (a layout-ahead budget for scroll performance) — confirmed
+  by reading the Flutter SDK source directly rather than guessing twice.
+- **`game_battleship.dart`** — status banner through the tab-toggle through
+  the board through the play-again button, the WHOLE outer `ListView`,
+  wrapped the same way. The board's own pre-existing `Center` +
+  `ConstrainedBox(maxWidth: 460)` is untouched — additive on top of the new
+  outer cap, not a replacement for it — and the tab-toggle single-board-at-
+  a-time interaction model is untouched; turning it into a side-by-side
+  two-board layout would be a real interaction-model change out of scope
+  for this mechanical pass.
+- **`game_hangman.dart`** — two screens. `HangmanSetupScreen` (guardian-
+  facing word entry) gets the standard new-`LayoutBuilder` wrap.
+  `HangmanScreen` (child-facing play) is the more interesting case: it
+  ALREADY had a `LayoutBuilder` wrapping its `ListView`, with `constraints`
+  captured and never used — a dead parameter from an earlier audit. That
+  existing `LayoutBuilder` is now genuinely wired to compute the cap,
+  finishing what it was already set up to do, rather than nesting a second
+  one around it.
+
+### Tests
+- 1 new responsive-cap test per file for `game_kim.dart`/`game_hunt.dart`/
+  `game_chain.dart` (3), 2 for `game_battleship.dart` (the outer cap, and a
+  dedicated check that the board's own 460px cap plus the tab-toggle model
+  are both unaffected by it), 2 for `game_hangman.dart` (setup screen, and
+  the play screen's now-wired `LayoutBuilder`) — 7 new tests total, each
+  proving the cap engages only at a wide tablet/desktop width (rendering at
+  exactly `ff.comfortableReadingWidth`) and the Fold5 cover (344px) and
+  standard phone (390px) widths render at full, uncapped width with zero
+  behavior change.
+- Every pre-existing test in all five files re-verified passing unchanged,
+  including `game_kim.dart`'s `_ItemGrid` regression above — confirmed by
+  reproducing the failure against the original file first, then re-running
+  the full pre-existing suite after the fix.
+- `flutter analyze`: no issues found. `flutter test`: 1894/1894 (1887
+  baseline + 7 new), including the full client suite run together.
+
+### Backlog
+- Closes the pre-existing-games half of the device-adaptive-coverage
+  finding this compatibility audit named alongside the 16-screen
+  investigation v0.49.29 finished. `game_findthing.dart`,
+  `game_wordsearch.dart`, and `game_story.dart` remain a separate,
+  deliberately not-yet-scoped tier — migrating their own hand-rolled sizing
+  onto `columnsAt()` directly, not the reading-cap treatment this entry
+  gives, and a different-shaped decision this entry does not make for
+  them. See MASTERFILE.md §8.11.1's own status note for the updated count.
+
+---
+
 ## [0.49.29] — 2026-08-22 — Device-adaptive backlog, batch C of 3 (final): handover_notes.dart, care_note.dart, availability_screen.dart, show_guardian.dart get the real two-pane split
 
 Closes out the device-adaptive two-pane backlog v0.49.27's investigation

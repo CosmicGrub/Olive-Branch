@@ -7,6 +7,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/game_battleship.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -183,6 +184,64 @@ void main() {
         expect(t.takeException(), isNull);
       });
     }
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // On a wide tablet/desktop viewport the whole outer column — status
+    // banner through the tab-toggle through the board through the
+    // play-again button — is only ever capped to a comfortable reading
+    // width and centered, never split; the Fold5 cover and phone widths are
+    // completely untouched. This is strictly ADDITIVE on top of the board's
+    // own pre-existing 460px cap, not a replacement for it.
+    testWidgets('the outer cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (t) async {
+      Future<void> pumpAt(Size size) async {
+        await t.binding.setSurfaceSize(size);
+        await t.pumpWidget(wrap(const GameBattleship(random: null)));
+        await t.pump();
+      }
+
+      addTearDown(() => t.binding.setSurfaceSize(null));
+
+      await pumpAt(const Size(1100, 900));
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 882)); // Fold5 cover
+      expect(t.getSize(find.byType(ListView)).width, 344);
+
+      await pumpAt(const Size(390, 844)); // standard phone
+      expect(t.getSize(find.byType(ListView)).width, 390);
+    });
+
+    testWidgets('the board keeps its own 460px cap regardless of the outer '
+        'reading-cap, and the tab-toggle single-board model is unaffected', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 2200));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(GameBattleship(random: Random(42))));
+      await t.pump();
+
+      // The outer reading-cap is engaged at this width...
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+      // ...yet the board itself never exceeds its own pre-existing 460px cap,
+      // in the placement phase...
+      expect(t.getSize(find.byType(AspectRatio)).width, 460);
+
+      // Placing the full fleet flips into play; still exactly one board
+      // ever renders at a time, and it is still capped at 460px.
+      for (var i = 0; i < bsFleet.length; i++) {
+        await t.tap(find.byKey(Key('bsOwn_${i * 8}')));
+        await t.pump();
+      }
+      expect(find.byKey(const Key('bsEnemy_0')), findsOneWidget);
+      expect(find.byKey(const Key('bsOwn_0')), findsNothing);
+      expect(t.getSize(find.byType(AspectRatio)).width, 460);
+
+      await t.tap(find.text('Your fleet'));
+      await t.pump();
+      expect(find.byKey(const Key('bsOwn_0')), findsOneWidget);
+      expect(find.byKey(const Key('bsEnemy_0')), findsNothing);
+      expect(t.getSize(find.byType(AspectRatio)).width, 460);
+    });
   });
 
   group('battleship — "opponent positions never leave the server", §9.2', () {
