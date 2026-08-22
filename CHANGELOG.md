@@ -14,6 +14,93 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.26] — 2026-08-22 — Device-adaptive priority tier, continued: wants_needs.dart, expenses_screen.dart, letters_screen.dart get message_banking.dart's real two-pane split
+
+v0.49.25 closed 4 of the ~60-screen device-adaptive backlog and left roughly
+56 remaining, deliberately not attempted mechanically — each screen needs its
+own read and its own judgment call. This entry continues that same
+one-screen-at-a-time discipline for three more: `wants_needs.dart`,
+`expenses_screen.dart`, `letters_screen.dart`. All three were read in full
+before deciding, and all three turned out to share `message_banking.dart`'s
+exact shape — two halves already visible in one `Column` at once — so all
+three get the same real `columnsAt() >= 2` `Row`/`Expanded` split, not an
+invented breakpoint.
+
+A fourth candidate, `journal_screen.dart`, was read and planned for the same
+treatment, then deliberately dropped mid-build: a separate, further-along
+effort was found already giving it a `comfortableReadingWidth` cap instead of
+a two-pane split, reasoning from §8.13.5's "a permanently STILL surface" —
+compose and read staying in one calm column rather than being pulled apart
+into side-by-side panes. That is a more considered fit for this specific
+screen's own documented character than a mechanically-applied two-pane split
+would have been, so this pass defers to it rather than duplicating or
+overriding it with a conflicting design.
+
+### Changed — real two-pane split
+- **`wants_needs.dart`** — the cleanest of the three: its two halves are
+  already the pre-existing, self-contained `_ItemSection` widgets ("Things I
+  want" / "Things I need"), untouched, now simply arranged as two `Expanded`
+  panes in a `Row` when `columnsAt() >= 2`, or spread back into the exact
+  original stacked `Column` order below that threshold. No price/cost field
+  exists anywhere near this change — P4's "own list, own input, own section"
+  separation is a pure layout question here, untouched by this restructuring.
+- **`expenses_screen.dart`** — needed one addition the pattern hadn't needed
+  before: the screen's own "Guardian ↔ guardian only" orientation banner
+  belongs to neither pane, so it now renders once, full-width, unsplit,
+  above the two-pane region in both layouts — the same treatment
+  `letters_screen.dart` below also uses for its own info banner. **P6's own
+  gate is untouched and unconditional**: `if (!inboxVisibleTo(widget.viewerRole))
+  return const _NotAGuardianSurface();` still runs first in `build()`, before
+  any pane, before `_seedIfNeeded()`, before any financial widget is even
+  constructed — confirmed against the actual diff, not assumed, since this is
+  the one screen in this tier where a layout mistake could plausibly widen
+  what a non-guardian viewer receives rather than merely rearrange it. Pane A
+  is "Needs your answer" (the pending-approval cards); Pane B is "Ledger"
+  (the settled-expense list).
+- **`letters_screen.dart`** — same shape as `journal_screen.dart` was going
+  to get before it was dropped from this tier (compose card | letters list),
+  but built anyway since no competing effort claimed this file: the
+  mail-lock info banner stays unsplit above the region; Pane A is the "Dear
+  future me…" compose card (text field, open-age chips, Seal it button);
+  Pane B is the sealed/opened letters list.
+- All three narrow-width paths are the exact same widget tree the screen
+  rendered before this change — the same widget lists spread back into one
+  flat `Column`, in original order, not two nested `Column`s wrapped around
+  visually-equivalent content. All three keep `SingleChildScrollView` +
+  `Column` (never `ListView`), so every list entry genuinely exists in the
+  tree rather than being sliver-virtualized away.
+
+### Tests
+- `wants_needs_test.dart`, `expenses_screen_test.dart`,
+  `letters_screen_test.dart`: 4 new tests each (12 total), following
+  `message_banking_test.dart`'s established four-case shape exactly — a
+  genuinely wide viewport (1100×900) renders the two-pane `Row` with both
+  panes' real content present; the Fold5 cover width (344px) and a standard
+  phone width (390px) both keep the exact single stacked column with no
+  `Row` at all; and a real interaction (adding a want, resolving a pending
+  expense approval, sealing a letter) still works correctly inside the wide
+  two-pane layout. No pre-existing test in any of the three files was
+  modified or removed — including `expenses_screen.dart`'s own structural P6
+  tests (the child_home.dart source-scan, the non-guardian-viewerRole
+  render-nothing-financial check), which stay exactly as they were.
+- `flutter analyze`: no issues found. `flutter test`: 1861/1861 (1849 + 12
+  new), including the full pre-existing suite unchanged.
+- Every implementation was independently adversarially re-verified against
+  the real, current file contents and a real re-run of both commands — not
+  trusted from the implementing pass's own report — with particular scrutiny
+  on `expenses_screen.dart`'s P6 gate, confirmed byte-for-byte outside the
+  diff.
+
+### Backlog
+- This tier closes 3 more of the remaining ~56 screens named in v0.49.24's
+  finding, leaving roughly 53 before whatever `journal_screen.dart`'s own,
+  separate landing closes on its own account. `meds_care.dart` remains a
+  named, deferred candidate (three sections, not two — needs its own design
+  judgment, not a mechanical split) from v0.49.25's own account, untouched
+  again here.
+
+---
+
 ## [0.49.25] — 2026-08-22 — Device-adaptive priority tier: message_banking.dart's real two-pane split, plus a comfortable-reading-width cap for three screens judged not to fit one
 
 v0.49.24's own 12th finding — roughly 60 screens with no device-adaptive

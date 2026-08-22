@@ -146,4 +146,69 @@ void main() {
       expect(t.takeException(), isNull);
     });
   });
+
+  group('expenses — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    // Real columnsAt()-driven threshold (form_factors.dart), matching
+    // message_banking.dart's own two-pane pattern — not an invented number.
+    // Every case here uses the default guardian viewerRole: this is a
+    // guardian-only feature by definition (P6), so there is no
+    // "child role + wide viewport" case to test.
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) '
+        "renders 'Needs your answer' and 'Ledger' as two side-by-side panes",
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const ExpensesScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('expensesTwoPaneRow')), findsOneWidget);
+      // Both panes' real content is still genuinely present, just rearranged.
+      expect(find.textContaining('Orthodontist co-pay'), findsOneWidget);
+      expect(find.text('Winter coat'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single '
+        "column unchanged — no two-pane Row at all", (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const ExpensesScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('expensesTwoPaneRow')), findsNothing);
+      expect(find.textContaining('Orthodontist co-pay'), findsOneWidget);
+      expect(find.text('Winter coat'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single '
+        'column, not the two-pane Row', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const ExpensesScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('expensesTwoPaneRow')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('agreeing to a pending approval still works correctly inside '
+        'the wide two-pane layout', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const ExpensesScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('NEEDS YOUR ANSWER (2)'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Agree').first);
+      await tester.pump();
+
+      expect(find.textContaining('NEEDS YOUR ANSWER (1)'), findsOneWidget);
+      // The agreed item lands in the Ledger pane, confirming both panes
+      // still read from the same state inside the wide two-pane layout.
+      expect(find.text('Soccer cleats, size 2'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

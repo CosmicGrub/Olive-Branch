@@ -31,6 +31,7 @@
 // port — same posture the rest of this preview build takes for unbuilt
 // backends.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 enum ViewerRole { guardian, child }
 
@@ -151,9 +152,58 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _seedIfNeeded();
 
     final List<InboxItem> pending = inbox(_approvals!);
+
+    // Pane A — "Needs your answer": the section label plus the
+    // pending-approvals content itself, either the empty state or the real
+    // cards. Same widgets, same order, as this screen always rendered — only
+    // ever split out into a named list so the wide/narrow branches below can
+    // share it verbatim rather than diverging.
+    final List<Widget> approvalsChildren = <Widget>[
+      _SectionLabel('Needs your answer (${pending.length})'),
+      const SizedBox(height: 8),
+      if (pending.isEmpty)
+        // 40/12 matches the house "nothing pending" empty-state idiom used
+        // throughout (journal_screen.dart, letters_screen.dart,
+        // teach_me.dart, weeks_screen.dart, inbox_screen.dart, etc.) — was
+        // 32/8, an unintentional one-off from before that idiom settled.
+        Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Column(children: [
+            Icon(Icons.mark_email_read_outlined, size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text('Nothing waiting.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ]))
+      else
+        for (final InboxItem item in pending)
+          _ApprovalCard(item: item, onAction: (String a) => _resolve(item.id, a)),
+    ];
+
+    // Pane B — the ledger: the section label plus the ledger Card. Same
+    // discipline as above.
+    final List<Widget> ledgerChildren = <Widget>[
+      const _SectionLabel('Ledger'),
+      const SizedBox(height: 8),
+      Card(child: Column(children: [
+        for (final LedgerLine l in _ledger!)
+          ListTile(
+            title: Text(l.description),
+            subtitle: Text('${l.paidBy} paid ${_money(l.amountCents)} · '
+              '${l.payerSharePercent}/${100 - l.payerSharePercent} split · ${l.status}'),
+            trailing: l.amountCents == 0 ? null
+              : Text(_money(l.owedToPayerCents), style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+      ])),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: const Text('Expenses')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+      body: SafeArea(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+        // Shared, unsplit header — orientation copy, not compose/list
+        // content, so it renders once, full-width, above the two-pane
+        // region in both wide and narrow layouts. (message_banking.dart, the
+        // reference pattern this split otherwise follows, has no such
+        // header to carry.)
         Container(padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12)),
@@ -167,38 +217,41 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 color: Theme.of(context).colorScheme.onSurfaceVariant))),
           ])),
         const SizedBox(height: 20),
-        _SectionLabel('Needs your answer (${pending.length})'),
-        const SizedBox(height: 8),
-        if (pending.isEmpty)
-          // 40/12 matches the house "nothing pending" empty-state idiom used
-          // throughout (journal_screen.dart, letters_screen.dart,
-          // teach_me.dart, weeks_screen.dart, inbox_screen.dart, etc.) — was
-          // 32/8, an unintentional one-off from before that idiom settled.
-          Padding(padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Column(children: [
-              Icon(Icons.mark_email_read_outlined, size: 40,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 12),
-              Text('Nothing waiting.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            ]))
-        else
-          for (final InboxItem item in pending)
-            _ApprovalCard(item: item, onAction: (String a) => _resolve(item.id, a)),
-        const SizedBox(height: 20),
-        const _SectionLabel('Ledger'),
-        const SizedBox(height: 8),
-        Card(child: Column(children: [
-          for (final LedgerLine l in _ledger!)
-            ListTile(
-              title: Text(l.description),
-              subtitle: Text('${l.paidBy} paid ${_money(l.amountCents)} · '
-                '${l.payerSharePercent}/${100 - l.payerSharePercent} split · ${l.status}'),
-              trailing: l.amountCents == 0 ? null
-                : Text(_money(l.owedToPayerCents), style: const TextStyle(fontWeight: FontWeight.w600)),
-            ),
-        ])),
-      ])),
+        Expanded(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+          // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+          // number — same threshold message_banking.dart uses for its own
+          // two-pane split: pending approvals and the ledger sit side by
+          // side once the viewport can genuinely afford two real columns at
+          // the current text scale. Below that, this is byte-for-byte the
+          // same single stacked column this screen always rendered.
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool wide = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+          // SingleChildScrollView + Column, NOT ListView — a sliver list
+          // only realizes children near the viewport, which would silently
+          // drop pending approvals or ledger lines scrolled below the fold
+          // from the widget tree. Same fix message_banking.dart,
+          // journal_screen.dart, and letters_screen.dart already document
+          // for the same bug class.
+          return SingleChildScrollView(
+            child: wide
+              ? Row(key: const Key('expensesTwoPaneRow'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: approvalsChildren)),
+                    const SizedBox(width: 24),
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: ledgerChildren)),
+                  ])
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ...approvalsChildren,
+                  const SizedBox(height: 20),
+                  ...ledgerChildren,
+                ]),
+          );
+        })),
+      ]))),
     );
   }
 }

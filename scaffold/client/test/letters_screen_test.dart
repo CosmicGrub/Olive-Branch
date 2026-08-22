@@ -217,4 +217,72 @@ void main() {
       expect(container.padding, const EdgeInsets.all(12));
     });
   });
+
+  group('letters screen — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    Widget buildScreen() => wrap(LettersScreen(childName: 'Maya', currentAge: 11, initialLetters: [
+      Letter(id: 'l1', childId: 'demo-child', writtenAtAge: 9, openAtAge: 18,
+        writtenAt: DateTime(2024, 1, 1), body: 'a secret only future me should read'),
+    ]));
+
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'compose card and the letters list as two side-by-side panes', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('lettersTwoPaneRow')), findsOneWidget);
+      // Pane A content (compose card) and Pane B content (the sealed letter
+      // tile) are both genuinely present at once.
+      expect(find.text('Dear future me…'), findsOneWidget);
+      expect(find.textContaining("Sealed until you're 18"), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('lettersTwoPaneRow')), findsNothing);
+      expect(find.text('Dear future me…'), findsOneWidget);
+      expect(find.textContaining("Sealed until you're 18"), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, not '
+        'the two-pane Row', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('lettersTwoPaneRow')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('sealing a letter still works correctly inside the wide two-pane layout',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const LettersScreen(childName: 'Maya', currentAge: 11)));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('lettersTwoPaneRow')), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Dear future me, hello from the wide layout.');
+      await tester.pump();
+      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Seal it'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Seal it'));
+      await tester.pump();
+
+      // Still inside the wide two-pane layout, and the new sealed tile landed
+      // in the list pane.
+      expect(find.byKey(const Key('lettersTwoPaneRow')), findsOneWidget);
+      expect(find.textContaining("Sealed until you're 18"), findsOneWidget);
+      expect(find.text('Dear future me, hello from the wide layout.'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
