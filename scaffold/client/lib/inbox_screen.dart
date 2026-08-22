@@ -18,6 +18,7 @@
 // informational, not a streak.
 import 'package:flutter/material.dart';
 import 'calendar_day_logic.dart';
+import 'form_factors.dart' as ff;
 import 'receipt_screen.dart';
 
 class InboxMessage {
@@ -103,24 +104,41 @@ class _InboxScreenState extends State<InboxScreen> {
     final int unread = _messages.where((InboxMessage m) => !m.watched).length;
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
-      body: SafeArea(child: _messages.isEmpty
-        ? Center(child: Padding(padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.inbox_outlined, size: 40,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 12),
-              Text('Nothing here yet.', style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            ])))
-        : ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-            Text(unread == 0
-              ? 'Hi ${widget.childName}, all caught up'
-              : "Hi ${widget.childName}, you've got $unread new "
-                '${unread == 1 ? 'message' : 'messages'}',
-              style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 16),
-            for (final InboxMessage m in _messages) _InboxTile(message: m, onTap: () => _open(m)),
-          ])),
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // The only "detail" relationship here is tap-to-push a full-screen
+        // ReceiptScreen (see file header) — no persistent second pane. On a
+        // wide tablet/desktop viewport the single column is only ever capped
+        // to a comfortable reading width and centered; tap-to-navigate is
+        // completely untouched. Same real columnsAt() gate every other width
+        // decision in the app uses.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = _messages.isEmpty
+            ? Center(child: Padding(padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.inbox_outlined, size: 40,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(height: 12),
+                  Text('Nothing here yet.', style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                ])))
+            : ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+                Text(unread == 0
+                  ? 'Hi ${widget.childName}, all caught up'
+                  : "Hi ${widget.childName}, you've got $unread new "
+                    '${unread == 1 ? 'message' : 'messages'}',
+                  style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 16),
+                for (final InboxMessage m in _messages) _InboxTile(message: m, onTap: () => _open(m)),
+              ]);
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }

@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/capture_gate.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/homework_screen.dart';
 import 'package:olive_client/retake_screen.dart';
 
@@ -168,5 +169,30 @@ void main() {
         expect(t.takeException(), isNull);
       });
     }
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // §8.13.5: this screen is deliberately the sparsest surface in the
+    // product — never a two-pane split (see file header). On a wide
+    // tablet/desktop viewport the single column is only ever capped to a
+    // comfortable reading width and centered; the Fold5 cover and phone
+    // widths are completely untouched by this cap.
+    testWidgets('the cap engages only on a wide tablet/desktop viewport — never '
+        'at the Fold5 cover or phone width', (t) async {
+      await useSurface(t, const Size(1100, 900));
+      await t.pumpWidget(wrap(const HomeworkScreen()));
+      await t.pumpAndSettle();
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+      await useSurface(t, const Size(344, 820)); // Fold5 cover
+      await t.pumpWidget(wrap(const HomeworkScreen()));
+      await t.pumpAndSettle();
+      expect(t.getSize(find.byType(ListView)).width, 344);
+
+      await useSurface(t, const Size(390, 844)); // standard phone
+      await t.pumpWidget(wrap(const HomeworkScreen()));
+      await t.pumpAndSettle();
+      expect(t.getSize(find.byType(ListView)).width, 390);
+    });
   });
 }

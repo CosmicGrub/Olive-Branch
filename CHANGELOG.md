@@ -14,7 +14,81 @@ Silent deletion is a process failure.
 
 ---
 
-## [0.49.24] — 2026-08-22 — Compatibility/dependency-audit fix pass: 11 mechanical fixes across dependency resolution, device-adaptive coverage, and canvas performance
+## [0.49.25] — 2026-08-22 — Device-adaptive priority tier: message_banking.dart's real two-pane split, plus a comfortable-reading-width cap for three screens judged not to fit one
+
+v0.49.24's own 12th finding — roughly 60 screens with no device-adaptive
+layout at all, of which 15–19 are nav-reachable content screens — named a
+priority tier of 4 to start with: `message_banking.dart`,
+`homework_screen.dart`, `weeks_screen.dart`, `inbox_screen.dart`. Each of the 4 was actually
+read before deciding its treatment, not assigned one mechanically from the
+audit's generic label: only `message_banking.dart` genuinely has a
+form-plus-list shape that fits `court_export.dart`'s established two-pane
+`Row`/`Expanded` pattern. The other three do not — `homework_screen.dart` is
+explicitly documented (§8.13.5) as "the one surface in the product that asks
+her to concentrate," deliberately the sparsest surface in the product, with
+no list-selects-detail shape to split in the first place; `weeks_screen.dart`
+is a rhythm visualization (a `Wrap` of night-beads) that already reflows on
+its own as width grows; `inbox_screen.dart`'s only "detail" relationship is a
+`Navigator.push` to a full-screen `ReceiptScreen`, and turning that into a
+persistent side-by-side pane would change its interaction model — a bigger,
+separate design decision outside this pass's scope. This is a record of that
+per-screen judgment, not a mechanical apply-to-all.
+
+### Added
+- **`form_factors.dart` gains one new named constant, `comfortableReadingWidth`
+  (640).** A typography-driven reading-width cap, not a tenth posture —
+  orthogonal to `columnsAt()`: it only ever applies within a screen still
+  rendering ONE column. Documented in the constant's own doc comment as
+  explicitly NOT belonging in `formFactors`/`FORM_FACTORS`.
+
+### Changed — real two-pane split
+- **`message_banking.dart`** (guardian-side compose form + banked-message
+  list, genuinely both halves already visible in one `Column` at once) now
+  wraps its body in a `LayoutBuilder` and, at `columnsAt() >= 2`, renders the
+  compose half (heading, subtitle, message field, delivery-window stepper,
+  bank button, conditional repeat-warning banner) and the list half (divider,
+  summary line, conditional revoke-all row, every `_BankedTile`) as two
+  `Expanded` panes in a `Row`, keyed `bankingTwoPaneRow` for testability. At
+  `columnsAt() < 2` the two panes' widget lists are spread back into ONE flat
+  `Column` in the exact original order — not two nested `Column`s wrapped
+  around the same content, an actually-identical widget tree to before this
+  change, not merely a visually-equivalent one. No change to `_BankedTile`,
+  `_BankingMessage`/`_BankStatus`, or any state method.
+
+### Changed — comfortable reading-width cap (not a two-pane split)
+- **`homework_screen.dart`, `weeks_screen.dart`, `inbox_screen.dart`** each
+  wrap their existing scrollable body in the same `LayoutBuilder` gate
+  (`columnsAt() >= 2`) and, only when wide, center the unchanged content
+  inside a `ConstrainedBox(maxWidth: comfortableReadingWidth)` — so a single
+  column of prose stops stretching edge-to-edge on a 10-inch tablet or
+  desktop. `homework_screen.dart`'s `AnimatedSwitcher`/`fadeMs` motion-budget
+  logic is untouched inside the cap. `weeks_screen.dart` and
+  `inbox_screen.dart` each apply the cap to BOTH their empty-state and
+  populated-state return paths. Below the same threshold, all three render
+  their prior, uncapped `ListView`/`Center` tree exactly as before.
+
+### Tests
+- `message_banking_test.dart`: 4 new tests — the two-pane `Row` renders at a
+  wide viewport (1100px) and is genuinely functional there (composing and
+  banking still works); the Fold5 cover width (344px) and a standard phone
+  width (390px) both keep the single stacked column with no `Row` at all.
+- `homework_screen_test.dart`/`weeks_screen_test.dart`/`inbox_screen_test.dart`:
+  1 new test each confirming the cap engages (rendered content width equals
+  `comfortableReadingWidth`, 640, not the viewport) at a wide tablet/desktop
+  width and does NOT engage (content fills the full viewport width) at
+  either the Fold5 cover width or a standard phone width.
+- All pre-existing tests across all four files pass unchanged — including
+  ones that, at Flutter's default 800×600 test viewport, now exercise the
+  new wide-path code (columnsAt(800) = 2) rather than the narrow path,
+  since none of them depend on physical layout position, only on the
+  widget tree. `flutter test`: 1849/1849 passing (1842 + 7 new).
+  `flutter analyze`: no issues found.
+
+### Backlog
+- Of the ~60 screens with no device-adaptive layout named by v0.49.24, this
+  tier closes 4 — all nav-reachable content screens. Roughly 56 remain
+  overall; the nav-reachable content-screen subset drops from 15–19 to
+  11–15. See MASTERFILE.md §8.11.1's own status note for the updated count.
 
 A 3-dimension compatibility audit (dependency-resolution, device-adaptive
 coverage, performance) ran over the whole app, every finding independently
