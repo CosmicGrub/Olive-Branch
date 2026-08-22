@@ -30,6 +30,7 @@
 // got to N together," never who broke it.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // =========================================================== ported logic ===
 // packages/games/src/games3.ts — the Simon/chain section.
@@ -272,73 +273,88 @@ class _GameChainScreenState extends State<GameChainScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Word chain')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('One thing each, and the list keeps going',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        Text('Grown a little more every time you two play.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-        const SizedBox(height: 16),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 280),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _justMoved ? scheme.primaryContainer : scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${view.length} things so far',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary)),
-            const SizedBox(height: 8),
-            Text(view.prompt, style: Theme.of(context).textTheme.bodyMedium),
-            // Shared, never comparative — shown alongside, not instead of,
-            // the plain "it stopped" line above.
-            if (view.closing != null) Padding(padding: const EdgeInsets.only(top: 4),
-              child: Text(view.closing!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700))),
-          ]),
-        ),
-        const SizedBox(height: 16),
-        if (!ended) _TurnBanner(name: _name(view.whoseTurn), phase: view.phase),
-        const SizedBox(height: 16),
-        if (view.visibleSteps.isNotEmpty) _ChainList(steps: _game.steps.map((ChainStep s) =>
-          (label: s.label, mine: s.side == ChainSide.a)).toList()),
-        if (!ended) ...[
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered, never split —
+      // same real columnsAt() gate every other reading-cap screen uses
+      // (form_factors.dart). Nothing below this changes, including the
+      // AnimatedContainer's own 280ms duration.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          Text('One thing each, and the list keeps going',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text('Grown a little more every time you two play.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 16),
-          TextField(
-            controller: _controller,
-            minLines: 1, maxLines: 2,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              hintText: view.phase == ChainPhase.building
-                ? 'What comes next?…'
-                : 'What was next in the chain?…',
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 280),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _justMoved ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(18),
             ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${view.length} things so far',
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary)),
+              const SizedBox(height: 8),
+              Text(view.prompt, style: Theme.of(context).textTheme.bodyMedium),
+              // Shared, never comparative — shown alongside, not instead of,
+              // the plain "it stopped" line above.
+              if (view.closing != null) Padding(padding: const EdgeInsets.only(top: 4),
+                child: Text(view.closing!,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700))),
+            ]),
           ),
-          const SizedBox(height: 12),
-          SizedBox(width: double.infinity, height: 48,
-            child: FilledButton(
-              onPressed: _submit,
-              child: Text(view.phase == ChainPhase.building ? 'Add it' : 'That\'s it!'),
-            )),
-        ] else
-          Padding(padding: const EdgeInsets.only(top: 4),
-            child: SizedBox(width: double.infinity, height: 48,
-              child: FilledButton.tonal(onPressed: _startNewChain,
-                child: const Text('Start a new chain')))),
-        if (artifact != null) Padding(padding: const EdgeInsets.only(top: 16),
-          child: Row(children: [
-            Icon(Icons.auto_stories_outlined, size: 18, color: scheme.primary),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Long enough to keep — this one is saved for your book.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
-          ])),
-      ])),
+          const SizedBox(height: 16),
+          if (!ended) _TurnBanner(name: _name(view.whoseTurn), phase: view.phase),
+          const SizedBox(height: 16),
+          if (view.visibleSteps.isNotEmpty) _ChainList(steps: _game.steps.map((ChainStep s) =>
+            (label: s.label, mine: s.side == ChainSide.a)).toList()),
+          if (!ended) ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              minLines: 1, maxLines: 2,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                hintText: view.phase == ChainPhase.building
+                  ? 'What comes next?…'
+                  : 'What was next in the chain?…',
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(width: double.infinity, height: 48,
+              child: FilledButton(
+                onPressed: _submit,
+                child: Text(view.phase == ChainPhase.building ? 'Add it' : 'That\'s it!'),
+              )),
+          ] else
+            Padding(padding: const EdgeInsets.only(top: 4),
+              child: SizedBox(width: double.infinity, height: 48,
+                child: FilledButton.tonal(onPressed: _startNewChain,
+                  child: const Text('Start a new chain')))),
+          if (artifact != null) Padding(padding: const EdgeInsets.only(top: 16),
+            child: Row(children: [
+              Icon(Icons.auto_stories_outlined, size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Long enough to keep — this one is saved for your book.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
+            ])),
+        ]);
+        return capWidth
+            ? Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                child: content))
+            : content;
+      })),
     );
   }
 }

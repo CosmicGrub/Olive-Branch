@@ -23,6 +23,7 @@
 // copy here too: a loss reveals the word warmly, never scores it as a
 // defeat.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // =========================================================== games2.ts ====
 class Hangman {
@@ -114,32 +115,46 @@ class _HangmanSetupScreenState extends State<HangmanSetupScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text('Choose a word for ${widget.childName}')),
-    body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-      Text('Her name, a family word, an inside joke — chosen by you, and personal.',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      const SizedBox(height: 16),
-      TextField(controller: _wordController,
-        decoration: const InputDecoration(labelText: 'The word', isDense: true,
-          border: OutlineInputBorder())),
-      const SizedBox(height: 12),
-      TextField(controller: _hintController,
-        decoration: const InputDecoration(labelText: 'A hint (optional)', isDense: true,
-          border: OutlineInputBorder())),
-      if (_problem != null) Padding(
-        padding: const EdgeInsets.only(top: 16),
-        child: Container(padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.errorContainer,
-            borderRadius: BorderRadius.circular(12)),
-          child: Text(_problem!, style: TextStyle(
-            color: Theme.of(context).colorScheme.onErrorContainer)))),
-      const SizedBox(height: 24),
-      SizedBox(height: 48, width: double.infinity,
-        child: FilledButton.icon(onPressed: _start,
-          icon: const Icon(Icons.emoji_objects_outlined),
-          label: const Text('Start the game'))),
-    ])),
+    // On a wide tablet/desktop viewport the single column is only ever
+    // capped to a comfortable reading width and centered, never split —
+    // same real columnsAt() gate every other reading-cap screen uses
+    // (form_factors.dart). Nothing below this changes.
+    body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+      final double textScale = MediaQuery.textScalerOf(context).scale(1);
+      final bool capWidth = ff.columnsAt(
+          ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+      final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+        Text('Her name, a family word, an inside joke — chosen by you, and personal.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 16),
+        TextField(controller: _wordController,
+          decoration: const InputDecoration(labelText: 'The word', isDense: true,
+            border: OutlineInputBorder())),
+        const SizedBox(height: 12),
+        TextField(controller: _hintController,
+          decoration: const InputDecoration(labelText: 'A hint (optional)', isDense: true,
+            border: OutlineInputBorder())),
+        if (_problem != null) Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Container(padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(12)),
+            child: Text(_problem!, style: TextStyle(
+              color: Theme.of(context).colorScheme.onErrorContainer)))),
+        const SizedBox(height: 24),
+        SizedBox(height: 48, width: double.infinity,
+          child: FilledButton.icon(onPressed: _start,
+            icon: const Icon(Icons.emoji_objects_outlined),
+            label: const Text('Start the game'))),
+      ]);
+      return capWidth
+          ? Center(child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+              child: content))
+          : content;
+    })),
   );
 }
 
@@ -168,8 +183,17 @@ class _HangmanScreenState extends State<HangmanScreen> {
     final String? outcome = hangmanOutcome(_game);
     return Scaffold(
       appBar: AppBar(title: Text('${widget.childName}\'s word game')),
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered, never split —
+      // same real columnsAt() gate every other reading-cap screen uses
+      // (form_factors.dart). `constraints` was previously captured here and
+      // never used; this wires up the existing LayoutBuilder rather than
+      // adding a second, nested one. Nothing below this changes.
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        return ListView(padding: const EdgeInsets.all(16), children: [
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
           if (_game.hint != null) Text('Hint: ${_game.hint}',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic)),
@@ -202,6 +226,11 @@ class _HangmanScreenState extends State<HangmanScreen> {
           _Keyboard(guessed: _game.guessed, gameOver: outcome != null,
             wordLetters: _game.word.split('').toSet(), onTap: _tapLetter, scheme: scheme),
         ]);
+        return capWidth
+            ? Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                child: content))
+            : content;
       })),
     );
   }

@@ -41,6 +41,7 @@
 // disappear at "Good game."
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
 enum BsSide { child, parent }
@@ -382,46 +383,64 @@ class _GameBattleshipState extends State<GameBattleship> {
           onPressed: () => _notBuiltYetBs(context, 'Voice notes on shots'),
         ),
       ]),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        _StatusBanner(placing: placing, finished: finished, parentThinking: _parentThinking,
-          isChildTurn: host.state.turn == BsSide.child,
-          childName: widget.childName, parentName: widget.parentName,
-          narration: _shotNarration),
-        const SizedBox(height: 12),
-        if (!placing && !finished) _TallyRowBs(
-          childName: widget.childName, parentName: widget.parentName,
-          childShips: host.shipsRemaining(BsSide.child),
-          parentShips: host.shipsRemaining(BsSide.parent),
-        ),
-        if (placing) _PlacementPanel(
-          unplacedNames: _unplacedNames,
-          pending: _pendingShip ?? (_unplacedNames.isEmpty ? null : _unplacedNames.first),
-          horizontal: _horizontal,
-          onPickShip: (n) => setState(() => _pendingShip = n),
-          onToggleOrientation: () => setState(() => _horizontal = !_horizontal),
-          hint: _placementHint,
-        ) else if (!finished) SegmentedButton<_BoardTab>(
-          segments: const [
-            ButtonSegment(value: _BoardTab.mine, label: Text('Your fleet'), icon: Icon(Icons.shield_outlined)),
-            ButtonSegment(value: _BoardTab.enemy, label: Text('Enemy waters'), icon: Icon(Icons.waves)),
-          ],
-          selected: {_tab},
-          onSelectionChanged: (s) => setState(() => _tab = s.first),
-        ),
-        const SizedBox(height: 12),
-        Center(child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: AspectRatio(aspectRatio: 1, child: placing || _tab == _BoardTab.mine
-              ? _OwnGrid(view: host.ownBoardView(BsSide.child), scheme: scheme,
-                  onTapCell: placing && !finished ? _tapOwnCellForPlacement : null)
-              : _EnemyGrid(view: host.enemyBoardView(BsSide.child), scheme: scheme,
-                  enabled: !finished && host.state.turn == BsSide.child && !_parentThinking,
-                  onTapCell: _fireChild)),
-        )),
-        const SizedBox(height: 16),
-        if (finished) Center(child: SizedBox(height: 48, child: FilledButton.icon(
-          onPressed: _resetGame, icon: const Icon(Icons.refresh), label: const Text('Play again')))),
-      ])),
+      // On a wide tablet/desktop viewport the whole outer column — status
+      // banner through the tab-toggle through the board through the
+      // play-again button — is only ever capped to a comfortable reading
+      // width and centered, never split (same real columnsAt() gate every
+      // other reading-cap screen uses, form_factors.dart). This is strictly
+      // ADDITIVE on top of the board's own existing 460px cap below, not a
+      // replacement for it — that inner cap, the tab-toggle single-board
+      // interaction model, and everything else below are all unchanged.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          _StatusBanner(placing: placing, finished: finished, parentThinking: _parentThinking,
+            isChildTurn: host.state.turn == BsSide.child,
+            childName: widget.childName, parentName: widget.parentName,
+            narration: _shotNarration),
+          const SizedBox(height: 12),
+          if (!placing && !finished) _TallyRowBs(
+            childName: widget.childName, parentName: widget.parentName,
+            childShips: host.shipsRemaining(BsSide.child),
+            parentShips: host.shipsRemaining(BsSide.parent),
+          ),
+          if (placing) _PlacementPanel(
+            unplacedNames: _unplacedNames,
+            pending: _pendingShip ?? (_unplacedNames.isEmpty ? null : _unplacedNames.first),
+            horizontal: _horizontal,
+            onPickShip: (n) => setState(() => _pendingShip = n),
+            onToggleOrientation: () => setState(() => _horizontal = !_horizontal),
+            hint: _placementHint,
+          ) else if (!finished) SegmentedButton<_BoardTab>(
+            segments: const [
+              ButtonSegment(value: _BoardTab.mine, label: Text('Your fleet'), icon: Icon(Icons.shield_outlined)),
+              ButtonSegment(value: _BoardTab.enemy, label: Text('Enemy waters'), icon: Icon(Icons.waves)),
+            ],
+            selected: {_tab},
+            onSelectionChanged: (s) => setState(() => _tab = s.first),
+          ),
+          const SizedBox(height: 12),
+          Center(child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: AspectRatio(aspectRatio: 1, child: placing || _tab == _BoardTab.mine
+                ? _OwnGrid(view: host.ownBoardView(BsSide.child), scheme: scheme,
+                    onTapCell: placing && !finished ? _tapOwnCellForPlacement : null)
+                : _EnemyGrid(view: host.enemyBoardView(BsSide.child), scheme: scheme,
+                    enabled: !finished && host.state.turn == BsSide.child && !_parentThinking,
+                    onTapCell: _fireChild)),
+          )),
+          const SizedBox(height: 16),
+          if (finished) Center(child: SizedBox(height: 48, child: FilledButton.icon(
+            onPressed: _resetGame, icon: const Icon(Icons.refresh), label: const Text('Play again')))),
+        ]);
+        return capWidth
+            ? Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                child: content))
+            : content;
+      })),
     );
   }
 }
