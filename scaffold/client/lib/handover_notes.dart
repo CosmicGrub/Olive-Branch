@@ -21,6 +21,7 @@
 // never have entries start reading themselves.
 import 'package:flutter/material.dart';
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
+import 'form_factors.dart' as ff;
 
 class _HandoverEntry {
   const _HandoverEntry({required this.author, required this.when, required this.text});
@@ -87,32 +88,73 @@ class _HandoverNotesScreenState extends State<HandoverNotesScreen> {
   @override
   Widget build(BuildContext context) {
     final List<_HandoverEntry> newestFirst = _entries.reversed.toList();
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+
+    // Pane A — compose: the disclaimer plus the add-note field and button,
+    // grouped together as the form. Only ever pulled into a named list so
+    // the wide/narrow branches below can share it verbatim rather than
+    // diverging — same discipline message_banking.dart uses for its own
+    // two panes.
+    final List<Widget> composeChildren = <Widget>[
+      Text(
+        "Entries here can't be edited or removed — this log is admissible if it's ever needed.",
+        style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+      const SizedBox(height: 12),
+      Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Expanded(child: TextField(controller: _controller,
+          decoration: const InputDecoration(
+            hintText: 'Add a note for the other parent…',
+            border: OutlineInputBorder()),
+          minLines: 1, maxLines: 4,
+          textInputAction: TextInputAction.send,
+          onSubmitted: (_) => _addEntry())),
+        const SizedBox(width: 8),
+        FilledButton(onPressed: _addEntry, child: const Text('Add note')),
+      ]),
+    ];
+
+    // Pane B — the entries list: every _EntryTile, newest first, same
+    // widgets and same order as this screen always rendered.
+    final List<Widget> listChildren = <Widget>[
+      for (int i = 0; i < newestFirst.length; i++)
+        _EntryTile(newestFirst[i], index: i, speak: widget.speak),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: const Text('Handover notes')),
-      body: SafeArea(child: Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-          child: Text(
-            "Entries here can't be edited or removed — this log is admissible if it's ever needed.",
-            style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant))),
-        Expanded(child: ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-          itemCount: newestFirst.length,
-          itemBuilder: (context, i) => _EntryTile(newestFirst[i], index: i, speak: widget.speak),
-        )),
-        const Divider(height: 1),
-        Padding(padding: const EdgeInsets.all(12),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Expanded(child: TextField(controller: _controller,
-              decoration: const InputDecoration(
-                hintText: 'Add a note for the other parent…',
-                border: OutlineInputBorder()),
-              minLines: 1, maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _addEntry())),
-            const SizedBox(width: 8),
-            FilledButton(onPressed: _addEntry, child: const Text('Add note')),
-          ])),
-      ])),
+      // SingleChildScrollView + Column, NOT Expanded/ListView.builder — a
+      // sliver list only realizes children near the viewport, which would
+      // silently drop entries scrolled below the fold from the widget tree
+      // (same fix message_banking.dart/letters_screen.dart already document
+      // for the same bug class). It also lets the compose form and the
+      // entries list become genuine independent panes at width, instead of
+      // the compose row staying pinned to the bottom of a fixed-height
+      // Column the way it did before this pass.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — same threshold message_banking.dart/letters_screen.dart
+        // use for their own two-pane splits.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: wide
+            ? Row(key: const Key('handoverNotesTwoPaneRow'),
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: composeChildren)),
+                  const SizedBox(width: 24),
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: listChildren)),
+                ])
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ...composeChildren,
+                const SizedBox(height: 20),
+                ...listChildren,
+              ]),
+        );
+      })),
     );
   }
 }

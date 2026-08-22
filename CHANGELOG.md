@@ -14,6 +14,99 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.29] — 2026-08-22 — Device-adaptive backlog, batch C of 3 (final): handover_notes.dart, care_note.dart, availability_screen.dart, show_guardian.dart get the real two-pane split
+
+Closes out the device-adaptive two-pane backlog v0.49.27's investigation
+named: the last four nav-reachable content screens with a genuine
+compose-plus-list shape — `care_note.dart` (the batch B screen still
+outstanding after v0.49.26 independently closed its other three) plus all
+three of batch C (`handover_notes.dart`, `availability_screen.dart`,
+`show_guardian.dart`). Each screen was read individually and given its own
+Pane A / Pane B assignment before implementation, the same discipline every
+entry in this tier has held to.
+
+### Changed — real two-pane split
+- **`handover_notes.dart`** — the one screen in this batch that needed more
+  than a mechanical split: its compose row was pinned to the bottom of a
+  fixed-height `Column` (`Expanded` + `ListView.builder` above it, chat-
+  style), not already living in a scrollable form list the way every other
+  two-pane candidate so far has. Restructured into the established
+  `composeChildren`/`listChildren` idiom, `ListView.builder` replaced by a
+  plain `Column` inside `SingleChildScrollView` (same sliver-virtualization
+  fix `message_banking.dart`/`letters_screen.dart` already document, so
+  every entry genuinely exists in the tree). Pane A is the disclaimer plus
+  the add-note field and button; Pane B is the entries list, newest first.
+  P8's append-only invariant is untouched by the rearrangement — no
+  `_deleteEntry`, no `_editEntry`, no long-press menu, confirmed by the
+  file's own pre-existing "NO delete or edit affordance" test, unmodified
+  and still green.
+- **`care_note.dart`** — the straightforward case: Pane A is the intro text,
+  kind chips, note field, conditional guidance banner, Send button, and the
+  "not evidence" disclaimer; Pane B is the divider and the sent-notes list.
+  `ListView` replaced by `SingleChildScrollView` + `Column` for the same
+  virtualization reason above. Narrow order is untouched from before this
+  pass. `careNoteVisibleTo('child')` stays `false`, unreachable from this
+  file either way — a layout-only split adds no new interactive element.
+- **`availability_screen.dart`** — Pane A is the editable weekly-hours form
+  (heading, description, the 7 day rows, the save error if any, the Save
+  button); Pane B is the read-only co-guardians list. Already used
+  `SingleChildScrollView` + `Column`, so only the `LayoutBuilder`/pane split
+  itself was new. Fixed one real pre-existing bug this split exposed:
+  `_dayRow`'s start/end time picker `Row` (two `TextButton`s and a dash)
+  could overflow at a pane's narrower width — invisible before this pass
+  because the row always had the full screen width, but the default
+  800px-wide flutter test surface already triggers `columnsAt() >= 2`
+  (`columnsAt(800)` returns 2), so several *pre-existing* tests with real
+  window data (`Save round-trips...`, `clearing a day removes it...`)
+  started failing the moment the split landed. Changed that inner `Row` to
+  a `Wrap` — identical single-line rendering at full width, falls back to a
+  second line instead of overflowing at a narrower one. All pre-existing
+  tests pass again, unmodified.
+- **`show_guardian.dart`** — the most content-dense of the four: Pane A is
+  the ask composer alone; Pane B is the pending-asks section, the shelf,
+  and the received-show reply tiles, stacked together as a unit in their
+  original order — not spread across both panes. §9.10's three invariants
+  (the loud 3-ask cap, the reply-in-kind nudge, showing counts on the
+  guardian side only, per P2) are untouched; repositioning existing
+  elements into two columns adds no new interactive or scored element.
+- All four narrow paths render the exact same widgets as
+  `composeChildren`/`listChildren` spread back into one flat `Column`, not
+  a nested wrapper — `care_note.dart`, `availability_screen.dart`, and
+  `show_guardian.dart` in the screen's original top-to-bottom order
+  unchanged; `handover_notes.dart` deliberately reorders (compose above
+  list, matching this tier's own convention) as part of the restructuring
+  described above, which its own file header and this entry both call out
+  rather than leaving unstated.
+
+### Tests
+- 4 new tests per file (16 total), following the established four-case
+  shape: a genuinely wide viewport (1100×900) renders the two-pane `Row`
+  (a named `Key` per file — `handoverNotesTwoPaneRow`, `careNoteTwoPaneRow`,
+  `availabilityTwoPaneRow`, `showGuardianTwoPaneRow`) with both panes' real
+  content present; the Fold5 cover width (344px) and a standard phone width
+  (390px) both keep the single stacked column with no `Row` at all; and a
+  real interaction (adding a handover note, sending a care note, saving
+  availability, sending an ask) still works correctly inside the wide
+  two-pane layout.
+- Every pre-existing test in all four files re-verified passing unchanged,
+  including after the `availability_screen.dart` `_dayRow` overflow fix
+  above — confirmed by re-running each file's full pre-existing suite both
+  before and after that fix.
+- `flutter analyze`: no issues found. `flutter test`: 1887/1887 (1871
+  baseline + 16 new), including the full client suite run together.
+
+### Backlog
+- Closes the last 4 of the 16 nav-reachable content screens this tier's
+  investigation named (9 batch A + 3 batch B closed early via v0.49.26 + 4
+  here). **The 16-screen device-adaptive backlog investigation is now
+  fully closed.** What remains, unscoped: roughly 40 non-priority screens
+  with no device-adaptive layout of any kind, and the pre-existing
+  zero-adaptive games — neither has had the same per-screen read this tier
+  gave its 16, and neither is scoped by this entry. See MASTERFILE.md
+  §8.11.1's own status note for the updated count.
+
+---
+
 ## [0.49.28] — 2026-08-22 — §16.2 #6 Step 2: the self-signed cert's hostname gap fixed, and a recurring Docker Desktop crash-loop resolved
 
 The self-signed-cert gap v0.46.2 left open — the one still blocking a real
