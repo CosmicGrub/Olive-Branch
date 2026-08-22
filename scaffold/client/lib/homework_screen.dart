@@ -50,6 +50,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'capture_gate.dart';
+import 'form_factors.dart' as ff;
 import 'homework_quality_gate.dart';
 import 'motion_rules.dart';
 
@@ -146,8 +147,16 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
       appBar: AppBar(title: const Text('Homework')),
       // ListView, not a fixed Column — matches emergency_card.dart's own
       // reasoning: generous text can exceed a small phone's viewport.
-      body: SafeArea(
-        child: ListView(
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // §8.13.5: this is deliberately the sparsest, "still" surface in the
+        // product — no second pane here, ever (see file header). On a wide
+        // tablet/desktop viewport the single column is only ever capped to a
+        // comfortable reading width and centered, never split. Same real
+        // columnsAt() gate every other width decision in the app uses.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(
           padding: const EdgeInsets.all(16),
           children: [
             Text("Let's get your worksheet", style: Theme.of(context).textTheme.headlineSmall),
@@ -208,8 +217,14 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                   : const SizedBox.shrink(key: ValueKey('empty')),
             ),
           ],
-        ),
-      ),
+        );
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }

@@ -139,3 +139,14 @@ int columnsAt(Viewport v, [double textScale = 1]) {
   if (eff >= 660) return 2;
   return 1;
 }
+
+/// A typography-driven cap, not a posture boundary — the widest a single
+/// column of body text should get before it's capped and centered, so a
+/// single-column screen doesn't stretch edge-to-edge on a wide tablet or
+/// desktop. Orthogonal to columnsAt(): this only ever applies WITHIN a
+/// screen that is still rendering ONE column (columnsAt() < 2 needs no cap
+/// at all; a screen that genuinely uses two real columns needs no cap
+/// either, since Expanded already bounds each pane). Value chosen for
+/// readable prose line length, not a device boundary — do not add this to
+/// `formFactors`/`FORM_FACTORS` or treat it as a tenth posture.
+const double comfortableReadingWidth = 640;
