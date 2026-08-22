@@ -218,3 +218,62 @@ device right now.
 (A prior revision here also suggested filing a Samsung platform bug report
 via Samsung Members. Don't — not until a genuine, deliberately-run
 confirmation actually exists.)
+
+---
+
+**2026-08-22, later the same day — the fix is confirmed working, on
+hard evidence this time, not a report.** The device owner clarified
+screen pinning is functional after all (see the retraction above for why
+the earlier claim to the contrary was wrong) and drove the actual
+Procedure above by hand — a real finger, "My child's device" → dismiss
+the pin dialog → "Call Dad" — while this session captured `adb logcat`
+and polled `dumpsys` independently, so the confirmation below is read
+from raw system logs with real timestamps, not summarized from what
+anyone reported seeing.
+
+`adb logcat -d` (114,222 lines) for the full session:
+
+- `grep -c "Attempted Lock Task Mode violation"` → **0**. The exact
+  failure this fix exists for does not occur, across the entire capture.
+- `13:36:49.137 ActivityTaskManager: START u0 {act=org.jitsi.meet.CONFERENCE
+  ... cmp=com.olivebranch.olive_client/org.jitsi.jitsi_meet_flutter_sdk.
+  WrapperJitsiMeetActivity ...} with LAUNCH_SINGLE_TASK from uid 11361
+  (com.olivebranch.olive_client) ... result code=0` — the call Activity
+  launched successfully, started by the app itself, while the device was
+  kiosk-pinned. This is the exact operation that used to be refused.
+- `13:36:49.165` — `WrapperJitsiMeetActivity` becomes the top resumed
+  activity immediately after, confirming the launch wasn't just requested
+  but actually took the foreground.
+- `13:37:36.382 JitsiMeetSDK: ExternalAPI Sending event: CONFERENCE_WILL_JOIN`
+  → `13:37:38.014 ... CONFERENCE_JOINED` — the call genuinely connected,
+  not just launched.
+- `13:38:36.876 JitsiMeetSDK: [INFO] [app:lobby] Lobby starting knocking
+  (membersOnly = ...)` — hit the public `meet.jit.si` server's
+  moderator-approval lobby shortly after. This is §16.2 #6's **separate,
+  already-documented second cause** (see the callout in `MASTERFILE.md`),
+  not a failure of the kiosk-lock fix this document verifies — expected
+  and correct behavior when testing against the public server without
+  Step 2 (self-hosting) in place.
+- `13:38:13.234` — `MainActivity` regains top-resumed status cleanly, no
+  crash, no error, anywhere in the capture.
+
+`dumpsys activity activities | grep mLockTaskModeState`, polled every 2s
+independently through the whole test: `NONE` → `PINNED` within 4 seconds
+of tapping "My child's device", then `PINNED` continuously (no gap) from
+partway through the run onward — spanning the Activity launch, the
+conference join, and the lobby wait, consistent with the pin genuinely
+handing off from `MainActivity` to `WrapperJitsiMeetActivity` and back
+rather than dropping in between.
+
+**This closes out the item Steps 3–7 of the Procedure above were written
+for.** The kiosk-lock/call-Activity conflict (§16.2 #6's first cause) is
+fixed and now confirmed on real hardware with real touch input. The
+public-server lobby (§16.2 #6's second cause) remains open, tracked
+separately, and requires Step 2 (self-hosting) — not a defect in this fix.
+
+Not yet re-run as part of this confirmation: the mid-call defeat path
+(Setup step 0 / Procedure step 7, deliberately unpinning during an active
+call to confirm it's reported through `lockTaskExited` rather than
+silently ignored). Worth a follow-up pass, but is a narrower, lower-risk
+claim than "does the call launch at all" — the part that was actually in
+doubt.
