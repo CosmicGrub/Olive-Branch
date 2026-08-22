@@ -18,6 +18,7 @@
 // nothing loops, ever. The only animation in this file is a single sub-400ms
 // fade-in on the entry she just saved — consequence motion, not autonomous.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ================= ported from packages/agency/src/agency.ts (readJournal) =
 class JournalEntry {
@@ -130,6 +131,57 @@ class _JournalScreenState extends State<JournalScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    // Pane A — compose: the whole "Write something" Card, verbatim (field
+    // and button together, unsplit). Only ever pulled into a named list so
+    // the wide/narrow branches below can share it verbatim rather than
+    // diverging — same discipline message_banking.dart/letters_screen.dart
+    // use for their own panes.
+    final List<Widget> composeChildren = <Widget>[
+      Card(child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Write something', style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            minLines: 3,
+            maxLines: 8,
+            decoration: const InputDecoration(
+              hintText: 'Whatever you want. Nobody sees this but you.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, height: 48,
+            child: FilledButton.icon(
+              onPressed: _controller.text.trim().isEmpty ? null : _save,
+              icon: const Icon(Icons.lock_outline),
+              label: const Text('Keep it, just for me'))),
+        ]),
+      )),
+    ];
+
+    // Pane B — the entries region: either the empty state or every
+    // _JournalTile, same widgets and same order as this screen always
+    // rendered.
+    final List<Widget> entryChildren = <Widget>[
+      if (_entries.isEmpty)
+        Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: Column(children: [
+            Icon(Icons.edit_note_outlined, size: 40, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text('Nothing written yet. Whenever you feel like it.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: scheme.onSurfaceVariant)),
+          ])))
+      else
+        for (final e in _entries)
+          _JournalTile(key: ValueKey(e.id), entry: e, justAdded: e.id == _justAddedId),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: const Text('My journal')),
       // SingleChildScrollView + Column, NOT ListView: a ListView's sliver
@@ -137,50 +189,35 @@ class _JournalScreenState extends State<JournalScreen> {
       // scrolled below the fold would not exist in the widget/element tree
       // at all — see message_banking.dart's identical note for the same
       // fix on the same class of bug.
-      body: SafeArea(child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _PrivacyBanner(childName: widget.childName, scheme: scheme),
-          const SizedBox(height: 16),
-          Card(child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Write something', style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _controller,
-                minLines: 3,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  hintText: 'Whatever you want. Nobody sees this but you.',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(width: double.infinity, height: 48,
-                child: FilledButton.icon(
-                  onPressed: _controller.text.trim().isEmpty ? null : _save,
-                  icon: const Icon(Icons.lock_outline),
-                  label: const Text('Keep it, just for me'))),
-            ]),
-          )),
-          const SizedBox(height: 24),
-          if (_entries.isEmpty)
-            Padding(padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Column(children: [
-                Icon(Icons.edit_note_outlined, size: 40, color: scheme.onSurfaceVariant),
-                const SizedBox(height: 12),
-                Text('Nothing written yet. Whenever you feel like it.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-              ])))
-          else
-            for (final e in _entries)
-              _JournalTile(key: ValueKey(e.id), entry: e, justAdded: e.id == _justAddedId),
-        ]),
-      )),
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — same threshold message_banking.dart/letters_screen.dart
+        // use for their own two-pane splits.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _PrivacyBanner(childName: widget.childName, scheme: scheme),
+            const SizedBox(height: 16),
+            wide
+              ? Row(key: const Key('journalTwoPaneRow'),
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: composeChildren)),
+                    const SizedBox(width: 24),
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: entryChildren)),
+                  ])
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ...composeChildren,
+                  const SizedBox(height: 24),
+                  ...entryChildren,
+                ]),
+          ]),
+        );
+      })),
     );
   }
 }

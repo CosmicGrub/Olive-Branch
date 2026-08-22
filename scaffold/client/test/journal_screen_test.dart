@@ -186,4 +186,72 @@ void main() {
       expect(find.text('not mine'), findsNothing);
     });
   });
+
+  group('journal screen — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    Widget buildScreen() => wrap(JournalScreen(childName: 'Maya', childId: 'maya', initialEntries: [
+      JournalEntry(id: 'j1', childId: 'maya', body: 'An entry already on the page.',
+        createdAt: DateTime(2026, 1, 1)),
+    ]));
+
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'compose card and the entries list as two side-by-side panes', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journalTwoPaneRow')), findsOneWidget);
+      // Pane A content (compose card) and Pane B content (the seeded entry)
+      // are both genuinely present at once.
+      expect(find.text('Write something'), findsOneWidget);
+      expect(find.text('An entry already on the page.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journalTwoPaneRow')), findsNothing);
+      expect(find.text('Write something'), findsOneWidget);
+      expect(find.text('An entry already on the page.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, not '
+        'the two-pane Row', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journalTwoPaneRow')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('writing and saving an entry still works correctly inside the wide '
+        'two-pane layout', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journalTwoPaneRow')), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Hello from the wide layout.');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await tester.pump();
+
+      // Still inside the wide two-pane layout, and the new entry landed in
+      // the entries pane.
+      expect(find.byKey(const Key('journalTwoPaneRow')), findsOneWidget);
+      expect(find.text('Hello from the wide layout.'), findsOneWidget);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller!.text, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
