@@ -13,6 +13,7 @@
 // exactly once — never a live meter, never blame.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================== §5.28.1 the quality ladder ==
 enum Quality { q720, q360, q180 }
@@ -282,7 +283,10 @@ class _LiveDegradeScreenState extends State<LiveDegradeScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Call with ${widget.callerName}')),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 420;
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final int cross = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale);
+        final narrow = cross < 2;
         // SingleChildScrollView, not a bare Column: on a short viewport (a
         // phone in landscape, or the Fold5 cover screen) the frame plus the
         // preview harness beneath it can exceed the available height —

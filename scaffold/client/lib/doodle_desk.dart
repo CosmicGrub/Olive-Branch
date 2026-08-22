@@ -27,6 +27,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'annotation_canvas.dart';
+import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
 
 enum _Tool { draw, stamp }
@@ -97,11 +98,14 @@ class _DoodleDeskState extends State<DoodleDesk> {
     setState(() => _liveStroke = <StrokePoint>[StrokePoint(d.localPosition.dx, d.localPosition.dy)]);
   }
 
+  // In-place `.add()`, not a rebuilt list — see game_draw_together.dart's
+  // identical note (`_onPanStart` already reassigns `_liveStroke` to a
+  // fresh list at the start of every stroke, and `_onPanEnd` below still
+  // reassigns it to a NEW empty list rather than `.clear()`ing this one).
   void _onPanUpdate(DragUpdateDetails d) {
-    setState(() => _liveStroke = <StrokePoint>[
-          ..._liveStroke,
-          StrokePoint(d.localPosition.dx, d.localPosition.dy),
-        ]);
+    setState(() {
+      _liveStroke.add(StrokePoint(d.localPosition.dx, d.localPosition.dy));
+    });
   }
 
   void _onPanEnd(DragEndDetails d) {
@@ -153,7 +157,9 @@ class _DoodleDeskState extends State<DoodleDesk> {
           // Fold5 cover (~344 CSS px) vs. its unfolded ~673x841 main screen:
           // no fixed widths anywhere below, everything derives from
           // constraints or wraps.
-          final bool narrow = constraints.maxWidth < 420;
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool narrow = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) < 2;
           return Padding(
             padding: EdgeInsets.all(narrow ? 8 : 16),
             child: Column(children: [

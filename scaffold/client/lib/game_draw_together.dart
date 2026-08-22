@@ -87,10 +87,17 @@ class _DrawTogetherScreenState extends State<DrawTogetherScreen> {
   void _onPanStart(DragStartDetails d) =>
       setState(() => _liveStroke = <StrokePoint>[StrokePoint(d.localPosition.dx, d.localPosition.dy)]);
 
-  void _onPanUpdate(DragUpdateDetails d) => setState(() => _liveStroke = <StrokePoint>[
-        ..._liveStroke,
-        StrokePoint(d.localPosition.dx, d.localPosition.dy),
-      ]);
+  // In-place `.add()`, not a rebuilt list: `_liveStroke` is a growable,
+  // non-const list, and `_onPanStart` already reassigns it to a brand-new
+  // list at the start of every stroke, so this only ever mutates a fresh
+  // buffer not yet handed to `AnnotationCanvas.add()`. Avoids an O(n²)
+  // point-list copy across a long drag (see `_onPanEnd`, which still
+  // reassigns `_liveStroke` to a NEW empty list rather than `.clear()`ing
+  // this one -- required, since `_onPanEnd` passes this exact list by
+  // reference into `_canvas.add()` with no defensive copy there).
+  void _onPanUpdate(DragUpdateDetails d) => setState(() {
+        _liveStroke.add(StrokePoint(d.localPosition.dx, d.localPosition.dy));
+      });
 
   void _onPanEnd(DragEndDetails d) {
     if (_liveStroke.isEmpty) return;
@@ -134,8 +141,8 @@ class _DrawTogetherScreenState extends State<DrawTogetherScreen> {
 
           final Widget canvas = AnnotationCanvasView(
             canvasKey: const Key('drawTogetherCanvas'),
-            painter: _SharedInkPainter(
-              strokes: _canvas.visible(),
+            committedPainter: _CommittedInkPainter(strokes: _canvas.visible()),
+            livePainter: _LiveInkPainter(
               live: _liveStroke,
               liveColor: _brushColor,
               liveWidth: _brushWidth,
@@ -209,47 +216,87 @@ abstract class InkPainterStrokes {
   List<Stroke> get strokes;
 }
 
-/// Follows _InkPainter's own shape in doodle_desk.dart exactly (that class
-/// is private to its own file, so this is a small, independent copy rather
-/// than an export change to an unrelated screen) — driven motion only, no
-/// smoothing lag, §8.13's "motion follows the finger, it never leads it."
-class _SharedInkPainter extends CustomPainter implements InkPainterStrokes {
-  const _SharedInkPainter({required this.strokes, required this.live, required this.liveColor, required this.liveWidth});
+/// Shared by both painters below — follows _InkPainter's own shape in
+/// doodle_desk.dart exactly (that class is private to its own file, so this
+/// is a small, independent copy rather than an export change to an
+/// unrelated screen) — driven motion only, no smoothing lag, §8.13's
+/// "motion follows the finger, it never leads it."
+void _paintPolyline(Canvas canvas, List<StrokePoint> pts, Color color, double width) {
+  if (pts.isEmpty) return;
+  final Paint paint = Paint()
+    ..color = color
+    ..strokeWidth = width
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  if (pts.length == 1) {
+    canvas.drawCircle(Offset(pts.first.x, pts.first.y), width / 2, paint..style = PaintingStyle.fill);
+    return;
+  }
+  final Path path = Path()..moveTo(pts.first.x, pts.first.y);
+  for (final StrokePoint p in pts.skip(1)) {
+    path.lineTo(p.x, p.y);
+  }
+  canvas.drawPath(path, paint);
+}
+
+/// Paints only the committed strokes — see annotation_canvas_view.dart's own
+/// header for why this is split from the live layer and wrapped in a
+/// [RepaintBoundary]: `strokes` comes from `AnnotationCanvas.visible()`,
+/// which returns a cached, `identical()` list between drag frames unless a
+/// real mutation happened, so `shouldRepaint` below can actually say no
+/// during a live pointer-move instead of repainting the whole stroke
+/// history every frame.
+class _CommittedInkPainter extends CustomPainter implements InkPainterStrokes {
+  const _CommittedInkPainter({required this.strokes});
   @override
   final List<Stroke> strokes;
-  final List<StrokePoint> live;
-  final Color liveColor;
-  final double liveWidth;
-
-  void _paintPolyline(Canvas canvas, List<StrokePoint> pts, Color color, double width) {
-    if (pts.isEmpty) return;
-    final Paint paint = Paint()
-      ..color = color
-      ..strokeWidth = width
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    if (pts.length == 1) {
-      canvas.drawCircle(Offset(pts.first.x, pts.first.y), width / 2, paint..style = PaintingStyle.fill);
-      return;
-    }
-    final Path path = Path()..moveTo(pts.first.x, pts.first.y);
-    for (final StrokePoint p in pts.skip(1)) {
-      path.lineTo(p.x, p.y);
-    }
-    canvas.drawPath(path, paint);
-  }
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final Stroke s in strokes) {
       _paintPolyline(canvas, s.points, _hexToColor(s.color), s.widthPx);
     }
-    _paintPolyline(canvas, live, liveColor, liveWidth);
   }
 
   @override
-  bool shouldRepaint(covariant _SharedInkPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _CommittedInkPainter oldDelegate) =>
+      !identical(oldDelegate.strokes, strokes);
+}
+
+/// Paints only the in-progress live stroke — small, and expected to repaint
+/// every pointer-move frame; isolated by the committed layer's
+/// [RepaintBoundary] so that repainting never drags the full stroke history
+/// along with it.
+class _LiveInkPainter extends CustomPainter {
+  const _LiveInkPainter({required this.live, required this.liveColor, required this.liveWidth});
+  final List<StrokePoint> live;
+  final Color liveColor;
+  final double liveWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _paintPolyline(canvas, live, liveColor, liveWidth);
+  }
+
+  // DEVIATION from the originally-proposed `oldDelegate.live.length !=
+  // live.length || !identical(oldDelegate.live, live)` check: Fix 11 (see
+  // `_onPanUpdate`) mutates `_liveStroke` IN PLACE via `.add()` rather than
+  // reassigning it every point, so by the time this runs, `oldDelegate.live`
+  // and `live` are the SAME List<StrokePoint> object (Dart lists are
+  // reference types) -- both `identical()` and a length comparison read the
+  // object's current, already-mutated state either way, so that check can
+  // never observe a change mid-stroke and would silently freeze the live
+  // ink trail after its first point. Verified directly (not assumed): a
+  // throwaway `dart` probe mutating a list in place after aliasing it
+  // confirmed `identical(ref1, ref2)` and `ref1.length == ref2.length` both
+  // read true post-mutation. Unconditional repaint is the correct fix here,
+  // not a missed optimization -- this layer is intentionally small (one
+  // in-progress stroke) and isolated by the committed layer's own
+  // RepaintBoundary in annotation_canvas_view.dart, so repainting it every
+  // frame was always the point of splitting it out, not a cost to avoid.
+  @override
+  bool shouldRepaint(covariant _LiveInkPainter oldDelegate) => true;
 }
 
 class _ToolPanel extends StatelessWidget {

@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22' }
+        with: { node-version: '22.22.2' }
       # The Dart client is analysed and its widget invariants executed.
       # verify.sh treats a missing toolchain as a gap, not a skip.
       #

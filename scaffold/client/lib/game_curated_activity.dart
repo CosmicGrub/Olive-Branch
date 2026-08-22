@@ -106,7 +106,7 @@ class SessionHistoryPanel extends StatelessWidget {
             child: ListView.separated(
               key: const Key('sessionHistoryList'),
               itemCount: entries.length,
-              separatorBuilder: (_, __) => const Divider(height: 12),
+              separatorBuilder: (_, _) => const Divider(height: 12),
               itemBuilder: (BuildContext context, int i) => Text(
                 entries[entries.length - 1 - i],
                 style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),

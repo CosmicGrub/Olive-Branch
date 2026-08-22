@@ -25,6 +25,7 @@
 // of who has more pieces on the board.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
 enum CkSide { child, parent }
@@ -336,7 +337,11 @@ class _GameCheckersState extends State<GameCheckers> {
         ],
       ),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 420;
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // breakpoint.
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
         return ListView(padding: const EdgeInsets.all(16), children: [
           _TurnBanner(
             finished: finished,
@@ -361,7 +366,7 @@ class _GameCheckersState extends State<GameCheckers> {
           ) else const _GoodGameBanner(),
           const SizedBox(height: 12),
           Center(child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: narrow ? constraints.maxWidth : 460),
+            constraints: BoxConstraints(maxWidth: wide ? 460 : constraints.maxWidth),
             child: AspectRatio(aspectRatio: 1, child: _Board(
               state: _state, selected: _selected,
               legalDestinations: _legalFromSelected.map((m) => m.to).toSet(),

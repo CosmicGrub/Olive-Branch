@@ -9,6 +9,7 @@
 // a child, so there is deliberately no streak, no "N days in a row", and no
 // framing of either option as new or better.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'palette_logic.dart';
 
 class ColourDailyScreen extends StatefulWidget {
@@ -41,7 +42,9 @@ class _ColourDailyScreenState extends State<ColourDailyScreen> {
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
         // Stacks on the Fold5 cover screen (344px), sits side by side once
         // there is room — no fixed pixel width either way.
-        final narrow = constraints.maxWidth < 420;
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool narrow = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) < 2;
         final options = [_pair.a, _pair.b]
           .map((s) => Expanded(child: _ColourCard(
             swatch: s, picked: _picked == s.id, onTap: () => _pick(s))))

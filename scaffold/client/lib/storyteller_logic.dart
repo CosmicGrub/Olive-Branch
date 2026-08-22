@@ -20,7 +20,7 @@
 // No Flutter import in this file, on purpose: this is the same pure-Dart
 // content/rules module the TS package is, so it can be unit-tested without
 // standing up a widget tree, exactly like lock_controller.dart.
-library storyteller_logic;
+library;
 
 import 'dart:math' as math;
 

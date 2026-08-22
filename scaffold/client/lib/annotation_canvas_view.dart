@@ -41,7 +41,8 @@ class AnnotationCanvasView extends StatelessWidget {
   const AnnotationCanvasView({
     super.key,
     required this.canvasKey,
-    required this.painter,
+    required this.committedPainter,
+    required this.livePainter,
     this.drawingEnabled = true,
     this.onPanStart,
     this.onPanUpdate,
@@ -52,7 +53,18 @@ class AnnotationCanvasView extends StatelessWidget {
   /// locate the canvas by this key (`drawTogetherCanvas`/`guessDoodleCanvas`),
   /// so it stays caller-supplied rather than hardcoded here.
   final Key canvasKey;
-  final CustomPainter painter;
+
+  /// Paints only the committed (already-added-to-AnnotationCanvas) strokes.
+  /// Wrapped in its own [RepaintBoundary] below so a live, in-progress
+  /// stroke repainting every pointer-move frame never forces the whole
+  /// stroke history to repaint alongside it — see annotation_canvas.dart's
+  /// own `visible()` caching, which is what makes this painter's
+  /// `shouldRepaint` able to say no between drag frames.
+  final CustomPainter committedPainter;
+
+  /// Paints only the in-progress live stroke — small, and repaints every
+  /// pointer-move frame by design.
+  final CustomPainter livePainter;
   final bool drawingEnabled;
   final GestureDragStartCallback? onPanStart;
   final GestureDragUpdateCallback? onPanUpdate;
@@ -75,10 +87,12 @@ class AnnotationCanvasView extends StatelessWidget {
           onPanStart: drawingEnabled ? onPanStart : null,
           onPanUpdate: drawingEnabled ? onPanUpdate : null,
           onPanEnd: drawingEnabled ? onPanEnd : null,
-          child: CustomPaint(
-            painter: painter,
-            size: Size.infinite,
-          ),
+          child: Stack(children: [
+            RepaintBoundary(
+              child: CustomPaint(painter: committedPainter, size: Size.infinite),
+            ),
+            CustomPaint(painter: livePainter, size: Size.infinite),
+          ]),
         ),
       );
 }
