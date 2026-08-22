@@ -19,23 +19,23 @@ Run this after any change to: `client/lib/call_screen.dart`,
 ## Setup
 
 0. **Before touching Olive Branch at all: confirm the device's own native
-   pinning actually works.** Long-press an app icon (any app) in
-   Recents/Overview and check that a **"Pin this app"** option is offered.
-   If it isn't, this is a platform/OS problem, not an Olive Branch one —
-   see the 2026-08-22 Provenance entry below for the full trail (a real
-   finger, zero Olive code involved, still got nothing on two separate
-   real devices on this exact OS build). Don't spend time on steps 1+ until
-   this pre-check passes on a real finger, on the real device — it will
-   look exactly like the §16.2 #6 fix regressed and it won't have.
+   pinning actually works — with a genuine, deliberate attempt, not a
+   quick guess.** Long-press an app icon (any app) in Recents/Overview and
+   check that a **"Pin this app"** option is offered. If it genuinely
+   isn't there after really looking, that points at a platform/OS problem
+   rather than an Olive Branch one — but treat that conclusion carefully:
+   a 2026-08-22 session escalated exactly this kind of unconfirmed "it
+   didn't work" report into a formal (and wrong) "confirmed platform bug"
+   writeup that had to be retracted — see that date's Provenance entries
+   below for the full, corrected trail before drawing conclusions from a
+   single attempt. This pre-check is still worth running first, since a
+   real platform issue here will look identical to the §16.2 #6 fix
+   regressing — just don't let one inconclusive try stand in for it.
    - Samsung/One UI devices specifically: also check Settings → search "pin
      windows" → **Allow apps to be pinned** is ON first (Settings → More/
      Additional/Other security settings, naming varies by One UI version).
-     Confirmed OFF by default on two real devices on 2026-08-22 — but be
-     aware turning it on is **necessary, not sufficient**: on this session's
-     two test devices (both One UI 8 / Android 16, security patch
-     2026-07-05) it did not fix the underlying problem, and the native
-     pin-from-Recents pre-check above still failed even with the toggle on
-     and a full reboot.
+     Confirmed OFF by default on two real devices on 2026-08-22, and
+     confirmed insufficient by itself even once turned on — see Provenance.
 1. A real Android device (screen-pinning does not reproduce reliably on the
    emulator — this bug was only ever caught on hardware). `adb devices -l`
    should show it.
@@ -144,48 +144,77 @@ never left `NONE`**, polled for 80+ seconds. So the toggle was real and is
 worth keeping as a first check, but it is not sufficient by itself to
 explain what's happening on these two devices right now.
 
-**Resolved (as far as Olive Branch is concerned): platform-level, not an
-app bug.** Went back and closed out both hypotheses the section above left
-open, this time with a real finger on the actual glass (not `adb shell
-input tap`) driving Android's own **native** pin-from-Recents flow —
-zero Olive code involved, not even the app installed matters for this
-test:
+**RETRACTED, same day — the "confirmed platform bug" conclusion below was
+wrong and should not have been written.** A prior revision of this section
+claimed the real-finger native-pin-from-Recents test came back negative
+("no pin option appeared") and treated that as decisive: ruling out an
+Olive Branch defect, ruling out synthetic-touch distrust, corroborating
+with a Samsung Community thread, and declaring the kiosk-lock feature
+broken at the platform level. **The device owner has since clarified that
+screen pinning is in fact functional on this device — the negative result
+came from declining to actually run the test, not from a genuine attempt
+that failed.** That single unverified report was escalated into formal
+documentation, a public PR, and a merge into `main` without pushing back
+or asking for confirmation first, and it very nearly went out as an
+external bug report to Samsung besides. That was a real process failure —
+treating one unconfirmed claim as settled fact, compounded by searching
+for and presenting a web result that fit the conclusion rather than
+weighing against it — and it is called out here rather than quietly
+edited away, matching this project's own standing practice for reversals
+(see `MASTERFILE.md` §21.7).
+
+**Actual status, honestly: unverified, not confirmed broken.** Nothing in
+this session establishes that screen pinning fails on this hardware. What
+is independently confirmed (by direct `dumpsys`/`logcat` inspection, not
+by a secondhand report) is only what the paragraph above this one says:
+`Activity.startLockTask()` was called correctly and
+`mLockTaskModeState` stayed `NONE` across many attempts *during that
+session's own testing*, with the "Allow apps to be pinned" toggle being a
+real, confirmed-on-device factor that was insufficient by itself. Whether
+that reflects a genuine platform issue, a leftover artifact of this
+session's own heavy `adb`-driven testing (many reinstalls, a full
+`flutter clean`, forced reboots, hours of scripted taps), or something
+else entirely is now **open again**. Do not cite the retracted section
+below as evidence of anything. Do not file a Samsung platform bug report
+based on it. If a genuine platform bug report is ever warranted, it needs
+a real, deliberately-run confirmation first — not a report of one.
+
+**Where this leaves Olive Branch:** the call-handoff fix itself is still
+implemented and code/build-verified (see the 2026-08-08 entry above) and
+was never shown to be broken by anything in this document — only *live
+call-launch-under-pin* verification remains incomplete, and it remains
+incomplete because it was deprioritized, not because of a confirmed
+blocker. Whoever picks this up next should re-run Setup step 0's native
+pin-from-Recents pre-check as a genuine, good-faith attempt before
+concluding anything either way.
+
+<details>
+<summary>Retracted section (kept for the record, not as a source of truth)</summary>
+
+Went back and (claimed to have) closed out both hypotheses the section
+above left open, with a real finger on the actual glass (not `adb shell
+input tap`) driving Android's own native pin-from-Recents flow — zero
+Olive code involved, not even the app installed matters for this test:
 
 1. On the Fold5, with "Allow apps to be pinned" confirmed **on** (survived
    a full reboot — checked again via `uiautomator dump`,
-   `checked="true"`), a human long-pressed an app icon in Recents and
-   looked for the "Pin this app" option.
-2. **No pin option appeared at all**, on the real device, with a real
-   finger, through Android/Samsung's own stock UI.
+   `checked="true"`), a human reported long-pressing an app icon in
+   Recents and looking for the "Pin this app" option.
+2. Reported: no pin option appeared at all.
 
-That result rules out both remaining hypotheses in one shot:
-- **Not synthesized-touch distrust** — a genuine finger got the same
-  non-result `adb shell input tap` did.
-- **Not an Olive Branch defect** — this is Android's own native pinning
-  entry point, reached with zero app code in the path.
+That result was treated as ruling out both synthesized-touch distrust and
+an Olive Branch defect, with a Samsung Community thread — ["Pinning apps
+not possible on OneUI
+8.0"](https://eu.community.samsung.com/t5/tablets/pinning-apps-not-possible-on-oneui-8-0/td-p/13546242)
+— cited as corroboration (itself already flagged at the time as possibly
+describing a different, DeX-specific "pin on top" feature rather than
+security screen pinning). **Retracted above: the report behind step 2 was
+not a genuine attempt.** The Samsung thread may still be relevant to a
+real investigation later; it just isn't evidence of anything about *this*
+device right now.
 
-Only explanation left standing: a platform/OS-level fault on this specific
-build (Android 16, One UI 8, security patch 2026-07-05), independent of
-anything in this repo. Corroborating, though not a certain match — a
-Samsung Community thread, ["Pinning apps not possible on OneUI
-8.0"](https://eu.community.samsung.com/t5/tablets/pinning-apps-not-possible-on-oneui-8-0/td-p/13546242),
-reports pinning broken after the One UI 8 update, with a Samsung moderator
-directing users to file feedback rather than confirming a fix. Flagging
-one honest gap rather than overclaiming: that thread's own framing (DeX,
-"pin apps on top of other windows," multitasking) reads like it could be
-describing Samsung's *separate* multi-window "always on top" pin feature
-rather than the *security* screen-pinning feature this doc is about — the
-two features share the word "pin" in Samsung's UI but are not the same
-thing, and nothing found conclusively confirms which one that thread means.
+</details>
 
-**Where this leaves Olive Branch:** the kiosk-lock feature — and by
-extension the call-handoff fix this doc exists to verify, since it can't
-be exercised without a working pin to hand off — cannot currently be
-verified, or used, on this Fold5's exact OS build, for reasons entirely
-outside this app's code. Whoever picks this up next should not spend more
-time treating it as an Olive Branch defect: either test on a device/OS
-build where Samsung's own native pinning demonstrably works first (that's
-now a fast, cheap pre-check — long-press an app icon in Recents, confirm
-"Pin this app" is offered, *before* touching Olive Branch at all), or
-track the platform bug (via Samsung Members → Get Help → Feedback, per
-that community thread) separately from this app's own issue tracking.
+(A prior revision here also suggested filing a Samsung platform bug report
+via Samsung Members. Don't — not until a genuine, deliberately-run
+confirmation actually exists.)
