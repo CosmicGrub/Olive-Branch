@@ -1,11 +1,12 @@
 # Self-hosted Jitsi — §16.2 #6 Step 2
 
-**Status: staged and container-level verified; not yet verified on real
-hardware.** This directory sets up a local `docker-jitsi-meet` stack so
-Step 2 (self-host Prosody/Jicofo/JVB) can be brought up on the dev machine,
-the same way `tools/local-call-room-server.mjs` already stands in for the
-production room-coordination API — LOCAL DEV/TEST ONLY, not a production
-deployment plan.
+**Status: staged, container-level verified, and the cert-trust gap is now
+closed at the TLS layer; still not verified on real hardware.** This
+directory sets up a local `docker-jitsi-meet` stack so Step 2 (self-host
+Prosody/Jicofo/JVB) can be brought up on the dev machine, the same way
+`tools/local-call-room-server.mjs` already stands in for the production
+room-coordination API — LOCAL DEV/TEST ONLY, not a production deployment
+plan.
 
 **What "verified" means here, precisely:** the full stack was actually
 brought up on this dev machine (not just written and assumed to work), hit
@@ -13,10 +14,21 @@ three real bugs in the process (all below, all fixed), and — once
 healthy — Prosody's own live-rendered config was inspected directly to
 confirm `authentication = "jitsi-anonymous"` with no forced-lobby or
 auth-gated moderator config, which is the actual mechanism that fixes the
-meet.jit.si finding. A full WebRTC join was **not** verified — the
-self-signed cert blocks it from both a browser (confirmed:
-`net::ERR_CERT_AUTHORITY_INVALID`) and would equally block the Flutter SDK
-on a real device (see "the self-signed cert" below). That gap, plus
+meet.jit.si finding. The self-signed-cert gap that originally blocked a
+real join (browser-confirmed `net::ERR_CERT_AUTHORITY_INVALID`) is now
+fixed the same way — actually generating a cert and checking what's served
+over the wire, not assumed: `generate-dev-cert.sh` replaces
+docker-jitsi-meet's own cert (CN-only, zero X.509 extensions — confirmed
+via `openssl x509 -noout -ext subjectAltName` returning "No extensions in
+certificate", which modern TLS clients including Android's would reject on
+hostname grounds even with the issuer trusted) with one carrying a proper
+`subjectAltName`, and `openssl s_client` against the running stack confirms
+nginx is actually serving it. **Still not proven end to end on a device**:
+this session's own browser tool runs in an isolated context that doesn't
+consult the Windows cert store, so even the "does trusting this issuer
+actually fix the handshake" question could only be verified at the raw TLS
+level, not through a full browser or device trust-anchor path — see "the
+self-signed cert" below for exactly what that leaves open. That gap, plus
 physical two-device re-verification, is what's left before this Step can be
 called done.
 
@@ -116,24 +128,63 @@ dev-machine stack, neither implemented here yet:
    `TCP_HARVESTER` mode) — works but adds latency and isn't how Jitsi is
    normally run.
 
-## A second real constraint: the self-signed cert
+## A second real constraint, now fixed at the TLS layer: the self-signed cert
 
 `docker-jitsi-meet` serves HTTPS with a **self-signed** cert unless
 `ENABLE_LETSENCRYPT`/`LETSENCRYPT_DOMAIN` are set, which need a real public
-DNS name — not available for a localhost dev stack. `network_security_config.xml`
-(`client/android/app/src/main/res/xml/`) only whitelists cleartext HTTP to
-`127.0.0.1` for the room-coordination call; it says nothing about trusting a
-TLS cert, and `jitsi_meet_flutter_sdk` has no client-side "skip cert
-validation" flag. A physical device will reject the self-hosted stack's TLS
-handshake outright until either:
-- a `<trust-anchors>` entry + bundled CA resource is added to
-  `network_security_config.xml` for local dev builds only, or
-- the stack runs behind a tunnel (Cloudflare Tunnel / ngrok) that terminates
-  with a real, publicly-issued cert.
+DNS name — not available for a localhost dev stack. `jitsi_meet_flutter_sdk`
+has no client-side "skip cert validation" flag, so a physical device (or
+any modern TLS client) rejects the handshake outright without help.
 
-Neither is done here. Browser-only checks (Task #3) don't hit this, since a
-desktop browser can click through a self-signed warning; the Jitsi SDK on a
-real device cannot.
+**Two separate problems here, not one** — worth spelling out because a fix
+for the first does not fix the second:
+1. **Untrusted issuer.** Nothing vouches for a self-signed cert. Fixed via
+   an Android `<trust-anchors>` entry (below).
+2. **No hostname match.** docker-jitsi-meet's own generated cert
+   (`/storage/keys/cert.crt`, from its `s6-overlay` config script) is
+   `CN=*` with **zero X.509v3 extensions** — confirmed via
+   `openssl x509 -in cert.crt -noout -ext subjectAltName` returning "No
+   extensions in certificate". Modern TLS clients (Chrome/Chromium since
+   ~2017, Android's default stack) ignore CN for hostname verification and
+   require `subjectAltName`. Even a device told to fully trust this
+   cert's issuer would *still* fail — a hostname-mismatch error, not a
+   trust error, and one that trusting the issuer alone would not catch.
+
+**Fix: `generate-dev-cert.sh`.** Generates a new self-signed cert with
+`subjectAltName=IP:127.0.0.1,DNS:localhost` (matching the `adb reverse`
+loopback address `call_screen.dart` already uses — see its own header),
+writes it to docker-jitsi-meet's own operator-override path
+(`${CONFIG}/storage/web/keys/`, which its `s6-overlay` config script
+already supports and prefers over generating its own — confirmed by
+reading that script directly rather than assumed), and copies the
+*public* half to `client/android/app/src/main/res/raw/jitsi_dev_cert.pem`
+— committed, since a cert's public half isn't a secret; the private key
+stays on the dev machine that generated it, in the gitignored `CONFIG`
+storage dir, and is never committed. `network_security_config.xml` now has
+a `<trust-anchors>` block scoped to `127.0.0.1` referencing that resource.
+
+**Verified:** after restarting the `web` container, `openssl s_client
+-connect 127.0.0.1:8443` confirms nginx serves the new cert, with the
+correct SAN, over the actual wire — not just present on disk.
+**Not verified:** whether Android's trust-anchor mechanism itself resolves
+this on a real device. This session's browser tool turned out to run in an
+isolated context that doesn't consult the Windows certificate store —
+importing the dev cert into `Cert:\CurrentUser\Root` and re-testing still
+showed `net::ERR_CERT_AUTHORITY_INVALID`, so that path couldn't confirm or
+refute the trust-anchor XML itself; the import was removed afterward
+(`certutil -delstore`) rather than left in place for a check that didn't
+end up telling us anything. The TLS-level fix (correct SAN, correct cert
+actually served) is real and independent of that; whether
+`network_security_config.xml`'s syntax is exactly what a real device wants
+is the one piece only a device (or a correctly-configured verification
+browser) can confirm.
+
+**If you ever need a LAN IP added** (WiFi-based device testing instead of
+`adb reverse`'s USB loopback — see the UDP section above for why you'd need
+that at all): `./generate-dev-cert.sh 192.168.x.x`, restart the `web`
+container, rebuild the Android app. Deliberately not automated or
+defaulted — see that script's own header for why baking in today's LAN IP
+would repeat the exact bug CHANGELOG `[0.46.0]` already fixed once.
 
 Physical two-device re-verification (the standard this project holds itself
 to — MASTERFILE §16.2 #6: "verified rather than trusted from code review")
@@ -162,11 +213,16 @@ It does not start the stack.
 ```bash
 ../with-jitsi.sh          # bring the stack up, wait for health, leave running
 ../with-jitsi.sh down     # tear it down
+./generate-dev-cert.sh    # replace the default cert with one a device can
+                          # actually trust — see "the self-signed cert" below
+                          # for why the default one isn't enough on its own
 ```
 
-Once running, the web UI is at `https://127.0.0.1:8443` (self-signed cert —
-expect a browser warning; that's expected for a dev stack). Point
-`local-call-room-server.mjs` at it with:
+Once running, the web UI is at `https://127.0.0.1:8443` (a real
+self-signed cert with the right SAN once `generate-dev-cert.sh` has run —
+still expect a browser warning on first visit until the issuer is trusted;
+that's expected for a dev stack). Point `local-call-room-server.mjs` at it
+with:
 
 ```bash
 JITSI_SERVER_URL=https://127.0.0.1:8443 node tools/local-call-room-server.mjs
