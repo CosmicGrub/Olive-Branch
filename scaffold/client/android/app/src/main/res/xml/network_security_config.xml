@@ -40,4 +40,23 @@
             <certificates src="system" />
         </trust-anchors>
     </domain-config>
+    <!-- LAN IP for real two-device WiFi testing against the self-hosted
+         Jitsi stack (§16.2 #6 Step 2) — see this file's own header above:
+         adb reverse can't tunnel JVB's UDP media path, so a physical device
+         must reach the dev machine's real LAN address for a call's actual
+         media, not just the loopback used for room-coordination HTTP.
+         generate-dev-cert.sh's own header already warns this address goes
+         stale the moment the dev machine's network changes — same caution
+         that entry above is about — so treat this as today's LAN IP, not a
+         permanent fixture; regenerate the cert and update this address
+         together if the dev machine's network changes.
+         No cleartextTrafficPermitted here: nothing on this address ever
+         speaks plain HTTP, only the self-hosted stack's real HTTPS. -->
+    <domain-config>
+        <domain includeSubdomains="false">192.168.1.175</domain>
+        <trust-anchors>
+            <certificates src="@raw/jitsi_dev_cert" />
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>

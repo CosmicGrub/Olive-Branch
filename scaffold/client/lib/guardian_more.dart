@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
+import 'call_screen.dart';
 import 'call_security_info.dart';
 import 'closing_ritual.dart';
 import 'colour_parent.dart';
@@ -50,6 +51,32 @@ import 'year_book.dart';
 Future<Map<String, dynamic>> _noLiveBackendWired(String childId) async =>
     throw StateError('No live backend is wired into this preview build yet — '
         'see main_live.dart for the real network path.');
+
+/// Real POST /v1/me/pin (OliveApi.setGuardianPin) when this hub has an
+/// actual live session (baseUrl/guardianId — see GuardianMoreScreen's own
+/// field doc comments); returns a callback GuardianSetupScreen can call
+/// directly, or null when there's no live session to set a PIN against —
+/// GuardianSetupScreen's own [_submitPin] already gives an honest "no
+/// backend wired" message for a null [GuardianSetupScreen.setGuardianPin],
+/// same convention [_noLiveBackendWired] above uses for its own live/offline
+/// split. A fresh devLoginFor() per call, not a session cached on this
+/// (stateless) widget — same posture main_live.dart's own
+/// _verifyGuardianPin/_fetchInitialTheme already hold themselves to, for
+/// the same reason: nothing here should trust a token that might have
+/// outlived whatever this widget's own lifecycle is.
+Future<void> Function(String pin)? _liveSetGuardianPin(
+    {required String? baseUrl, required String? guardianId, http.Client? httpClient}) {
+  if (baseUrl == null || guardianId == null) return null;
+  return (String pin) async {
+    final token = await devLoginFor(baseUrl, userId: guardianId, client: httpClient);
+    final api = OliveApi(baseUrl, token, client: httpClient);
+    try {
+      await api.setGuardianPin(pin);
+    } finally {
+      if (httpClient == null) api.close();
+    }
+  };
+}
 
 class GuardianMoreScreen extends StatelessWidget {
   const GuardianMoreScreen({
@@ -230,6 +257,21 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, ShowGuardianScreen(childName: childName, childAge: childAge))),
         ]),
         HubSection(title: 'Calls', children: [
+          HubTile(icon: Icons.call_outlined, title: 'Call $childName',
+            subtitle: baseUrl != null
+              ? 'Real Jitsi room, real room-coordination server'
+              // Deliberately NOT "not connected" (the substring
+              // guardian_more_test.dart's Availability-tile test matches
+              // on) — this subtitle renders unconditionally, unlike that
+              // tile's tap-time snackbar, so reusing the same wording here
+              // would make every future "not connected" assertion in this
+              // file ambiguous between two ALWAYS-visible widgets, not one.
+              : 'Needs a live session — no backend in this preview build',
+            onTap: () => baseUrl != null
+              ? _open(context, const CallScreen(who: 'dad', displayName: 'Dad'))
+              : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Calling needs a live session — no backend in this preview build.'),
+                  duration: Duration(seconds: 3)))),
           HubTile(icon: Icons.waving_hand_outlined, title: 'Closing ritual (demo)',
             subtitle: 'Calls end the same way every time',
             onTap: () => _open(context, ClosingRitualScreen(childName: childName, callerName: 'Dad'))),
@@ -252,7 +294,9 @@ class GuardianMoreScreen extends StatelessWidget {
               onDecline: () => Navigator.of(context).pop(),
             ))),
           HubTile(icon: Icons.key_outlined, title: 'Guardian setup',
-            subtitle: 'Passkey sign-in — an honest stub, not a faked grant',
+            subtitle: baseUrl != null
+              ? 'Set your kiosk PIN — passkey sign-in is still an honest stub'
+              : 'Passkey sign-in — an honest stub, not a faked grant',
             onTap: () => _open(context, GuardianSetupScreen(
               // Real navigation wiring — no longer a null-checked snackbar
               // fallback (see guardian_setup.dart's own _tapAgreement, which
@@ -264,12 +308,22 @@ class GuardianMoreScreen extends StatelessWidget {
                 childName: childName,
                 fetchOrder: fetchAgreementOrder ?? _noLiveBackendWired,
               )),
+              // Real POST /v1/me/pin when this hub has a live session; null
+              // (GuardianSetupScreen's own honest "no backend wired" state)
+              // otherwise — see _liveSetGuardianPin's own doc comment.
+              setGuardianPin: _liveSetGuardianPin(
+                baseUrl: baseUrl, guardianId: guardianId,
+                httpClient: availabilityHttpClient),
             ))),
           HubTile(icon: Icons.fingerprint_outlined,
             title: 'Guardian setup — passkey (dev verification)',
             subtitle: 'Real ceremony, real backend, local dev server only',
-            onTap: () => _open(context,
-              GuardianSetupScreen(registerPasskey: _devRegisterPasskey))),
+            onTap: () => _open(context, GuardianSetupScreen(
+              registerPasskey: _devRegisterPasskey,
+              setGuardianPin: _liveSetGuardianPin(
+                baseUrl: baseUrl, guardianId: guardianId,
+                httpClient: availabilityHttpClient),
+            ))),
           HubTile(icon: Icons.push_pin_outlined, title: 'Kiosk lock advisory',
             subtitle: 'What this platform actually guarantees, honestly',
             onTap: () => _open(context, const LockAdvisoryScreen())),

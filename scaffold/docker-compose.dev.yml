@@ -1,0 +1,87 @@
+# OLIVE BRANCH — the live two-device-testing dev stack, containerized.
+# See tools/docker-dev/README.md for why this exists, what it does and
+# does not replace, and how to point physical devices at it.
+#
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# `--build` on every invocation is deliberate, not a habit to drop later —
+# "previous, current, and future builds" all go through this same path, so
+# rebuilding is the normal way to pick up new code, not an occasional
+# maintenance step. Compose's own layer cache (see Dockerfile's comment on
+# COPY order) keeps a no-op rebuild fast when only source changed.
+name: olive-dev
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - olive-dev-pgdata:/var/lib/postgresql/data
+      # Runs once, only against a truly empty volume — see that file's own
+      # header for what it does and why app_owner must be NOSUPERUSER
+      # NOBYPASSRLS rather than reusing the `postgres` superuser role.
+      - ./tools/docker-dev/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      # 5434, not Postgres's default 5433/5432 this project's other local
+      # Postgres instances (the WSL-native one, and the separate
+      # olive-verify-pg container tools/verify.sh's own CI-parity check
+      # uses) already claim — a distinct port keeps this stack from ever
+      # silently colliding with either.
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+    # Connects AS app_owner (not postgres) so every table migrate.mjs
+    # creates is already owned by the real NOBYPASSRLS role from the start
+    # — no separate GRANT/ALTER TABLE OWNER TO pass needed afterward, the
+    # exact manual step this session had to do by hand for the WSL-native
+    # database every time a new migration landed.
+    command: ["node", "tools/migrate.mjs"]
+    restart: "no"
+
+  server:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8123"
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+      SESSION_SECRET: dev-secret-docker-devicetest
+      DEV_LOGIN: "1"
+    ports:
+      - "8123:8123"
+    command: ["node", "server/index.mjs"]
+    restart: unless-stopped
+
+  callroom:
+    build: .
+    # No dependency on `server`/`migrate` — the room-coordination server
+    # only calls into packages/session-runtime directly (see its own file
+    # header), it never talks to Postgres or the main server.
+    environment:
+      # Point this at the self-hosted Jitsi stack's real LAN address, not
+      # its default (public meet.jit.si) — see tools/jitsi-selfhost/'s own
+      # README for why the default exists and what it's for. Update this
+      # if the dev machine's LAN IP or the self-hosted stack's port ever
+      # changes; same staleness caution as generate-dev-cert.sh's own
+      # header and network_security_config.xml's LAN-IP entry.
+      JITSI_SERVER_URL: https://192.168.1.175:8443
+    ports:
+      - "8787:8787"
+    command: ["node", "tools/local-call-room-server.mjs"]
+    restart: unless-stopped
+
+volumes:
+  olive-dev-pgdata:
