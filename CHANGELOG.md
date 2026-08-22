@@ -103,6 +103,107 @@ list+detail shape, so none gets a two-pane split.
 
 ---
 
+## [0.49.30] — 2026-08-22 — Live guardian entry point, real PIN onboarding, a real self-hosted-call bug found and fixed on physical hardware, and a containerized dev server
+
+Found while live-testing calling on two real devices for the first time
+against the self-hosted Jitsi stack (§16.2 #6 Step 2). Four independent
+pieces, all found in the course of that one test session.
+
+### Fixed — no live guardian entry point existed at all
+`main_live.dart`'s own boot sequence has always hardcoded a child dev-login
+with no guardian path — `guardian_more.dart` and everything under it
+(message banking, care note, emergency card, handover notes, availability,
+theme picker, kiosk PIN setup) sat completely unreachable from any real,
+running build, a gap that file's own comment already named directly. A new
+`main_live_guardian.dart` (a third build target, alongside `main.dart` and
+`main_live.dart`) boots straight into `GuardianMoreScreen` with a real
+guardian session. Deliberately does NOT boot the full ribbon/dual-clock
+`GuardianHome` — that widget needs a `/ribbon` endpoint `api_client.dart`
+only ever declared a path constant for (`OliveApi.childRibbon`), with no
+real server route and no client fetch method behind it anywhere in this
+codebase. Building that honestly (real server-side timezone/schedule
+computation, not fabricated ribbon data) is its own separate, larger piece
+of work — tracked, not invented here to make this entry point's job easier.
+
+### Fixed — the real kiosk-PIN-setup screen was never wired to its own real backend
+`GuardianSetupScreen.setGuardianPin` (backed by the already-real, already-
+tested `POST /v1/me/pin` → `setPinCredential`, scrypt-hashed, RLS-scoped)
+had zero callers at either of `guardian_more.dart`'s two `GuardianSetupScreen`
+call sites — a guardian could reach the screen, type a PIN, and it would
+silently do nothing beyond a "no backend wired" snackbar. Wired at both
+sites, following the same live/offline-preview conditional split every
+other real screen in this file already uses (`_openAvailability`,
+`fetchAgreementOrder`) — a fresh `devLoginFor(userId: ...)` per call, not a
+session cached on this stateless widget, the same posture `main_live.dart`'s
+own `_verifyGuardianPin`/`_fetchInitialTheme` already hold themselves to.
+A real "Call " tile was added to `guardian_more.dart`'s existing Calls
+section, which previously held only demo/info screens (closing ritual,
+call security info, live degrade, busy fork) and no way to actually place
+a call at all.
+
+### Fixed — the self-hosted Jitsi stack's served client config pointed devices at themselves
+§16.2 #6 Step 2 (self-hosted Jitsi) was staged and container-verified as of
+v0.49.28 but never confirmed against a real device — this pass tried, and
+every join attempt failed with a real Strophe `Websocket error`/`connfail`.
+Root cause, found by reading the actual served config rather than assuming
+the TLS-layer fix from v0.49.28 was sufficient: `config.js`'s
+`config.websocket`/`config.bosh` both hardcoded `wss://localhost:8443/...`
+— derived from `PUBLIC_URL`, left at its commented-out default. A physical
+device resolves `localhost` to itself, not the dev machine, so the
+WebSocket handshake had nowhere real to go regardless of the cert being
+correctly trusted. Fixed by setting `PUBLIC_URL` to the dev machine's real
+LAN address in `olive.env` (`tools/jitsi-selfhost/`) and restarting the
+stack; `config.js` now correctly serves the LAN address, and the very next
+join attempt produced a real `CONFERENCE_JOINED` event with a real room
+URL — the first time this Step has actually connected on real hardware.
+`network_security_config.xml` gained a second `<domain-config>` trusting
+the same dev cert for that LAN address (the existing entry only ever
+covered `127.0.0.1`, the loopback address `adb reverse`-based
+room-coordination traffic uses, a genuinely different concern from the
+LAN address real UDP media needs — see that file's own header for both).
+
+### Added — this project's own dev server, containerized
+`scaffold/Dockerfile` + `scaffold/docker-compose.dev.yml`
+(`scaffold/tools/docker-dev/README.md`) run `server/index.mjs` and
+`tools/local-call-room-server.mjs` as real Docker containers against a
+dedicated Postgres, replacing the bare `node` processes this session had
+been launching by hand — one of which silently died mid-session, taking
+both physical test devices' backend connectivity down with it, when the
+one-shot shell invocation that launched it exited and took `nohup`/`disown`
+down too, with no crash log and no symptom beyond "the app can't reach the
+server." `docker-compose.dev.yml`'s own `db` service provisions `app_owner`
+as NOSUPERUSER NOBYPASSRLS from creation (`tools/docker-dev/init-db.sql`)
+and the `migrate` one-shot service connects AS that role, so every table a
+migration creates is already correctly owned from the start — closing the
+same manual-grants-pass gap that produced a real `permission denied for
+table child_theme_preference` bug earlier this session, this time by
+construction rather than a follow-up fix.
+
+### Verification
+`flutter analyze` clean. `flutter test`: 1871/1871 (no new automated tests
+this pass — every fix here needed a real device/real network/real Docker
+stack to prove, not a widget test; the one new local-only regression this
+pass caught and fixed itself, a `guardian_more_test.dart` failure from the
+new Calls tile's subtitle text colliding with an existing "not connected"
+substring match, is a text-wording fix, not new coverage). Live-verified
+directly, not assumed: the guardian entry point booted clean and showed
+real backend-fetched content on a physical tablet; the PIN-setup screen's
+real backend call was exercised via `setPinCredential()` directly against
+a live database before the UI wiring existed, then via the wired UI path
+itself; the self-hosted-Jitsi fix is verified by a real `CONFERENCE_JOINED`
+event captured in that device's own logcat, not by re-reading the config.
+
+### A process note, recorded honestly rather than silently corrected
+This entry did not actually land in `CHANGELOG.md`/`MASTERFILE.md`/
+`MARKUP.html` when PR #54 merged — a `git add` call listing a nonexistent
+path (`scaffold/demo/DEMO.html`, which is gitignored, not tracked) failed
+atomically, silently leaving every doc-sync file unstaged; the commit was
+made without re-checking `git status` first, and a later `git reset --hard`
+discarded the uncommitted correct content before the gap was noticed. Found
+and fixed only when a later agent's own final report flagged the missing
+entry rather than assuming it wasn't needed. Reconstructed here from the
+original text, not rewritten from memory or summarized down.
+
 ## [0.49.29] — 2026-08-22 — Device-adaptive backlog, batch C of 3 (final): handover_notes.dart, care_note.dart, availability_screen.dart, show_guardian.dart get the real two-pane split
 
 Closes out the device-adaptive two-pane backlog v0.49.27's investigation
