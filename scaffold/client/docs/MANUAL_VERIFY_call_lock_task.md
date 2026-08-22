@@ -18,22 +18,24 @@ Run this after any change to: `client/lib/call_screen.dart`,
 
 ## Setup
 
-0. **Samsung/One UI devices: check "Allow apps to be pinned" is ON before
-   assuming anything else is broken.** Settings → search "pin windows" →
-   **Allow apps to be pinned**. Confirmed OFF by default on two separate
-   real devices (a Fold5 and a Tab S9 FE, both Android 16 / One UI, security
-   patch 2026-07-05) on 2026-08-22. With it off, `Activity.startLockTask()`
-   still gets called, the OS still shows the "App is pinned" confirmation
-   toast, and `RestrictionPolicy: isScreenPinningAllowed` logs `false` right
-   before the transition — but `dumpsys activity activities |
-   grep mLockTaskModeState` never leaves `NONE`, indefinitely, no timeout,
-   no error. This is **the same silent-hang shape as the bug this whole
-   document exists for**, just one layer further out (OS setting, not app
-   code) — worth checking first since it produces near-identical symptoms
-   and will make it look like the §16.2 #6 fix itself regressed when it
-   hasn't. Confirmed present as a toggle back to at least One UI 6 per
-   Samsung's own support content; not part of the stock AOSP screen-pinning
-   flow, so don't expect to find it documented on developer.android.com.
+0. **Before touching Olive Branch at all: confirm the device's own native
+   pinning actually works.** Long-press an app icon (any app) in
+   Recents/Overview and check that a **"Pin this app"** option is offered.
+   If it isn't, this is a platform/OS problem, not an Olive Branch one —
+   see the 2026-08-22 Provenance entry below for the full trail (a real
+   finger, zero Olive code involved, still got nothing on two separate
+   real devices on this exact OS build). Don't spend time on steps 1+ until
+   this pre-check passes on a real finger, on the real device — it will
+   look exactly like the §16.2 #6 fix regressed and it won't have.
+   - Samsung/One UI devices specifically: also check Settings → search "pin
+     windows" → **Allow apps to be pinned** is ON first (Settings → More/
+     Additional/Other security settings, naming varies by One UI version).
+     Confirmed OFF by default on two real devices on 2026-08-22 — but be
+     aware turning it on is **necessary, not sufficient**: on this session's
+     two test devices (both One UI 8 / Android 16, security patch
+     2026-07-05) it did not fix the underlying problem, and the native
+     pin-from-Recents pre-check above still failed even with the toggle on
+     and a full reboot.
 1. A real Android device (screen-pinning does not reproduce reliably on the
    emulator — this bug was only ever caught on hardware). `adb devices -l`
    should show it.
@@ -140,28 +142,50 @@ logged `false` right before the doomed transition. Turned it on
 any stuck WindowManager transition state — **`mLockTaskModeState` still
 never left `NONE`**, polled for 80+ seconds. So the toggle was real and is
 worth keeping as a first check, but it is not sufficient by itself to
-explain what's happening on these two devices right now. Not yet
-determined: whether this is Android 16 / One UI security-hardening around
-lock-task specifically for non-device-owner apps (searched
-developer.android.com's Android 16 behavior-change pages — nothing
-documented there for lock task mode, so if this is a real platform change
-it isn't showing up in the usual place), a leftover Knox/Secure Folder
-interaction (this device has a Secure Folder profile owner under a
-separate user id — unconfirmed whether that's relevant to the main user's
-own lock-task state), or a genuine device-level fault reproducing
-identically by coincidence. Attempted to isolate further: (a) whether
-`adb shell input tap`-synthesized touches are specifically distrusted by
-Android 16 for this security-sensitive transition, by asking a human to
-drive the same flow with real touch input — inconclusive, no confirmed
-result captured before the polling window closed; (b) the OS's own manual
-"pin from Recents" flow (long-press the app icon in Overview), independent
-of Olive's code entirely, as a cleaner isolation test — didn't reach a
-conclusive result either; the long-press gesture kept triggering this
-Samsung build's split-screen app-picker instead of the pin context menu.
-**Whoever picks this up next: start with (a), a real finger on the actual
-touchscreen, since it's the cheapest test and was never conclusively
-ruled in or out.** If genuine touch also fails to pin, this is a real
-platform/device issue outside Olive's control, and the honest fix is
-probably "wait for both devices to reproduce it in Google's/Samsung's own
-Settings app pinning independent of any of our code, then file it as a
-platform bug" rather than continuing to treat it as an Olive Branch defect.
+explain what's happening on these two devices right now.
+
+**Resolved (as far as Olive Branch is concerned): platform-level, not an
+app bug.** Went back and closed out both hypotheses the section above left
+open, this time with a real finger on the actual glass (not `adb shell
+input tap`) driving Android's own **native** pin-from-Recents flow —
+zero Olive code involved, not even the app installed matters for this
+test:
+
+1. On the Fold5, with "Allow apps to be pinned" confirmed **on** (survived
+   a full reboot — checked again via `uiautomator dump`,
+   `checked="true"`), a human long-pressed an app icon in Recents and
+   looked for the "Pin this app" option.
+2. **No pin option appeared at all**, on the real device, with a real
+   finger, through Android/Samsung's own stock UI.
+
+That result rules out both remaining hypotheses in one shot:
+- **Not synthesized-touch distrust** — a genuine finger got the same
+  non-result `adb shell input tap` did.
+- **Not an Olive Branch defect** — this is Android's own native pinning
+  entry point, reached with zero app code in the path.
+
+Only explanation left standing: a platform/OS-level fault on this specific
+build (Android 16, One UI 8, security patch 2026-07-05), independent of
+anything in this repo. Corroborating, though not a certain match — a
+Samsung Community thread, ["Pinning apps not possible on OneUI
+8.0"](https://eu.community.samsung.com/t5/tablets/pinning-apps-not-possible-on-oneui-8-0/td-p/13546242),
+reports pinning broken after the One UI 8 update, with a Samsung moderator
+directing users to file feedback rather than confirming a fix. Flagging
+one honest gap rather than overclaiming: that thread's own framing (DeX,
+"pin apps on top of other windows," multitasking) reads like it could be
+describing Samsung's *separate* multi-window "always on top" pin feature
+rather than the *security* screen-pinning feature this doc is about — the
+two features share the word "pin" in Samsung's UI but are not the same
+thing, and nothing found conclusively confirms which one that thread means.
+
+**Where this leaves Olive Branch:** the kiosk-lock feature — and by
+extension the call-handoff fix this doc exists to verify, since it can't
+be exercised without a working pin to hand off — cannot currently be
+verified, or used, on this Fold5's exact OS build, for reasons entirely
+outside this app's code. Whoever picks this up next should not spend more
+time treating it as an Olive Branch defect: either test on a device/OS
+build where Samsung's own native pinning demonstrably works first (that's
+now a fast, cheap pre-check — long-press an app icon in Recents, confirm
+"Pin this app" is offered, *before* touching Olive Branch at all), or
+track the platform bug (via Samsung Members → Get Help → Feedback, per
+that community thread) separately from this app's own issue tracking.
