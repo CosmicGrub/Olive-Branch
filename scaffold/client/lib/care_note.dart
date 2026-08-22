@@ -18,6 +18,7 @@
 // enforced before a note is ever created, not applied afterward as a filter
 // on display — a rejected note never enters `_sent` at all.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // =========================================================== guardian.ts ===
 enum CareKind { sleep, appetite, mood, health, school, social, other }
@@ -131,12 +132,20 @@ class _CareNoteScreenState extends State<CareNoteScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Care note')),
-    body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+
+    // Pane A — compose: intro text, kind chips, the note field, the
+    // conditional guidance banner, the Send button, and the "not evidence"
+    // disclaimer — the whole compose card, verbatim, same as this screen
+    // always rendered. Only ever pulled into a named list so the
+    // wide/narrow branches below can share it rather than diverging — same
+    // discipline message_banking.dart/letters_screen.dart use for their own
+    // two panes.
+    final List<Widget> composeChildren = <Widget>[
       Text('A soft channel for the hard days — about ${widget.childName}, '
-        'never seen by her.', style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        'never seen by her.', style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         for (final CareKind k in CareKind.values)
@@ -149,23 +158,60 @@ class _CareNoteScreenState extends State<CareNoteScreen> {
           hintText: 'She had a rough night, or a cough, or...')),
       if (_guidance != null) Padding(padding: const EdgeInsets.only(top: 8),
         child: Container(padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Theme.of(context).colorScheme.errorContainer,
+          decoration: BoxDecoration(color: scheme.errorContainer,
             borderRadius: BorderRadius.circular(12)),
-          child: Text(_guidance!, style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onErrorContainer)))),
+          child: Text(_guidance!, style: textTheme.bodySmall?.copyWith(
+            color: scheme.onErrorContainer)))),
       const SizedBox(height: 8),
       SizedBox(width: double.infinity, height: 48,
         child: FilledButton(onPressed: _send, child: const Text('Send note'))),
       const SizedBox(height: 8),
       Text('Not evidence — outside the court-tier log, and clears itself in '
-        '7 days.', style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      const SizedBox(height: 20),
+        '7 days.', style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+    ];
+
+    // Pane B — the sent-notes list: the divider and every _NoteTile, same
+    // widgets and same order as this screen always rendered.
+    final List<Widget> listChildren = <Widget>[
       const Divider(),
       const SizedBox(height: 8),
       for (final CareNote n in _sent) _NoteTile(note: n, now: _now),
-    ])),
-  );
+    ];
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Care note')),
+      // SingleChildScrollView + Column, NOT ListView — a sliver list only
+      // realizes children near the viewport, which would silently drop
+      // sent notes scrolled below the fold from the widget tree. Same fix
+      // message_banking.dart/letters_screen.dart already document for the
+      // same bug class.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — same threshold message_banking.dart/letters_screen.dart
+        // use for their own two-pane splits.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: wide
+            ? Row(key: const Key('careNoteTwoPaneRow'),
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: composeChildren)),
+                  const SizedBox(width: 24),
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: listChildren)),
+                ])
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ...composeChildren,
+                const SizedBox(height: 20),
+                ...listChildren,
+              ]),
+        );
+      })),
+    );
+  }
 }
 
 class _NoteTile extends StatelessWidget {

@@ -41,6 +41,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'form_factors.dart' as ff;
 
 const List<String> _weekdayNames = <String>[
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
@@ -292,6 +293,52 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   Widget _buildReady(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+
+    // Pane A — the editable weekly-hours form: heading, description, the 7
+    // day rows, the save error (if any), and the Save button. Only ever
+    // pulled into a named list so the wide/narrow branches below can share
+    // it verbatim rather than diverging — same discipline
+    // message_banking.dart/letters_screen.dart use for their own two panes.
+    final List<Widget> composeChildren = <Widget>[
+      Text('When you can be reached',
+        style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 4),
+      Text(
+        'Set a start and end time for each day your co-guardian should see '
+        'you as reachable. Leave a day blank to say nothing about it.',
+        style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+      const SizedBox(height: 12),
+      for (var i = 0; i < 7; i++) _dayRow(context, i),
+      if (_saveError != null) Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(_saveError!, style: TextStyle(color: scheme.error)),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(height: 48, child: FilledButton(
+        onPressed: _saving ? null : _save,
+        child: _saving
+          ? const SizedBox(width: 18, height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.4))
+          : const Text('Save'),
+      )),
+    ];
+
+    // Pane B — the read-only co-guardians list: heading and every
+    // co-guardian window (or the honest empty-state notice), same widgets
+    // and same order as this screen always rendered.
+    final List<Widget> listChildren = <Widget>[
+      Text('Co-guardians', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 4),
+      if (_others.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text('No co-guardian has set their availability yet.',
+            style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+        )
+      else
+        for (final w in _others) _otherRow(context, w),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: const Text('Availability')),
       // SingleChildScrollView + Column, not ListView: this codebase already
@@ -299,43 +346,31 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
       // child_home.dart/guardian_home.dart (content below the fold silently
       // drops from the ELEMENT TREE, not just from view) — same convention
       // guardian_more.dart's own HubSection/HubTile pair already follows.
-      body: SafeArea(child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('When you can be reached',
-            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(
-            'Set a start and end time for each day your co-guardian should see '
-            'you as reachable. Leave a day blank to say nothing about it.',
-            style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-          const SizedBox(height: 12),
-          for (var i = 0; i < 7; i++) _dayRow(context, i),
-          if (_saveError != null) Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(_saveError!, style: TextStyle(color: scheme.error)),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(height: 48, child: FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-              ? const SizedBox(width: 18, height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2.4))
-              : const Text('Save'),
-          )),
-          const Divider(height: 32),
-          Text('Co-guardians', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          if (_others.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text('No co-guardian has set their availability yet.',
-                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-            )
-          else
-            for (final w in _others) _otherRow(context, w),
-        ]),
-      )),
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — same threshold message_banking.dart/letters_screen.dart
+        // use for their own two-pane splits.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: wide
+            ? Row(key: const Key('availabilityTwoPaneRow'),
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: composeChildren)),
+                  const SizedBox(width: 24),
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: listChildren)),
+                ])
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ...composeChildren,
+                const Divider(height: 32),
+                ...listChildren,
+              ]),
+        );
+      })),
     );
   }
 
@@ -353,7 +388,13 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
             ? TextButton(
                 onPressed: () => _pickStart(weekday),
                 child: const Text('Set a window'))
-            : Row(children: [
+            // Wrap, not Row: at a two-pane split's narrower pane width this
+            // card has roughly half the horizontal room it always used to,
+            // and a bare Row of two TextButtons could overflow. Wrap falls
+            // back to a second line there instead — at full single-column
+            // width (this card's usual case) everything still fits on one
+            // line, so nothing visibly changes.
+            : Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
                 TextButton(
                   onPressed: () => _pickStart(weekday),
                   child: Text(w.startLocal.format(context))),

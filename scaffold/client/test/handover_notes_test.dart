@@ -159,4 +159,64 @@ void main() {
       expect(spoken.single, contains('A brand new note to read back.'));
     });
   });
+
+  group('handover notes — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'compose form and the entries list as two side-by-side panes', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const HandoverNotesScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('handoverNotesTwoPaneRow')), findsOneWidget);
+      // Pane A content (the compose form) and Pane B content (an entry) are
+      // both genuinely present at once.
+      expect(find.textContaining("can't be edited or removed"), findsOneWidget);
+      expect(find.textContaining('Running about 15 minutes late'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (t) async {
+      await t.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const HandoverNotesScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('handoverNotesTwoPaneRow')), findsNothing);
+      expect(find.textContaining("can't be edited or removed"), findsOneWidget);
+      expect(find.textContaining('Running about 15 minutes late'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, '
+        'not the two-pane Row', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const HandoverNotesScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('handoverNotesTwoPaneRow')), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('adding a note still works correctly inside the wide two-pane layout',
+        (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const HandoverNotesScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('handoverNotesTwoPaneRow')), findsOneWidget);
+      await t.enterText(find.byType(TextField), 'Wide-pane handover note.');
+      await t.tap(find.text('Add note'));
+      await t.pump();
+
+      // Still inside the wide two-pane layout, and the new entry landed in
+      // the list pane.
+      expect(find.byKey(const Key('handoverNotesTwoPaneRow')), findsOneWidget);
+      expect(find.textContaining('Wide-pane handover note.'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  });
 }

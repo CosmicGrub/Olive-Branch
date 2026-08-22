@@ -190,4 +190,82 @@ void main() {
       });
     });
   });
+
+  group('AvailabilityScreen — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    Widget buildScreen() => AvailabilityScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        httpClient: mockFor(windows: <Map<String, dynamic>>[
+          {'guardianId': 'dad-1', 'guardianName': 'Dad', 'weekday': 1,
+            'startLocal': '09:00', 'endLocal': '12:00', 'note': 'mornings'},
+          {'guardianId': 'mom-1', 'guardianName': 'Mom', 'weekday': 2,
+            'startLocal': '13:00', 'endLocal': '15:00', 'note': null},
+        ]));
+
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'weekly-hours form and the co-guardians list as two side-by-side panes', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(buildScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('availabilityTwoPaneRow')), findsOneWidget);
+      // Pane A content (her own Monday window) and Pane B content (Mom's
+      // co-guardian window) are both genuinely present at once.
+      expect(find.text('Monday'), findsOneWidget);
+      expect(find.textContaining('Mom'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (t) async {
+      await t.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(buildScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('availabilityTwoPaneRow')), findsNothing);
+      expect(find.text('Monday'), findsOneWidget);
+      expect(find.textContaining('Mom'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, '
+        'not the two-pane Row', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(buildScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('availabilityTwoPaneRow')), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('saving still round-trips correctly inside the wide two-pane layout',
+        (t) async {
+      final captured = <Map<String, dynamic>>[];
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(AvailabilityScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        httpClient: mockFor(
+          windows: <Map<String, dynamic>>[
+            {'guardianId': 'dad-1', 'guardianName': 'Dad', 'weekday': 5,
+              'startLocal': '08:00', 'endLocal': '10:00', 'note': 'school run'},
+          ],
+          capturedPuts: captured,
+        ))));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('availabilityTwoPaneRow')), findsOneWidget);
+      await t.tap(find.text('Save'));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('availabilityTwoPaneRow')), findsOneWidget);
+      expect(find.text('Availability saved.'), findsOneWidget);
+      expect(captured.single, <String, dynamic>{
+        'weekday': 5, 'startLocal': '08:00', 'endLocal': '10:00', 'note': 'school run',
+      });
+      expect(t.takeException(), isNull);
+    });
+  });
 }

@@ -25,6 +25,7 @@
 //     she has been into. shelfChildView() in the TS original strips counts
 //     for her side; this screen is deliberately the one place they survive.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'showcase_logic.dart';
 
 class ShowGuardianScreen extends StatefulWidget {
@@ -214,36 +215,77 @@ class _ShowGuardianScreenState extends State<ShowGuardianScreen> {
   Widget build(BuildContext context) {
     final shelfEntries = shelf(_collections, _interestLabels);
     final openAsks = _asks.where((a) => !a.answered).toList();
+
+    // Pane A — the ask composer, verbatim. Only ever pulled into a named
+    // list so the wide/narrow branches below can share it rather than
+    // diverging — same discipline message_banking.dart/letters_screen.dart
+    // use for their own two panes.
+    final List<Widget> composeChildren = <Widget>[
+      _AskComposer(
+        kind: _kind, onKindChanged: (k) => setState(() => _kind = k),
+        suggested: _suggested, controller: _promptController,
+        openCount: _openAskCount, onSend: _sendAsk,
+      ),
+    ];
+
+    // Pane B — the activity/reply feed: pending asks, the shelf, and the
+    // received-show reply tiles, stacked together as a unit in the same
+    // order this screen always rendered them.
+    final List<Widget> listChildren = <Widget>[
+      Text('Waiting to hear back', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      if (openAsks.isEmpty)
+        const _NothingWaitingNotice()
+      else
+        for (final a in openAsks) _PendingAskTile(ask: a, agePhrase: _agePhrase(a)),
+      const SizedBox(height: 20),
+      Text('What she has been collecting', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      SizedBox(height: 104, child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: shelfEntries.length,
+        separatorBuilder: (context, i) => const SizedBox(width: 12),
+        itemBuilder: (context, i) => _ShelfCard(entry: shelfEntries[i]),
+      )),
+      const SizedBox(height: 20),
+      Text('What she has shown you', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      for (final s in _shows)
+        _ReceivedShowTile(show: s, controller: _controllerFor(s.id), onSend: () => _sendReply(s)),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: Text("${widget.childName}'s show & tell")),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        _AskComposer(
-          kind: _kind, onKindChanged: (k) => setState(() => _kind = k),
-          suggested: _suggested, controller: _promptController,
-          openCount: _openAskCount, onSend: _sendAsk,
-        ),
-        const SizedBox(height: 20),
-        Text('Waiting to hear back', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        if (openAsks.isEmpty)
-          const _NothingWaitingNotice()
-        else
-          for (final a in openAsks) _PendingAskTile(ask: a, agePhrase: _agePhrase(a)),
-        const SizedBox(height: 20),
-        Text('What she has been collecting', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        SizedBox(height: 104, child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: shelfEntries.length,
-          separatorBuilder: (context, i) => const SizedBox(width: 12),
-          itemBuilder: (context, i) => _ShelfCard(entry: shelfEntries[i]),
-        )),
-        const SizedBox(height: 20),
-        Text('What she has shown you', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        for (final s in _shows)
-          _ReceivedShowTile(show: s, controller: _controllerFor(s.id), onSend: () => _sendReply(s)),
-      ])),
+      // SingleChildScrollView + Column, NOT ListView — a sliver list only
+      // realizes children near the viewport, which would silently drop
+      // pending asks/shelf/received-show tiles scrolled below the fold from
+      // the widget tree. Same fix message_banking.dart/letters_screen.dart
+      // already document for the same bug class.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — same threshold message_banking.dart/letters_screen.dart
+        // use for their own two-pane splits.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: wide
+            ? Row(key: const Key('showGuardianTwoPaneRow'),
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: composeChildren)),
+                  const SizedBox(width: 24),
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: listChildren)),
+                ])
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ...composeChildren,
+                const SizedBox(height: 20),
+                ...listChildren,
+              ]),
+        );
+      })),
     );
   }
 }

@@ -118,4 +118,69 @@ void main() {
       expect(t.takeException(), isNull);
     });
   });
+
+  group('care note — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    Future<void> sendOneNote(WidgetTester t) async {
+      await t.pumpWidget(wrap(const CareNoteScreen()));
+      await t.enterText(find.byType(TextField), 'She had a rough night.');
+      await t.tap(find.text('Send note'));
+      await t.pump();
+    }
+
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'compose form and the sent-notes list as two side-by-side panes', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await sendOneNote(t);
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsOneWidget);
+      // Pane A content (compose) and Pane B content (the sent note) are
+      // both genuinely present at once.
+      expect(find.textContaining('A soft channel'), findsOneWidget);
+      expect(find.text('She had a rough night.'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (t) async {
+      await t.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await sendOneNote(t);
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsNothing);
+      expect(find.textContaining('A soft channel'), findsOneWidget);
+      expect(find.text('She had a rough night.'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, '
+        'not the two-pane Row', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await sendOneNote(t);
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('sending a note still works correctly inside the wide two-pane layout',
+        (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const CareNoteScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsOneWidget);
+      await t.enterText(find.byType(TextField), 'Wide-pane care note.');
+      await t.tap(find.text('Send note'));
+      await t.pump();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsOneWidget);
+      expect(find.text('Wide-pane care note.'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  });
 }

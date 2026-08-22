@@ -194,4 +194,63 @@ void main() {
       });
     }
   });
+
+  group('guardian showcase — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'ask composer and the activity feed as two side-by-side panes', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen(childName: 'Maya')));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsOneWidget);
+      // Pane A content (the composer) and Pane B content (a pending ask)
+      // are both genuinely present at once.
+      expect(find.text('Ask her to show you something'), findsOneWidget);
+      expect(find.text("Show me the biggest dinosaur you've got"), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (t) async {
+      await t.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen(childName: 'Maya')));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsNothing);
+      expect(find.text('Ask her to show you something'), findsOneWidget);
+      expect(find.text("Show me the biggest dinosaur you've got"), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, '
+        'not the two-pane Row', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen(childName: 'Maya')));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('sending an ask still works correctly inside the wide two-pane layout',
+        (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsOneWidget);
+      await t.enterText(find.byType(TextField).first, 'Show me your shoes');
+      await t.tap(find.widgetWithText(FilledButton, 'Send the ask'));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsOneWidget);
+      expect(find.text('3 of 3 waiting'), findsOneWidget);
+      expect(find.text('Show me your shoes'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  });
 }
