@@ -14,6 +14,85 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.28] — 2026-08-22 — §16.2 #6 Step 2: the self-signed cert's hostname gap fixed, and a recurring Docker Desktop crash-loop resolved
+
+The self-signed-cert gap v0.46.2 left open — the one still blocking a real
+device join against the local self-hosted Jitsi stack — turned out to be
+two separate problems, and fixing only the obvious one (untrusted issuer)
+would not have fixed the other (no hostname match). Found and fixed by
+actually generating a cert and checking what's served over the wire, same
+standard the rest of this Step already holds itself to.
+
+### Fixed
+- **`docker-jitsi-meet`'s own self-signed cert has zero X.509v3
+  extensions.** `openssl x509 -in cert.crt -noout -ext subjectAltName`
+  returned "No extensions in certificate" — just a legacy `CN=*` wildcard.
+  Modern TLS clients (Chrome/Chromium since ~2017, Android's default
+  stack, which is what `jitsi_meet_flutter_sdk` ultimately rides on) ignore
+  CN for hostname verification and require `subjectAltName`. This is a
+  **second, independent failure mode** from "untrusted self-signed cert" —
+  a device told to fully trust this cert's issuer would still fail on
+  hostname grounds, since there's nothing in the cert asserting it's valid
+  for `127.0.0.1` (or anything else) at all.
+- **`scaffold/tools/jitsi-selfhost/generate-dev-cert.sh`** (new) generates
+  a replacement cert with `subjectAltName=IP:127.0.0.1,DNS:localhost`
+  (matching the loopback address `call_screen.dart` already reaches via
+  `adb reverse` — see that file's own header) and writes it to
+  docker-jitsi-meet's own operator-override path
+  (`${CONFIG}/storage/web/keys/` — its `s6-overlay` config script already
+  supports and prefers a supplied cert over generating its own; confirmed
+  by reading that script, not assumed) rather than fighting nginx config
+  directly. Copies the *public* half to
+  `client/android/app/src/main/res/raw/jitsi_dev_cert.pem` — committed,
+  since a cert's public half isn't a secret; the private key stays on the
+  generating machine, in the gitignored `CONFIG` storage dir, never
+  committed.
+- **`network_security_config.xml`** gains a `<trust-anchors>` block scoped
+  to the existing `127.0.0.1` `<domain-config>`, referencing
+  `@raw/jitsi_dev_cert` alongside the system store (so this scope doesn't
+  become the *only* thing 127.0.0.1 traffic can trust).
+- Not hardcoded: adding a LAN IP for WiFi-based device testing (instead of
+  `adb reverse`'s USB loopback) is a deliberate, separate, undefaulted step
+  — `./generate-dev-cert.sh 192.168.x.x` — for the same reason
+  `devRoomServerBase` no longer hardcodes one (CHANGELOG `[0.46.0]`,
+  "Fixed").
+
+### Verified
+- After restarting the `web` container, `openssl s_client -connect
+  127.0.0.1:8443` confirms nginx actually serves the new cert, with the
+  correct SAN, over the wire — not just present on disk.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+Whether Android's `<trust-anchors>` mechanism itself resolves the handshake
+on a real device is still open. This session's own browser tool turned out
+to run in an isolated context that doesn't consult the Windows certificate
+store: importing the dev cert into `Cert:\CurrentUser\Root` and reloading
+still showed `net::ERR_CERT_AUTHORITY_INVALID`, so that path could not
+confirm or refute the trust-anchor XML — the import was removed afterward
+(`certutil -delstore`) rather than left in place for a check that told us
+nothing. The TLS-level fix (correct SAN, correct cert actually served) is
+real and independent of that gap; physical two-device re-verification —
+still not done, still no hardware access this session — is what would
+close it for real.
+
+### Fixed — unrelated, but blocked all of the above
+- **Docker Desktop crash-looped on startup**, unable to bring the stack up
+  at all: `starting services: initializing <Inference manager|Secrets
+  Engine>: listening on unix://...: remove ...: The file cannot be
+  accessed by the system.` Root cause: when the backend is killed
+  uncleanly, the Unix-domain-socket files its sidecar services listen on
+  are left as corrupted Windows reparse points that normal
+  `Remove-Item`/`fsutil reparsepoint delete` can't touch — confirmed this
+  is a recurring pattern on this dev machine (matching prior
+  `*_old_20260804`-style workarounds already sitting in
+  `%LOCALAPPDATA%`), not a one-off. Disabling `EnableDockerAI` does not
+  prevent it — confirmed already off, crashed anyway.
+  `-ResetToFactoryDefault` also doesn't help headlessly. Fix: rename both
+  known-recurring stale paths out of the way before every launch attempt
+  (clearing only the one path a given crash names is whack-a-mole — the
+  next crash just leaves the other one stuck). Not part of this repo — a
+  one-time machine fix, `C:\Users\Obliv\bin\Fix-DockerDesktop.ps1`.
+
 ## [0.49.27] — 2026-08-22 — Device-adaptive backlog, batch A of 3: nine more screens get the comfortable-reading-width cap
 
 Continues v0.49.25's per-screen judgment discipline, not a mechanical sweep:
