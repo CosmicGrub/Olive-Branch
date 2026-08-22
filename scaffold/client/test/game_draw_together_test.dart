@@ -23,10 +23,16 @@ List<Stroke> _visibleStrokes(WidgetTester t) {
   // find.byType(CustomPaint) — Material widgets elsewhere in the tree (e.g.
   // a Scrollbar painting its thumb inside the wide layout's side panel) can
   // legitimately add their own CustomPaint, and this must keep finding THE
-  // canvas's painter regardless of how many others exist.
-  final CustomPaint cp = t.widget<CustomPaint>(
+  // canvas's painter regardless of how many others exist. Audit-fix
+  // (compat-fix pass): AnnotationCanvasView now renders TWO CustomPaint
+  // widgets under this key (a RepaintBoundary-wrapped committed layer plus
+  // a live layer — see annotation_canvas_view.dart), so this filters down
+  // to the one whose painter implements InkPainterStrokes (the committed
+  // one) rather than assuming a single match.
+  final Iterable<CustomPaint> candidates = t.widgetList<CustomPaint>(
     find.descendant(of: find.byKey(const Key('drawTogetherCanvas')), matching: find.byType(CustomPaint)),
   );
+  final CustomPaint cp = candidates.singleWhere((CustomPaint c) => c.painter is InkPainterStrokes);
   final InkPainterStrokes painter = cp.painter! as InkPainterStrokes;
   return painter.strokes;
 }

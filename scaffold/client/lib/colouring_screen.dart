@@ -22,6 +22,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
 
 const List<Color> _kPalette = <Color>[
@@ -125,7 +126,9 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
         ]),
         body: SafeArea(
           child: LayoutBuilder(builder: (context, constraints) {
-            final bool narrow = constraints.maxWidth < 420;
+            final double textScale = MediaQuery.textScalerOf(context).scale(1);
+            final bool narrow = ff.columnsAt(
+                ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) < 2;
             return Padding(
               padding: EdgeInsets.all(narrow ? 8 : 16),
               child: Column(children: [

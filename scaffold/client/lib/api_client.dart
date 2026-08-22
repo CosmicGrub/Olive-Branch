@@ -477,8 +477,8 @@ class OliveApi {
       _post(messages, {
         'storageKey': storageKey,
         'durationMs': durationMs,
-        if (captionKey != null) 'captionKey': captionKey,
-        if (targetLocalDate != null) 'targetLocalDate': targetLocalDate,
+        'captionKey': ?captionKey,
+        'targetLocalDate': ?targetLocalDate,
         'daypart': daypart,
         'preserve': preserve,
       }, childId: childId);
@@ -502,7 +502,7 @@ class OliveApi {
     final body = await _post(deviceTokens, {
       'platform': platform,
       'token': token,
-      if (channel != null) 'channel': channel,
+      'channel': ?channel,
     });
     return body['id'] as String;
   }
@@ -672,7 +672,7 @@ Future<String> devLoginFor(
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.devLoginPath}'),
     headers: {'content-type': 'application/json'},
-    body: jsonEncode({if (userId != null) 'userId': userId, if (childId != null) 'childId': childId}),
+    body: jsonEncode({'userId': ?userId, 'childId': ?childId}),
   );
   final body = jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {

@@ -26,9 +26,14 @@ List<Stroke> _visibleStrokes(WidgetTester t) {
   // game_draw_together_test.dart's identical helper for why a bare
   // find.byType(CustomPaint) is fragile (other Material widgets, e.g. a
   // Scrollbar in the wide side panel, can legitimately add their own).
-  final CustomPaint cp = t.widget<CustomPaint>(
+  // Audit-fix (compat-fix pass): AnnotationCanvasView now renders TWO
+  // CustomPaint widgets under this key (committed + live layer — see
+  // annotation_canvas_view.dart), so this filters to the one whose painter
+  // implements InkPainterStrokes (the committed one).
+  final Iterable<CustomPaint> candidates = t.widgetList<CustomPaint>(
     find.descendant(of: find.byKey(const Key('guessDoodleCanvas')), matching: find.byType(CustomPaint)),
   );
+  final CustomPaint cp = candidates.singleWhere((CustomPaint c) => c.painter is InkPainterStrokes);
   final InkPainterStrokes painter = cp.painter! as InkPainterStrokes;
   return painter.strokes;
 }

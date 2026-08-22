@@ -18,7 +18,7 @@
 //
 // No Flutter import in this file, on purpose — same posture as
 // storyteller_logic.dart and lock_controller.dart.
-library library_logic;
+library;
 
 import 'storyteller_logic.dart';
 

@@ -18,6 +18,7 @@ import 'care_note.dart';
 import 'emergency_card.dart';
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
+import 'form_factors.dart' as ff;
 import 'guardian_more.dart';
 import 'handover_notes.dart';
 import 'meds_care.dart';
@@ -130,12 +131,25 @@ class GuardianHome extends StatelessWidget {
           // that exact width, not by inspection. Wider layouts keep the
           // original, more compact extent.
           child: LayoutBuilder(builder: (context, constraints) {
-            final columnWidth = (constraints.maxWidth - 10) / 2;
-            final mainAxisExtent = columnWidth < 165.0 ? 128.0 : 108.0;
+            final textScale = MediaQuery.textScalerOf(context).scale(1);
+            // Floor of 2, not columnsAt()'s raw output: columnsAt() returns 1
+            // below 660px effective width, which would collapse BOTH real
+            // test devices (Fold5 cover screen, ~312px inside this grid's
+            // padding, and the 7-inch tabletSmall posture, 600px min) from
+            // the deliberately-tuned 2-column layout down to a single
+            // stacked column. Only scale UP on genuinely wide guardian
+            // surfaces (desktop/dex/wide tabletLarge), never down.
+            final crossAxisCount = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale,
+            ).clamp(2, 3);
+            final gapTotal = 10.0 * (crossAxisCount - 1);
+            final effectiveColumnWidth =
+                (constraints.maxWidth / textScale - gapTotal) / crossAxisCount;
+            final mainAxisExtent = effectiveColumnWidth < 165.0 ? 128.0 : 108.0;
             return GridView(shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10,
+              crossAxisCount: crossAxisCount, mainAxisSpacing: 10, crossAxisSpacing: 10,
               mainAxisExtent: mainAxisExtent),
             children: [
               _GTile(icon: Icons.schedule_send, label: 'Message banking',

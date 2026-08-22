@@ -24,8 +24,8 @@ import 'guardian_setup.dart' show PasskeyOutcome;
 /// A real, distinct ceremony failure reported by the native side —
 /// [code] mirrors WebAuthnBridge.kt's own error codes verbatim
 /// ('user_cancelled', 'no_platform_authenticator', 'api_level_too_low',
-/// 'provider_not_configured', 'interrupted', 'dom_error_<DOMException type>',
-/// 'create_credential_failed_<type>' / 'get_credential_failed_<type>').
+/// 'provider_not_configured', 'interrupted', `dom_error_<DOMException type>`,
+/// `create_credential_failed_<type>` / `get_credential_failed_<type>`).
 class WebAuthnException implements Exception {
   WebAuthnException(this.code, this.message);
   final String code;

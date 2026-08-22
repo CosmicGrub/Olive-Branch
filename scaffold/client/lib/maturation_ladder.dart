@@ -31,6 +31,7 @@
 //      "Move this later" is therefore the only mutation this screen offers,
 //      and it is offered only for a rung that has not happened yet.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============ ported from packages/maturation/src/maturation.ts (§21) ======
 enum Grant {
@@ -306,7 +307,9 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
         ? 'Growing up, ${widget.childName}'
         : "${widget.childName}'s ladder")),
       body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
-        final bool narrow = constraints.maxWidth < 420;
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool narrow = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) < 2;
         return ListView(
           padding: EdgeInsets.all(narrow ? 12 : 20),
           children: <Widget>[

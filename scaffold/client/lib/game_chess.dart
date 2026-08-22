@@ -59,6 +59,7 @@
 // product never narrates it as a verdict on her.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
 enum ChSide { child, parent }
@@ -698,7 +699,11 @@ class _GameChessState extends State<GameChess> {
         ],
       ),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 420;
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // breakpoint.
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
         return ListView(padding: const EdgeInsets.all(16), children: [
           if (_handicapBanner() != null) Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -717,7 +722,7 @@ class _GameChessState extends State<GameChess> {
             child: _CoachCard(text: chessCoach(_state))),
           const SizedBox(height: 12),
           Center(child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: narrow ? constraints.maxWidth : 460),
+            constraints: BoxConstraints(maxWidth: wide ? 460 : constraints.maxWidth),
             child: AspectRatio(aspectRatio: 1, child: _ChessBoardView(
               state: _state, selected: _selected,
               legalDestinations: {for (final m in _legalFromSelected) m.to},

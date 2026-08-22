@@ -167,10 +167,13 @@ class _GuessDoodleScreenState extends State<GuessDoodleScreen> {
   void _onPanStart(DragStartDetails d) =>
       setState(() => _liveStroke = <StrokePoint>[StrokePoint(d.localPosition.dx, d.localPosition.dy)]);
 
-  void _onPanUpdate(DragUpdateDetails d) => setState(() => _liveStroke = <StrokePoint>[
-        ..._liveStroke,
-        StrokePoint(d.localPosition.dx, d.localPosition.dy),
-      ]);
+  // In-place `.add()`, not a rebuilt list — see game_draw_together.dart's
+  // identical note (`_onPanStart` already reassigns `_liveStroke` to a
+  // fresh list at the start of every stroke, and `_onPanEnd` below still
+  // reassigns it to a NEW empty list rather than `.clear()`ing this one).
+  void _onPanUpdate(DragUpdateDetails d) => setState(() {
+        _liveStroke.add(StrokePoint(d.localPosition.dx, d.localPosition.dy));
+      });
 
   void _onPanEnd(DragEndDetails d) {
     if (_liveStroke.isEmpty || _revealed) return;
@@ -213,7 +216,8 @@ class _GuessDoodleScreenState extends State<GuessDoodleScreen> {
           // gates its pan callbacks on.
           final Widget canvas = AnnotationCanvasView(
             canvasKey: const Key('guessDoodleCanvas'),
-            painter: _SoloInkPainter(strokes: _canvas.visible(), live: _liveStroke),
+            committedPainter: _CommittedSoloInkPainter(strokes: _canvas.visible()),
+            livePainter: _LiveSoloInkPainter(live: _liveStroke),
             drawingEnabled: !_revealed,
             onPanStart: _onPanStart,
             onPanUpdate: _onPanUpdate,
@@ -267,49 +271,77 @@ class _GuessDoodleScreenState extends State<GuessDoodleScreen> {
   }
 }
 
-/// Follows doodle_desk.dart's own private _InkPainter shape (see
-/// game_draw_together.dart's identical note) — one fixed ink color/width
-/// here since this screen has no color picker, just a drawer and a guesser.
-/// Implements game_draw_together.dart's `InkPainterStrokes` — the same
-/// small, typed, `dynamic`-free test seam, reused rather than redeclared.
-class _SoloInkPainter extends CustomPainter implements InkPainterStrokes {
-  const _SoloInkPainter({required this.strokes, required this.live});
+/// Shared by both painters below — follows doodle_desk.dart's own private
+/// _InkPainter shape (see game_draw_together.dart's identical note) — one
+/// fixed ink color/width here since this screen has no color picker, just a
+/// drawer and a guesser.
+void _paintPolyline(Canvas canvas, List<StrokePoint> pts, Color color, double width) {
+  if (pts.isEmpty) return;
+  final Paint paint = Paint()
+    ..color = color
+    ..strokeWidth = width
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round
+    ..style = PaintingStyle.stroke;
+  if (pts.length == 1) {
+    canvas.drawCircle(Offset(pts.first.x, pts.first.y), width / 2, paint..style = PaintingStyle.fill);
+    return;
+  }
+  final Path path = Path()..moveTo(pts.first.x, pts.first.y);
+  for (final StrokePoint p in pts.skip(1)) {
+    path.lineTo(p.x, p.y);
+  }
+  canvas.drawPath(path, paint);
+}
+
+const Color _soloInkColor = Color(0xFF2D2A32);
+const double _soloLiveWidth = 8;
+
+/// Paints only the committed strokes. Implements game_draw_together.dart's
+/// `InkPainterStrokes` — the same small, typed, `dynamic`-free test seam,
+/// reused rather than redeclared. See annotation_canvas_view.dart's own
+/// header and game_draw_together.dart's `_CommittedInkPainter` (identical
+/// split, applied here too) for why this is separated from the live layer
+/// and wrapped in a RepaintBoundary: `strokes` comes from
+/// `AnnotationCanvas.visible()`'s cache, so `shouldRepaint` can actually say
+/// no between drag frames instead of repainting the whole stroke history
+/// every pointer-move.
+class _CommittedSoloInkPainter extends CustomPainter implements InkPainterStrokes {
+  const _CommittedSoloInkPainter({required this.strokes});
   @override
   final List<Stroke> strokes;
-  final List<StrokePoint> live;
-
-  static const Color _liveColor = Color(0xFF2D2A32);
-  static const double _liveWidth = 8;
-
-  void _paintPolyline(Canvas canvas, List<StrokePoint> pts, Color color, double width) {
-    if (pts.isEmpty) return;
-    final Paint paint = Paint()
-      ..color = color
-      ..strokeWidth = width
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    if (pts.length == 1) {
-      canvas.drawCircle(Offset(pts.first.x, pts.first.y), width / 2, paint..style = PaintingStyle.fill);
-      return;
-    }
-    final Path path = Path()..moveTo(pts.first.x, pts.first.y);
-    for (final StrokePoint p in pts.skip(1)) {
-      path.lineTo(p.x, p.y);
-    }
-    canvas.drawPath(path, paint);
-  }
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final Stroke s in strokes) {
-      _paintPolyline(canvas, s.points, _liveColor, s.widthPx);
+      _paintPolyline(canvas, s.points, _soloInkColor, s.widthPx);
     }
-    _paintPolyline(canvas, live, _liveColor, _liveWidth);
   }
 
   @override
-  bool shouldRepaint(covariant _SoloInkPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _CommittedSoloInkPainter oldDelegate) =>
+      !identical(oldDelegate.strokes, strokes);
+}
+
+/// Paints only the in-progress live stroke. Always repaints -- see
+/// game_draw_together.dart's `_LiveInkPainter` for why a length/identical
+/// check on `live` cannot work once `_onPanUpdate` mutates `_liveStroke` in
+/// place (Fix 11): both the old and new painter end up aliasing the exact
+/// same, already-mutated `List<StrokePoint>` object, so neither check can
+/// ever observe a change mid-stroke. This layer is small and isolated by
+/// the committed layer's own RepaintBoundary, so an unconditional repaint
+/// here is the correct, cheap choice, not a missed optimization.
+class _LiveSoloInkPainter extends CustomPainter {
+  const _LiveSoloInkPainter({required this.live});
+  final List<StrokePoint> live;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _paintPolyline(canvas, live, _soloInkColor, _soloLiveWidth);
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiveSoloInkPainter oldDelegate) => true;
 }
 
 class _RoundPanel extends StatelessWidget {

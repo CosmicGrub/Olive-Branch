@@ -111,6 +111,14 @@ class AnnotationCanvas {
   int _seq = 0;
   final Map<String, CanvasPointer> _pointers = <String, CanvasPointer>{};
 
+  /// Cache for [visible()] — a committed-layer `CustomPainter` calls this
+  /// every build, and an unchanged, `identical()` list lets its
+  /// `shouldRepaint` return false instead of repainting the whole stroke
+  /// history on every pointer-move frame. Invalidated (set back to null) by
+  /// every method below that actually mutates what `visible()` would
+  /// return; never by anything else.
+  List<Stroke>? _visibleCache;
+
   AddResult add({
     required String id,
     required String actorId,
@@ -126,6 +134,7 @@ class AnnotationCanvas {
       id: id, actorId: actorId, actorKind: actorKind, seq: ++_seq,
       points: points, color: color, widthPx: widthPx, stampGlyph: stampGlyph);
     _strokes.add(s);
+    _visibleCache = null;
     return AddOk(s);
   }
 
@@ -144,6 +153,7 @@ class AnnotationCanvas {
       if (s.undoneAt != null) continue;
       if (s.erasedBy != null && s.erasedBy != actorId) continue;
       s.undoneAt = at;
+      _visibleCache = null;
       return s;
     }
     return null;
@@ -156,7 +166,10 @@ class AnnotationCanvas {
       if (s.actorId != actorId || s.undoneAt == null) continue;
       if (best == null || s.undoneAt! > best.undoneAt!) best = s;
     }
-    if (best != null) best.undoneAt = null;
+    if (best != null) {
+      best.undoneAt = null;
+      _visibleCache = null;
+    }
     return best;
   }
 
@@ -167,11 +180,19 @@ class AnnotationCanvas {
     }
     if (s == null || s.erasedBy != null) return false;
     s.erasedBy = byActorId;
+    _visibleCache = null;
     return true;
   }
 
-  /// Deterministic render order regardless of arrival order.
+  /// Deterministic render order regardless of arrival order. Cached and
+  /// invalidated only on real mutation (add/undo/redo/erase above), so a
+  /// caller that rebuilds every frame without mutating the canvas (e.g. a
+  /// `CustomPainter` re-reading this during a live pointer-move) gets back
+  /// the exact same `List<Stroke>` instance — letting `shouldRepaint` skip
+  /// repainting the whole committed stroke history on every frame.
   List<Stroke> visible() {
+    final List<Stroke>? cached = _visibleCache;
+    if (cached != null) return cached;
     final List<Stroke> vis = _strokes
         .where((Stroke s) => s.undoneAt == null && s.erasedBy == null)
         .toList();
@@ -179,7 +200,7 @@ class AnnotationCanvas {
       final int bySeq = a.seq.compareTo(b.seq);
       return bySeq != 0 ? bySeq : a.actorId.compareTo(b.actorId);
     });
-    return vis;
+    return _visibleCache = vis;
   }
 
   void point(CanvasPointer e) => _pointers[e.actorId] = e;

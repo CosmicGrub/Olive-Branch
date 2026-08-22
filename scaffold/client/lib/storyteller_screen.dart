@@ -22,6 +22,7 @@
 // server yet (see api_client.dart) — favourites/bookmarks reset on restart,
 // same honest-stub posture as message_banking.dart's seeded demo state.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'library_logic.dart';
 import 'storyteller_logic.dart' as story;
 
@@ -124,7 +125,10 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
       // No settings affordance anywhere on this child-facing screen (§8.1).
       body: SafeArea(
         child: LayoutBuilder(builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 560;
+          final textScale = MediaQuery.textScalerOf(context).scale(1);
+          final wide = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight),
+              textScale) >= 2;
           final reading = _current == null
               ? _AskCard(
                   key: const ValueKey('ask'),

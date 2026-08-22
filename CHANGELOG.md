@@ -14,6 +14,192 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.24] — 2026-08-22 — Compatibility/dependency-audit fix pass: 11 mechanical fixes across dependency resolution, device-adaptive coverage, and canvas performance
+
+A 3-dimension compatibility audit (dependency-resolution, device-adaptive
+coverage, performance) ran over the whole app, every finding independently
+adversarially re-verified (a second pass tried to REFUTE each one by reading
+the actual code, and in one case running a diagnostic probe). 13 findings
+raised, 12 confirmed real, 1 correctly refuted — a `child_home.dart` action-
+grid claim that had no live bug once actually tested; left untouched. Of the
+12 confirmed, 11 were concrete, mechanical single/multi-file fixes, all
+shipped here. The 12th — roughly 60 screens with no device-adaptive layout
+at all, of which 15–19 are nav-reachable content screens that should
+eventually get a `form_factors.dart`-driven two-column tablet layout — is a
+prioritized backlog item, deliberately **not** attempted this pass: it needs
+real per-screen design and testing judgment a mechanical fix pass is not
+scoped to invent, and is left for a human decision.
+
+### Fixed — dependency resolution
+- **`scaffold/client/pubspec.yaml`'s declared SDK floor was looser than what
+  was already resolved.** `sdk: ">=3.4.0 <4.0.0"` with no `flutter:` key
+  understated both `pubspec.lock`'s own resolved `sdks:` stanza and the
+  Flutter version CI is actually pinned to (3.44.8). Now
+  `sdk: ">=3.12.0 <4.0.0"` / `flutter: ">=3.44.0"` — a floor tightened to
+  match what was already true, not a package-version change; `flutter pub
+  get` resolves cleanly, unchanged.
+- **`scaffold/package.json` declared no `engines` field**, so nothing
+  enforced that `jsdom` — the one dependency in this manifest with its own
+  `engines.node` constraint (`^22.22.2 || ^24.15.0 || >=26.0.0`, confirmed
+  via `package-lock.json`, not assumed) — could actually run on the Node
+  version installing it. Added that exact range plus `engineStrict: true`;
+  `.github/workflows/verify.yml`'s `actions/setup-node@v4` step, previously
+  a bare `'22'` (which resolves to whatever latest 22.x npm ships and is not
+  guaranteed to satisfy `^22.22.2`), now pins a concrete `'22.22.2'`.
+- **`jsdom` and `livekit-server-sdk` were misclassified as production
+  `dependencies`** despite neither shipping in any production code path —
+  their only real callers are `demo/src/play.ts` (a dev-only jsdom-driven
+  probe harness) and `packages/session-runtime/test/*.test.mjs` (test-only).
+  Both moved to `devDependencies`, alongside the existing `esbuild`;
+  `dependencies` now holds exactly chess.js, jpeg-js, luxon, pg, pngjs,
+  tesseract.js. `npm install` regenerated `package-lock.json` accordingly;
+  the demo build (jsdom) and `packages/session-runtime/test/session.test.mjs`
+  (livekit-server-sdk) both still resolve and pass, confirming
+  devDependencies still install normally via `npm install`/`npm ci` — CI's
+  own `verify.yml` never passes `--omit=dev`.
+- **`flutter_lints` was two majors behind (`^4.0.0` → `^6.0.0`).** Bumped;
+  `flutter pub get` resolved `flutter_lints 6.0.0` cleanly. `flutter analyze`
+  under the new ruleset surfaced 13 new info-level lints across the whole
+  `lib/` tree (`use_null_aware_elements` ×5 in `api_client.dart`,
+  `unnecessary_underscores` ×2, `unnecessary_library_name` ×2,
+  `unintended_html_in_doc_comment` ×4 in `game_guess_doodle.dart` and
+  `webauthn_channel.dart`) — none in the files this pass touches directly,
+  all fixed (9 via `dart fix --apply`, 4 by hand — wrapping angle-bracket
+  generic types in backticks inside doc comments). `flutter analyze` is
+  clean: **No issues found!**
+
+### Fixed — device-adaptive coverage
+Nine files each hand-rolled their own single, arbitrary pixel breakpoint
+(`maxWidth < 420` or `>= 560`) instead of `form_factors.dart`'s real,
+tested §8.11.1 posture logic (`columnsAt()`), textScale-unaware and
+matching none of that table's own nine boundaries — the exact anti-pattern
+§8.11.1's own v0.49.13 note already named and partially fixed elsewhere
+(`court_export.dart`, `game_tictactoe.dart`, `game_dotsboxes.dart`).
+- **`guardian_home.dart`'s action grid** hardcoded `crossAxisCount: 2` from
+  raw `constraints.maxWidth`. Now computes columns from `columnsAt()`,
+  clamped to `[2, 3]` — the clamp is load-bearing: an unclamped swap would
+  have collapsed both the Fold5 cover screen and the 7-inch `tabletSmall`
+  posture from the deliberately-tuned 2 columns down to 1, since
+  `columnsAt()` only returns 2+ above 660px effective width. Only scales up
+  on genuinely wide surfaces, never down.
+- **`storyteller_screen.dart`** (`constraints.maxWidth >= 560`),
+  **`degradation_banner.dart`**, **`colour_daily.dart`**,
+  **`colouring_screen.dart`**, **`doodle_desk.dart`**, and
+  **`maturation_ladder.dart`** (all `constraints.maxWidth < 420`) each now
+  read `columnsAt()` directly, matching the pattern already established in
+  `court_export.dart`/`game_tictactoe.dart`/`game_dotsboxes.dart`. Not
+  numerically neutral by design — the threshold shifts from the old literal
+  to `columnsAt()`'s real ~660px effective-width boundary and becomes
+  textScale-aware, matching the app's real posture boundaries rather than
+  an arbitrary number. `degradation_banner.dart`'s boolean sense was
+  already correct (`narrow` still means narrow) and needed no ternary
+  change; the other five needed none either — only the `narrow`/`wide`
+  computation changed, not how callers branch on it.
+- **`game_checkers.dart`/`game_chess.dart`'s board `ConstrainedBox`**
+  (`maxWidth < 420`) required more care: the consuming ternary read
+  `narrow ? constraints.maxWidth : 460` (narrow meant "fill the available
+  width"). Renaming the variable to `wide` (`columnsAt() >= 2`) without
+  flipping the ternary branches would have rendered the board backwards —
+  capped when it should fill, and vice versa — on both real test devices.
+  Both files now read `constraints: BoxConstraints(maxWidth: wide ? 460 :
+  constraints.maxWidth)`, branches flipped along with the rename, with the
+  same "real §8.11.1 posture logic, not a made-up breakpoint" comment
+  `game_tictactoe.dart`/`game_dotsboxes.dart` already use. Both files' own
+  widget tests, pinned to the Fold5 cover-screen width (344px) and to
+  344/673/390/1100px responsive-audit widths, pass unchanged — confirming
+  `columnsAt()` classifies 344px as narrow/1-column exactly as the old
+  breakpoint did, and that no test hardcoded the old 420px assumption in
+  the shifted 400–419px range.
+
+### Fixed — canvas performance
+Two files (`annotation_canvas.dart`, `annotation_canvas_view.dart`) plus
+their two real screen consumers (`game_draw_together.dart`,
+`game_guess_doodle.dart`) and one more sharing the same pointer-move hot
+path (`doodle_desk.dart`).
+- **`AnnotationCanvas.visible()` recomputed and re-sorted the full stroke
+  history on every call**, including once per pointer-move frame during a
+  live drag. Now cached (`_visibleCache`), invalidated only by a real
+  mutation (`add`/`undo`/`redo`/`erase`) — an unmutated canvas now returns
+  the exact same `List<Stroke>` instance between frames.
+- **`AnnotationCanvasView` painted the full committed stroke history and
+  the in-progress live stroke together, unconditionally, on one
+  `CustomPaint` every frame.** Split into two layers — a `RepaintBoundary`-
+  wrapped committed layer (`shouldRepaint` now `!identical(oldStrokes,
+  strokes)`, made meaningful by the caching above) and a small, always-
+  repainting live layer — so a live drag no longer repaints the whole
+  stroke history every pointer-move. `game_draw_together.dart`'s
+  `_SharedInkPainter` split into `_CommittedInkPainter`/`_LiveInkPainter`
+  (the former still implements the existing `InkPainterStrokes` seam for
+  test compatibility); `game_guess_doodle.dart`'s `_SoloInkPainter` got the
+  identical split (`_CommittedSoloInkPainter`/`_LiveSoloInkPainter` — Dart's
+  per-file privacy means the classes themselves can't be literally shared,
+  only the `InkPainterStrokes` seam, matching this file's own established
+  precedent for parallel-not-shared painter code).
+- **A companion O(n²) fix**, same hot path: `_onPanUpdate` in all three
+  files (`game_draw_together.dart`, `game_guess_doodle.dart`,
+  `doodle_desk.dart`) rebuilt `_liveStroke` as a brand-new list
+  (`[..._liveStroke, newPoint]`) on every pointer-move — an O(n²) copy
+  across a long stroke. Now `_liveStroke.add(newPoint)`, safe only because
+  `_onPanStart` already reassigns `_liveStroke` to a fresh list at the
+  start of every stroke and `_onPanEnd` already reassigns (never
+  `.clear()`s) it afterward — both preserved exactly as-is; `_onPanEnd`
+  hands `_liveStroke` to `AnnotationCanvas.add()` by reference with no
+  defensive copy there, so clearing in place would have corrupted the
+  just-committed stroke.
+- **One deliberate deviation from the first-drafted fix, found and fixed
+  before landing, not shipped and found later:** the originally-proposed
+  live-layer `shouldRepaint` compared `oldDelegate.live.length != live.length
+  || !identical(oldDelegate.live, live)`. With `_onPanUpdate` now mutating
+  `_liveStroke` in place instead of rebuilding it, the "old" and "new"
+  painter end up aliasing the *exact same* `List<StrokePoint>` object by
+  the time `shouldRepaint` runs — Dart lists are reference types, so both a
+  length comparison and `identical()` read the object's current,
+  already-mutated state either way, and neither can ever observe a change
+  mid-stroke. Confirmed directly with a throwaway `dart` probe (mutate a
+  list in place after aliasing it; both checks read true post-mutation),
+  not assumed from reading the diff. As shipped, `_LiveInkPainter`/
+  `_LiveSoloInkPainter.shouldRepaint` return `true` unconditionally — this
+  layer is small and already isolated by the committed layer's own
+  `RepaintBoundary`, so an unconditional repaint here is the correct, cheap
+  choice, not a missed optimization.
+- Existing `game_draw_together_test.dart`/`game_guess_doodle_test.dart`
+  helpers assumed a single `CustomPaint` under the canvas key; updated to
+  filter to the one whose painter implements `InkPainterStrokes` (the
+  committed layer), since the view now renders two. All pre-existing
+  functional widget tests across `annotation_canvas_test.dart`,
+  `game_draw_together_test.dart`, and `game_guess_doodle_test.dart` pass
+  unchanged otherwise, proving the refactor behavior-preserving. Not
+  independently verifiable this pass: the actual frame-timing improvement
+  during a long real drawing session needs a physical device, none
+  available tonight — deferred, not skipped.
+
+### Verified, not changed
+- `child_home.dart`'s action grid — the one refuted finding from the audit.
+  Read carefully and probed; no live bug exists at any tested width. Left
+  alone.
+- The broader ~60-screen device-adaptive coverage gap (`message_banking.dart`,
+  `homework_screen.dart`, `weeks_screen.dart`, `inbox_screen.dart`,
+  `journal_screen.dart`, and roughly 15 others) — catalogued, not built.
+  `form_factors.dart` was not added to any file beyond the nine named above.
+
+### Verification
+`flutter analyze` clean (0 issues) under the bumped `flutter_lints`.
+`flutter test` — all 1842 widget/unit tests pass, including the
+Fold5-cover/main, phone, and desktop-scale responsive-audit suites for
+`guardian_home.dart` (via `invariants_test.dart`), `game_checkers.dart`,
+`game_chess.dart`, and every other file this pass touched. `npm install`
+regenerates `package-lock.json` cleanly; the JS/TS suites this pass's
+dependency changes could plausibly affect (`packages/session-runtime/test/
+session.test.mjs`, 67/67; `demo/test/drive.test.mjs`, 116/116, jsdom-backed)
+pass, along with every other JS test file run directly (40 of 42 files ran
+clean; the remaining two — `packages/transport/test/notify.test.mjs` and
+`packages/homework/test/homework.test.mjs` — need a live Postgres and
+ImageMagick respectively, both real external dependencies this local
+Windows session does not have provisioned, exactly as `verify.yml`'s own
+comments describe; left to CI, which provisions both).
+
+---
+
 ## [0.49.23] — 2026-08-21 — A documentation-staleness pass: one more wrong citation, one stale branch claim, one stale footer
 
 Second of two audit-style passes run tonight (the first, a 6-dimension
