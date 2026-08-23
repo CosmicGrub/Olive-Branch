@@ -29,6 +29,27 @@
  *   JITSI_SERVER_URL=https://127.0.0.1:8443 node tools/local-call-room-server.mjs
  *
  * GET /room?who=dad|ivy -> { room, serverURL, identity, displayName }
+ *
+ * POST/GET /pending-call — a SEPARATE, later addition: a real live-device
+ * test of the real `POST /v1/children/:childId/calls` route (routes.mjs)
+ * needs the child device to actually see a knock screen when the guardian
+ * device starts a call, same as a real `call_incoming` push would trigger
+ * (see call_knock_screen.dart's own buildCallIncomingHandler). No real
+ * FCM/APNs credential exists in this environment (push_channel.dart's own
+ * header — no google-services.json in this repo, confirmed, not merely
+ * assumed) — that push genuinely cannot be delivered here, full stop, not
+ * a bug in routes.mjs or notify.mjs. This is a same-spirit dev-only stand-in
+ * for THAT ONE missing hop, not a new production feature: the guardian's
+ * real call-start POSTs the real room it just minted here; the child
+ * device's dev-only test entry polls it every ~1s and, on seeing a new
+ * room, feeds it into the exact same real PushPointer-driven handler a real
+ * push would have. Everything on either side of this one hop — the real
+ * server route, the real session mint, the real Jitsi join, the real knock
+ * UI and its Answer button — is unmodified, real, tested code; only the
+ * undeliverable transport in between is bridged, and only in this
+ * LOCAL-DEV/TEST-ONLY file, never in routes.mjs or any shipped client
+ * screen. In-memory, single most-recent value, no auth — same posture as
+ * /room above, for the same reason (see that endpoint's own comment).
  */
 import { createServer } from 'node:http';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
@@ -69,8 +90,43 @@ const session = createSession({ childId: CHILD_ID, kind: 'call', createdBy: DAD_
   authorizedUserIds: [DAD_ID, IVY_ID], ladderStep: 'open' });
 console.log(`Session room: ${session.roomName}`);
 
+// See this file's own header comment on POST/GET /pending-call for what
+// this is and, just as importantly, what it deliberately is not.
+let pendingCall = null;
+
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (url.pathname === '/pending-call') {
+    if (req.method === 'POST') {
+      let raw = '';
+      req.on('data', (chunk) => { raw += chunk; });
+      req.on('end', () => {
+        try {
+          const { room, serverURL } = JSON.parse(raw || '{}');
+          if (typeof room !== 'string' || !room) {
+            res.writeHead(400, { 'content-type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'room required' }));
+          }
+          pendingCall = { room, serverURL: serverURL ?? JITSI_SERVER_URL };
+          res.writeHead(204);
+          res.end();
+        } catch {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'malformed body' }));
+        }
+      });
+      return;
+    }
+    if (req.method === 'GET') {
+      if (!pendingCall) { res.writeHead(204); return res.end(); }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify(pendingCall));
+    }
+    res.writeHead(405);
+    return res.end('method not allowed');
+  }
+
   if (url.pathname !== '/room') { res.writeHead(404); return res.end('not found'); }
 
   const who = url.searchParams.get('who');

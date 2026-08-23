@@ -96,6 +96,7 @@ class GuardianMoreScreen extends StatelessWidget {
     this.fetchAgreementOrder,
     this.currentTheme = defaultAppTheme,
     this.onThemeApplied,
+    this.onCallStarted,
   });
   final String childName;
   final int childAge;
@@ -143,8 +144,50 @@ class GuardianMoreScreen extends StatelessWidget {
   /// optional and additive, exactly like [fetchAgreementOrder] above.
   final void Function(AppTheme)? onThemeApplied;
 
+  /// Fires once [_startRealCall] below has a real, successfully-started
+  /// call — the decoded POST calls response verbatim (room/serverURL/
+  /// identity/rang). Every real call site leaves this null; it exists
+  /// purely as an observation seam for a dev-only test entry point that
+  /// needs to know a real call just started without this hub knowing or
+  /// caring why (same additive-optional-callback shape as
+  /// [fetchAgreementOrder]/[onThemeApplied] above — this hub's own real
+  /// behavior is identical whether or not anything is listening).
+  final void Function(Map<String, dynamic> started)? onCallStarted;
+
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+
+  /// Real call-start — POST OliveApi.calls (server/routes.mjs's real
+  /// handler), then opens the real [CallScreen] already joined to the room
+  /// that call just minted (`knownRoom`/`knownServerURL`, so this device
+  /// never falls back to [CallScreen]'s own dev-room-server fetch). Same
+  /// devLoginFor-per-call posture as [_liveSetGuardianPin] above, for the
+  /// same reason: nothing here should trust a token that might have
+  /// outlived this (stateless) widget's own lifecycle.
+  Future<void> _startRealCall(BuildContext context) async {
+    final url = baseUrl, gid = guardianId;
+    if (url == null || gid == null) return; // onTap's own gate already prevents this; defensive only.
+    try {
+      final token = await devLoginFor(url, userId: gid, client: availabilityHttpClient);
+      final api = OliveApi(url, token, client: availabilityHttpClient);
+      final Map<String, dynamic> started;
+      try {
+        started = await api.startCall(childId);
+      } finally {
+        if (availabilityHttpClient == null) api.close();
+      }
+      onCallStarted?.call(started);
+      if (context.mounted) {
+        _open(context, CallScreen(who: 'dad', displayName: 'Dad',
+          knownRoom: started['room'] as String?, knownServerURL: started['serverURL'] as String?));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not start the call: $e'), duration: const Duration(seconds: 3)));
+      }
+    }
+  }
 
   // ===========================================================================
   // DEV VERIFICATION ONLY -- §7.1, §8.1, §11. This whole preview build has no
@@ -267,8 +310,8 @@ class GuardianMoreScreen extends StatelessWidget {
               // would make every future "not connected" assertion in this
               // file ambiguous between two ALWAYS-visible widgets, not one.
               : 'Needs a live session — no backend in this preview build',
-            onTap: () => baseUrl != null
-              ? _open(context, const CallScreen(who: 'dad', displayName: 'Dad'))
+            onTap: () => baseUrl != null && guardianId != null
+              ? _startRealCall(context)
               : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('Calling needs a live session — no backend in this preview build.'),
                   duration: Duration(seconds: 3)))),
