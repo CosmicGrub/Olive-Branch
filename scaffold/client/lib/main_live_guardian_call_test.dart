@@ -1,4 +1,10 @@
-// OLIVE BRANCH — live-backend GUARDIAN CALL-TEST entry point. DEV
+// OLIVE BRANCH — live-backend GUARDIAN CALL-TEST entry point. UNVERIFIED
+// (tools/verify.sh's automated pipeline never builds/runs this specific
+// --target, only flutter analyze/flutter test against the shared test
+// suite — same posture as every other dev-only entry point in this repo).
+// Actually built and run on a real Galaxy Z Fold5 this pass, though: real
+// devLoginFor()/OliveApi.startCall() call, real CONFERENCE_JOINED, real
+// PARTICIPANT_JOINED on the other device — see CHANGELOG v0.49.34. DEV
 // VERIFICATION ONLY, same status as main_live_child_call_test.dart — not a
 // real product screen, not a design decision, and not shipped alongside
 // main_live_guardian.dart. MASTERFILE §7, §16.2 #6.

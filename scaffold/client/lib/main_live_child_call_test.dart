@@ -1,6 +1,12 @@
-// OLIVE BRANCH — DEV VERIFICATION ONLY entry point. Not a real product
-// screen, not a design decision, and not shipped alongside main_live.dart.
-// MASTERFILE §7, §16.2 #6.
+// OLIVE BRANCH — DEV VERIFICATION ONLY entry point. UNVERIFIED
+// (tools/verify.sh's automated pipeline never builds/runs this specific
+// --target, only flutter analyze/flutter test against the shared test
+// suite — same posture as every other dev-only entry point in this repo).
+// Actually built and run on a real tablet this pass and earlier this
+// session, though: real CONFERENCE_JOINED, real PARTICIPANT_JOINED on the
+// other device — see CHANGELOG v0.49.34. Not a real product screen, not a
+// design decision, and not shipped alongside main_live.dart. MASTERFILE
+// §7, §16.2 #6.
 //
 // Exists for exactly one reason: to verify a real two-device call with the
 // TABLET in the child role and a phone in the guardian role, the way
