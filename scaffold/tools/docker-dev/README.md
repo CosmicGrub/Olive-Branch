@@ -48,8 +48,19 @@ Does NOT replace:
 
 ## Use
 
+**First time only** — this stack needs a real, local `SESSION_SECRET`
+before it will start at all, and `DEV_LOGIN` (needed for physical-device
+testing) is opt-in, not on by default:
+
 ```bash
 cd scaffold
+cp .env.example .env
+# then edit .env: paste the output of `openssl rand -hex 32` into
+# SESSION_SECRET, and set DEV_LOGIN=1 if you're testing against a real
+# device. Never commit this file — it's already gitignored.
+```
+
+```bash
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
@@ -73,6 +84,14 @@ Physical devices reach this stack exactly the same way they always have —
 device, since the container publishes those same host ports. Nothing about
 how `call_screen.dart`/`api_client.dart` reach the backend changes; only
 how the backend itself is launched and kept alive changed.
+
+Both ports publish to `127.0.0.1` only, not every host interface — a
+device on the same WiFi network can't reach either port directly, only
+through `adb reverse`'s own tunnel to host loopback. This is deliberate:
+both `DEV_LOGIN=1` (server) and the call-room coordinator's own
+`who=dad|ivy` endpoint issue real, valid credentials with no password of
+any kind, so this stack should never be reachable by anything but the host
+machine itself.
 
 ## A new migration lands — what to do
 

@@ -34,6 +34,20 @@ import { createServer } from 'node:http';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
 
 const HTTP_PORT = 8787;
+// Loopback by default — this endpoint hands out a real Jitsi room name +
+// identity to anyone who asks who=dad|ivy, with no auth of its own (see
+// this file's own header: no self-hosted-with-JWT-auth SFU is decided
+// yet, so room-name-unguessability is the only real access control, and
+// this endpoint's whole job is handing that name out). Run bare (`node
+// tools/local-call-room-server.mjs`), the safe default is loopback-only.
+// Run inside docker-compose.dev.yml's `callroom` service, the container
+// MUST bind 0.0.0.0 within its own network namespace or Docker's port
+// -forwarding can't reach it at all — that service sets
+// CALLROOM_BIND_HOST=0.0.0.0 explicitly for exactly that reason, and the
+// real security boundary in that case is the host-side port mapping
+// ("127.0.0.1:8787:8787", not "8787:8787") in docker-compose.dev.yml,
+// not this bind address.
+const BIND_HOST = process.env.CALLROOM_BIND_HOST ?? '127.0.0.1';
 // Defaults to the public server so the original v0.46.0 lobby finding stays
 // reproducible without any config; override to point at a local Step 2
 // stack — see tools/jitsi-selfhost/README.md.
@@ -83,5 +97,5 @@ const server = createServer((req, res) => {
   }));
 });
 
-server.listen(HTTP_PORT, '0.0.0.0', () =>
-  console.log(`Local room-coordination server on 0.0.0.0:${HTTP_PORT}`));
+server.listen(HTTP_PORT, BIND_HOST, () =>
+  console.log(`Local room-coordination server on ${BIND_HOST}:${HTTP_PORT}`));

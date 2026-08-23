@@ -14,6 +14,109 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.32] — 2026-08-23 — Docker dev-stack: closing four confirmed, live security findings
+
+Found during a fresh audit pass (three parallel research passes, then 21
+adversarial re-verifiers checking the highest-stakes claims fresh against
+the actual source, refute-by-default) — four of seven claims checked lived
+in this exact stack, all four confirmed unanimously. All four close here,
+in one PR, rather than staged separately: each on its own still left the
+stack either reachable or the secret exposed.
+
+### Fixed — a committed session secret let anyone forge any identity,
+including escalated:true
+`docker-compose.dev.yml` hardcoded `SESSION_SECRET: dev-secret-docker-
+devicetest` in plaintext, committed, in a public repo. Sessions are
+HMAC-SHA256 over an unencrypted, caller-controlled JSON payload
+(`packages/auth/src/auth.ts`'s `issueSession`/`readSession`) with no DB
+round-trip, nonce, or revocation check at verification — anyone holding
+the secret could mint a token for any `userId`/`childId`/`roleName`,
+`escalated` or not, entirely offline, no server call needed. The verify
+pass found this reaches further than identity spoofing:
+`packages/api/src/api.ts` trusts a forged token's `escalated` flag
+directly, with zero re-check of the PIN-plus-biometric ceremony that flag
+is supposed to require — a forged token doesn't just spoof identity, it
+walks straight past the app's own two-factor guardian-escalation gate.
+Now read from `${SESSION_SECRET:?...}` — Compose fails fast with a clear
+message when no `.env` is present rather than falling back to any
+default, committed or otherwise. New `scaffold/.env.example` is the
+tracked template (generate a real value with `openssl rand -hex 32`);
+`scaffold/.env` itself is gitignored.
+
+### Fixed — DEV_LOGIN was hardcoded on by default
+`docker-compose.dev.yml` set `DEV_LOGIN: "1"` unconditionally — every
+clone following the documented setup got a server where `POST
+/v1/auth/dev-login` with a bare `{userId}`/`{childId}` mints a fully
+valid, real session with zero credential check of any kind
+(`server/index.mjs`'s own header already names this exactly, and fences
+it behind the flag for exactly that reason). Now `${DEV_LOGIN:-0}` — off
+unless a local `.env` opts in, matching what physical-device testing
+actually needs without shipping the committed file itself auth-disabled.
+
+### Fixed — the next image build would have baked real Jitsi secrets into
+its layers
+No `.dockerignore` existed anywhere in the repo. `Dockerfile`'s
+`COPY . .` build context is the whole `scaffold/` tree, which on any
+machine where the self-hosted Jitsi setup has already run includes a
+real, generated `tools/jitsi-selfhost/.jitsi-docker/.env` — six live
+Prosody/Jicofo/JVB/Jigasi/Jibri auth secrets. `.gitignore` already
+excludes this path from git; it has no effect on what Docker sends to the
+daemon. That same vendored checkout carries its own nested `.git/`, which
+would have swept in too. New `scaffold/.dockerignore` excludes it,
+`node_modules/` (reinstalled fresh by `npm ci` regardless), `.git/`, and
+any local `.env*`. Verified against the actual rebuilt image, not just
+read: neither `.jitsi-docker/` nor `.git/` is present anywhere inside it.
+
+### Fixed — the call-room coordinator was reachable by anyone on the LAN
+`GET /room?who=dad|ivy` (`tools/local-call-room-server.mjs`) issues a
+real, valid Jitsi room name and identity for one of two fixed principals
+based on nothing but that query string — no session, no header, no
+shared secret, and it quietly defeats the self-hosted stack's own
+room-name-as-secret model by handing the name to anyone who asks. Both
+this port and the main server's were published on every host interface
+(`"8787:8787"`/`"8123:8123"`), not just loopback. Physical devices have
+never needed that — they reach this stack exactly the same way they
+always have, `adb reverse tcp:8123 tcp:8123`/`adb reverse tcp:8787
+tcp:8787` to host loopback, which `tools/docker-dev/README.md` already
+documented — so restricting both to `"127.0.0.1:PORT:PORT"` closes real
+LAN/WiFi exposure with no change to the actual testing flow.
+`local-call-room-server.mjs` itself now binds `127.0.0.1` by default for
+safety when run bare; the containerized `callroom` service explicitly
+sets `CALLROOM_BIND_HOST=0.0.0.0` (required for Docker's own port
+forwarding to reach a process bound only to a container's own internal
+loopback — the real security boundary is the host-side port mapping, not
+this bind address).
+
+### Verified
+All four fixes tested live against the actual running stack, not only
+read: `docker compose ... up -d --build` fails fast with a clear message
+when `.env`/`SESSION_SECRET` is absent; `DEV_LOGIN=0` (the new default)
+makes `/v1/auth/dev-login` genuinely 404; `DEV_LOGIN=1` (opted in
+locally) still mints a real, working session; the call-room endpoint
+still returns a real room/identity through the container despite the
+bind-address change; `netstat` confirms both ports now listen on
+`127.0.0.1` only, no `0.0.0.0` wildcard; `docker run --rm
+olive-dev-server` confirms neither `.jitsi-docker/` nor `.git/` exists
+anywhere inside the rebuilt image.
+
+### Docs
+`tools/docker-dev/README.md` documents the new required first-time setup
+(`cp .env.example .env`, generate a real secret, opt into `DEV_LOGIN`)
+and the loopback-only binding, and explains why both matter in the same
+place the setup instructions live.
+
+### Not fixed, out of scope for this pass
+Self-hosted Jitsi's own room-level auth (`ENABLE_AUTH` unset) remains a
+deliberate design choice per its own Step 2 documentation — the
+room-name-as-secret model this fix restores meaning to, not a gap this
+pass closes on its own. Broader Docker-as-production-pillar work
+(healthcheck directives, a real production compose profile, a Postgres
+backup strategy, CI image publishing) and a handful of MASTERFILE
+documentation-staleness items scoped alongside these findings are tracked
+separately, not folded in here.
+
+---
+
 ## [0.49.31] — 2026-08-22 — Device-adaptive backlog, legacy-games tier: game_kim.dart, game_hunt.dart, game_chain.dart, game_battleship.dart, game_hangman.dart get the comfortable-reading-width cap
 
 Closes the compatibility audit's other named device-adaptive gap alongside

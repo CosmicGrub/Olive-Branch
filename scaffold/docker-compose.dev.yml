@@ -58,10 +58,23 @@ services:
     environment:
       PORT: "8123"
       DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
-      SESSION_SECRET: dev-secret-docker-devicetest
-      DEV_LOGIN: "1"
+      # Both read from ./.env (untracked — see .env.example), not a literal
+      # here. A committed SESSION_SECRET plus a permanently-on DEV_LOGIN
+      # were both real, confirmed findings: anyone holding the secret could
+      # forge a session for any user/child with escalated:true and no
+      # server round-trip, and DEV_LOGIN=1 needed no credential at all.
+      # `:?` fails fast with no secret rather than falling back to a weak
+      # default; DEV_LOGIN now defaults OFF so the committed file itself
+      # never ships with auth disabled — see .env.example to opt in.
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
+      DEV_LOGIN: "${DEV_LOGIN:-0}"
     ports:
-      - "8123:8123"
+      # Loopback-only, not "8123:8123" (which publishes on every host
+      # interface). Physical devices reach this exactly the same way they
+      # always have — adb reverse tcp:8123 tcp:8123 targets host loopback,
+      # never a LAN IP (see tools/docker-dev/README.md) — so this closes
+      # real LAN/WiFi exposure with no change to the actual testing flow.
+      - "127.0.0.1:8123:8123"
     command: ["node", "server/index.mjs"]
     restart: unless-stopped
 
@@ -78,8 +91,22 @@ services:
       # changes; same staleness caution as generate-dev-cert.sh's own
       # header and network_security_config.xml's LAN-IP entry.
       JITSI_SERVER_URL: https://192.168.1.175:8443
+      # Required inside a container: local-call-room-server.mjs now binds
+      # 127.0.0.1 by default (see its own header), which would make it
+      # unreachable through Docker's own port-forwarding — the forwarder
+      # connects to the container's bridge-network address, not its
+      # loopback. The real security boundary here is the host-side port
+      # mapping below ("127.0.0.1:8787:8787"), not this bind address.
+      CALLROOM_BIND_HOST: "0.0.0.0"
     ports:
-      - "8787:8787"
+      # Loopback-only — see the identical note on `server` above. This
+      # endpoint hands out a real Jitsi room name + identity to anyone who
+      # asks who=dad|ivy with zero auth of its own (that gap is separate
+      # and still real — see local-call-room-server.mjs's own header) but
+      # publishing on every interface meant anyone on the same WiFi could
+      # reach it too; loopback-only plus the same adb-reverse pattern
+      # closes that half.
+      - "127.0.0.1:8787:8787"
     command: ["node", "tools/local-call-room-server.mjs"]
     restart: unless-stopped
 
