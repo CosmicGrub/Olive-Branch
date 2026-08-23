@@ -62,7 +62,8 @@
     "test:contract": "npm run build && node packages/api/test/contract.test.mjs",
     "test:db:export": "npm run build && node packages/db/test/raw_export.test.mjs",
     "test:message-capture": "npm run build && node packages/db/test/message_capture.test.mjs",
-    "test:messages-route": "npm run build && node packages/api/test/messages_route.test.mjs"
+    "test:messages-route": "npm run build && node packages/api/test/messages_route.test.mjs",
+    "test:calls-route": "npm run build && node server/test/calls_route.test.mjs"
   },
   "dependencies": {
     "chess.js": "^1.4.0",

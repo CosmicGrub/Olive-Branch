@@ -14,6 +14,148 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.33] — 2026-08-23 — A real TURN relay, real relay-only enforcement, and the call_incoming ring path finally wired end to end
+
+Three independent research passes (signaling/room-coordination, client-side
+call lifecycle, self-hosted network topology) converged on the same real
+verdict: two devices on different home networks could not currently
+complete a call through this stack, and separately, `call_incoming` — fully
+built and tested on both the push and the client side — had zero real
+callers anywhere in this codebase. This entry closes the highest-leverage
+piece of both gaps. The fuller list of what's still open (persisted
+N-guardian room-coordination, the full §5.23–§5.28 call-quality UX, the
+camera-toggle SDK bug) is tracked separately, not folded in here.
+
+### Added — a real TURN relay (coturn)
+No TURN server existed anywhere in the self-hosted stack — confirmed by
+exhaustive grep, not assumed. Without one, any client whose own NAT/
+firewall blocks a direct or JVB-relayed path has no fallback at all; STUN
+alone (the only thing configured before this) tells a peer its own
+address, it does nothing when that address still isn't reachable through
+the OTHER side's NAT — the normal case for two independent home routers.
+`tools/jitsi-selfhost/docker-compose.override.yml` adds a real `coturn`
+service (time-limited shared-secret credentials via Prosody's own
+`external_service_secret`, matching how `docker-jitsi-meet`'s template
+already expected `TURN_CREDENTIALS` to be used); `gen-turn-secret.sh` (new,
+mirrors `generate-dev-cert.sh`'s own role) keeps that secret in sync
+between coturn and Prosody. Plain TURN only for this pass — TURNS needs
+the same real-domain/real-cert decision already deferred for the web UI,
+not invented here.
+
+Two real coturn image quirks found and fixed getting a clean deployment,
+neither obvious from the docs: (1) coturn auto-detects its own Docker-
+bridge-internal IP unless `--external-ip` is set explicitly — the exact
+class of bug `JVB_ADVERTISE_IPS` already exists to prevent for the
+videobridge, now also closed for TURN; (2) the official image's own
+entrypoint runs every CLI argument through `eval "echo $i"` (needed for
+its own default `$(detect-external-ip)` substitution) — a bare `-n` flag
+becomes `echo -n`, which prints nothing, silently turning the flag into an
+empty argument coturn then logs as `Unknown argument: `. Verified live
+end to end, not just read: coturn starts clean with zero warnings beyond
+two confirmed-benign ones (a cosmetic pidfile path, and a legacy STUN
+feature that needs two external IPs to matter); Prosody's own rendered
+config confirmed carrying real `external_service_secret` and matching
+`external_services` UDP+TCP entries; the client-served `config.js`
+confirmed reflecting it.
+
+### Fixed — a real, documented safety policy was not actually enforced
+MASTERFILE §5.21.1: "all media is relayed, always" — neither device may
+ever learn the other's real IP, a protective-order-relevant safety
+requirement, not a performance preference.
+`packages/session-runtime/src/security.ts`'s own `CallPolicy` already
+modeled `iceTransportPolicy: 'relay'` for exactly this reason, but it was
+never imported by the real Flutter client, and the self-hosted stack's own
+served config confirmed live: `config.p2p.enabled: true` — direct
+peer-to-peer is attempted by default upstream, exactly what this policy
+forbids. Fixed at the robust enforcement point — `tools/jitsi-selfhost/
+olive.env`'s new `ENABLE_P2P=0` disables it server-wide, so the policy
+holds no matter what any given client does or forgets to set — plus a
+client-side `configOverrides` override in `call_screen.dart` as defense in
+depth for the day this build points at some other Jitsi deployment that
+hasn't made the same choice. Verified live: `config.js` now confirmed
+serving `config.p2p.enabled: false`.
+
+### Added — the call_incoming ring path, wired end to end for the first time
+`packages/transport/src/push.ts` has declared a real `call_incoming` push
+kind with real copy since well before this pass; `client/lib/
+call_knock_screen.dart`'s `buildCallIncomingHandler()` has been real,
+tested wiring since before this pass too. Neither had a caller — confirmed
+independently by two research passes: `notifyDevices()` had zero HTTP call
+sites anywhere in `server/`, and this client's root widget had no
+`GlobalKey<NavigatorState>` for a push handler to navigate with.
+
+New `POST /v1/children/:childId/calls` (`server/routes.mjs`) closes both
+gaps at once, since they turned out to be the same missing piece: a callee
+can only be told to ring with a room she's actually authorized to join.
+Real, narrow, and deliberately not the fuller persisted N-guardian room-
+coordination service a production deployment eventually needs (recorded as
+a real, larger follow-up): authorized through the ordinary generic action
+gate (`action: 'call'`) rather than a hand-rolled check — `'call'` is
+already a real, recognized `Action` (`authorize.ts`'s own `can()`, the
+exact function `mintToken()` itself re-runs at mint per its I4 invariant),
+so this route reuses that existing, more thoroughly-tested authorization
+path instead of adding a fifth `action: null` exception to
+`contract.test.mjs`'s own deliberately narrow whitelist. Mints a real
+session via `createSession()`/`mintToken()` — the same pure, tested
+primitives `local-call-room-server.mjs` already reused, now given their
+first live, authenticated production caller — and calls the real
+`notifyDevices()` with a real `call_incoming` payload. A push-send failure
+never fails the call itself; the caller can still join and wait, same as
+before this route existed, just without the one improvement it adds on top.
+
+`packages/api/test/contract.test.mjs` caught two real gaps this route
+introduced before this entry's own final form: a server route with no
+matching `OliveApi` path constant (`client/lib/api_client.dart` now
+declares `calls`, unused by any real caller yet — same posture as that
+file's other not-yet-wired constants, see its own header) and — the
+reason `action: 'call'` is the design described above, not the route's
+original `action: null` — every other `:childId` route in this repo is
+required to declare a real action unless explicitly, individually
+whitelisted in that same test file, and adding a fifth whitelist entry
+would have been the wrong fix once a real, fitting `Action` (`'call'`)
+already existed to use instead.
+
+Client side: `main_live.dart` gains the `GlobalKey<NavigatorState>` both
+gaps were waiting on; `child_home_live.dart` wires it into `PushChannel`'s
+real `onForegroundPointer`. `CallScreen` gains an optional `knownRoom`/
+`knownServerURL` pair — when present, its own `_fetchRoom()` is skipped
+entirely and the call joins THAT exact room instead, which is what lets a
+knock answered from `CallKnockScreen` join the room the CALLER is already
+in, rather than two devices independently minting two different rooms and
+never actually meeting. A `call_incoming` push carries only `kind`/`ref`/
+`callHandle` by design (`push.ts`'s content-free `PushInput`) — no
+`serverURL` — so a new `OLIVE_JITSI_SERVER_URL` dart-define constant
+(matching the existing `OLIVE_API_BASE_URL` pattern) supplies it for a
+push-triggered join, while the real route's own response supplies both for
+a guardian-initiated one.
+
+### Tests
+New `server/test/calls_route.test.mjs` — real Postgres, real HTTP through
+`api.mjs`, 14 assertions: the real success path (a fresh, I1-compliant
+random room minted on every call, never the same room twice), a child
+principal refused, a guardian with no live edge refused, no session
+refused, and — the one property no other suite could prove, since nothing
+called `notifyDevices()` from a route before this — a real registered
+`device_token` row is genuinely read and a real send genuinely attempted
+(honestly `rang: false` in this environment, since no real FCM credential
+exists anywhere in this repo — a pre-existing, already-documented
+limitation, not a defect in this route). Wired into `tools/verify.sh`
+alongside `messages_route.test.mjs`, the identical pattern this test
+mirrors. `flutter analyze`/`flutter test`: clean, 1894/1894, no
+regressions in either file this pass touched.
+
+### Not fixed, tracked separately
+Self-hosted Jitsi's own room-level auth (`ENABLE_AUTH` unset) remains a
+deliberate Step 2 design choice. The camera-toggle bug reproduced live on
+the Tab S9 FE is very likely upstream (`jitsi-meet-sdk`/
+`react-native-webrtc`) — not touched this pass. The full §5.23–§5.28
+call-quality UX (frozen/dropped states, the quality ladder, sanitized
+error copy for the child) does not exist client-side yet. The persisted,
+N-guardian room-coordination service this route's own comment names as a
+real next step is scoped, not built.
+
+---
+
 ## [0.49.32] — 2026-08-23 — Docker dev-stack: closing four confirmed, live security findings
 
 Found during a fresh audit pass (three parallel research passes, then 21

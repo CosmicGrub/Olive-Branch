@@ -317,7 +317,8 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \
-            "messages route (real DB)|packages/api/test/messages_route.test.mjs" ; do
+            "messages route (real DB)|packages/api/test/messages_route.test.mjs" \
+            "calls route (real DB)|server/test/calls_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

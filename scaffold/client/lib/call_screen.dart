@@ -43,8 +43,28 @@ import 'kiosk_channel.dart';
 /// dev machine share a WiFi network at all.
 const devRoomServerBase = 'http://127.0.0.1:8787';
 
+/// The Jitsi deployment itself — a real per-deployment constant, not
+/// per-call data. `_fetchRoom()`'s own response already carries this (dev-
+/// room-server/the real POST /v1/children/:childId/calls route both read
+/// the identical JITSI_SERVER_URL env var server-side, see routes.mjs's own
+/// comment on why), but a `call_incoming` push cannot: push.ts's own
+/// content-free PushInput carries only kind/ref/callHandle, deliberately —
+/// see that file's own header for why a push payload is not the place for
+/// deployment config. A knock answered from call_knock_screen.dart has a
+/// real room name (the push's callHandle) but needs this constant to know
+/// where to actually find it.
+const _defaultJitsiServerURL = String.fromEnvironment('OLIVE_JITSI_SERVER_URL',
+    defaultValue: 'https://meet.jit.si');
+
 class CallScreen extends StatefulWidget {
-  const CallScreen({super.key, required this.who, required this.displayName, this.kiosk});
+  const CallScreen({
+    super.key,
+    required this.who,
+    required this.displayName,
+    this.kiosk,
+    this.knownRoom,
+    this.knownServerURL,
+  });
 
   /// 'dad' or 'ivy' — matches local-call-room-server.mjs's fixed identities.
   final String who;
@@ -52,6 +72,23 @@ class CallScreen extends StatefulWidget {
   /// Injectable for widget tests; defaults to the real platform channel —
   /// mirrors kiosk_shell.dart's own `channel` param.
   final KioskChannel? kiosk;
+  /// When [knownRoom] is supplied, [_fetchRoom] is skipped entirely and the
+  /// call joins THIS exact room instead — the room a caller already minted
+  /// (via the real `POST /v1/children/:childId/calls` route, or the room
+  /// name a `call_incoming` push carried) rather than a possibly-different
+  /// one this screen would otherwise fetch fresh from
+  /// `local-call-room-server.mjs`. This is what lets a knock answered from
+  /// call_knock_screen.dart join the room the CALLER is already in, instead
+  /// of two devices independently minting two different rooms and never
+  /// actually meeting. [knownServerURL] is optional even then — a push
+  /// payload carries no deployment config (see [_defaultJitsiServerURL]'s
+  /// own doc comment), only [knownRoom]; supplied together (the real POST
+  /// route's own response shape), [knownServerURL] wins over the constant.
+  /// Both null (the default) is byte-for-byte the original behavior — every
+  /// existing call site (child_home.dart, guardian_home.dart,
+  /// main_live_child_call_test.dart) is unaffected.
+  final String? knownRoom;
+  final String? knownServerURL;
 
   @override
   State<CallScreen> createState() => _CallScreenState();
@@ -94,9 +131,16 @@ class _CallScreenState extends State<CallScreen> {
       _errorMessage = null;
     });
     try {
-      final data = await _fetchRoom();
-      final room = data['room'] as String;
-      final serverURL = data['serverURL'] as String;
+      final String room;
+      final String serverURL;
+      if (widget.knownRoom != null) {
+        room = widget.knownRoom!;
+        serverURL = widget.knownServerURL ?? _defaultJitsiServerURL;
+      } else {
+        final data = await _fetchRoom();
+        room = data['room'] as String;
+        serverURL = data['serverURL'] as String;
+      }
 
       if (!mounted) return;
       setState(() => _status = _CallStatus.joining);
@@ -109,6 +153,20 @@ class _CallScreenState extends State<CallScreen> {
           'startWithAudioMuted': false,
           'startWithVideoMuted': false,
           'subject': 'Olive Branch call',
+          // §5.21.1: "all media is relayed, always" — neither device may
+          // ever learn the other's real IP address, a protective-order-
+          // relevant safety requirement, not a quality/performance choice.
+          // The self-hosted stack now sets this server-side too
+          // (tools/jitsi-selfhost/olive.env's ENABLE_P2P=0) — that's the
+          // robust enforcement point, since a server default holds no
+          // matter what any given client does. This client-side override
+          // is defense-in-depth for the day this build points at some
+          // OTHER Jitsi deployment (a different self-host, or back at a
+          // public server for a quick repro) that hasn't made the same
+          // choice — direct P2P defaults ON upstream (confirmed live:
+          // config.js's own config.p2p.enabled: true), which is exactly
+          // what this policy forbids.
+          'p2p': {'enabled': false},
         },
         featureFlags: const {
           FeatureFlags.welcomePageEnabled: false,

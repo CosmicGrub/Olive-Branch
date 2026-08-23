@@ -42,6 +42,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'call_knock_screen.dart' show buildCallIncomingHandler;
 import 'child_home.dart';
 import 'push_channel.dart';
 import 'wear_sync_channel.dart';
@@ -56,6 +57,7 @@ class LiveChildHomeScreen extends StatefulWidget {
     this.httpClient,
     this.wearSync,
     this.pushChannel,
+    this.navigatorKey,
   });
 
   final String baseUrl;
@@ -73,6 +75,16 @@ class LiveChildHomeScreen extends StatefulWidget {
   /// `_syncWear` piggybacks on it), so push registration lives here rather
   /// than inventing a second, parallel session concept.
   final PushChannel? pushChannel;
+  /// The real, previously-missing wire call_knock_screen.dart's own header
+  /// named directly: "a `call_incoming` push carries only kind/ref/
+  /// callHandle — buildCallIncomingHandler is real, tested wiring ready to
+  /// pass as PushChannel.onForegroundPointer the day this client's root
+  /// widget gains a `GlobalKey&lt;NavigatorState&gt;` — it doesn't have one yet."
+  /// Null (the default) means exactly what it always meant here: an
+  /// incoming call push falls through to PushChannel's own generic debug-
+  /// log fallback instead of opening CallKnockScreen — not a regression,
+  /// the same behavior every build without this param already had.
+  final GlobalKey<NavigatorState>? navigatorKey;
 
   @override
   State<LiveChildHomeScreen> createState() => _LiveChildHomeScreenState();
@@ -169,7 +181,19 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // count even on a checkout with zero push configuration.
   Future<void> _initPush(String token) async {
     final channel = widget.pushChannel ??
-        PushChannel(OliveApi(widget.baseUrl, token, client: widget.httpClient));
+        PushChannel(
+          OliveApi(widget.baseUrl, token, client: widget.httpClient),
+          onForegroundPointer: widget.navigatorKey == null ? null : buildCallIncomingHandler(
+            navigatorKey: widget.navigatorKey!,
+            // Hardcoded, matching every other call site in this client
+            // (CallScreen's own constructors, local-call-room-server.mjs) —
+            // a real call_incoming push carries no caller identity by
+            // design (push.ts's content-free PushInput shape), so there is
+            // nothing to resolve 'from'/'who'/'displayName' from even if
+            // this screen wanted to.
+            from: 'Dad', who: 'ivy', displayName: 'Ivy',
+          ),
+        );
     _pushChannel = channel;
     try {
       await channel.initialize();
