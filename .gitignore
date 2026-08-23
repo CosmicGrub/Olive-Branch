@@ -18,6 +18,11 @@ scaffold/client/ios/Pods/
 # not Olive source. See scaffold/tools/jitsi-selfhost/README.md.
 scaffold/tools/jitsi-selfhost/.jitsi-docker/
 
+# Local docker-compose.dev.yml overrides (SESSION_SECRET, DEV_LOGIN) — see
+# scaffold/.env.example, the tracked template this is copied from. Never
+# commit the real file.
+scaffold/.env
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db

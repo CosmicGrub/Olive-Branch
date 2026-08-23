@@ -1,0 +1,37 @@
+# OLIVE BRANCH — Docker build-context exclusions.
+#
+# .gitignore keeps tools/jitsi-selfhost/.jitsi-docker/ out of git, but
+# .gitignore has no effect on `docker build`'s own context — a real,
+# already-generated .jitsi-docker/.env (holding live Prosody/Jicofo/JVB/
+# Jigasi/Jibri auth secrets) sat inside this Dockerfile's `COPY . .` scope
+# with nothing to stop it landing permanently in the image's layer
+# history, confirmed as a live leak path on a machine where the Jitsi
+# self-host setup had already run. This file closes that.
+
+# Vendored third-party checkout + generated secrets — same reasoning as
+# the root .gitignore's identical entry, restated here because .gitignore
+# does not reach Docker's own build context. It's also a nested git
+# checkout with its own .git/ history, which would otherwise sweep in
+# here too.
+tools/jitsi-selfhost/.jitsi-docker/
+
+# Reinstalled fresh by `npm ci` inside the image (the Dockerfile's own
+# COPY order already relies on this for layer-cache reasons) — the host's
+# own copy is frequently built for a different OS/arch and should never
+# be copied in regardless.
+node_modules/
+
+# This repo's own git history has no reason to enter a runtime image.
+.git/
+.gitignore
+
+# Local dev secrets for docker-compose.dev.yml itself (SESSION_SECRET,
+# DEV_LOGIN) — read from the environment at container start, never baked
+# into an image layer. See .env.example, which stays trackable.
+.env
+.env.*
+!.env.example
+
+# OS/editor cruft.
+.DS_Store
+Thumbs.db
