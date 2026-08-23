@@ -68,6 +68,11 @@ services:
       # never ships with auth disabled — see .env.example to opt in.
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
       DEV_LOGIN: "${DEV_LOGIN:-0}"
+      # server/routes.mjs's real POST /v1/children/:childId/calls route
+      # needs this too now, not just callroom — same value, same reasoning
+      # as the identical line below (point it at the self-hosted stack once
+      # Step 2 is up; defaults to the public server otherwise).
+      JITSI_SERVER_URL: https://192.168.1.175:8443
     ports:
       # Loopback-only, not "8123:8123" (which publishes on every host
       # interface). Physical devices reach this exactly the same way they

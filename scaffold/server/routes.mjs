@@ -30,6 +30,18 @@ import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
 import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
 import { CHANNELS } from '../packages/devices/src/devices.mjs';
+import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
+import { notifyDevices } from '../packages/transport/src/notify.mjs';
+
+/**
+ * Same fallback and env var name `tools/local-call-room-server.mjs` already
+ * uses, on purpose — this route is the real, authenticated replacement for
+ * that dev-only script's `/room` endpoint, not a second, independently-
+ * configured path to the same self-hosted Jitsi stack. See docker-compose
+ * .dev.yml's `server` service for where this gets set in the containerized
+ * dev stack.
+ */
+const JITSI_SERVER_URL = process.env.JITSI_SERVER_URL ?? 'https://meet.jit.si';
 
 /**
  * LOCAL DEV/TEST ONLY — same honesty convention server/index.mjs's own
@@ -303,6 +315,98 @@ export function registerRoutes(api, pool) {
         return { status, body: { error: result.reason } };
       }
       return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // ===========================================================================
+  // CALL — real, authenticated room-coordination + ringing. §5.19, §5.21,
+  // §5.25.2. The real replacement for tools/local-call-room-server.mjs's own
+  // two-hardcoded-principal `/room` endpoint: a live audit of that script
+  // found it has no persistence, no N-guardian support, and — separately —
+  // that push.ts's `call_incoming` kind has zero real callers anywhere in
+  // this codebase despite the client-side knock screen and push decoder
+  // both being real, tested, and waiting for exactly this. This route closes
+  // both gaps at once, since they're the same missing piece: a callee can
+  // only be told to ring with a room she's actually authorized to join.
+  //
+  // Deliberately narrow, matching this file's own header discipline: mints
+  // ONE session per call, for a live guardian calling a child she has a
+  // real, unrestricted, unexpired guardian edge to. Does not attempt the
+  // fuller persisted, N-guardian, group-call room-coordination service a
+  // production deployment eventually needs — recorded as a real, larger
+  // follow-up, not invented here. `createSession()`/`mintToken()` are pure
+  // (packages/session-runtime/src/rooms.ts's own header: no DB access) —
+  // this route is what gives them their first live, authenticated caller.
+  // ===========================================================================
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/calls',
+    // Same shape as the guardian-invitation route above: no dedicated
+    // Action fits "start a call" cleanly (mintToken() below already runs
+    // the real can('call', ...) check for the caller's own token — this
+    // flag just means the ROUTE itself doesn't gate on a generic Action
+    // before the handler runs).
+    action: null, identityScopedByHandler: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_start_call' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+
+      const now = new Date();
+      const edges = await edgesFor(pool, c.principal.userId);
+      // Same live-guardian check the invitation route above already uses —
+      // deliberately re-checked here too rather than trusted from mintToken()
+      // alone, so a denial reads as "not a guardian of this child" instead
+      // of the more generic "not_authorized" mintToken() would otherwise
+      // return for the same underlying reason.
+      const isLiveGuardian = edges.some((e) =>
+        e.childId === c.childId && e.role === 'guardian' && !e.restricted &&
+        !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
+      if (!isLiveGuardian) return { status: 403, body: { error: 'not_a_guardian_of_child' } };
+
+      const session = createSession({
+        childId: c.childId,
+        kind: 'call',
+        createdBy: c.principal.userId,
+        // The child herself is authorized by construction (it's her call),
+        // named positionally the same way local-call-room-server.mjs's own
+        // dev session already does for the identical reason — a child
+        // principal has no app_user row / real userId to list here, see
+        // that script's own header for the fuller account of why this is
+        // an accepted, pre-existing pattern, not new to this route.
+        authorizedUserIds: [c.principal.userId, c.childId],
+        ladderStep: 'open',
+      });
+
+      const minted = mintToken(
+        session,
+        { userId: c.principal.userId, observerOnly: false, isChild: false, roleName: c.principal.roleName },
+        edges, now,
+      );
+      if (!minted.ok) return { status: 403, body: { error: minted.reason } };
+
+      // Ring the child's own device(s) — the actual gap this route closes.
+      // A send failure here is reported, not thrown: the caller can still
+      // join and wait (the same "call, then hope she notices" posture this
+      // whole codebase had before this route existed), just without the
+      // one improvement this route adds on top of that.
+      const pushResults = await notifyDevices(pool, { childId: c.childId }, {
+        kind: 'call_incoming',
+        ref: session.id,
+        callRoomHandle: session.roomName,
+      });
+
+      return {
+        status: 201,
+        body: {
+          room: session.roomName,
+          serverURL: JITSI_SERVER_URL,
+          identity: minted.token.identity,
+          displayName: 'Dad',
+          rang: pushResults.some((r) => r.ok),
+        },
+      };
     },
   });
 

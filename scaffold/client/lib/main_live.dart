@@ -164,6 +164,14 @@ class _OliveLiveState extends State<OliveLive> {
   // not a second rewrite of the propagation mechanism itself.
   late final ThemeController _themeController = ThemeController(widget.initialTheme);
 
+  // The real, previously-missing piece call_knock_screen.dart's own header
+  // named directly: buildCallIncomingHandler is real, tested wiring, ready
+  // the day this app's root widget gains a GlobalKey<NavigatorState> —
+  // it didn't have one before this. Lets a call_incoming push open
+  // CallKnockScreen from wherever the app happens to be, not just from
+  // whatever screen was already on top.
+  static final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   void dispose() {
     _themeController.dispose();
@@ -177,6 +185,7 @@ class _OliveLiveState extends State<OliveLive> {
       final scheme = colorSchemeFor(_themeController.value);
       final themeData = ThemeData(colorScheme: scheme, useMaterial3: true);
       return MaterialApp(
+        navigatorKey: _navigatorKey,
         title: 'Olive (live)',
         // theme: and darkTheme: are intentionally the SAME resolved scheme,
         // with themeMode PINNED to the guardian's own explicit brightness
@@ -201,12 +210,13 @@ class _OliveLiveState extends State<OliveLive> {
           curve: Curves.easeInOut,
           child: child!,
         ),
-        home: const KioskShell(
+        home: KioskShell(
           verifyPin: _verifyGuardianPin,
           verifyBiometric: _liveVerifyBiometricStub,
           child: LiveChildHomeScreen(
             baseUrl: _defaultBaseUrl,
             childId: _defaultChildId,
+            navigatorKey: _navigatorKey,
           ),
         ),
       );

@@ -20,19 +20,20 @@
 // Both are honestly identical in behavior here; only the word she tapped
 // differs.
 //
-// REACHABILITY, disclosed honestly: this screen has no live call site yet.
-// A real `call_incoming` push carries only `kind`/`ref`/`callHandle` — no
-// caller name (see push.ts's own `PushInput` — content-free by design) —
-// so `from`/`who`/`displayName` below are supplied by whatever real caller
-// eventually creates this screen, the same way `CallScreen`'s own existing
-// call sites (child_home.dart, guardian_home.dart) already hardcode 'dad'/
-// 'ivy' rather than resolving an arbitrary caller. `buildCallIncomingHandler`
-// (this file, bottom) is real, tested wiring ready to pass as
-// `PushChannel.onForegroundPointer` the day this client's root widget gains
-// a `GlobalKey<NavigatorState>` — it doesn't have one yet, and neither does
-// any server route actually dispatch a `call_incoming` push yet
-// (`notify.ts`'s own header: `notifyDevices()` has zero HTTP call sites).
-// Both are real, separate, already-disclosed gaps this pass does not close.
+// REACHABILITY. `buildCallIncomingHandler` (this file, bottom) is now wired
+// as `main_live.dart`'s own `PushChannel.onForegroundPointer` — that build's
+// `GlobalKey<NavigatorState>` and `server/routes.mjs`'s real
+// `POST /v1/children/:childId/calls` (which mints a real session, mints the
+// CALLING guardian's own token via the real, tested `can('call', ...)`
+// gate, and calls `notifyDevices()` with a real `call_incoming` payload) are
+// what closed the two gaps this comment used to describe as open. A real
+// `call_incoming` push still carries only `kind`/`ref`/`callHandle` — no
+// caller name (push.ts's own `PushInput` — content-free by design) — so
+// `from`/`who`/`displayName` below are still supplied by the caller
+// constructing this screen (`buildCallIncomingHandler`'s own params),
+// hardcoded the same way `CallScreen`'s own other call sites already are;
+// `callHandle` itself is real and DOES flow through now — see `knownRoom`
+// below and `CallScreen.knownRoom`'s own doc comment for the full path.
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
@@ -52,6 +53,7 @@ class CallKnockScreen extends StatefulWidget {
     required this.from,
     required this.who,
     required this.displayName,
+    this.knownRoom,
     this.speak,
     this.onTimedOut,
   });
@@ -64,6 +66,15 @@ class CallKnockScreen extends StatefulWidget {
   /// same `who`/`displayName` shape that screen's own call sites already use.
   final String who;
   final String displayName;
+
+  /// The real room the caller is already in — [PushPointer.callHandle] from
+  /// the `call_incoming` push that opened this screen, passed straight
+  /// through to [CallScreen.knownRoom] on Answer/Just talking so this device
+  /// joins the SAME room instead of minting a new one. Null only if this
+  /// screen is ever opened some other way than a real push (a test, or a
+  /// future non-push call site) — [CallScreen] falls back to its own
+  /// `_fetchRoom()` exactly as it always did when this is null.
+  final String? knownRoom;
 
   /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null reports
   /// itself honestly on tap, same posture as emergency_card.dart's own
@@ -125,7 +136,8 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
   void _handleAnswer() {
     _timeoutTimer?.cancel();
     Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-      builder: (_) => CallScreen(who: widget.who, displayName: widget.displayName)));
+      builder: (_) => CallScreen(
+        who: widget.who, displayName: widget.displayName, knownRoom: widget.knownRoom)));
   }
 
   void _handleNotNow() {
@@ -225,6 +237,7 @@ void Function(PushPointer pointer) buildCallIncomingHandler({
     final navigator = navigatorKey.currentState;
     if (navigator == null) return;
     navigator.push(MaterialPageRoute<void>(
-      builder: (_) => CallKnockScreen(from: from, who: who, displayName: displayName)));
+      builder: (_) => CallKnockScreen(
+        from: from, who: who, displayName: displayName, knownRoom: pointer.callHandle)));
   };
 }

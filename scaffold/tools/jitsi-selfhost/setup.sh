@@ -48,6 +48,10 @@ if [ ! -x gen-passwords.sh ]; then
 fi
 ./gen-passwords.sh
 
+cd ..
+./gen-turn-secret.sh
+cd "$CHECKOUT_DIR"
+
 mkdir -p ~/.jitsi-meet-cfg/{web,transcripts,prosody/config,prosody/prosody-plugins-custom,jicofo,jvb,jigasi,jibri}
 
 cat <<'EOF'

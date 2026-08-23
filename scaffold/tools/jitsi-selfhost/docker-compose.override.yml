@@ -39,6 +39,75 @@ services:
       - ${CONFIG}/prosody/prosody-plugins-custom:/prosody-plugins-custom:Z
       - prosody-config:/config:Z
       - prosody-storage:/var/lib/prosody:Z
+
+  # A real TURN relay — this stack had none before it. Without one, any
+  # client whose own NAT/firewall blocks a direct or JVB-relayed path has
+  # no fallback at all; STUN alone (the only thing configured previously)
+  # tells a peer its own address, it does nothing when that address still
+  # isn't reachable through the OTHER side's NAT — the normal case for two
+  # devices on two different home routers, which is this app's actual real-
+  # world shape, not the single-LAN dev setup this stack has only ever been
+  # tested against. See ../README.md's "TURN relay" section for the fuller
+  # account and ../gen-turn-secret.sh for how TURN_CREDENTIALS below is
+  # generated.
+  #
+  # Plain TURN only (no TURNS/TLS) for this dev-stage pass — TURNS needs the
+  # same real-domain/real-cert decision already deferred for the web UI
+  # (README.md "What this does NOT decide"), not invented here. Real
+  # production hosting still needs coturn's own listening address to
+  # actually be reachable from the internet (a port-forwarded home
+  # connection or a real public IP) — this container makes NAT traversal
+  # POSSIBLE, it doesn't by itself make this dev stack internet-reachable.
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    networks:
+      meet.jitsi:
+    ports:
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
+      # Relay port range coturn allocates a pair of ports from per active
+      # media stream it relays. 40 ports is enough for several concurrent
+      # two-person calls on a family app; widen if that's ever not true.
+      - '49160-49200:49160-49200/udp'
+    # No `-n` flag: the official image's own entrypoint (docker-entrypoint.sh)
+    # runs every argument through `eval "echo $i"` — needed so its own default
+    # CMD's `--external-ip=$(detect-external-ip)` expands at runtime, but it
+    # has a real, confirmed side effect: a bare `-n` becomes `echo -n`, which
+    # prints nothing, silently turning the flag into an empty argument
+    # (coturn then logs "Unknown argument: " for it). Harmless to just not
+    # pass it — "Cannot find config file: turnserver.conf" already confirms
+    # coturn falls back to command-line-only config on its own regardless.
+    command:
+      - --log-file=stdout
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --realm=olivebranch.local
+      # Without this, coturn auto-detects its OWN interface address to hand
+      # relayed media back through — inside Docker's bridge network that's
+      # an internal container IP, useless to any real client, the exact same
+      # class of bug JVB_ADVERTISE_IPS exists to prevent for the videobridge
+      # (confirmed live: coturn logs "NO EXPLICIT RELAY ADDRESS(ES) ARE
+      # CONFIGURED" without this flag). Same value as TURN_HOST/
+      # JVB_ADVERTISE_IPS/PUBLIC_URL — one real "how do I reach this stack"
+      # address, reused everywhere it's needed.
+      - --external-ip=${TURN_HOST:?TURN_HOST must be set -- see olive.env's own comment on it}
+      # Time-limited credentials (RFC-style shared-secret mechanism), not a
+      # single static username/password baked into every client forever —
+      # Prosody's own `external_service_secret` (prosody.cfg.lua:353,
+      # fed from this same TURN_CREDENTIALS value) mints short-lived
+      # per-session credentials against this secret, matching how
+      # docker-jitsi-meet's own template expects TURN_CREDENTIALS to be
+      # used, not a coincidence of naming.
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_CREDENTIALS:?TURN_CREDENTIALS must be set -- run ../gen-turn-secret.sh}
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --fingerprint
+      - --stale-nonce=600
+
 volumes:
   prosody-config:
   prosody-storage:
