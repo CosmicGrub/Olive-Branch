@@ -110,13 +110,17 @@ const post = (childId, tok) => api.handle(
 }
 
 // ===========================================================================
-// C · authorization — a guardian with no live edge to this child
+// C · authorization — a guardian with no live edge to this child. Runs
+//     through the ordinary generic gate now (action: 'call'), not a
+//     hand-rolled check in the route itself -- so the denial reason is
+//     authorize.ts's own can()/'no_edge', the same reason every other
+//     action-gated route surfaces for the identical underlying situation.
 // ===========================================================================
 {
   const res = await post(CHILD_B, dadTok);
   check('C auth', 'a guardian with no edge to this child is refused', res.status, 403);
-  check('C auth', 'the reason names the real check that failed',
-    res.body.error, 'not_a_guardian_of_child');
+  check('C auth', 'the reason is the real can() denial, not an invented string',
+    res.body.error, 'no_edge');
 }
 
 // ===========================================================================

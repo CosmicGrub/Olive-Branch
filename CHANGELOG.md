@@ -89,15 +89,31 @@ gaps at once, since they turned out to be the same missing piece: a callee
 can only be told to ring with a room she's actually authorized to join.
 Real, narrow, and deliberately not the fuller persisted N-guardian room-
 coordination service a production deployment eventually needs (recorded as
-a real, larger follow-up): authenticates the calling guardian, re-checks a
-live, unrestricted, unexpired guardian edge to the child (mirroring the
-guardian-invitation route's own established pattern), mints a real session
-via `createSession()`/`mintToken()` — the same pure, tested primitives
-`local-call-room-server.mjs` already reused, now given their first live,
-authenticated production caller — and calls the real `notifyDevices()`
-with a real `call_incoming` payload. A push-send failure never fails the
-call itself; the caller can still join and wait, same as before this route
-existed, just without the one improvement it adds on top.
+a real, larger follow-up): authorized through the ordinary generic action
+gate (`action: 'call'`) rather than a hand-rolled check — `'call'` is
+already a real, recognized `Action` (`authorize.ts`'s own `can()`, the
+exact function `mintToken()` itself re-runs at mint per its I4 invariant),
+so this route reuses that existing, more thoroughly-tested authorization
+path instead of adding a fifth `action: null` exception to
+`contract.test.mjs`'s own deliberately narrow whitelist. Mints a real
+session via `createSession()`/`mintToken()` — the same pure, tested
+primitives `local-call-room-server.mjs` already reused, now given their
+first live, authenticated production caller — and calls the real
+`notifyDevices()` with a real `call_incoming` payload. A push-send failure
+never fails the call itself; the caller can still join and wait, same as
+before this route existed, just without the one improvement it adds on top.
+
+`packages/api/test/contract.test.mjs` caught two real gaps this route
+introduced before this entry's own final form: a server route with no
+matching `OliveApi` path constant (`client/lib/api_client.dart` now
+declares `calls`, unused by any real caller yet — same posture as that
+file's other not-yet-wired constants, see its own header) and — the
+reason `action: 'call'` is the design described above, not the route's
+original `action: null` — every other `:childId` route in this repo is
+required to declare a real action unless explicitly, individually
+whitelisted in that same test file, and adding a fifth whitelist entry
+would have been the wrong fix once a real, fitting `Action` (`'call'`)
+already existed to use instead.
 
 Client side: `main_live.dart` gains the `GlobalKey<NavigatorState>` both
 gaps were waiting on; `child_home_live.dart` wires it into `PushChannel`'s

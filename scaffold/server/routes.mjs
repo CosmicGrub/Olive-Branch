@@ -341,29 +341,35 @@ export function registerRoutes(api, pool) {
 
   api.register({
     method: 'POST', path: '/v1/children/:childId/calls',
-    // Same shape as the guardian-invitation route above: no dedicated
-    // Action fits "start a call" cleanly (mintToken() below already runs
-    // the real can('call', ...) check for the caller's own token — this
-    // flag just means the ROUTE itself doesn't gate on a generic Action
-    // before the handler runs).
-    action: null, identityScopedByHandler: true,
+    // Unlike the guardian-invitation route above, 'call' IS already a real,
+    // recognized Action (authorize.ts's own can() — the exact check
+    // mintToken() below runs a second time, at mint, per its own I4
+    // invariant). So this route uses the ordinary generic gate rather than
+    // adding a fifth action:null exception to contract.test.mjs's own
+    // deliberately narrow whitelist — api.ts's own dispatcher already
+    // fetches this caller's real edges and runs can('call', edges,
+    // childId, ...) before this handler ever starts, on the exact same
+    // authorization function mintToken() itself relies on.
+    action: 'call',
     handler: async (c) => {
+      // The generic gate above does NOT reject a child principal outright
+      // for 'call' (it isn't a P6/P7-restricted action) — but this route's
+      // whole shape is "a guardian STARTS a call, rings the child"; a child
+      // hitting this route herself doesn't correspond to anything this app
+      // does, so that business rule is still this handler's own to enforce.
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'child_cannot_start_call' } };
       }
       if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
 
       const now = new Date();
+      // mintToken() below needs this caller's real edges as an input to
+      // compute their own grant (observer-only vs full-publish) — a second
+      // fetch from what the outer gate already did internally, since Ctx
+      // doesn't expose that result to the handler. Harmless: this caller's
+      // authorization was already proven by the outer gate; this is data,
+      // not a re-decision.
       const edges = await edgesFor(pool, c.principal.userId);
-      // Same live-guardian check the invitation route above already uses —
-      // deliberately re-checked here too rather than trusted from mintToken()
-      // alone, so a denial reads as "not a guardian of this child" instead
-      // of the more generic "not_authorized" mintToken() would otherwise
-      // return for the same underlying reason.
-      const isLiveGuardian = edges.some((e) =>
-        e.childId === c.childId && e.role === 'guardian' && !e.restricted &&
-        !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
-      if (!isLiveGuardian) return { status: 403, body: { error: 'not_a_guardian_of_child' } };
 
       const session = createSession({
         childId: c.childId,

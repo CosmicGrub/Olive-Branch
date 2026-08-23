@@ -184,6 +184,16 @@ class OliveApi {
   static const guardianInviteAccept = '/v1/guardian-invites/:inviteId/accept';
   static const guardianInviteRevoke = '/v1/guardian-invites/:inviteId/revoke';
 
+  // --- call — real room-coordination + ringing (§5.19, §5.21, §5.25.2) ----
+  // server/routes.mjs's own real replacement for local-call-room-server.mjs's
+  // dev-only /room endpoint — see that route's own header comment for the
+  // fuller account. Path constant declared here for the client/server
+  // contract (packages/api/test/contract.test.mjs); no OliveApi method
+  // calls it yet — call_screen.dart's own room-fetch still targets the dev
+  // room server, matching every other currently-dev-only call site in this
+  // client. Wiring a real caller here is the next step, not this one.
+  static const calls = '/v1/children/:childId/calls';
+
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
           .replace(queryParameters: query);
