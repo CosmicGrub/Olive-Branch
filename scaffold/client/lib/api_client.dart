@@ -187,11 +187,12 @@ class OliveApi {
   // --- call — real room-coordination + ringing (§5.19, §5.21, §5.25.2) ----
   // server/routes.mjs's own real replacement for local-call-room-server.mjs's
   // dev-only /room endpoint — see that route's own header comment for the
-  // fuller account. Path constant declared here for the client/server
-  // contract (packages/api/test/contract.test.mjs); no OliveApi method
-  // calls it yet — call_screen.dart's own room-fetch still targets the dev
-  // room server, matching every other currently-dev-only call site in this
-  // client. Wiring a real caller here is the next step, not this one.
+  // fuller account. [startCall] below is the real caller this constant's
+  // own comment used to say didn't exist yet — guardian_more.dart's "Call
+  // $childName" tile is the one real call site; call_screen.dart's own
+  // room-fetch still falls back to the dev room server when a caller (like
+  // main_live_child_call_test.dart's "Call Dad (test)" FAB) never supplies
+  // a [CallScreen.knownRoom] to begin with.
   static const calls = '/v1/children/:childId/calls';
 
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
@@ -294,6 +295,22 @@ class OliveApi {
   Future<void> setGuardianPin(String pin) async {
     await _post(guardianPinPath, {'pin': pin});
   }
+
+  /// Starts a real call for [childId] — POST [calls], server/routes.mjs's
+  /// real handler: mints a real session (session-runtime's createSession/
+  /// mintToken, a genuinely new room per call — never the same room twice),
+  /// then attempts a real `call_incoming` push via notifyDevices(). Returns
+  /// the decoded body verbatim — `room`/`serverURL`/`identity`/`rang` —
+  /// the same shape [CallScreen.knownRoom]/[knownServerURL] expect, so a
+  /// caller can pass this straight through without re-deriving anything.
+  ///
+  /// Throws [ApiException] on any non-2xx response (e.g. 403
+  /// child_cannot_start_call for a child session, 403 no_edge for a
+  /// guardian with no live edge to this child) — same posture as
+  /// [setGuardianPin] above: a failed call-start must never be silently
+  /// swallowed into "nothing happened."
+  Future<Map<String, dynamic>> startCall(String childId) =>
+      _post(calls, const {}, childId: childId);
 
   /// Invites a new guardian/adult into [childId]'s family graph -- POST
   /// guardianships, server/routes.mjs's real handler. Requires a live

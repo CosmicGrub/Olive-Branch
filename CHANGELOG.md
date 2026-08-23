@@ -14,6 +14,27 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.34] — 2026-08-23 — A real caller for `POST /v1/children/:childId/calls`, verified live on two physical devices ringing and answering in real time
+
+**Correction to the [0.49.33] entry above's own wording:** it described the route as "finally has a real caller," but that was the server's own honesty (a real, tested route existed) getting ahead of the client — `api_client.dart`'s own `calls` constant said so directly: "no OliveApi method calls it yet." No screen anywhere in this client ever actually invoked the route. This entry is what actually closes that gap.
+
+### Added
+- `OliveApi.startCall(childId)` (`api_client.dart`) — the real client caller for `POST /v1/children/:childId/calls`. Decodes and returns the server's real `room`/`serverURL`/`identity`/`rang` verbatim.
+- `guardian_more.dart`'s "Call $childName" tile now calls `startCall()` and opens the real `CallScreen` already joined to the room that call just minted (`knownRoom`/`knownServerURL`), instead of `CallScreen`'s own dev-room-server fallback (`local-call-room-server.mjs`'s single fixed session) it silently used before. Added an optional `GuardianMoreScreen.onCallStarted` observation seam (same additive shape as `fetchAgreementOrder`/`onThemeApplied`) — null on every real call site, used only by the new dev-only test entry point below.
+- Three new widget tests (`guardian_more_test.dart`) covering the honest not-connected fallback, a real successful call-start (proving the real POST response's room/serverURL flow unmodified into `CallScreen`, and that `onCallStarted` fires with the real payload), and a real call-start failure (`no_edge`) surfacing an honest error and never opening `CallScreen` on a call that never started.
+
+### Added — dev-only live-device verification scaffolding (not shipped product surfaces)
+No real FCM/APNs credential exists anywhere in this environment (`push_channel.dart`'s own header — no `google-services.json` in this repo, confirmed directly) — a real `call_incoming` push genuinely cannot be delivered to a physical device here. Rather than invent a new production polling endpoint to work around that (a real design decision, not made unilaterally), the gap is bridged entirely within already-dev-only files:
+- `local-call-room-server.mjs` gains `POST`/`GET /pending-call` — an in-memory, single-most-recent-value, no-auth relay (same posture as its existing `/room` endpoint) for exactly one hop: handing a real just-minted room from the guardian device to the child device.
+- `main_live_guardian_call_test.dart` (new) — byte-for-byte `main_live_guardian.dart` plus `onCallStarted` wired to POST the real room to `/pending-call`.
+- `main_live_child_call_test.dart` gains a 1-second poll of `/pending-call`; on a genuinely new room, it feeds a real `PushPointer` into the same real, tested `buildCallIncomingHandler` a real push would use — real knock screen, real Answer button, real `CallScreen` join. Only the undeliverable FCM hop itself is bridged; everything downstream is the unmodified real code path.
+
+**Verified live on two physical devices (Fold5 as guardian/Dad, tablet as child/Ivy), guardian tap to child answer, in real time**: tapping "Call Ivy" on the Fold5 minted a real, freshly-random room; the tablet's real "Dad would like to talk" knock screen appeared on its own within ~2 seconds via the poll bridge, with no manual intervention; tapping Answer joined the identical room (`CONFERENCE_JOINED` logged the same URL on both devices, both against the self-hosted stack, not the public server); the Fold5's own log shows `PARTICIPANT_JOINED {"name":"Ivy"}` at the exact join moment, with live relayed (non-p2p) audio and video confirmed flowing both ways. A real bug was caught and fixed during this: the first attempt had the child join the public `meet.jit.si` rather than the self-hosted stack, because a real push — like `PushPointer` here — cannot carry `serverURL` either (`push.ts`'s own content-free payload shape); fixed with the same `--dart-define=OLIVE_JITSI_SERVER_URL` mechanism a real production build would use, not a shortcut through the dev bridge.
+
+Full client test suite: 1897 passed, 0 failed. Assertion total unchanged at 5513 (no new counted `.test.mjs` assertions this pass — the three new tests are Dart/Flutter, outside `tools/verify.sh`'s automated count, same as every other Flutter test in this repo). `package.json`'s own `check:markup` placeholder was found stale (5447, pre-existing drift unrelated to this change) and corrected to match the real, already-correct 5513 MARKUP.html has carried since [0.49.33].
+
+No dedicated MARKUP screen entry for this — `guardian_more.dart` isn't a MARKUP screen of its own (its own header says so), and `callSecurity`'s existing description is about wire-level properties (opacity, tokens, TTL, relay enforcement) unaffected by which client button triggers a call, not client-wiring completeness.
+
 ## [0.49.33] — 2026-08-23 — A real TURN relay, real relay-only enforcement, and the call_incoming ring path finally wired end to end
 
 Three independent research passes (signaling/room-coordination, client-side
