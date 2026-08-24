@@ -721,7 +721,7 @@ Future<String> devLoginFor(
     Uri.parse('$baseUrl${OliveApi.devLoginPath}'),
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'userId': ?userId, 'childId': ?childId}),
-  );
+  ).timeout(const Duration(seconds: 6));
   final body = jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
     throw ApiException(res.statusCode, body['error'] as String? ?? 'error');

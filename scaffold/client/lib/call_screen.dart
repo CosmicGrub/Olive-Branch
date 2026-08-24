@@ -79,23 +79,44 @@ const _defaultJitsiServerURL = String.fromEnvironment('OLIVE_JITSI_SERVER_URL',
 bool isGuardianWho(String who) => who != 'ivy';
 
 /// Real, role-conditional feature flags — found and fixed by a 2026-08-23
-/// audit named in this file's own header. Three facts, not one flat
-/// constant: Jitsi's native Settings UI is off for EVERY role (closes a
-/// real containment gap on the kiosk-locked child device); native in-call
-/// chat is off for the child specifically (unmoderated, unarchived, unlike
-/// every other text surface in this app — never routed anywhere, simply
-/// disabled); PiP is guardian-only for now, making MASTERFILE's own
-/// "structural conclusion" real in code instead of only in prose. (A later
-/// pass, scoped and verified separately on a real kiosk-locked device, may
-/// extend PiP to the child — not decided or built here.) No custom
-/// "shrink to a mini window" UI exists anywhere in this file for the
-/// guardian either, deliberately: once `_jitsiMeet.join()` hands off,
-/// Jitsi's own native Activity — not this screen's build() — owns the
-/// entire display; setting `pip.enabled: true` here is what makes Jitsi's
-/// own native in-call toolbar offer the real PiP entry point, the same
-/// broadcast chain WrapperJitsiMeetActivity.kt's own `enterPiP()` already
-/// wires end to end. A Flutter-side button in this screen's own build()
-/// method would never be reachable during a real call at all.
+/// audit named in this file's own header. Jitsi's native Settings UI is off
+/// for EVERY role (closes a real containment gap on the kiosk-locked child
+/// device); native in-call chat is off for the child specifically
+/// (unmoderated, unarchived, unlike every other text surface in this app —
+/// never routed anywhere, simply disabled).
+///
+/// PiP is enabled for BOTH roles as of 2026-08-24 — an explicit, informed
+/// decision, not the default this file originally shipped with (guardian-
+/// only, matching MASTERFILE's then-"structural conclusion"). Real PiP for
+/// a kiosk-locked child device is a genuine tension with what that lock
+/// exists to guarantee — a PiP window is not full-screen, so whatever sits
+/// behind it is reachable — and this was accepted deliberately, not
+/// invented unilaterally: she can now shrink a call to a small window the
+/// same way her father can, and reach the rest of her own app underneath
+/// it exactly the way any other Android PiP works. The mitigation is
+/// native, not a Dart-side assumption: see kiosk_channel.dart's own
+/// [KioskChannel.start] doc comment and KioskBridge.kt's
+/// ACTION_CALL_ACTIVITY_DESTROYED for the real re-pin-on-every-resume fix
+/// this decision required — MainActivity re-pins on every resume while a
+/// call handoff is outstanding, and the original one-shot handoff flag
+/// would have left the child's device unpinned after a real call end if
+/// PiP had been entered even once during that same call.
+///
+/// Deliberately NOT paired with an auto-navigate-to-an-activity feature: a
+/// same-2026-08-24 attempt to have a PiP entry automatically open a
+/// drawing screen behind it was built, live-tested, and found genuinely
+/// unreachable for the path a child would actually use (pressing Home) —
+/// Android's own WindowManagerService re-asserts the launcher as the PiP
+/// host once Home has been pressed (`RootWindowContainer
+/// .startHomeOnTaskDisplayArea`, confirmed via dumpsys, not assumed), and
+/// no ordinary app-level call reliably overrides that. Reverted rather than
+/// shipped half-working; she can still reach Doodle Desk on her own, from
+/// her own menu, the same way she always could — PiP just doesn't try to
+/// take her there automatically. No custom "shrink to a mini window" UI
+/// exists anywhere in this file for either role: once `_jitsiMeet.join()`
+/// hands off, Jitsi's own native Activity — not this screen's build() —
+/// owns the entire display; setting `pip.enabled: true` here is what makes
+/// Jitsi's own native in-call toolbar/Home-press offer real PiP entry.
 Map<String, Object?> callFeatureFlagsFor(bool isGuardian) => {
   FeatureFlags.welcomePageEnabled: false,
   FeatureFlags.preJoinPageEnabled: false,
@@ -115,8 +136,11 @@ Map<String, Object?> callFeatureFlagsFor(bool isGuardian) => {
   // already claiming it was done.
   FeatureFlags.settingsEnabled: false,
   FeatureFlags.chatEnabled: isGuardian,
-  FeatureFlags.pipEnabled: isGuardian,
-  FeatureFlags.pipWhileScreenSharingEnabled: isGuardian,
+  // 2026-08-24 — real PiP for BOTH roles now (was guardian-only). See this
+  // function's own doc comment above for the full account of why, and for
+  // the native re-pin fix this decision required.
+  FeatureFlags.pipEnabled: true,
+  FeatureFlags.pipWhileScreenSharingEnabled: true,
 };
 
 class CallScreen extends StatefulWidget {

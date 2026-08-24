@@ -63,22 +63,41 @@ object KioskBridge {
     // is exactly why the transport contract test mirrors string constants
     // this same way for the MethodChannel/EventChannel names above.
     const val ACTION_CALL_LOCK_TASK_EXITED = "app.olive.kiosk.CALL_LOCK_TASK_EXITED"
+    // 2026-08-24 — real PiP for the child (see call_screen.dart's own
+    // header for the fuller account) surfaced a real bug in the ORIGINAL
+    // read-and-clear handoff design this constant's sibling used to be
+    // named after: entering PiP mid-call is ALSO a MainActivity.onResume()
+    // (Android brings the host task back behind the floating PiP window),
+    // so a one-shot "consume on first resume" flag got cleared the moment
+    // PiP was entered — leaving NOTHING to re-pin on the SECOND resume,
+    // the one that happens when the call genuinely ends. A kiosk-locked
+    // child's device could end a real call and never re-lock. Same string-
+    // duplication contract as ACTION_CALL_LOCK_TASK_EXITED above —
+    // WrapperJitsiMeetActivity.kt's own onDestroy() broadcasts this
+    // literal, verbatim, for the identical module-boundary reason.
+    const val ACTION_CALL_ACTIVITY_DESTROYED = "app.olive.kiosk.CALL_ACTIVITY_DESTROYED"
 
     private fun setExpectingCallHandoff(ctx: Context, expecting: Boolean) {
         ctx.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(HANDOFF_KEY, expecting).apply()
     }
 
-    /// Read-and-clear: called once by MainActivity.onResume() when the call
-    /// Activity hands the pin back, whether the call ended cleanly or the
-    /// child defeated the pinned call Activity. Either way, once we're back
-    /// here, the handoff is over.
-    fun consumeExpectingCallHandoff(ctx: Context): Boolean {
-        val was = ctx.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
+    /// Peek, never consume — see this file's own ACTION_CALL_ACTIVITY_
+    /// DESTROYED comment above for exactly why a read-and-clear was wrong.
+    /// MainActivity.onResume() calls this on EVERY resume while a call is
+    /// outstanding (a real call end, a mid-call kiosk defeat, AND a PiP
+    /// entry all resume this Activity) and re-pins every single time —
+    /// re-pinning an already-pinned Activity is a safe, standard no-op,
+    /// verified live rather than assumed. Only clearCallHandoff() below
+    /// ever actually turns this off.
+    fun stillExpectingCallHandoff(ctx: Context): Boolean =
+        ctx.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
             .getBoolean(HANDOFF_KEY, false)
-        if (was) setExpectingCallHandoff(ctx, false)
-        return was
-    }
+
+    /// Called ONLY from MainActivity's ACTION_CALL_ACTIVITY_DESTROYED
+    /// receiver — the one signal that actually means the call Activity is
+    /// gone for good, not just backgrounded behind a PiP window.
+    fun clearCallHandoff(ctx: Context) = setExpectingCallHandoff(ctx, false)
 
     fun currentMode(ctx: Context): String =
         when ((ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)

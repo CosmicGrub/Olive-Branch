@@ -1,6 +1,7 @@
-// OLIVE BRANCH — call_screen.dart tests. MASTERFILE §5.20, §5.21.1, §8.1.
-import 'package:flutter/material.dart';
+// OLIVE BRANCH — call_screen.dart tests. MASTERFILE §5.20, §5.21.1, §8.1,
+// §16.2 #6.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 import 'package:olive_client/call_screen.dart';
 
@@ -26,9 +27,13 @@ void main() {
       expect(callFeatureFlagsFor(true)[FeatureFlags.chatEnabled], true);
     });
 
-    test('PiP is guardian-only, in code — not just in MASTERFILE prose', () {
-      expect(callFeatureFlagsFor(false)[FeatureFlags.pipEnabled], false);
-      expect(callFeatureFlagsFor(false)[FeatureFlags.pipWhileScreenSharingEnabled], false);
+    test('PiP is real for BOTH roles now, in code — 2026-08-24, an explicit '
+        'informed decision superseding the earlier guardian-only default, '
+        'not a regression back to one flat constant', () {
+      expect(callFeatureFlagsFor(false)[FeatureFlags.pipEnabled], true,
+        reason: 'the child now gets real OS PiP — see callFeatureFlagsFor\'s '
+          'own doc comment for the native re-pin fix this required');
+      expect(callFeatureFlagsFor(false)[FeatureFlags.pipWhileScreenSharingEnabled], true);
       expect(callFeatureFlagsFor(true)[FeatureFlags.pipEnabled], true);
       expect(callFeatureFlagsFor(true)[FeatureFlags.pipWhileScreenSharingEnabled], true);
     });
