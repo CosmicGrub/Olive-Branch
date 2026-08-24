@@ -1,7 +1,9 @@
 # OLIVE BRANCH — Phase 0 scaffold
 
-Spec: `MASTERFILE.md` v0.4.0. This directory is implementation; the three
-canonical documents remain the source of truth.
+Spec: `MASTERFILE.md`, canonical — see that file for the current version;
+this directory's own numbering does not track it in lockstep. This
+directory is implementation; the three canonical documents remain the
+source of truth.
 
 ## Layout
 
@@ -35,35 +37,57 @@ scaffold/
         └── src/lock.ts             kiosk defeat state machine, §8.3
 ```
 
-Planned siblings, not yet written:
-
-```
-    ├── family-graph/               guardianship, RLS context          §5.1
-    ├── api/                        NestJS gateway                     §7
-    └── app/                        Flutter client                     §11
-```
+The three siblings once tracked here as "planned, not yet written" are now
+all built: `family-graph/` (already shown above — this list duplicated it
+by mistake), `packages/api/` (a hand-rolled router — `packages/api/src/api.ts`
+— not the NestJS gateway §7 originally described), and the Flutter client,
+which landed at `client/` rather than `app/`. The scaffold has grown well
+past these three since — `packages/` holds 40+ modules today. See
+`MASTERFILE.md` for the current, complete inventory rather than expanding
+this illustrative Layout section to match.
 
 ## Run everything
 
 ```bash
 npm install
-npm run test             # all packages  → 187 passed
+npm run test             # all packages  → now chains 43 sub-suite
+                          #   invocations (42 unique -- test:games2 is
+                          #   invoked twice), well past the four below;
+                          #   see tools/verify.sh for the current
+                          #   combined total (that script also runs six
+                          #   more Postgres-dependent suites this chain
+                          #   does not -- test:db, test:auth-credentials,
+                          #   test:db:export, test:message-capture,
+                          #   test:messages-route, test:calls-route)
 npm run test:golden      # time engine   →  24
 npm run test:delivery    # delivery      →  37
 npm run test:graph       # family graph  →  59
 npm run test:session     # session+lock  →  67
 
-# database (needs a live Postgres 16)
-psql -v ON_ERROR_STOP=1 -f db/migrations/0001_phase0_init.sql
-psql -v ON_ERROR_STOP=1 -f db/migrations/0002_delivery_sweep.sql
-psql -v ON_ERROR_STOP=1 -f db/migrations/0003_session_context.sql
+# database (needs a live Postgres 16) — apply every migration in order,
+# idempotently, via the real runner (see tools/migrate.mjs; this replaced
+# hand-listing each file one at a time after that produced two real
+# incidents — a suite run against a database missing a migration, and one
+# run twice against the same database):
+PSQL_CMD="psql" node tools/migrate.mjs
 psql -f db/test/0001_constraints.test.sql     # 24 PASS
 psql -f db/test/0002_seed.sql
 bash db/test/run_concurrency.sh               #  7 PASS
 psql -f db/test/0003_session.test.sql         # 14 PASS  (non-superuser only)
+psql -f db/test/0004_e2e_message.test.sql
+psql -f db/test/0005_court.test.sql
 ```
 
-Totals: **232 assertions, all green.**
+The four package suites above (`24 + 37 + 59 + 67 = 187`, reconfirmed by
+actually running all four, unchanged since Phase 0) plus the three counted
+DB suites (`0001_constraints.test.sql` 24, `run_concurrency.sh` 7,
+`0003_session.test.sql` 14) still total **232 assertions, all green** —
+this is the same 232 the doc has always claimed, not a new figure. But both
+`npm run test` and `db/test/` have since grown well past what this section
+originally covered (48 npm test sub-suites now exist, plus the two DB
+suites added above, neither counted in the 232). See `CHANGELOG.md`'s
+latest entry for the current repo-wide combined total — **6010** as of
+v0.49.40 (JS/server + Flutter), not this file's 232.
 
 > The database suites must run as a `NOSUPERUSER NOBYPASSRLS` role. Run as
 > `postgres` they measure nothing — superusers bypass RLS even with FORCE.
@@ -133,9 +157,42 @@ replaced by `contact_ladder` — a boolean cannot express reunification.
 
 ## Before Phase 0 ships
 
-- [ ] §16.2 #1 — product name cleared
+MASTERFILE.md's own §20 "Phase 0 review" now tracks this more rigorously
+than this list ever did; cross-checked against it directly below.
+
+- [ ] §16.2 #1 — product name cleared. **Still open** — MASTERFILE's own
+      header confirms USPTO/app-store collision clearance has not happened.
 - [ ] RLS policy tests: prove the child role cannot read `expense` or another
-      child's `child_journal_entry` (P6, P7)
-- [ ] `policy_has_target` CHECK exercised for all six delivery policies
-- [ ] Nightly rematerialization sweep + the event-driven invalidation hooks
-- [ ] Single-guardian mode verified end to end with no second guardian row (§17.1)
+      child's `child_journal_entry` (P6, P7). **Partly done** — the
+      `child_journal_entry` half is genuinely proven, automated, cross-child
+      (`db/test/0003_session.test.sql`'s real `assert_eq` pairs). The
+      `expense` half has a real `expense_no_child` RLS policy and a real
+      FORCE-RLS structural check (`db/migrations/0006_court_tier.sql`'s
+      `health_check` view), but `db/test/0005_court.test.sql` only exercises
+      `expense` INSERT validation, not a child role actually being denied a
+      read — that specific behavioral proof still doesn't exist.
+- [ ] `policy_has_target` CHECK exercised for all six delivery policies.
+      **Partly done** — the constraint itself covers all six branches
+      (`db/migrations/0001_phase0_init.sql`), but `db/test/0001_constraints.test.sql`
+      only exercises three of them by name (`at_daypart`, `on_local_date`,
+      `when_reachable`) — `at_instant`, `on_event`, and `immediate` have no
+      matching probe there. Still a real gap for the other three.
+- [ ] Nightly rematerialization sweep + the event-driven invalidation hooks.
+      **Partly done, partly still open** — the invalidation guarantee itself
+      is real and proven (`materialize()`'s own "future + undelivered only"
+      behavior, covered by `delivery.test.mjs`'s 37 probes), but no cron or
+      scheduler actually calls it on a nightly cadence anywhere in this repo
+      (grepped for one; found none) — matching this codebase's own broader,
+      already-disclosed pattern of no cron/scheduled jobs existing yet
+      (MASTERFILE §20.2b, re: health-alert). Still a real, open gap for the
+      sweep half specifically.
+- [x] Single-guardian mode verified end to end with no second guardian row
+      (§17.1). **COMPLETE since v0.49.6** — MASTERFILE §20.1.
+
+Phase 0 has, in fact, long since shipped, and this list was more done than
+its all-unchecked state implied — but re-verifying each item against the
+real, current source (rather than trusting the original claim) found the
+truth is mixed, not uniformly "done": single-guardian mode is cleanly
+complete; the other three "not yet done" items each turned out to be
+partly real and partly still a genuine, disclosed gap, detailed above. Only
+the product name is still simply, entirely open.
