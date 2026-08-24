@@ -46,7 +46,23 @@ android {
         // its own manifest — confirmed by a real manifest-merger failure, not
         // assumed from the docs. Both target devices run Android 14+.
         minSdk = maxOf(flutter.minSdkVersion, 26)
-        targetSdk = flutter.targetSdkVersion
+        // Floor-guarded for the same reason compileSdk/minSdk are above: the
+        // wear module (android/wear/build.gradle.kts) hardcodes targetSdk =
+        // 36 with no dependency on the Flutter SDK at all, so this line was
+        // the one SDK field in this file with nothing anchoring it to that
+        // floor -- it would silently track whatever flutter.targetSdkVersion
+        // happens to resolve to for whichever Flutter SDK build this, with
+        // no guard against drifting below the wear module's fixed value.
+        // Verified against this repo's own pinned toolchain, not assumed:
+        // Flutter 3.44.8 (the exact version CI pins in
+        // .github/workflows/verify.yml and the exact version installed at
+        // C:/Users/Obliv/flutter on this machine) sets
+        // FlutterExtension.targetSdkVersion = 36
+        // (packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt),
+        // so this is a no-op today -- both modules already resolve to 36 --
+        // but it removes the only remaining path by which a future Flutter
+        // version bump could quietly desynchronize app and wear.
+        targetSdk = maxOf(flutter.targetSdkVersion, 36)
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

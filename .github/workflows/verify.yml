@@ -46,6 +46,24 @@ jobs:
         with: { flutter-version: '3.44.8', channel: stable }
       - run: flutter pub get
         working-directory: scaffold/client
+      # Explicit pin, matching the Flutter pin's own discipline right above.
+      # tools/verify.sh's own Android gate (client/android/app/build.gradle
+      # .kts §5.20) genuinely runs -- confirmed via this repo's own CI logs
+      # ("android kotlin compile / wear os compile ... clean"), not the
+      # MISSING-TOOLCHAIN fallback its own condition implies when no SDK is
+      # present -- because ubuntu-latest runners ship a pre-installed
+      # Android SDK and set ANDROID_HOME/ANDROID_SDK_ROOT before any step
+      # runs. That pre-installed SDK's platform/build-tools versions are
+      # controlled entirely by GitHub's own runner-image rotation, not by
+      # this repo, and can drift silently whenever that image changes --
+      # the exact reproducibility gap the Flutter pin above exists to
+      # close, just for the other toolchain. compileSdk/targetSdk 36 is the
+      # real, current value app/build.gradle.kts's own maxOf() floor-guards
+      # resolve to under Flutter 3.44.8 (confirmed by reading that file and
+      # the pinned Flutter SDK's own FlutterExtension.kt directly); 36.0.0
+      # is the matching build-tools release.
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
       # tesseract is a REAL dependency of the homework suite, not a nicety —
       # the OCR assertions shell out to it. imagemagick is a real dependency
       # too: make-fixtures.sh shells out to `magick`/`convert` to generate the
