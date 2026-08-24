@@ -70,10 +70,11 @@ class MyDayScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<StripSegment> segments = scheduleStrip(parts, nowLocal);
-    final StripSegment current = segments.firstWhere(
-      (StripSegment s) => s.current,
-      orElse: () => segments.first,
-    );
+    // `current` is honestly nullable: a `parts` list with a genuine gap (a
+    // stretch of the day no day-part covers) can leave `nowLocal` outside
+    // every segment's window. See calendar_day_logic.dart's `currentSegment`
+    // doc for why that must render as "nothing scheduled", not a guess.
+    final StripSegment? current = currentSegment(segments);
     return Scaffold(
       appBar: AppBar(title: const Text('My day')),
       body: SafeArea(child: ListView(
@@ -81,12 +82,16 @@ class MyDayScreen extends StatelessWidget {
         children: <Widget>[
           Text("$childName's day", style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 4),
-          Row(children: <Widget>[
-            Text(current.icon, style: const TextStyle(fontSize: 20)),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Right now: ${current.label}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
-          ]),
+          if (current != null)
+            Row(children: <Widget>[
+              Text(current.icon, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Right now: ${current.label}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+            ])
+          else
+            Text('Nothing scheduled right now.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
           _DayRibbon(parts: parts, nowLocal: nowLocal),
           const SizedBox(height: 24),

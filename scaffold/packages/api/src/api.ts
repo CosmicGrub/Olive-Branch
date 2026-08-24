@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readSession, type VerifiedPrincipal } from '../../auth/src/auth.ts';
+import { readSession, issueSession, type VerifiedPrincipal } from '../../auth/src/auth.ts';
 import { can, type Edge, type Action } from '../../family-graph/src/authorize.ts';
 import { sweep } from '../../globalaudit/src/globalaudit.ts';
 
@@ -322,6 +322,30 @@ export class Api {
       if (e?.status) return { status: e.status, body: { error: e.code ?? 'error' } };
       return { status: 500, body: { error: 'internal' } };
     }
+  }
+
+  /**
+   * Mints a real session for a route that has just proven identity some
+   * OTHER way than the Bearer token this same call would otherwise require
+   * — server/routes.mjs's guardian-invite bootstrap route (the account-
+   * creation gap CHANGELOG v0.49.9 named and left open: "no account-
+   * creation route ... for a first OR an invited guardian") is the one real
+   * caller today. Exists so a route dispatched THROUGH `register()` can
+   * mint a token without this class handing its signing `secret` out to
+   * routes.mjs, which never receives it directly (`registerRoutes(api,
+   * pool)` takes only those two). server/index.mjs's own pre-session login
+   * routes (webauthnLoginVerify, devLogin) call auth.ts's issueSession()
+   * directly for the identical reason, but they run entirely OUTSIDE this
+   * class, before api.handle() is ever invoked (see this file's own
+   * noSessionRequired doc comment) — they have no `Api` instance to ask.
+   * The `noSessionRequired` route below, by contrast, IS registered on this
+   * instance and already has one in scope via its own closure.
+   */
+  issueSessionToken(
+    p: Omit<VerifiedPrincipal, 'verified' | 'expiresAt'>,
+    ttlMs?: number,
+  ): string {
+    return issueSession(this.secret, p, this.now(), ttlMs);
   }
 
   listen(port: number) {

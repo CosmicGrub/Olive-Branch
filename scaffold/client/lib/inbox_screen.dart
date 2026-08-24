@@ -81,12 +81,12 @@ class _InboxScreenState extends State<InboxScreen> {
     if (wasUnwatched) {
       final String nowHhmm = hhmmNow();
       final List<StripSegment> segments = scheduleStrip(demoDayParts, nowHhmm);
-      final StripSegment current = segments.firstWhere(
-        (StripSegment s) => s.current,
-        orElse: () => segments.first,
-      );
+      // Honestly nullable, same as receipt_screen.dart's own `dayPartKind`
+      // doc says: no day-part context (a genuine schedule gap) is still a
+      // valid, honest receipt — it just drops the "— before school" clause,
+      // rather than fabricating one by grabbing whichever part sorts first.
       watchedAtLabel = formatTimeOfDay(nowHhmm);
-      dayPartKind = current.kind;
+      dayPartKind = currentSegment(segments)?.kind;
       final int i = _messages.indexWhere((InboxMessage x) => x.id == m.id);
       setState(() => _messages[i] = m.markWatched());
     }

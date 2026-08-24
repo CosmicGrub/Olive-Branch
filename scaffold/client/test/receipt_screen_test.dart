@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:olive_client/offline_outbox.dart' show offlineForbidden;
 import 'package:olive_client/receipt_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -216,6 +217,116 @@ void main() {
       expect(requestMade, isFalse);
       expect(find.text('Send one back'), findsOneWidget);
       expect(find.textContaining('error'), findsNothing);
+    });
+  });
+
+  group('Receipt — offline-outbox honesty (queued/in-flight vs confirmed-sent '
+      'vs failed-will-retry, MASTERFILE §5.22, offline_outbox.dart)', () {
+    testWidgets(
+        'a connectivity failure is queued and reassures her honestly -- '
+        'never "Sent!", never the raw exception, never the banned '
+        'engineering vocabulary', (tester) async {
+      final MockClient mock =
+          MockClient((http.Request req) async => throw Exception('connection refused'));
+
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad',
+        watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(),
+        // Real backoff is minutes-to-hours; overridden to something that
+        // will not fire during this test, which only asserts the FIRST
+        // honest state a connectivity gap lands on.
+        retryBackoff: (_) => const Duration(minutes: 10),
+      )));
+
+      await tester.tap(find.text('Send one back'));
+      await tester.pump();
+
+      // The one honest sentence offline_outbox.dart's offlineChildView
+      // allows -- her thing is safe, and that is all she is told.
+      expect(find.text('It will go when you have internet again. It is safe.'),
+          findsOneWidget);
+      expect(find.text('Kept safe'), findsOneWidget);
+
+      // Never claims further along than it truly is, and never leaks the
+      // raw exception or this codebase's own banned queue/retry vocabulary.
+      expect(find.text('Sent!'), findsNothing);
+      expect(find.textContaining('connection refused'), findsNothing);
+      expect(find.textContaining('Exception'), findsNothing);
+      for (final String word in offlineForbidden) {
+        expect(find.textContaining(word), findsNothing,
+            reason: 'banned offline vocabulary "$word" must never reach her screen');
+      }
+    });
+
+    testWidgets(
+        'a connectivity failure really retries on its own -- "Sent!" only '
+        'appears once a real retry genuinely succeeds', (tester) async {
+      int attempts = 0;
+      final MockClient mock = MockClient((http.Request req) async {
+        attempts += 1;
+        if (attempts == 1) throw Exception('connection refused');
+        return http.Response(
+            jsonEncode({'id': 'intent-2', 'artifactId': 'artifact-2', 'state': 'pending'}), 201);
+      });
+
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad',
+        watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(),
+        // Real backoff is offline_outbox.dart's own backoffMs (minutes to
+        // hours); overridden here only so this test can observe a real
+        // automatic retry firing without actually waiting.
+        retryBackoff: (_) => const Duration(milliseconds: 20),
+      )));
+
+      await tester.tap(find.text('Send one back'));
+      await tester.pump();
+      expect(find.text('Kept safe'), findsOneWidget);
+      expect(attempts, 1);
+
+      // Advancing past the real (if shortened) backoff fires the scheduled
+      // retry -- a genuine second attempt, not a fabricated success.
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(attempts, 2);
+      expect(find.text('Sent!'), findsOneWidget);
+      expect(find.text('Kept safe'), findsNothing);
+    });
+
+    testWidgets(
+        'a genuine server rejection is never mistaken for a connectivity '
+        'gap -- no queued-safe copy, no silent auto-retry, the same real '
+        'error as always', (tester) async {
+      int attempts = 0;
+      final MockClient mock = MockClient((http.Request req) async {
+        attempts += 1;
+        return http.Response(jsonEncode({'error': 'not_authorized'}), 403);
+      });
+
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad',
+        watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(),
+        retryBackoff: (_) => const Duration(milliseconds: 20),
+      )));
+
+      await tester.tap(find.text('Send one back'));
+      await tester.pump();
+
+      expect(find.text('Kept safe'), findsNothing);
+      expect(find.text('It will go when you have internet again. It is safe.'),
+          findsNothing);
+      expect(find.textContaining('403'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+
+      // No silent background retry for a genuine rejection -- waiting past
+      // where a connectivity retry would have fired must not call the
+      // server again on its own.
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(attempts, 1);
     });
   });
 }

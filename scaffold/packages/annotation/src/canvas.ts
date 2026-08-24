@@ -60,15 +60,22 @@ export class Canvas {
    *  - It must skip strokes belonging to anyone else.
    *  - It must skip strokes already undone, so repeated undo walks backwards
    *    rather than toggling one stroke.
-   *  - It must skip strokes ERASED by someone else. Undo is not a way to
-   *    reach past another person's deliberate erase.
+   *  - It must skip ERASED strokes entirely — including ones the same actor
+   *    erased themselves. Erase and undo are deliberately distinct, one-way
+   *    mechanisms: undo only ever manipulates `undoneAt`, and erase only
+   *    ever manipulates `erasedBy`. Letting a self-erased stroke re-enter
+   *    the undoneAt bookkeeping here would hand it a timestamp that
+   *    competes with real draw-undos in redo()'s "most recently undone"
+   *    ordering — corrupting which stroke a later redo() actually restores.
+   *    (Live-found bug, not a hypothetical: the original version of this
+   *    guard only skipped strokes erased by someone ELSE.)
    */
   undo(actorId: string, at: number): Stroke | null {
     for (let i = this.strokes.length - 1; i >= 0; i--) {
       const s = this.strokes[i];
       if (s.actorId !== actorId) continue;
       if (s.undoneAt !== null) continue;
-      if (s.erasedBy !== null && s.erasedBy !== actorId) continue;
+      if (s.erasedBy !== null) continue;
       s.undoneAt = at;
       return s;
     }
@@ -90,6 +97,17 @@ export class Canvas {
     const s = this.strokes.find(x => x.id === strokeId);
     if (!s || s.erasedBy) return false;
     s.erasedBy = byActorId;
+    // A stroke must never simultaneously carry a live undoneAt AND a set
+    // erasedBy — undo()'s own guard (above) already keeps an ALREADY-erased
+    // stroke from ever being handed a fresh undoneAt, but the reverse
+    // ordering (undo a stroke first, legitimately, THEN erase that same
+    // stroke) was a real, live-found gap: erase() left the stale undoneAt in
+    // place, so redo()'s "most recently undone" comparison could still pick
+    // the now-erased stroke as its restoration target — a silent no-op on
+    // the wrong stroke that shadowed the actually-expected one. Clearing it
+    // here closes the invariant at its one real source, rather than adding
+    // a second erasedBy check to every future undoneAt reader.
+    s.undoneAt = null;
     return true;
   }
 

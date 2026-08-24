@@ -55,6 +55,48 @@ void main() {
       expect(find.textContaining('failed'), findsNothing);
     });
 
+    // §8.4 gap-fallback. `demoDayParts` covers all 24h, so this scenario
+    // never reaches production through it — but a real family's edited
+    // schedule can easily leave a stretch of the day with no day-part
+    // defined at all. Landing `nowLocal` inside that gap must render an
+    // honest "nothing scheduled" state, not silently reattribute "right
+    // now" to whichever day-part happens to sort first.
+    group('a genuine schedule gap (no day-part covers "now")', () {
+      const List<DayPartLite> partsWithGap = <DayPartLite>[
+        DayPartLite(kind: 'school', startsLocal: '08:00', endsLocal: '15:00'),
+        DayPartLite(kind: 'dinner', startsLocal: '18:00', endsLocal: '19:00'),
+      ];
+      // 16:30 sits after school ends (15:00) and before dinner starts
+      // (18:00) — inside the gap, covered by nothing.
+
+      testWidgets('does NOT fall back to the chronologically-first day-part',
+          (tester) async {
+        await tester.pumpWidget(wrap(const MyDayScreen(
+          childName: 'Ivy', parts: partsWithGap, nowLocal: '16:30')));
+        // The buggy fallback (`orElse: () => segments.first`) would show
+        // "Right now: school" here — school is long over at 16:30.
+        expect(find.textContaining('Right now: school'), findsNothing);
+        expect(find.textContaining('Right now: dinner'), findsNothing);
+      });
+
+      testWidgets('shows an honest "nothing scheduled" state instead',
+          (tester) async {
+        await tester.pumpWidget(wrap(const MyDayScreen(
+          childName: 'Ivy', parts: partsWithGap, nowLocal: '16:30')));
+        expect(find.textContaining('Nothing scheduled'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('no day-part card wears the "right now" pill during the gap',
+          (tester) async {
+        await tester.binding.setSurfaceSize(const Size(800, 1200));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const MyDayScreen(
+          childName: 'Ivy', parts: partsWithGap, nowLocal: '16:30')));
+        expect(find.text('right now'), findsNothing);
+      });
+    });
+
     testWidgets('tapping a day-part card is a real interaction: it reveals detail',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(800, 1800));

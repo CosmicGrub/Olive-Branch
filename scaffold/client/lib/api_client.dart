@@ -183,6 +183,10 @@ class OliveApi {
   static const guardianInvite = '/v1/guardian-invites/:inviteId';
   static const guardianInviteAccept = '/v1/guardian-invites/:inviteId/accept';
   static const guardianInviteRevoke = '/v1/guardian-invites/:inviteId/revoke';
+  // The account-creation gap CHANGELOG v0.49.9 named and left open -- see
+  // [bootstrapGuardianInvite] below, the real free function this constant
+  // backs.
+  static const guardianInviteBootstrap = '/v1/guardian-invites/:inviteId/bootstrap';
 
   // --- call — real room-coordination + ringing (§5.19, §5.21, §5.25.2) ----
   // server/routes.mjs's own real replacement for local-call-room-server.mjs's
@@ -704,6 +708,43 @@ Future<void> revokeGuardianInvite(
   if (res.statusCode >= 400) {
     throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
   }
+}
+
+/// Mints a real session for the invited party to complete passkey/PIN
+/// registration -- POST guardianInviteBootstrap, server/routes.mjs's real
+/// handler. No session, same reasoning as [fetchGuardianInvite]/
+/// [acceptGuardianInvite]. Closes the account-creation gap CHANGELOG
+/// v0.49.9 named and explicitly declined to invent an answer for ("how does
+/// a passwordless account get created at all") WITHOUT touching WebAuthn
+/// registration itself: the token this returns is an ordinary guardian
+/// session with no guardianship edge to any child yet (none is created
+/// here -- see 0014/0019_guardian_invite_bootstrap.sql's own headers), meant
+/// to be handed straight to [OliveApi.webauthnRegisterChallenge]/[Verify]
+/// (unchanged, already-existing routes), the same handoff
+/// [GuardianSetupScreen.registerPasskey]'s own real caller would make. Only
+/// succeeds once per invite, and only for one that has already been
+/// accepted -- expired/revoked/not_accepted/already_bootstrapped/
+/// email_already_registered are all real, distinguishable [ApiException]s,
+/// not an opaque bool. No client screen calls this yet -- same "route and
+/// wiring are real and tested regardless" convention [revokeGuardianInvite]
+/// above already states for its own still-unwired route.
+Future<Map<String, dynamic>> bootstrapGuardianInvite(
+  String baseUrl,
+  String inviteId,
+  String displayName, {
+  http.Client? client,
+}) async {
+  final c = client ?? http.Client();
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.guardianInviteBootstrap.replaceFirst(':inviteId', inviteId)}'),
+    headers: {'content-type': 'application/json'},
+    body: jsonEncode({'displayName': displayName}),
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body;
 }
 
 /// Dev-only login helper wrapping [OliveApi.devLoginPath] — see

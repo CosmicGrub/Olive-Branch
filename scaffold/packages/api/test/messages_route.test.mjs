@@ -192,21 +192,73 @@ const post = (childId, tok, body) => api.handle(
   });
   check('D auth', 'a guardian with no edge to this child is refused', otherChild.status, 403);
 
-  // HONEST GAP, exercised for real rather than merely asserted in a comment:
-  // a `child` principal carries no `userId` (packages/auth/src/auth.ts), so
-  // she can never appear as `delivery_intent.sender_id` (`NOT NULL REFERENCES
-  // app_user`). "Send one back", called with the CHILD's own real session —
-  // exactly what receipt_screen.dart's real caller would present — is
-  // therefore refused too, honestly, not silently downgraded into a fake
-  // success. This is not a bug this suite is tolerating; it is the actual,
-  // current behaviour, proven so nobody has to take a comment's word for it.
+  // FORMERLY A HONEST GAP, closed by 0019_child_message_sender.sql: a
+  // `child` principal carries no `userId` (packages/auth/src/auth.ts), so
+  // she can never appear as `delivery_intent.sender_id`'s OLD shape (`NOT
+  // NULL REFERENCES app_user`) — that column is what used to make "Send one
+  // back", called with the CHILD's own real session, structurally
+  // unrepresentable and therefore always refused. Now it is a real success:
+  // the child is her own sender, recorded via `sender_child_id`/
+  // `author_child_id`, never `sender_id`/`author_id`.
+  const before2 = await rowCounts();
   const asChild = await post(CHILD, childTok, {
     storageKey: `device/${randomUUID()}`, durationMs: 4200,
   });
-  check('D auth', 'a child session cannot send one back yet (no app_user identity to attach)',
-    asChild.status, 403);
-  check('D auth', 'the reason is not_authorized, same as any other unauthorized sender',
-    asChild.body.error, 'not_authorized');
+  check('D auth', 'a child session sending about herself now succeeds', asChild.status, 201);
+  const after2 = await rowCounts();
+  check('D auth', 'exactly one media_artifact row landed for her own capture',
+    after2.artifacts - before2.artifacts, 1);
+  check('D auth', 'exactly one delivery_intent row landed for her own capture',
+    after2.intents - before2.intents, 1);
+
+  const childArt = await admin.query(
+    `SELECT author_id, author_child_id FROM media_artifact WHERE id = $1`,
+    [asChild.body.artifactId]);
+  check('D auth', 'author_id is null for a child-authored artifact',
+    childArt.rows[0]?.author_id, 'null');
+  check('D auth', 'author_child_id names the sending child',
+    childArt.rows[0]?.author_child_id, CHILD);
+
+  const childIntent = await admin.query(
+    `SELECT sender_id, sender_child_id FROM delivery_intent WHERE id = $1`,
+    [asChild.body.id]);
+  check('D auth', 'sender_id is null for a child-originated intent',
+    childIntent.rows[0]?.sender_id, 'null');
+  check('D auth', 'sender_child_id names the sending child',
+    childIntent.rows[0]?.sender_child_id, CHILD);
+
+  // SHARED-DEVICE MISATTRIBUTION, the audit finding's own worry ("a design
+  // that can't distinguish which child sent a video when multiple children
+  // share a device"), exercised over real HTTP: a child session is
+  // identity-scoped to her OWN childId ONLY. api.ts's own gateway
+  // (`principal.childId !== childId` → `wrong_child`) refuses this before
+  // captureMessage() (and its own, second `child_sender_mismatch` lock —
+  // proven directly in pipeline.test.mjs, which can call it with a
+  // deliberately mismatched id this gateway would never let through over
+  // real HTTP) is ever reached.
+  const wrongChild = await post(CHILD_B, childTok, {
+    storageKey: `device/${randomUUID()}`, durationMs: 4200,
+  });
+  check('D auth', 'a child session cannot attribute a send to a DIFFERENT child',
+    wrongChild.status, 403);
+  check('D auth', 'the reason is wrong_child, the identity gate, not a family-graph denial',
+    wrongChild.body.error, 'wrong_child');
+
+  // PRESERVATION IS A GUARDIAN ELECTION (§9.8.1) — a child asking to skip
+  // her own retention clock is refused cleanly, not left to fail on
+  // media_artifact's `preservation_is_attributed` CHECK with no app_user id
+  // to attribute it to.
+  const beforePreserve = await rowCounts();
+  const childPreserve = await post(CHILD, childTok, {
+    storageKey: `device/${randomUUID()}`, durationMs: 4200, preserve: true,
+  });
+  check('D auth', 'a child cannot elect to preserve her own sent video',
+    childPreserve.status, 400);
+  check('D auth', 'the reason is child_cannot_preserve',
+    childPreserve.body.error, 'child_cannot_preserve');
+  const afterPreserve = await rowCounts();
+  check('D auth', 'no row written for the refused preserve request',
+    afterPreserve.artifacts, beforePreserve.artifacts);
 }
 
 for (const cid of [CHILD, CHILD_B]) {

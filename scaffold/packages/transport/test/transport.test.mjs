@@ -295,6 +295,31 @@ const REF = 'r_' + 'a'.repeat(20);
   check('K wear bridge', 'Dart caller guards on Platform.isAndroid',
     dart.includes('Platform.isAndroid'), 'true');
 
+  // "Call Dad" — the watch -> phone -> Dart round trip (§21.5, closes the
+  // Tier-2 "Wear OS 'Call Dad' wiring" gap). Kotlin -> Dart method name:
+  // agrees across the phone bridge and its Dart caller, same shape as
+  // 'syncSleepsUntilHandover' above just checked in the other direction.
+  check('K wear bridge', "method 'callDadRequested' declared in phone Kotlin and Dart",
+    [kt, dart].every(f => f.includes('"callDadRequested"') || f.includes("'callDadRequested'")),
+    'true');
+  // MessageClient path: native Kotlin on both ends (watch sender, phone
+  // listener), no Dart involved -- same "no shared Kotlin module to enforce
+  // it" reasoning as the DataItem path/key pair above, checked the same way.
+  check('K wear bridge', 'MessageClient path "/olive/call-dad" agrees between phone and watch',
+    [kt, wearMain].every(f => f.includes('"/olive/call-dad"')), 'true');
+  // The watch must actually SEND on that path (a literal string appearing in
+  // wear/.../MainActivity.kt could otherwise just be the path constant's own
+  // declaration, never actually used) -- checked separately from the plain
+  // path-agreement check above, the same way this suite elsewhere
+  // distinguishes "the string exists" from "the string is used".
+  check('K wear bridge', 'the watch actually calls sendMessage(), not just declares the path',
+    wearMain.includes('.sendMessage('), 'true');
+  // And the phone must actually forward it on to Dart -- a listener that
+  // checked the path but never called invokeMethod() would be a silent dead
+  // end indistinguishable from this gap never having been closed at all.
+  check('K wear bridge', 'the phone bridge actually forwards the tap to Dart via invokeMethod()',
+    kt.includes('methods.invokeMethod(M_CALL_DAD_REQUESTED'), 'true');
+
   // §21.5's own "presence" carve-out: no computation logic for it exists
   // anywhere, so the bridge's actual CODE must not smuggle a second field in
   // under one pass's cover. Comments are allowed to name "presence" when

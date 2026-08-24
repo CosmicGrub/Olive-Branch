@@ -1,5 +1,11 @@
-// OLIVE BRANCH — live-backed child home. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §7, §8.1.
+// OLIVE BRANCH — live-backed child home. UNVERIFIED at the live-device/live-
+// server level (this screen has never been run against a real deployed
+// backend or a paired Wear OS watch). tools/verify.sh's own automated
+// pipeline still has no Flutter toolchain, so this marker stays present —
+// but see wear_sync_channel.dart's own header for the real, actually-run
+// `flutter analyze`/`flutter test` verification this file's own §21.5
+// changes got this pass, against a real local Flutter toolchain. MASTERFILE
+// §7, §8.1.
 //
 // The first screen in this app wired to real network calls rather than
 // hardcoded demo constants (see main.dart's own header, and server/index.mjs
@@ -39,10 +45,26 @@
 // exists, and correctly still a no-op (never a placeholder) when it doesn't
 // -- see wear_sync_channel.dart's own doc comment on why a guess must never
 // be sent.
+//
+// Watch -> phone (§21.5, new this pass): this is also the one real place a
+// watch's "Call Dad" tap reaches this client. `_handleWatchCallDad()` below
+// is registered against `_wearSync.listenForCallDad()` in `initState()`
+// (before `_load()` even resolves, so a tap arriving unusually early is
+// still caught) and opens the exact same real `CallScreen(who: 'ivy', ...)`
+// child_home.dart's own existing "Call Dad" button (`_PresenceCard`) already
+// opens -- see wear_sync_channel.dart's and WearSyncBridge.kt's own headers
+// for the full watch -> phone -> Dart path and for exactly why THIS is the
+// honest target rather than guardian_more.dart's guardian-only real
+// `POST /v1/children/:childId/calls` route (server/routes.mjs refuses a
+// child session there by design). Gated on `widget.navigatorKey` being
+// supplied, same posture as `_initPush`'s own `buildCallIncomingHandler`
+// wiring below -- null there is not a regression, it's the same honest gap
+// every build without a navigator key already had.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'call_knock_screen.dart' show buildCallIncomingHandler;
+import 'call_screen.dart';
 import 'child_home.dart';
 import 'push_channel.dart';
 import 'wear_sync_channel.dart';
@@ -111,6 +133,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Registered before `_load()` resolves on purpose -- see file header.
+    _wearSync.listenForCallDad(_handleWatchCallDad);
     _load();
   }
 
@@ -167,6 +191,29 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   Future<void> _syncWear() async {
     final sleeps = _sleepsUntilHandover;
     if (sleeps != null) await _wearSync.syncSleepsUntilHandover(sleeps);
+  }
+
+  // Real watch -> phone "Call Dad" handler (§21.5) -- see file header for
+  // the full path and why this specific screen (CallScreen(who: 'ivy', ...),
+  // no knownRoom) is the honest target. Reads `_childName` live rather than
+  // closing over it at registration time, since `listenForCallDad` above
+  // runs in `initState()` before `_childName` has a real fetched value --
+  // by the time any real watch tap can plausibly arrive (well after this
+  // screen has had a chance to load), this reads whatever `_childName`
+  // actually is then, same as `ChildHome`'s own build() below already does.
+  //
+  // Deliberately does NOT check `_state == _LoadState.ready`: a real "Call
+  // Dad" tap should reach Dad even if this screen's own name/inbox fetch is
+  // still in flight or has failed -- matching this affordance's own
+  // unconditional presence on the watch face (no presence gate, unlike
+  // child_home.dart's own `_PresenceCard`, which this screen currently never
+  // renders at all since `presence` is always null -- see file header).
+  void _handleWatchCallDad() {
+    if (!mounted) return;
+    final navigator = widget.navigatorKey?.currentState;
+    if (navigator == null) return;
+    navigator.push(MaterialPageRoute<void>(
+      builder: (_) => CallScreen(who: 'ivy', displayName: _childName)));
   }
 
   // Real permission request + token registration (§11) using the exact

@@ -490,6 +490,29 @@ async function childCtxFor(pool, childId) {
     };
   });
 }
+async function loadCallLog(q, childId) {
+  const rows = await q(
+    `SELECT cl.id, cl.started_by, u.display_name AS started_by_name,
+            cl.participant_ids, cl.ladder_step, cl.recorded, cl.rang,
+            cl.started_at::text, cl.ended_at::text
+       FROM call_log cl
+       JOIN app_user u ON u.id = cl.started_by
+      WHERE cl.child_id = $1
+      ORDER BY cl.started_at ASC`,
+    [childId]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    startedBy: r.started_by,
+    startedByName: r.started_by_name ?? null,
+    participantIds: r.participant_ids,
+    ladderStep: r.ladder_step,
+    recorded: r.recorded,
+    rang: r.rang,
+    startedAt: r.started_at,
+    endedAt: r.ended_at ?? null
+  }));
+}
 async function assembleRawExportBundle(q, childId, requester, journalRows) {
   const childRows = await q(`SELECT display_name FROM child WHERE id = $1`, [childId]);
   const deliveredRows = await q(
@@ -510,6 +533,7 @@ async function assembleRawExportBundle(q, childId, requester, journalRows) {
        FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
     [childId]
   );
+  const callLogRows = await loadCallLog(q, childId);
   const bundle = {
     childId,
     childName: childRows[0]?.display_name ?? null,
@@ -548,7 +572,8 @@ async function assembleRawExportBundle(q, childId, requester, journalRows) {
       body: r.body,
       prevHash: r.prev_hash,
       hash: r.hash
-    }))
+    })),
+    callLog: callLogRows
   };
   const serialized = JSON.stringify(bundle);
   const bundleHash = sha256Hex(serialized);
@@ -684,15 +709,16 @@ async function persistCapturedMessage(pool, capture, opts = {}) {
     const a = capture.artifact;
     const artifactRows = await q(
       `INSERT INTO media_artifact
-         (child_id, author_id, kind, storage_key, duration_ms, caption_key,
-          captured_at, captured_tz, era_tag, preserved, preserved_by,
+         (child_id, author_id, author_child_id, kind, storage_key, duration_ms,
+          caption_key, captured_at, captured_tz, era_tag, preserved, preserved_by,
           preserved_at, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8,$9,$10,$11,
-               $12::timestamptz,$13::timestamptz)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9,$10,$11,$12,
+               $13::timestamptz,$14::timestamptz)
        RETURNING id`,
       [
         a.childId,
         a.authorId,
+        a.authorChildId,
         a.kind,
         a.storageKey,
         a.durationMs,
@@ -710,6 +736,11 @@ async function persistCapturedMessage(pool, capture, opts = {}) {
     const i = capture.intent;
     let batchId = i.batchId;
     if (opts.newBatch) {
+      if (!i.senderId) {
+        throw new Error(
+          "persistCapturedMessage: opts.newBatch requires an app_user sender (intent_batch.sender_id is NOT NULL) \u2014 a child-originated capture (senderChildId set) cannot start a batch."
+        );
+      }
       const b = opts.newBatch;
       const batchRows = await q(
         `INSERT INTO intent_batch
@@ -732,15 +763,16 @@ async function persistCapturedMessage(pool, capture, opts = {}) {
     }
     const intentRows = await q(
       `INSERT INTO delivery_intent
-         (child_id, sender_id, payload_kind, payload_ref, policy,
-          target_local_date, target_daypart, batch_id, batch_seq, state,
-          expires_at)
-       VALUES ($1,$2,$3,$4,$5::delivery_policy,$6::date,$7,$8,$9,$10,
-               $11::timestamptz)
+         (child_id, sender_id, sender_child_id, payload_kind, payload_ref,
+          policy, target_local_date, target_daypart, batch_id, batch_seq,
+          state, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6::delivery_policy,$7::date,$8,$9,$10,$11,
+               $12::timestamptz)
        RETURNING id`,
       [
         i.childId,
         i.senderId,
+        i.senderChildId,
         i.payloadKind,
         artifactId,
         i.policy,
@@ -878,8 +910,9 @@ async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__
     if (!verification.ok) {
       return { ok: false, reason: "chain_broken", faults: verification.faults };
     }
+    const callLog = await loadCallLog(q, childId);
     const attestation = certify(chain, childId, now.toISOString());
-    const bundleHash = sha256Hex(JSON.stringify({ chain, attestation }));
+    const bundleHash = sha256Hex(JSON.stringify({ chain, attestation, callLog }));
     const inserted = await q(
       `INSERT INTO export_record (child_id, requested_by, kind, was_free, head_hash, bundle_hash)
        VALUES ($1, $2, 'certified', $3, $4, $5)
@@ -891,6 +924,7 @@ async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__
       free: auth.free,
       chain,
       attestation,
+      callLog,
       bundleHash,
       exportRecordId: inserted[0].id
     };
@@ -961,6 +995,37 @@ async function revokeGuardianInvite(pool, inviteId, byUserId, now) {
     return { ok: true };
   });
 }
+async function bootstrapGuardianInvite(pool, inviteId, displayName, now) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
+    if (!rows.length) return { ok: false, reason: "not_found" };
+    const row = rows[0];
+    if (row.revoked_at) return { ok: false, reason: "revoked" };
+    if (!row.accepted_at) return { ok: false, reason: "not_accepted" };
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: "expired" };
+    if (row.bootstrapped_at) return { ok: false, reason: "already_bootstrapped" };
+    const existing = await q(`SELECT id FROM app_user WHERE email = $1`, [row.invited_email]);
+    if (existing.length) return { ok: false, reason: "email_already_registered" };
+    const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [row.child_id]);
+    let userId;
+    try {
+      const inserted = await q(
+        `INSERT INTO app_user (email, display_name, home_tz)
+         VALUES ($1, $2, $3) RETURNING id`,
+        [row.invited_email, displayName, child[0].home_tz]
+      );
+      userId = inserted[0].id;
+    } catch (e) {
+      if (e?.code === "23505") return { ok: false, reason: "email_already_registered" };
+      throw e;
+    }
+    await q(
+      `UPDATE guardian_invite SET bootstrapped_at = $2, bootstrap_user_id = $3 WHERE id = $1`,
+      [inviteId, now.toISOString(), userId]
+    );
+    return { ok: true, userId, childId: row.child_id };
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
@@ -976,6 +1041,7 @@ export {
   activeCustodyOrderFor,
   attemptPinFor,
   availabilityFor,
+  bootstrapGuardianInvite,
   certifiedExportBundleFor,
   childCtxFor,
   consumeChallenge,

@@ -144,14 +144,24 @@ class AnnotationCanvas {
   ///  - It must skip strokes belonging to anyone else.
   ///  - It must skip strokes already undone, so repeated undo walks
   ///    backwards rather than toggling one stroke.
-  ///  - It must skip strokes ERASED by someone else. Undo is not a way to
-  ///    reach past another person's deliberate erase.
+  ///  - It must skip ERASED strokes entirely — including ones the same
+  ///    actor erased themselves. Erase and undo are deliberately distinct,
+  ///    one-way mechanisms (see [Stroke.erasedBy]): undo only ever
+  ///    manipulates [Stroke.undoneAt], and erase only ever manipulates
+  ///    [Stroke.erasedBy]. Letting a self-erased stroke re-enter the
+  ///    undoneAt bookkeeping here would hand it a timestamp that competes
+  ///    with real draw-undos in redo()'s "most recently undone" ordering
+  ///    (redo() picks by comparing undoneAt across all of the actor's
+  ///    strokes) — corrupting which stroke a later redo() actually
+  ///    restores, and reporting a stroke as "undone" when nothing about
+  ///    its visibility ever changed. An erased stroke is simply gone from
+  ///    undo's perspective, same as one erased by someone else.
   Stroke? undo(String actorId, int at) {
     for (int i = _strokes.length - 1; i >= 0; i--) {
       final Stroke s = _strokes[i];
       if (s.actorId != actorId) continue;
       if (s.undoneAt != null) continue;
-      if (s.erasedBy != null && s.erasedBy != actorId) continue;
+      if (s.erasedBy != null) continue;
       s.undoneAt = at;
       _visibleCache = null;
       return s;
@@ -180,6 +190,17 @@ class AnnotationCanvas {
     }
     if (s == null || s.erasedBy != null) return false;
     s.erasedBy = byActorId;
+    // A stroke must never simultaneously carry a live undoneAt AND a set
+    // erasedBy — undo()'s own guard (above) already keeps an ALREADY-erased
+    // stroke from ever being handed a fresh undoneAt, but the reverse
+    // ordering (undo a stroke first, legitimately, THEN erase that same
+    // stroke) was a real, live-found gap: erase() left the stale undoneAt in
+    // place, so redo()'s "most recently undone" comparison could still pick
+    // the now-erased stroke as its restoration target — a silent no-op on
+    // the wrong stroke that shadowed the actually-expected one. Clearing it
+    // here closes the invariant at its one real source, rather than adding
+    // a second erasedBy check to every future undoneAt reader.
+    s.undoneAt = null;
     _visibleCache = null;
     return true;
   }

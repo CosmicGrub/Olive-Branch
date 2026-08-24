@@ -1140,6 +1140,26 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
  * handler is expected to reject it before this is ever called), so it throws
  * rather than silently returning an empty bundle.
  */
+/**
+ * One row of db/migrations/0018_call_log.sql, shaped for an export bundle —
+ * shared verbatim between RawExportBundle (below) and
+ * CertifiedExportResult (this file's certified-export half), so the two
+ * kinds of export can never quietly drift into describing a call
+ * differently. See RawExportBundle's own `callLog` field doc for the full
+ * reasoning behind exactly these columns and no others.
+ */
+export interface CallLogEntry {
+  id: string;
+  startedBy: string;
+  startedByName: string | null;
+  participantIds: string[];
+  ladderStep: string;
+  recorded: boolean;
+  rang: boolean;
+  startedAt: string;
+  endedAt: string | null;
+}
+
 export interface RawExportBundle {
   childId: string;
   childName: string | null;
@@ -1183,6 +1203,44 @@ export interface RawExportBundle {
    *  function's own header. */
   journalEntries: Array<{ id: string; body: string | null; mediaRef: string | null; createdAt: string }>;
   messageLog: Array<{ seq: number; authorId: string; at: string; body: string; prevHash: string; hash: string }>;
+  /**
+   * db/migrations/0018_call_log.sql — real call metadata, the audit's own
+   * "single biggest finding" (CHANGELOG v0.49.35): session-runtime/src/
+   * security.ts's RESIDUAL_RISKS table has claimed since before that pass
+   * that "who called whom, when, for how long" is "Retained, because §14
+   * court export needs it" — the table existed, but nothing ever actually
+   * queried it FOR an export. This is that query.
+   *
+   * Metadata only, matching call_log's own column set — never content,
+   * never location (P3), same discipline every other field in this bundle
+   * already follows. `roomName` is deliberately excluded: an internal
+   * signaling identifier, not part of "who called whom, when, for how
+   * long," and not evidentiary — no other field in this bundle exposes an
+   * internal routing/storage identifier without also being the payload the
+   * export is actually about (contrast `storageKey` above, which IS the
+   * artifact). `durationMs` is deliberately NOT computed here from
+   * startedAt/endedAt: call_log has no stored duration column (the
+   * migration's own header explains why — a call's real duration is only
+   * known once it ends), and inventing one by subtracting two timestamps
+   * would be synthesizing a field this schema does not actually have,
+   * exactly what `delivered[].artifact.durationMs` above avoids by reading
+   * a REAL `duration_ms` column instead. `startedAt`/`endedAt` round-trip
+   * as plain `::text`, matching `materializedAt`/`capturedAt` above — NOT
+   * the special `to_char(...)` format `loadMessageChain()` below uses,
+   * because that format exists solely to reproduce `entryHash()`'s exact
+   * input bytes for message_log's hash chain, and call_log has no hash
+   * chain of its own to reproduce (0018's own header: "Deliberately NOT
+   * append-only / hash-chained like message_log").
+   *
+   * `startedByName` resolves the single `started_by` FK, mirroring
+   * `delivered[].senderName` above; `participantIds` (a real uuid[] column
+   * — see 0018's own header on why it is a list, not a single column) is
+   * left as raw ids, not resolved to names, since resolving a variable-
+   * length array of names would need a second join this file has no
+   * existing precedent for and the raw ids are still real, useful
+   * identifiers for a reader cross-referencing the rest of the bundle.
+   */
+  callLog: CallLogEntry[];
 }
 
 /**
@@ -1219,7 +1277,61 @@ export interface RawExportBundle {
  * too, not just the guardian's: "She can have a copy of everything; she
  * cannot erase somebody else's record of their own conduct" — a copy, not
  * deletion rights, which is exactly what an export bundle is.
+ *
+ * call_log (0018_call_log.sql) joins this same single-query-against-
+ * whatever-`q` shape for a DIFFERENT reason than message_log's: it carries
+ * TWO policies, not one — `call_log_guardian_read` (real rows, gated by
+ * `actor_has_edge(child_id)`, satisfied by rawExportBundleFor()'s own
+ * guardian-scoped session below) and `call_log_system_all` (satisfied by
+ * takeAndGo()'s system-scoped session) — no policy admits the 'child' role
+ * at all (0018's own header: "the child never reads or writes this table
+ * directly"). Both of this function's real callers are covered by ONE of
+ * those two policies apiece, so — exactly like message_log — a single query
+ * against whatever `q` was handed in is correct for both, with no
+ * branching. This is the real backing for security.ts's own RESIDUAL_RISKS
+ * claim that call metadata is "Retained, because §14 court export needs
+ * it" (CHANGELOG v0.49.35) — the table existed and was written to since
+ * that pass, but nothing before this queried it FOR an export; the claim
+ * had no export-side implementation until now.
  */
+/**
+ * db/migrations/0018_call_log.sql, shaped as CallLogEntry — the ONE query
+ * both assembleRawExportBundle() (below) and certifiedExportBundleFor()
+ * (this file's certified-export half, further down) run, so a future
+ * change to which columns an export shows can't accidentally update one
+ * bundle kind and not the other. `u` resolves `started_by`'s display name,
+ * mirroring the `delivered` query's own `sender_name` JOIN below;
+ * `started_by` is NOT NULL (same as `delivery_intent.sender_id`), so an
+ * INNER JOIN is safe here for the identical reason it is safe there.
+ *
+ * Correct under EITHER real caller's session — see this function's own
+ * callers for which RLS policy admits which one (call_log_guardian_read
+ * for a guardian-scoped `q`, call_log_system_all for a system-scoped one).
+ */
+async function loadCallLog(q: Query, childId: string): Promise<CallLogEntry[]> {
+  const rows = await q(
+    `SELECT cl.id, cl.started_by, u.display_name AS started_by_name,
+            cl.participant_ids, cl.ladder_step, cl.recorded, cl.rang,
+            cl.started_at::text, cl.ended_at::text
+       FROM call_log cl
+       JOIN app_user u ON u.id = cl.started_by
+      WHERE cl.child_id = $1
+      ORDER BY cl.started_at ASC`,
+    [childId],
+  );
+  return rows.map((r: any): CallLogEntry => ({
+    id: r.id,
+    startedBy: r.started_by,
+    startedByName: r.started_by_name ?? null,
+    participantIds: r.participant_ids,
+    ladderStep: r.ladder_step,
+    recorded: r.recorded,
+    rang: r.rang,
+    startedAt: r.started_at,
+    endedAt: r.ended_at ?? null,
+  }));
+}
+
 async function assembleRawExportBundle(
   q: Query, childId: string,
   requester: { userId: string } | { childId: string },
@@ -1246,6 +1358,12 @@ async function assembleRawExportBundle(
        FROM message_log WHERE child_id = $1 ORDER BY seq ASC`,
     [childId],
   );
+
+  // Real call metadata (0018_call_log.sql) — see this function's own header
+  // for why a single query against whatever `q` the caller passed in is
+  // correct for both real callers, and loadCallLog()'s own header for why
+  // this is the SAME query certifiedExportBundleFor() runs below.
+  const callLogRows = await loadCallLog(q, childId);
 
   const bundle: RawExportBundle = {
     childId,
@@ -1279,6 +1397,7 @@ async function assembleRawExportBundle(
       seq: Number(r.seq), authorId: r.author_id, at: r.at, body: r.body,
       prevHash: r.prev_hash, hash: r.hash,
     })),
+    callLog: callLogRows,
   };
 
   // Real sha256 over the exact bytes a recipient would receive — see this
@@ -1607,14 +1726,14 @@ export async function persistCapturedMessage(
     const a = capture.artifact;
     const artifactRows = await q(
       `INSERT INTO media_artifact
-         (child_id, author_id, kind, storage_key, duration_ms, caption_key,
-          captured_at, captured_tz, era_tag, preserved, preserved_by,
+         (child_id, author_id, author_child_id, kind, storage_key, duration_ms,
+          caption_key, captured_at, captured_tz, era_tag, preserved, preserved_by,
           preserved_at, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8,$9,$10,$11,
-               $12::timestamptz,$13::timestamptz)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9,$10,$11,$12,
+               $13::timestamptz,$14::timestamptz)
        RETURNING id`,
-      [a.childId, a.authorId, a.kind, a.storageKey, a.durationMs, a.captionKey,
-       a.capturedAt, a.capturedTz, a.eraTag, a.preserved, a.preservedBy,
+      [a.childId, a.authorId, a.authorChildId, a.kind, a.storageKey, a.durationMs,
+       a.captionKey, a.capturedAt, a.capturedTz, a.eraTag, a.preserved, a.preservedBy,
        a.preservedAt, a.expiresAt],
     );
     const artifactId = artifactRows[0].id as string;
@@ -1622,6 +1741,20 @@ export async function persistCapturedMessage(
     const i = capture.intent;
     let batchId: string | null = i.batchId;
     if (opts.newBatch) {
+      // intent_batch.sender_id stays NOT NULL REFERENCES app_user(id) —
+      // message banking (§9.8.1) is a guardian-only capability, deliberately
+      // untouched by 0021_child_message_sender.sql (see that migration's own
+      // header). No real caller reaches this branch for a child-originated
+      // capture today (server/routes.mjs's POST .../messages never passes
+      // `opts.newBatch`), but failing loudly here — rather than letting a
+      // future caller hit intent_batch's raw NOT NULL violation — keeps that
+      // a clear, named error instead of an opaque Postgres one.
+      if (!i.senderId) {
+        throw new Error(
+          'persistCapturedMessage: opts.newBatch requires an app_user sender ' +
+          '(intent_batch.sender_id is NOT NULL) — a child-originated capture ' +
+          '(senderChildId set) cannot start a batch.');
+      }
       const b = opts.newBatch;
       const batchRows = await q(
         `INSERT INTO intent_batch
@@ -1637,15 +1770,15 @@ export async function persistCapturedMessage(
 
     const intentRows = await q(
       `INSERT INTO delivery_intent
-         (child_id, sender_id, payload_kind, payload_ref, policy,
-          target_local_date, target_daypart, batch_id, batch_seq, state,
-          expires_at)
-       VALUES ($1,$2,$3,$4,$5::delivery_policy,$6::date,$7,$8,$9,$10,
-               $11::timestamptz)
+         (child_id, sender_id, sender_child_id, payload_kind, payload_ref,
+          policy, target_local_date, target_daypart, batch_id, batch_seq,
+          state, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6::delivery_policy,$7::date,$8,$9,$10,$11,
+               $12::timestamptz)
        RETURNING id`,
-      [i.childId, i.senderId, i.payloadKind, artifactId, i.policy,
-       i.targetLocalDate, i.targetDaypart, batchId, i.batchSeq, i.state,
-       i.expiresAt],
+      [i.childId, i.senderId, i.senderChildId, i.payloadKind, artifactId,
+       i.policy, i.targetLocalDate, i.targetDaypart, batchId, i.batchSeq,
+       i.state, i.expiresAt],
     );
 
     return { artifactId, intentId: intentRows[0].id as string, batchId };
@@ -1948,6 +2081,23 @@ export type CertifiedExportResult =
       free: boolean;
       chain: LogEntry[];
       attestation: Attestation;
+      /**
+       * Real call metadata (0018_call_log.sql), same shape and same query
+       * pattern as RawExportBundle's own `callLog` field — see that
+       * field's doc for the full reasoning. Deliberately NOT folded into
+       * `chain`/`attestation`/`verifyChain()`/`certify()`: those exist
+       * specifically to hash-chain-verify message_log, and call_log has no
+       * hash chain of its own to verify (0018's own header: "Deliberately
+       * NOT append-only / hash-chained like message_log") — reusing that
+       * machinery for a table it was never designed to cover would be
+       * exactly the kind of quiet contradiction MASTERFILE's own §5.21.3
+       * warns against. It IS covered by `bundleHash` below, though: that
+       * hash is computed over `{chain, attestation, callLog}` together, so
+       * altering a call record after export is still detectable, just
+       * through the bundle-level hash rather than message_log's own
+       * per-entry chain.
+       */
+      callLog: CallLogEntry[];
       bundleHash: string;
       exportRecordId: string;
     }
@@ -2040,8 +2190,27 @@ export async function certifiedExportBundleFor(
       return { ok: false, reason: 'chain_broken', faults: verification.faults };
     }
 
+    // 5 · real call metadata (0018_call_log.sql) — loadCallLog()'s own
+    // header explains why this is the identical query
+    // assembleRawExportBundle() runs for the raw-export half of this
+    // feature, and why it is NOT run through verifyChain()/certify(): those
+    // two exist to hash-chain-verify message_log specifically, and
+    // call_log has no chain of its own to verify. `q` here is the
+    // system-scoped session this whole function already opened
+    // (withSystemSession above), which call_log_system_all (0018) admits
+    // unconditionally — the RBAC "first lock" already ran, above, so this
+    // is not a client-reachable widening, the same reasoning this
+    // function's own header already gives for reading `app_user.court_tier`
+    // and `export_record` under the same system session.
+    const callLog = await loadCallLog(q, childId);
+
     const attestation = certify(chain, childId, now.toISOString());
-    const bundleHash = sha256Hex(JSON.stringify({ chain, attestation }));
+    // Covers callLog too, not just {chain, attestation} — see
+    // CertifiedExportResult's own `callLog` field doc for why folding it in
+    // here (rather than into the message_log-specific chain/attestation
+    // machinery) is the honest way to make a later edit to a call record
+    // detectable without pretending call_log has a hash chain it doesn't.
+    const bundleHash = sha256Hex(JSON.stringify({ chain, attestation, callLog }));
 
     const inserted = await q(
       `INSERT INTO export_record (child_id, requested_by, kind, was_free, head_hash, bundle_hash)
@@ -2051,7 +2220,7 @@ export async function certifiedExportBundleFor(
     );
 
     return {
-      ok: true, free: auth.free, chain, attestation, bundleHash,
+      ok: true, free: auth.free, chain, attestation, callLog, bundleHash,
       exportRecordId: inserted[0].id,
     };
   });
@@ -2190,6 +2359,116 @@ export async function revokeGuardianInvite(
 
     await q(`UPDATE guardian_invite SET revoked_at = $2 WHERE id = $1`, [inviteId, now.toISOString()]);
     return { ok: true };
+  });
+}
+
+export type BootstrapInviteError =
+  | 'not_found' | 'expired' | 'revoked' | 'not_accepted'
+  | 'already_bootstrapped' | 'email_already_registered';
+
+/**
+ * The gap CHANGELOG v0.49.9 found and explicitly declined to invent an
+ * answer for: "how does a passwordless account get created at all."
+ *
+ * Given an invite that has ALREADY been through the real POST .../accept
+ * route (accepted_at IS NOT NULL — checked below, not re-derived from
+ * expires_at alone), creates the invited party's FIRST app_user row and
+ * hands back its id so the caller (server/routes.mjs) can mint a real
+ * session via `Api.issueSessionToken()`. Does NOT touch webauthn_credential
+ * or pin_credential at all, and does NOT create a guardianship row — see
+ * this file's own header and 0014/0020's migration headers for why the
+ * latter stays a real, separate, still-open gap this function does not
+ * close.
+ *
+ * Single-use by construction, not just by this function's own already_
+ * bootstrapped branch: 0020's bootstrap_columns_paired/bootstrap_needs_
+ * accept CHECK constraints and its partial UNIQUE index on
+ * bootstrap_user_id are the second lock behind it, the same "the DB
+ * enforces it independently" posture this file's RLS-backed functions
+ * already rely on everywhere else.
+ *
+ * Runs as `system`, same reasoning as acceptGuardianInvite(): the invited
+ * party has no session yet — the invite's own long, random, ALREADY-
+ * ACCEPTED id is what stands in for a credential here, one step later in
+ * the same flow getGuardianInvite()/acceptGuardianInvite() already use it
+ * for.
+ */
+export async function bootstrapGuardianInvite(
+  pool: pg.Pool, inviteId: string, displayName: string, now: Date,
+): Promise<
+  | { ok: true; userId: string; childId: string }
+  | { ok: false; reason: BootstrapInviteError }
+> {
+  return withSystemSession(pool, async (q) => {
+    // FOR UPDATE — same double-tap protection acceptGuardianInvite() already
+    // uses: two concurrent bootstrap calls against the SAME invite id must
+    // not both observe bootstrapped_at IS NULL and both proceed to create a
+    // second app_user row.
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const row = rows[0];
+    // Revoked checked before not_accepted — a revoked-before-ever-accepted
+    // invite (0014's own CHECK permits that state; acceptGuardianInvite()
+    // itself refuses to accept a revoked one) is named the more specific,
+    // more security-relevant 'revoked' rather than the merely incidental
+    // 'not_accepted' it would also technically satisfy.
+    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (!row.accepted_at) return { ok: false, reason: 'not_accepted' };
+    // Defense in depth, matching webauthnLoginVerify's own belt-and-
+    // suspenders posture (server/index.mjs): acceptGuardianInvite() already
+    // refuses to set accepted_at past expires_at, so this branch should be
+    // unreachable through the real accept route — kept anyway so a future
+    // bug in that OTHER function cannot silently turn into a live session
+    // minted off a decision window that had already closed.
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: 'expired' };
+    if (row.bootstrapped_at) return { ok: false, reason: 'already_bootstrapped' };
+
+    // A guardian already invited to a second child — or anyone else whose
+    // email happens to match an existing account — must sign in the
+    // ordinary way. Minting a session for an EXISTING app_user row here, off
+    // nothing but knowledge of an invite id, would be a real authentication
+    // bypass of that account's own passkey, not an account bootstrap.
+    // Refusing outright, rather than attaching to the existing row, is the
+    // conservative reading of "first-time guardian" this route is scoped to
+    // — see this function's own file header on the still-open question of
+    // what a SECOND invite to an already-registered guardian should do.
+    const existing = await q(`SELECT id FROM app_user WHERE email = $1`, [row.invited_email]);
+    if (existing.length) return { ok: false, reason: 'email_already_registered' };
+
+    // child_id is NOT NULL REFERENCES child(id) ON DELETE CASCADE — if this
+    // invite row still exists, its child does too, so home_tz is always
+    // real here. A real, precedented fallback (server/routes.mjs's own /now
+    // handler already falls back to child.home_tz the same way, per its own
+    // file header), not an invented one — no route anywhere in this
+    // codebase yet lets a guardian set her OWN home_tz, first-time or not.
+    const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [row.child_id]);
+
+    let userId: string;
+    try {
+      const inserted = await q(
+        `INSERT INTO app_user (email, display_name, home_tz)
+         VALUES ($1, $2, $3) RETURNING id`,
+        [row.invited_email, displayName, child[0].home_tz],
+      );
+      userId = inserted[0].id;
+    } catch (e: any) {
+      // The SELECT above closes the common case; this closes the race
+      // between two DIFFERENT invites for the same email bootstrapping
+      // concurrently — each holds FOR UPDATE on its OWN guardian_invite
+      // row, so the lock above does not serialize them against each other.
+      // Postgres's own app_user.email UNIQUE constraint is the actual,
+      // final authority, same "the DB enforces it independently" posture
+      // this file's RLS-backed functions already rely on for every other
+      // invariant.
+      if (e?.code === '23505') return { ok: false, reason: 'email_already_registered' };
+      throw e;
+    }
+
+    await q(
+      `UPDATE guardian_invite SET bootstrapped_at = $2, bootstrap_user_id = $3 WHERE id = $1`,
+      [inviteId, now.toISOString(), userId],
+    );
+    return { ok: true, userId, childId: row.child_id };
   });
 }
 
