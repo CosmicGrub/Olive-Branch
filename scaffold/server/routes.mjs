@@ -1099,6 +1099,13 @@ export function registerRoutes(api, pool) {
     // a single session, is the right shape here).
     method: 'POST', path: '/v1/children/:childId/handover', action: null,
     identityScopedByHandler: true, skipOuterSession: true,
+    // §20.5 — her own complete take-and-go bundle real-500'd the moment the
+    // global child-payload sweep first shipped: it legitimately includes
+    // her own message log (`rungs.ts`'s NOT_HERS_TO_DELETE — "she can have
+    // a copy of everything"), which the sweep correctly bans from a curated
+    // UI surface but this route is not one. See `Api`'s own
+    // `skipChildPayloadSweep` doc comment for the full reasoning.
+    skipChildPayloadSweep: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'child' || c.principal.childId !== c.childId) {
         return { status: 403, body: { error: 'not_this_child' } };

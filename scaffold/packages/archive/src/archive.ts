@@ -140,7 +140,16 @@ export function onThisDay(
   const md = today.setZone(childZone).toFormat('MM-dd');
   return all.filter(a => {
     if (a.childId !== childId || !a.preserved) return false;
-    if (a.eraTag && prefs.mutedEras.includes(a.eraTag)) return false;
+    // Fail closed, not open: a `null` eraTag (a real, common state for
+    // legacy/untagged data — the column is nullable) used to skip this check
+    // entirely via the `a.eraTag &&` short-circuit, so untagged material
+    // could never be suppressed by ANY era mute a family configured — a
+    // real, live P9 gap in exactly the mechanism this comment already
+    // claims is the mitigation. Whenever at least one era is muted, an
+    // untagged artifact can't be proven to be from an unmuted era, so it's
+    // excluded too, the same "can't confirm it's safe, so don't show it"
+    // posture the rest of this file already applies.
+    if (prefs.mutedEras.length > 0 && (a.eraTag === null || prefs.mutedEras.includes(a.eraTag))) return false;
     const d = DateTime.fromISO(a.capturedAt).setZone(a.capturedTz);
     return d.toFormat('MM-dd') === md && d.year < today.year;
   });
