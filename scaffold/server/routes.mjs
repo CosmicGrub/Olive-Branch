@@ -23,6 +23,7 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          createGuardianInvite, getGuardianInvite,
          acceptGuardianInvite, revokeGuardianInvite,
          takeAndGo, themeFor, setChildTheme,
+         recordCallStart, recordCallEnd,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -371,6 +372,19 @@ export function registerRoutes(api, pool) {
       // not a re-decision.
       const edges = await edgesFor(pool, c.principal.userId);
 
+      // The caller's REAL ladder step for THIS child — found and fixed by a
+      // live audit (2026-08-23) that this route previously hardcoded 'open'
+      // here despite already having the real per-edge value in hand one
+      // line above, which meant rooms.ts's own tested "supervised calls are
+      // recorded and disclosed" logic (recorded: input.ladderStep ===
+      // 'supervised') could never fire through this route, even for a
+      // guardian whose real edge genuinely is supervised. `?? 'open'`
+      // mirrors authorize.ts's own convention for a null ladderStep
+      // (edgesFor() returns null, not the string 'open', for an edge with
+      // no explicit contact_ladder row) — matches the outer gate's own
+      // resolution of the identical value, not a fresh policy invented here.
+      const realLadderStep = edges.find((e) => e.childId === c.childId)?.ladderStep ?? 'open';
+
       const session = createSession({
         childId: c.childId,
         kind: 'call',
@@ -382,7 +396,7 @@ export function registerRoutes(api, pool) {
         // that script's own header for the fuller account of why this is
         // an accepted, pre-existing pattern, not new to this route.
         authorizedUserIds: [c.principal.userId, c.childId],
-        ladderStep: 'open',
+        ladderStep: realLadderStep,
       });
 
       const minted = mintToken(
@@ -402,6 +416,24 @@ export function registerRoutes(api, pool) {
         ref: session.id,
         callRoomHandle: session.roomName,
       });
+      const rang = pushResults.some((r) => r.ok);
+
+      // The real backing for security.ts's own RESIDUAL_RISKS claim that
+      // call metadata is retained — found by the same 2026-08-23 audit to
+      // have zero implementation anywhere before this. A write failure here
+      // must never fail the call itself (the same posture notifyDevices()
+      // above already has) — logged, not thrown, so a real database hiccup
+      // degrades to "this one call goes unlogged" rather than "no one can
+      // call at all".
+      try {
+        await recordCallStart(pool, {
+          id: session.id, childId: c.childId, startedBy: c.principal.userId,
+          participantIds: [c.principal.userId], roomName: session.roomName,
+          ladderStep: realLadderStep, recorded: minted.token.recorded, rang,
+        });
+      } catch (e) {
+        console.error(`[call_log] failed to record call start for session ${session.id}:`, e);
+      }
 
       return {
         status: 201,
@@ -410,9 +442,48 @@ export function registerRoutes(api, pool) {
           serverURL: JITSI_SERVER_URL,
           identity: minted.token.identity,
           displayName: 'Dad',
-          rang: pushResults.some((r) => r.ok),
+          rang,
+          // Lets CallScreen's own hang-up path call the new end-call route
+          // below on the exact session this response minted, without the
+          // client needing to invent or track its own identifier.
+          sessionId: session.id,
         },
       };
+    },
+  });
+
+  // ===========================================================================
+  // CALL END — marks call_log's own row ended. Found by the same 2026-08-23
+  // audit: revokeLiveAccess()/endSession() (packages/transport/src/push.ts)
+  // are the only server-side room-lifecycle functions, real and unit-tested
+  // in isolation, but were never called from anywhere — no route in this
+  // repo could actually end a call. This route closes the RECORD-KEEPING
+  // half of that gap (call_log.ended_at becomes real, so a call's real
+  // duration is honestly knowable) — it deliberately does NOT close the
+  // MEDIA-REVOCATION half. revokeLiveAccess()/endSession() operate on a
+  // RoomLifecyclePort (createRoom/removeParticipant/deleteRoom) shaped
+  // around LiveKit's own server-side admin API; a repo-wide check found no
+  // real implementation of that port exists for the self-hosted Jitsi stack
+  // this app actually runs on today — only a mock, in live.test.mjs. Wiring
+  // real server-side Jitsi media revocation needs a genuine Jicofo-backed
+  // adapter, a separately-scoped piece of work, not invented or faked here.
+  // ===========================================================================
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/calls/:sessionId/end',
+    // Same reasoning as the call-start route above: 'call' is already a
+    // real, recognized Action, so the ordinary generic gate applies rather
+    // than a new action:null contract.test.mjs exception. A child principal
+    // ending a call she was a real party to is legitimate (unlike starting
+    // one) — the generic gate's own P6/P7-only child restriction already
+    // permits this; no extra child_cannot_end_call check is added here.
+    action: 'call',
+    handler: async (c) => {
+      const ended = await recordCallEnd(pool, c.childId, c.params.sessionId);
+      // Idempotent by design (recordCallEnd()'s own doc comment): both
+      // parties hanging up simultaneously, or a client retry, produces two
+      // calls to this route for one session — the second is a real, honest
+      // 200 with ended:false, never an error.
+      return { status: 200, body: { ended } };
     },
   });
 

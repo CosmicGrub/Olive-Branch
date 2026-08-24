@@ -820,6 +820,61 @@ export async function setChildTheme(
 }
 
 /**
+ * db/migrations/0018_call_log.sql — the real backing for security.ts's own
+ * RESIDUAL_RISKS claim that call metadata is retained. `system` role for
+ * both the insert and the later update below: unlike setChildTheme() above,
+ * this table's own RLS (call_log_system_all, 0018) grants system role ALL,
+ * not a guardian-actor-scoped policy — the route's real can('call', ...)
+ * check (server/routes.mjs) already gated this write before it runs, so
+ * this is not a client-reachable widening, the same reasoning themeFor()'s
+ * own system-role read already documents.
+ *
+ * `id` MUST be session-runtime's own createSession().id (routes.mjs passes
+ * `session.id` verbatim) — the same identifier server/routes.mjs's real
+ * call-start response and notifyDevices()'s own `ref` field already use,
+ * not a second, redundant one minted here.
+ */
+export async function recordCallStart(pool: pg.Pool, input: {
+  id: string; childId: string; startedBy: string; participantIds: string[];
+  roomName: string; ladderStep: string; recorded: boolean; rang: boolean;
+}): Promise<void> {
+  await withSystemSession(pool, async (q) => {
+    await q(
+      `INSERT INTO call_log
+         (id, child_id, started_by, participant_ids, room_name, ladder_step, recorded, rang)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [input.id, input.childId, input.startedBy, input.participantIds,
+       input.roomName, input.ladderStep, input.recorded, input.rang],
+    );
+  });
+}
+
+/**
+ * server/routes.mjs's call-end route — sets `ended_at` on the exact row
+ * recordCallStart() above created. Idempotent by design (matches endSession
+ * ()'s own doc comment in packages/transport/src/push.ts: "both parties
+ * hanging up simultaneously produces two calls for one room; the second
+ * must be a no-op, not an error") — `WHERE ended_at IS NULL` makes a second
+ * call a real, harmless no-op UPDATE of zero rows rather than overwriting an
+ * already-real end time with a later, wrong one. Returns whether this call
+ * was the one that actually recorded the end, so the route can distinguish
+ * "you ended it" from "it was already ended" without a separate SELECT.
+ */
+export async function recordCallEnd(
+  pool: pg.Pool, childId: string, sessionId: string,
+): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log SET ended_at = now()
+        WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
+        RETURNING id`,
+      [sessionId, childId],
+    );
+    return rows.length > 0;
+  });
+}
+
+/**
  * db/migrations/0011_account_deletion.sql — account deletion, for real.
  * MASTERFILE §2.10, §2.11, §9.8, prohibition P8.
  * client/lib/deletion_screen.dart's `whatDeletionKeeps` / `whatDeletionRemoves`

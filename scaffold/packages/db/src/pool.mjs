@@ -368,6 +368,36 @@ async function setChildTheme(pool, guardianId, childId, theme) {
     }
   );
 }
+async function recordCallStart(pool, input) {
+  await withSystemSession(pool, async (q) => {
+    await q(
+      `INSERT INTO call_log
+         (id, child_id, started_by, participant_ids, room_name, ladder_step, recorded, rang)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        input.id,
+        input.childId,
+        input.startedBy,
+        input.participantIds,
+        input.roomName,
+        input.ladderStep,
+        input.recorded,
+        input.rang
+      ]
+    );
+  });
+}
+async function recordCallEnd(pool, childId, sessionId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log SET ended_at = now()
+        WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
+        RETURNING id`,
+      [sessionId, childId]
+    );
+    return rows.length > 0;
+  });
+}
 async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
   if (!userId) throw new Error("deactivateAccount: userId required");
   if (callerRoleName === "child") {
@@ -961,6 +991,8 @@ export {
   persistCapturedMessage,
   pinCredentialFor,
   rawExportBundleFor,
+  recordCallEnd,
+  recordCallStart,
   recordPinAttempt,
   registerDeviceToken,
   removeDeviceTokenSystem,

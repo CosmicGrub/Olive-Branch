@@ -22,8 +22,17 @@
 //
 // §8.1 — the child side has no settings affordance at any depth. The feature
 // flags below strip Jitsi's own settings/server-change/security UI on both
-// sides, not just the child's, so the two calling experiences stay identical
-// while this is still a single dev build.
+// sides. A 2026-08-23 audit found this header's own claim was NOT actually
+// true in code: `FeatureFlags.settingsEnabled` was never set, so Jitsi's
+// native Settings screen stayed reachable mid-call on both devices,
+// including the child's kiosk-locked one — fixed below, alongside two more
+// findings from the same audit: `chatEnabled` was never disabled for the
+// child (Jitsi's native, unmoderated, unarchived free-text chat was live
+// for her, unlike every other text surface in this app), and PiP-related
+// flags applied identically regardless of role despite MASTERFILE already
+// declaring PiP a guardian-only, structural decision. `_featureFlagsFor()`
+// below makes all three real, role-conditional facts instead of one flat
+// constant silently applied to both roles alike.
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -56,6 +65,60 @@ const devRoomServerBase = 'http://127.0.0.1:8787';
 const _defaultJitsiServerURL = String.fromEnvironment('OLIVE_JITSI_SERVER_URL',
     defaultValue: 'https://meet.jit.si');
 
+/// 'ivy' is the only child identity any real call site uses (child_home
+/// .dart, call_knock_screen.dart's own answer path); every other value —
+/// today only 'dad' — is a guardian. A real, tested distinction, not a
+/// guess: guardian_more.dart's own real call-start route already refuses a
+/// child principal outright (child_cannot_start_call), so 'who' and "which
+/// side of the ladder can this device leave kiosk lock" already agree in
+/// every real call path this client has. A top-level function, not a
+/// private method on [_CallScreenState], so [callFeatureFlagsFor] below and
+/// this can both be exercised directly by a widget test without needing to
+/// pump a whole [CallScreen] and force it through its own real (and, in a
+/// test sandbox, unavoidably platform-channel-hanging) join attempt.
+bool isGuardianWho(String who) => who != 'ivy';
+
+/// Real, role-conditional feature flags — found and fixed by a 2026-08-23
+/// audit named in this file's own header. Three facts, not one flat
+/// constant: Jitsi's native Settings UI is off for EVERY role (closes a
+/// real containment gap on the kiosk-locked child device); native in-call
+/// chat is off for the child specifically (unmoderated, unarchived, unlike
+/// every other text surface in this app — never routed anywhere, simply
+/// disabled); PiP is guardian-only for now, making MASTERFILE's own
+/// "structural conclusion" real in code instead of only in prose. (A later
+/// pass, scoped and verified separately on a real kiosk-locked device, may
+/// extend PiP to the child — not decided or built here.) No custom
+/// "shrink to a mini window" UI exists anywhere in this file for the
+/// guardian either, deliberately: once `_jitsiMeet.join()` hands off,
+/// Jitsi's own native Activity — not this screen's build() — owns the
+/// entire display; setting `pip.enabled: true` here is what makes Jitsi's
+/// own native in-call toolbar offer the real PiP entry point, the same
+/// broadcast chain WrapperJitsiMeetActivity.kt's own `enterPiP()` already
+/// wires end to end. A Flutter-side button in this screen's own build()
+/// method would never be reachable during a real call at all.
+Map<String, Object?> callFeatureFlagsFor(bool isGuardian) => {
+  FeatureFlags.welcomePageEnabled: false,
+  FeatureFlags.preJoinPageEnabled: false,
+  FeatureFlags.inviteEnabled: false,
+  FeatureFlags.addPeopleEnabled: false,
+  FeatureFlags.recordingEnabled: false,
+  FeatureFlags.liveStreamingEnabled: false,
+  FeatureFlags.meetingPasswordEnabled: false,
+  FeatureFlags.serverUrlChangeEnabled: false,
+  FeatureFlags.securityOptionEnabled: false,
+  FeatureFlags.meetingNameEnabled: false,
+  FeatureFlags.calenderEnabled: false,
+  FeatureFlags.helpButtonEnabled: false,
+  FeatureFlags.kickOutEnabled: false,
+  FeatureFlags.lobbyModeEnabled: false,
+  // The fix — omitted before this pass despite this file's own header
+  // already claiming it was done.
+  FeatureFlags.settingsEnabled: false,
+  FeatureFlags.chatEnabled: isGuardian,
+  FeatureFlags.pipEnabled: isGuardian,
+  FeatureFlags.pipWhileScreenSharingEnabled: isGuardian,
+};
+
 class CallScreen extends StatefulWidget {
   const CallScreen({
     super.key,
@@ -64,6 +127,7 @@ class CallScreen extends StatefulWidget {
     this.kiosk,
     this.knownRoom,
     this.knownServerURL,
+    this.onCallEnd,
   });
 
   /// 'dad' or 'ivy' — matches local-call-room-server.mjs's fixed identities.
@@ -90,6 +154,19 @@ class CallScreen extends StatefulWidget {
   final String? knownRoom;
   final String? knownServerURL;
 
+  /// Fires once, right before this screen navigates away on a real,
+  /// SDK-reported `readyToClose` — never on the error path (nothing was
+  /// ever really joined there to end). Deliberately a caller-supplied
+  /// callback rather than this screen knowing a baseUrl/session/childId/
+  /// sessionId itself: mirrors guardian_more.dart's own onCallStarted
+  /// seam, keeping CallScreen decoupled from OliveApi entirely, same as
+  /// it already is today. A real call site supplies one that calls the
+  /// real POST /v1/children/:childId/calls/:sessionId/end route
+  /// (guardian_more.dart's own `_startRealCall`); null here is a safe,
+  /// honest no-op for every call site that doesn't have a real sessionId
+  /// to close (e.g. the dev room server's fixed session has none).
+  final Future<void> Function()? onCallEnd;
+
   @override
   State<CallScreen> createState() => _CallScreenState();
 }
@@ -108,6 +185,15 @@ class _CallScreenState extends State<CallScreen> {
     _kiosk = widget.kiosk ?? KioskChannel();
     _startCall();
   }
+
+  /// 'ivy' is the only child identity any real call site uses (child_home
+  /// .dart, call_knock_screen.dart's own answer path); every other value —
+  /// today only 'dad' — is a guardian. A real, tested distinction, not a
+  /// guess: guardian_more.dart's own real call-start route already refuses
+  /// a child principal outright (child_cannot_start_call), so 'who' and
+  /// "which side of the ladder can this device leave kiosk lock" already
+  /// agree in every real call path this client has.
+  bool get _isGuardian => isGuardianWho(widget.who);
 
   Future<Map<String, dynamic>> _fetchRoom() async {
     final client = HttpClient();
@@ -149,7 +235,7 @@ class _CallScreenState extends State<CallScreen> {
         serverURL: serverURL,
         room: room,
         userInfo: JitsiMeetUserInfo(displayName: widget.displayName),
-        configOverrides: const {
+        configOverrides: {
           'startWithAudioMuted': false,
           'startWithVideoMuted': false,
           'subject': 'Olive Branch call',
@@ -165,25 +251,21 @@ class _CallScreenState extends State<CallScreen> {
           // public server for a quick repro) that hasn't made the same
           // choice — direct P2P defaults ON upstream (confirmed live:
           // config.js's own config.p2p.enabled: true), which is exactly
-          // what this policy forbids.
-          'p2p': {'enabled': false},
+          // what this policy forbids. `iceTransportPolicy: 'relay'`
+          // (2026-08-23) is the same defense-in-depth idea applied one
+          // layer deeper: MASTERFILE §5.21.1 named this as a residual gap
+          // after the ENABLE_P2P=0 fix, but lib-jitsi-meet only documents
+          // `iceTransportPolicy` as a P2P-CONNECTION setting (confirmed
+          // against upstream docs, not guessed) — with P2P already
+          // disabled there is no live P2P path for it to apply to today.
+          // Kept here anyway, nested under the same 'p2p' key, for the
+          // identical reason `enabled: false` already is: the day P2P is
+          // ever re-enabled on some other deployment this build points at,
+          // this ensures that path can still only negotiate a TURN-relayed
+          // candidate, never a direct one.
+          'p2p': {'enabled': false, 'iceTransportPolicy': 'relay'},
         },
-        featureFlags: const {
-          FeatureFlags.welcomePageEnabled: false,
-          FeatureFlags.preJoinPageEnabled: false,
-          FeatureFlags.inviteEnabled: false,
-          FeatureFlags.addPeopleEnabled: false,
-          FeatureFlags.recordingEnabled: false,
-          FeatureFlags.liveStreamingEnabled: false,
-          FeatureFlags.meetingPasswordEnabled: false,
-          FeatureFlags.serverUrlChangeEnabled: false,
-          FeatureFlags.securityOptionEnabled: false,
-          FeatureFlags.meetingNameEnabled: false,
-          FeatureFlags.calenderEnabled: false,
-          FeatureFlags.helpButtonEnabled: false,
-          FeatureFlags.kickOutEnabled: false,
-          FeatureFlags.lobbyModeEnabled: false,
-        },
+        featureFlags: callFeatureFlagsFor(_isGuardian),
       );
 
       // §16.2 #6 / §5.20 — the SDK opens the call in its own singleTask
@@ -213,6 +295,13 @@ class _CallScreenState extends State<CallScreen> {
           if (error != null) debugPrint('Jitsi conference terminated: $error');
         },
         readyToClose: () {
+          // Fire-and-forget, deliberately: popping the Navigator must never
+          // wait on a network call, and a failed end-call POST must never
+          // strand the user on a screen that already knows the call is
+          // over. See widget.onCallEnd's own doc comment for what this is
+          // and is not (record-keeping only — no server-side media
+          // revocation happens here, a real, disclosed, separate gap).
+          widget.onCallEnd?.call();
           if (mounted) Navigator.of(context).maybePop();
         },
       );

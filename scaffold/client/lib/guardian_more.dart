@@ -177,15 +177,40 @@ class GuardianMoreScreen extends StatelessWidget {
         if (availabilityHttpClient == null) api.close();
       }
       onCallStarted?.call(started);
+      final sessionId = started['sessionId'] as String?;
       if (context.mounted) {
         _open(context, CallScreen(who: 'dad', displayName: 'Dad',
-          knownRoom: started['room'] as String?, knownServerURL: started['serverURL'] as String?));
+          knownRoom: started['room'] as String?, knownServerURL: started['serverURL'] as String?,
+          onCallEnd: sessionId == null ? null : () => _endRealCall(url, gid, childId, sessionId)));
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Could not start the call: $e'), duration: const Duration(seconds: 3)));
       }
+    }
+  }
+
+  /// [CallScreen.onCallEnd]'s real implementation — POST OliveApi.endCall,
+  /// record-keeping only (2026-08-23). A fresh devLoginFor() rather than
+  /// reusing whatever token [_startRealCall] minted: the same "nothing here
+  /// should trust a token that might have outlived this widget's own
+  /// lifecycle" reasoning that method's own doc comment already states
+  /// applies even more by the time a call has actually ended. Deliberately
+  /// swallows its own failure — this is metadata bookkeeping, not something
+  /// a guardian should ever see an error dialog for on top of a call that
+  /// already, correctly, just ended from her point of view.
+  Future<void> _endRealCall(String baseUrl, String guardianId, String childId, String sessionId) async {
+    try {
+      final token = await devLoginFor(baseUrl, userId: guardianId, client: availabilityHttpClient);
+      final api = OliveApi(baseUrl, token, client: availabilityHttpClient);
+      try {
+        await api.endCall(childId, sessionId);
+      } finally {
+        if (availabilityHttpClient == null) api.close();
+      }
+    } catch (_) {
+      // Best-effort — see this method's own doc comment.
     }
   }
 
