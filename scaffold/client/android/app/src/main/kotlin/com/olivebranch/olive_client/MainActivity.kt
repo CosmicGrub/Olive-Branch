@@ -69,6 +69,23 @@ class MainActivity : FlutterActivity() {
             onSink = { eventSink = it },
         )
         lastKnownMode = KioskBridge.currentMode(this)
+        // 2026-08-24 — a fresh process cannot genuinely be mid-call-handoff
+        // for an Activity it hasn't launched yet. Real, live gap this
+        // closes: expecting_call_handoff previously only ever cleared via
+        // a real call Activity's own onDestroy() broadcast — never on
+        // abnormal process death (an OOM/LMK kill, which takes
+        // WrapperJitsiMeetActivity down WITH this process, since neither
+        // manifest sets android:process — they share one). An orphaned
+        // true flag would silently re-pin the device on every future
+        // resume, forever, with nothing left alive to ever clear it.
+        // Gated on currentMode()=="none": a genuinely-pinned fresh start
+        // (Android CAN recreate an Activity within an already-pinned task)
+        // must not have this cleared out from under it.
+        if (KioskBridge.currentMode(this) == "none" && KioskBridge.stillExpectingCallHandoff(this)) {
+            android.util.Log.w("MainActivity",
+                "clearing an orphaned call-handoff flag at fresh process start")
+            KioskBridge.clearCallHandoff(this)
+        }
         LocalBroadcastManager.getInstance(this).registerReceiver(
             callDefeatReceiver, IntentFilter(KioskBridge.ACTION_CALL_LOCK_TASK_EXITED),
         )
@@ -112,11 +129,21 @@ class MainActivity : FlutterActivity() {
         // resume this Activity, and only the LAST of those (whichever one
         // actually happens) should leave the child free to leave the app —
         // callActivityDestroyedReceiver above is what actually clears the
-        // flag, not this method.
+        // flag, not this method. Verified, not fire-and-forget, as of the
+        // same 2026-08-24 pass — see KioskBridge.startLockTaskVerified()'s
+        // own doc comment for the real, live-confirmed bug this closes
+        // (startLockTask() can return without throwing yet not actually
+        // pin). emitResumed()/lastKnownMode are deferred into the retry's
+        // own callback so they reflect the FINAL settled mode, not a
+        // mid-retry snapshot.
         if (KioskBridge.stillExpectingCallHandoff(this)) {
-            startLockTask()
+            KioskBridge.startLockTaskVerified(this) {
+                lastKnownMode = KioskBridge.currentMode(this)
+                KioskBridge.emitResumed(eventSink)
+            }
+        } else {
+            lastKnownMode = KioskBridge.currentMode(this)
+            KioskBridge.emitResumed(eventSink)
         }
-        lastKnownMode = KioskBridge.currentMode(this)
-        KioskBridge.emitResumed(eventSink)
     }
 }

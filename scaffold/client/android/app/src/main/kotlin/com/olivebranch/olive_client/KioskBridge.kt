@@ -17,6 +17,9 @@ package com.olivebranch.olive_client
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
 
@@ -107,6 +110,98 @@ object KioskBridge {
             else -> "none"
         }
 
+    // 2026-08-24 — real fix for a live-confirmed bug: startLockTask() can
+    // return without throwing yet not actually leave the device pinned
+    // (confirmed live this session on a real Galaxy Tab S9 FE — see
+    // CHANGELOG's own disclosed pin-quirk note).
+    //
+    // REVISED same day, after this first version's own live test caught IT
+    // making a false claim of failure. The original theory here (window
+    // needs FOCUS, not just onResume) was wrong, or at least not what this
+    // device is actually doing — real dumpsys/logcat evidence from that test
+    // run showed the true mechanism: for an app that is NOT a device owner
+    // (i.e. every real install this app supports — see this file's own
+    // header), Android's SystemUI shows a real, asynchronous confirmation
+    // surface (`ScreenPinningRequest`/`ScreenPinningConfirmation`, visible in
+    // logcat as WindowManager addView/removeView churn) as PART of actually
+    // committing the pin, and that transition can genuinely take several
+    // hundred ms to settle — dumpsys showed mLockTaskModeState still NONE at
+    // the ~450ms mark this function's original 3×150ms budget gave up at,
+    // yet PINNED (with the OS's own "App is pinned" notice on screen) a
+    // short while after. The original design RE-CALLED startLockTask() on
+    // every retry, reasoning that was a safe no-op — but re-invoking it
+    // WHILE that confirmation surface is still transitioning is exactly what
+    // the logcat churn (repeated removeView/addView of the same window
+    // class, once per retry) shows happening, which risks resetting the
+    // OS's own transition rather than helping it along. Fixed: call
+    // startLockTask() exactly ONCE, then only POLL currentMode() — never
+    // re-invoke — across a total budget generous enough to clear the
+    // observed real-world settle time with real margin.
+    //
+    // Widened again the same pass, after a THIRD live re-test on the same
+    // Tab S9 FE: a 6×250ms (1.5s) budget still gave a false failure — real
+    // dumpsys evidence showed the transition genuinely can still be pending
+    // (a WindowManager Transition record open, type UNKNOWN, no pinning
+    // confirmation surface even drawn yet) well past 1.5s, and on an earlier
+    // run that same cold-start attempt didn't visibly settle to PINNED until
+    // multiple *minutes* later, well outside anything a synchronous-feeling
+    // UI wait should ever block on. This is the known, already-disclosed
+    // pin-quirk on this specific tablet (see CHANGELOG; the user has
+    // explicitly accepted it as a non-blocking device flakiness, not
+    // something every future session should keep re-chasing). 8×300ms
+    // (2.4s) here buys real, evidenced margin over the fast/common case
+    // without making the child wait unreasonably long for the normal path;
+    // it does NOT claim to make this tablet's pin reliable — onResult(false)
+    // still fires honestly when it doesn't settle in time, exactly as
+    // lock_controller.dart's own fail-truthfully framing (this file's own
+    // header) requires.
+    // FOURTH revision, same pass — the real trigger source, not just the
+    // OS-side settle time, turned out to matter. kiosk_shell.dart's
+    // `_engage()` (KioskShell's own real "pin now" call) runs from Dart's
+    // `initState()`, which fires as soon as the Flutter widget tree first
+    // builds — a Flutter-side lifecycle event with no defined relationship
+    // to the native Activity's own lifecycle, and empirically much earlier
+    // than it: a cold-launch M_START can reach this method before the
+    // Activity's WINDOW has focus at all, which is exactly the documented
+    // Android constraint startLockTask() is built around (the ORIGINAL
+    // theory at the top of this doc comment, dismissed too quickly the
+    // first time this was revised — real evidence this pass showed both
+    // things are true: the OS confirmation surface is slow AND focus can
+    // genuinely not be there yet). Gates the actual startLockTask() call on
+    // Activity.hasWindowFocus() now, polling for focus first rather than
+    // assuming onResume() already implies it.
+    fun startLockTaskVerified(
+        activity: Activity, totalChecks: Int = 8, delayMs: Long = 300,
+        focusChecksLeft: Int = 10, focusDelayMs: Long = 100,
+        onResult: (pinned: Boolean) -> Unit,
+    ) {
+        if (!activity.hasWindowFocus() && focusChecksLeft > 1) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                startLockTaskVerified(activity, totalChecks, delayMs,
+                    focusChecksLeft - 1, focusDelayMs, onResult)
+            }, focusDelayMs)
+            return
+        }
+        activity.startLockTask() // exactly once — see this function's own doc comment above
+        pollLockTaskMode(activity, totalChecks, delayMs, onResult)
+    }
+
+    private fun pollLockTaskMode(
+        activity: Activity, checksLeft: Int, delayMs: Long, onResult: (pinned: Boolean) -> Unit,
+    ) {
+        val mode = currentMode(activity)
+        if (mode != "none") { onResult(true); return }
+        if (checksLeft <= 1) {
+            Log.w("KioskBridge", "startLockTask() did not pin after the full poll budget " +
+                "(activity=${activity.javaClass.simpleName})")
+            onResult(false)
+            return
+        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            pollLockTaskMode(activity, checksLeft - 1, delayMs, onResult)
+        }, delayMs)
+    }
+
     // `events` was accepted but never wired to a stream handler in the
     // original reference copy — a declaration without an implementation,
     // invisible only because that copy was never compiled or run. Fixed here:
@@ -117,8 +212,29 @@ object KioskBridge {
     ) {
         methods.setMethodCallHandler { call, result ->
             when (call.method) {
-                M_START -> { activity.startLockTask(); result.success(currentMode(activity)) }
-                M_STOP  -> { activity.stopLockTask();  result.success(null) }
+                // Verified, not fire-and-forget (2026-08-24) — see
+                // startLockTaskVerified()'s own doc comment for the real bug
+                // this closes. Async now (result.success() called from the
+                // retry's own callback); MethodChannel supports a delayed
+                // result exactly this way.
+                M_START -> startLockTaskVerified(activity) { result.success(currentMode(activity)) }
+                // 2026-08-24 — also clears the call-handoff flag, not just
+                // the pin. Real, live gap this closes: `expecting_call_
+                // handoff` previously only ever cleared from a real call
+                // Activity's own onDestroy() broadcast (see
+                // ACTION_CALL_ACTIVITY_DESTROYED's own doc comment) — never
+                // from an explicit guardian exit-kiosk action
+                // (GuardianEscalationScreen's "exit kiosk mode" button,
+                // kiosk_shell.dart's _exitKiosk(), this exact method). If a
+                // call's own Activity died abnormally mid-call (a process
+                // kill, never reaching its own onDestroy()) the flag stays
+                // orphaned true, and the VERY NEXT onResume() re-pins the
+                // device — potentially seconds after a guardian explicitly,
+                // successfully unpinned it, with no signal telling her why
+                // it re-locked. An explicit stop request is a strictly
+                // stronger, more authoritative signal than "assume a call
+                // might still be in flight" — clearing here is always safe.
+                M_STOP  -> { activity.stopLockTask(); clearCallHandoff(activity); result.success(null) }
                 M_MODE  -> result.success(currentMode(activity))
                 // Reported honestly at setup (§5.20): a parent who believes the
                 // tablet is sealed makes worse decisions than one who knows it
