@@ -37,10 +37,14 @@ await admin.connect();
 const CHILD = 'eeeeeeee-1234-1234-1234-eeeeeeeeeeee';
 const DAD = 'ffffffff-1234-1234-1234-ffffffffffff';
 const CHILD_B = '11111111-2222-1234-1234-333333333333';   // DAD has no edge to this one
+// F's own fixture — a real contact_ladder row, not just the null/'open'
+// default every other case above exercises. See section F's own comment.
+const CHILD_C = '22222222-3333-1234-1234-444444444444';
 
 const cleanup = async () => {
+  await admin.query(`DELETE FROM call_log WHERE child_id IN ($1, $2, $3)`, [CHILD, CHILD_B, CHILD_C]);
   await admin.query(`DELETE FROM device_token WHERE owner_child_id IN ($1, $2)`, [CHILD, CHILD_B]);
-  for (const cid of [CHILD, CHILD_B]) {
+  for (const cid of [CHILD, CHILD_B, CHILD_C]) {
     await admin.query(`DELETE FROM guardianship WHERE child_id = $1`, [cid]);
     await admin.query(`DELETE FROM child WHERE id = $1`, [cid]);
   }
@@ -54,10 +58,19 @@ await admin.query(
 await admin.query(
   `INSERT INTO child (id, display_name, birth_date, home_tz) VALUES
      ($1,'Ivy','2016-04-02','America/New_York'),
-     ($2,'Otherchild','2016-04-02','America/New_York')`, [CHILD, CHILD_B]);
+     ($2,'Otherchild','2016-04-02','America/New_York'),
+     ($3,'Supervisedchild','2016-04-02','America/New_York')`, [CHILD, CHILD_B, CHILD_C]);
 await admin.query(
   `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
      ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`, [CHILD, DAD]);
+const supervisedGship = await admin.query(
+  `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
+     ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null)) RETURNING id`,
+  [CHILD_C, DAD]);
+await admin.query(
+  `INSERT INTO contact_ladder (guardianship_id, step, effective) VALUES
+     ($1, 'supervised', tstzrange(now() - interval '1 day', null))`,
+  [supervisedGship.rows[0].id]);
 await admin.query('COMMIT');
 
 const SECRET = Buffer.from('b'.repeat(32), 'utf8');
@@ -151,6 +164,76 @@ const post = (childId, tok) => api.handle(
     res.status, 201);
   check('E device token', 'rang is false — no real FCM credential exists in this test environment',
     res.body.rang, false);
+}
+
+// ===========================================================================
+// F · call_log — the real backing for security.ts's own RESIDUAL_RISKS
+//     claim ("Retained, because §14 court export needs it"), which a
+//     2026-08-23 audit found had no implementation anywhere. Two real
+//     things proven here, not one: a row genuinely gets written at all,
+//     and it carries the REAL per-edge ladder step -- not the literal
+//     'open' this route hardcoded until the same audit found and fixed it.
+// ===========================================================================
+{
+  const before = await post(CHILD, dadTok);
+  const row = await admin.query(`SELECT * FROM call_log WHERE id = $1`, [before.body.sessionId]);
+  check('F call_log', 'a real row is written for an ordinary open-ladder call', row.rowCount, 1);
+  check('F call_log', 'child_id matches the real call', row.rows[0]?.child_id, CHILD);
+  check('F call_log', 'started_by is the real calling guardian', row.rows[0]?.started_by, DAD);
+  check('F call_log', 'room_name matches the real minted room', row.rows[0]?.room_name, before.body.room);
+  check('F call_log', 'ladder_step is the real edge value, open by default', row.rows[0]?.ladder_step, 'open');
+  check('F call_log', 'recorded is false for an open-ladder call', row.rows[0]?.recorded, false);
+  check('F call_log', 'ended_at is null — the call has not ended yet', row.rows[0]?.ended_at, null);
+
+  // The actual fix: a guardian with a real, live 'supervised' edge to
+  // CHILD_C must see that ladder step land in call_log, not the literal
+  // 'open' this route hardcoded before this pass. rooms.ts's own
+  // recorded: input.ladderStep === 'supervised' is what this proves is
+  // finally reachable through the real route, not just in a unit test.
+  const supervised = await post(CHILD_C, dadTok);
+  check('F call_log', 'a supervised call is accepted', supervised.status, 201);
+  const supRow = await admin.query(`SELECT * FROM call_log WHERE id = $1`, [supervised.body.sessionId]);
+  check('F call_log', 'the REAL supervised ladder step reaches call_log — not the old hardcoded open',
+    supRow.rows[0]?.ladder_step, 'supervised');
+  check('F call_log', 'recorded is true — rooms.ts\'s own tested rule, finally reachable',
+    supRow.rows[0]?.recorded, true);
+}
+
+// ===========================================================================
+// G · call end — marks call_log's own row ended. Deliberately does NOT
+//     assert anything about server-side media revocation (see the route's
+//     own comment in routes.mjs for why that half is a real, disclosed,
+//     separately-scoped gap, not built here).
+// ===========================================================================
+{
+  const started = await post(CHILD, dadTok);
+  const sessionId = started.body.sessionId;
+  const end = (childId, sid, tok) => api.handle(
+    'POST', `/v1/children/${childId}/calls/${sid}/end`,
+    tok ? { authorization: `Bearer ${tok}` } : {}, '',
+  );
+
+  const res1 = await end(CHILD, sessionId, dadTok);
+  check('G call end', 'ending a real, unended call returns 200', res1.status, 200);
+  check('G call end', 'ended is true the first time', res1.body.ended, true);
+
+  const row = await admin.query(`SELECT ended_at FROM call_log WHERE id = $1`, [sessionId]);
+  check('G call end', 'ended_at is now genuinely set', row.rows[0]?.ended_at != null, 'true');
+
+  // Idempotent by design (recordCallEnd()'s own doc comment) — both parties
+  // hanging up at once must be a real, honest no-op, never an error.
+  const res2 = await end(CHILD, sessionId, dadTok);
+  check('G call end', 'ending an already-ended call is a real 200, not an error', res2.status, 200);
+  check('G call end', 'ended is false the second time — a genuine no-op, not a re-write',
+    res2.body.ended, false);
+
+  // A child answering her own call must be able to end it too — the
+  // generic gate's own P6/P7-only child restriction permits this by
+  // design; no extra child_cannot_end_call check exists in this route.
+  const started2 = await post(CHILD, dadTok);
+  const res3 = await end(CHILD, started2.body.sessionId, childTok);
+  check('G call end', 'a child ending a real call she was a party to is allowed', res3.status, 200);
+  check('G call end', 'ended is true for the child-initiated end too', res3.body.ended, true);
 }
 
 await cleanup();

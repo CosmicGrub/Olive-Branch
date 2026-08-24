@@ -195,6 +195,13 @@ class OliveApi {
   // a [CallScreen.knownRoom] to begin with.
   static const calls = '/v1/children/:childId/calls';
 
+  // POST .../calls/:sessionId/end — real call-end record-keeping, added
+  // alongside [recordCallStart]'s own real per-edge-ladderStep fix
+  // (2026-08-23 audit). Two params, not one — see [endCall]'s own doc
+  // comment for why this is pre-substituted rather than going through
+  // [_post]'s single-`:childId` substitution the way [calls] above does.
+  static const callEnd = '/v1/children/:childId/calls/:sessionId/end';
+
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
           .replace(queryParameters: query);
@@ -299,10 +306,12 @@ class OliveApi {
   /// Starts a real call for [childId] — POST [calls], server/routes.mjs's
   /// real handler: mints a real session (session-runtime's createSession/
   /// mintToken, a genuinely new room per call — never the same room twice),
-  /// then attempts a real `call_incoming` push via notifyDevices(). Returns
-  /// the decoded body verbatim — `room`/`serverURL`/`identity`/`rang` —
-  /// the same shape [CallScreen.knownRoom]/[knownServerURL] expect, so a
-  /// caller can pass this straight through without re-deriving anything.
+  /// then attempts a real `call_incoming` push via notifyDevices(), and
+  /// records a real call_log row (2026-08-23). Returns the decoded body
+  /// verbatim — `room`/`serverURL`/`identity`/`rang`/`sessionId` — the same
+  /// shape [CallScreen.knownRoom]/[knownServerURL] expect, plus `sessionId`
+  /// for [endCall] below, so a caller can pass this straight through
+  /// without re-deriving anything.
   ///
   /// Throws [ApiException] on any non-2xx response (e.g. 403
   /// child_cannot_start_call for a child session, 403 no_edge for a
@@ -311,6 +320,18 @@ class OliveApi {
   /// swallowed into "nothing happened."
   Future<Map<String, dynamic>> startCall(String childId) =>
       _post(calls, const {}, childId: childId);
+
+  /// Marks call_log's own row for [sessionId] ended — POST [callEnd],
+  /// server/routes.mjs's real handler (2026-08-23). Idempotent: returns
+  /// `{ended: false}` on an already-ended session, never an error — a real
+  /// call site (e.g. [CallScreen.onCallEnd]) should treat any non-2xx
+  /// response as non-fatal (record-keeping only; nothing about the call
+  /// itself depends on this succeeding) rather than surfacing it to the
+  /// user, the same posture [startCall]'s own push-notification failure
+  /// already has inside routes.mjs.
+  Future<Map<String, dynamic>> endCall(String childId, String sessionId) => _post(
+      callEnd.replaceFirst(':childId', childId).replaceFirst(':sessionId', sessionId),
+      const {});
 
   /// Invites a new guardian/adult into [childId]'s family graph -- POST
   /// guardianships, server/routes.mjs's real handler. Requires a live

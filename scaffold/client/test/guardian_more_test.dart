@@ -164,6 +164,7 @@ void main() {
             'serverURL': 'https://jitsi.test',
             'identity': 'dad-1',
             'rang': false,
+            'sessionId': 'session-xyz',
           }), 201);
         }
         return http.Response('not found', 404);
@@ -205,6 +206,10 @@ void main() {
       // dev-only pending-call bridge relies on.
       expect(started, isNotNull);
       expect(started!['room'], 'real-room-abc');
+      // The real call-end wiring (2026-08-23): a real sessionId in the
+      // response means CallScreen gets a real onCallEnd callback, not the
+      // null every earlier call site left it at.
+      expect(screen.onCallEnd, isNotNull);
       expect(started!['rang'], false);
     });
 
