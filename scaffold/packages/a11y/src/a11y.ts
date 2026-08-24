@@ -35,6 +35,78 @@ export function captionsSurviveCall(p: CaptionPolicy, recorded: boolean): boolea
   return p.mode === 'live_and_saved' && recorded;
 }
 
+/**
+ * §8.8.1, continued — the missing half.
+ *
+ * `captionPolicy()`/`captionsSurviveCall()` above are the DECISION layer only:
+ * given a mode and whether the call was recorded, they say what is and is not
+ * allowed to happen. Neither function, nor anything else in this repository,
+ * produces a caption. There is no speech-to-text engine here, on-device or
+ * otherwise — CHANGELOG's own `UNDER_CONSTRUCTION` disclosure for
+ * `captions_and_translation` says it plainly: "no STT/translation exists at
+ * all; no API key exists in this repo either." MASTERFILE's platform table
+ * (§8.4 area) names a target ("on-device STT first, cloud fallback") but a
+ * target is not an implementation, and that "cloud fallback" reads in real
+ * tension with `CaptionPolicy.onDevice` being a hard `true` for LIVE
+ * captions — §8.8.1's whole argument is that an on-device track is the only
+ * version a subpoena cannot reach. Resolving that tension is a product
+ * decision, not something this file invents an answer for.
+ *
+ * `CaptionPort` below is the shape a real implementation would have to
+ * satisfy to close the gap — mirroring `StoragePort`
+ * (packages/storage/src/storage.ts) and `RoomLifecyclePort`
+ * (packages/transport/src/push.ts): specify the contract, do not fake the
+ * engine behind it.
+ *
+ * What this port does NOT own, deliberately: it does not decide whether a
+ * transcript is kept (`captionsSurviveCall` already does that, and a caller
+ * must consult it — this port does not re-derive the decision, the same way
+ * `reap()` trusts a preservation decision made by its caller instead of
+ * re-deriving it). It does not decide where recognition happens, only that
+ * `CaptionPolicy.onDevice` binds whatever the real implementation is — the
+ * same relationship `RoomLifecyclePort` has to LiveKit's actual media
+ * routing: the port owns the session's lifecycle and handoff, not the
+ * engine underneath it.
+ *
+ * NO IMPLEMENTATION OF THIS PORT EXISTS IN THIS REPOSITORY. Not a stub, not
+ * a mock, not an in-memory test double of the `MemoryStorage` kind. A fake
+ * transcript is fabricated speech attributed to a real call between a parent
+ * and a child — a materially different kind of dishonesty than a fake disk
+ * or a fake room server, and building one was explicitly out of scope for
+ * whatever added this interface. `captionPolicy()`/`captionsSurviveCall()`
+ * are exercised directly in tests, as pure functions; `CaptionPort` is
+ * exercised nowhere, because nothing here claims to satisfy it.
+ */
+export interface CaptionSegment {
+  /** Offset from call start, milliseconds. */
+  startMs: number;
+  endMs: number;
+  text: string;
+  /** Whose device recognised this segment. */
+  speaker: 'local' | 'remote';
+}
+
+export interface CaptionPort {
+  /** Begins a caption session for a call already in a mode other than 'off'.
+   *  Callers must not invoke this at all when `mode === 'off'`. */
+  start(callId: string, mode: CaptionMode): Promise<{ sessionId: string }>;
+  /** Fired as recognised text becomes available, for on-screen live captions. */
+  onSegment(sessionId: string, cb: (segment: CaptionSegment) => void): void;
+  /** Ends the session and returns the full transcript, unconditionally —
+   *  whether it is KEPT is `captionsSurviveCall`'s decision, made by the
+   *  caller before anything is persisted, not by this port. */
+  stop(sessionId: string): Promise<{ segments: CaptionSegment[] }>;
+  /**
+   * Prepares a transcript for handoff to `StoragePort.put()`. Callers MUST
+   * have already confirmed `captionsSurviveCall(policy, recorded)` is `true`
+   * before calling this — it is not re-checked here. The returned `key` is
+   * what `media_artifact.caption_key` (db/migrations/0001_phase0_init.sql)
+   * is set to, so the transcript inherits the call's own retention row
+   * rather than getting a longer clock of its own.
+   */
+  serializeForStorage(callId: string, segments: CaptionSegment[]): { key: string; text: string };
+}
+
 /** §8.8.2 — motion. Vestibular triggers are not a preference. */
 export interface MotionPolicy {
   reduced: boolean;

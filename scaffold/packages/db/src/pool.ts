@@ -2357,7 +2357,24 @@ export async function revokeGuardianInvite(
     if (!rows.length) return { ok: false, reason: 'not_found' };
     if (rows[0].accepted_at) return { ok: false, reason: 'already_accepted' };
 
-    await q(`UPDATE guardian_invite SET revoked_at = $2 WHERE id = $1`, [inviteId, now.toISOString()]);
+    // Idempotent, on purpose — RevokeInviteError has no 'already_revoked'
+    // reason, so a second revoke of an already-revoked invite still
+    // returns ok:true rather than an error. But idempotent must mean the
+    // OBSERVABLE STATE doesn't change either, not just that no error is
+    // thrown: without the `revoked_at IS NULL` guard this UPDATE used to
+    // carry, a second call (a double-tap, or a client retry after a
+    // timeout of unknown outcome — the exact race acceptGuardianInvite()'s
+    // own FOR UPDATE lock above already exists to prevent on the accept
+    // side) silently overwrote a real revocation instant with a later,
+    // fabricated one. In a product whose own court-export feature exists
+    // to produce a trustworthy record of exactly when access was revoked,
+    // a rewritable revoked_at is a real integrity bug, not a cosmetic one.
+    // The FOR UPDATE row lock already taken above is what makes this guard
+    // race-free against a concurrent double-tap, not just single-threaded
+    // logic.
+    if (!rows[0].revoked_at) {
+      await q(`UPDATE guardian_invite SET revoked_at = $2 WHERE id = $1`, [inviteId, now.toISOString()]);
+    }
     return { ok: true };
   });
 }
