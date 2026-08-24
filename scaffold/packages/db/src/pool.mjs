@@ -991,7 +991,9 @@ async function revokeGuardianInvite(pool, inviteId, byUserId, now) {
     const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
     if (!rows.length) return { ok: false, reason: "not_found" };
     if (rows[0].accepted_at) return { ok: false, reason: "already_accepted" };
-    await q(`UPDATE guardian_invite SET revoked_at = $2 WHERE id = $1`, [inviteId, now.toISOString()]);
+    if (!rows[0].revoked_at) {
+      await q(`UPDATE guardian_invite SET revoked_at = $2 WHERE id = $1`, [inviteId, now.toISOString()]);
+    }
     return { ok: true };
   });
 }

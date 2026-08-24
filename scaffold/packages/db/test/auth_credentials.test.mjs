@@ -28,18 +28,41 @@
  *      setPinCredential()/storeWebauthnCredential() refuse a deactivated
  *      guardian, and webauthnLoginVerify()'s own gate (server/index.mjs)
  *      refuses one too, over a real HTTP server.
+ *
+ * Added by a Tier-3 test-coverage audit finding ("WebAuthn registration" —
+ * thin coverage, not a known bug): sections I/J/K below close the specific
+ * gaps that finding named, none of which any earlier section (here or in
+ * attestation.test.mjs/contract.test.mjs) actually proved:
+ *   I) storeWebauthnCredential()'s v0.49.3 atomic `FOR UPDATE` fix, under a
+ *      REAL concurrent race against deactivateAccount() — G above only
+ *      proves the sequential case (already deactivated, then refused);
+ *      this proves the actual property the row lock exists for.
+ *   J) registering a SECOND credential for the same user (multi-device) —
+ *      never exercised anywhere before, at the pool level, plus the one
+ *      real uniqueness constraint (credential_id) that IS enforced.
+ *   K) the real HTTP registration routes themselves (POST .../register/
+ *      challenge + verify, server/routes.mjs, through the real Api +
+ *      registerRoutes wiring) end to end — a malformed/truncated
+ *      attestationObject, a replayed challenge, a challenge minted for the
+ *      wrong purpose or the wrong user, a second device, and a child
+ *      session — none of which contract.test.mjs's route-shape check or
+ *      attestation.test.mjs's pure-parser check actually drives over a
+ *      request/response cycle.
  */
 import pg from 'pg';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import {
   createPool, withSession, guardiansOfChild, pinCredentialFor, setPinCredential,
   recordPinAttempt, attemptPinFor, PIN_MAX_ATTEMPTS, createChallenge, consumeChallenge,
   storeWebauthnCredential, webauthnCredentialsForUser, webauthnCredentialById,
-  updateWebauthnSignCount,
+  updateWebauthnSignCount, deactivateAccount, dbPort,
 } from '../src/pool.mjs';
-import { hashPin, verifyPin } from '../../auth/src/auth.mjs';
+import { hashPin, verifyPin, issueSession } from '../../auth/src/auth.mjs';
+import { Api } from '../../api/src/api.mjs';
+import { registerRoutes, RP_ID, RP_ORIGIN } from '../../../server/routes.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? DATABASE_URL;
@@ -527,6 +550,345 @@ await admin.query('COMMIT');
 
   child.kill();
   await new Promise((r) => setTimeout(r, 200));
+}
+
+// ===========================================================================
+// I · storeWebauthnCredential() atomicity — a REAL concurrent race against
+// deactivateAccount() (CHANGELOG v0.49.3's SEC-01 follow-up, "worse than the
+// device-token case"). Section G above only proves the SEQUENTIAL case
+// (already deactivated, then a register attempt is refused) — real, but not
+// the property the `FOR UPDATE` lock actually exists for. Both functions
+// take that lock on the SAME `app_user` row (pool.ts's own comment on
+// storeWebauthnCredential() says so explicitly), so a genuinely concurrent
+// pair must serialize: whichever transaction acquires the row lock first
+// runs to completion before the other is even allowed to read
+// deactivated_at. Two orderings are possible and BOTH are legitimate:
+//   (a) deactivateAccount() gets the lock first -> sets deactivated_at,
+//       deletes any (zero, here) existing webauthn_credential rows, commits.
+//       storeWebauthnCredential() then sees deactivated_at set and throws.
+//   (b) storeWebauthnCredential() gets the lock first -> inserts, commits
+//       (deactivated_at was still null). deactivateAccount() then runs its
+//       own `DELETE FROM webauthn_credential WHERE user_id = $1`, which now
+//       matches the row just inserted, and removes it on its way to setting
+//       deactivated_at.
+// What must be true under EITHER ordering — the actual invariant this fix
+// protects — is that the process never ends with a deactivated account that
+// still has a live, usable credential. Fired with Promise.allSettled (not
+// sequentially awaited), the same real-race shape sections C/E/F above use
+// to prove their own atomicity claims.
+// ===========================================================================
+{
+  const RACER = 'e5555555-5555-5555-5555-555555555555';
+  await admin.query(`DELETE FROM webauthn_credential WHERE user_id = $1`, [RACER]);
+  await admin.query(`DELETE FROM app_user WHERE id = $1`, [RACER]);
+  await admin.query(
+    `INSERT INTO app_user (id, display_name, home_tz) VALUES ($1, 'Racer', 'America/Chicago')`,
+    [RACER]);
+
+  const [storeOutcome, deactivateOutcome] = await Promise.allSettled([
+    storeWebauthnCredential(pool, RACER, 'racer-cred-1',
+      '-----BEGIN PUBLIC KEY-----\nRACER\n-----END PUBLIC KEY-----'),
+    deactivateAccount(pool, RACER),
+  ]);
+
+  check('I atomic race', 'deactivateAccount() always succeeds regardless of who wins the row lock',
+    deactivateOutcome.status, 'fulfilled');
+
+  const finalUser = await admin.query(`SELECT deactivated_at FROM app_user WHERE id = $1`, [RACER]);
+  check('I atomic race', 'the account ends up deactivated no matter which side won the race',
+    finalUser.rows[0]?.deactivated_at !== null, 'true');
+
+  const finalCreds = await admin.query(
+    `SELECT credential_id FROM webauthn_credential WHERE user_id = $1`, [RACER]);
+  check('I atomic race',
+    'THE REAL INVARIANT: a deactivated account NEVER ends up with a live credential, ' +
+    'whichever transaction actually won the FOR UPDATE lock',
+    finalCreds.rows.length, 0);
+
+  // Names which real ordering happened, so a future regression that flips
+  // WHICH branch fires is visible, not just silently absorbed by the two
+  // invariant checks above.
+  if (storeOutcome.status === 'rejected') {
+    check('I atomic race', 'ordering (a): deactivateAccount() won — storeWebauthnCredential() ' +
+      'is refused with the real reason', storeOutcome.reason?.code, 'account_deactivated');
+  } else {
+    check('I atomic race', 'ordering (b): storeWebauthnCredential() won the lock first, but its ' +
+      'row is gone by the time deactivateAccount() commits (proven above: 0 live credentials)',
+      finalCreds.rows.length, 0);
+  }
+
+  await admin.query(`DELETE FROM webauthn_credential WHERE user_id = $1`, [RACER]);
+  await admin.query(`DELETE FROM app_user WHERE id = $1`, [RACER]);
+}
+
+// ===========================================================================
+// J · registering a SECOND credential for the same user — real multi-device
+// support, never exercised anywhere in this suite (or any other) before.
+// Nothing in the schema (0008_auth_credentials.sql: webauthn_credential's
+// PRIMARY KEY is its own uuid `id`; `user_id` is merely INDEXed, not UNIQUE)
+// or in storeWebauthnCredential() itself restricts a guardian to one
+// credential — this proves that's REAL, not just schema-permitted-but-
+// untested, and that the one uniqueness constraint that DOES exist
+// (credential_id, globally UNIQUE) is enforced.
+// ===========================================================================
+{
+  // A self-contained, known baseline — deliberately NOT relying on section
+  // A's own DAD credential surviving untouched: section E's own always-0
+  // case (real, deliberate) DELETEs every webauthn_credential row for DAD
+  // and replaces it with 'dad-cred-zero', so by this point in the file
+  // "DAD's section-A credential" is no longer what's actually there. Setting
+  // up fresh, named fixtures here — the same discipline section B/F use for
+  // MOM's PIN state — keeps this section correct regardless of what earlier
+  // sections leave behind.
+  await admin.query(`DELETE FROM webauthn_credential WHERE user_id = $1`, [DAD]);
+  await storeWebauthnCredential(pool, DAD, 'j-first-device-' + DAD,
+    '-----BEGIN PUBLIC KEY-----\nJ1\n-----END PUBLIC KEY-----');
+  const before = await webauthnCredentialsForUser(pool, DAD);
+  check('J multi-device', 'DAD starts this section with exactly one known credential',
+    before.length, 1);
+
+  await storeWebauthnCredential(pool, DAD, 'j-second-device-' + DAD,
+    '-----BEGIN PUBLIC KEY-----\nJ2\n-----END PUBLIC KEY-----');
+  const after = await webauthnCredentialsForUser(pool, DAD);
+  check('J multi-device', 'a SECOND credential for the same user is accepted, not refused',
+    after.length, 2);
+  const ids = after.map((c) => c.credentialId).sort();
+  check('J multi-device', 'both credential rows are real and distinct',
+    ids.join(','), ['j-first-device-' + DAD, 'j-second-device-' + DAD].sort().join(','));
+
+  // The one real uniqueness constraint that DOES exist: credential_id is
+  // globally UNIQUE. A DIFFERENT user must not be able to register a
+  // credential_id someone else already owns (this would only ever happen
+  // from a corrupted/malicious client) — must be a real DB error, not a
+  // silent overwrite of the original owner's row.
+  let collided = false, collisionMsg = '';
+  try {
+    await storeWebauthnCredential(pool, MOM, 'j-first-device-' + DAD,
+      '-----BEGIN PUBLIC KEY-----\nMOM-STEAL\n-----END PUBLIC KEY-----');
+  } catch (e) { collided = true; collisionMsg = String(e.message ?? e); }
+  check('J multi-device', 'a DIFFERENT user cannot register a credential_id already owned by someone else',
+    collided, 'true');
+  check('J multi-device', 'and it is a real uniqueness violation, not the deactivation gate',
+    /duplicate key|unique/i.test(collisionMsg), 'true');
+  const dadCredStillDads = await webauthnCredentialById(pool, 'j-first-device-' + DAD);
+  check('J multi-device', "DAD's original row is untouched by the rejected collision attempt",
+    dadCredStillDads?.userId, DAD);
+}
+
+// ===========================================================================
+// K · the REAL HTTP registration routes end to end — POST .../register/
+// challenge + POST .../register/verify (server/routes.mjs), through the real
+// Api + registerRoutes wiring, in-process against api.handle() (no spawn
+// needed — unlike section H's LOGIN routes, these run through api.register()
+// so a Bearer session token authenticates them the ordinary way; see
+// routes.mjs's own header for why LOGIN cannot). Nothing before this section
+// has ever driven these two routes over an actual request/response cycle:
+// section G proves the pool-level deactivation gate directly,
+// attestation.test.mjs proves the pure CBOR/COSE parser directly, and
+// contract.test.mjs proves the route EXISTS with the right action/session
+// shape — none of them prove what happens when a real (or malformed) request
+// actually reaches the handler in routes.mjs.
+// ===========================================================================
+{
+  const SECRET = Buffer.from('k-section-webauthn-route-test-secret-32', 'utf8');
+  const NOW = Date.now();
+  const api = new Api(SECRET, dbPort(pool));
+  registerRoutes(api, pool);
+
+  const stTok = issueSession(SECRET,
+    { userId: STRANGER, roleName: 'guardian', childId: null, escalated: false }, NOW);
+  const momTok = issueSession(SECRET,
+    { userId: MOM, roleName: 'guardian', childId: null, escalated: false }, NOW);
+  const childTok = issueSession(SECRET,
+    { userId: null, roleName: 'child', childId: CHILD, escalated: false }, NOW);
+
+  const post = (path, tok, body) => api.handle('POST', path,
+    tok ? { authorization: `Bearer ${tok}` } : {}, body ? JSON.stringify(body) : '');
+
+  // A tiny, standalone CBOR encoder — the same deliberately-independent
+  // shape attestation.test.mjs's own header explains (built only to
+  // construct synthetic registration material, never derived from
+  // attestation.ts's own decoder).
+  const cborUint = (n) => (n < 24 ? Buffer.from([n]) : Buffer.from([24, n]));
+  const cborNegint = (n) => { const a = n - 1; return a < 24 ? Buffer.from([0x20 | a]) : Buffer.from([0x38, a]); };
+  const cborBytes = (buf) => (buf.length < 24
+    ? Buffer.concat([Buffer.from([0x40 | buf.length]), buf])
+    : Buffer.concat([Buffer.from([0x58, buf.length]), buf]));
+  const cborText = (s) => { const b = Buffer.from(s, 'utf8');
+    return b.length < 24 ? Buffer.concat([Buffer.from([0x60 | b.length]), b])
+                         : Buffer.concat([Buffer.from([0x78, b.length]), b]); };
+  const cborMapHeader = (n) => Buffer.from([0xa0 | n]);
+  const encodeCoseKeyEc2 = (x, y) => Buffer.concat([
+    cborMapHeader(5),
+    cborUint(1), cborUint(2),     // kty: EC2
+    cborUint(3), cborNegint(7),   // alg: ES256
+    cborNegint(1), cborUint(1),   // crv: P-256
+    cborNegint(2), cborBytes(x),
+    cborNegint(3), cborBytes(y),
+  ]);
+  const rpIdHash = createHash('sha256').update(RP_ID, 'utf8').digest();
+  const buildAuthData = (credentialIdBuf, coseKeyBuf) => {
+    const flags = Buffer.from([0x41]); // UP + AT
+    const signCount = Buffer.alloc(4);
+    const aaguid = Buffer.alloc(16, 0);
+    const credIdLen = Buffer.alloc(2); credIdLen.writeUInt16BE(credentialIdBuf.length);
+    return Buffer.concat([rpIdHash, flags, signCount, aaguid, credIdLen, credentialIdBuf, coseKeyBuf]);
+  };
+  // rawCredentialId is a plain test-chosen string; the route stores the
+  // credential_id extractCredentialPublicKey() produces, which is the
+  // base64url of these RAW BYTES — credIdB64u() below computes the same
+  // transform so assertions can look the row up correctly.
+  const credIdB64u = (raw) => Buffer.from(raw, 'utf8').toString('base64url');
+  const buildAttestationObjectB64u = (rawCredentialId) => {
+    const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const jwk = publicKey.export({ format: 'jwk' });
+    const x = Buffer.from(jwk.x, 'base64url');
+    const y = Buffer.from(jwk.y, 'base64url');
+    const authData = buildAuthData(Buffer.from(rawCredentialId, 'utf8'), encodeCoseKeyEc2(x, y));
+    const obj = Buffer.concat([
+      cborMapHeader(3),
+      cborText('fmt'), cborText('none'),
+      cborText('attStmt'), cborMapHeader(0),
+      cborText('authData'), cborBytes(authData),
+    ]);
+    return obj.toString('base64url');
+  };
+  const clientDataFor = (challenge, type = 'webauthn.create') =>
+    Buffer.from(JSON.stringify({ type, challenge, origin: RP_ORIGIN }), 'utf8').toString('base64url');
+
+  // --- K1 sanity: a full, real, valid registration round trip ------------
+  {
+    const chal = await post('/v1/auth/webauthn/register/challenge', stTok, null);
+    check('K1 route success', 'challenge route returns 200 for a real guardian session', chal.status, 200);
+    check('K1 route success', 'challenge names the real RP_ID', chal.body.rpId, RP_ID);
+
+    const attestationObject = buildAttestationObjectB64u('k1-stranger-device-1');
+    const verify = await post('/v1/auth/webauthn/register/verify', stTok, {
+      clientDataJSON: clientDataFor(chal.body.challenge), attestationObject,
+    });
+    check('K1 route success', 'a real, well-formed registration is accepted end to end', verify.status, 200);
+    check('K1 route success', 'and reports ok:true', verify.body.ok, 'true');
+
+    const stored = await webauthnCredentialById(pool, credIdB64u('k1-stranger-device-1'));
+    check('K1 route success', 'the credential the ROUTE actually persisted belongs to the real caller',
+      stored?.userId, STRANGER);
+  }
+
+  // --- K2 malformed/truncated attestationObject over the real route ------
+  {
+    const chal = await post('/v1/auth/webauthn/register/challenge', stTok, null);
+    const verify = await post('/v1/auth/webauthn/register/verify', stTok, {
+      clientDataJSON: clientDataFor(chal.body.challenge),
+      attestationObject: Buffer.from([0xff, 0xff, 0xff, 0xff]).toString('base64url'),
+    });
+    check('K2 malformed', 'a garbage attestationObject is refused with 400, not a 500 crash',
+      verify.status, 400);
+    check('K2 malformed', 'and names the real reason', verify.body.error, 'bad_attestation_object');
+
+    // consumeChallenge runs BEFORE attestation parsing (routes.mjs's own
+    // ordering) — the challenge above was already burned reaching this far.
+    // Retrying with a WELL-FORMED attestation on the same challenge must
+    // still fail, proving the burn is real even on a failed attempt.
+    const retry = await post('/v1/auth/webauthn/register/verify', stTok, {
+      clientDataJSON: clientDataFor(chal.body.challenge),
+      attestationObject: buildAttestationObjectB64u('k2-should-never-be-stored'),
+    });
+    check('K2 malformed', 'the SAME challenge cannot be retried after the malformed attempt burned it',
+      retry.status, 400);
+    check('K2 malformed', 'and it fails as a spent challenge, not a second parse error',
+      retry.body.error, 'challenge_mismatch');
+    const neverStored = await webauthnCredentialById(pool, credIdB64u('k2-should-never-be-stored'));
+    check('K2 malformed', 'and no credential was ever stored from either attempt', neverStored, 'null');
+  }
+
+  // --- K3 challenge replay — reusing an already-CONSUMED challenge --------
+  {
+    const chal = await post('/v1/auth/webauthn/register/challenge', stTok, null);
+    const body = { clientDataJSON: clientDataFor(chal.body.challenge),
+      attestationObject: buildAttestationObjectB64u('k3-first-use') };
+    const first = await post('/v1/auth/webauthn/register/verify', stTok, body);
+    check('K3 replay', 'the first use of a fresh challenge succeeds', first.status, 200);
+
+    const second = await post('/v1/auth/webauthn/register/verify', stTok, body);
+    check('K3 replay', 'reusing the SAME already-consumed challenge is refused, not accepted again',
+      second.status, 400);
+    check('K3 replay', 'named as a challenge failure, not a duplicate-credential failure',
+      second.body.error, 'challenge_mismatch');
+  }
+
+  // --- K4 a challenge minted for the WRONG PURPOSE (login, not register) --
+  {
+    const loginChallenge = await createChallenge(pool, STRANGER, 'login');
+    const verify = await post('/v1/auth/webauthn/register/verify', stTok, {
+      clientDataJSON: clientDataFor(loginChallenge),
+      attestationObject: buildAttestationObjectB64u('k4-should-never-be-stored'),
+    });
+    check('K4 wrong purpose', 'a real LOGIN challenge cannot be spent as a REGISTER one over the real route',
+      verify.status, 400);
+    check('K4 wrong purpose', 'named as a challenge failure', verify.body.error, 'challenge_mismatch');
+    const neverStored = await webauthnCredentialById(pool, credIdB64u('k4-should-never-be-stored'));
+    check('K4 wrong purpose', 'and nothing was stored', neverStored, 'null');
+
+    // The failed register/verify attempt must not have consumed the LOGIN
+    // challenge either (purposes don't match, so consumeChallenge's WHERE
+    // never touched that row) — it is still spendable under its real purpose.
+    const stillGoodAsLogin = await consumeChallenge(pool, STRANGER, 'login', loginChallenge);
+    check('K4 wrong purpose', 'the login challenge itself is untouched and still consumable as a login',
+      stillGoodAsLogin, 'true');
+  }
+
+  // --- K5 a challenge minted for the WRONG USER ---------------------------
+  {
+    const chalForStranger = await post('/v1/auth/webauthn/register/challenge', stTok, null);
+    // MOM tries to spend STRANGER's own challenge under HER OWN session.
+    const verify = await post('/v1/auth/webauthn/register/verify', momTok, {
+      clientDataJSON: clientDataFor(chalForStranger.body.challenge),
+      attestationObject: buildAttestationObjectB64u('k5-should-never-be-stored'),
+    });
+    check('K5 wrong user', "a challenge minted for STRANGER cannot be spent under MOM's session",
+      verify.status, 400);
+    check('K5 wrong user', 'named as a challenge failure', verify.body.error, 'challenge_mismatch');
+    const neverStored = await webauthnCredentialById(pool, credIdB64u('k5-should-never-be-stored'));
+    check('K5 wrong user', 'and nothing was stored under either identity', neverStored, 'null');
+
+    // STRANGER's own challenge is still live — MOM's attempt never touched
+    // it (wrong-user is scoped entirely by consumeChallenge's own WHERE
+    // user_id = $1, not a shared burn) — she can still use it herself.
+    const strangerNowUses = await post('/v1/auth/webauthn/register/verify', stTok, {
+      clientDataJSON: clientDataFor(chalForStranger.body.challenge),
+      attestationObject: buildAttestationObjectB64u('k5-strangers-real-device'),
+    });
+    check('K5 wrong user', "the real owner's challenge still works after a wrong-user attempt on it",
+      strangerNowUses.status, 200);
+  }
+
+  // --- K6 a SECOND device registered for the same user, over the real route
+  {
+    const chal = await post('/v1/auth/webauthn/register/challenge', momTok, null);
+    const verify = await post('/v1/auth/webauthn/register/verify', momTok, {
+      clientDataJSON: clientDataFor(chal.body.challenge),
+      attestationObject: buildAttestationObjectB64u('k6-moms-second-device'),
+    });
+    check('K6 multi-device route', "a SECOND device registration for MOM (who already has 'mom-cred-1' " +
+      'from section E) succeeds through the real route', verify.status, 200);
+    const momCreds = await webauthnCredentialsForUser(pool, MOM);
+    check('K6 multi-device route', "MOM now has BOTH her section-E device and this new one",
+      momCreds.length, 2);
+  }
+
+  // --- K7 a CHILD session is refused before any body work is even done ---
+  {
+    const chal = await post('/v1/auth/webauthn/register/challenge', childTok, null);
+    check('K7 child session', 'a child session cannot mint a registration challenge', chal.status, 403);
+    check('K7 child session', 'named the real reason', chal.body.error, 'guardian_session_required');
+
+    const verify = await post('/v1/auth/webauthn/register/verify', childTok, {
+      clientDataJSON: clientDataFor('irrelevant'), attestationObject: buildAttestationObjectB64u('nope'),
+    });
+    check('K7 child session', 'a child session cannot verify a registration either', verify.status, 403);
+    const neverStored = await webauthnCredentialById(pool, credIdB64u('nope'));
+    check('K7 child session', 'and nothing was ever stored on its behalf', neverStored, 'null');
+  }
 }
 
 await admin.query(`DELETE FROM auth_challenge WHERE user_id IN ($1,$2,$3)`, [DAD, MOM, STRANGER]);

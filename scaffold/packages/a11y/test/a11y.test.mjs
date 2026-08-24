@@ -12,6 +12,14 @@ const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
   rows.push({g,n,ok,a:String(a),e:String(e)});};
 
 // FA · §8.8.1 CAPTIONS — on-device, retention follows the call
+//
+// NOTE: `captionPolicy()`/`captionsSurviveCall()` are the decision layer
+// only — see `CaptionPort` in a11y.ts, just above §8.8.2, for the (currently
+// unimplemented) shape a real STT backend would have to satisfy to actually
+// produce a caption. The checks below lock down the exact invariants a real
+// `CaptionPort` implementation would be required to honor: on-device is
+// unconditional across every mode, and "the call was recorded" alone is
+// never sufficient — only `live_and_saved` plus a recorded call survives.
 {
   const live=captionPolicy('live');
   check('FA captions','on-device, always', live.onDevice, 'true');
@@ -19,14 +27,42 @@ const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
   check('FA captions','both parties are told', live.disclosedToBoth, 'true');
   check('FA captions','the mode is carried', live.mode, 'live');
 
+  const off=captionPolicy('off');
+  check('FA captions','off is on-device too — the invariant does not depend on mode',
+    off.onDevice, 'true');
+  check('FA captions','off still carries retention-follows-call',
+    off.retentionFollowsCall, 'true');
+  check('FA captions','off still discloses to both',
+    off.disclosedToBoth, 'true');
+  check('FA captions','off carries its own mode, not a leftover',
+    off.mode, 'off');
+
+  const saved=captionPolicy('live_and_saved');
+  check('FA captions','live_and_saved is on-device too',
+    saved.onDevice, 'true');
+  check('FA captions','live_and_saved carries retention-follows-call',
+    saved.retentionFollowsCall, 'true');
+  check('FA captions','live_and_saved discloses to both',
+    saved.disclosedToBoth, 'true');
+  check('FA captions','live_and_saved carries its own mode',
+    saved.mode, 'live_and_saved');
+
+  check('FA captions','onDevice is true for every mode unconditionally — the exact invariant a real CaptionPort must honor',
+    ['off','live','live_and_saved'].every(m=>captionPolicy(m).onDevice===true), 'true');
+
+  // The full mode × recorded matrix — every combination, not just a sample.
   check('FA captions','a live-only caption does not survive an unrecorded call',
     captionsSurviveCall(captionPolicy('live'),false), 'false');
+  check('FA captions','a live-only caption does not survive EVEN a recorded call — mode gates it, not "recorded" alone',
+    captionsSurviveCall(captionPolicy('live'),true), 'false');
+  check('FA captions','off never survives an unrecorded call',
+    captionsSurviveCall(captionPolicy('off'),false), 'false');
+  check('FA captions','off never survives a recorded call either',
+    captionsSurviveCall(captionPolicy('off'),true), 'false');
   check('FA captions','a saved caption survives only where the call was recorded',
     captionsSurviveCall(captionPolicy('live_and_saved'),true), 'true');
   check('FA captions','not where the call was not recorded',
     captionsSurviveCall(captionPolicy('live_and_saved'),false), 'false');
-  check('FA captions','off never survives',
-    captionsSurviveCall(captionPolicy('off'),true), 'false');
 }
 
 // FB · §8.8.2 MOTION — reduced is not zero

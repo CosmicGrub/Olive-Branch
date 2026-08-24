@@ -19,7 +19,13 @@
  *      guardian's attempt is indistinguishable from not_found (RLS, not app
  *      logic, is what makes that true — proven by querying AS guardian B and
  *      finding zero rows, not by trusting revokeGuardianInvite()'s own
- *      return value alone)
+ *      return value alone); an already-accepted invite is refused
+ *      (already_accepted); a never-existed id is refused (not_found, the
+ *      same case section C already proves for accept); and revoking an
+ *      already-revoked invite is idempotent (ok:true — RevokeInviteError
+ *      has no already_revoked reason) but must not rewrite revoked_at to a
+ *      later, fabricated instant — a real bug this section's own probe
+ *      found and pool.ts's revokeGuardianInvite() was fixed for
  *   E. the DB-level CHECK — accepted_at and revoked_at can never both be set,
  *      even via a raw admin UPDATE that bypasses every function above
  *   F. health_check's rls_unforced — guardian_invite reports 0, proving
@@ -186,6 +192,46 @@ let liveInviteId;
   const revokeAfterAccept = await revokeGuardianInvite(pool, toAcceptFirst.invite.id, GUARDIAN_A, now);
   check('D revoke', 'an already-accepted invite cannot then be revoked', revokeAfterAccept.ok, 'false');
   check('D revoke', 'refusal reason is already_accepted', revokeAfterAccept.reason, 'already_accepted');
+
+  // Revoking a genuinely nonexistent invite id — the accept path's own
+  // never-existed-id refusal is proven in section C above, but until now
+  // nothing proved the identical case for revoke.
+  const revokeMissing = await revokeGuardianInvite(pool, randomUUID(), GUARDIAN_A, now);
+  check('D revoke', 'revoking a never-existed id is refused', revokeMissing.ok, 'false');
+  check('D revoke', 'refusal reason is not_found', revokeMissing.reason, 'not_found');
+
+  // Revoking an ALREADY-revoked invite. RevokeInviteError has no
+  // 'already_revoked' reason (see revokeGuardianInvite()'s own type doc
+  // comment) — so a second revoke must succeed again (ok:true), the same
+  // idempotent shape acceptGuardianInvite() does NOT give a second accept.
+  // But "idempotent" has to mean the stored revoked_at doesn't move either,
+  // not just that no error is thrown — this was a real, confirmed gap: the
+  // UPDATE used to run unconditionally on every call, so a double-tap (or a
+  // client retry after a timeout of unknown outcome) silently overwrote a
+  // real revocation instant with a fabricated later one, in a product whose
+  // own court-export feature exists to make that instant trustworthy. Two
+  // real timestamps months apart prove the second call is a genuine no-op
+  // on the stored value, not a coincidence of both calls landing near
+  // `now`.
+  const toDoubleRevoke = await createGuardianInvite(
+    pool, GUARDIAN_A, CHILD, 'guardian', 'Double Revoke Me', 'dr@example.com');
+  const firstRevokeAt = new Date('2026-01-01T00:00:00.000Z');
+  const firstRevoke = await revokeGuardianInvite(
+    pool, toDoubleRevoke.invite.id, GUARDIAN_A, firstRevokeAt);
+  check('D revoke', 'the first revoke succeeds', firstRevoke.ok, 'true');
+  const afterFirstRevoke = await getGuardianInvite(pool, toDoubleRevoke.invite.id);
+  check('D revoke', 'revoked_at is set to the first call\'s instant',
+    new Date(afterFirstRevoke.revokedAt).toISOString(), firstRevokeAt.toISOString());
+
+  const secondRevokeAt = new Date('2026-06-01T00:00:00.000Z'); // months later
+  const secondRevoke = await revokeGuardianInvite(
+    pool, toDoubleRevoke.invite.id, GUARDIAN_A, secondRevokeAt);
+  check('D revoke', 'revoking an already-revoked invite is idempotent (ok:true), not refused',
+    secondRevoke.ok, 'true');
+  const afterSecondRevoke = await getGuardianInvite(pool, toDoubleRevoke.invite.id);
+  check('D revoke', 'but revoked_at is NOT rewritten to the second call\'s instant '
+    + '— the real revocation record stays the first one',
+    new Date(afterSecondRevoke.revokedAt).toISOString(), firstRevokeAt.toISOString());
 }
 
 // E · THE DB-LEVEL CHECK — accepted_at/revoked_at can never both be set,
