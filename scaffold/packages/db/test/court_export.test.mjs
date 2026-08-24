@@ -39,10 +39,25 @@
  *       own INSERT, so all of them walked away with was_free=true. Fixed by
  *       a `SELECT ... FOR UPDATE` on the guardian's own app_user row, taken
  *       before the count query — see pool.ts's certifiedExportBundleFor().
+ *   F · call metadata (0018_call_log.sql) is real in the CERTIFIED bundle
+ *       too, not just raw export (packages/db/test/raw_export.test.mjs owns
+ *       proving the raw half, including the direct RLS proof — this section
+ *       does not repeat that, it proves the CERTIFIED-specific wiring):
+ *       correct child-scoping through certifiedExportBundleFor() itself, a
+ *       real `bundleHash` that provably covers `callLog` (not just
+ *       `{chain, attestation}` — dropping callLog would silently change the
+ *       hash), and a real HTTP round trip proving server/routes.mjs's
+ *       `GET .../export?kind=certified` handler actually serializes
+ *       `callLog` into the response body rather than computing it and
+ *       dropping it on the way out — the exact class of bug MASTERFILE
+ *       §16.1 #3's own v0.49.15 note describes fixing once already for two
+ *       other fields.
  */
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
 import { createPool, dbPort, certifiedExportBundleFor } from '../src/pool.mjs';
 import { append } from '../../ledger/src/ledger.mjs';
+import { sha256Hex } from '../../ledger/src/sha256.mjs';
 import { issueSession } from '../../auth/src/auth.mjs';
 import { Api } from '../../api/src/api.mjs';
 import { registerRoutes } from '../../../server/routes.mjs';
@@ -403,6 +418,94 @@ const chain = await seedFamily();
 
   await admin.query(`DELETE FROM export_record WHERE requested_by = $1`, [DAD]);
   await admin.query(`UPDATE app_user SET court_tier = false WHERE id = $1`, [DAD]);
+}
+
+// F · call metadata (0018_call_log.sql) is real in the CERTIFIED bundle too.
+// Placed after E's own reset (export_record cleared, court_tier=false for
+// DAD) so this section starts from a known, unspent allowance.
+{
+  await admin.query(`DELETE FROM call_log WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
+  const CALL1 = randomUUID(); // IVY, ordinary open-ladder call, already ended
+  const CALL2 = randomUUID(); // IVY, supervised + recorded, still in progress
+  const CALL3 = randomUUID(); // SOLO — must NEVER appear in IVY's certified bundle
+  await admin.query(
+    `INSERT INTO call_log
+       (id, child_id, started_by, participant_ids, room_name, ladder_step, recorded, rang,
+        started_at, ended_at)
+     VALUES ($1, $2, $3, $4, 'room-ivy-1', 'open', false, true, $5, $6)`,
+    [CALL1, IVY, DAD, [DAD], AT0, AT1]);
+  await admin.query(
+    `INSERT INTO call_log
+       (id, child_id, started_by, participant_ids, room_name, ladder_step, recorded, rang,
+        started_at, ended_at)
+     VALUES ($1, $2, $3, $4, 'room-ivy-2', 'supervised', true, false, $5, null)`,
+    [CALL2, IVY, DAD, [DAD], AT1]);
+  await admin.query(
+    `INSERT INTO call_log
+       (id, child_id, started_by, participant_ids, room_name, ladder_step, recorded, rang,
+        started_at, ended_at)
+     VALUES ($1, $2, $3, $4, 'room-solo-1', 'open', false, true, now(), null)`,
+    [CALL3, SOLO, DAD, [DAD]]);
+
+  const result = await certifiedExportBundleFor(pool, DAD, IVY, new Date());
+  check('F call_log', "the first certified export this window is free (a fresh allowance after E's reset)",
+    result.ok && result.free, 'true');
+  check('F call_log', "exactly IVY's own two call_log rows appear — SOLO's does not",
+    result.ok ? result.callLog.length : -1, 2);
+  check('F call_log', 'call_log entries are in startedAt order (oldest first)',
+    result.ok ? result.callLog.map((c) => c.id).join(',') : '', `${CALL1},${CALL2}`);
+  check('F call_log', 'call metadata: startedBy round-trips (DAD)',
+    result.ok ? result.callLog[0]?.startedBy : '', DAD);
+  check('F call_log', 'call metadata: startedByName resolves from app_user (Dad)',
+    result.ok ? result.callLog[0]?.startedByName : '', 'Dad');
+  check('F call_log', 'call metadata: ladderStep round-trips for the second, supervised call',
+    result.ok ? result.callLog[1]?.ladderStep : '', 'supervised');
+  check('F call_log', 'call metadata: recorded round-trips (true) for the supervised call',
+    result.ok ? result.callLog[1]?.recorded : null, 'true');
+  check('F call_log', 'call metadata: endedAt is null for the still-open call',
+    result.ok ? result.callLog[1]?.endedAt : 'x', 'null');
+  check('F call_log', "SOLO's call never appears in IVY's certified bundle",
+    result.ok ? result.callLog.some((c) => c.id === CALL3) : true, 'false');
+
+  // The bundleHash genuinely covers callLog, not just {chain, attestation}
+  // — the same independent-recomputation discipline raw_export.test.mjs's
+  // own section C already applies to the raw bundle hash.
+  const recomputedWithCallLog = result.ok
+    ? sha256Hex(JSON.stringify({ chain: result.chain, attestation: result.attestation, callLog: result.callLog }))
+    : '';
+  check('F call_log', 'bundleHash is a genuine sha256 over {chain, attestation, callLog} together',
+    result.ok ? result.bundleHash : '', recomputedWithCallLog);
+  const recomputedWithoutCallLog = result.ok
+    ? sha256Hex(JSON.stringify({ chain: result.chain, attestation: result.attestation }))
+    : '';
+  check('F call_log', 'and callLog genuinely changes the hash — dropping it would silently mismatch',
+    result.ok && result.bundleHash !== recomputedWithoutCallLog, 'true');
+
+  // Real HTTP round trip — proves server/routes.mjs's route handler itself
+  // actually serializes `callLog` into the response body, not merely that
+  // pool.ts computes it. court_tier=true so this SECOND request this
+  // window (the first was spent by the direct call just above) still
+  // succeeds rather than colliding with the annual-allowance rule section B
+  // already owns.
+  await admin.query(`UPDATE app_user SET court_tier = true WHERE id = $1`, [DAD]);
+  const secret = Buffer.from('test-secret-32-bytes-minimum-ok', 'utf8');
+  const api = new Api(secret, dbPort(pool));
+  registerRoutes(api, pool);
+  const NOW = Date.now();
+  const dadTok = issueSession(secret, { userId: DAD, roleName: 'guardian', childId: null,
+    escalated: false }, NOW);
+  const routeResult = await api.handle('GET', `/v1/children/${IVY}/export?kind=certified`,
+    { authorization: `Bearer ${dadTok}` }, '');
+  check('F call_log', 'the real HTTP route -> 200', routeResult.status, 200);
+  check('F call_log', 'the route body carries callLog too — not silently dropped the way two other '
+    + 'fields were before the real v0.49.15 fix',
+    Array.isArray(routeResult.body.callLog) ? routeResult.body.callLog.length : -1, 2);
+  check('F call_log', 'the route body callLog matches the pool-level result exactly',
+    JSON.stringify(routeResult.body.callLog), JSON.stringify(result.ok ? result.callLog : null));
+
+  await admin.query(`DELETE FROM export_record WHERE requested_by = $1 AND child_id = $2`, [DAD, IVY]);
+  await admin.query(`UPDATE app_user SET court_tier = false WHERE id = $1`, [DAD]);
+  await admin.query(`DELETE FROM call_log WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
 }
 
 await admin.query(`DELETE FROM export_record WHERE child_id IN ($1, $2)`, [IVY, SOLO]);

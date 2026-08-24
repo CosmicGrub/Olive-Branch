@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:olive_client/api_client.dart';
+import 'package:olive_client/call_screen.dart';
 import 'package:olive_client/child_home_live.dart';
 import 'package:olive_client/push_channel.dart';
 import 'package:olive_client/wear_sync_channel.dart';
@@ -46,6 +47,23 @@ class _FakeWearSyncChannel extends WearSyncChannel {
   @override
   Future<void> syncSleepsUntilHandover(int sleepsUntilHandover) async {
     calls.add(sleepsUntilHandover);
+  }
+
+  // Captures the real callback LiveChildHomeScreen registers, rather than
+  // touching a real platform channel (no native handler exists under
+  // `flutter test` — same reason [syncSleepsUntilHandover] above is faked,
+  // not exercised for real). Tests below invoke this directly to simulate a
+  // real watch "Call Dad" tap arriving via WearSyncBridge.kt's own
+  // MessageClient listener -> Dart invokeMethod() path (proven separately,
+  // at the platform-channel layer, by wear_sync_channel_test.dart) —
+  // exercising what LiveChildHomeScreen itself does once that callback
+  // fires, which is the half wear_sync_channel_test.dart's own tests cannot
+  // see.
+  void Function()? capturedCallDadHandler;
+
+  @override
+  void listenForCallDad(void Function() onCallDadRequested) {
+    capturedCallDadHandler = onCallDadRequested;
   }
 }
 
@@ -244,6 +262,106 @@ void main() {
 
       expect(find.text('Hi Ivy'), findsOneWidget);
       expect(fakeWear.calls, isEmpty);
+    });
+  });
+
+  group('Watch "Call Dad" wiring — §21.5', () {
+    MockClient readyMock({String childName = 'Ivy'}) => MockClient((req) async {
+      if (req.url.path == '/v1/auth/dev-login') {
+        return http.Response(jsonEncode({'token': 'tok'}), 200);
+      }
+      if (req.url.path == '/v1/me') {
+        return http.Response(jsonEncode({'displayName': childName}), 200);
+      }
+      if (req.url.path.endsWith('/inbox')) {
+        return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+      }
+      if (req.url.path.endsWith('/now')) {
+        return http.Response(jsonEncode({
+          'childLocalTime': '4:15 PM', 'zoneAbbr': 'EDT', 'zone': 'America/New_York',
+          'sleepsUntilHandover': null,
+        }), 200);
+      }
+      return http.Response('not found', 404);
+    });
+
+    testWidgets(
+        'registers a real callback with the wear channel as soon as this '
+        'screen mounts -- before the initial load even resolves', (t) async {
+      final fakeWear = _FakeWearSyncChannel();
+      await t.pumpWidget(wrap(LiveChildHomeScreen(
+        baseUrl: 'http://api.test', childId: 'child-a',
+        httpClient: readyMock(), wearSync: fakeWear,
+        pushChannel: _FakePushChannel())));
+      // Deliberately BEFORE pumpAndSettle -- proves registration happens in
+      // initState, not only once loading finishes (see file header on why
+      // that matters: a real watch tap should never race a slow load).
+      expect(fakeWear.capturedCallDadHandler, isNotNull);
+      await t.pumpAndSettle();
+    });
+
+    testWidgets(
+        'a real watch "Call Dad" tap reaches the SAME real CallScreen '
+        "child_home.dart's own existing \"Call Dad\" button already opens -- "
+        'proven by real navigation into it, not a mock, and with the real '
+        'fetched child name, not a hardcoded placeholder', (t) async {
+      final fakeWear = _FakeWearSyncChannel();
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await t.pumpWidget(MaterialApp(
+        navigatorKey: navigatorKey,
+        home: LiveChildHomeScreen(
+          baseUrl: 'http://api.test', childId: 'child-a',
+          // Distinctive, non-default name (not "Ivy", which would be
+          // ambiguous with CallScreen's own hardcoded `who: 'ivy'`) -- proves
+          // _handleWatchCallDad reads the real, live-fetched `_childName`,
+          // not a coincidentally-matching literal.
+          httpClient: readyMock(childName: 'Ruth'), wearSync: fakeWear,
+          pushChannel: _FakePushChannel(), navigatorKey: navigatorKey,
+        ),
+      ));
+      await t.pumpAndSettle();
+      expect(find.text('Hi Ruth'), findsOneWidget);
+
+      // Simulates exactly what LiveChildHomeScreen receives once
+      // WearSyncBridge.kt's real Kotlin -> Dart invokeMethod() call has
+      // already been delivered through the real platform-channel handler
+      // (proven separately, at that layer, by wear_sync_channel_test.dart).
+      fakeWear.capturedCallDadHandler!();
+      await t.pumpAndSettle();
+
+      expect(find.byType(CallScreen), findsOneWidget);
+      final screen = t.widget<CallScreen>(find.byType(CallScreen));
+      expect(screen.who, 'ivy');
+      expect(screen.displayName, 'Ruth');
+      expect(screen.knownRoom, isNull);
+      // No knownRoom -- CallScreen's own _fetchRoom() hits the local dev
+      // room server (tools/local-call-room-server.mjs), unreachable in this
+      // test sandbox, so it lands on its own real error state. The same
+      // signal call_knock_screen_test.dart's own "reaches the real
+      // CallScreen" tests already use to prove real navigation happened,
+      // not just a widget-type check -- and the same honest reason
+      // documented in WearSyncBridge.kt's own header for why this is NOT
+      // guardian_more.dart's guardian-only production route.
+      expect(find.text('Try again'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a watch tap with no navigatorKey supplied is a safe, honest no-op -- '
+        'same posture as an incoming call_incoming push with no navigatorKey',
+        (t) async {
+      final fakeWear = _FakeWearSyncChannel();
+      await t.pumpWidget(wrap(LiveChildHomeScreen(
+        baseUrl: 'http://api.test', childId: 'child-a',
+        httpClient: readyMock(), wearSync: fakeWear,
+        pushChannel: _FakePushChannel())));
+      await t.pumpAndSettle();
+      expect(find.text('Hi Ivy'), findsOneWidget);
+
+      fakeWear.capturedCallDadHandler!();
+      await t.pumpAndSettle();
+
+      expect(find.byType(CallScreen), findsNothing);
+      expect(find.text('Hi Ivy'), findsOneWidget);
     });
   });
 

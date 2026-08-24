@@ -186,6 +186,68 @@ const cap = (o={}) => captureMessage({
 }
 
 // -------------------------------------------------------------------------
+// M8 — a CHILD sender (§9.5, 0019_child_message_sender.sql). Closes the
+// audit finding "child_async_video_sender_identity schema change": before
+// that migration, `senderRole:'child'` reached `can()` with structurally
+// empty edges (a child never holds a guardianship edge to herself) and was
+// always refused `not_authorized` — the schema had no way to attribute a
+// capture to a child at all. Now it is a real, distinct authorization path.
+// -------------------------------------------------------------------------
+{
+  const childCap = (o={}) => captureMessage({
+    childId: CHILD, senderRole:'child', senderChildId: CHILD,
+    storageKey:'k/child-1', durationMs: 6000, targetLocalDate: null,
+    daypart:'bedtime', preserve: false, ...o,
+  }, [], CTX, NOW);   // empty edges — a child holds no edge to herself, and
+                       // none is needed for her own self-authored send.
+
+  const r = childCap();
+  check('M8 child sender', 'a child sending about herself succeeds', r.ok, 'true');
+  check('M8 child sender', 'authorId is null, never a forged app_user id',
+    r.artifact?.authorId, 'null');
+  check('M8 child sender', 'authorChildId names the real sending child',
+    r.artifact?.authorChildId, CHILD);
+  check('M8 child sender', 'senderId is null on the intent too',
+    r.intent?.senderId, 'null');
+  check('M8 child sender', 'senderChildId names the real sending child',
+    r.intent?.senderChildId, CHILD);
+  // M1's own seam guarantee (artifact outlives intent) is untouched by which
+  // branch computed the sender — retention math runs identically after.
+  check('M8 child sender', 'the retention seam still holds for a child capture',
+    DateTime.fromISO(r.artifact.expiresAt) > DateTime.fromISO(r.intent.expiresAt), 'true');
+
+  // No senderChildId at all — the field a real HTTP caller can never
+  // actually omit (server/routes.mjs derives it from the verified session,
+  // never the body), but captureMessage() itself must still refuse it
+  // rather than silently writing a null-attributed row.
+  check('M8 child sender', 'a missing senderChildId is refused, not silently accepted',
+    childCap({ senderChildId: undefined }).reason, 'child_sender_mismatch');
+
+  // THE SHARED-DEVICE CASE the audit finding named by name: two siblings on
+  // one kiosk, and a capture that claims to be from the WRONG one. api.ts's
+  // own gateway (`principal.childId !== childId`) can never let real HTTP
+  // traffic reach this shape (messages_route.test.mjs's own "D auth" group
+  // proves that lock separately) — this is the SECOND, independent lock,
+  // proven directly against the pure function so it is not merely assumed
+  // to exist behind the first one.
+  check('M8 child sender', 'a capture claiming a DIFFERENT child as sender is refused',
+    childCap({ childId: CHILD, senderChildId: 'sibling-child-id' }).reason,
+    'child_sender_mismatch');
+
+  // §9.8.1 — preservation is a guardian election, never a child's to make.
+  check('M8 child sender', 'a child cannot preserve her own sent artifact',
+    childCap({ preserve: true }).reason, 'child_cannot_preserve');
+
+  // The `guardian` path (M2's own suite) is unaffected — the branch is
+  // chosen strictly by `senderRole`, and a plain guardian capture with a
+  // real edge still succeeds exactly as before this file's own M1 proved.
+  check('M8 child sender', "senderRole:'guardian' still succeeds, unaffected by the new branch",
+    cap().ok, 'true');
+  check('M8 child sender', 'a guardian capture still names authorId, never authorChildId',
+    cap().artifact.authorChildId, 'null');
+}
+
+// -------------------------------------------------------------------------
 let g = '';
 for (const r of rows) {
   if (r.group !== g) { g = r.group; console.log(`\n${g}`); }

@@ -89,7 +89,8 @@ for spec in \
   "school layer|packages/school/test/school.test.mjs" \
   "print fulfilment|packages/print/test/print.test.mjs" \
   "filesystem storage adapter|packages/storage/test/storage.test.mjs" \
-  "emergency card|packages/emergency/test/emergency.test.mjs" ; do
+  "emergency card|packages/emergency/test/emergency.test.mjs" \
+  "annotation canvas engine (undo/redo/erase)|packages/annotation/test/canvas.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
@@ -276,6 +277,9 @@ echo "── DB suites requiring a real NOSUPERUSER NOBYPASSRLS role ───�
 # were the same gap again, caught by a round-2 post-merge audit
 # ("Merge Aftermath") rather than by this list ever being re-checked against
 # the actual `test/` directories on disk — TEST-01/TEST-02 in that report.
+# guardian invite bootstrap route is this pass's own addition, added here
+# alongside the new test file itself rather than left for a future audit to
+# find missing, same lesson as the paragraph above.
 APP_OWNER_PW="verify_run_app_owner_pw"
 $PSQL -d "$DB" -q -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
@@ -319,6 +323,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \
             "messages route (real DB)|packages/api/test/messages_route.test.mjs" \
+            "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)

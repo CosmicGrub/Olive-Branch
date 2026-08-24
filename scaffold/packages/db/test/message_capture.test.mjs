@@ -189,6 +189,122 @@ const edge = (o = {}) => ({ childId: CHILD, userId: DAD, role: 'guardian', scope
   check('C batch', 'preserved flag round-trips true', artRows.rows[0]?.preserved, 'true');
 }
 
+// ===========================================================================
+// D · a CHILD sender — db/migrations/0019_child_message_sender.sql. Proves
+//     the identity is correctly RECORDED (real rows, real columns, via the
+//     real NOSUPERUSER NOBYPASSRLS `pool` role — the same connection every
+//     write above already used, not a superuser standing in for it) and
+//     correctly ENFORCED (the CHECK constraints reject a bad row for EVERY
+//     role, proven here as `admin`/superuser specifically so the assertion
+//     is "even the strongest role cannot write this", not merely "the app
+//     role's own queries happen not to try").
+//
+//     media_artifact/delivery_intent carry no row-level security at all
+//     (confirmed: neither name appears in health_check's own `rls_unforced`
+//     audit list built by 0008/0013/0014/0017/0018) — a real, pre-existing,
+//     DEFERRED gap named in packages/db/src/pool.ts's own persistCaptured
+//     Message() header, NOT something this migration or this suite closes.
+//     There is no guardian-read RLS policy on these tables to test against;
+//     the CHECK constraints below are the real enforcement mechanism this
+//     migration actually adds, and what is tested here.
+// ===========================================================================
+{
+  const ctx = await childCtxFor(pool, CHILD);
+  const now = DateTime.fromISO('2026-08-11T18:00:00Z');
+  const capture = captureMessage({
+    childId: CHILD, senderRole: 'child', senderChildId: CHILD,
+    storageKey: 'device/child-reply-1', durationMs: 3300,
+    targetLocalDate: null, daypart: 'bedtime', preserve: false,
+  }, [], ctx, now);   // empty edges — a child holds no edge to herself.
+  check('D child sender', 'captureMessage() accepts her own capture', capture.ok, 'true');
+
+  const persisted = await persistCapturedMessage(pool, capture);
+
+  const artRows2 = await admin.query(
+    `SELECT author_id, author_child_id FROM media_artifact WHERE id = $1`,
+    [persisted.artifactId]);
+  check('D child sender', 'author_id is null for a child-authored artifact',
+    artRows2.rows[0]?.author_id, 'null');
+  check('D child sender', 'author_child_id names the real sending child',
+    artRows2.rows[0]?.author_child_id, CHILD);
+
+  const intentRows2 = await admin.query(
+    `SELECT sender_id, sender_child_id FROM delivery_intent WHERE id = $1`,
+    [persisted.intentId]);
+  check('D child sender', 'sender_id is null for a child-originated intent',
+    intentRows2.rows[0]?.sender_id, 'null');
+  check('D child sender', 'sender_child_id names the real sending child',
+    intentRows2.rows[0]?.sender_child_id, CHILD);
+
+  // ENFORCED, not just conventionally true — even a superuser INSERT is
+  // refused by the CHECK constraints themselves, for every shape this
+  // migration's header describes as unrepresentable.
+  const rejects = async (sql, params) => {
+    try { await admin.query(sql, params); return 'ALLOWED'; }
+    catch (e) { return e.constraint ?? e.message; }
+  };
+
+  check('D child sender', 'a row naming BOTH author_id and author_child_id is refused',
+    await rejects(
+      `INSERT INTO media_artifact
+         (child_id, author_id, author_child_id, kind, storage_key,
+          captured_at, captured_tz, expires_at)
+       VALUES ($1,$2,$3,'video_msg','x','2026-01-01T00:00:00Z','UTC',
+               '2026-02-01T00:00:00Z')`,
+      [CHILD, DAD, CHILD]),
+    'author_is_one_kind');
+
+  check('D child sender', "a row attributing a DIFFERENT child's artifact is refused",
+    await rejects(
+      `INSERT INTO media_artifact
+         (child_id, author_child_id, kind, storage_key,
+          captured_at, captured_tz, expires_at)
+       VALUES ($1,$2,'video_msg','x','2026-01-01T00:00:00Z','UTC',
+               '2026-02-01T00:00:00Z')`,
+      [CHILD, NOCTX]),
+    'child_author_is_self');
+
+  check('D child sender', 'a delivery_intent naming NEITHER sender_id nor sender_child_id is refused',
+    await rejects(
+      `INSERT INTO delivery_intent
+         (child_id, payload_kind, payload_ref, policy, target_daypart, expires_at)
+       VALUES ($1,'video_msg',$2,'at_daypart','bedtime','2026-02-01T00:00:00Z')`,
+      [CHILD, persisted.artifactId]),
+    'sender_is_exactly_one_kind');
+
+  check('D child sender', 'a delivery_intent naming BOTH sender_id and sender_child_id is refused',
+    await rejects(
+      `INSERT INTO delivery_intent
+         (child_id, sender_id, sender_child_id, payload_kind, payload_ref,
+          policy, target_daypart, expires_at)
+       VALUES ($1,$2,$3,'video_msg',$4,'at_daypart','bedtime','2026-02-01T00:00:00Z')`,
+      [CHILD, DAD, CHILD, persisted.artifactId]),
+    'sender_is_exactly_one_kind');
+
+  check('D child sender', "a delivery_intent attributing a DIFFERENT child's send is refused",
+    await rejects(
+      `INSERT INTO delivery_intent
+         (child_id, sender_child_id, payload_kind, payload_ref,
+          policy, target_daypart, expires_at)
+       VALUES ($1,$2,'video_msg',$3,'at_daypart','bedtime','2026-02-01T00:00:00Z')`,
+      [CHILD, NOCTX, persisted.artifactId]),
+    'child_sender_is_self');
+
+  // Message banking stays guardian-only (this migration's own header) —
+  // persistCapturedMessage() fails loudly rather than reaching intent_
+  // batch's raw NOT NULL violation when a child-originated capture is
+  // (wrongly) asked to start a batch.
+  let batchWithChildSender = 'ALLOWED';
+  try {
+    await persistCapturedMessage(pool, capture, {
+      newBatch: { label: 'x', cadence: 'daily', startsLocal: '2026-09-01',
+        endsLocal: '2026-09-02' },
+    });
+  } catch (e) { batchWithChildSender = e.message; }
+  check('D child sender', 'a child-originated capture cannot start a batch',
+    batchWithChildSender.includes('cannot start a batch'), 'true');
+}
+
 await admin.query(`DELETE FROM delivery_intent WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);
 await admin.query(`DELETE FROM media_artifact WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);
 await admin.query(`DELETE FROM intent_batch WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);

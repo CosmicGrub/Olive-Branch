@@ -21,7 +21,7 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          unregisterDeviceToken,
          certifiedExportBundleFor,
          createGuardianInvite, getGuardianInvite,
-         acceptGuardianInvite, revokeGuardianInvite,
+         acceptGuardianInvite, revokeGuardianInvite, bootstrapGuardianInvite,
          takeAndGo, themeFor, setChildTheme,
          recordCallStart, recordCallEnd,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
@@ -316,6 +316,48 @@ export function registerRoutes(api, pool) {
         return { status, body: { error: result.reason } };
       }
       return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // The account-creation gap CHANGELOG v0.49.9 found and explicitly declined
+  // to invent an answer for: guardian_setup.dart's passkey registration has
+  // ALWAYS required an already-authenticated guardian session, and nowhere
+  // did a brand-new guardian ever acquire one. This route closes exactly
+  // that and nothing more — it does NOT touch WebAuthn registration itself
+  // (POST .../webauthn/register/challenge and .../verify above are
+  // completely unchanged) and does NOT create a guardianship row (see
+  // 0014/0020_guardian_invite_bootstrap.sql's own headers for why that
+  // stays a real, separate, still-open gap).
+  //
+  // noSessionRequired, same reason as GET/accept above: the caller has no
+  // app_user row yet, so there is nothing for them to hold a session token
+  // TO. Unlike GET/accept, this route requires the invite to have ALREADY
+  // been accepted (bootstrapGuardianInvite() checks accepted_at, not just
+  // existence) — the invite's own unguessable id, ONE STEP FURTHER along
+  // this same flow, is what stands in for a credential here.
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/bootstrap', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const displayName = c.body?.displayName;
+      if (typeof displayName !== 'string' || !displayName.trim()) {
+        return { status: 400, body: { error: 'display_name_required' } };
+      }
+      const result = await bootstrapGuardianInvite(
+        pool, c.params.inviteId, displayName.trim(), new Date());
+      if (!result.ok) {
+        const status = result.reason === 'not_found' ? 404
+          : result.reason === 'expired' ? 410 : 409;
+        return { status, body: { error: result.reason } };
+      }
+      // Mints exactly what guardian_setup.dart's real passkey registration
+      // needs and nothing else: an ordinary guardian session with NO
+      // guardianship edge to any child (none was created — see above), so
+      // every OTHER route that checks edgesFor() still refuses this
+      // session exactly as it would refuse any guardian with zero edges.
+      const token = api.issueSessionToken(
+        { userId: result.userId, roleName: 'guardian', childId: null, escalated: false });
+      return { status: 201, body: { ok: true, token, userId: result.userId, childId: result.childId } };
     },
   });
 
@@ -1048,6 +1090,16 @@ export function registerRoutes(api, pool) {
           free: result.free,
           chain: result.chain,
           attestation: result.attestation,
+          // Real call metadata (0018_call_log.sql, packages/db/src/pool.mjs's
+          // certifiedExportBundleFor()) -- included here deliberately, not
+          // left for the client to fetch separately: `bundleHash` below is
+          // computed over {chain, attestation, callLog} together, so a
+          // response that dropped this field on the way out would silently
+          // stop matching its own advertised hash. See MASTERFILE §16.1 #3's
+          // own v0.49.15 note on the exact class of bug this avoids -- a
+          // real field the backend already computed, never wired to the one
+          // response that was supposed to carry it.
+          callLog: result.callLog,
           bundleHash: result.bundleHash,
           exportRecordId: result.exportRecordId,
         } };
@@ -1163,23 +1215,26 @@ export function registerRoutes(api, pool) {
       // Sender identity is ALWAYS the authenticated principal, never the
       // body (A3's own reasoning in api.ts, extended to identity generally —
       // a body-supplied senderId would let anyone forge a message as coming
-      // from any guardian). A `child` principal carries no `userId`
-      // (packages/auth/src/auth.ts's VerifiedPrincipal, server/index.mjs's
-      // dev-login), so `edges` below is honestly `[]` for a child caller.
+      // from any guardian, and a body-supplied childId would let anyone
+      // attribute a send to a different child). A `child` principal carries
+      // no `userId` at all (packages/auth/src/auth.ts's VerifiedPrincipal,
+      // server/index.mjs's dev-login) — she has an app_user row nowhere —
+      // so `edges` stays honestly `[]` for her, and her identity is instead
+      // her OWN `childId`, taken from the verified session/path exactly the
+      // way api.ts's outer gateway already required it to match
+      // (`principal.childId !== childId` → 403 `wrong_child`, before this
+      // handler even runs).
       //
-      // HONEST GAP this route surfaces rather than hides: `delivery_intent.
-      // sender_id` is `NOT NULL REFERENCES app_user(id)`, and a child has no
-      // `app_user` row — this schema has no representation for a child AS a
-      // sender at all. So a `child` session hitting this route (the
-      // realistic caller for "Send one back") always reaches
-      // captureMessage() with empty edges and gets `not_authorized` back —
-      // the exact same denial a sitter or coordinator would get (see
-      // pipeline.test.mjs's M2 suite) — a real, honoured rejection, not a
-      // silently faked success. Wiring a child as a genuine sender would need
-      // a schema change this task did not ask for; see receipt_screen.dart's
-      // header and this pass's final report for the same note.
+      // 0021_child_message_sender.sql is what makes this representable at
+      // all: `delivery_intent.sender_id` used to be `NOT NULL REFERENCES
+      // app_user(id)`, and a child has no `app_user` row, so every child-
+      // originated capture was structurally unrepresentable and honestly
+      // refused (`not_authorized`) — see that migration's own header, and
+      // pipeline.test.mjs's M8 suite, for the full history of that gap and
+      // the real success path that replaces it.
       const senderId = c.principal.userId;
       const senderRole = c.principal.roleName;
+      const senderChildId = senderRole === 'child' ? c.principal.childId : null;
       const edges = senderId ? await edgesFor(pool, senderId) : [];
 
       const ctx = await childCtxFor(pool, c.childId);
@@ -1188,11 +1243,9 @@ export function registerRoutes(api, pool) {
       const result = captureMessage(
         {
           childId: c.childId,
-          // captureMessage() never reads senderId on a denial path (it checks
-          // `can()` first and returns before touching the value) — see
-          // pipeline.ts. The '' fallback only ever reaches that dead branch.
-          senderId: senderId ?? '',
+          senderId,
           senderRole,
+          senderChildId,
           storageKey,
           durationMs,
           captionKey,
@@ -1205,8 +1258,9 @@ export function registerRoutes(api, pool) {
         edges, ctx, DateTime.utc(),
       );
       if (!result.ok) {
-        return { status: result.reason === 'not_authorized' ? 403 : 400,
-                 body: { error: result.reason } };
+        const status = result.reason === 'not_authorized' ||
+          result.reason === 'child_sender_mismatch' ? 403 : 400;
+        return { status, body: { error: result.reason } };
       }
 
       const persisted = await persistCapturedMessage(pool, result);

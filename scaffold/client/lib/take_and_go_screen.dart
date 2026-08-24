@@ -43,6 +43,22 @@
 // which does the identical thing for a guardian) and make a REAL network
 // call that fails honestly (no such child / not yet of age / unreachable
 // host) rather than faking success.
+//
+// Dead-wire fix (2026-08-24, following v0.49.15's own sweep): `_takeAndGo()`
+// read `result['bundleJson']` -- copied from deletion_screen.dart's
+// `_export()` without noticing that method calls a DIFFERENT route (GET
+// .../export, which renames pool.ts's `serialized` to `bundleJson`) than
+// this screen's own POST .../handover (which spreads TakeAndGoResult
+// verbatim -- the real key is `serialized`). `result['bundleJson']` was
+// simply absent from every real response this screen ever received, so the
+// `as String` cast would have thrown on every genuine success. Fixed to
+// read the field this response actually carries. Separately,
+// `guardianshipsClosed`/`artifactsTransferred`/`journalEntriesTransferred`/
+// `handedOverAt` -- real, computed by takeAndGo() and present in the same
+// response `_takeAndGo()` already had in hand -- were parsed into nothing:
+// the exact "what closes" facts this screen's own pre-confirm copy
+// (whatTakeAndGoCloses above) already promises abstractly, now stated as
+// the real numbers this handover actually produced.
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -100,6 +116,20 @@ const List<String> takeAndGoForbiddenCopy = <String>[
   return (ok: found.isEmpty, found: found);
 }
 
+/// Minimal, no-intl formatting of a UTC ISO-8601 instant into
+/// 'YYYY-MM-DD HH:mm UTC' — matches this app's own no-intl-dependency
+/// convention (see calendar_day_logic.dart's own hand-rolled 'HH:mm'
+/// formatter) rather than pulling in the `intl` package for one field.
+/// Returns [iso] itself, unparsed, on anything malformed — an honest
+/// fallback, never a crash on a real server response.
+String formatHandedOverAt(String iso) {
+  final DateTime? dt = DateTime.tryParse(iso);
+  if (dt == null) return iso;
+  final DateTime utc = dt.toUtc();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${utc.year}-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)} UTC';
+}
+
 // ============================================================== the demo ===
 class TakeAndGoScreen extends StatefulWidget {
   const TakeAndGoScreen({
@@ -133,6 +163,20 @@ class _TakeAndGoScreenState extends State<TakeAndGoScreen> {
   String? _savedPath;
   String? _serverHash;
   bool _hashVerified = false;
+  // Real, fetched from POST .../handover's own response body (packages/db/
+  // src/pool.ts's takeAndGo(), TakeAndGoResult) and, before this pass,
+  // parsed into nothing at all -- `result` held these the whole time but
+  // only bundleHash/exportRecordId (and a WRONG key for the bundle text
+  // itself, see below) were ever read out of it. These are exactly the
+  // "what closes" facts this screen's own pre-confirm copy already promises
+  // abstractly (whatTakeAndGoCloses above) made concrete with the real
+  // numbers this handover actually produced -- same "state the real count,
+  // not just the abstract promise" fix v0.49.15 already made for
+  // deletion_screen.dart's cancelledDeliveryIntents.
+  int? _guardianshipsClosed;
+  int? _artifactsTransferred;
+  int? _journalEntriesTransferred;
+  String? _handedOverAt;
 
   Future<void> _takeAndGo(BuildContext context) async {
     if (_working || _done) return;
@@ -145,10 +189,19 @@ class _TakeAndGoScreenState extends State<TakeAndGoScreen> {
       if (widget.httpClient == null) api.close();
 
       // Same "verify from the file alone" contract fetchRawExport's own
-      // caller (deletion_screen.dart's `_export()`) already relies on:
-      // `bundleJson` is the EXACT string the server hashed, never a
-      // client-side re-serialization of the parsed `bundle`.
-      final String bundleJson = result['bundleJson'] as String;
+      // caller (deletion_screen.dart's `_export()`) already relies on --
+      // but NOT the same wire shape. deletion_screen.dart's `_export()`
+      // calls GET .../export, whose route renames pool.ts's own
+      // `serialized` key to `bundleJson` for the client (see routes.mjs's
+      // own comment on that route). POST .../handover, which THIS screen
+      // calls, spreads TakeAndGoResult verbatim instead -- `serialized`,
+      // never renamed. Before this pass this read `result['bundleJson']`
+      // (copied from deletion_screen.dart's own pattern without noticing
+      // the two routes' shapes differ), which is simply absent from this
+      // response -- a `null` that would have thrown `as String` on every
+      // real call this screen ever made. Fixed to read the field this
+      // response actually carries.
+      final String bundleJson = result['serialized'] as String;
       final String serverHash = result['bundleHash'] as String;
       final String exportRecordId = result['exportRecordId'] as String;
       final bool verified = sha256Hex(bundleJson) == serverHash;
@@ -169,6 +222,11 @@ class _TakeAndGoScreenState extends State<TakeAndGoScreen> {
         _savedPath = file.path;
         _serverHash = serverHash;
         _hashVerified = verified;
+        // Real closure facts -- see these fields' own doc comments above.
+        _guardianshipsClosed = (result['guardianshipsClosed'] as num?)?.toInt();
+        _artifactsTransferred = (result['artifactsTransferred'] as num?)?.toInt();
+        _journalEntriesTransferred = (result['journalEntriesTransferred'] as num?)?.toInt();
+        _handedOverAt = result['handedOverAt'] as String?;
       });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text(takeAndGoConfirmationCopy), duration: Duration(seconds: 6)));
@@ -261,6 +319,39 @@ class _TakeAndGoScreenState extends State<TakeAndGoScreen> {
                   const SizedBox(width: 8),
                   const Expanded(child: Text(takeAndGoConfirmationCopy)),
                 ]),
+                // Real closure facts from the server's own response --
+                // see _guardianshipsClosed/_artifactsTransferred/
+                // _journalEntriesTransferred/_handedOverAt's own doc
+                // comments above. This app's own "null/0 renders nothing"
+                // convention (deletion_screen.dart's cancelledDeliveryIntents,
+                // child_home.dart's badgeCount) applies to each count
+                // independently, so a genuinely-zero count states nothing
+                // rather than a confusing "0 items transferred."
+                if ((_guardianshipsClosed ?? 0) > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _guardianshipsClosed == 1
+                      ? "1 guardian's access closed with it."
+                      : "$_guardianshipsClosed guardians' access closed with it.",
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                ],
+                if ((_artifactsTransferred ?? 0) > 0 || (_journalEntriesTransferred ?? 0) > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_artifactsTransferred ?? 0} preserved '
+                    '${_artifactsTransferred == 1 ? 'item' : 'items'} and '
+                    '${_journalEntriesTransferred ?? 0} journal '
+                    '${_journalEntriesTransferred == 1 ? 'entry' : 'entries'} came with you.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                ],
+                if (_handedOverAt != null) ...[
+                  const SizedBox(height: 4),
+                  Text('Closed ${formatHandedOverAt(_handedOverAt!)}.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                ],
                 if (_savedPath != null) ...[
                   const SizedBox(height: 12),
                   const Text('Saved to:'),

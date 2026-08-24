@@ -69,6 +69,20 @@ void main() {
     });
   });
 
+  group('formatHandedOverAt — pure logic', () {
+    test('formats a real UTC ISO-8601 handedOverAt instant', () {
+      expect(formatHandedOverAt('2028-04-03T12:34:00.000Z'), '2028-04-03 12:34 UTC');
+    });
+
+    test('pads single-digit month/day/hour/minute', () {
+      expect(formatHandedOverAt('2028-01-02T03:04:00.000Z'), '2028-01-02 03:04 UTC');
+    });
+
+    test('falls back to the raw string on malformed input, never a crash', () {
+      expect(formatHandedOverAt('not-a-real-timestamp'), 'not-a-real-timestamp');
+    });
+  });
+
   group('TakeAndGoScreen widget', () {
     testWidgets('states what she takes and what closes BEFORE any destructive control '
         'is enabled', (t) async {
@@ -135,16 +149,22 @@ void main() {
           sawTakeAndGo = true;
           expect(req.method, 'POST');
           expect(req.headers['authorization'], 'Bearer tok');
+          // The REAL POST .../handover shape (server/routes.mjs spreads
+          // packages/db/src/pool.ts's TakeAndGoResult verbatim) -- `serialized`,
+          // NOT `bundleJson` (that renamed key only exists on the DIFFERENT
+          // GET .../export route deletion_screen.dart's own _export() calls).
+          // A mock that sent `bundleJson` here would be testing the wrong
+          // contract — see this file's own header on the bug that shipped.
           return http.Response(jsonEncode(<String, dynamic>{
             'ok': true,
             'childId': 'child-a',
-            'handedOverAt': '2028-04-03T12:00:00.000Z',
+            'handedOverAt': '2028-04-03T12:34:00.000Z',
             'guardianshipsClosed': 2,
             'artifactsTransferred': 5,
             'journalEntriesTransferred': 3,
             'exportRecordId': 'rec-1',
             'bundle': <String, dynamic>{},
-            'bundleJson': bundleJson,
+            'serialized': bundleJson,
             'bundleHash': realHash,
           }), 200);
         }
@@ -173,10 +193,45 @@ void main() {
         reason: 'the real hash is shown, not hidden or fabricated');
       expect(find.textContaining('verified against the server'), findsOneWidget);
 
+      // Dead-wire fix: guardianshipsClosed/artifactsTransferred/
+      // journalEntriesTransferred/handedOverAt were fetched in this exact
+      // response and previously parsed into nothing. Now genuinely rendered.
+      expect(find.text("2 guardians' access closed with it."), findsOneWidget);
+      expect(find.text('5 preserved items and 3 journal entries came with you.'),
+        findsOneWidget);
+      expect(find.text('Closed 2028-04-03 12:34 UTC.'), findsOneWidget);
+
       // The confirm control retires once this irreversible action succeeds —
       // never re-tappable.
       final FilledButton confirm = t.widget(find.widgetWithText(FilledButton, 'Done'));
       expect(confirm.onPressed, isNull);
+    });
+
+    testWidgets('a singular guardianship count reads "1 guardian\'s", not "1 guardians\'", '
+        'and zero transferred counts show no transfer line at all', (t) async {
+      const String bundleJson = '{}';
+      final String realHash = sha256Hex(bundleJson);
+      final http.Client mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode(<String, String>{'token': 'tok'}), 200);
+        }
+        return http.Response(jsonEncode(<String, dynamic>{
+          'ok': true, 'childId': 'child-a', 'handedOverAt': '2028-01-01T00:00:00.000Z',
+          'guardianshipsClosed': 1, 'artifactsTransferred': 0, 'journalEntriesTransferred': 0,
+          'exportRecordId': 'rec-3', 'bundle': <String, dynamic>{}, 'serialized': bundleJson,
+          'bundleHash': realHash,
+        }), 200);
+      });
+
+      await pump(t, TakeAndGoScreen(
+        baseUrl: 'http://api.test', childId: 'child-a',
+        httpClient: mock, documentsDirectory: () async => tempDir));
+      await ackAndConfirm(t);
+      await pumpUntil(t, find.text('Done'));
+
+      expect(find.text("1 guardian's access closed with it."), findsOneWidget);
+      expect(find.textContaining('came with you'), findsNothing,
+        reason: 'both transferred counts are zero — no confusing "0 ... came with you" line');
     });
 
     testWidgets('shows a real progress state while the request is in flight, and '
@@ -189,7 +244,7 @@ void main() {
         return http.Response(jsonEncode(<String, dynamic>{
           'ok': true, 'childId': 'child-a', 'handedOverAt': '2028-01-01T00:00:00.000Z',
           'guardianshipsClosed': 1, 'artifactsTransferred': 0, 'journalEntriesTransferred': 0,
-          'exportRecordId': 'rec-2', 'bundle': <String, dynamic>{}, 'bundleJson': '{}',
+          'exportRecordId': 'rec-2', 'bundle': <String, dynamic>{}, 'serialized': '{}',
           'bundleHash': sha256Hex('{}'),
         }), 200);
       });

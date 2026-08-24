@@ -95,6 +95,49 @@ void main() {
       c.erase('a1', 'dad');
       expect(c.undo('ivy', 10), isNull);
     });
+
+    // REPRO for the audit's Tier-2 "redo() erased-stroke bug": a
+    // self-erased stroke was still eligible for undo()'s undoneAt
+    // bookkeeping (the skip condition only excluded strokes erased by
+    // SOMEONE ELSE), which let an erased stroke acquire an undoneAt
+    // timestamp and pollute the shared per-actor undo/redo ordering that
+    // redo() relies on to pick "the most recently undone stroke".
+    test('undo does not touch a stroke the actor erased themselves — erase is not undo', () {
+      final AnnotationCanvas c = AnnotationCanvas();
+      c.add(id: 'a1', actorId: 'ivy', actorKind: ActorKind.child,
+        points: const [StrokePoint(0, 0)], color: '#f00', widthPx: 4);
+      c.erase('a1', 'ivy'); // self-erase
+      // Nothing left for undo to touch: draw then self-erase is not an
+      // undoable "live" stroke — erase is a separate, one-way action.
+      expect(c.undo('ivy', 10), isNull);
+      expect(c.visible(), isEmpty);
+    });
+
+    test('a self-erased stroke never poisons the redo order of a later draw', () {
+      final AnnotationCanvas c = AnnotationCanvas();
+      c.add(id: 'a1', actorId: 'ivy', actorKind: ActorKind.child,
+        points: const [StrokePoint(0, 0)], color: '#f00', widthPx: 4);
+      c.erase('a1', 'ivy'); // self-erase a1
+      c.add(id: 'a2', actorId: 'ivy', actorKind: ActorKind.child,
+        points: const [StrokePoint(1, 1)], color: '#f00', widthPx: 4);
+
+      // Undo the actor's one live stroke, a2.
+      final Stroke? undone = c.undo('ivy', 100);
+      expect(undone?.id, 'a2');
+      expect(c.visible(), isEmpty);
+
+      // A second undo() call must find nothing left (a1 is erased, not
+      // undoable) rather than silently grabbing a1 and stamping it with a
+      // later undoneAt than a2's.
+      expect(c.undo('ivy', 200), isNull);
+
+      // redo() must restore a2 on the very first call — not silently
+      // "restore" the already-erased a1 (which would stay invisible and
+      // require a second redo() press to actually bring a2 back).
+      final Stroke? redone = c.redo('ivy');
+      expect(redone?.id, 'a2');
+      expect(c.visible().map((s) => s.id), contains('a2'));
+    });
   });
 
   group('redo — restores the most recently undone stroke for that actor', () {
@@ -107,6 +150,35 @@ void main() {
       final Stroke? redone = c.redo('ivy');
       expect(redone?.id, 'a1');
       expect(c.visible().map((s) => s.id), contains('a1'));
+    });
+
+    // REPRO for the second half of the "redo() erased-stroke bug": the
+    // reverse ordering from the "self-erased stroke" tests above. Undo a
+    // stroke first (legitimately) — it now carries a real undoneAt — THEN
+    // erase that same stroke. erase() used to leave the stale undoneAt in
+    // place, so redo()'s "most recently undone" comparison could still
+    // select the now-erased stroke as its restoration target: a silent
+    // no-op that shadowed whichever stroke was actually meant to come back.
+    // Fixed by erase() itself clearing undoneAt when it tombstones a
+    // stroke — a stroke may never simultaneously carry a live undoneAt and
+    // a set erasedBy.
+    test('undo-then-erase on the same stroke does not poison a later redo', () {
+      final AnnotationCanvas c = AnnotationCanvas();
+      c.add(id: 'a1', actorId: 'ivy', actorKind: ActorKind.child,
+        points: const [StrokePoint(0, 0)], color: '#f00', widthPx: 4);
+      expect(c.undo('ivy', 10)?.id, 'a1'); // legitimate undo — a1 gets undoneAt=10
+      c.erase('a1', 'ivy'); // then erased — must clear that undoneAt
+
+      c.add(id: 'a2', actorId: 'ivy', actorKind: ActorKind.child,
+        points: const [StrokePoint(1, 1)], color: '#f00', widthPx: 4);
+      expect(c.undo('ivy', 20)?.id, 'a2');
+
+      // redo() must restore a2 — not silently no-op on the erased a1.
+      final Stroke? redone = c.redo('ivy');
+      expect(redone?.id, 'a2');
+      final List<String> visibleIds = c.visible().map((s) => s.id).toList();
+      expect(visibleIds, contains('a2'));
+      expect(visibleIds, isNot(contains('a1')), reason: 'erased strokes never come back');
     });
   });
 

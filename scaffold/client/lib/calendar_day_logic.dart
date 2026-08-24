@@ -110,6 +110,23 @@ List<StripSegment> scheduleStrip(List<DayPartLite> parts, String nowLocal) {
   ];
 }
 
+/// The one currently-active segment out of `scheduleStrip`'s result, honestly.
+///
+/// A `parts` list that does not cover the full 24h leaves a genuine gap: a
+/// stretch of the day no `DayPartLite` claims. When `nowLocal` falls inside
+/// that gap, EVERY segment's `current` is false (see `scheduleStrip` above) —
+/// there is no right answer to "what's happening now" to give. Returning
+/// `null` here, instead of guessing (e.g. `segments.first`, the
+/// chronologically-earliest part regardless of whether it's anywhere near
+/// "now"), is what lets callers render an honest "nothing scheduled" state
+/// rather than silently mislabelling the gap as whatever part sorts first.
+StripSegment? currentSegment(List<StripSegment> segments) {
+  for (final StripSegment s in segments) {
+    if (s.current) return s;
+  }
+  return null;
+}
+
 /// Minutes since local midnight — the shape scheduleStrip's "HH:mm" strings
 /// already assume, made explicit so the Day Ribbon can lay them out on a
 /// 0..1 fraction of a day.
