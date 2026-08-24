@@ -35,6 +35,11 @@ private const val HANDOFF_PREFS = "app.olive.kiosk"
 private const val HANDOFF_KEY   = "expecting_call_handoff"
 // Mirrors com.olivebranch.olive_client.KioskBridge.ACTION_CALL_LOCK_TASK_EXITED.
 private const val ACTION_CALL_LOCK_TASK_EXITED = "app.olive.kiosk.CALL_LOCK_TASK_EXITED"
+// Mirrors com.olivebranch.olive_client.KioskBridge.ACTION_CALL_ACTIVITY_DESTROYED
+// — see that constant's own doc comment for the real bug this closes (a
+// one-shot handoff flag that PiP entry alone could already consume, before
+// the call genuinely ended).
+private const val ACTION_CALL_ACTIVITY_DESTROYED = "app.olive.kiosk.CALL_ACTIVITY_DESTROYED"
 
 class WrapperJitsiMeetActivity : JitsiMeetActivity() {
     private val eventStreamHandler = JitsiMeetEventStreamHandler.instance
@@ -207,6 +212,15 @@ class WrapperJitsiMeetActivity : JitsiMeetActivity() {
     }
 
     override fun onDestroy() {
+        // 2026-08-24 — the one real "this Activity is gone for good" signal,
+        // distinct from every onResume() a PiP entry ALSO produces on the
+        // host. Sent unconditionally, not just when hasSelfPinned — a
+        // guardian device (never pinned, beginCallHandoff never called)
+        // simply has no receiver listening for HANDOFF_KEY at all on its
+        // side, so this is harmless there; see KioskBridge.kt's own
+        // ACTION_CALL_ACTIVITY_DESTROYED doc comment for the fuller account.
+        LocalBroadcastManager.getInstance(this)
+            .sendBroadcast(Intent(ACTION_CALL_ACTIVITY_DESTROYED))
         LocalBroadcastManager.getInstance(this).unregisterReceiver(this.broadcastReceiver)
         super.onDestroy()
     }

@@ -1,8 +1,10 @@
-// OLIVE BRANCH — call_screen.dart tests. MASTERFILE §5.20, §5.21.1, §8.1.
+// OLIVE BRANCH — call_screen.dart tests. MASTERFILE §5.20, §5.21.1, §8.1,
+// §16.2 #6.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 import 'package:olive_client/call_screen.dart';
+import 'package:olive_client/doodle_desk.dart';
 
 void main() {
   group('isGuardianWho — the one real role signal this screen has', () {
@@ -26,9 +28,13 @@ void main() {
       expect(callFeatureFlagsFor(true)[FeatureFlags.chatEnabled], true);
     });
 
-    test('PiP is guardian-only, in code — not just in MASTERFILE prose', () {
-      expect(callFeatureFlagsFor(false)[FeatureFlags.pipEnabled], false);
-      expect(callFeatureFlagsFor(false)[FeatureFlags.pipWhileScreenSharingEnabled], false);
+    test('PiP is real for BOTH roles now, in code — 2026-08-24, an explicit '
+        'informed decision superseding the earlier guardian-only default, '
+        'not a regression back to one flat constant', () {
+      expect(callFeatureFlagsFor(false)[FeatureFlags.pipEnabled], true,
+        reason: 'the child now gets real OS PiP — see callFeatureFlagsFor\'s '
+          'own doc comment for the native re-pin fix this required');
+      expect(callFeatureFlagsFor(false)[FeatureFlags.pipWhileScreenSharingEnabled], true);
       expect(callFeatureFlagsFor(true)[FeatureFlags.pipEnabled], true);
       expect(callFeatureFlagsFor(true)[FeatureFlags.pipWhileScreenSharingEnabled], true);
     });
@@ -78,6 +84,71 @@ void main() {
       // reaching a genuine readyToClose, so onCallEnd firing here would be
       // a real bug (ending record-keeping for a call that never started).
       expect(called, false);
+    });
+  });
+
+  group('shouldShowInCallActivities — the real 2026-08-24 PiP-resume trigger, '
+      'pulled to a pure top-level function specifically so it is testable '
+      'without a platform-channel-dependent join (see its own doc comment)', () {
+    test('fires only on resumed + inCall + not-yet-shown + child', () {
+      expect(shouldShowInCallActivities(
+        state: AppLifecycleState.resumed,
+        isInCall: true, alreadyShown: false, isGuardian: false,
+      ), true);
+    });
+
+    test('never fires for the guardian — her own device resuming behind '
+        'her own PiP must never redirect her', () {
+      expect(shouldShowInCallActivities(
+        state: AppLifecycleState.resumed,
+        isInCall: true, alreadyShown: false, isGuardian: true,
+      ), false);
+    });
+
+    test('never fires a second time for the same call — she PiPs, comes '
+        'back, PiPs again must not stack a second copy of the screen', () {
+      expect(shouldShowInCallActivities(
+        state: AppLifecycleState.resumed,
+        isInCall: true, alreadyShown: true, isGuardian: false,
+      ), false);
+    });
+
+    test('never fires before the call is actually joined — a plain app '
+        'launch/resume with no call in progress must not navigate anywhere', () {
+      expect(shouldShowInCallActivities(
+        state: AppLifecycleState.resumed,
+        isInCall: false, alreadyShown: false, isGuardian: false,
+      ), false);
+    });
+
+    test('never fires on a lifecycle state other than resumed — pausing, '
+        'inactive, detached, and hidden are all real states this must '
+        'ignore, not just the ones this file happens to name explicitly', () {
+      for (final state in AppLifecycleState.values) {
+        if (state == AppLifecycleState.resumed) continue;
+        expect(shouldShowInCallActivities(
+          state: state, isInCall: true, alreadyShown: false, isGuardian: false,
+        ), false, reason: '$state must not trigger navigation');
+      }
+    });
+  });
+
+  group('InCallActivitiesScreen — what the child actually sees while PiP\'d, '
+      'public specifically so this content is verified directly rather than '
+      'only ever reachable on a live device (see its own doc comment)', () {
+    testWidgets('shows the honest disclosure copy — no "shared" or '
+        '"together" claim for a canvas that is not actually synced yet', (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: InCallActivitiesScreen()));
+      await tester.pump();
+      expect(find.textContaining("isn't shared with his screen yet"), findsOneWidget);
+      expect(find.text('While you talk'), findsOneWidget);
+    });
+
+    testWidgets('wraps the real, already-tested DoodleDesk engine — not a '
+        'new or stubbed canvas widget', (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: InCallActivitiesScreen()));
+      await tester.pump();
+      expect(find.byType(DoodleDesk), findsOneWidget);
     });
   });
 }

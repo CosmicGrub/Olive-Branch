@@ -47,6 +47,17 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // 2026-08-24 — the real, non-PiP-confusable "the call is truly over"
+    // signal. See KioskBridge.ACTION_CALL_ACTIVITY_DESTROYED's own doc
+    // comment for the real bug this closes: onResume() alone fires for a
+    // PiP entry too, so a read-and-clear handoff flag could already be
+    // gone by the time the call genuinely ends, leaving nothing to re-pin.
+    private val callActivityDestroyedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            KioskBridge.clearCallHandoff(this@MainActivity)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -60,6 +71,9 @@ class MainActivity : FlutterActivity() {
         lastKnownMode = KioskBridge.currentMode(this)
         LocalBroadcastManager.getInstance(this).registerReceiver(
             callDefeatReceiver, IntentFilter(KioskBridge.ACTION_CALL_LOCK_TASK_EXITED),
+        )
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            callActivityDestroyedReceiver, IntentFilter(KioskBridge.ACTION_CALL_ACTIVITY_DESTROYED),
         )
 
         // Phone -> watch sync (§21.5). See WearSyncBridge.kt's own header for
@@ -86,16 +100,20 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        // §16.2 #6 — consumeExpectingCallHandoff() only ever returns true if
-        // M_BEGIN_CALL_HANDOFF actually ran, which the Dart side only does
-        // when this device was pinned/locked to begin with (kiosk_channel.dart's
-        // beginCallHandoff callers all guard on mode() != 'none' first) — so
-        // this never fires on an unlocked/guardian device. The call Activity
-        // held the pin (or was in the middle of taking it) while we were
-        // stopped; either way the handoff is over the moment we're back here,
-        // clean call end or mid-call defeat alike (the defeat itself is
-        // reported separately, above, via callDefeatReceiver).
-        if (KioskBridge.consumeExpectingCallHandoff(this)) {
+        // §16.2 #6, revised 2026-08-24 for real child PiP — see KioskBridge
+        // .stillExpectingCallHandoff()'s own doc comment for exactly why
+        // this peeks rather than consumes now. stillExpectingCallHandoff()
+        // only ever returns true if M_BEGIN_CALL_HANDOFF actually ran,
+        // which the Dart side only does when this device was pinned/locked
+        // to begin with (kiosk_channel.dart's beginCallHandoff callers all
+        // guard on mode() != 'none' first) — so this never fires on an
+        // unlocked/guardian device. Re-pins on EVERY resume while a call is
+        // outstanding: a clean end, a mid-call defeat, AND a PiP entry all
+        // resume this Activity, and only the LAST of those (whichever one
+        // actually happens) should leave the child free to leave the app —
+        // callActivityDestroyedReceiver above is what actually clears the
+        // flag, not this method.
+        if (KioskBridge.stillExpectingCallHandoff(this)) {
             startLockTask()
         }
         lastKnownMode = KioskBridge.currentMode(this)
