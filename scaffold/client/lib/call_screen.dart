@@ -37,7 +37,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
-import 'doodle_desk.dart';
 import 'kiosk_channel.dart';
 
 /// LOCAL DEV/TEST ONLY — tools/local-call-room-server.mjs. Not a production
@@ -92,26 +91,32 @@ bool isGuardianWho(String who) => who != 'ivy';
 /// a kiosk-locked child device is a genuine tension with what that lock
 /// exists to guarantee — a PiP window is not full-screen, so whatever sits
 /// behind it is reachable — and this was accepted deliberately, not
-/// invented unilaterally, specifically so [InCallActivitiesScreen] below
-/// (drawing together while still on the call) has real OS PiP to build on.
-/// The mitigation is native, not a Dart-side assumption: see kiosk_channel
-/// .dart's own [KioskChannel.start] doc comment and KioskBridge.kt's
+/// invented unilaterally: she can now shrink a call to a small window the
+/// same way her father can, and reach the rest of her own app underneath
+/// it exactly the way any other Android PiP works. The mitigation is
+/// native, not a Dart-side assumption: see kiosk_channel.dart's own
+/// [KioskChannel.start] doc comment and KioskBridge.kt's
 /// ACTION_CALL_ACTIVITY_DESTROYED for the real re-pin-on-every-resume fix
-/// this decision required — a PiP entry resumes MainActivity exactly the
-/// same way a genuine call end does, and the original one-shot handoff
-/// flag would have left the child's device unpinned after a real call end
-/// if PiP had been entered even once during that same call.
+/// this decision required — MainActivity re-pins on every resume while a
+/// call handoff is outstanding, and the original one-shot handoff flag
+/// would have left the child's device unpinned after a real call end if
+/// PiP had been entered even once during that same call.
 ///
-/// No custom "shrink to a mini window" UI exists anywhere in this file for
-/// either role, deliberately: once `_jitsiMeet.join()` hands off, Jitsi's
-/// own native Activity — not this screen's build() — owns the entire
-/// display; setting `pip.enabled: true` here is what makes Jitsi's own
-/// native in-call toolbar offer the real PiP entry point, the same
-/// broadcast chain WrapperJitsiMeetActivity.kt's own `enterPiP()` already
-/// wires end to end. A Flutter-side button in this screen's own build()
-/// method would never be reachable during a real call at all — the way
-/// back INTO the Flutter app (for either role) is a real PiP entry, not
-/// anything this file draws.
+/// Deliberately NOT paired with an auto-navigate-to-an-activity feature: a
+/// same-2026-08-24 attempt to have a PiP entry automatically open a
+/// drawing screen behind it was built, live-tested, and found genuinely
+/// unreachable for the path a child would actually use (pressing Home) —
+/// Android's own WindowManagerService re-asserts the launcher as the PiP
+/// host once Home has been pressed (`RootWindowContainer
+/// .startHomeOnTaskDisplayArea`, confirmed via dumpsys, not assumed), and
+/// no ordinary app-level call reliably overrides that. Reverted rather than
+/// shipped half-working; she can still reach Doodle Desk on her own, from
+/// her own menu, the same way she always could — PiP just doesn't try to
+/// take her there automatically. No custom "shrink to a mini window" UI
+/// exists anywhere in this file for either role: once `_jitsiMeet.join()`
+/// hands off, Jitsi's own native Activity — not this screen's build() —
+/// owns the entire display; setting `pip.enabled: true` here is what makes
+/// Jitsi's own native in-call toolbar/Home-press offer real PiP entry.
 Map<String, Object?> callFeatureFlagsFor(bool isGuardian) => {
   FeatureFlags.welcomePageEnabled: false,
   FeatureFlags.preJoinPageEnabled: false,
@@ -137,22 +142,6 @@ Map<String, Object?> callFeatureFlagsFor(bool isGuardian) => {
   FeatureFlags.pipEnabled: true,
   FeatureFlags.pipWhileScreenSharingEnabled: true,
 };
-
-/// Pure decision logic for [_CallScreenState.didChangeAppLifecycleState] —
-/// see that method's own doc comment for why this lives at the top level.
-/// `state == resumed` alone is not enough (fires on the very first launch
-/// too, before any call exists); neither is `isInCall` alone (the screen
-/// stays mounted, still "resumed", the whole time she's actually on-screen
-/// watching the call, which must not repeatedly push a second copy);
-/// `alreadyShown` guards the same call PiP'ing more than once; `!isGuardian`
-/// is the one role check — see [callFeatureFlagsFor]'s doc comment for why
-/// the guardian's own device resuming must never redirect her.
-bool shouldShowInCallActivities({
-  required AppLifecycleState state,
-  required bool isInCall,
-  required bool alreadyShown,
-  required bool isGuardian,
-}) => state == AppLifecycleState.resumed && isInCall && !alreadyShown && !isGuardian;
 
 class CallScreen extends StatefulWidget {
   const CallScreen({
@@ -208,76 +197,17 @@ class CallScreen extends StatefulWidget {
 
 enum _CallStatus { fetchingRoom, joining, inCall, error }
 
-class _CallScreenState extends State<CallScreen> with WidgetsBindingObserver {
+class _CallScreenState extends State<CallScreen> {
   final _jitsiMeet = JitsiMeet();
   late final KioskChannel _kiosk;
   _CallStatus _status = _CallStatus.fetchingRoom;
   String? _errorMessage;
-  // Set true the moment this screen's own PiP-entry-triggered navigation
-  // has already fired once for this call, so a second resume (e.g. she
-  // PiPs, comes back, PiPs again) doesn't stack a second copy of
-  // InCallActivitiesScreen on the Navigator.
-  bool _shownInCallActivities = false;
 
   @override
   void initState() {
     super.initState();
     _kiosk = widget.kiosk ?? KioskChannel();
-    WidgetsBinding.instance.addObserver(this);
     _startCall();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  /// The real trigger for [InCallActivitiesScreen] below — see
-  /// [callFeatureFlagsFor]'s own doc comment for the fuller account. Jitsi's
-  /// own call Activity runs OUTSIDE this Flutter engine entirely (it's a
-  /// separate, non-Flutter Activity — WrapperJitsiMeetActivity.kt extends
-  /// the SDK's own JitsiMeetActivity, not io.flutter.embedding.android
-  /// .FlutterActivity), so `AppLifecycleState.resumed` genuinely reflects
-  /// "this Flutter engine's own Activity is visible again" — real, not
-  /// assumed: confirmed the two Activities share no Flutter engine by
-  /// reading WrapperJitsiMeetActivity.kt directly before relying on this.
-  /// A real PiP entry (voluntary or Home-button-triggered) is exactly the
-  /// moment that becomes true again while `_status` is still `inCall` —
-  /// unlike a genuine end, which routes through readyToClose instead and
-  /// never reaches here with `_status == inCall` still true.
-  ///
-  /// The actual decision is [shouldShowInCallActivities] below — a pure,
-  /// top-level function pulled out the same way [isGuardianWho] and
-  /// [callFeatureFlagsFor] already are, so it's directly unit-testable
-  /// without needing to force a real [CallScreen] through a platform-
-  /// channel-dependent join just to reach `_status == inCall` in a test
-  /// sandbox, which it never can (see call_screen_test.dart's own note on
-  /// why the error state, not inCall, is the reachable proof-of-navigation
-  /// signal there).
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!shouldShowInCallActivities(
-      state: state,
-      isInCall: _status == _CallStatus.inCall,
-      alreadyShown: _shownInCallActivities,
-      isGuardian: _isGuardian,
-    )) {
-      return;
-    }
-    _shownInCallActivities = true;
-    // Fire-and-forget: a real re-pin already happens natively on this same
-    // resume (KioskBridge.stillExpectingCallHandoff(), MainActivity's own
-    // onResume() — see that file's own comment), synchronously with the
-    // Activity lifecycle rather than a separate, slower Dart round trip
-    // through this platform channel. Nothing here needs to wait on it.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => const InCallActivitiesScreen(),
-        ));
-      }
-    });
   }
 
   /// 'ivy' is the only child identity any real call site uses (child_home
@@ -454,52 +384,6 @@ class _ErrorState extends StatelessWidget {
         onPressed: () => Navigator.of(context).maybePop(),
         child: const Text('Back'),
       ),
-    ]),
-  );
-}
-
-/// Real, 2026-08-24 — what she gets while a real call is PiP'd (see
-/// [callFeatureFlagsFor]'s own doc comment for the full account of why
-/// PiP is real for the child now, and [_CallScreenState
-/// .didChangeAppLifecycleState] for exactly when this screen is reached).
-///
-/// Deliberately honest, not oversold: this wraps the same real, tested
-/// [DoodleDesk] engine `child_more.dart`'s own "Doodle desk" tile already
-/// reaches — NOT a new, shared-in-real-time canvas. `annotation_canvas
-/// .dart`'s own header says plainly why a second actor doesn't exist here
-/// yet: "there is just one actor in this preview build because there's no
-/// realtime transport yet to carry a second." Building that transport is
-/// real, separately-scoped work (a genuine WebSocket-shaped feature, not a
-/// PiP-adjacent wiring task) — not invented or faked here. What IS real
-/// today: she can draw while the small PiP window keeps the call itself —
-/// his voice, his face — right there the whole time, instead of the call
-/// being the only thing she can do.
-///
-/// Public (not `_`-prefixed), unlike this file's other single-use display
-/// widgets ([_Status], [_ErrorState]) — those two are always reachable
-/// through [CallScreen] itself in a test sandbox (fetch failure lands on
-/// the real error state), but this one is only ever pushed from inside
-/// `_status == inCall`, which a widget test can never reach without a real
-/// platform-channel join. Public visibility is what lets
-/// call_screen_test.dart pump and verify this screen's own content
-/// directly instead of leaving it unverified until a live device.
-class InCallActivitiesScreen extends StatelessWidget {
-  const InCallActivitiesScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('While you talk')),
-    body: const Column(children: [
-      Padding(
-        padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-        child: Text(
-          "He's still right there — look for the small video window. "
-          "This drawing isn't shared with his screen yet, but you can "
-          'still show him what you made.',
-          textAlign: TextAlign.center,
-        ),
-      ),
-      Expanded(child: DoodleDesk()),
     ]),
   );
 }
