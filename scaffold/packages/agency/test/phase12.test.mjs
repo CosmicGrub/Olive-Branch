@@ -88,6 +88,15 @@ const NYC='America/New_York', CHI='America/Chicago';
     auditBundle({...bundle,expenses:[1]}).ok, 'false');
   check('H card','audit catches an address leaking in',
     auditBundle({...bundle,address:'1 Main St'}).leaks.join(','), 'address');
+  // Real, live gap this closes: CARD_FORBIDDEN used to maintain its own
+  // narrower duplicate of the location-key list (latitude/longitude/address
+  // only) instead of sharing LOCATION_KEYS with auditArrival — a field
+  // named lat/lng/coords/geohash/accuracy/altitude passed this exact guard
+  // silently, on the surface built for the LEAST trusted audience.
+  for (const k of ['lat','lng','coords','geohash','accuracy','altitude']) {
+    check('H card',`audit catches a "${k}" leaking in — not just latitude/longitude/address`,
+      auditBundle({...bundle,[k]:'x'}).ok, 'false');
+  }
 }
 
 // I · MEDICATION — the exchange-day double dose

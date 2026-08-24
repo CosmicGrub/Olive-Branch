@@ -514,6 +514,71 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
     `${stillGated.status}/${stillGated.body?.error}`, '401/no_session');
 }
 
+// ===========================================================================
+// I · CHILD PAYLOAD SWEEP — MASTERFILE §20.5, wired in for real 2026-08-24.
+// A fresh audit found `auditChildSurface()`/`GLOBAL_CHILD_FORBIDDEN` had zero
+// real callers anywhere despite this file's own header describing it as the
+// "no future module writes its own — it imports this" guard. Wiring it into
+// `handle()` itself — the one real choke point every response to a child
+// principal passes through — real-500'd a genuine, already-shipped route
+// the same pass (take-and-go's own full self-export bundle, which legitimately
+// includes her real message log by product design) before `skipChildPayloadSweep`
+// was added to fix it. Both halves proven here, not just reasoned about.
+// ===========================================================================
+{
+  const calls = [];
+  const db = { edgesFor: async () => [edge()], withSession: async (p, fn) => {
+    calls.push(p.roleName); return fn(async () => []);
+  } };
+  const api = new Api(SECRET, db, () => NOW);
+
+  api.register({ method: 'GET', path: '/v1/children/:childId/leaky-test',
+    action: 'message', handler: async () => ({ body: { streak: 3 } }) });
+  api.register({ method: 'GET', path: '/v1/children/:childId/clean-test',
+    action: 'message', handler: async () => ({ body: { title: 'A dragon' } }) });
+  api.register({ method: 'GET', path: '/v1/children/:childId/full-export-test',
+    action: 'message', skipChildPayloadSweep: true,
+    handler: async () => ({ body: { messageLog: ['real entry'] } }) });
+
+  const childTok2 = issueSession(SECRET, { userId: null, roleName: 'child',
+    childId: CHILD_A, escalated: false }, NOW);
+  const guardianTok = issueSession(SECRET, { userId: DAD, roleName: 'guardian',
+    childId: null, escalated: false }, NOW);
+  const hitAs = (tok, path) => api.handle('GET', path,
+    { authorization: `Bearer ${tok}` }, '');
+
+  const leaked = await hitAs(childTok2, `/v1/children/${CHILD_A}/leaky-test`);
+  check('I child sweep', 'a real forbidden field in a response to a CHILD is caught, not shipped',
+    leaked.status, 500);
+  check('I child sweep', 'the real leaked field path is named in the error, for a developer to find',
+    leaked.body?.fields?.[0], 'streak');
+
+  const clean = await hitAs(childTok2, `/v1/children/${CHILD_A}/clean-test`);
+  check('I child sweep', 'a clean response to a child passes through untouched',
+    clean.status, 200);
+  check('I child sweep', 'and its real body is preserved, not stripped or replaced',
+    clean.body?.title, 'A dragon');
+
+  const guardianSameShape = await hitAs(guardianTok,
+    `/v1/children/${CHILD_A}/leaky-test`);
+  check('I child sweep', 'the SAME forbidden-field response to a GUARDIAN is not swept — '
+    + 'this guard is specifically about what reaches the CHILD, not a generic linter',
+    guardianSameShape.status, 200);
+
+  // Real, live bug fixed the same pass this shipped: a full self-export
+  // bundle (take-and-go) legitimately contains fields the sweep would
+  // otherwise flag, by deliberate product design (rungs.ts's own
+  // NOT_HERS_TO_DELETE — "she can have a copy of everything"), not a leak.
+  const fullExport = await hitAs(childTok2,
+    `/v1/children/${CHILD_A}/full-export-test`);
+  check('I child sweep', 'skipChildPayloadSweep: true lets a real, deliberate full-export '
+    + 'route through untouched — the one narrow, individually-reviewed exception',
+    fullExport.status, 200);
+  check('I child sweep', 'and its real body — including a field the sweep would otherwise ban — '
+    + 'is genuinely preserved, not silently emptied',
+    fullExport.body?.messageLog?.[0], 'real entry');
+}
+
 // ---------------------------------------------------------------------------
 let g = '';
 for (const r of rows) {

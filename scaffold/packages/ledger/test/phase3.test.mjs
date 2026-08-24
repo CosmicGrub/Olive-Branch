@@ -209,6 +209,18 @@ const chainOf=(n)=>{let c=[];for(let i=0;i<n;i++)
     onThisDay(old,'m',today,NYC,{enabled:true,mutedEras:[]}).length, 1);
   check('P archive','a muted era stays muted',
     onThisDay(old,'m',today,NYC,{enabled:true,mutedEras:['pre-separation']}).length, 0);
+  // A real, live gap this section closes: `art()`'s own default eraTag is
+  // null (line 164 above) — a common, real state for legacy/untagged data,
+  // not a contrived edge case. The original `a.eraTag &&` short-circuit let
+  // untagged material bypass EVERY era mute a family configured. Fail
+  // closed instead: once any era is muted, untagged material can't be
+  // proven to be from an unmuted era, so it's excluded too.
+  const untagged=[{...art(2,'photo',2020),capturedAt:'2020-07-27T15:00:00Z'}];
+  check('P archive','untagged material surfaces when nothing is muted',
+    onThisDay(untagged,'m',today,NYC,{enabled:true,mutedEras:[]}).length, 1);
+  check('P9 archive','untagged material is suppressed once ANY era is muted — '
+    +'it can no longer bypass every mute via a null eraTag',
+    onThisDay(untagged,'m',today,NYC,{enabled:true,mutedEras:['pre-separation']}).length, 0);
 }
 
 // Q · GAMES — turn clocks in reachable hours

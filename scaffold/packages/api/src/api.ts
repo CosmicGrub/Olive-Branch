@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readSession, type VerifiedPrincipal } from '../../auth/src/auth.ts';
 import { can, type Edge, type Action } from '../../family-graph/src/authorize.ts';
+import { sweep } from '../../globalaudit/src/globalaudit.ts';
 
 /**
  * MASTERFILE §7 — the API layer.
@@ -129,6 +130,25 @@ export interface Route {
    * exactly like every other `skipOuterSession` route already does.
    */
   noSessionRequired?: boolean;
+  /**
+   * Escape hatch #4, and the narrowest one: opts a route OUT of the global
+   * child-payload sweep (globalaudit.ts's own header; `handle()`'s own
+   * comment below) for a response to a child principal. A REAL,
+   * found-not-guessed need:
+   * `POST /v1/children/:childId/handover` (take-and-go, §9.8.4) hands a
+   * child her own COMPLETE data bundle — including her real parent-to-
+   * parent message log, `rungs.ts`'s own `NOT_HERS_TO_DELETE` rule ("she can
+   * have a copy of everything") — and the sweep's `messagelog` entry
+   * (correctly banned from a curated CHILD-FACING UI SURFACE, which this is
+   * not) 500'd that real, honest response the moment the sweep first shipped.
+   * A full self-export is a fundamentally different category from a game
+   * screen or a home-screen tile: deliberately, completely unfiltered by
+   * product design, not a payload that forgot to be curated. Sweep every
+   * OTHER child response by default; a route setting this is a deliberate,
+   * auditable, individually-reviewed exception, not a way to quietly widen
+   * what a child sees — grep this flag before adding it to a second route.
+   */
+  skipChildPayloadSweep?: boolean;
   handler: (c: Ctx, q: Query) => Promise<{ status?: number; body?: any }>;
 }
 
@@ -269,7 +289,35 @@ export class Api {
       const out = m.route.skipOuterSession
         ? await m.route.handler(ctx, unusedQuery)
         : await this.db.withSession(principal, (q) => m.route.handler(ctx, q));
-      return { status: out.status ?? 200, body: out.body ?? null };
+      const body = out.body ?? null;
+      // The global sweep (globalaudit.ts's own header — not MASTERFILE
+      // §20.5, a wrong citation corrected the same pass this shipped),
+      // wired in here for real, not just held by a demo. A 2026-08-24
+      // audit found `auditChildSurface()`/
+      // `GLOBAL_CHILD_FORBIDDEN` existed as exactly the "no future module
+      // writes its own — it imports this" guard this file's own header
+      // describes, with zero real callers anywhere: every product package
+      // still relied solely on its own local forbidden-field list, the
+      // precise failure mode (a field one author knew was dangerous
+      // protects only the surfaces they personally wrote) the sweep exists
+      // to close. This is the one real choke point every response to a
+      // child principal passes through, so it's the one real place this
+      // can be enforced structurally rather than by a route author
+      // remembering to call it. Fails closed — the same posture every
+      // other child-safety check in this file already takes — rather than
+      // logging a leak and shipping it anyway. `skipChildPayloadSweep`
+      // (its own doc comment above) is the one, narrow, individually-
+      // reviewed exception, found real and necessary the same pass this
+      // shipped: a full self-export bundle is deliberately unfiltered by
+      // product design, not a curated UI payload the sweep is meant for.
+      if (principal.roleName === 'child' && !m.route.skipChildPayloadSweep) {
+        const leaks = sweep(body);
+        if (leaks.length > 0) {
+          return { status: 500, body: { error: 'child_payload_leak',
+            fields: leaks.map(l => l.path) } };
+        }
+      }
+      return { status: out.status ?? 200, body };
     } catch (e: any) {
       if (e?.status) return { status: e.status, body: { error: e.code ?? 'error' } };
       return { status: 500, body: { error: 'internal' } };
