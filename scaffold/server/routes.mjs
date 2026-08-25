@@ -10,14 +10,16 @@
 // time.ts's exports are all pure (no DB access). Day-part classification
 // (school/bedtime/etc.) is NOT wired yet -- a real follow-up, not silently
 // glossed over.
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
 import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential, availabilityFor,
          setAvailabilityWindows, deactivateAccount,
          rawExportBundleFor, edgesFor, childCtxFor,
-         persistCapturedMessage, registerDeviceToken,
+         persistCapturedMessage, mediaArtifactFor, registerDeviceToken,
          unregisterDeviceToken,
          certifiedExportBundleFor,
          createGuardianInvite, getGuardianInvite,
@@ -33,6 +35,27 @@ import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
 import { CHANNELS } from '../packages/devices/src/devices.mjs';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
+import { FilesystemStorage } from '../packages/storage/src/storage.mjs';
+
+/**
+ * MASTERFILE §20.2b's own gap, closed here: "`StoragePort` has no
+ * production implementation anywhere in this codebase (MemoryStorage is
+ * test-only)." `FilesystemStorage` (packages/storage/src/storage.ts) was
+ * real and real-tested (packages/storage/test/storage.test.mjs) before this
+ * pass — nothing wired it to an HTTP path or gave it a persistent root to
+ * write under. `MEDIA_STORAGE_ROOT` is that root: a real, self-hosted-
+ * deployment volume, not a cloud account (see storage.ts's own header on
+ * why a cloud provider is explicitly out of scope). Defaults to
+ * `scaffold/data/media` — resolved from THIS file's own location, not
+ * `process.cwd()`, so it lands in the same place regardless of the
+ * directory `node server/index.mjs` happens to be launched from. Gitignored
+ * (see repo-root .gitignore's own entry) — real family media has no
+ * business in source control, even accidentally.
+ */
+const DEFAULT_MEDIA_STORAGE_ROOT =
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'media');
+const defaultMediaStorage =
+  new FilesystemStorage(process.env.MEDIA_STORAGE_ROOT ?? DEFAULT_MEDIA_STORAGE_ROOT);
 
 /**
  * Same fallback and env var name `tools/local-call-room-server.mjs` already
@@ -148,8 +171,13 @@ const EXPORT_DENIAL_MESSAGES = {
  * @param {import('pg').Pool} pool raw pool, needed for activeCustodyOrderFor()
  *   — it runs its own withSystemSession (see pool.ts), independent of the
  *   caller-scoped session api.handle() already opened for this request.
+ * @param {import('../packages/storage/src/storage.ts').StoragePort} [storage]
+ *   Injectable so a test can point real disk I/O at a throwaway temp
+ *   directory (mirrors storage.test.mjs's own `fs.mkdtemp` pattern) instead
+ *   of this module's real, persistent `MEDIA_STORAGE_ROOT`. Every real call
+ *   site (server/index.mjs) leaves this at its default.
  */
-export function registerRoutes(api, pool) {
+export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   api.register({
     method: 'GET', path: '/v1/me', action: null,
     handler: async (c, q) => {
@@ -1287,6 +1315,112 @@ export function registerRoutes(api, pool) {
       const persisted = await persistCapturedMessage(pool, result);
       return { status: 201, body: {
         id: persisted.intentId, artifactId: persisted.artifactId, state: 'pending' } };
+    },
+  });
+
+  // ===========================================================================
+  // REAL OBJECT STORAGE — MASTERFILE §20.2b: "packages/storage/src/storage.ts's
+  // StoragePort has no production implementation anywhere in this codebase
+  // ... receipt_screen.dart's real camera capture never uploads the recorded
+  // bytes; media_artifact.storage_key is a locally-meaningful reference only."
+  // These two routes are the real upload/download half of that gap.
+  // FilesystemStorage itself (this module's own `storage` param, defaulting
+  // to `defaultMediaStorage` above) was already real and already tested —
+  // this is its first real caller.
+  // ===========================================================================
+
+  // Uploads the REAL bytes client/lib/receipt_screen.dart's camera capture
+  // records, returning the REAL storage key FilesystemStorage assigned —
+  // meant to be fed straight into the POST .../messages route just above as
+  // its `storageKey`, a genuinely separate step from persisting the
+  // media_artifact/delivery_intent rows (captureMessage()'s own pipeline
+  // still decides whether a capture is ALLOWED; this route only ever
+  // decides whether bytes can be WRITTEN, the same separation the pipeline
+  // already draws between "persist" and "validate").
+  //
+  // `action: 'message'` — the identical gate POST .../messages already runs
+  // (api.ts's A1 declared-action + A3 childId-from-path), not a second,
+  // parallel check invented for this one route. `skipOuterSession: true`
+  // for the same reason routes.mjs's homework-capture route already gives:
+  // this handler does real, possibly-slow disk I/O and touches Postgres
+  // not at all, so holding the outer `db.withSession()` connection open
+  // for its whole duration would be pure waste (see api.ts's own doc
+  // comment on that flag for the real, live-reproduced pool-deadlock this
+  // avoids under concurrency).
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/media', action: 'message',
+    skipOuterSession: true,
+    handler: async (c) => {
+      const b64 = c.body?.bytes;
+      if (typeof b64 !== 'string' || b64.length === 0) {
+        return { status: 400, body: { error: 'bytes_required' } };
+      }
+      let bytes;
+      try {
+        bytes = Buffer.from(b64, 'base64');
+      } catch {
+        return { status: 400, body: { error: 'bad_bytes' } };
+      }
+      // An empty capture is refused HERE, not left to surface later as a
+      // confusing captureMessage() `empty_recording` denial against a
+      // storageKey that turned out to point at a zero-byte file.
+      if (bytes.length === 0) return { status: 400, body: { error: 'bad_bytes' } };
+
+      // children/<childId>/messages/<uuid> — mirrors the real nested-key
+      // shape storage.test.mjs's own "Q nested keys" group already proves
+      // FilesystemStorage handles (list()-by-prefix, no cross-child leakage).
+      // childId comes from the verified path (A3), never the body — the
+      // same identity discipline every other write in this file follows.
+      const key = `children/${c.childId}/messages/${randomUUID()}`;
+      const put = await storage.put(key, bytes);
+      return { status: 201, body: { storageKey: put.key, etag: put.etag } };
+    },
+  });
+
+  // Reads back the REAL bytes a prior POST .../media wrote, once they are
+  // attached to a real, persisted media_artifact row (POST .../messages'
+  // own job, above) — the real counterpart to GET .../inbox for the
+  // ACTUAL payload an inbox entry only ever named a reference to.
+  //
+  // `action: 'message'` — the SAME gate GET .../inbox and POST .../messages
+  // already run, per this task's own instruction not to build a separate,
+  // weaker check. `mediaArtifactFor()` (pool.ts) is the real authorization
+  // BOUNDARY underneath that gate: media_artifact carries no row-level
+  // security of its own (see persistCapturedMessage()'s header), so the
+  // `WHERE id = $1 AND child_id = $2` that function runs is what actually
+  // stops a caller who is authorized for THIS child from reading a
+  // DIFFERENT child's artifact merely by guessing its uuid — the exact
+  // "child-authorization boundary" concern this pass was asked to hold.
+  // `skipOuterSession: true` for the same reason the upload route above
+  // does: this handler runs its OWN system-scoped query
+  // (mediaArtifactFor()'s own withSystemSession) plus real disk I/O, never
+  // the outer caller-scoped `q`.
+  //
+  // Returns the real bytes base64-encoded in the JSON body — the same
+  // convention this whole API already uses in the other direction
+  // (captureHomework's `image` field) — rather than a raw byte stream or a
+  // real signed-URL-serving `/media/:key` endpoint. `StoragePort.signedUrl()`
+  // exists and is real-tested (storage.test.mjs), but nothing in this
+  // codebase serves the URL it produces — building that (an unauthenticated,
+  // signature-verified byte-serving path OUTSIDE api.ts's session-based JSON
+  // contract entirely) is real, separate follow-up work, not silently
+  // folded in here. This route is deliberately the SESSION-authenticated
+  // read path the task asked for, not the differently-authorized signed-URL
+  // one.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/messages/:artifactId/media',
+    action: 'message', skipOuterSession: true,
+    handler: async (c) => {
+      const artifact = await mediaArtifactFor(pool, c.childId, c.params.artifactId);
+      if (!artifact) return { status: 404, body: { error: 'artifact_not_found' } };
+      const bytes = await storage.get(artifact.storageKey);
+      // A row that outlived its blob — the reaper's own "row survives so the
+      // blob stays discoverable" tombstone case (storage.ts's reap()), or a
+      // capture that persisted its row before this pass existed and never
+      // had real bytes behind it at all. Either way: an honest 404, not a
+      // 500 or an empty-but-200 body pretending there was something there.
+      if (!bytes) return { status: 404, body: { error: 'media_not_found' } };
+      return { body: { bytes: bytes.toString('base64'), kind: artifact.kind } };
     },
   });
 }

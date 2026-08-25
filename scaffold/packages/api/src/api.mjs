@@ -2,6 +2,11 @@ import { createServer } from "node:http";
 import { readSession, issueSession } from "../../auth/src/auth.ts";
 import { can } from "../../family-graph/src/authorize.ts";
 import { sweep } from "../../globalaudit/src/globalaudit.ts";
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 40 * 1024 * 1024;
+const MAX_REQUEST_BODY_BYTES = (() => {
+  const raw = Number(process.env.MAX_REQUEST_BODY_BYTES);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_REQUEST_BODY_BYTES;
+})();
 const unusedQuery = async () => {
   throw new Error(
     "this route is registered with skipOuterSession: true and must not call q \u2014 it is responsible for its own, correctly-scoped database session(s)."
@@ -163,7 +168,7 @@ class Api {
       let raw = "";
       req.on("data", (c) => {
         raw += c;
-        if (raw.length > 2e6) req.destroy();
+        if (raw.length > MAX_REQUEST_BODY_BYTES) req.destroy();
       });
       req.on("end", async () => {
         const out = await this.handle(
@@ -194,5 +199,6 @@ class Api {
 const httpError = (status, code) => Object.assign(new Error(code), { status, code });
 export {
   Api,
+  MAX_REQUEST_BODY_BYTES,
   httpError
 };

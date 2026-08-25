@@ -96,6 +96,39 @@ jobs:
       - run: npm ci || npm install
         working-directory: scaffold
 
+      # db/migrations/0022_backup_reader_role.sql references BOTH app_owner
+      # (`ALTER DEFAULT PRIVILEGES FOR ROLE app_owner ...`) and backup_reader
+      # by name, and Postgres validates a DDL statement's role names exist
+      # regardless of who runs it -- this M1-M4 check connects as the bare
+      # `postgres` superuser (PSQL_CMD above), which has never needed either
+      # role to exist for any of the first 21 migrations, none of which
+      # reference a role by name. 0022 is the first one that does. The real
+      # Docker dev/prod flow creates both roles via
+      # tools/docker-dev/init-db.sql (mounted as docker-entrypoint-initdb.d,
+      # run once against a truly empty volume); tools/verify.sh's own later
+      # steps create app_owner again for ITS separate scratch database. This
+      # workflow's bare Postgres SERVICE container (above) has no equivalent
+      # bootstrap for either, and this M1-M4 check runs before verify.sh ever
+      # gets a chance to provision anything -- confirmed live in CI, in two
+      # stages (first "role \"backup_reader\" does not exist", then, once
+      # that was fixed, "role \"app_owner\" does not exist" one statement
+      # later in the same migration). Both created here, mirroring
+      # init-db.sql's own real role definitions, before any migration runs.
+      - run: |
+          psql postgresql://postgres:postgres@localhost:5432/olive -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_owner') THEN
+              CREATE ROLE app_owner NOSUPERUSER NOBYPASSRLS LOGIN PASSWORD 'app_owner';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_reader') THEN
+              CREATE ROLE backup_reader NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS
+                LOGIN PASSWORD 'backup_reader';
+            END IF;
+          END
+          $$;
+          SQL
+
       # M1-M4. Runs twice: the second run must be a clean no-op, which is the
       # idempotency property under test rather than an assumption.
       - run: node tools/migrate.mjs

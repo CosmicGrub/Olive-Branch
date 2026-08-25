@@ -229,6 +229,33 @@ $PGBIN/dropdb   -h localhost -p "$PORT" -U postgres --if-exists "$DB" \
   || { echo "  ABORT: cannot drop $DB"; exit 2; }
 $PGBIN/createdb -h localhost -p "$PORT" -U postgres "$DB" \
   || { echo "  ABORT: cannot create $DB"; exit 2; }
+# db/migrations/0022_backup_reader_role.sql GRANTs onto this role but
+# deliberately cannot CREATE it (app_owner, the identity migrate.mjs
+# connects as once role provisioning below hands off, has no CREATEROLE
+# privilege — see that migration's own header for the full reasoning).
+# docker-compose.dev.yml's real Docker flow creates it via
+# tools/docker-dev/init-db.sql, mounted as docker-entrypoint-initdb.d —
+# this script has no equivalent bootstrap step, so migration 0022 failed
+# outright the first time this branch's own migrations ran here
+# ("role \"backup_reader\" does not exist"), and would have failed
+# identically in CI (.github/workflows/verify.yml runs this exact script
+# against its own Postgres service container, which never touches
+# init-db.sql either). Created here, as postgres superuser, before
+# migrations run — the same ordering docker-dev/init-db.sql establishes.
+$PSQL -d "$DB" -q -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_reader') THEN
+    CREATE ROLE backup_reader LOGIN NOSUPERUSER NOBYPASSRLS;
+  END IF;
+END
+\$\$;
+ALTER ROLE backup_reader NOSUPERUSER BYPASSRLS LOGIN PASSWORD 'verify_run_backup_reader_pw';
+SQL
+if [ $? -ne 0 ]; then
+  echo "  ABORT: could not provision backup_reader before migrations"
+  exit 2
+fi
 # Applied through the runner, so ordering, checksums, and idempotency are
 # exercised on every verification rather than only when someone remembers.
 PSQL_CMD="$PSQL -d $DB" node tools/migrate.mjs >/tmp/mig.out 2>&1 \
@@ -332,7 +359,9 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
-            "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" ; do
+            "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
+            "scheduler: rematerialize sweep + lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
+            "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

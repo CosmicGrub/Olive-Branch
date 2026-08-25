@@ -12,7 +12,11 @@ import {
   handover
 } from "../../archive/src/archive.ts";
 function createPool(connectionString) {
-  return new pg.Pool({ connectionString });
+  const pool = new pg.Pool({ connectionString });
+  pool.on("error", (err) => {
+    console.error("pg pool: idle client error (pool recovers on next query)", err);
+  });
+  return pool;
 }
 async function withSession(pool, principal, fn) {
   if (principal.roleName === "child" && !principal.childId) {
@@ -787,6 +791,16 @@ async function persistCapturedMessage(pool, capture, opts = {}) {
     return { artifactId, intentId: intentRows[0].id, batchId };
   });
 }
+async function mediaArtifactFor(pool, childId, artifactId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT storage_key, kind FROM media_artifact WHERE id = $1 AND child_id = $2`,
+      [artifactId, childId]
+    );
+    if (!rows.length) return null;
+    return { storageKey: rows[0].storage_key, kind: rows[0].kind };
+  });
+}
 async function registerDeviceToken(pool, principal, platform, token, channel) {
   if (principal.roleName === "system") {
     throw new Error("registerDeviceToken: system role cannot own a device");
@@ -1056,6 +1070,7 @@ export {
   edgesFor,
   getGuardianInvite,
   guardiansOfChild,
+  mediaArtifactFor,
   persistCapturedMessage,
   pinCredentialFor,
   rawExportBundleFor,

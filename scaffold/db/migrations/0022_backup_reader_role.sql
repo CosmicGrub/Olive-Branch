@@ -1,0 +1,60 @@
+-- ============================================================================
+--  OLIVE BRANCH — grants for the backup-reader role.
+--
+--  tools/backup-db.sh needs a connection that can actually read every row of
+--  every table. app_owner cannot be that connection: it is deliberately
+--  NOSUPERUSER NOBYPASSRLS (tools/docker-dev/init-db.sql's own header — "the
+--  server only proves anything if the connecting role can't silently bypass
+--  row-level security the way a superuser always can"), and 11 tables in
+--  this schema carry FORCE ROW LEVEL SECURITY (the authoritative list lives
+--  in health_check's own `rls_unforced` check, 0013_court_tier_flag.sql):
+--  child_journal_entry, pin_credential, expense, message_log, custody_order,
+--  webauthn_credential, auth_challenge, guardian_availability_window,
+--  app_user, device_token, export_record. FORCE means even the table OWNER
+--  is subject to RLS unless the owner also holds BYPASSRLS.
+--
+--  Proven, not assumed: running `pg_dump -U app_owner` against a fully
+--  migrated dev database fails outright —
+--    ERROR: query would be affected by row-level security policy for table "app_user"
+--    HINT: To disable the policy for the table's owner, use ALTER TABLE NO FORCE ROW LEVEL SECURITY
+--  — before this migration existed. pg_dump's COPY-based data dump refuses
+--  to silently emit a filtered subset of an RLS table; it errors instead,
+--  which is the right behavior (a backup missing rows with no indication is
+--  worse than a backup that fails loudly) but means app_owner structurally
+--  cannot ever be a working backup identity, no matter how backup-db.sh is
+--  invoked.
+--
+--  The role itself (backup_reader — NOSUPERUSER, LOGIN, BYPASSRLS) is
+--  created in tools/docker-dev/init-db.sql, alongside
+--  app_owner, for the same structural reason app_owner is created there and
+--  not in a migration: CREATE ROLE needs CREATEROLE or superuser, and
+--  app_owner (the identity migrate.mjs / this file runs as) has neither, on
+--  purpose. What THIS migration does is the part app_owner — as the owner of
+--  every table — CAN do and SHOULD be the one to do: grant read access on
+--  its own objects. Kept as a normal migration (not a one-time manual grant)
+--  so it applies identically in every environment migrate.mjs ever runs
+--  against, dev or prod.
+--
+--  BYPASSRLS is the narrowest fix available. The alternative — granting
+--  app_owner itself BYPASSRLS, or dropping FORCE from these 11 tables —
+--  would remove the RLS defense-in-depth from every ordinary server query,
+--  not just backups (the exact protection init-db.sql's header says
+--  app_owner exists to prove). backup_reader is otherwise unprivileged: it
+--  cannot INSERT, UPDATE, or DELETE anything (no such grant below), only
+--  SELECT — a stolen backup_reader credential can read every family's data
+--  (same blast radius as a stolen backup FILE would already have) but
+--  cannot forge a session, alter a message log, or grant itself anything
+--  else.
+-- ============================================================================
+GRANT USAGE ON SCHEMA public TO backup_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO backup_reader;
+
+-- Applies to every table any FUTURE migration creates too, with no manual
+-- follow-up step — the exact "no manual GRANT pass required" property
+-- tools/docker-dev/README.md already documents for app_owner's own table
+-- ownership, extended to cover this role's read grant as well. Scoped to
+-- objects app_owner itself creates, since app_owner owns every table this
+-- schema has (migrate.mjs always connects as app_owner — see
+-- docker-compose.dev.yml's `migrate` service).
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public
+  GRANT SELECT ON TABLES TO backup_reader;

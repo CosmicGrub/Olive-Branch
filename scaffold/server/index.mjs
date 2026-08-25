@@ -17,7 +17,7 @@
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { issueSession, verifyAssertion } from '../packages/auth/src/auth.mjs';
-import { Api } from '../packages/api/src/api.mjs';
+import { Api, MAX_REQUEST_BODY_BYTES } from '../packages/api/src/api.mjs';
 import { createPool, dbPort, withSystemSession, createChallenge, consumeChallenge,
          webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
 import { registerRoutes, RP_ID, RP_ORIGIN } from './routes.mjs';
@@ -192,7 +192,11 @@ async function webauthnLoginVerify(rawBody) {
 
 const server = createServer((req, res) => {
   let raw = '';
-  req.on('data', (c) => { raw += c; if (raw.length > 2_000_000) req.destroy(); });
+  // Same cap Api.listen() enforces, imported rather than a second,
+  // independently-configured copy of the same number — see
+  // MAX_REQUEST_BODY_BYTES's own doc comment (api.ts) for why this is no
+  // longer a flat 2,000,000 as of the storage-wiring pass.
+  req.on('data', (c) => { raw += c; if (raw.length > MAX_REQUEST_BODY_BYTES) req.destroy(); });
   req.on('end', async () => {
     const send = (out) => {
       res.writeHead(out.status, {
@@ -210,6 +214,25 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify(out.body));
     };
     try {
+      // Docker healthcheck target (docker-compose.dev.yml / .prod.yml's
+      // `server` service) — see this pass's CHANGELOG entry for why a real
+      // HTTP check matters here: `depends_on: condition: service_healthy`
+      // is only honest if "healthy" means the server can actually reach
+      // Postgres, not just that the process bound a port. A bare `SELECT 1`
+      // is the cheapest real proof of that — no session, no RLS context, no
+      // app-data read, just "is this connection pool actually usable right
+      // now." Unauthenticated deliberately, same posture as any other
+      // liveness probe: it reveals only up/down, nothing about any family's
+      // data.
+      if (req.method === 'GET' && req.url === '/healthz') {
+        try {
+          await pool.query('SELECT 1');
+          return send({ status: 200, body: { status: 'ok' } });
+        } catch (e) {
+          console.error('healthz: database unreachable', e);
+          return send({ status: 503, body: { status: 'db_unreachable' } });
+        }
+      }
       if (req.method === 'POST' && req.url === '/v1/auth/dev-login') {
         return send(await devLogin(raw));
       }

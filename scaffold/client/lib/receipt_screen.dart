@@ -18,29 +18,40 @@
 //
 // "Send one back" is real now, not the snackbar-only stub this file used to
 // carry (see CHANGELOG for the date). It really records a video via
-// image_picker's pickVideo(source: camera) and really POSTs it through
-// api_client.dart's sendMessage() to server/routes.mjs's POST
-// /v1/children/:childId/messages, which really runs it through
-// packages/messaging/src/pipeline.ts's captureMessage() and really persists
-// a row on success (packages/db/src/pool.ts's persistCapturedMessage()).
-// Two things stay honestly short of "fully working," on purpose:
+// image_picker's pickVideo(source: camera), really UPLOADS the recorded
+// bytes through api_client.dart's uploadMedia() to server/routes.mjs's real
+// POST /v1/children/:childId/media (packages/storage/src/storage.ts's
+// FilesystemStorage, wired to an HTTP path for the first time this pass),
+// and really POSTs the REAL storage key that route returns through
+// sendMessage() to POST /v1/children/:childId/messages, which really runs it
+// through packages/messaging/src/pipeline.ts's captureMessage() and really
+// persists a row on success (packages/db/src/pool.ts's
+// persistCapturedMessage()). One thing stays honestly short of "fully
+// working," on purpose:
 //
-//  1. NO OBJECT STORAGE. This repo has no real blob backend (see
-//     packages/storage/src/storage.ts's StoragePort — an interface with no
-//     production implementation anywhere in this codebase). The recorded
-//     file is captured for real on-device but its bytes are never uploaded;
-//     `storageKey` sent to the server is a locally-meaningful reference
-//     only, matching media_artifact.storage_key's shape but pointing at
-//     nothing retrievable server-side. A real upload path is a real,
-//     separate piece of work.
-//  2. NO LIVE CALL SITE YET. `baseUrl`/`childId`/`sessionToken` must all be
-//     supplied for the button to attempt a real send — inbox_screen.dart,
-//     this screen's only current caller, is still main.dart's offline demo
-//     build (see both files' own headers) and does not supply them. Tapping
-//     "Send one back" from that demo path reports itself honestly ("This
-//     screen isn't connected to a server yet.") rather than doing nothing or
-//     faking success. A live caller (mirroring child_home_live.dart's own
-//     pattern) is real follow-up work, not silently glossed over.
+//  NO LIVE CALL SITE YET. `baseUrl`/`childId`/`sessionToken` must all be
+//  supplied for the button to attempt a real send — inbox_screen.dart,
+//  this screen's only current caller, is still main.dart's offline demo
+//  build (see both files' own headers) and does not supply them. Tapping
+//  "Send one back" from that demo path reports itself honestly ("This
+//  screen isn't connected to a server yet.") rather than doing nothing or
+//  faking success. A live caller (mirroring child_home_live.dart's own
+//  pattern) is real follow-up work, not silently glossed over.
+//
+// FORMERLY a second honest gap here, CLOSED this pass (§20.2b): "NO OBJECT
+// STORAGE ... the recorded file is captured for real on-device but its
+// bytes are never uploaded; `storageKey` sent to the server is a locally-
+// meaningful reference only, pointing at nothing retrievable server-side."
+// One real, narrow edge case remains, flagged rather than hidden: `_attemptSend`
+// below caches the REAL storage key on the outbox item the moment the upload
+// itself succeeds, so a network failure on the SEND half of a first attempt
+// retries only the send, not the upload — but a genuinely fresh recording
+// (a new "Send one back" tap after an earlier one already succeeded at
+// uploading but never got recorded server-side, e.g. the app was killed
+// mid-retry — see this file's own in-memory-only `_outbox` caveat below) has
+// no way to reclaim that earlier blob. It sits on disk as a real, harmless
+// orphan — never lost data, never a corrupted send, just a few MB with no
+// media_artifact row pointing at it — until a real orphan-sweep is built.
 //
 // FORMERLY a third, honest gap here: "a child session cannot actually send
 // one yet, even fully wired" — the async-message tables (db/migrations/
@@ -83,6 +94,7 @@
 //     string, audited before paint the same way busy_fork.dart/
 //     degradation_banner.dart already audit their own child-facing copy.
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -220,15 +232,20 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
     final int elapsedMs = DateTime.now().difference(started).inMilliseconds;
     final int durationMs = elapsedMs > 0 ? elapsedMs : 1;
 
-    // See this file's header, point 1: nothing here uploads `file`'s
-    // bytes anywhere. This is a local reference only.
-    final String storageKey = 'device/${started.millisecondsSinceEpoch}-${file.name}';
+    // The real recorded bytes — read once, here, and carried on the outbox
+    // item itself (base64, the same wire encoding [OliveApi.uploadMedia]
+    // sends) rather than left as a dangling file reference: a real
+    // connectivity gap can outlive `file`'s own underlying temp path just as
+    // easily as it can outlive this widget's frame, and offline_outbox.dart's
+    // whole point is that a queued item must be able to retry ON ITS OWN
+    // later, not merely remember where a byte source USED to be.
+    final List<int> bytes = await file.readAsBytes();
 
     final outbox.OutboxItem item = outbox.OutboxItem(
       id: 'receipt-${_idCounter++}-${started.microsecondsSinceEpoch}',
       kind: outbox.OutboxKind.message,
       createdAt: started,
-      payload: <String, Object>{'storageKey': storageKey, 'durationMs': durationMs},
+      payload: <String, Object>{'videoBytesB64': base64Encode(bytes), 'durationMs': durationMs},
     );
     await _attemptSend(item);
   }
@@ -241,14 +258,40 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
   /// [_SendState.retrying] only for a request that never got an answer at
   /// all — see this file's own header for why those three must never be
   /// conflated.
+  ///
+  /// Two real network calls now, not one: [OliveApi.uploadMedia] writes the
+  /// real bytes and returns the REAL storage key server/routes.mjs's
+  /// FilesystemStorage assigned, then [OliveApi.sendMessage] persists the
+  /// capture against that key — see this file's own header for exactly what
+  /// each half owns. Both live inside the SAME try/catch as before, so an
+  /// [ApiException] from EITHER call is still the identical honest "the
+  /// server answered and refused it" outcome, and a connectivity failure on
+  /// EITHER call is still the identical honest "no answer at all, queue and
+  /// retry" outcome — this method does not grow a fourth outcome just
+  /// because there are now two round trips.
   Future<void> _attemptSend(outbox.OutboxItem item) async {
     final OliveApi api =
         OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
     final Map<String, Object> payload = item.payload! as Map<String, Object>;
     try {
+      // A cached key (see below) means an earlier attempt already uploaded
+      // these exact bytes — reused rather than uploaded a second time, so a
+      // retry that only failed on the SEND half never orphans a second blob
+      // for the same recording. See this file's header for the one edge
+      // case this does NOT cover (a genuinely fresh recording after an
+      // earlier upload succeeded but its send never got recorded).
+      String? storageKey = payload['storageKey'] as String?;
+      if (storageKey == null) {
+        storageKey = await api.uploadMedia(
+            widget.childId!, base64Decode(payload['videoBytesB64']! as String));
+        item = outbox.OutboxItem(
+          id: item.id, kind: item.kind, createdAt: item.createdAt,
+          payload: <String, Object>{...payload, 'storageKey': storageKey},
+          attempts: item.attempts, lastError: item.lastError,
+        );
+      }
       await api.sendMessage(widget.childId!,
-          storageKey: payload['storageKey']! as String,
-          durationMs: payload['durationMs']! as int);
+          storageKey: storageKey, durationMs: payload['durationMs']! as int);
       if (!mounted) return;
       setState(() {
         // A no-op filter if [item] was never queued (the common, first-try,
@@ -273,10 +316,18 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
       // No answer at all — the real connectivity gap offline_outbox.dart
       // exists for. Queued (or re-recorded as still-queued, if this was
       // already a retry), never lost, and never shown the raw exception.
-      List<outbox.OutboxItem> next = _outbox;
-      if (!next.any((outbox.OutboxItem i) => i.id == item.id)) {
-        next = outbox.enqueue(next, item).outbox;
-      }
+      //
+      // NOT simply "enqueue if absent, then recordFailure by id": on a
+      // SECOND-OR-LATER attempt, `item` here may carry a storageKey the
+      // FIRST attempt's own upload half already cached (see above) that the
+      // stale copy still sitting in `_outbox` does not — recordFailure()
+      // matches by id and bumps attempts on whatever payload is ALREADY in
+      // the list, so replacing that stale entry with this attempt's own
+      // `item` first is what keeps the cached key from being silently
+      // dropped back to "not yet uploaded" on its next retry.
+      List<outbox.OutboxItem> next = _outbox.any((outbox.OutboxItem i) => i.id == item.id)
+          ? <outbox.OutboxItem>[for (final outbox.OutboxItem i in _outbox) i.id == item.id ? item : i]
+          : outbox.enqueue(_outbox, item).outbox;
       next = outbox.recordFailure(next, item.id, e.toString());
       setState(() {
         _outbox = next;

@@ -97,6 +97,17 @@ let pendingCall = null;
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  // Docker healthcheck target (docker-compose.dev.yml's `callroom` service).
+  // This process never touches Postgres (see this file's own header — it
+  // only calls into packages/session-runtime directly), so unlike
+  // server/index.mjs's /healthz there is no downstream dependency worth
+  // probing: the HTTP listener itself responding IS the whole health
+  // contract for this service.
+  if (url.pathname === '/healthz') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ status: 'ok' }));
+  }
+
   if (url.pathname === '/pending-call') {
     if (req.method === 'POST') {
       let raw = '';
