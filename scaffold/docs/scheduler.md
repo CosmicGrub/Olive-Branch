@@ -34,11 +34,19 @@ I turn it on" half.
 
 ## What it runs
 
-Two named jobs:
+Three named jobs, run in this order (`rematerialize`, then `reap-media`, then
+`health-alert` — `JOB_NAMES` in `tools/scheduler.mjs`). This page said "two
+named jobs" from `reap-media`'s own real addition (v0.49.46) until this
+project's own post-tier audit caught the miss — a genuine, real gap, not
+just documentation lag, since `docker-compose.prod.yml`'s always-on
+`scheduler` service is `reap-media`'s ONLY production caller, and this was
+the one page an operator would actually read to understand what that
+service does:
 
 | Job | What it does |
 |---|---|
 | `rematerialize` | Sweeps every `delivery_intent` row still `state='pending'`, calls the real `materialize()` against a real `ChildCtx` loaded from Postgres, and writes the result back (`ready` + `scheduled_at`, `expired`, or left `pending` for a config gap that might still get fixed). |
+| `reap-media` | Runs the real COPPA retention reaper (`packages/storage/src/storage.ts`'s `reap()`) against every `media_artifact` row `artifacts_due_for_reaping()` returns — deletes the real blob first, then the row, and writes a `reap_tombstone` on a genuine failure so a stuck row stays discoverable and gets retried, never silently re-attempted forever or silently dropped. |
 | `health-alert` | Runs the real `tools/health-alert.mjs` as a subprocess against the same database and reports its exit code. |
 
 ## Turning it on for the Docker Compose dev stack
@@ -112,9 +120,18 @@ a log aggregator):
 ```
 scope=scheduler event=start job=rematerialize at=2026-08-25T03:00:00.010Z
 scope=scheduler event=end job=rematerialize status=ok duration_ms=812 scanned=4 materialized=3 expired=1 still_pending=0 skipped_rows=0 batch_limit_hit=false at=2026-08-25T03:00:00.822Z
-scope=scheduler event=start job=health-alert at=2026-08-25T03:00:00.823Z
-scope=scheduler event=end job=health-alert status=ok exit_code=0 duration_ms=610 at=2026-08-25T03:00:01.433Z
+scope=scheduler event=start job=reap-media at=2026-08-25T03:00:00.823Z
+scope=scheduler event=end job=reap-media status=ok duration_ms=340 examined=2 blobs_deleted=1 blobs_already_gone=0 rows_deleted=1 tombstoned=0 skipped_preserved=1 refused_no_clock=0 at=2026-08-25T03:00:01.163Z
+scope=scheduler event=start job=health-alert at=2026-08-25T03:00:01.164Z
+scope=scheduler event=end job=health-alert status=ok exit_code=0 duration_ms=610 at=2026-08-25T03:00:01.774Z
 ```
+
+`blobs_already_gone` (added by this project's own post-tier audit) is a
+real, distinct signal from `blobs_deleted` — see `packages/storage/src/
+storage.ts`'s own `ReapResult.blobsAlreadyGone` doc comment. A sustained
+non-zero value here on a real deployment is worth investigating (it usually
+means this process isn't actually reaching the real media volume), not
+proof retention is quietly succeeding.
 
 A skipped run under real lock contention (a manual `run` invocation
 overlapping the loop's own scheduled run, for instance) looks like:
@@ -137,8 +154,9 @@ rebuilds the container:
 cd scaffold
 npm run build   # scheduler.mjs imports the compiled delivery-engine/db packages
 DATABASE_URL=postgres://... node tools/scheduler.mjs run rematerialize
+DATABASE_URL=postgres://... node tools/scheduler.mjs run reap-media
 DATABASE_URL=postgres://... node tools/scheduler.mjs run health-alert
-DATABASE_URL=postgres://... node tools/scheduler.mjs run all      # both, in sequence
+DATABASE_URL=postgres://... node tools/scheduler.mjs run all      # all three, in sequence
 ```
 
 `run` always exits after one pass — this is the mode a REAL external cron
@@ -161,6 +179,7 @@ from there instead and skip the `scheduler` Compose service entirely.
 | `DATABASE_URL` (or `ADMIN_DATABASE_URL` as a fallback) | — (required) | Same connection convention as every other tool in this repo (`health-alert.mjs`, `migrate.mjs`). |
 | `SCHEDULER_HOUR_UTC` | `3` | `loop` mode only — the UTC hour the daily sweep fires at. |
 | `SCHEDULER_INTERVAL_MS` | unset | `loop` mode only — if set, overrides the daily schedule with a fixed interval instead. Useful for a tighter cadence, or for exercising the loop itself quickly without waiting for a real UTC day boundary. |
+| `MEDIA_STORAGE_ROOT` | this file's own directory-relative default (see `server/routes.mjs`'s `DEFAULT_MEDIA_STORAGE_ROOT`) | `reap-media` only — where the real media volume is mounted. **Required in any real container deployment**, and must point at the SAME volume `server` itself writes to, not a private copy — found unset for the `scheduler` service in both Compose files by this project's own post-tier audit; `reap-media` silently deleted `media_artifact` rows while never touching the real blobs until that was fixed. |
 
 ## What this does not do (yet)
 

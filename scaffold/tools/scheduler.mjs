@@ -458,6 +458,14 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     logLine({
       event: 'end', job: jobName, status: 'ok', duration_ms: durationMs,
       examined: r.examined, blobs_deleted: r.blobsDeleted,
+      // blobs_already_gone (reap()'s own ReapResult field, added by this
+      // project's own post-tier audit) — a real, distinct operational
+      // signal, not merged into blobs_deleted: a real spike here means
+      // storage.delete() resolved false rather than actually deleting
+      // anything, which is exactly the symptom of this process being
+      // pointed at the wrong storage root (the docker-compose gap that same
+      // audit found and fixed) rather than proof retention is working.
+      blobs_already_gone: r.blobsAlreadyGone,
       rows_deleted: r.rowsDeleted, tombstoned: r.tombstoned.length,
       skipped_preserved: r.skippedPreserved, refused_no_clock: r.refusedNoClock,
       at: DateTime.utc().toISO(),

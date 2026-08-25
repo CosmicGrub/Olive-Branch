@@ -97,6 +97,13 @@ services:
       # explicitly rather than left to server/routes.mjs's own
       # DEFAULT_MEDIA_STORAGE_ROOT fallback.
       MEDIA_STORAGE_ROOT: /app/data/media
+      # Same `:?`-required discipline as SESSION_SECRET above, and the same
+      # real bug that discipline exists to prevent: without a persisted
+      # value, routes.mjs's own FilesystemStorage minted a fresh random
+      # signing secret every process start, silently invalidating every
+      # outstanding signed media URL on the next `docker compose up`/restart
+      # — found by this project's own post-tier audit.
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
     ports:
       # Loopback-only, not "8123:8123" (which publishes on every host
       # interface). Physical devices reach this exactly the same way they
@@ -195,6 +202,14 @@ services:
       # loop while testing the scheduler itself — see
       # scaffold/docs/scheduler.md.
       SCHEDULER_HOUR_UTC: "${SCHEDULER_HOUR_UTC:-3}"
+      # Same real bug docker-compose.prod.yml's own identical comment
+      # explains: without this, `reap-media` silently deletes real rows
+      # while its own `FilesystemStorage` writes/deletes against this
+      # container's own disconnected filesystem, never the volume below —
+      # found by this project's own post-tier audit, not a hypothetical.
+      MEDIA_STORAGE_ROOT: /app/data/media
+    volumes:
+      - olive-dev-media:/app/data/media
     command: ["node", "tools/scheduler.mjs", "loop"]
     restart: unless-stopped
 

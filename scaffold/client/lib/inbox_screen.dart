@@ -32,6 +32,7 @@
 // a separate, still-open gap, matching ChildHome's own presence field) —
 // receipt_screen.dart's own dayPartKind is already nullable and handles
 // that absence honestly, same as it always has for the demo path.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
@@ -158,6 +159,29 @@ class _InboxScreenState extends State<InboxScreen> {
     }
   }
 
+  /// Best-effort — mirrors [OliveApi.endCall]'s own posture exactly (see
+  /// that method's own doc comment): record-keeping only, never allowed to
+  /// block or delay the real screen transition [_open] is already mid-tap
+  /// on, and never surfaced to the child as an error. A real gap this
+  /// closes, found by this project's own post-tier audit: MASTERFILE §7.3
+  /// declared POST .../inbox/:id/opened as part of the API surface for as
+  /// long as this document has had an API reference section, but nothing
+  /// anywhere ever called it — this screen only ever flipped `watched` in
+  /// LOCAL widget state, invisible to the server past this one screen
+  /// instance, so a fresh [_load] on the next visit re-showed every
+  /// previously-watched message as "New."
+  Future<void> _markOpenedRemote(String messageId) async {
+    final OliveApi api =
+        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+    try {
+      await api.markInboxOpened(widget.childId!, messageId);
+    } catch (e) {
+      debugPrint('[olive.inbox] markInboxOpened failed (best-effort, not shown to her): $e');
+    } finally {
+      if (widget.httpClient == null) api.close();
+    }
+  }
+
   void _open(InboxMessage m) {
     final bool wasUnwatched = !m.watched;
     String watchedAtLabel = m.deliveredAtLabel;
@@ -181,6 +205,10 @@ class _InboxScreenState extends State<InboxScreen> {
       }
       final int i = _messages.indexWhere((InboxMessage x) => x.id == m.id);
       setState(() => _messages[i] = m.markWatched());
+      // Fire-and-forget — not awaited, deliberately: see _markOpenedRemote's
+      // own doc comment for why this must never delay the Navigator.push
+      // just below, which happens unconditionally either way.
+      if (widget._isLive) unawaited(_markOpenedRemote(m.id));
     }
 
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ReceiptScreen(

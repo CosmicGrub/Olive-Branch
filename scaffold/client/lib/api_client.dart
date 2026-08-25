@@ -98,6 +98,15 @@ class OliveApi {
   static const inbox    = '/v1/children/:childId/inbox';
   static const messages = '/v1/children/:childId/messages';
   static const batches  = '/v1/children/:childId/batches';
+  // Two path params, not one — same reasoning [callEnd]'s own doc comment
+  // gives for why this is pre-substituted rather than going through
+  // [_post]'s single-`:childId` substitution the way [inbox] above does.
+  // Real bug this closes, found by this project's own post-tier audit:
+  // MASTERFILE §7.3 declared this route for as long as this document has
+  // had an API reference section, but nothing anywhere ever called it —
+  // inbox_screen.dart's own _open() only flipped `watched` in LOCAL widget
+  // state, invisible to the server the moment she left the screen.
+  static const inboxOpened = '/v1/children/:childId/inbox/:messageId/opened';
   // --- real object storage (§20.2b) ---------------------------------------
   // server/routes.mjs's real upload/download pair for the bytes [messages]
   // above only ever carried a `storageKey` REFERENCE to — see [uploadMedia]
@@ -290,6 +299,19 @@ class OliveApi {
   Future<Map<String, dynamic>> fetchMe() => _get(mePath);
   Future<Map<String, dynamic>> fetchNow(String childId) => _get(childNow, childId: childId);
   Future<Map<String, dynamic>> fetchInbox(String childId) => _get(inbox, childId: childId);
+
+  /// Marks delivery_intent's own row for [messageId] `opened` — POST
+  /// [inboxOpened], server/routes.mjs's real handler. Idempotent: an
+  /// already-opened message (a real re-open, or an offline-queued duplicate
+  /// call) is a safe 200, never an error. Mirrors [endCall]'s own posture
+  /// exactly: this is record-keeping only — nothing about actually SHOWING
+  /// the receipt depends on it succeeding, so a real call site (inbox_
+  /// screen.dart's own `_open()`) should fire this best-effort and never let
+  /// its failure block or delay the real screen transition the child is
+  /// already mid-tap on.
+  Future<Map<String, dynamic>> markInboxOpened(String childId, String messageId) => _post(
+      inboxOpened.replaceFirst(':childId', childId).replaceFirst(':messageId', messageId),
+      const {});
 
   /// `{free: null}` or `{free: {guardianId, name, theirLocalTime,
   /// freeUntilHerTime}}` — GET [childPresence], server/routes.mjs's real

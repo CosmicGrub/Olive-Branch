@@ -126,6 +126,16 @@ const get = (childId, tok) => api.handle(
   tok ? { authorization: `Bearer ${tok}` } : {}, '',
 );
 
+const markOpened = (childId, messageId, tok) => api.handle(
+  'POST', `/v1/children/${childId}/inbox/${messageId}/opened`,
+  tok ? { authorization: `Bearer ${tok}` } : {}, '',
+);
+
+const stateOf = async (id) => {
+  const { rows } = await admin.query('SELECT state FROM delivery_intent WHERE id = $1', [id]);
+  return rows[0]?.state ?? null;
+};
+
 // ===========================================================================
 // A · a guardian with a real, live edge reads the real inbox — delivered
 //     and opened messages, never a still-pending one.
@@ -196,6 +206,62 @@ const get = (childId, tok) => api.handle(
 
   const wrongChild = await get(CHILD, strangerChildTok);
   check('D auth', 'a different child cannot read this inbox', wrongChild.status, 403);
+}
+
+// ===========================================================================
+// E · POST .../inbox/:id/opened — real bug, found by this project's own
+//     post-tier audit: MASTERFILE §7.3 declared this route as part of the
+//     API surface for as long as this document has had an API reference
+//     section, but it was never built. inbox_screen.dart's own _open() only
+//     ever flipped `watched` in LOCAL widget state — real, but invisible to
+//     the server, so nothing persisted past that one screen instance. Runs
+//     LAST in this file, deliberately: it mutates MSG_DELIVERED/MSG_OPENED's
+//     real state, which sections A-D above all read from but never write to.
+// ===========================================================================
+{
+  check('E mark opened', 'MSG_DELIVERED starts delivered, not already opened — the real '
+    + 'precondition every check below assumes', await stateOf(MSG_DELIVERED), 'delivered');
+
+  const guardianRes = await markOpened(CHILD, MSG_DELIVERED, dadTok);
+  check('E mark opened', "a guardian cannot mark a receipt opened on the child's behalf "
+    + '-- "opened" means SHE watched it', guardianRes.status, 403);
+  check('E mark opened', 'the real reason is named', guardianRes.body?.error,
+    'child_session_required');
+  check('E mark opened', "the guardian's refused attempt left the real row untouched",
+    await stateOf(MSG_DELIVERED), 'delivered');
+
+  const wrongChildRes = await markOpened(CHILD, MSG_DELIVERED, strangerChildTok);
+  check('E mark opened', "a different child's own session cannot mark THIS child's "
+    + 'message opened', wrongChildRes.status, 403);
+  check('E mark opened', "the wrong child's refused attempt also left the row untouched",
+    await stateOf(MSG_DELIVERED), 'delivered');
+
+  const pendingRes = await markOpened(CHILD, MSG_PENDING, childTok);
+  check('E mark opened', 'a still-pending message (never actually delivered to her) is '
+    + 'honestly refused, not silently accepted', pendingRes.status, 404);
+  check('E mark opened', 'a still-pending message is NOT resurrected into opened',
+    await stateOf(MSG_PENDING), 'pending');
+
+  const missingRes = await markOpened(CHILD, randomUUID(), childTok);
+  check('E mark opened', 'a real, valid session against a message id that does not exist '
+    + 'at all gets the same honest 404, not a 500', missingRes.status, 404);
+
+  const res = await markOpened(CHILD, MSG_DELIVERED, childTok);
+  check('E mark opened', 'the child herself marking her own delivered message -> 200',
+    res.status, 200);
+  check('E mark opened', 'the real row actually transitions delivered -> opened, not just '
+    + 'an HTTP 200 with nothing persisted', await stateOf(MSG_DELIVERED), 'opened');
+
+  const again = await markOpened(CHILD, MSG_DELIVERED, childTok);
+  check('E mark opened', 'marking an already-opened message again is a safe, idempotent '
+    + '200 -- a real re-open or an offline-queued duplicate call, never an error',
+    again.status, 200);
+  check('E mark opened', 'and the state stays opened, not reset or double-transitioned',
+    await stateOf(MSG_DELIVERED), 'opened');
+
+  const alreadyOpenedRes = await markOpened(CHILD, MSG_OPENED, childTok);
+  check('E mark opened', 'a message that was ALREADY opened before this section ever ran '
+    + 'is also an idempotent 200', alreadyOpenedRes.status, 200);
 }
 
 await cleanup();

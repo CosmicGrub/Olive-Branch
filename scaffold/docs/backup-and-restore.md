@@ -7,22 +7,37 @@ that wrote this file — not just written and assumed to work (see the
 and what it doesn't).
 
 What is at stake: this database holds a family's custody records, the
-message hash-chain that backs a certified court export, a child's private
-journal, and every piece of media a parent or child has preserved. Losing
-the Postgres volume is not a bug. It is the one failure mode this whole
-product cannot recover from for a real family. `db/DEPLOYMENT.md`'s own
-pre-production checklist already says this in one line — "Backups exclude
-nothing — `preserved` artifacts are irreplaceable (§9.8)" — this document is
-how that line becomes something an operator can actually do.
+message hash-chain that backs a certified court export, and a child's
+private journal. Losing the Postgres volume is not a bug. It is the one
+failure mode this whole product cannot recover from for a real family.
+`db/DEPLOYMENT.md`'s own pre-production checklist says this in one line —
+"Backups exclude nothing — `preserved` artifacts are irreplaceable (§9.8)" —
+this document is how that line becomes something an operator can actually
+do.
 
-## The three real gaps this closes
+**"Backups exclude nothing" is a claim about TWO things, not one.** The
+actual bytes of every photo, video, and voice note a family has preserved
+never live in Postgres at all — `media_artifact.storage_key`
+(`db/migrations/0001_phase0_init.sql`) is a `text` column, a POINTER, not
+the content; the real bytes live on the separate `olive-prod-media`
+filesystem volume (`packages/storage/src/storage.ts`'s `FilesystemStorage`).
+A Postgres-only backup restores every row that CLAIMS an artifact is
+preserved while the artifact itself is gone — a real, found gap (this
+project's own post-tier audit), closed below by treating the media volume
+as its own, equally real backup target, not an afterthought bolted onto the
+database one.
+
+## The gaps this closes
 
 CHANGELOG's v0.49.32 entry named four things as disclosed, out-of-scope
 Docker-hardening gaps in one sentence: "healthcheck directives, a real
 production compose profile, a Postgres backup strategy, CI image
-publishing." This pass closes the first three for real and gets CI image
+publishing." That pass closed the first three for real and got CI image
 publishing partway (see `.github/workflows/publish-image.yml`'s own header
-for exactly what "partway" means and why).
+for exactly what "partway" means and why) — but left the Postgres backup
+strategy incomplete in a way nobody noticed until a later, dedicated audit:
+it backed up Postgres and genuinely nothing else. `tools/backup-media.sh`/
+`tools/restore-media.sh` (below) close that remaining half.
 
 ## Take a backup
 
@@ -49,6 +64,26 @@ Either produces one timestamped, compressed dump —
 output directory. `-Fc` (Postgres's own "custom" archive format) is
 compressed by construction and restorable selectively or in parallel — see
 `tools/backup-db.sh`'s own header for why this format specifically.
+
+**The real prod invocation above ALSO backs up media now.** The `backup`
+service's entrypoint runs `tools/backup-db.sh` and, if that succeeds,
+`tools/backup-media.sh` — the SAME command from the "Take a backup" section
+above already produces both `olive_<dbname>_<UTC-timestamp>.dump` AND
+`olive_media_<UTC-timestamp>.tar.gz` in the same output directory; there is
+no separate step to remember. Standalone, against the dev stack (no Compose
+service wired for this yet — `docker-compose.dev.yml`'s own media volume is
+disposable dev data, not something this runbook treats as precious):
+
+```bash
+docker cp olive-dev-server-1:/app/data/media - > /tmp/media.tar \
+  && mkdir -p /tmp/media && tar -xf /tmp/media.tar -C /tmp/media --strip-components=1 \
+  && bash tools/backup-media.sh /tmp/media
+```
+
+(`docker cp` is the simplest way to reach a volume mounted into a container
+you don't want to stop; a production host instead mounts `olive-prod-media`
+directly into the `backup` service, no container-to-container copy needed —
+see `docker-compose.prod.yml`'s own `backup` service definition.)
 
 **Both run as `backup_reader`, never as `app_owner`.** This is not a style
 preference: 11 tables in this schema carry `FORCE ROW LEVEL SECURITY`
@@ -140,6 +175,24 @@ After a real restore, before declaring the incident over: rerun
 all 11 FORCE-RLS tables came back correctly protected — not just that rows
 exist, but that P6/P7's actual enforcement survived the round trip.
 
+**Restore media too — this is not optional if any `preserved` artifact
+matters.** A database-only restore leaves every `media_artifact.storage_key`
+pointing at nothing; do this BEFORE the database is put back in front of
+real traffic, so a guardian never gets a "found" result on a preserved photo
+that isn't actually there:
+
+```bash
+bash tools/restore-media.sh backups/olive_media_<timestamp>.tar.gz /path/to/media/root
+```
+
+Point `/path/to/media/root` at the real, mounted `olive-prod-media` volume
+path — the same `MEDIA_STORAGE_ROOT` `server`/`scheduler` already use
+(`docker-compose.prod.yml`'s own comment on that env var). Unlike the
+Postgres restore above, there is no role/privilege subtlety here: it's a
+plain directory extraction, safe to run against an empty or partially
+populated target (existing files with the same name are overwritten, same
+as `pg_restore --clean`'s spirit for the database side).
+
 ## How often
 
 Nightly, via the scheduler service another agent in this same round is
@@ -186,6 +239,17 @@ container every time), not asserted from reading the scripts:
   codes, confirmed `DEV_LOGIN`'s route is a real `404` with no override
   path, and confirmed a real backup landed on the host filesystem — then
   torn down completely.
+- **Media backup/restore** (`tools/backup-media.sh`/`tools/restore-media.sh`,
+  added by this project's own post-tier audit): a real directory of
+  multiple files tarred, extracted into a fresh target, and `diff -r`'d
+  byte-for-byte identical against the original — including the deliberate
+  empty-media-root case (a brand-new deployment with no uploads yet),
+  proven to exit `0` rather than being (incorrectly) treated as a failure.
+  **Disclosed, not silently skipped**: unlike the Postgres round trip above,
+  this has NOT yet been run through `tools/backup-restore-verify.sh`'s own
+  full Docker-container simulation (a real media volume mounted into a
+  throwaway container, backed up, the container discarded, restored into a
+  fresh one) — a real, valuable follow-up, not done in this pass.
 - `tools/backup-restore-verify.sh` packages the first bullet's steps into a
   single, repeatable script and was run to completion as the final check
   before this file was written.

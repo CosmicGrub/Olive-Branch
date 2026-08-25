@@ -72,7 +72,8 @@ const DAD2 = '11111111-1111-4111-9111-000000000002'; const MOM2 = '22222222-2222
 const DAD3 = '11111111-1111-4111-9111-000000000003'; const MOM3 = '22222222-2222-4222-9222-000000000003'; // (c)
 const DAD4 = '11111111-1111-4111-9111-000000000004'; const MOM4 = '22222222-2222-4222-9222-000000000004'; // (d)
 const SOLE = '33333333-3333-4333-9333-000000000001'; // (d)
-const ALL_USERS = [DAD1, MOM1, DAD2, MOM2, DAD3, MOM3, DAD4, MOM4, SOLE];
+const SITTER1 = '44444444-4444-4444-9444-000000000001'; // (f)
+const ALL_USERS = [DAD1, MOM1, DAD2, MOM2, DAD3, MOM3, DAD4, MOM4, SOLE, SITTER1];
 
 const CHILD_ONDUTY = '44444444-4444-4444-9444-444444444444'; // (a)
 const CHILD_SINGLE = '55555555-5555-4555-9555-555555555555'; // (b), (e)
@@ -122,8 +123,8 @@ await admin.query(
      ($3,'Dad','America/Chicago'),  ($4,'Mom','America/Denver'),
      ($5,'Dad','America/Chicago'),  ($6,'Mom','America/Denver'),
      ($7,'Dad','America/Chicago'),  ($8,'Mom','America/Denver'),
-     ($9,'Solo','America/New_York')`,
-  [DAD1, MOM1, DAD2, MOM2, DAD3, MOM3, DAD4, MOM4, SOLE]);
+     ($9,'Solo','America/New_York'), ($10,'Sitter','America/Chicago')`,
+  [DAD1, MOM1, DAD2, MOM2, DAD3, MOM3, DAD4, MOM4, SOLE, SITTER1]);
 await admin.query(
   `INSERT INTO child (id, display_name, birth_date, home_tz) VALUES
      ($1,'OnDutyChild','2015-01-01',$6),
@@ -142,9 +143,10 @@ await admin.query(
      ($7,  $9,  'guardian', '{}', tstzrange(now() - interval '1 year', null)),
      ($10, $11, 'guardian', '{}', tstzrange(now() - interval '1 year', null)),
      ($10, $12, 'guardian', '{}', tstzrange(now() - interval '1 year', null)),
-     ($13, $14, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`,
+     ($13, $14, 'guardian', '{}', tstzrange(now() - interval '1 year', null)),
+     ($15, $16, 'sitter',   '{}', tstzrange(now() - interval '1 year', null))`,
   [CHILD_ONDUTY, DAD1, MOM1, CHILD_SINGLE, DAD2, MOM2, CHILD_TIE, DAD3, MOM3,
-   CHILD_NONE, DAD4, MOM4, CHILD_SOLE, SOLE]);
+   CHILD_NONE, DAD4, MOM4, CHILD_SOLE, SOLE, CHILD_SINGLE, SITTER1]);
 // CHILD_ONDUTY's custody order: anchor_local_date = TODAY (in CHILD_ZONE),
 // pattern '2-2-3' puts Side A on day-index 0 -- i.e. today, deterministically,
 // regardless of what real calendar date this suite happens to run on. Side A
@@ -164,6 +166,7 @@ const dad2Tok = tok(DAD2);
 const dad3Tok = tok(DAD3);
 const dad4Tok = tok(DAD4);
 const soleTok = tok(SOLE);
+const sitterTok = issueSession(SECRET, { userId: SITTER1, roleName: 'sitter', childId: null, escalated: false }, NOW);
 const childOnDutyTok = issueSession(SECRET, { userId: null, roleName: 'child', childId: CHILD_ONDUTY, escalated: false }, NOW);
 
 const get = (childId, tokv) => api.handle(
@@ -224,6 +227,27 @@ async function setWindow(guardianId, weekday, startLocal, endLocal) {
   check('B single + her-frame',
     'freeUntilHerTime is the window end in the CHILD\'s zone, phrased "<h:mm a> her time"',
     res.body.free?.freeUntilHerTime, `${fmt(end)} her time`);
+}
+
+// ===========================================================================
+// (f) real bug, found by this project's own post-tier audit: calendar.view
+//     alone is far wider than this route was ever meant to admit — a real
+//     sitter, with a genuine live edge to this exact child (so the OUTER
+//     action-capability check alone would have let her through) is NOT a
+//     parent (§5.27.2), and must never see a live, named-parent reachability
+//     signal that specific. Same CHILD_SINGLE fixture as (b) above, so this
+//     also proves the gate is evaluated BEFORE any real work runs, not just
+//     that a response happens to come back empty.
+// ===========================================================================
+{
+  const res = await get(CHILD_SINGLE, sitterTok);
+  check('F non-parent gate', 'a real sitter, with a genuine live edge to this exact '
+    + 'child, is still refused — not a parent, regardless of calendar.view',
+    res.status, 403);
+  check('F non-parent gate', 'the real reason is named, not a generic denial',
+    res.body?.error, 'not_a_parent_of_child');
+  check('F non-parent gate', 'no presence data of any kind leaks alongside the refusal',
+    res.body?.free, undefined);
 }
 
 // ===========================================================================
