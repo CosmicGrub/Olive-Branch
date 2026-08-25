@@ -96,6 +96,31 @@ jobs:
       - run: npm ci || npm install
         working-directory: scaffold
 
+      # db/migrations/0022_backup_reader_role.sql GRANTs onto backup_reader
+      # but deliberately cannot CREATE it (app_owner, the identity migrate.mjs
+      # connects as everywhere else in this repo, has no CREATEROLE privilege
+      # -- see that migration's own header). The real Docker dev/prod flow
+      # creates it via tools/docker-dev/init-db.sql, mounted as
+      # docker-entrypoint-initdb.d; this workflow's own Postgres SERVICE
+      # container (above) has no equivalent bootstrap step, and this M1-M4
+      # check runs migrate.mjs directly against it, before tools/verify.sh's
+      # own internal backup_reader provisioning for ITS separate scratch
+      # database ever runs -- so this exact step failed the first time this
+      # branch's migrations ran in real CI ("role \"backup_reader\" does not
+      # exist"). Created here, as the postgres superuser this service already
+      # authenticates as, before any migration runs.
+      - run: |
+          psql postgresql://postgres:postgres@localhost:5432/olive -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_reader') THEN
+              CREATE ROLE backup_reader LOGIN NOSUPERUSER NOBYPASSRLS;
+            END IF;
+          END
+          $$;
+          ALTER ROLE backup_reader NOSUPERUSER BYPASSRLS LOGIN PASSWORD 'ci_backup_reader_pw';
+          SQL
+
       # M1-M4. Runs twice: the second run must be a clean no-op, which is the
       # idempotency property under test rather than an assumption.
       - run: node tools/migrate.mjs
