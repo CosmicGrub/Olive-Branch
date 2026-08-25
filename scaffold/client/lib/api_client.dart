@@ -80,6 +80,14 @@ class OliveApi {
   static const childRibbon = '/v1/children/:childId/ribbon';
   static const childOverlap = '/v1/children/:childId/overlap';
 
+  // --- live parent presence (ChildHome's own `ParentPresence`) -----------
+  // GET .../presence — server/routes.mjs's real handler: which (at most
+  // one) parent guardian is currently free, per the design spec's §3
+  // tie-break algorithm (custody-duty exclusion, then earliest available-
+  // window start). `action: 'calendar.view'`, the same reused action /now
+  // and /custody-order already authorize a child session through.
+  static const childPresence = '/v1/children/:childId/presence';
+
   // --- custody schedule (§5.4, §9.4) --------------------------------------
   // Read-only view of the real custody_order row -- see
   // family_agreement_screen.dart's own header for why this is deliberately
@@ -282,6 +290,19 @@ class OliveApi {
   Future<Map<String, dynamic>> fetchMe() => _get(mePath);
   Future<Map<String, dynamic>> fetchNow(String childId) => _get(childNow, childId: childId);
   Future<Map<String, dynamic>> fetchInbox(String childId) => _get(inbox, childId: childId);
+
+  /// `{free: null}` or `{free: {guardianId, name, theirLocalTime,
+  /// freeUntilHerTime}}` — GET [childPresence], server/routes.mjs's real
+  /// handler. `free` is honestly `null` whenever nobody currently qualifies
+  /// (no second live parent guardian, the on-duty guardian excluded, or no
+  /// guardian has an active availability window right now) — the same
+  /// "honest absence, not a guess" posture [fetchNow]'s own
+  /// `sleepsUntilHandover` already has. Decoding `free` into a
+  /// [ParentPresence]-shaped value is left to the caller, matching
+  /// [fetchNow]/[fetchInbox] above. Throws [ApiException] on any non-2xx
+  /// response, same posture as every other read in this class.
+  Future<Map<String, dynamic>> fetchPresence(String childId) =>
+      _get(childPresence, childId: childId);
 
   /// Checks [pin] against every LIVE guardian of [childId] -- POST
   /// kioskPinVerify, server/routes.mjs's real handler. This is the check

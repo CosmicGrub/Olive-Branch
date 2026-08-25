@@ -15,12 +15,15 @@
 // asserts (her name not an id, no settings affordance, sleeps not hours,
 // HER frame first) still holds for the live path with zero duplicated logic.
 //
-// One of ChildHome's four fields still has no real data source wired up:
-//   presence             -- no day-part/overlap endpoint exists server-side,
-//                           so this is `null` (ChildHome already renders
-//                           nothing when presence is null -- an honest
-//                           absence, not a guess).
-// sleepsUntilHandover, unreadCount, and childName are ALL real now.
+// All four of ChildHome's fields are real now. `presence` (this pass) is
+// backed by the real GET .../presence route (api_client.dart's
+// `fetchPresence` / `childPresence` path) -- see `_load()` below for how a
+// failure there is kept from breaking the rest of this screen, and
+// `ParentPresence`'s own construction for how the server's `free` shape maps
+// onto ChildHome's existing constructor field unchanged (ChildHome itself is
+// untouched -- its `_PresenceCard` already renders nothing when `presence`
+// is null, an honest absence, not a guess, exactly as before).
+// sleepsUntilHandover, unreadCount, and childName are ALL real too.
 // sleepsUntilHandover (v0.49.15): a prior pass found the real custody
 // endpoint (db/migrations/0007_custody_order.sql, packages/db/src/pool.mjs's
 // activeCustodyOrderFor, routes.mjs's /now calling schedule.mjs's real
@@ -121,6 +124,12 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // ChildHome's constructor below) so _syncWear() has a real value to read
   // once a live custody endpoint exists to populate it from.
   int? _sleepsUntilHandover;
+  // Real, fetched from GET .../presence in `_load()` below. Honestly null
+  // whenever the server reports `{free: null}`, OR whenever the presence
+  // fetch itself failed -- both are the same "no live signal to show" state
+  // from ChildHome's own point of view, matching `_sleepsUntilHandover`'s
+  // own null-is-honest-absence posture above.
+  ParentPresence? _presence;
   // The session token _load() mints is otherwise used-once-and-discarded
   // (only `api` above holds it); retained here so ChildHome's own Homework
   // tile can reach the REAL capture_gate.dart path (§9.1, §20.2b) with the
@@ -153,6 +162,20 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       final me = await api.fetchMe();
       final inbox = await api.fetchInbox(widget.childId);
       final now = await api.fetchNow(widget.childId);
+      // Fetched in its own try/catch, deliberately NOT alongside the three
+      // awaits directly above: presence is a supplementary signal, not core
+      // to this screen's own readiness, matching `_initPush`'s own posture
+      // below for push registration (a design-spec-literal inline await
+      // here would let a presence-fetch failure throw into this method's
+      // outer catch and trap her name/inbox/sleeps behind an error screen
+      // too -- this app's established "never let a secondary fetch trap the
+      // primary screen" posture, same as `_initPush`'s own comment states).
+      Map<String, dynamic>? presenceJson;
+      try {
+        presenceJson = await api.fetchPresence(widget.childId);
+      } catch (e) {
+        debugPrint('[olive.presence] not loaded this run: $e');
+      }
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
       // `entries`, not `messages` -- server/routes.mjs's own GET .../inbox
@@ -176,6 +199,15 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         // Real, fetched from /now -- see file header. Honestly null when
         // the child has no active custody_order row (/now's own absence).
         _sleepsUntilHandover = (now['sleepsUntilHandover'] as num?)?.toInt();
+        // §1's own disclosure lives at the server computation site
+        // (server/routes.mjs), not here -- this is a pure wire-shape decode,
+        // matching how `now`/`inbox` are decoded immediately above.
+        final free = presenceJson?['free'] as Map<String, dynamic>?;
+        _presence = free == null ? null : ParentPresence(
+          free['name'] as String,
+          free['theirLocalTime'] as String,
+          free['freeUntilHerTime'] as String,
+        );
         _sessionToken = token;
         _state = _LoadState.ready;
       });
@@ -214,8 +246,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // Dad" tap should reach Dad even if this screen's own name/inbox fetch is
   // still in flight or has failed -- matching this affordance's own
   // unconditional presence on the watch face (no presence gate, unlike
-  // child_home.dart's own `_PresenceCard`, which this screen currently never
-  // renders at all since `presence` is always null -- see file header).
+  // child_home.dart's own `_PresenceCard`, which only ever renders when a
+  // real `_presence` is both fetched AND non-null -- see file header).
   void _handleWatchCallDad() {
     if (!mounted) return;
     final navigator = widget.navigatorKey?.currentState;
@@ -293,7 +325,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
                 color: Theme.of(context).colorScheme.onTertiaryContainer))),
           Expanded(child: ChildHome(
             childName: _childName,
-            presence: null, // no live day-part/overlap endpoint yet
+            presence: _presence, // real, from GET .../presence
             sleepsUntilHandover: _sleepsUntilHandover, // still null -- see header and _load()
             unreadCount: _unreadCount,
             // Real homework-capture wiring (§9.1, §20.2b) — the same
