@@ -186,18 +186,22 @@ than this list ever did; cross-checked against it directly below.
       six, not just three — `at_instant`, `on_event`, and `immediate` each
       gained a must_fail/must_pass pair, live-Postgres-verified.
 - [x] Nightly rematerialization sweep + the event-driven invalidation hooks.
-      **COMPLETE since v0.49.43** (PR #68). The invalidation guarantee was
-      already real and proven (`materialize()`'s own "future + undelivered
-      only" behavior, `delivery.test.mjs`'s 37 probes); the sweep half — no
-      cron or scheduler anywhere in this repo actually called it — is now
-      closed by `tools/scheduler.mjs`, a real Postgres advisory-lock-guarded
-      job runner (`rematerialize` + `health-alert` jobs). Wired into
-      `docker-compose.dev.yml`/`docker-compose.prod.yml` as an **opt-in**
-      Compose service (a background sweep is a real footgun against a live
-      debug session, so it is not part of the default `up -d`) — an operator
-      must explicitly turn it on (`--profile scheduler`), which is a real,
-      deliberate deployment choice, not an unclosed gap in the code itself.
-      See `scaffold/docs/scheduler.md`.
+      **COMPLETE since v0.49.43** (PR #68), updated v0.49.45. The
+      invalidation guarantee was already real and proven (`materialize()`'s
+      own "future + undelivered only" behavior, `delivery.test.mjs`'s 37
+      probes); the sweep half — no cron or scheduler anywhere in this repo
+      actually called it — is now closed by `tools/scheduler.mjs`, a real
+      Postgres advisory-lock-guarded job runner (`rematerialize` +
+      `health-alert` jobs). Wired into `docker-compose.dev.yml` as an
+      **opt-in** Compose service (a background sweep is a real footgun
+      against a live debug session, so it is not part of dev's default
+      `up -d`) — but wired into `docker-compose.prod.yml` as part of the
+      **default** service set (v0.49.45): the dev footgun rationale is about
+      protecting a human actively debugging the same database, which has no
+      production equivalent, and gating it there would instead mean the
+      documented default `up -d` silently never delivers anything until an
+      operator finds a second undocumented flag. See
+      `scaffold/docs/scheduler.md` for both paths in full.
 - [x] Single-guardian mode verified end to end with no second guardian row
       (§17.1). **COMPLETE since v0.49.6** — MASTERFILE §20.1.
 

@@ -77,6 +77,32 @@ container on future `up`s — it does not undo any `ready`/`expired` state
 transitions it already wrote, the same way stopping `server` doesn't undo
 rows it already wrote.
 
+## Production: on by default, not opt-in
+
+`docker-compose.prod.yml` also defines a `scheduler` service, running the
+same `node tools/scheduler.mjs loop` — but deliberately does **not** gate
+it behind a Compose profile the way the dev file does. That file's own
+comment on the service explains the reasoning in full; short version: the
+dev opt-in exists to protect a *human actively debugging the same
+database* from a background job rewriting rows out from under them.
+Production has no such human-in-the-loop session to protect, and gating
+it there would instead mean the documented default invocation
+(`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`,
+this repo's own top-of-file usage note) silently never delivers a single
+message, forever, until an operator reads the compose file closely enough
+to discover a second required flag. So in production:
+
+```bash
+cd scaffold
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# scheduler is already running — no extra flag needed
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f scheduler
+```
+
+Same `app_owner` connection and `SCHEDULER_HOUR_UTC` override as dev, just
+sourced from `.env.prod`'s real secrets (`APP_OWNER_PASSWORD`) instead of
+dev's hardcoded `app_owner`/`app_owner`.
+
 ## Reading its logs
 
 Every line is flat `key=value` (the same shape `health-alert.mjs`'s own
