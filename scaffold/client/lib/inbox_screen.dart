@@ -16,7 +16,25 @@
 // happened. No settings affordance exists at any depth (matches
 // child_home.dart), and nothing here is a score: `watched`/unread state is
 // informational, not a streak.
+//
+// LIVE WIRING (baseUrl/childId/sessionToken/httpClient, all optional and
+// additive — same convention HomeworkScreen/ReceiptScreen already use):
+// when supplied, this screen fetches its OWN real inbox via
+// OliveApi.fetchInbox() on init, mirroring HomeworkScreen's own self-
+// fetching pattern rather than requiring a caller to pre-fetch and pass
+// down a messages list. `deliveredAtLabel` for a real fetched entry is
+// ALREADY formatted in her real frame server-side (server/routes.mjs's own
+// relativeInboxLabel()) — this screen never does its own timezone math, the
+// same "conversion belongs on the server side of the wire" discipline every
+// other live-wired screen in this client already follows (no timezone
+// package exists in client/pubspec.yaml). `dayPartKind` is honestly left
+// null for a real fetched entry (the server route does not compute one —
+// a separate, still-open gap, matching ChildHome's own presence field) —
+// receipt_screen.dart's own dayPartKind is already nullable and handles
+// that absence honestly, same as it always has for the demo path.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'calendar_day_logic.dart';
 import 'form_factors.dart' as ff;
 import 'receipt_screen.dart';
@@ -30,7 +48,10 @@ class InboxMessage {
     this.watched = false,
   });
 
-  final int id;
+  /// A real fetched message's id is a real database UUID, not a small int —
+  /// hence String, not int (the demo fixtures below use string literals of
+  /// the same small numbers for exactly this reason).
+  final String id;
   final String senderName;
   /// Already formatted, her frame, e.g. "7:04 AM" or "Yesterday, 7:58 PM".
   /// Relative wording only — never a calendar date (§8.2.5's "sleeps, not
@@ -49,28 +70,92 @@ class InboxMessage {
 /// Demo-only inbox contents. No live delivery-engine backend exists yet (see
 /// api_client.dart / packages/delivery-engine) — this stands in for it.
 const List<InboxMessage> demoInboxMessages = <InboxMessage>[
-  InboxMessage(id: 1, senderName: 'Dad', deliveredAtLabel: '7:04 AM', dayPartKind: 'before_school'),
-  InboxMessage(id: 2, senderName: 'Dad', deliveredAtLabel: 'Yesterday, 7:58 PM',
+  InboxMessage(id: '1', senderName: 'Dad', deliveredAtLabel: '7:04 AM', dayPartKind: 'before_school'),
+  InboxMessage(id: '2', senderName: 'Dad', deliveredAtLabel: 'Yesterday, 7:58 PM',
     dayPartKind: 'wind_down', watched: true),
-  InboxMessage(id: 3, senderName: 'Grandma', deliveredAtLabel: '2 days ago, 6:10 PM',
+  InboxMessage(id: '3', senderName: 'Grandma', deliveredAtLabel: '2 days ago, 6:10 PM',
     dayPartKind: 'dinner', watched: true),
 ];
 
+enum _LoadState { ready, loading, error }
+
 class InboxScreen extends StatefulWidget {
-  const InboxScreen({super.key, required this.childName, required this.messages});
+  const InboxScreen({
+    super.key,
+    required this.childName,
+    required this.messages,
+    this.baseUrl,
+    this.childId,
+    this.sessionToken,
+    this.httpClient,
+  });
   final String childName;
+  /// The demo/offline fixture — also what renders for one frame before a
+  /// live fetch (below) resolves, when live params are supplied.
   final List<InboxMessage> messages;
+  final String? baseUrl;
+  final String? childId;
+  final String? sessionToken;
+  /// Injectable for tests (package:http/testing.dart's MockClient) — matches
+  /// HomeworkScreen/ReceiptScreen/child_home_live.dart's own convention.
+  final http.Client? httpClient;
+
+  bool get _isLive => baseUrl != null && childId != null && sessionToken != null;
+
   @override
   State<InboxScreen> createState() => _InboxScreenState();
 }
 
 class _InboxScreenState extends State<InboxScreen> {
   late List<InboxMessage> _messages;
+  _LoadState _loadState = _LoadState.ready;
 
   @override
   void initState() {
     super.initState();
     _messages = List<InboxMessage>.of(widget.messages);
+    if (widget._isLive) _load();
+  }
+
+  /// The ONLY place this screen calls the network — mirrors HomeworkScreen's
+  /// own self-fetching pattern rather than requiring a pre-fetched list from
+  /// a caller. A failure here is a real, honest error state with a retry
+  /// affordance (child_home_live.dart's own established shape), never a
+  /// silent fall-back to the demo fixture and never an unhandled exception.
+  Future<void> _load() async {
+    setState(() => _loadState = _LoadState.loading);
+    final OliveApi api =
+        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+    try {
+      final Map<String, dynamic> result = await api.fetchInbox(widget.childId!);
+      final List<dynamic> raw = result['entries'] as List<dynamic>? ?? <dynamic>[];
+      final List<InboxMessage> fetched = raw.map((dynamic e) {
+        final Map<String, dynamic> row = e as Map<String, dynamic>;
+        return InboxMessage(
+          id: row['id'] as String,
+          senderName: row['sender_name'] as String,
+          // Already formatted in her real frame, server-side — see this
+          // file's own header for why no client-side timezone math happens
+          // here.
+          deliveredAtLabel: row['deliveredAtLabel'] as String? ?? '',
+          // Not returned by the real route yet — a separate, still-open gap
+          // (see this file's header); left honestly null, same as
+          // receipt_screen.dart already handles for the demo path.
+          dayPartKind: null,
+          watched: row['state'] == 'opened',
+        );
+      }).toList();
+      if (!mounted) return;
+      setState(() {
+        _messages = fetched;
+        _loadState = _LoadState.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadState = _LoadState.error);
+    } finally {
+      if (widget.httpClient == null) api.close();
+    }
   }
 
   void _open(InboxMessage m) {
@@ -80,13 +165,20 @@ class _InboxScreenState extends State<InboxScreen> {
 
     if (wasUnwatched) {
       final String nowHhmm = hhmmNow();
-      final List<StripSegment> segments = scheduleStrip(demoDayParts, nowHhmm);
-      // Honestly nullable, same as receipt_screen.dart's own `dayPartKind`
-      // doc says: no day-part context (a genuine schedule gap) is still a
-      // valid, honest receipt — it just drops the "— before school" clause,
-      // rather than fabricating one by grabbing whichever part sorts first.
       watchedAtLabel = formatTimeOfDay(nowHhmm);
-      dayPartKind = currentSegment(segments)?.kind;
+      // demoDayParts is a fixed DEMO schedule — real for the offline/demo
+      // path, but classifying a REAL live-fetched message against it would
+      // present a fabricated day-part as if it were hers. No real day-part
+      // source exists server-side yet for a live message (the same gap
+      // ChildHome's own `presence` field discloses) — honestly left null
+      // there, same as receipt_screen.dart's own dayPartKind already
+      // handles a genuine absence for.
+      if (!widget._isLive) {
+        final List<StripSegment> segments = scheduleStrip(demoDayParts, nowHhmm);
+        dayPartKind = currentSegment(segments)?.kind;
+      } else {
+        dayPartKind = null;
+      }
       final int i = _messages.indexWhere((InboxMessage x) => x.id == m.id);
       setState(() => _messages[i] = m.markWatched());
     }
@@ -96,11 +188,40 @@ class _InboxScreenState extends State<InboxScreen> {
       senderName: m.senderName,
       watchedAtLabel: watchedAtLabel,
       dayPartKind: dayPartKind,
+      baseUrl: widget.baseUrl,
+      childId: widget.childId,
+      sessionToken: widget.sessionToken,
+      httpClient: widget.httpClient,
     )));
   }
 
   @override
   Widget build(BuildContext context) {
+    // Loading/error UI mirrors child_home_live.dart's own established
+    // shape (same icon, same wording pattern, same real retry action) —
+    // both only ever reachable when this screen is live-wired; the pure
+    // demo path (no live params) never enters either state.
+    if (_loadState == _LoadState.loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_loadState == _LoadState.error) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Messages')),
+        body: Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.cloud_off, size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text("Couldn't reach the server",
+              style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Try again')),
+          ]),
+        )),
+      );
+    }
     final int unread = _messages.where((InboxMessage m) => !m.watched).length;
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),

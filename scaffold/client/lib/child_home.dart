@@ -168,7 +168,9 @@ class ChildHome extends StatelessWidget {
           _Tile(icon: Icons.mail_outline, label: 'Messages', badgeCount: unreadCount,
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => InboxScreen(
-                childName: childName, messages: List<InboxMessage>.of(demoInboxMessages))))),
+                childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
+                baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                httpClient: httpClient)))),
           _Tile(icon: Icons.wb_sunny_outlined, label: 'My day',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => MyDayScreen(

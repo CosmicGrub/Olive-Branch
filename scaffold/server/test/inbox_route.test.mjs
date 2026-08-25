@@ -82,16 +82,26 @@ await admin.query(
 // the route's own pre-existing state filter into showing everything it can
 // see). payload_ref needs no FK target (see 0023's own migration header —
 // delivery_intent.payload_ref carries no REFERENCES clause).
+//
+// materialized_at is set explicitly for the first two — MSG_DELIVERED "just
+// now" (real, live clock: proves the same-day branch), MSG_OPENED three real
+// days back (proves the past branch fires; not pinned to an exact "N days
+// ago" count, which a live now() makes genuinely nondeterministic across a
+// timezone day-boundary — see the assertions below for why).
 const MSG_DELIVERED = randomUUID();
 const MSG_OPENED = randomUUID();
 const MSG_PENDING = randomUUID();
 await admin.query(
   `INSERT INTO delivery_intent
-     (id, child_id, sender_id, payload_kind, payload_ref, policy, state, expires_at)
+     (id, child_id, sender_id, payload_kind, payload_ref, policy, state,
+      expires_at, materialized_at)
    VALUES
-     ($1, $5, $6, 'video_msg', $2, 'immediate', 'delivered', now() + interval '90 days'),
-     ($3, $5, $6, 'video_msg', $2, 'immediate', 'opened',    now() + interval '90 days'),
-     ($4, $5, $6, 'video_msg', $2, 'immediate', 'pending',   now() + interval '90 days')`,
+     ($1, $5, $6, 'video_msg', $2, 'immediate', 'delivered',
+      now() + interval '90 days', now()),
+     ($3, $5, $6, 'video_msg', $2, 'immediate', 'opened',
+      now() + interval '90 days', now() - interval '3 days'),
+     ($4, $5, $6, 'video_msg', $2, 'immediate', 'pending',
+      now() + interval '90 days', now())`,
   [MSG_DELIVERED, randomUUID(), MSG_OPENED, MSG_PENDING, CHILD, DAD]);
 await admin.query('COMMIT');
 
@@ -128,6 +138,22 @@ const get = (childId, tok) => api.handle(
     ids.join(','), [MSG_DELIVERED, MSG_OPENED].sort().join(','));
   check('A guardian read', 'sender_name is the real joined app_user.display_name',
     res.body.entries.every((m) => m.sender_name === 'Dad'), 'true');
+
+  // deliveredAtLabel — her frame, real zone-aware formatting (routes.mjs's
+  // own relativeInboxLabel(), CHILD's real home_tz America/New_York, no
+  // child_tz_interval row so the /now-established fallback path is what's
+  // actually exercised here). Not pinned to an exact clock value — a live
+  // now() makes that genuinely nondeterministic — but the SHAPE proves the
+  // real mechanism ran: no day-count on the just-now message, a real one on
+  // the three-days-back message.
+  const delivered = res.body.entries.find((m) => m.id === MSG_DELIVERED);
+  const opened = res.body.entries.find((m) => m.id === MSG_OPENED);
+  check('A guardian read', 'a message materialized just now gets a bare time label, '
+    + 'no "Yesterday"/"days ago" prefix', /^\d{1,2}:\d{2} (AM|PM)$/.test(delivered.deliveredAtLabel),
+    'true');
+  check('A guardian read', 'a message materialized days ago gets the real relative-day '
+    + 'prefix (never a raw ISO timestamp, never a bare calendar date — §8.2.5)',
+    /^(Yesterday|\d+ days ago), \d{1,2}:\d{2} (AM|PM)$/.test(opened.deliveredAtLabel), 'true');
 }
 
 // ===========================================================================
