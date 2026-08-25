@@ -192,7 +192,10 @@ const post = (childId, tok, body) => api.handle(
   });
   check('D auth', 'a guardian with no edge to this child is refused', otherChild.status, 403);
 
-  // FORMERLY A HONEST GAP, closed by 0019_child_message_sender.sql: a
+  // FORMERLY A HONEST GAP, closed by 0021_child_message_sender.sql (renamed
+  // from 0019 after a real migration-numbering collision — see CHANGELOG
+  // v0.49.39 — this comment itself was missed by that pass's own "every
+  // cross-referencing comment updated" claim until now): a
   // `child` principal carries no `userId` (packages/auth/src/auth.ts), so
   // she can never appear as `delivery_intent.sender_id`'s OLD shape (`NOT
   // NULL REFERENCES app_user`) — that column is what used to make "Send one

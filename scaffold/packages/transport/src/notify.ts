@@ -56,19 +56,17 @@ export interface DeviceSendResult {
    * `apns_send_failed` embed the third party's raw response text verbatim
    * (see each file's own `safeText()`/response-body handling) — genuinely
    * useful for server-side logs and a system-role caller debugging a send
-   * failure, which is the only kind of caller this function has today (grep
-   * across server/routes.mjs confirms notifyDevices() has zero HTTP call
-   * sites as of this writing).
+   * failure. `notifyDevices()` gained its first real API-facing caller in
+   * v0.49.33 — `POST /v1/children/:childId/calls` (server/routes.mjs) —
+   * which correctly follows the rule below rather than leaking this field.
    *
    * THIS IS DELIBERATELY NOT SAFE TO RETURN VERBATIM IN AN HTTP RESPONSE.
-   * Whoever wires the first real API-facing caller of notifyDevices() MUST
-   * NOT naively serialize `results`/`results[].message` into that response —
-   * `code` above is the already-generalized, safe-to-expose signal a
-   * client-facing surface should use instead. Caught by an adversarial
-   * review while this was still a forward-looking gap, not a live one;
-   * recorded here rather than "fixed" by guessing at a redaction shape the
-   * real caller's actual needs (ops dashboard vs. client-facing error toast
-   * likely want different things) don't exist yet to inform.
+   * The real caller above proves the rule works in practice: it derives
+   * only a boolean (`rang = pushResults.some(r => r.ok)`) and serializes
+   * THAT, never `results`/`results[].message` themselves. `code` above
+   * remains the already-generalized, safe-to-expose signal any FUTURE
+   * client-facing surface should reach for instead, should one ever need
+   * more than a bare boolean.
    */
   message?: string;
   /** True when the device's row was reaped because the platform told us the
@@ -78,11 +76,12 @@ export interface DeviceSendResult {
    * Present only when the device was skipped for lacking push capability
    * (`code: 'no_push_capability'`) — `channelAdvice()`'s guardian-facing
    * copy (devices.ts), ready for whatever future caller surfaces
-   * `notifyDevices()`'s results to a client. That caller does not exist yet
-   * (`notifyDevices()` has zero HTTP call sites as of this writing, same
-   * pre-existing gap this comment block already noted above `message`) —
-   * this field exists so the copy is correct and tested the day one does,
-   * not invented then.
+   * `notifyDevices()`'s results to a client. `POST /v1/children/:childId/
+   * calls` (v0.49.33, see above) is the first such caller, and — same as
+   * `message` above — does not surface this field either, only the derived
+   * `rang` boolean; this field stays ready for whatever future surface
+   * actually needs the guardian-facing copy, not invented a consumer for
+   * here.
    */
   advice?: string;
 }
