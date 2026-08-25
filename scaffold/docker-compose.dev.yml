@@ -92,6 +92,11 @@ services:
       # as the identical line below (point it at the self-hosted stack once
       # Step 2 is up; defaults to the public server otherwise).
       JITSI_SERVER_URL: https://192.168.1.175:8443
+      # Pinned to the same absolute path the volume below mounts — see
+      # docker-compose.prod.yml's matching line for why this is written
+      # explicitly rather than left to server/routes.mjs's own
+      # DEFAULT_MEDIA_STORAGE_ROOT fallback.
+      MEDIA_STORAGE_ROOT: /app/data/media
     ports:
       # Loopback-only, not "8123:8123" (which publishes on every host
       # interface). Physical devices reach this exactly the same way they
@@ -99,6 +104,15 @@ services:
       # never a LAN IP (see tools/docker-dev/README.md) — so this closes
       # real LAN/WiFi exposure with no change to the actual testing flow.
       - "127.0.0.1:8123:8123"
+    volumes:
+      # Named volume, matching `db`'s own `olive-dev-pgdata` pattern below —
+      # without this, every uploaded photo/video a tester attaches during a
+      # demo is gone the next time this container gets recreated (`--build`
+      # is this file's own documented normal invocation, top of file), which
+      # is a worse tester experience than losing a fixture DB row, not a
+      # better one. See docker-compose.prod.yml's matching comment for the
+      # full data-loss reasoning this mirrors.
+      - olive-dev-media:/app/data/media
     command: ["node", "server/index.mjs"]
     restart: unless-stopped
     healthcheck:
@@ -186,3 +200,4 @@ services:
 
 volumes:
   olive-dev-pgdata:
+  olive-dev-media:

@@ -64,6 +64,22 @@
 #     workflow file's own header), not whatever happens to be in the local
 #     build context at the moment `up` runs.
 #
+#  8. `server` has a named volume for uploaded media (`olive-prod-media`,
+#     mounted at MEDIA_STORAGE_ROOT=/app/data/media) — docker-compose.dev.yml
+#     does not. Dev's own db data already gets a named volume
+#     (`olive-dev-pgdata`) while media does not, an inconsistency worth
+#     fixing there too, but this file cannot leave a real family's uploaded
+#     photos of their kid living only in a container's writable layer while
+#     that's pending.
+#
+#  9. `scheduler` is part of the default service set here, NOT gated behind
+#     a Compose profile the way docker-compose.dev.yml's own `scheduler`
+#     service is — see that service's own comment below for why the dev
+#     rationale (a live debug session footgun) doesn't transfer to
+#     production, where the opposite risk (silently never delivering
+#     anything because an operator didn't know to pass a second flag)
+#     dominates instead.
+#
 # WHAT IS DELIBERATELY UNCHANGED / STILL OUT OF SCOPE:
 #   No reverse proxy or TLS termination — this repository has no domain and
 #   no certificate material (tools/docker-dev/README.md's own scope note:
@@ -143,8 +159,27 @@ services:
       # can make this anything other than "0" through this file.
       DEV_LOGIN: "0"
       JITSI_SERVER_URL: ${JITSI_SERVER_URL:?JITSI_SERVER_URL must be set — see .env.prod.example, no LAN-IP dev default here}
+      # Pinned explicitly rather than left to server/routes.mjs's own
+      # DEFAULT_MEDIA_STORAGE_ROOT fallback (derived from import.meta.url —
+      # an internal implementation detail, not a contract). The volume
+      # mount below targets this exact path; keeping both written down
+      # side by side here is what makes the pairing legible and keeps them
+      # from silently drifting apart if that fallback's derivation ever
+      # changes.
+      MEDIA_STORAGE_ROOT: /app/data/media
     ports:
       - "127.0.0.1:${SERVER_HOST_PORT:-8123}:8123"
+    volumes:
+      # Without this, every uploaded photo/video (POST
+      # /v1/children/:childId/media, server/routes.mjs) lives only in the
+      # container's writable layer — gone on the next `docker compose up`
+      # that recreates the container (a new image pull, a resource-limit
+      # change, a host reboot), not just a deliberate `down -v`. That is a
+      # real data-loss bug in this file, not a hardening nice-to-have: a
+      # family's actual photos of their kid disappearing on a routine
+      # redeploy. Named volume, same durability pattern already used for
+      # `olive-prod-pgdata` below.
+      - olive-prod-media:/app/data/media
     command: ["node", "server/index.mjs"]
     healthcheck:
       test: ["CMD", "node", "-e",
@@ -211,5 +246,46 @@ services:
       - ${BACKUP_DIR:-./backups}:/backups
     entrypoint: ["bash", "/tools/backup-db.sh", "/backups"]
 
+  # NOT profile-gated, unlike docker-compose.dev.yml's own `scheduler`
+  # service — a deliberate divergence from that file's pattern, not an
+  # oversight, so it is written down here rather than left for a diff to
+  # explain. Dev gates this behind `--profile scheduler` because a
+  # background sweep silently rewriting `delivery_intent` rows out from
+  # under a developer's live debug session is a real footgun (see
+  # scaffold/docs/scheduler.md). That specific risk is about a *human
+  # actively poking at the same database at the same time* — it has no
+  # equivalent in production, where nobody is expected to be hand-editing
+  # `delivery_intent` rows while the stack runs. What production DOES need
+  # is the opposite failure mode closed: an operator who runs the
+  # documented `up -d` (this file's own header, top of file) and reasonably
+  # expects that to mean "the app is fully running" — not "the app is
+  # running except the one background job that makes intents actually get
+  # delivered, which needs a second, undocumented-outside-this-comment
+  # flag." Requiring `--profile scheduler` here would mean the default
+  # production invocation silently never delivers anything, forever, until
+  # an operator reads this file closely enough to notice the gap — the
+  # same class of silent gap `db/DEPLOYMENT.md` and this file's own note #4
+  # both already argue against elsewhere. So: part of the default service
+  # set, real secret injection (`:?`) same as every other service here.
+  scheduler:
+    image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
+    restart: always
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+      SCHEDULER_HOUR_UTC: "${SCHEDULER_HOUR_UTC:-3}"
+    command: ["node", "tools/scheduler.mjs", "loop"]
+    deploy:
+      resources:
+        limits:
+          # One `materialize()` call per still-pending row, once a day, plus
+          # a health-alert subprocess — lighter than `server`, not idle
+          # (see note #4).
+          memory: 256m
+          cpus: "0.25"
+
 volumes:
   olive-prod-pgdata:
+  olive-prod-media:

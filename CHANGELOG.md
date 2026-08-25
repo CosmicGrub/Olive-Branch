@@ -14,6 +14,23 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.45] — 2026-08-25 — Production-readiness Tier B: a persistent media volume and a default-on scheduler for docker-compose.prod.yml
+
+Opens a fresh tier/priority/risk-organized execution pass over a 49-finding gap inventory (5-lens discovery sweep, no build phase). Tier B — highest priority, lowest risk — closes two real gaps in this session's own recently-shipped infrastructure (v0.49.43) before either could bite in a real deployment.
+
+### Fixed
+- **`docker-compose.prod.yml`'s `server` service had no volume for uploaded child media.** `POST /v1/children/:childId/media` (v0.49.43) writes real files to `MEDIA_STORAGE_ROOT`, which defaulted to a path inside the container's own writable layer — gone on any routine `docker compose up` that recreates the container (an image update, a resource-limit change, a host reboot), not just a deliberate `down -v`. A family's actual uploaded photos of their kid disappearing on a routine redeploy is a real data-loss bug, not a hardening nice-to-have. Fixed with a named `olive-prod-media` volume mounted at `/app/data/media`, matching the durability pattern `olive-prod-pgdata` already established for `db`; `MEDIA_STORAGE_ROOT` is now also pinned explicitly as an env var rather than left to `server/routes.mjs`'s own `DEFAULT_MEDIA_STORAGE_ROOT` fallback (derived from `import.meta.url` — an internal implementation detail, not a contract two independent files should silently depend on staying in sync).
+- **The same gap existed in `docker-compose.dev.yml`, one commit shy of the same fix.** Its `db` service already gets a named volume (`olive-dev-pgdata`); its `server` service did not get the equivalent for media, an inconsistency worth closing for its own sake — testers (including this app's real target audience: a kid, other parents, their kids) losing every photo attached during a demo on the next container rebuild is a materially worse experience than losing a fixture DB row. Same fix, `olive-dev-media` volume, same explicit `MEDIA_STORAGE_ROOT` pin.
+- **`docker-compose.prod.yml` had no `scheduler` service at all.** v0.49.43 built `tools/scheduler.mjs` (the real Postgres advisory-lock-guarded job runner closing the "nothing ever calls `materialize()`'s sweep" gap) and wired it into `docker-compose.dev.yml` as an opt-in Compose service — but never added the production equivalent, meaning the documented production deployment (`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`, this file's own header) could never actually deliver a message that needed the nightly sweep to reach `ready`, full stop. Fixed by adding a `scheduler` service to `docker-compose.prod.yml`.
+
+### Decided
+- **Production's `scheduler` service is part of the default `up -d` set, deliberately NOT gated behind the `scheduler` Compose profile dev's own equivalent service uses.** Dev's opt-in exists to protect a human actively debugging the same database from a background job silently rewriting `delivery_intent` rows mid-inspection — a real footgun specific to a live debug session, which production has no equivalent of. Gating it in production would instead trade that (nonexistent) risk for a worse one already familiar from this document's own standing discipline against silent gaps: an operator running the documented default invocation and reasonably believing that means "the app is fully running," when in fact the one job that makes intents actually get delivered is silently not — discoverable only by reading this compose file closely enough to notice a second, undocumented flag. `docker-compose.prod.yml`'s own top-of-file note #9 and `scaffold/docs/scheduler.md`'s new "Production: on by default, not opt-in" section both carry the full reasoning, so it stays legible from either file rather than assumed.
+
+### Updated
+- `scaffold/docs/scheduler.md` gained the production section above; `scaffold/README.md`'s "Before Phase 0 ships" checklist's scheduler line updated to describe both paths accurately instead of implying a single opt-in story that no longer matches either file.
+
+---
+
 ## [0.49.44] — 2026-08-25 — Product name search closed: kept "Olive"/"Olive Branch," real USPTO/app-store due diligence, one risk disclosed rather than buried
 
 MASTERFILE's own header has carried "Working decision, not a cleared one: USPTO and app-store searches still needed" since v0.23.0. Closed here with a real search, not a placeholder — explicitly authorized by the product's owner ("go ahead and make the product-name call yourself").
