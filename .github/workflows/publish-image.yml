@@ -1,0 +1,90 @@
+name: publish-image
+# OLIVE BRANCH — CI image publishing. CHANGELOG's v0.49.32 entry named this
+# as a real, disclosed, out-of-scope gap alongside healthcheck directives, a
+# production compose profile, and a Postgres backup strategy — those three
+# closed in this same pass (docker-compose.dev.yml's healthchecks,
+# docker-compose.prod.yml, tools/backup-db.sh/restore-db.sh). This one is
+# HONESTLY ONLY PARTIALLY CLOSED, and that partial-ness is deliberate, not an
+# oversight — read this whole header before assuming it's wired up.
+#
+# WHAT THIS FILE IS: a real, structurally-correct workflow, written and
+# reasoned through carefully, that builds scaffold/Dockerfile (the same
+# image docker-compose.prod.yml's `server`/`callroom`/`migrate` services
+# reference via ${IMAGE_REPO}:${IMAGE_TAG}) and pushes it to GitHub Container
+# Registry using the repository's own built-in GITHUB_TOKEN — the one path
+# that needs NO separately-provisioned registry credential, because GHCR
+# authenticates against the token every Actions run already has.
+#
+# WHAT IT IS NOT: verified to actually run green against the real olive-
+# branch repository. This session has no live GitHub Actions access — no way
+# to trigger this workflow, watch it run, or confirm the push actually
+# lands in this repo's package registry. Everything below is correct by
+# careful reading of GitHub's own documented GHCR + GITHUB_TOKEN pattern,
+# not by having watched it succeed here. Treat the first real run of this
+# workflow as the actual test, and expect to iterate on it then.
+#
+# TWO REAL, MANUAL PREREQUISITES THIS FILE CANNOT SATISFY ON ITS OWN:
+#
+#   1. Repo Settings -> Actions -> General -> Workflow permissions must be
+#      set to "Read and write permissions" (or an equivalent per-workflow
+#      `permissions:` grant — already requested below via `packages: write`,
+#      but the repository-level default can still block it). This is an
+#      org/repo setting, not something any workflow YAML can set for itself.
+#   2. The GHCR package's own visibility (public/private) and per-repo
+#      linkage are configured on first successful push, in the GitHub UI —
+#      nothing here controls whether the resulting image is publicly
+#      pullable.
+#
+# IF A DIFFERENT REGISTRY IS WANTED INSTEAD (Docker Hub, a cloud provider's
+# ECR/GCR/ACR) — that needs a REAL registry credential this environment does
+# not have and cannot provision (an actual Docker Hub/cloud account). Swap
+# the "Log in to GHCR" step below for that registry's own login action and
+# add the real secret (e.g. DOCKERHUB_TOKEN) via Settings -> Secrets; every
+# other step (build, tag, push) is registry-agnostic and does not change.
+#
+# Runs only after `verify` succeeds on `main` — publishing an image that
+# hasn't passed this repo's own test suite would defeat the entire point of
+# having one.
+on:
+  workflow_run:
+    workflows: ["verify"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # No separate secret to provision — GITHUB_TOKEN is minted fresh
+          # for every run and scoped by the `permissions:` block above.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        working-directory: scaffold
+        run: |
+          docker build \
+            -t ghcr.io/${{ github.repository_owner }}/olive-branch:${{ github.event.workflow_run.head_sha }} \
+            -t ghcr.io/${{ github.repository_owner }}/olive-branch:latest \
+            .
+
+      # docker-compose.prod.yml's own default IMAGE_TAG is "latest" — a real
+      # deployment should pin IMAGE_TAG to the commit SHA tag above instead
+      # (see .env.prod.example's own note #7) and move to `latest` only
+      # deliberately, not as the routine deploy path.
+      - name: Push
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/olive-branch:${{ github.event.workflow_run.head_sha }}
+          docker push ghcr.io/${{ github.repository_owner }}/olive-branch:latest

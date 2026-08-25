@@ -20,6 +20,36 @@ import { sweep } from '../../globalaudit/src/globalaudit.ts';
  *      which are attacker-controlled in the same way.
  */
 
+/**
+ * The raw request-body cap BOTH real HTTP entry points enforce — this
+ * class's own `listen()` below, and server/index.mjs's own hand-rolled
+ * `createServer` (which calls `Api.handle()` directly, never `listen()`,
+ * but must refuse an oversized body the identical way rather than being a
+ * second, independently-configured copy of the same number — see that
+ * file's own import of this constant).
+ *
+ * §20.2b's storage-wiring pass is what raised this from a flat, uncommented
+ * `2_000_000`: routes.mjs's homework-capture route already flagged that
+ * number as a real constraint on a base64-encoded PHOTO ("limits a base64-
+ * encoded photo to roughly 1.5MB of real image bytes"); a base64-encoded
+ * VIDEO — POST .../media, this same pass's new upload route — needs
+ * meaningfully more headroom, not a silent truncation. Base64 inflates
+ * bytes by 4/3, so 40MiB of request-body characters (base64 is pure ASCII,
+ * so "characters" and "bytes" are the same count here) admits roughly 30MB
+ * of real recorded bytes before the connection is refused — generous for a
+ * short video message, still a real, finite ceiling rather than "however
+ * much RAM happens to be free." `MAX_REQUEST_BODY_BYTES` env var overrides
+ * it for a deployment that genuinely needs a different number; an invalid
+ * or missing value falls back to this default rather than parsing to NaN
+ * (NaN > anything is always false, which would silently disable the cap
+ * entirely).
+ */
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 40 * 1024 * 1024;
+export const MAX_REQUEST_BODY_BYTES = (() => {
+  const raw = Number(process.env.MAX_REQUEST_BODY_BYTES);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_REQUEST_BODY_BYTES;
+})();
+
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 export interface Ctx {
@@ -351,7 +381,7 @@ export class Api {
   listen(port: number) {
     const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       let raw = '';
-      req.on('data', (c) => { raw += c; if (raw.length > 2_000_000) req.destroy(); });
+      req.on('data', (c) => { raw += c; if (raw.length > MAX_REQUEST_BODY_BYTES) req.destroy(); });
       req.on('end', async () => {
         const out = await this.handle(req.method ?? 'GET', req.url ?? '/',
           req.headers as any, raw);

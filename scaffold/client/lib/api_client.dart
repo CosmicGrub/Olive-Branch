@@ -90,6 +90,16 @@ class OliveApi {
   static const inbox    = '/v1/children/:childId/inbox';
   static const messages = '/v1/children/:childId/messages';
   static const batches  = '/v1/children/:childId/batches';
+  // --- real object storage (§20.2b) ---------------------------------------
+  // server/routes.mjs's real upload/download pair for the bytes [messages]
+  // above only ever carried a `storageKey` REFERENCE to — see [uploadMedia]
+  // and [fetchMessageMedia] below, and receipt_screen.dart's own header for
+  // the gap this closes.
+  static const media = '/v1/children/:childId/media';
+  // Two path params, not one — same reasoning [callEnd]'s own doc comment
+  // gives for why this is pre-substituted rather than going through
+  // [_get]'s single-`:childId` substitution the way [fetchInbox] above does.
+  static const messageMedia = '/v1/children/:childId/messages/:artifactId/media';
 
   // --- child agency (§7.10) ----------------------------------------------
   static const ping    = '/v1/children/:childId/ping';
@@ -534,6 +544,53 @@ class OliveApi {
         'daypart': daypart,
         'preserve': preserve,
       }, childId: childId);
+
+  /// POST .../media — server/routes.mjs's real upload route, the other real
+  /// half of [sendMessage]'s own header comment ("the real backend for
+  /// receipt_screen.dart's 'Send one back'"). Uploads [bytes] as base64 in a
+  /// JSON body -- same convention [captureHomework] already uses for a
+  /// photo, applied here to a real recorded video -- and returns the REAL
+  /// storage key server/routes.mjs's FilesystemStorage instance assigned,
+  /// meant to be handed straight to [sendMessage]'s own `storageKey`
+  /// parameter as the very next call. Two genuinely separate server-side
+  /// steps on purpose (this route only ever decides whether bytes can be
+  /// WRITTEN; [sendMessage] is what decides whether the capture itself is
+  /// ALLOWED, via captureMessage()'s own pipeline) -- a caller that uploads
+  /// bytes and never calls [sendMessage] afterward leaves a real, orphaned
+  /// blob with no media_artifact row pointing at it; receipt_screen.dart's
+  /// own retry logic caches the returned key across a retry specifically to
+  /// avoid creating a SECOND one for the same recording, but a genuinely new
+  /// upload attempt (a fresh recording) has no way to reclaim an earlier
+  /// orphan -- a real, honest limitation, not one this method hides.
+  ///
+  /// Throws [ApiException] on any non-2xx response (e.g. 400 `bytes_required`
+  /// for an empty body, 403 for a role with no message capability -- the
+  /// same `action: 'message'` gate [sendMessage] itself is checked against),
+  /// exactly like [sendMessage]'s own posture on a real rejection.
+  Future<String> uploadMedia(String childId, List<int> bytes) async {
+    final Map<String, dynamic> body =
+        await _post(media, {'bytes': base64Encode(bytes)}, childId: childId);
+    return body['storageKey'] as String;
+  }
+
+  /// GET .../messages/:artifactId/media — server/routes.mjs's real download
+  /// route, the read-side counterpart to [uploadMedia]. Requires the SAME
+  /// live session/edge [sendMessage]/[fetchInbox] already require for this
+  /// exact child (server-side: api.ts's `action: 'message'` gate, then
+  /// `mediaArtifactFor()`'s own `child_id` + artifact-id scoping -- see that
+  /// function's own doc comment in pool.ts for why the double scoping is the
+  /// real authorization boundary, not a formality). Returns the real bytes,
+  /// base64-decoded here so a caller gets back exactly what [uploadMedia]
+  /// was given, never the wire encoding. Throws [ApiException] on a 404
+  /// (`artifact_not_found` -- wrong id, or one belonging to a different
+  /// child; `media_not_found` -- a row that outlived its blob, e.g. the
+  /// storage reaper's own tombstone case) or any other non-2xx response, the
+  /// same posture as every other read in this class.
+  Future<List<int>> fetchMessageMedia(String childId, String artifactId) async {
+    final Map<String, dynamic> body = await _get(
+        messageMedia.replaceFirst(':childId', childId).replaceFirst(':artifactId', artifactId));
+    return base64Decode(body['bytes'] as String);
+  }
 
   /// POST /v1/me/device-tokens — {platform, token[, channel]} in, the new
   /// device_token row's real id out. `platform` must be 'android' or 'ios'

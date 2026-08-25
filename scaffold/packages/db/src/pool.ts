@@ -34,7 +34,29 @@ import {
  */
 
 export function createPool(connectionString: string): pg.Pool {
-  return new pg.Pool({ connectionString });
+  const pool = new pg.Pool({ connectionString });
+  // node-postgres's own documented gotcha, not a hypothetical: an IDLE
+  // pooled client that hits a network-level error (the DB restarting, a
+  // dropped connection, a transient blip) emits 'error' on the POOL itself,
+  // separate from any in-flight query's own promise. pg.Pool extends
+  // EventEmitter, and an EventEmitter's unhandled 'error' event is fatal in
+  // Node — no listener here means the *entire process* crashes on the next
+  // idle-connection error, not just the one request that was affected.
+  // Found for real, not assumed: running this project's own new Docker
+  // healthcheck (server/index.mjs's GET /healthz) against a live server
+  // with its DB container stopped underneath it crashed the whole Node
+  // process (uncaught 'error', exit 1) on the very next idle-client error,
+  // rather than letting /healthz report a real 503 and recover once the DB
+  // came back. `restart: unless-stopped` (docker-compose.dev.yml /
+  // .prod.yml) papers over this in practice — Docker just restarts the
+  // container — but that turns every transient DB blip into a dropped
+  // in-flight request plus a full process restart, instead of the pool
+  // quietly reconnecting on its own on the next query, which is what
+  // node-postgres already does correctly once this listener exists.
+  pool.on('error', (err) => {
+    console.error('pg pool: idle client error (pool recovers on next query)', err);
+  });
+  return pool;
 }
 
 /**
@@ -1782,6 +1804,41 @@ export async function persistCapturedMessage(
     );
 
     return { artifactId, intentId: intentRows[0].id as string, batchId };
+  });
+}
+
+/**
+ * §20.2b storage-wiring pass — the real, authenticated read side of
+ * `persistCapturedMessage()` above: looks up ONE `media_artifact` row,
+ * scoped to BOTH the child AND the exact artifact id in the SAME query.
+ * That double scoping is the real authorization boundary here, not a
+ * belt-and-braces extra — `persistCapturedMessage()`'s own header already
+ * documents that `media_artifact` carries no row-level security of its
+ * own, so a query that only filtered on `id` would let any caller who
+ * already cleared the route's `action: 'message'` gate for SOME child read
+ * a DIFFERENT child's artifact merely by guessing its uuid. A mismatched
+ * id — wrong artifact, or a real artifact belonging to a different child —
+ * returns `null`, identical to "does not exist," never "exists but isn't
+ * yours" — the same non-leaking-existence posture `childCtxFor()`'s own
+ * `null` already keeps for a missing child row.
+ *
+ * System role for the same reason `childCtxFor()`/`activeCustodyOrderFor()`
+ * use it: this is a lookup the route handler needs before it can call
+ * `storage.get()`, not a second authorization pass — the route's own
+ * `action: 'message'` (api.ts A1) plus `childId` taken from the verified
+ * path (A3) is the first and only pass, exactly like every other reader of
+ * this table in this file.
+ */
+export async function mediaArtifactFor(
+  pool: pg.Pool, childId: string, artifactId: string,
+): Promise<{ storageKey: string; kind: string } | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT storage_key, kind FROM media_artifact WHERE id = $1 AND child_id = $2`,
+      [artifactId, childId],
+    );
+    if (!rows.length) return null;
+    return { storageKey: rows[0].storage_key as string, kind: rows[0].kind as string };
   });
 }
 

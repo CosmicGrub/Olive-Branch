@@ -84,4 +84,7 @@ prohibition and an enforced one.
 - [ ] GUCs reset or `SET LOCAL` on every checkout
 - [ ] `0001_constraints.test.sql` green in CI against a fresh database
 - [ ] Golden time suite green: `npm run test:golden` → 24 passed
-- [ ] Backups exclude nothing — `preserved` artifacts are irreplaceable (§9.8)
+- [ ] Backups exclude nothing — `preserved` artifacts are irreplaceable (§9.8).
+      See `docs/backup-and-restore.md` for the actual procedure and the real,
+      executed round-trip proof (`tools/backup-restore-verify.sh`) that this
+      box means something.

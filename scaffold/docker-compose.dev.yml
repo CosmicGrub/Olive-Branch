@@ -101,6 +101,20 @@ services:
       - "127.0.0.1:8123:8123"
     command: ["node", "server/index.mjs"]
     restart: unless-stopped
+    healthcheck:
+      # server/index.mjs's own GET /healthz — a real SELECT 1 against the DB
+      # pool, not just "the process exists" (see that file's own comment on
+      # why: "healthy" only means something if it proves the server can
+      # actually reach Postgres). No curl/wget in node:22-slim; Node 22+
+      # ships a native fetch, so this needs nothing extra installed in the
+      # image. start_period gives the process time to open its DB pool on
+      # first boot before failures start counting against retries.
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   callroom:
     build: .
@@ -132,6 +146,42 @@ services:
       # closes that half.
       - "127.0.0.1:8787:8787"
     command: ["node", "tools/local-call-room-server.mjs"]
+    restart: unless-stopped
+    healthcheck:
+      # local-call-room-server.mjs's own GET /healthz — this process never
+      # touches Postgres, so unlike `server` above there's no dependency
+      # worth probing; the HTTP listener answering IS the whole contract.
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  scheduler:
+    build: .
+    # OPT-IN ONLY — gated behind the `scheduler` Compose profile, so a plain
+    # `docker compose -f docker-compose.dev.yml up -d --build` (this file's
+    # own documented default invocation, above) never starts it. A
+    # background sweep mutating live `delivery_intent` rows on the exact
+    # database someone is mid-debug against is a real footgun, not a
+    # hypothetical one — see scaffold/docs/scheduler.md for the full
+    # reasoning and tools/scheduler.mjs's own header for what the job does.
+    # Turn it on explicitly:
+    #   docker compose -f docker-compose.dev.yml --profile scheduler up -d --build
+    profiles: ["scheduler"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      # Same app_owner connection every other service here uses — see
+      # `migrate`'s own comment on why app_owner, not postgres.
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+      # Real nightly cadence by default (03:00 UTC). Override for a tighter
+      # loop while testing the scheduler itself — see
+      # scaffold/docs/scheduler.md.
+      SCHEDULER_HOUR_UTC: "${SCHEDULER_HOUR_UTC:-3}"
+    command: ["node", "tools/scheduler.mjs", "loop"]
     restart: unless-stopped
 
 volumes:

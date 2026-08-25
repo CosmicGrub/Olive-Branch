@@ -43,8 +43,14 @@ Does NOT replace:
 - **Production deployment.** This is a single-stage dev image (see the
   `Dockerfile`'s own header) that ships the whole repo plus
   `node_modules`, runs `npm run build` inside the image, and has no
-  concept of secrets management, horizontal scaling, or a real domain —
-  none of that is in scope here.
+  concept of horizontal scaling or a real domain/TLS — none of that is in
+  scope here. `docker-compose.prod.yml` (repo root) is the genuinely
+  separate production-oriented profile — real restart policies, resource
+  limits, DEV_LOGIN structurally unreachable, and secrets read from a
+  required `.env.prod` rather than this stack's hardcoded dev role
+  passwords; see that file's own header for the full list of what differs
+  and why, and `docs/backup-and-restore.md` for the backup/restore
+  operator runbook.
 
 ## Use
 
@@ -99,6 +105,24 @@ host machine itself. `db`'s own superuser password is overridable via
 `POSTGRES_PASSWORD` in `.env` (see `.env.example`) if you want it to be
 more than a formality even against another local process on the same
 host.
+
+## Optional: the scheduled-jobs runner
+
+`docker-compose.dev.yml` also defines a `scheduler` service (`node tools/
+scheduler.mjs loop`) that runs the delivery-engine rematerialization sweep
+and `tools/health-alert.mjs` on a schedule. It is gated behind a Compose
+**profile** and is NOT part of the default `up -d --build` above — a
+background job silently rewriting `delivery_intent` rows on the exact
+database someone is mid-debug session against is a real footgun. Turn it on
+explicitly:
+
+```bash
+docker compose -f docker-compose.dev.yml --profile scheduler up -d --build
+```
+
+See `scaffold/docs/scheduler.md` for the full picture: what each job does,
+how to read its structured log lines, and how to run it by hand (no Docker)
+instead.
 
 ## A new migration lands — what to do
 

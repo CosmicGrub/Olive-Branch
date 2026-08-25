@@ -23,6 +23,22 @@ scaffold/tools/jitsi-selfhost/.jitsi-docker/
 # commit the real file.
 scaffold/.env
 
+# Same as scaffold/.env above, for docker-compose.prod.yml — see
+# scaffold/.env.prod.example, the tracked template. Real production secrets
+# (DB passwords, SESSION_SECRET) never belong in git.
+scaffold/.env.prod
+
+# tools/backup-db.sh's default output directory and
+# docker-compose.prod.yml's `backup` service default volume target — real
+# Postgres dumps of a family's data, never committed.
+scaffold/backups/
+
+# Real family media, written by FilesystemStorage (server/routes.mjs's
+# `defaultMediaStorage`, MASTERFILE §20.2b) — a self-hosted deployment's own
+# persistent volume, never source-controlled content. See MEDIA_STORAGE_ROOT
+# to point this somewhere else entirely.
+scaffold/data/
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db

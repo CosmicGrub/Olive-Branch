@@ -132,17 +132,27 @@ void main() {
   });
 
   group('Receipt — "Send one back" really wired (live params + injected picker/client)', () {
-    testWidgets('records, POSTs, and shows a real success state', (tester) async {
-      Uri? seenUrl;
-      Map<String, dynamic>? seenBody;
+    testWidgets('records, uploads the real bytes, POSTs the REAL server-'
+        'assigned storage key, and shows a real success state', (tester) async {
+      final List<Uri> seenUrls = <Uri>[];
+      Map<String, dynamic>? uploadBody;
+      Map<String, dynamic>? sendBody;
       // A real (if tiny) delay on the mocked transport — otherwise every
       // await in _sendOneBack resolves within the same microtask flush a
       // single tester.pump() already drains, and the busy state below would
       // never actually be observable, real or not.
       final MockClient mock = MockClient((http.Request req) async {
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-        seenUrl = req.url;
-        seenBody = jsonDecode(req.body) as Map<String, dynamic>;
+        await Future<void>.delayed(const Duration(milliseconds: 15));
+        seenUrls.add(req.url);
+        if (req.url.path.endsWith('/media')) {
+          uploadBody = jsonDecode(req.body) as Map<String, dynamic>;
+          // The REAL storage key server/routes.mjs's FilesystemStorage would
+          // assign — never a client-fabricated `device/...` reference.
+          return http.Response(
+            jsonEncode({'storageKey': 'children/child-a/messages/real-uuid-1', 'etag': 'e1'}),
+            201);
+        }
+        sendBody = jsonDecode(req.body) as Map<String, dynamic>;
         return http.Response(
           jsonEncode({'id': 'intent-1', 'artifactId': 'artifact-1', 'state': 'pending'}), 201);
       });
@@ -164,15 +174,20 @@ void main() {
       expect(find.text('Sent!'), findsOneWidget);
       expect(find.text('Send one back'), findsNothing);
 
-      // The real request actually reached api_client.dart's real POST path.
-      expect(seenUrl.toString(), 'http://api.test/v1/children/child-a/messages');
-      expect(seenBody?['durationMs'], isA<int>());
-      expect((seenBody?['durationMs'] as int) > 0, isTrue);
-      expect(seenBody?['storageKey'], isA<String>());
-      // Nothing here ever claims to have uploaded video bytes — only a
-      // locally-meaningful reference travels in the body (see this file's
-      // and receipt_screen.dart's own header on the object-storage gap).
-      expect(seenBody?['storageKey'], startsWith('device/'));
+      // BOTH real requests actually reached api_client.dart's real paths,
+      // upload before send.
+      expect(seenUrls.map((u) => u.toString()), <String>[
+        'http://api.test/v1/children/child-a/media',
+        'http://api.test/v1/children/child-a/messages',
+      ]);
+      // The real recorded bytes travelled to the upload route.
+      expect(uploadBody?['bytes'], isA<String>());
+      // ...and the message-send route received the REAL key the (mocked)
+      // upload response assigned — not a locally-fabricated reference. This
+      // is the real object-storage gap MASTERFILE §20.2b named, closed.
+      expect(sendBody?['storageKey'], 'children/child-a/messages/real-uuid-1');
+      expect(sendBody?['durationMs'], isA<int>());
+      expect((sendBody?['durationMs'] as int) > 0, isTrue);
     });
 
     testWidgets('a real server rejection shows a real error, not a faked success',
@@ -263,10 +278,19 @@ void main() {
     testWidgets(
         'a connectivity failure really retries on its own -- "Sent!" only '
         'appears once a real retry genuinely succeeds', (tester) async {
-      int attempts = 0;
+      // Counts UPLOAD attempts specifically (a real connectivity gap blocks
+      // whichever real HTTP call happens to go first, same as it would for
+      // any single request) -- the first upload attempt fails, the retry's
+      // own upload succeeds, and the send that follows it succeeds too.
+      int uploadAttempts = 0;
       final MockClient mock = MockClient((http.Request req) async {
-        attempts += 1;
-        if (attempts == 1) throw Exception('connection refused');
+        if (req.url.path.endsWith('/media')) {
+          uploadAttempts += 1;
+          if (uploadAttempts == 1) throw Exception('connection refused');
+          return http.Response(
+              jsonEncode({'storageKey': 'children/child-a/messages/real-uuid-2', 'etag': 'e2'}),
+              201);
+        }
         return http.Response(
             jsonEncode({'id': 'intent-2', 'artifactId': 'artifact-2', 'state': 'pending'}), 201);
       });
@@ -285,12 +309,15 @@ void main() {
       await tester.tap(find.text('Send one back'));
       await tester.pump();
       expect(find.text('Kept safe'), findsOneWidget);
-      expect(attempts, 1);
+      expect(uploadAttempts, 1);
 
       // Advancing past the real (if shortened) backoff fires the scheduled
-      // retry -- a genuine second attempt, not a fabricated success.
+      // retry -- a genuine second attempt, not a fabricated success. The
+      // retry's own upload succeeds and is never repeated a third time (see
+      // receipt_screen.dart's own storageKey-caching comment) -- exactly one
+      // more upload call, then the send that follows it.
       await tester.pump(const Duration(milliseconds: 30));
-      expect(attempts, 2);
+      expect(uploadAttempts, 2);
       expect(find.text('Sent!'), findsOneWidget);
       expect(find.text('Kept safe'), findsNothing);
     });
@@ -299,6 +326,11 @@ void main() {
         'a genuine server rejection is never mistaken for a connectivity '
         'gap -- no queued-safe copy, no silent auto-retry, the same real '
         'error as always', (tester) async {
+      // A rejection this early (the upload half, the FIRST of the two real
+      // calls _attemptSend now makes) never even reaches the send half —
+      // `attempts` stays at 1 for the whole test, same as when this test
+      // predates the upload step, because the same-403-for-any-request mock
+      // below never distinguishes which call it was.
       int attempts = 0;
       final MockClient mock = MockClient((http.Request req) async {
         attempts += 1;

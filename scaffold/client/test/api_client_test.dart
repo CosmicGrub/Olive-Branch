@@ -315,6 +315,67 @@ void main() {
     });
   });
 
+  group('uploadMedia / fetchMessageMedia — real object storage (§20.2b)', () {
+    test('uploadMedia posts base64 bytes to POST .../media and returns the '
+        'REAL server-assigned storage key, not a client-fabricated one',
+        () async {
+      Uri? seenUrl;
+      Map<String, dynamic>? sentBody;
+      final mock = MockClient((req) async {
+        seenUrl = req.url;
+        sentBody = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({
+          'storageKey': 'children/child-a/messages/real-uuid-1', 'etag': 'abc123',
+        }), 201);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final String storageKey = await api.uploadMedia('child-a', <int>[9, 9, 9]);
+
+      expect(seenUrl.toString(), 'http://api.test/v1/children/child-a/media');
+      expect(sentBody!['bytes'], base64Encode(<int>[9, 9, 9]));
+      expect(storageKey, 'children/child-a/messages/real-uuid-1');
+    });
+
+    test('uploadMedia throws ApiException on a real rejection (e.g. empty bytes)',
+        () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'bytes_required'}), 400));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.uploadMedia('child-a', <int>[]),
+        throwsA(isA<ApiException>().having((e) => e.error, 'error', 'bytes_required')),
+      );
+    });
+
+    test('fetchMessageMedia substitutes BOTH :childId and :artifactId and '
+        'returns the real decoded bytes', () async {
+      Uri? seenUrl;
+      final mock = MockClient((req) async {
+        seenUrl = req.url;
+        return http.Response(jsonEncode({
+          'bytes': base64Encode(<int>[1, 2, 3, 4]), 'kind': 'video_msg',
+        }), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      final List<int> bytes = await api.fetchMessageMedia('child-a', 'artifact-9');
+
+      expect(seenUrl.toString(),
+          'http://api.test/v1/children/child-a/messages/artifact-9/media');
+      expect(bytes, <int>[1, 2, 3, 4]);
+    });
+
+    test('fetchMessageMedia throws ApiException on a 404 (wrong artifact, '
+        'or one belonging to a different child)', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'artifact_not_found'}), 404));
+      final api = OliveApi('http://api.test', 'tok-123', client: mock);
+      await expectLater(
+        () => api.fetchMessageMedia('child-a', 'nope'),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'statusCode', 404)),
+      );
+    });
+  });
+
   group('OliveApi — device-token registration (§11)', () {
     test('registerDeviceToken POSTs {platform, token} and returns the real id',
         () async {
