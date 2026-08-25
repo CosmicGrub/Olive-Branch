@@ -265,6 +265,83 @@ void main() {
     });
   });
 
+  group('Live parent presence — GET .../presence', () {
+    // Base handler for /dev-login, /me, /inbox, /now shared by every test
+    // below; `presence` supplies (or omits) the .../presence response so
+    // each test only has to state what's distinctive about it — same
+    // shared-base-mock shape `readyMock()` already uses in the groups below.
+    MockClient mockWith(http.Response Function(http.Request) presence) =>
+        MockClient((req) async {
+          if (req.url.path == '/v1/auth/dev-login') {
+            return http.Response(jsonEncode({'token': 'tok'}), 200);
+          }
+          if (req.url.path == '/v1/me') {
+            return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
+          }
+          if (req.url.path.endsWith('/inbox')) {
+            return http.Response(jsonEncode({'entries': <Map<String, dynamic>>[]}), 200);
+          }
+          if (req.url.path.endsWith('/now')) {
+            return http.Response(jsonEncode({
+              'childLocalTime': '4:15 PM', 'zoneAbbr': 'EDT', 'zone': 'America/New_York',
+              'sleepsUntilHandover': null,
+            }), 200);
+          }
+          if (req.url.path.endsWith('/presence')) return presence(req);
+          return http.Response('not found', 404);
+        });
+
+    testWidgets(
+        'renders a real, fetched free guardian through the real ChildHome '
+        '_PresenceCard', (t) async {
+      final mock = mockWith((req) => http.Response(jsonEncode({'free': {
+        'guardianId': 'g-dad', 'name': 'Dad',
+        'theirLocalTime': '6:42 PM', 'freeUntilHerTime': '9:00 PM her time',
+      }}), 200));
+      await t.pumpWidget(wrap(LiveChildHomeScreen(
+        baseUrl: 'http://api.test', childId: 'child-a', httpClient: mock,
+        pushChannel: _FakePushChannel())));
+      await t.pumpAndSettle();
+
+      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Dad is free right now'), findsOneWidget);
+      expect(find.textContaining('9:00 PM her time'), findsOneWidget);
+      expect(find.textContaining("6:42 PM"), findsOneWidget);
+    });
+
+    testWidgets(
+        'presence is absent -- no card at all -- when the server honestly '
+        'reports {free: null}, matching sleepsUntilHandover\'s own '
+        'absence-not-a-guess posture', (t) async {
+      final mock = mockWith((req) =>
+          http.Response(jsonEncode({'free': null}), 200));
+      await t.pumpWidget(wrap(LiveChildHomeScreen(
+        baseUrl: 'http://api.test', childId: 'child-a', httpClient: mock,
+        pushChannel: _FakePushChannel())));
+      await t.pumpAndSettle();
+
+      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.textContaining('is free right now'), findsNothing);
+    });
+
+    testWidgets(
+        'a presence-fetch FAILURE never traps the rest of ChildHome\'s live '
+        'rendering behind an error screen -- same "secondary fetch must '
+        'never break the primary screen" posture as the real PushChannel '
+        'failure test above', (t) async {
+      final mock = mockWith((req) =>
+          http.Response(jsonEncode({'error': 'boom'}), 500));
+      await t.pumpWidget(wrap(LiveChildHomeScreen(
+        baseUrl: 'http://api.test', childId: 'child-a', httpClient: mock,
+        pushChannel: _FakePushChannel())));
+      await t.pumpAndSettle();
+
+      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text("Couldn't reach the server"), findsNothing);
+      expect(find.textContaining('is free right now'), findsNothing);
+    });
+  });
+
   group('Watch "Call Dad" wiring — §21.5', () {
     MockClient readyMock({String childName = 'Ivy'}) => MockClient((req) async {
       if (req.url.path == '/v1/auth/dev-login') {

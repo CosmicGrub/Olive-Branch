@@ -42,6 +42,18 @@ export interface Order {
   holidays: HolidayRule[];
   effectiveFrom: string;      // 'YYYY-MM-DD', child-local
   effectiveTo?: string | null;
+  /**
+   * db/migrations/0024_custody_order_side_guardians.sql — which real
+   * app_user.id holds Side A/B. Both nullable, and NULL on every row that
+   * existed before that migration (no way to retroactively know); a NULL
+   * here is an honest "unmapped", never a guess. See that migration's own
+   * header for why this mapping did not exist anywhere in the schema before
+   * it, and freeGuardianNow()'s caller (server/routes.mjs's GET
+   * .../presence) for how a NULL is handled — the on-duty exclusion is
+   * skipped, not faked.
+   */
+  sideAGuardianId?: string | null;
+  sideBGuardianId?: string | null;
 }
 
 export interface Block {
@@ -204,4 +216,118 @@ export function childCalendarLabel(
     return `${block.holidayName} with ${sideNames[block.side]}`;
   }
   return `${sideNames[block.side]}'s time`;
+}
+
+// ================================================= live parent presence =====
+// GET /v1/children/:childId/presence (server/routes.mjs). Who, among her
+// PARENTS ONLY (§5.27.2 — "Only a parent. Not a grandparent, a stepparent,
+// a caregiver, a therapist or a coordinator"; server/routes.mjs's caller
+// pre-filters to role='guardian' via pool.ts's parentGuardiansOfChild(),
+// same principle the come-back signal already applies, adopted here for a
+// different, non-signal card), is currently free to be shown on ChildHome.
+// Pure, no DB — same "no side effects, unit-testable in isolation" shape as
+// prioritise() in packages/signal/src/signal.ts, which this deliberately
+// mirrors, not a coincidence.
+
+export interface FreeCandidate {
+  userId: string;
+  name: string;
+}
+
+/** Structurally compatible with pool.ts's AvailabilityWindow — this module
+ *  does not import that type (schedule.ts has no DB dependency anywhere
+ *  else and this function should not be the first to add one). */
+export interface FreeWindow {
+  guardianId: string;
+  guardianName: string;
+  weekday: number;
+  startLocal: string;   // 'HH:mm'
+  endLocal: string;     // 'HH:mm'
+}
+
+export interface FreeGuardian {
+  guardianId: string;
+  guardianName: string;
+  startLocal: string;   // 'HH:mm'
+  endLocal: string;     // 'HH:mm'
+}
+
+/**
+ * scheduleStrip()'s own wrap-aware comparison (client/lib/calendar_day_logic
+ * .dart / packages/custody's own phase3.ts equivalent): an overnight window
+ * (end < start) is active either from start through midnight, or from
+ * midnight through end — never neither, never both halves double-counted.
+ *
+ * NOT reachable via real data today: guardian_availability_window's own
+ * CHECK (end_local > start_local) constraint (db/migrations/0010_
+ * availability.sql) makes storing end < start impossible, so startLocal <=
+ * endLocal holds for every real row today and only the first branch below
+ * ever actually runs. Kept correct anyway — see freeGuardianNow()'s own
+ * yesterday-wrap handling just below — rather than left half-ported, so a
+ * future relaxation of that constraint doesn't also need someone to
+ * remember this file. A guardian cannot express an overnight availability
+ * window at all today; that is a real, disclosed, PRE-EXISTING gap in the
+ * availability feature itself (this constraint predates this presence
+ * feature), not something introduced or silently left broken here.
+ */
+function isWindowActiveNow(startLocal: string, endLocal: string, nowLocalHHMM: string): boolean {
+  return startLocal <= endLocal
+    ? (nowLocalHHMM >= startLocal && nowLocalHHMM < endLocal)
+    : (nowLocalHHMM >= startLocal || nowLocalHHMM < endLocal);
+}
+
+/**
+ * §3 of the presence design spec, Steps 3-4. `candidates` MUST already have
+ * the on-duty guardian excluded by the caller (server/routes.mjs) — this
+ * function has no custody-order concept at all, deliberately: "who is on
+ * duty" and "who is free" are two different questions answered by two
+ * different pieces of state (custody_order vs. guardian_availability_window),
+ * and folding both into one function would make the on-duty exclusion
+ * untestable in isolation from the availability-window logic.
+ *
+ * "No seniority, no primary/secondary, no custody weighting." — MASTERFILE
+ * §5.27.4. The only real tie-break below is "then simply first" (earliest
+ * window start wins); the guardianId secondary sort exists purely to make
+ * an exact-start-time tie deterministic and carries no product meaning.
+ */
+export function freeGuardianNow(
+  candidates: FreeCandidate[],
+  windows: FreeWindow[],
+  nowWeekday: number,
+  nowLocalHHMM: string,
+): FreeGuardian | null {
+  const candidateIds = new Set(candidates.map(c => c.userId));
+  // A window is "active now" if it starts on TODAY's weekday (the ordinary
+  // case, and today the only one guardian_availability_window's own CHECK
+  // constraint permits — see isWindowActiveNow()'s own comment), OR it
+  // started YESTERDAY and is an overnight window (startLocal > endLocal)
+  // still running past midnight into today. The two cases use different
+  // comparisons deliberately: reusing isWindowActiveNow() unmodified for a
+  // yesterday-dated window would also match its ordinary same-day range a
+  // second time (e.g. a plain 08:00-09:00 window from yesterday would
+  // wrongly read as active at 08:30 again today) — only the post-midnight
+  // half of a genuine overnight window carries over to today.
+  const yesterday = (nowWeekday + 6) % 7;
+  const active = windows.filter(w => {
+    if (!candidateIds.has(w.guardianId)) return false;
+    if (w.weekday === nowWeekday) {
+      return isWindowActiveNow(w.startLocal, w.endLocal, nowLocalHHMM);
+    }
+    if (w.weekday === yesterday && w.startLocal > w.endLocal) {
+      return nowLocalHHMM < w.endLocal;
+    }
+    return false;
+  });
+  if (!active.length) return null;
+
+  const winner = [...active].sort((a, b) =>
+    a.startLocal.localeCompare(b.startLocal) ||
+    a.guardianId.localeCompare(b.guardianId))[0];
+
+  return {
+    guardianId: winner.guardianId,
+    guardianName: winner.guardianName,
+    startLocal: winner.startLocal,
+    endLocal: winner.endLocal,
+  };
 }

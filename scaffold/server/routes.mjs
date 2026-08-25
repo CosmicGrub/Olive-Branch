@@ -14,7 +14,7 @@ import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
-import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
+import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential, availabilityFor,
          setAvailabilityWindows, deactivateAccount,
@@ -27,7 +27,7 @@ import { activeCustodyOrderFor, guardiansOfChild, setPinCredential,
          takeAndGo, themeFor, setChildTheme,
          recordCallStart, recordCallEnd,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
-import { sleepsUntilSideChange } from '../packages/custody/src/schedule.mjs';
+import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
@@ -751,6 +751,101 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // is passed straight through -- see that function's own header for why
       // that shape is what it is.
       return { body: { order } };
+    },
+  });
+
+  api.register({
+    // GET /v1/children/:childId/presence — "who is free to be called right
+    // now" on ChildHome. Design spec's §0: the brief this route was
+    // originally scoped from assumed a Side→guardian mapping already
+    // existed; it did not (no table anywhere mapped schedule.ts's abstract
+    // 'A'|'B' to a real app_user.id) until
+    // db/migrations/0024_custody_order_side_guardians.sql, added alongside
+    // this route specifically to make the exclusion below possible. Same
+    // closest-existing-action reasoning as /now and /custody-order above:
+    // no dedicated Action exists for this either, and calendar.view is the
+    // same schedule/status-adjacent fit for the same undocumented gap.
+    method: 'GET', path: '/v1/children/:childId/presence', action: 'calendar.view',
+    handler: async (c, q) => {
+      // Same tz-resolution block as /now and /custody-order, duplicated a
+      // third time rather than shared — matching those two routes' own
+      // explicit "small duplication, not worth a shared helper here"
+      // comments.
+      const nowUtc = DateTime.utc();
+      const interval = await q(
+        `SELECT tz FROM child_tz_interval
+          WHERE child_id = $1 AND valid @> $2::timestamptz
+          ORDER BY confidence DESC LIMIT 1`,
+        [c.childId, nowUtc.toJSDate()],
+      );
+      let tz = interval[0]?.tz;
+      if (!tz) {
+        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
+        if (!child.length) return { status: 404, body: { error: 'child_not_found' } };
+        tz = child[0].home_tz;
+      }
+      const local = nowUtc.setZone(tz);
+      const nowLocalDate = local.toISODate();
+      // 24h, comparison-only — HH:mm sorts/compares identically to
+      // chronological order, the same technique freeGuardianNow()'s own
+      // sort already relies on (schedule.ts).
+      const nowLocalHHMM = local.toFormat('HH:mm');
+      // Sun=0..Sat=6, matching packages/delivery-engine/src/materialize.ts's
+      // own convention and 0010_availability.sql's weekday column — NOT
+      // Luxon's native 1=Monday..7=Sunday ISO weekday.
+      const nowWeekday = local.weekday % 7;
+
+      // Step 1 — who is on duty, honestly (design spec §0/§3). A NULL side-
+      // guardian column (legacy row, or simply no order at all) means the
+      // on-duty exclusion is SKIPPED, not guessed: every live co-guardian
+      // stays a candidate, matching activeCustodyOrderFor()'s own "honest
+      // null, never a guess" discipline.
+      const order = await activeCustodyOrderFor(pool, c.childId, nowLocalDate);
+      let onDutyGuardianId = null;
+      if (order) {
+        const side = sideOn(order, nowLocalDate).side;
+        onDutyGuardianId = side === 'A'
+          ? (order.sideAGuardianId ?? null)
+          : (order.sideBGuardianId ?? null);
+      }
+
+      // Step 2 — candidates: PARENTS only (§5.27.2), on-duty guardian
+      // excluded. An only-guardian family (or a family where the only other
+      // guardian happens to be on duty) naturally falls through to
+      // `{ free: null }` below via this list being empty — no special case
+      // needed, and no distinguishable state that would leak "you only have
+      // one parent" through this card (§5.27.3's sibling concern).
+      const parents = await parentGuardiansOfChild(pool, c.childId);
+      const candidates = parents.filter(g => g.userId !== onDutyGuardianId);
+      if (!candidates.length) return { body: { free: null } };
+
+      // Step 3/4 — active windows now, tie-break via freeGuardianNow()'s own
+      // ported prioritise()-style sort (packages/custody/src/schedule.ts).
+      const windows = await availabilityFor(pool, c.childId);
+      const winner = freeGuardianNow(candidates, windows, nowWeekday, nowLocalHHMM);
+      if (!winner) return { body: { free: null } };
+
+      // §1 — theirLocalTime/freeUntilHerTime are BOTH rendered in the
+      // child's own resolved zone (the same one /now resolves for her),
+      // never a per-guardian zone: this app has no per-guardian timezone
+      // (confirmed: no `tz` column on app_user, and custody_order.order_tz
+      // is a single order-wide zone documented as "the child's
+      // primary-residence zone at entry" — not a location for any specific
+      // adult, and actively the wrong proxy for THIS guardian specifically,
+      // since by construction (Step 2's on-duty exclusion) she is the one
+      // NOT currently at the child's home). Reusing the child's own zone is
+      // the least-invented option available, not a claim that it is
+      // accurate for a genuinely cross-timezone family.
+      const childLocalEndOf = DateTime.fromISO(
+        `${nowLocalDate}T${winner.endLocal}`, { zone: tz },
+      ).toFormat('h:mm a');
+
+      return { body: { free: {
+        guardianId: winner.guardianId,
+        name: winner.guardianName,
+        theirLocalTime: local.toFormat('h:mm a'),
+        freeUntilHerTime: `${childLocalEndOf} her time`,
+      } } };
     },
   });
 

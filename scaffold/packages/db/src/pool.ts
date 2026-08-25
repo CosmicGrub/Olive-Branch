@@ -188,7 +188,8 @@ export async function activeCustodyOrderFor(
               to_char(exchange_time, 'HH24:MI') AS exchange_time,
               holiday_rules,
               effective_from::text AS effective_from,
-              effective_to::text AS effective_to
+              effective_to::text AS effective_to,
+              side_a_guardian_id, side_b_guardian_id
          FROM custody_order
         WHERE child_id = $1
           AND effective_from <= $2::date
@@ -206,6 +207,11 @@ export async function activeCustodyOrderFor(
       holidays: r.holiday_rules ?? [],
       effectiveFrom: r.effective_from,
       effectiveTo: r.effective_to,
+      // db/migrations/0024_custody_order_side_guardians.sql — NULL on every
+      // legacy row (honest "unmapped", never guessed). See Order's own
+      // field comment (schedule.ts) for the full reasoning.
+      sideAGuardianId: r.side_a_guardian_id,
+      sideBGuardianId: r.side_b_guardian_id,
     } as Order;
   });
 }
@@ -256,6 +262,46 @@ export async function guardiansOfChild(
       [childId],
     );
     return rows.map((r: any) => ({ userId: r.user_id }));
+  });
+}
+
+/**
+ * GET /v1/children/:childId/presence's own candidate pool — §5.27.2's
+ * "Only a parent. Not a grandparent, a stepparent, a caregiver, a therapist
+ * or a coordinator", applied here because guardiansOfChild() above returns
+ * EVERY effective_guardianship row regardless of role (step_parent, sitter,
+ * coordinator, ...), which is too wide for "call them" on a child's home
+ * screen. Role-filtered the same way export.raw's live-guardian check
+ * already filters (this file's rawExportBundleFor(): `role = 'guardian'`
+ * against a live guardianship row) — reused against effective_guardianship
+ * rather than the raw table, for the identical reason guardiansOfChild()'s
+ * own header gives for preferring that view: `expires_at` is honored for
+ * free, not re-derived a second, possibly-drifting way.
+ *
+ * System-scoped, mirroring guardiansOfChild()'s own reasoning verbatim:
+ * guardianship carries no RLS in this schema, so there is no narrower
+ * session this could run under that would change what it sees, and the
+ * route handler's real A3 childId-from-path + can('calendar.view', ...)
+ * check already gates the call before this ever runs.
+ *
+ * `name` is `app_user.display_name` at read time, joined here rather than
+ * left for the caller to resolve separately — the presence response needs
+ * exactly this pairing (see FreeCandidate in packages/custody/src/
+ * schedule.ts) and no other caller of this function exists yet to want the
+ * id alone.
+ */
+export async function parentGuardiansOfChild(
+  pool: pg.Pool, childId: string,
+): Promise<{ userId: string; name: string }[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT DISTINCT eg.user_id, u.display_name
+         FROM effective_guardianship eg
+         JOIN app_user u ON u.id = eg.user_id
+        WHERE eg.child_id = $1 AND eg.role = 'guardian'`,
+      [childId],
+    );
+    return rows.map((r: any) => ({ userId: r.user_id, name: r.display_name }));
   });
 }
 
