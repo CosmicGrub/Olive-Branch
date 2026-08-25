@@ -205,6 +205,32 @@ await clearFixture();
      PAYLOAD_ALREADY_EXPIRED, PAYLOAD_AT_INSTANT, NOW.plus({ days: 90 }).toISO()],
   );
 
+  // runRematerializeSweep() is, correctly, GLOBAL — it has no child_id scope
+  // of its own, matching the real production job (tools/scheduler.mjs's own
+  // header: it sweeps every pending delivery_intent row, not just one
+  // child's). Inside tools/verify.sh's single shared `verify_run` database,
+  // that means it also touches every OTHER suite's own leftover 'pending'
+  // fixture rows (db/test/0001_constraints.test.sql's must_pass probes in
+  // particular — real, permanent INSERTs, never rolled back or cleaned up,
+  // because nothing had ever swept the WHOLE table before this file existed
+  // to prove that sweep is real). Reproduced live: a fresh tools/verify.sh
+  // run genuinely tripped health_check's own stalled_delivery breach this
+  // way, sourced from other suites' rows this test's own materialize() call
+  // legitimately (and correctly) advanced to 'ready'/'expired' — not a bug
+  // in the sweep, a real, previously-invisible side effect of it existing
+  // at all. Those other suites' own assertions already ran and passed
+  // before this file ever executes (verify.sh's suite ordering), so
+  // touching their leftover rows breaks nothing there; but leaving them
+  // 'ready'/'expired' afterward pollutes the shared database for the
+  // Health check that runs once every suite is done. Snapshot every
+  // non-CHILD_R pending row now, before the real, global sweep runs it —
+  // restored (deleted, not left mutated) once every sweep in this file has
+  // finished, immediately below.
+  const foreignPendingIds = (await admin.query(
+    `SELECT id FROM delivery_intent WHERE state = 'pending' AND child_id != $1`,
+    [CHILD_R],
+  )).rows.map((r) => r.id);
+
   const before = await runRematerializeSweep(pool, { now: NOW, batchLimit: 500 });
   check('B sweep', 'scanned exactly the 3 seeded pending rows (>=; a shared DB may carry more)',
     before.scanned >= 3, true);
@@ -284,6 +310,22 @@ await clearFixture();
     stillThere.every((r) => r.state === 'ready' || r.state === 'expired'), true);
   check('B sweep', 'the config-gap row is the one still being rescanned every sweep',
     after.scanned >= 1, true);
+
+  // Restore every OTHER suite's own leftover 'pending' row the sweep above
+  // legitimately (and correctly) just materialized to 'ready'/'expired' —
+  // see this section's own opening comment on `foreignPendingIds` for the
+  // full reasoning: a real, global sweep touching real leftover fixture
+  // rows from suites that already ran and already passed, not a bug in the
+  // sweep itself. Deleted, not reset back to 'pending' — this codebase has
+  // no way to know what state a stranger's row "should" be in, and every
+  // suite that created these rows has already finished using them by this
+  // point in verify.sh's own suite order. Inside this block, not after it
+  // — foreignPendingIds is block-scoped to section B (a real ReferenceError
+  // caught this the first time it was written outside the block).
+  if (foreignPendingIds.length) {
+    await admin.query(`DELETE FROM delivery_intent WHERE id = ANY($1::uuid[])`,
+      [foreignPendingIds]);
+  }
 }
 
 // Clean up every row this suite seeded BEFORE section D runs — D invokes the
