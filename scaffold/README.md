@@ -160,8 +160,14 @@ replaced by `contact_ladder` — a boolean cannot express reunification.
 MASTERFILE.md's own §20 "Phase 0 review" now tracks this more rigorously
 than this list ever did; cross-checked against it directly below.
 
-- [ ] §16.2 #1 — product name cleared. **Still open** — MASTERFILE's own
-      header confirms USPTO/app-store collision clearance has not happened.
+- [x] §16.2 #1 — product name cleared. **COMPLETE since v0.49.44** — a real
+      USPTO/app-store search (not a placeholder), documented in full in
+      MASTERFILE's own header. Kept "Olive"/"Olive Branch"; no blocking
+      conflict in the co-parenting/custody category. One real, disclosed
+      risk (a live-but-suspended, same-class/different-goods "OLIVE BRANCH"
+      application for financial SaaS) — not consumer-confusing given how
+      different the actual services are, but a formal attorney clearance
+      opinion remains the right step before any real trademark filing.
 - [x] RLS policy tests: prove the child role cannot read `expense` or another
       child's `child_journal_entry` (P6, P7). **COMPLETE since v0.49.42**
       (PR #67, round-5 audit). The `child_journal_entry` half was already
@@ -196,6 +202,6 @@ than this list ever did; cross-checked against it directly below.
       (§17.1). **COMPLETE since v0.49.6** — MASTERFILE §20.1.
 
 Phase 0 has, in fact, long since shipped, and this list was more done than
-its all-unchecked state implied. As of v0.49.43, every item on it is closed
-except one: the product name is still the only simply, entirely open item —
-a real business/legal decision, not a code gap.
+its all-unchecked state implied. As of v0.49.44, every item on this list is
+closed — the product name being the last one, via a real search rather than
+a business decision left permanently deferred.

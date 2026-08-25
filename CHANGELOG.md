@@ -14,6 +14,22 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.44] — 2026-08-25 — Product name search closed: kept "Olive"/"Olive Branch," real USPTO/app-store due diligence, one risk disclosed rather than buried
+
+MASTERFILE's own header has carried "Working decision, not a cleared one: USPTO and app-store searches still needed" since v0.23.0. Closed here with a real search, not a placeholder — explicitly authorized by the product's owner ("go ahead and make the product-name call yourself").
+
+### Searched
+- **App-store/market landscape**: the established co-parenting/custody-app competitive set (OurFamilyWizard, AppClose, TalkingParents, WeParent, Custody X Change, MyFam, Pairently) — none use "Olive" or "Olive Branch." A live app called bare "Olive" exists (Giga Studios' `oliveapp.com`, a food/cosmetic allergen scanner marketed to parents) but in an unrelated category. Several small/regional apps use "Olive Branch" (church apps, a preschool parent-teacher communication tool, a nanny-booking service, a retail loyalty app) — none are custody/co-parenting products, none show federal registration.
+- **USPTO's own trademark database** (`tmsearch.uspto.gov`, queried live, not from memory): every "OLIVE BRANCH" filing found is either dead (abandoned/cancelled — hosiery, restaurant, nutrition counseling, kids' entertainment, book publishing, internet chat rooms) or in a plainly unrelated goods category (a live, registered "THE OLIVE BRANCH" mark for packaged foods featuring olives). One real, disclosed risk: Serial 98817745, a live-but-**suspended** "OLIVE BRANCH" service-mark application filed Oct. 24, 2024 by Silvius Enterprise, Inc., in Class 042 — the same class a software-services filing for this app would likely use. Its actual goods/services (confirmed by reading the full USPTO record, not the truncated search-result snippet): "financial data management, accounting, tax preparation... managing financial portfolios... business intelligence" — a wholly different market and function from family custody coordination. A companion application, Serial 98817742 (Class 035, same owner), covers accounts-receivable/billing administration — same story.
+
+### Decided
+Kept **Olive** (child-facing) / **Olive Branch** (adult-facing). No blocking conflict found for this specific product category. The Silvius Enterprise Class 042 application is a real, disclosed, same-class/different-goods risk — a genuine consideration for the *prosecution* of any future federal trademark application this app might file (an examining attorney could cite it), but not a consumer-confusion risk given how different the actual services are, and it is currently suspended, not registered, so it blocks nothing today.
+
+### Explicitly not claimed
+This is a real, good-faith due-diligence search — sufficient to close this document's own tracking item and to keep building under this name with eyes open. It is **not** a substitute for a licensed trademark attorney's formal clearance opinion, which remains the right step before any actual USPTO trademark application filing or wide commercial launch. Stated plainly here rather than implied as settled, matching this document's own standing discipline against overclaiming certainty it cannot back up.
+
+---
+
 ## [0.49.43] — 2026-08-25 — Three real infrastructure systems: a scheduled-jobs runner, Postgres backup/restore + production hardening, and real object-storage wiring
 
 MASTERFILE §20.2b has named three gaps as real and unbuilt since at least Phase 0: no cron/scheduler ever calls `materialize()`'s own sweep or `health-alert.mjs`; "Broader Docker-as-production-pillar work (healthcheck directives, a real production compose profile, a Postgres backup strategy, CI image publishing)" was explicitly out of scope when the dev-stack hardening pass closed (v0.49.32); and `StoragePort` had no production implementation, so a child's recorded video message was never actually uploaded anywhere. All three close here — scoped, built, and adversarially reviewed against real Postgres/Docker before merge, not asserted.
