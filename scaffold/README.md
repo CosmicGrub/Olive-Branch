@@ -162,37 +162,40 @@ than this list ever did; cross-checked against it directly below.
 
 - [ ] §16.2 #1 — product name cleared. **Still open** — MASTERFILE's own
       header confirms USPTO/app-store collision clearance has not happened.
-- [ ] RLS policy tests: prove the child role cannot read `expense` or another
-      child's `child_journal_entry` (P6, P7). **Partly done** — the
-      `child_journal_entry` half is genuinely proven, automated, cross-child
-      (`db/test/0003_session.test.sql`'s real `assert_eq` pairs). The
-      `expense` half has a real `expense_no_child` RLS policy and a real
-      FORCE-RLS structural check (`db/migrations/0006_court_tier.sql`'s
-      `health_check` view), but `db/test/0005_court.test.sql` only exercises
-      `expense` INSERT validation, not a child role actually being denied a
-      read — that specific behavioral proof still doesn't exist.
-- [ ] `policy_has_target` CHECK exercised for all six delivery policies.
-      **Partly done** — the constraint itself covers all six branches
-      (`db/migrations/0001_phase0_init.sql`), but `db/test/0001_constraints.test.sql`
-      only exercises three of them by name (`at_daypart`, `on_local_date`,
-      `when_reachable`) — `at_instant`, `on_event`, and `immediate` have no
-      matching probe there. Still a real gap for the other three.
-- [ ] Nightly rematerialization sweep + the event-driven invalidation hooks.
-      **Partly done, partly still open** — the invalidation guarantee itself
-      is real and proven (`materialize()`'s own "future + undelivered only"
-      behavior, covered by `delivery.test.mjs`'s 37 probes), but no cron or
-      scheduler actually calls it on a nightly cadence anywhere in this repo
-      (grepped for one; found none) — matching this codebase's own broader,
-      already-disclosed pattern of no cron/scheduled jobs existing yet
-      (MASTERFILE §20.2b, re: health-alert). Still a real, open gap for the
-      sweep half specifically.
+- [x] RLS policy tests: prove the child role cannot read `expense` or another
+      child's `child_journal_entry` (P6, P7). **COMPLETE since v0.49.42**
+      (PR #67, round-5 audit). The `child_journal_entry` half was already
+      proven (`db/test/0003_session.test.sql`'s real `assert_eq` pairs); the
+      `expense` half — a real `expense_no_child` RLS policy and a real
+      FORCE-RLS structural check existed, but the behavioral proof of an
+      actual denied read did not — is now closed too: `db/test/0005_court.test.sql`
+      proves a `child`-role session sees zero rows on a real expense row
+      while a `guardian`-role session sees the same row (proving the denial
+      is the policy, not an empty table), live-Postgres-verified including a
+      superuser-bypasses-RLS negative control.
+- [x] `policy_has_target` CHECK exercised for all six delivery policies.
+      **COMPLETE since v0.49.42** (PR #67, round-5 audit). The constraint
+      itself always covered all six branches (`db/migrations/0001_phase0_init.sql`);
+      `db/test/0001_constraints.test.sql` now has adversarial probes for all
+      six, not just three — `at_instant`, `on_event`, and `immediate` each
+      gained a must_fail/must_pass pair, live-Postgres-verified.
+- [x] Nightly rematerialization sweep + the event-driven invalidation hooks.
+      **COMPLETE since v0.49.43** (PR #68). The invalidation guarantee was
+      already real and proven (`materialize()`'s own "future + undelivered
+      only" behavior, `delivery.test.mjs`'s 37 probes); the sweep half — no
+      cron or scheduler anywhere in this repo actually called it — is now
+      closed by `tools/scheduler.mjs`, a real Postgres advisory-lock-guarded
+      job runner (`rematerialize` + `health-alert` jobs). Wired into
+      `docker-compose.dev.yml`/`docker-compose.prod.yml` as an **opt-in**
+      Compose service (a background sweep is a real footgun against a live
+      debug session, so it is not part of the default `up -d`) — an operator
+      must explicitly turn it on (`--profile scheduler`), which is a real,
+      deliberate deployment choice, not an unclosed gap in the code itself.
+      See `scaffold/docs/scheduler.md`.
 - [x] Single-guardian mode verified end to end with no second guardian row
       (§17.1). **COMPLETE since v0.49.6** — MASTERFILE §20.1.
 
 Phase 0 has, in fact, long since shipped, and this list was more done than
-its all-unchecked state implied — but re-verifying each item against the
-real, current source (rather than trusting the original claim) found the
-truth is mixed, not uniformly "done": single-guardian mode is cleanly
-complete; the other three "not yet done" items each turned out to be
-partly real and partly still a genuine, disclosed gap, detailed above. Only
-the product name is still simply, entirely open.
+its all-unchecked state implied. As of v0.49.43, every item on it is closed
+except one: the product name is still the only simply, entirely open item —
+a real business/legal decision, not a code gap.
