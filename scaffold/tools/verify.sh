@@ -281,7 +281,8 @@ out=$(PGBIN="$PGBIN" DB="$DB" PORT="$PORT" bash db/test/run_concurrency.sh 2>&1)
 record "db concurrency" "$(printf '%s' "$out" | grep -c '  PASS')" "$(printf '%s' "$out" | grep -c '  FAIL')"
 
 for spec in "db isolation|db/test/0003_session.test.sql" \
-            "db e2e message chain|db/test/0004_e2e_message.test.sql" ; do
+            "db e2e message chain|db/test/0004_e2e_message.test.sql" \
+            "db message/media RLS|db/test/0007_message_media_rls.test.sql" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$($PSQL -d "$DB" -f "$file" 2>&1)
   record "$name" "$(printf '%s' "$out" | grep -c 'NOTICE:  PASS')" \
@@ -360,6 +361,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
+            "inbox route (real DB, real RLS)|server/test/inbox_route.test.mjs" \
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"

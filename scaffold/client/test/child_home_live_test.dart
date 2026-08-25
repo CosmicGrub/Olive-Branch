@@ -96,7 +96,7 @@ void main() {
           // and 'opened' (already watched) messages — this mix is the exact
           // shape that used to make the badge overcount. Two delivered, one
           // already opened: the real unread count is 2, not 3.
-          return http.Response(jsonEncode({'messages': [
+          return http.Response(jsonEncode({'entries': [
             {'id': '1', 'state': 'delivered'},
             {'id': '2', 'state': 'delivered'},
             {'id': '3', 'state': 'opened'},
@@ -142,7 +142,7 @@ void main() {
           return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
         }
         if (req.url.path.endsWith('/inbox')) {
-          return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+          return http.Response(jsonEncode({'entries': <Map<String, dynamic>>[]}), 200);
         }
         if (req.url.path.endsWith('/now')) {
           return http.Response(jsonEncode({
@@ -202,7 +202,7 @@ void main() {
         }
         if (req.url.path == '/v1/me') return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
         if (req.url.path.endsWith('/inbox')) {
-          return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+          return http.Response(jsonEncode({'entries': <Map<String, dynamic>>[]}), 200);
         }
         if (req.url.path.endsWith('/now')) {
           return http.Response(jsonEncode({
@@ -244,7 +244,7 @@ void main() {
           return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
         }
         if (req.url.path.endsWith('/inbox')) {
-          return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+          return http.Response(jsonEncode({'entries': <Map<String, dynamic>>[]}), 200);
         }
         if (req.url.path.endsWith('/now')) {
           return http.Response(jsonEncode({
@@ -274,7 +274,7 @@ void main() {
         return http.Response(jsonEncode({'displayName': childName}), 200);
       }
       if (req.url.path.endsWith('/inbox')) {
-        return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+        return http.Response(jsonEncode({'entries': <Map<String, dynamic>>[]}), 200);
       }
       if (req.url.path.endsWith('/now')) {
         return http.Response(jsonEncode({
@@ -374,7 +374,7 @@ void main() {
         return http.Response(jsonEncode({'displayName': 'Ivy'}), 200);
       }
       if (req.url.path.endsWith('/inbox')) {
-        return http.Response(jsonEncode({'messages': <Map<String, dynamic>>[]}), 200);
+        return http.Response(jsonEncode({'entries': <Map<String, dynamic>>[]}), 200);
       }
       if (req.url.path.endsWith('/now')) {
         return http.Response(jsonEncode({

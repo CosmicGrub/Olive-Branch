@@ -724,6 +724,28 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     },
   });
 
+  // The response's top-level key is `entries`, not `messages` — a real,
+  // previously undiscovered bug, found only while writing this route's
+  // first-ever HTTP-level test (server/test/inbox_route.test.mjs, added
+  // alongside db/migrations/0023_message_media_delivery_rls.sql). `messages`
+  // is on `packages/globalaudit/src/globalaudit.ts`'s own
+  // GLOBAL_CHILD_FORBIDDEN list ("adult plumbing that should never be
+  // rendered to her") — banned there for an unrelated reason (some other
+  // module's own pressure-framing leak, per that file's own comments), but
+  // `Api.handle()`'s global child-payload sweep (wired in v0.49.37) checks
+  // every key name in EVERY response served to a `child` principal, with no
+  // per-route exemption by default. That meant every real child session
+  // hitting her own inbox — the actual, load-bearing call
+  // `client/lib/child_home_live.dart`'s home screen makes on every load —
+  // 500'd with `child_payload_leak` in real production, silently, since the
+  // sweep first shipped. A guardian's own read was never affected (the
+  // sweep only inspects responses to a `child` principal), which is exactly
+  // why nothing caught this: every existing manual/device check of this
+  // route was a guardian request. Renamed rather than exempted via
+  // skipChildPayloadSweep — the field ITSELF is not adult plumbing (it is
+  // exactly, legitimately hers), only its old NAME collided; renaming keeps
+  // the sweep's real protection live for every other field this route ever
+  // returns, instead of turning it off for the whole route.
   api.register({
     method: 'GET', path: '/v1/children/:childId/inbox', action: 'message',
     handler: async (c, q) => {
@@ -737,7 +759,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
           LIMIT 50`,
         [c.childId],
       );
-      return { body: { messages: rows } };
+      return { body: { entries: rows } };
     },
   });
 
