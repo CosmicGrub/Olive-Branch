@@ -1,11 +1,16 @@
 /**
- * The ten items. MASTERFILE §8.11.4, §8.12. (Corrected
+ * The ten items. MASTERFILE §8.11.4, §8.11.1, §8.11.2, §8.11.7. (Corrected
  * v0.49.11 — this cited §10.5, which is unrelated "Recording consent" law;
  * the channels.mjs group below actually tests §8.11.4's "silent device"
- * behavior, copy-pasted from channels.ts's own now-fixed header.) The DS–DV
- * groups below test guardian/pending.ts's four surfaces — that file cites
- * §5.14, §16.2 #11, §10.1b, and §9.9.1, not a §12.8–§12.11 range, which does
- * not exist; MASTERFILE's §12 stops at §12.7.
+ * behavior, copy-pasted from channels.ts's own now-fixed header.) (Further
+ * corrected here — this cited a bare "§8.12" for the tabletop/landscape/
+ * rotation groups below, which does not exist; §8.12 is skipped entirely
+ * between §8.11 and §8.13. See postures.ts's own header for the real,
+ * per-section correction of each — §8.11.7's own note already flagged this
+ * exact gap as "found, not fixed... a distinct, smaller issue" before now.)
+ * The DS–DV groups below test guardian/pending.ts's four surfaces — that
+ * file cites §5.14, §16.2 #11, §10.1b, and §9.9.1, not a §12.8–§12.11 range,
+ * which does not exist; MASTERFILE's §12 stops at §12.7.
  */
 import { PUSH_CHANNELS, SMS_ESCALATE_AFTER_MINUTES, route, senderStatus,
   auditStatus, ADULT_SMS, auditAdultSms, socketPolicy, reachability }

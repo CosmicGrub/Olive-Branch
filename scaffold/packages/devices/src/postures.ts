@@ -1,10 +1,16 @@
 /**
- * MASTERFILE §8.12 — the layouts the postures implied.
+ * MASTERFILE §8.11.1/§8.11.2/§8.11.7 — the layouts the postures implied.
+ * (Corrected — every "§8.12"/"§8.12.x" marker this file and its own test
+ * carried since v0.32.0 cited a section that does not exist anywhere in
+ * MASTERFILE; §8.12 is skipped entirely between §8.11 and §8.13, the exact
+ * gap §8.11.7's own note already found and flagged for the §8.12.3 case
+ * specifically — "found, not fixed... a distinct, smaller issue" — closed
+ * here for the rest of this file's own citations too.)
  *
- * v0.32.0 declared nine postures and a `degradesTo` mechanism. Three of those
- * declarations had nothing behind them: the half-open Fold had no layout, tablets
- * had no landscape arrangement, and `court_export_request` — the degraded form the
- * audit demanded — existed only as a string.
+ * v0.32.0 declared nine postures and a `degradesTo` mechanism (§8.11.1). Three
+ * of those declarations had nothing behind them: the half-open Fold (§8.11.2)
+ * had no layout, tablets had no landscape arrangement, and `court_export_request`
+ * — the degraded form the audit demanded (§8.11.7) — existed only as a string.
  *
  * A declaration with nothing behind it is worse than an omission, because the
  * audit passes.
@@ -16,7 +22,11 @@ export type Posture =
 
 export type Orientation = 'portrait' | 'landscape';
 
-// ============================================ §8.12.1 the tabletop layout ===
+// =========================================== §8.11.2 the half-open Fold ===
+// (was "§8.12.1 the tabletop layout" — §8.12 does not exist; §8.11.2 is
+// "The half-open Fold," MASTERFILE's own real match, confirmed by its
+// content: "Video above the crease, controls below... Nothing used it" —
+// the exact gap TabletopLayout/tabletopPlacementOk below closes.)
 /**
  * Half-open, the Fold stands by itself with the camera at eye level. The crease
  * runs horizontally across the middle in this posture, not vertically — so the
@@ -52,7 +62,11 @@ export function tabletopPlacementOk(region: 'video' | 'controls', above: boolean
 /** A call in tabletop mode should not end when she puts it down. */
 export const TABLETOP_KEEPS_CALL_ALIVE = true;
 
-// =========================================== §8.12.2 landscape on tablets ===
+// ================================================ §8.11.1 nine postures ===
+// (was "§8.12.2 landscape on tablets" — §8.12 does not exist; §8.11.1 is
+// "Nine postures," the section that originally declared per-posture
+// landscape support in its own table with nothing behind it, the gap the
+// LANDSCAPE array below closes.)
 /**
  * Tablets are used in landscape more often than portrait — the opposite of a
  * phone. A portrait-only layout on a 10-inch tablet is the common case broken.
@@ -157,7 +171,13 @@ export function requestableAt(width: number): boolean {
   return width >= REQUEST_MIN_WIDTH;
 }
 
-// ==================================================== §8.12.4 the web path ==
+// ======================================================== the web path ===
+// (was "§8.12.4" — §8.12 does not exist. Unlike the two sections above,
+// this one has no confirmed real MASTERFILE replacement: WebCapability/
+// WEB_ALLOWED build NEW behavior on top of §8.11.6's already-settled fact
+// below, not a re-implementation of an existing declared-but-empty MASTERFILE
+// subsection — honestly disclosed as real, tested code with no exact
+// matching prose section, rather than a citation forced to fit.)
 /**
  * §8.11.6 — there is no kiosk in a browser tab, so the **web client is
  * guardian-only**. That is settled. What was missing is the path a second parent

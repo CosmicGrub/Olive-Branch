@@ -95,6 +95,10 @@ for spec in \
   "print fulfilment|packages/print/test/print.test.mjs" \
   "filesystem storage adapter|packages/storage/test/storage.test.mjs" \
   "emergency card|packages/emergency/test/emergency.test.mjs" \
+  "global child-payload sweep|packages/globalaudit/test/globalaudit.test.mjs" \
+  "observer tier (§17.3)|packages/observer/test/observer.test.mjs" \
+  "offline outbox + conflict resolution (§5.22)|packages/offline/test/offline.test.mjs" \
+  "toddler shell (§8.10)|packages/toddler/test/toddler.test.mjs" \
   "annotation canvas engine (undo/redo/erase)|packages/annotation/test/canvas.test.mjs" \
   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
