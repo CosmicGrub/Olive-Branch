@@ -13,7 +13,9 @@
  * migrated Postgres — not part of `npm test`'s default JS-suite chain, for
  * the same reason its siblings above aren't.
  *
- * Three things proven here, matching the task's own three-part demand:
+ * Four things proven here (a fourth, C, added when runMediaReapSweep()
+ * closed the separate "reap() has no production caller" gap this file's
+ * own first version missed — see tools/scheduler.mjs's own header):
  *   A) LOCK CONTENTION, at the primitive — two genuinely concurrent
  *      `withJobLock()` calls for the SAME job name, fired with `Promise.all`
  *      (this repo's own established real-race shape — see
@@ -31,6 +33,17 @@
  *      `materialize()` itself, which `delivery.test.mjs`'s 37 probes already
  *      do). A second sweep afterward proves already-resolved rows are never
  *      re-touched.
+ *   C) MEDIA REAP CORRECTNESS — five real media_artifact rows (due,
+ *      preserved, not-yet-due, already-tombstoned, and a blob whose delete
+ *      is made to fail) swept once against `artifacts_due_for_reaping()`
+ *      and a real `reap_tombstone` table, proving: an expired row's blob
+ *      AND row both go; a preserved row is excluded by the SQL WHERE
+ *      clause itself (never even reaches reap()'s own belt-and-braces
+ *      check — see this section's own comment on why); a future row is
+ *      untouched; an already-tombstoned row is excluded by the SQL
+ *      `NOT EXISTS`, not re-attempted; and a blob delete failure leaves the
+ *      row in place and writes a real reap_tombstone row, per reap()'s own
+ *      "blob first, then row" design.
  *   D) LOCK CONTENTION, at the real job — two genuinely concurrent
  *      `runNamedJob()` calls for `health-alert` (a real subprocess spawn,
  *      naturally slow enough to race reliably — empirically ~0.5-1s per run
@@ -42,7 +55,7 @@ import { DateTime } from 'luxon';
 import { createPool, childCtxFor } from '../src/pool.mjs';
 import { materialize } from '../../delivery-engine/src/materialize.mjs';
 import {
-  withJobLock, runRematerializeSweep, runNamedJob,
+  withJobLock, runRematerializeSweep, runMediaReapSweep, runNamedJob,
 } from '../../../tools/scheduler.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -326,6 +339,186 @@ await clearFixture();
     await admin.query(`DELETE FROM delivery_intent WHERE id = ANY($1::uuid[])`,
       [foreignPendingIds]);
   }
+}
+
+// ===========================================================================
+// C · runMediaReapSweep — real media_artifact rows, real artifacts_due_
+//     for_reaping()/reap_tombstone, a fake StoragePort standing in only for
+//     the parts reap() actually calls (storage.delete()) — MemoryStorage/
+//     FilesystemStorage's own real disk/memory behavior is already proven
+//     in storage.test.mjs and stack.test.mjs; this section proves the SEAM
+//     (the SQL candidate query + the tombstone write path), the same
+//     division of labor section B draws for materialize().
+// ===========================================================================
+{
+  // A real, non-fixed "now" — unlike section B's deliberately-fixed NOW
+  // (chosen so materialize() is deterministic), artifacts_due_for_reaping()
+  // filters on the DATABASE's own real now(), not an injectable value (see
+  // tools/scheduler.mjs's own comment on dueForReaping() for why that is
+  // the correct choice for a production sweep). Fixture timestamps below
+  // are offset by days specifically so ordinary test latency and any
+  // client/server clock skew can never flip which side of "due" they land
+  // on.
+  const REAL_NOW = DateTime.utc();
+  const MEDIA_DUE = 'a0000000-0000-0000-0000-0000000000c1';
+  const MEDIA_PRESERVED = 'a0000000-0000-0000-0000-0000000000c2';
+  const MEDIA_FUTURE = 'a0000000-0000-0000-0000-0000000000c3';
+  const MEDIA_TOMBSTONE_SKIP = 'a0000000-0000-0000-0000-0000000000c4';
+  const MEDIA_DELETE_FAILS = 'a0000000-0000-0000-0000-0000000000c5';
+  const KEY_DUE = `children/${CHILD_R}/reap-test/due.jpg`;
+  const KEY_PRESERVED = `children/${CHILD_R}/reap-test/preserved.jpg`;
+  const KEY_FUTURE = `children/${CHILD_R}/reap-test/future.jpg`;
+  const KEY_TOMBSTONE_SKIP = `children/${CHILD_R}/reap-test/tombstone-skip.jpg`;
+  const KEY_DELETE_FAILS = `children/${CHILD_R}/reap-test/delete-fails.jpg`;
+
+  // child/app_user rows from section B are still live — clearFixture() has
+  // not run yet at this point in the file.
+  await admin.query(
+    `INSERT INTO media_artifact
+       (id, child_id, author_id, kind, storage_key, captured_at, captured_tz,
+        preserved, expires_at)
+     VALUES ($1, $2, $3, 'photo', $4, now(), 'America/New_York', false, $5::timestamptz)`,
+    [MEDIA_DUE, CHILD_R, DAD, KEY_DUE, REAL_NOW.minus({ days: 1 }).toISO()]);
+  await admin.query(
+    `INSERT INTO media_artifact
+       (id, child_id, author_id, kind, storage_key, captured_at, captured_tz,
+        preserved, preserved_by, preserved_at, expires_at)
+     VALUES ($1, $2, $3, 'photo', $4, now(), 'America/New_York', true, $3, now(), NULL)`,
+    [MEDIA_PRESERVED, CHILD_R, DAD, KEY_PRESERVED]);
+  await admin.query(
+    `INSERT INTO media_artifact
+       (id, child_id, author_id, kind, storage_key, captured_at, captured_tz,
+        preserved, expires_at)
+     VALUES ($1, $2, $3, 'photo', $4, now(), 'America/New_York', false, $5::timestamptz)`,
+    [MEDIA_FUTURE, CHILD_R, DAD, KEY_FUTURE, REAL_NOW.plus({ days: 30 }).toISO()]);
+  await admin.query(
+    `INSERT INTO media_artifact
+       (id, child_id, author_id, kind, storage_key, captured_at, captured_tz,
+        preserved, expires_at)
+     VALUES ($1, $2, $3, 'photo', $4, now(), 'America/New_York', false, $5::timestamptz)`,
+    [MEDIA_TOMBSTONE_SKIP, CHILD_R, DAD, KEY_TOMBSTONE_SKIP, REAL_NOW.minus({ days: 2 }).toISO()]);
+  await admin.query(
+    `INSERT INTO media_artifact
+       (id, child_id, author_id, kind, storage_key, captured_at, captured_tz,
+        preserved, expires_at)
+     VALUES ($1, $2, $3, 'photo', $4, now(), 'America/New_York', false, $5::timestamptz)`,
+    [MEDIA_DELETE_FAILS, CHILD_R, DAD, KEY_DELETE_FAILS, REAL_NOW.minus({ days: 1 }).toISO()]);
+
+  // A pre-existing tombstone for MEDIA_TOMBSTONE_SKIP — proves the SQL
+  // function's own `NOT EXISTS (SELECT 1 FROM reap_tombstone ...)` clause
+  // really excludes an already-tombstoned row from the candidate set,
+  // rather than re-attempting it (and re-incrementing `attempts`) every
+  // single sweep.
+  await admin.query(
+    `INSERT INTO reap_tombstone (artifact_id, storage_key, error, attempts)
+     VALUES ($1, $2, 'pre-existing tombstone, seeded to prove exclusion', 3)`,
+    [MEDIA_TOMBSTONE_SKIP, KEY_TOMBSTONE_SKIP]);
+
+  // Same shared-database caution section B's own foreignPendingIds comment
+  // documents, applied to media_artifact instead of delivery_intent: this
+  // sweep is correctly GLOBAL, so if any OTHER suite's own leftover fixture
+  // happens to carry a real past expires_at, it is swept too — genuinely
+  // correct reaper behavior, not a bug, but worth surfacing rather than
+  // silently absorbing into this suite's own counts. No other suite in
+  // this repo seeds media_artifact with a deliberately past expires_at (all
+  // use now()+interval future dates, matching production's own real
+  // default), so this is expected to be empty in practice.
+  const foreignDueIds = (await admin.query(
+    `SELECT m.id FROM media_artifact m
+      WHERE m.preserved = false AND m.expires_at IS NOT NULL AND m.expires_at <= now()
+        AND m.child_id != $1
+        AND NOT EXISTS (SELECT 1 FROM reap_tombstone t WHERE t.artifact_id = m.id)`,
+    [CHILD_R])).rows.map((r) => r.id);
+  if (foreignDueIds.length) {
+    console.error(`C reap: note — ${foreignDueIds.length} foreign media_artifact row(s) `
+      + 'are also due for reaping in this shared database; the sweep below will delete '
+      + 'them for real (correct behavior, not this suite\'s bug) — informational only.');
+  }
+
+  // A minimal, fake StoragePort — reap() only ever calls storage.delete(),
+  // so that is the only method this needs to implement for real. Throws for
+  // exactly one key, to prove the tombstone write path without needing a
+  // real, flaky I/O failure.
+  const deletedKeys = [];
+  const fakeStorage = {
+    async delete(key) {
+      if (key === KEY_DELETE_FAILS) throw new Error('simulated blob delete failure');
+      deletedKeys.push(key);
+      return true;
+    },
+  };
+
+  const result = await runMediaReapSweep(pool, fakeStorage, { now: REAL_NOW.toJSDate(), limit: 500 });
+
+  check('C reap', 'examined at least the 2 real due rows (>=; a shared DB may carry more)',
+    result.examined >= 2, true);
+  check('C reap', 'deleted at least the 1 blob that should succeed',
+    result.blobsDeleted >= 1, true);
+  check('C reap', 'the due row\'s blob was actually handed to storage.delete()',
+    deletedKeys.includes(KEY_DUE), true);
+  check('C reap', 'the delete-fails row\'s blob was attempted, not skipped',
+    result.tombstoned.includes(MEDIA_DELETE_FAILS), true);
+
+  const dueRow = (await admin.query(
+    `SELECT 1 FROM media_artifact WHERE id = $1`, [MEDIA_DUE])).rows;
+  check('C reap', 'the due row is actually gone from media_artifact', dueRow.length, 0);
+
+  const preservedRow = (await admin.query(
+    `SELECT 1 FROM media_artifact WHERE id = $1`, [MEDIA_PRESERVED])).rows;
+  check('C reap', 'the preserved row survives untouched — excluded by the SQL WHERE '
+    + 'clause itself (preserved=false), never even reaching reap()\'s own belt-and-'
+    + 'braces skippedPreserved check', preservedRow.length, 1);
+  check('C reap', 'a preserved row was never handed to storage.delete()',
+    deletedKeys.includes(KEY_PRESERVED), false);
+
+  const futureRow = (await admin.query(
+    `SELECT 1 FROM media_artifact WHERE id = $1`, [MEDIA_FUTURE])).rows;
+  check('C reap', 'the not-yet-due row survives untouched', futureRow.length, 1);
+  check('C reap', 'a not-yet-due row was never handed to storage.delete()',
+    deletedKeys.includes(KEY_FUTURE), false);
+
+  const tombstoneSkipRow = (await admin.query(
+    `SELECT 1 FROM media_artifact WHERE id = $1`, [MEDIA_TOMBSTONE_SKIP])).rows;
+  check('C reap', 'an already-tombstoned row survives untouched — excluded by the SQL '
+    + 'NOT EXISTS, not re-attempted', tombstoneSkipRow.length, 1);
+  const tombstoneSkipAttempts = (await admin.query(
+    `SELECT attempts FROM reap_tombstone WHERE artifact_id = $1`, [MEDIA_TOMBSTONE_SKIP])).rows[0];
+  check('C reap', 'its pre-existing tombstone attempts count is unchanged, not re-incremented',
+    tombstoneSkipAttempts.attempts, 3);
+
+  const deleteFailsRow = (await admin.query(
+    `SELECT 1 FROM media_artifact WHERE id = $1`, [MEDIA_DELETE_FAILS])).rows;
+  check('C reap', 'a row whose blob delete failed survives — "blob first, then row" '
+    + 'means a failed blob delete must never lose the row too', deleteFailsRow.length, 1);
+  const tombstoneRow = (await admin.query(
+    `SELECT attempts, error FROM reap_tombstone WHERE artifact_id = $1`,
+    [MEDIA_DELETE_FAILS])).rows[0];
+  check('C reap', 'a real reap_tombstone row was written for the failed delete',
+    tombstoneRow?.attempts, 1);
+  check('C reap', 'it records the real error message, not a placeholder',
+    tombstoneRow?.error, 'simulated blob delete failure');
+
+  // A second sweep must leave the surviving rows alone and not re-tombstone
+  // the one already-tombstoned by the first sweep, above — proving the
+  // NOT EXISTS exclusion applies to a tombstone THIS run just wrote, not
+  // only to one seeded ahead of time.
+  const second = await runMediaReapSweep(pool, fakeStorage, { now: REAL_NOW.toJSDate(), limit: 500 });
+  const tombstoneRowAfter = (await admin.query(
+    `SELECT attempts FROM reap_tombstone WHERE artifact_id = $1`, [MEDIA_DELETE_FAILS])).rows[0];
+  check('C reap', 'a second sweep does not re-attempt an artifact this run already '
+    + 'tombstoned', tombstoneRowAfter.attempts, 1);
+  check('C reap', 'a second sweep genuinely finds fewer candidates than the first',
+    second.examined < result.examined, true);
+
+  // Clean up this section's own rows — the survivors (preserved/future/
+  // tombstone-skip/delete-fails) and their tombstone row(s), since the DUE
+  // row already deleted itself via the sweep. clearFixture() below only
+  // ever targets delivery_intent/day_part/child_tz_interval/guardianship/
+  // child/app_user, never media_artifact, so this suite is responsible for
+  // its own media rows specifically.
+  await admin.query(`DELETE FROM reap_tombstone WHERE artifact_id = ANY($1::uuid[])`,
+    [[MEDIA_TOMBSTONE_SKIP, MEDIA_DELETE_FAILS]]);
+  await admin.query(`DELETE FROM media_artifact WHERE child_id = $1`, [CHILD_R]);
 }
 
 // Clean up every row this suite seeded BEFORE section D runs — D invokes the
