@@ -155,7 +155,15 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       final now = await api.fetchNow(widget.childId);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
-      final List<dynamic> messages = inbox['messages'] as List;
+      // `entries`, not `messages` -- server/routes.mjs's own GET .../inbox
+      // handler renamed its response key: `messages` collided with
+      // packages/globalaudit/src/globalaudit.ts's GLOBAL_CHILD_FORBIDDEN
+      // list (banned there for an unrelated reason), which meant every real
+      // child session hitting this exact call 500'd in production, silently
+      // -- see that handler's own comment for the full account. This
+      // screen's own header already disclosed why nothing caught it: it has
+      // never been run against a real deployed backend.
+      final List<dynamic> messages = inbox['entries'] as List;
       setState(() {
         _childName = (me['displayName'] as String?) ?? 'there';
         // Only 'delivered' (unwatched) messages count toward the badge --
