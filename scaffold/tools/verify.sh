@@ -94,6 +94,7 @@ for spec in \
   "school layer|packages/school/test/school.test.mjs" \
   "print fulfilment|packages/print/test/print.test.mjs" \
   "filesystem storage adapter|packages/storage/test/storage.test.mjs" \
+  "signed-URL media serving route|server/test/signed_media_route.test.mjs" \
   "emergency card|packages/emergency/test/emergency.test.mjs" \
   "global child-payload sweep|packages/globalaudit/test/globalaudit.test.mjs" \
   "observer tier (§17.3)|packages/observer/test/observer.test.mjs" \

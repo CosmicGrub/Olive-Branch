@@ -89,12 +89,43 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), 'olive-storage-test-'));
   const url = st.signedUrl('media/ivy-1.jpg', 300, 1_000_000);
   check('S signed urls', 'the key is present, percent-encoded', url.includes('media%2Fivy-1.jpg'), 'true');
   check('S signed urls', 'carries an expiry and a signature', /exp=\d+&sig=/.test(url), 'true');
+
+  // verifySignedKey() — the real counterpart signed-url-serving routes
+  // actually call, proven against THIS instance's own real signature, not
+  // a hand-rolled one — real HMAC-shaped output, real expiry math.
+  const params = new URLSearchParams(url.split('?')[1]);
+  const exp = Number(params.get('exp'));
+  const sig = params.get('sig');
+  check('S signed urls', 'a real, freshly-minted signature verifies ok, well before its expiry',
+    st.verifySignedKey('media/ivy-1.jpg', exp, sig, 1_000_000).ok, 'true');
+  check('S signed urls', 'the SAME signature is refused once real time has passed its real expiry',
+    st.verifySignedKey('media/ivy-1.jpg', exp, sig, (exp + 1) * 1000).ok, 'false');
+  check('S signed urls', 'an expired verification names the real reason',
+    st.verifySignedKey('media/ivy-1.jpg', exp, sig, (exp + 1) * 1000).reason, 'expired');
+  check('S signed urls', 'the identical signature does NOT verify for a DIFFERENT key — '
+    + 'the signature genuinely binds the key, not just the expiry',
+    st.verifySignedKey('media/some-other-key.jpg', exp, sig, 1_000_000).ok, 'false');
+  check('S signed urls', 'a tampered signature is refused, not silently accepted',
+    st.verifySignedKey('media/ivy-1.jpg', exp, `${sig.slice(0, -1)}x`, 1_000_000).ok, 'false');
+  check('S signed urls', 'a bad signature (not expiry) names the real reason',
+    st.verifySignedKey('media/ivy-1.jpg', exp, `${sig.slice(0, -1)}x`, 1_000_000).reason, 'bad_signature');
+
+  // A signature minted by a DIFFERENT FilesystemStorage instance (its own,
+  // independently-random secret) must not verify against this one — proves
+  // verifySignedKey() genuinely checks against ITS OWN instance secret, not
+  // some shared/global one.
+  const otherSt = new FilesystemStorage(root);
+  const otherUrl = otherSt.signedUrl('media/ivy-1.jpg', 300, 1_000_000);
+  const otherSig = new URLSearchParams(otherUrl.split('?')[1]).get('sig');
+  check('S signed urls', 'a signature from a DIFFERENT storage instance does not verify here '
+    + '— each instance really does hold its own independent secret',
+    st.verifySignedKey('media/ivy-1.jpg', exp, otherSig, 1_000_000).ok, 'false');
 }
 
 // T · CONTRACT PARITY — FilesystemStorage satisfies the same port MemoryStorage does
 {
   const st = new FilesystemStorage(root);
-  const required = ['put', 'get', 'delete', 'exists', 'signedUrl', 'list'];
+  const required = ['put', 'get', 'delete', 'exists', 'signedUrl', 'list', 'verifySignedKey'];
   check('T contract', 'implements every StoragePort method',
     required.every(m => typeof st[m] === 'function'), 'true');
 }

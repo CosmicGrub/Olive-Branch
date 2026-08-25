@@ -29,6 +29,7 @@ import 'invitation_screen.dart';
 import 'lock_advisory_screen.dart';
 import 'maturation_ladder.dart';
 import 'palette_logic.dart';
+import 'push_channel.dart';
 import 'show_guardian.dart';
 import 'siblings_screen.dart';
 import 'storyteller_screen.dart' show StorytellerSafetyScreen;
@@ -292,6 +293,42 @@ class GuardianMoreScreen extends StatelessWidget {
     ));
   }
 
+  /// There is no persisted client-side session anywhere in this codebase to
+  /// clear (every screen calls devLoginFor() fresh — see push_channel.dart's
+  /// own "no sign-out/log-out flow anywhere in lib/" note, which this tile
+  /// closes). So the real, honest actions a sign-out can take here are: (1)
+  /// stop this device from receiving push (PushChannel.unregister(), real
+  /// and already tested, with no caller anywhere until now), and (2) leave
+  /// the guardian shell — popUntil(isFirst) rather than a hardcoded target,
+  /// since which screen is actually first differs by entry point
+  /// (main.dart's EntryGate in the offline demo build; GuardianMoreScreen
+  /// itself in main_live_guardian.dart's live build, where this is already
+  /// the root and popUntil is a harmless no-op).
+  ///
+  /// Step 1 is best-effort — same posture [_endRealCall] already holds
+  /// itself to: a network hiccup unregistering push must never get in the
+  /// way of actually leaving the screen, and there is nothing further a
+  /// guardian could do about a background bookkeeping call failing anyway.
+  Future<void> _signOut(BuildContext context) async {
+    final url = baseUrl, gid = guardianId;
+    if (url != null && gid != null) {
+      try {
+        final token = await devLoginFor(url, userId: gid, client: availabilityHttpClient);
+        final api = OliveApi(url, token, client: availabilityHttpClient);
+        try {
+          await PushChannel(api).unregister();
+        } finally {
+          if (availabilityHttpClient == null) api.close();
+        }
+      } catch (_) {
+        // Best-effort — see this method's own doc comment.
+      }
+    }
+    if (context.mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('More')),
@@ -428,6 +465,9 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.palette_outlined, title: 'Theme',
             subtitle: 'A real palette, guardian-only, synced across your devices',
             onTap: () => _openThemePicker(context)),
+          HubTile(icon: Icons.logout, title: 'Sign out',
+            subtitle: 'Stops notifications on this device and returns to the start',
+            onTap: () => _signOut(context)),
         ]),
       ]),
     )),

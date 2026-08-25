@@ -244,6 +244,86 @@ void main() {
     });
   });
 
+  group('Sign out — guardian_more.dart\'s own _signOut/"Sign out" HubTile, '
+      'added directly to the Preferences section', () {
+    /// Pushes GuardianMoreScreen on top of a real, distinct root route --
+    /// unlike this file's own pump()/wrap() helpers (which seat
+    /// GuardianMoreScreen AS MaterialApp.home, i.e. already isFirst, a
+    /// no-op for popUntil(isFirst)), sign-out's whole point is returning to
+    /// a real prior screen, so the stack needs a real root to pop back to.
+    Future<void> pumpPushed(WidgetTester tester, Widget child) async {
+      await tester.binding.setSurfaceSize(const Size(800, 1800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(builder: (context) => Scaffold(
+          body: Center(child: ElevatedButton(
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute<void>(builder: (_) => child)),
+            child: const Text('root screen'))))),
+      ));
+      await tester.tap(find.text('root screen'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('with no live session threaded in, tapping Sign out still '
+        'returns cleanly to the real prior screen -- no network call '
+        'attempted at all (no baseUrl/guardianId to call with)', (t) async {
+      await pumpPushed(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      expect(find.byType(GuardianMoreScreen), findsOneWidget);
+
+      final signOutTile = find.text('Sign out');
+      await t.ensureVisible(signOutTile);
+      await t.pumpAndSettle();
+      await t.tap(signOutTile);
+      await t.pumpAndSettle();
+
+      expect(find.byType(GuardianMoreScreen), findsNothing);
+      expect(find.text('root screen'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('with a live session threaded in, sign-out STILL returns '
+        'cleanly to the real prior screen even though the real push-'
+        'unregister step genuinely fails in this sandbox (no Firebase app '
+        'initialized here) -- proves the best-effort contract in '
+        "_signOut's own doc comment: a bookkeeping failure must never trap "
+        'a guardian on the screen', (t) async {
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pumpPushed(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      expect(find.byType(GuardianMoreScreen), findsOneWidget);
+
+      final signOutTile = find.text('Sign out');
+      await t.ensureVisible(signOutTile);
+      await t.pumpAndSettle();
+      await t.tap(signOutTile);
+      await t.pumpAndSettle();
+
+      expect(find.byType(GuardianMoreScreen), findsNothing);
+      expect(find.text('root screen'), findsOneWidget);
+      // The real push-unregister step throws inside this sandbox (no
+      // Firebase app initialized) -- _signOut's own try/catch swallows it,
+      // the same posture as _endRealCall's own established one. If that
+      // catch were ever removed or narrowed, this is what would catch it:
+      // a leaked exception here, not just a stuck screen.
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('the tile itself reads honestly -- explains what it does, '
+        'not just "Sign out"', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      expect(find.text('Sign out'), findsOneWidget);
+      expect(find.textContaining('Stops notifications on this device'),
+          findsOneWidget);
+    });
+  });
+
   group('responsive layout — phone, Fold5 (cover + main), and desktop-scale '
       'PC widths', () {
     const Map<String, Size> widths = <String, Size>{

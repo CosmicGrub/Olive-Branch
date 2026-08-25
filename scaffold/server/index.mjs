@@ -20,7 +20,8 @@ import { issueSession, verifyAssertion } from '../packages/auth/src/auth.mjs';
 import { Api, MAX_REQUEST_BODY_BYTES } from '../packages/api/src/api.mjs';
 import { createPool, dbPort, withSystemSession, createChallenge, consumeChallenge,
          webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
-import { registerRoutes, RP_ID, RP_ORIGIN } from './routes.mjs';
+import { registerRoutes, RP_ID, RP_ORIGIN, defaultMediaStorage } from './routes.mjs';
+import { serveSignedMedia } from './signed_media.mjs';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -241,6 +242,9 @@ const server = createServer((req, res) => {
       }
       if (req.method === 'POST' && req.url === '/v1/auth/webauthn/login/verify') {
         return send(await webauthnLoginVerify(raw));
+      }
+      if (req.method === 'GET' && req.url && req.url.startsWith('/media/')) {
+        return await serveSignedMedia(req.url, res, defaultMediaStorage);
       }
       send(await api.handle(req.method ?? 'GET', req.url ?? '/', req.headers, raw));
     } catch (e) {

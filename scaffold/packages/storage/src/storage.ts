@@ -19,6 +19,20 @@ export interface StoragePort {
   /** Short-lived, single-key, read-only. */
   signedUrl(key: string, ttlSeconds: number, now: number): string;
   list(prefix: string): Promise<string[]>;
+  /**
+   * The real counterpart to signedUrl() — verifies a signature MINTED BY
+   * THIS SAME INSTANCE (against its own internal secret) rather than
+   * exposing the secret itself for an external caller to check by hand.
+   * The signature already cryptographically binds the exact key string
+   * (verifySignedUrl()'s own comment: "a valid signature for one object
+   * cannot be replayed against another") — for a key namespaced
+   * `children/<childId>/messages/<uuid>` (server/routes.mjs's own real
+   * convention), that means the childId segment is already covered by the
+   * signature, with no separate childId-binding needed.
+   */
+  verifySignedKey(
+    key: string, expiresAt: number, sig: string, now: number,
+  ): { ok: true } | { ok: false; reason: 'expired' | 'bad_signature' };
 }
 
 /** §11 — signed URLs are minutes, not hours; a leaked URL is a leaked child. */
@@ -58,6 +72,9 @@ export class MemoryStorage implements StoragePort {
   signedUrl(key: string, ttlSeconds: number, now: number) {
     const exp = Math.floor(now / 1000) + ttlSeconds;
     return `/media/${encodeURIComponent(key)}?exp=${exp}&sig=${signKey(this.secret, key, exp)}`;
+  }
+  verifySignedKey(key: string, expiresAt: number, sig: string, now: number) {
+    return verifySignedUrl(this.secret, key, expiresAt, sig, now);
   }
   get size() { return this.m.size; }
 }
@@ -153,6 +170,9 @@ export class FilesystemStorage implements StoragePort {
   signedUrl(key: string, ttlSeconds: number, now: number) {
     const exp = Math.floor(now / 1000) + ttlSeconds;
     return `/media/${encodeURIComponent(key)}?exp=${exp}&sig=${signKey(this.secret, key, exp)}`;
+  }
+  verifySignedKey(key: string, expiresAt: number, sig: string, now: number) {
+    return verifySignedUrl(this.secret, key, expiresAt, sig, now);
   }
 }
 

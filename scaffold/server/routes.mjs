@@ -54,7 +54,14 @@ import { FilesystemStorage } from '../packages/storage/src/storage.mjs';
  */
 const DEFAULT_MEDIA_STORAGE_ROOT =
   join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'media');
-const defaultMediaStorage =
+// Exported (not just module-private) so server/index.mjs's own raw
+// GET /media/:key signed-URL route (outside api.ts's session-based JSON
+// dispatch entirely — a signed URL carries no session) can verify and read
+// against the EXACT SAME instance registerRoutes() wires POST/GET
+// .../media into, rather than a second, independently-constructed
+// FilesystemStorage that would hold its own independent secret and could
+// never verify a URL the first instance minted.
+export const defaultMediaStorage =
   new FilesystemStorage(process.env.MEDIA_STORAGE_ROOT ?? DEFAULT_MEDIA_STORAGE_ROOT);
 
 /**
@@ -116,6 +123,29 @@ function invalidThemeBody(body) {
   if (!THEME_PALETTES.has(body.themePalette)) return 'bad_themePalette';
   if (!THEME_BRIGHTNESSES.has(body.themeBrightness)) return 'bad_themeBrightness';
   return null;
+}
+
+/**
+ * The real "her frame" relative label GET .../inbox's real caller needs —
+ * client/lib/inbox_screen.dart's own InboxMessage.deliveredAtLabel doc
+ * comment specifies this exact shape ("7:04 AM" today, "Yesterday, 7:58 PM",
+ * "2 days ago, 6:10 PM" — relative wording only, never a calendar date,
+ * §8.2.5's "sleeps, not dates" rule). Computed server-side, matching /now's
+ * own established pattern of doing zone math once here and handing the
+ * client an already-formatted string — no timezone-conversion package
+ * exists in client/pubspec.yaml, and this codebase's own precedent (every
+ * *_route.mjs handler that touches a child's local time) is that this kind
+ * of conversion belongs on this side of the wire, not the client's.
+ */
+function relativeInboxLabel(materializedAtIso, tz, nowUtc) {
+  const at = DateTime.fromISO(materializedAtIso, { zone: 'utc' }).setZone(tz);
+  const now = nowUtc.setZone(tz);
+  const timeLabel = at.toFormat('h:mm a');
+  if (!at.isValid || !now.isValid) return timeLabel;
+  const daysAgo = Math.round(now.startOf('day').diff(at.startOf('day'), 'days').days);
+  if (daysAgo <= 0) return timeLabel;
+  if (daysAgo === 1) return `Yesterday, ${timeLabel}`;
+  return `${daysAgo} days ago, ${timeLabel}`;
 }
 
 const DEVICE_PLATFORMS = new Set(['android', 'ios']);
@@ -749,9 +779,18 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   api.register({
     method: 'GET', path: '/v1/children/:childId/inbox', action: 'message',
     handler: async (c, q) => {
+      // to_char(... AT TIME ZONE 'UTC', ...), not a bare ::text cast — the
+      // same DateStyle bug this codebase has already found and fixed twice
+      // (runRematerializeSweep's own to_char() fix, tools/scheduler.mjs; the
+      // reap-media job's identical fix, same file). Was harmless here only
+      // because nothing had ever actually parsed materialized_at client-side
+      // before — deliveredAtLabel below is this route's first real reader of
+      // it, so the cast needed to be right before it became load-bearing.
       const rows = await q(
         `SELECT di.id, di.payload_kind, di.sender_id, di.state,
-                di.materialized_at::text, u.display_name AS sender_name
+                to_char(di.materialized_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                  AS materialized_at,
+                u.display_name AS sender_name
            FROM delivery_intent di
            JOIN app_user u ON u.id = di.sender_id
           WHERE di.child_id = $1 AND di.state IN ('delivered','opened')
@@ -759,7 +798,33 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
           LIMIT 50`,
         [c.childId],
       );
-      return { body: { entries: rows } };
+
+      // Her frame first, always (this route's own receiving screen, receipt_
+      // screen.dart's header, quoting pipeline.ts's openReceipt(): "a receipt
+      // renders in HER frame... not the capture zone"). Zone resolution
+      // duplicated from /now and /custody-order rather than shared — same
+      // precedent those two routes already set for each other (custody-
+      // order's own comment: "this route tolerates the small duplication
+      // rather than risk changing /now's own already-relied-upon behaviour").
+      const nowUtc = DateTime.utc();
+      const interval = await q(
+        `SELECT tz FROM child_tz_interval
+          WHERE child_id = $1 AND valid @> $2::timestamptz
+          ORDER BY confidence DESC LIMIT 1`,
+        [c.childId, nowUtc.toJSDate()],
+      );
+      let tz = interval[0]?.tz;
+      if (!tz) {
+        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
+        tz = child[0]?.home_tz ?? 'UTC';
+      }
+
+      const entries = rows.map((r) => ({
+        ...r,
+        deliveredAtLabel: r.materialized_at
+          ? relativeInboxLabel(r.materialized_at, tz, nowUtc) : '',
+      }));
+      return { body: { entries } };
     },
   });
 
