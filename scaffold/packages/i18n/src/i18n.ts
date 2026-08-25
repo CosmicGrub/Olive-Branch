@@ -1,5 +1,5 @@
 /**
- * MASTERFILE §8.9 — two languages in one family.
+ * MASTERFILE §8.4 — two languages in one family.
  *
  * A US-only product (§1), in a country where roughly one household in five speaks
  * a language other than English at home. The common case is not "the app is in
@@ -37,7 +37,7 @@ export function langFor(prefs: LangPrefs[], userId: string, fallback: Lang = 'en
 }
 
 /**
- * §8.9.1 — translating what a person WROTE.
+ * §8.4 — translating what a person WROTE.
  *
  * The rule: **the original is always shown, and it is shown first.** A
  * translation sits underneath, marked as machine-produced, and never replaces the
@@ -72,7 +72,7 @@ export function forCourtLog(t: Translated): { text: string; lang: Lang } {
 }
 
 /**
- * §8.9.2 — what is NEVER machine-translated.
+ * §8.4 — what is NEVER machine-translated.
  *
  * A child's own words are hers. Running a five-year-old's caption through a
  * translator and showing the result to her father as if she said it is putting

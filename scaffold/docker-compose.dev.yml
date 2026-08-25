@@ -15,7 +15,15 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_PASSWORD: postgres
+      # Overridable via ./.env now (see .env.example), not a bare literal —
+      # this was the one credential in this file the 21a1c92 (v0.49.32)
+      # pass moved SESSION_SECRET/DEV_LOGIN off of but never touched. No
+      # `:?` here unlike SESSION_SECRET below: this role is only ever
+      # dialed over the compose bridge network (service name `db`) by
+      # `migrate`/`server`, or from the host itself via the loopback-only
+      # mapping right below, so an existing .env with no POSTGRES_PASSWORD
+      # line keeps working exactly as before rather than failing to start.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - olive-dev-pgdata:/var/lib/postgresql/data
       # Runs once, only against a truly empty volume — see that file's own
@@ -23,12 +31,23 @@ services:
       # NOBYPASSRLS rather than reusing the `postgres` superuser role.
       - ./tools/docker-dev/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     ports:
-      # 5434, not Postgres's default 5433/5432 this project's other local
-      # Postgres instances (the WSL-native one, and the separate
-      # olive-verify-pg container tools/verify.sh's own CI-parity check
-      # uses) already claim — a distinct port keeps this stack from ever
-      # silently colliding with either.
-      - "5434:5432"
+      # Loopback-only, not "5434:5432" (which publishes on every host
+      # interface) — the one port in this stack 21a1c92 (v0.49.32) missed
+      # when it restricted `server`/`callroom` to 127.0.0.1. Nothing needs
+      # LAN reachability here: `migrate`/`server` dial `db` by service name
+      # over the compose bridge network, never through this host mapping,
+      # and a developer running `psql -h 127.0.0.1 -p 5434` from the host
+      # itself still works identically. seed-dev.mjs populates this
+      # database with real-shaped family data (a child's name and birth
+      # date, a guardian identity, an active custody-order pattern, a
+      # delivered video-message artifact) that a device on the same WiFi
+      # could otherwise read or write directly, with no session/auth layer
+      # in the way at all — 5434, not Postgres's default 5433/5432 this
+      # project's other local Postgres instances (the WSL-native one, and
+      # the separate olive-verify-pg container tools/verify.sh's own
+      # CI-parity check uses) already claim — a distinct port keeps this
+      # stack from ever silently colliding with either.
+      - "127.0.0.1:5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 3s

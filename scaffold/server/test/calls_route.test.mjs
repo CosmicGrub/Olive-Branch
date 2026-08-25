@@ -12,6 +12,7 @@
  * notifyDevices() needs a real database under it, not a fake `db`/`pool`
  * object standing in for one.
  */
+import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { Api } from '../../packages/api/src/api.mjs';
 import { createPool, dbPort } from '../../packages/db/src/pool.mjs';
@@ -40,11 +41,15 @@ const CHILD_B = '11111111-2222-1234-1234-333333333333';   // DAD has no edge to 
 // F's own fixture — a real contact_ladder row, not just the null/'open'
 // default every other case above exercises. See section F's own comment.
 const CHILD_C = '22222222-3333-1234-1234-444444444444';
+// H's own fixture — DAD's edge to this child is real, live, and
+// observer_only=true. See section H's own comment for what this proves.
+const CHILD_D = '33333333-4444-1234-1234-555555555555';
 
 const cleanup = async () => {
-  await admin.query(`DELETE FROM call_log WHERE child_id IN ($1, $2, $3)`, [CHILD, CHILD_B, CHILD_C]);
+  await admin.query(`DELETE FROM call_log WHERE child_id IN ($1, $2, $3, $4)`,
+    [CHILD, CHILD_B, CHILD_C, CHILD_D]);
   await admin.query(`DELETE FROM device_token WHERE owner_child_id IN ($1, $2)`, [CHILD, CHILD_B]);
-  for (const cid of [CHILD, CHILD_B, CHILD_C]) {
+  for (const cid of [CHILD, CHILD_B, CHILD_C, CHILD_D]) {
     await admin.query(`DELETE FROM guardianship WHERE child_id = $1`, [cid]);
     await admin.query(`DELETE FROM child WHERE id = $1`, [cid]);
   }
@@ -59,7 +64,8 @@ await admin.query(
   `INSERT INTO child (id, display_name, birth_date, home_tz) VALUES
      ($1,'Ivy','2016-04-02','America/New_York'),
      ($2,'Otherchild','2016-04-02','America/New_York'),
-     ($3,'Supervisedchild','2016-04-02','America/New_York')`, [CHILD, CHILD_B, CHILD_C]);
+     ($3,'Supervisedchild','2016-04-02','America/New_York'),
+     ($4,'Observedchild','2016-04-02','America/New_York')`, [CHILD, CHILD_B, CHILD_C, CHILD_D]);
 await admin.query(
   `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
      ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`, [CHILD, DAD]);
@@ -71,6 +77,13 @@ await admin.query(
   `INSERT INTO contact_ladder (guardianship_id, step, effective) VALUES
      ($1, 'supervised', tstzrange(now() - interval '1 day', null))`,
   [supervisedGship.rows[0].id]);
+// H's own fixture — DAD's edge to CHILD_D is real and observer_only=true,
+// the §17.3 "watch without obligation" tier. Every other edge above relies
+// on observer_only's own column DEFAULT false; this is the one live edge in
+// this suite where that default does NOT apply.
+await admin.query(
+  `INSERT INTO guardianship (child_id, user_id, role, scope, observer_only, valid) VALUES
+     ($1, $2, 'guardian', '{}', true, tstzrange(now() - interval '1 year', null))`, [CHILD_D, DAD]);
 await admin.query('COMMIT');
 
 const SECRET = Buffer.from('b'.repeat(32), 'utf8');
@@ -234,6 +247,64 @@ const post = (childId, tok) => api.handle(
   const res3 = await end(CHILD, started2.body.sessionId, childTok);
   check('G call end', 'a child ending a real call she was a party to is allowed', res3.status, 200);
   check('G call end', 'ended is true for the child-initiated end too', res3.body.ended, true);
+}
+
+// ===========================================================================
+// H · observer-only guardian — §17.3/I4. rooms.ts's deriveGrant() computes
+//     `canPublish: !principal.observerOnly`, but this route minted
+//     `observerOnly: false` as a literal constant regardless of the
+//     caller's real edge (routes.mjs:446, found by a 2026-08-24 audit) — the
+//     exact hardcode bug ladderStep already had and was fixed for six lines
+//     away in v0.49.35 (see section F above), just never caught here. No
+//     test anywhere exercised an observer-only caller of this route before
+//     this section.
+//
+//     H1 proves the easy half: authorize.ts's WRITES list does not include
+//     'call', so an observer-only guardian's call-start must still succeed
+//     — this bug was never a wrongful DENIAL, only a wrongly-permissive
+//     GRANT, and this guards against a fix that overcorrects into blocking
+//     a real §17.3 "watch without obligation" guardian from calling at all.
+//
+//     H2 proves the actual regression: the minted grant's `canPublish`
+//     value is not itself in the HTTP response (routes.mjs's response body
+//     omits `minted.token.grant` entirely — deliberately not changed by
+//     this fix, see that route's own reasoning) and nothing in call_log
+//     persists it either, so — unlike ladderStep, which reaches a real,
+//     readable call_log column — there is no black-box HTTP observation
+//     that distinguishes "wired correctly" from "hardcoded false" for this
+//     specific field. session.test.mjs's own "§17.3 observer" section
+//     already proves deriveGrant()/mintToken() compute canPublish correctly
+//     GIVEN a correct `observerOnly` input; what was never proven anywhere
+//     is that ROUTES.MJS actually passes that input in. H2 closes that gap
+//     the same way packages/api/test/contract.test.mjs's own "REAL,
+//     ACTUALLY-REGISTERED server route table" section already does for a
+//     different silent-drift class: reading this route's own real source
+//     rather than re-deriving its logic in the test, so a future revert to
+//     a literal `observerOnly: false` (or `true`) fails here even though it
+//     would be invisible to every response/DB assertion above.
+// ===========================================================================
+{
+  const res = await post(CHILD_D, dadTok);
+  check('H1 observer-only', 'an observer-only guardian can still start a call — §17.3 is read-only, ' +
+    'not no-access; \'call\' is absent from authorize.ts\'s WRITES list', res.status, 201);
+  check('H1 observer-only', 'the call is genuinely accepted, not silently downgraded to a denial',
+    typeof res.body.room === 'string' && res.body.room.length > 0, 'true');
+
+  const routesSrc = readFileSync(new URL('../routes.mjs', import.meta.url), 'utf8');
+  const callStartAt = routesSrc.indexOf(`path: '/v1/children/:childId/calls'`);
+  const callEndAt = routesSrc.indexOf(`path: '/v1/children/:childId/calls/:sessionId/end'`);
+  check('H2 wiring', 'both the call-start and call-end route registrations were found in routes.mjs',
+    callStartAt >= 0 && callEndAt > callStartAt, 'true');
+  const handlerSrc = routesSrc.slice(callStartAt, callEndAt);
+
+  check('H2 wiring', 'mintToken is no longer called with a hardcoded observerOnly boolean literal — ' +
+    'the exact regression this section exists to catch',
+    /observerOnly:\s*(?:true|false)\s*,/.test(handlerSrc), 'false');
+  check('H2 wiring', 'mintToken\'s principal instead reads observerOnly from a real identifier',
+    /mintToken\(\s*session,\s*\{[^}]*observerOnly:\s*[A-Za-z_$][\w$]*\b/.test(handlerSrc), 'true');
+  check('H2 wiring', 'that identifier is sourced from this caller\'s real per-edge observerOnly — ' +
+    'not a fresh literal or an unrelated variable',
+    /edges\.find\(.*?\)\??\.observerOnly/.test(handlerSrc), 'true');
 }
 
 await cleanup();

@@ -81,6 +81,7 @@ for spec in \
   "stream + budget|packages/budget/test/budget.test.mjs" \
   "signal + a11y matrix|packages/signal/test/signal.test.mjs" \
   "a11y read-aloud|packages/a11y/test/a11y.test.mjs" \
+  "i18n bilingual/translation (§8.4)|packages/i18n/test/i18n.test.mjs" \
   "maturation ladder|packages/maturation/test/maturation.test.mjs" \
   "games|packages/games/test/games.test.mjs" \
   "games (checkers, battleship, hangman, chess)|packages/games/test/games2.test.mjs" \
@@ -94,7 +95,8 @@ for spec in \
   "print fulfilment|packages/print/test/print.test.mjs" \
   "filesystem storage adapter|packages/storage/test/storage.test.mjs" \
   "emergency card|packages/emergency/test/emergency.test.mjs" \
-  "annotation canvas engine (undo/redo/erase)|packages/annotation/test/canvas.test.mjs" ; do
+  "annotation canvas engine (undo/redo/erase)|packages/annotation/test/canvas.test.mjs" \
+  "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)

@@ -180,7 +180,8 @@ export function clampVolume(v: number, role: 'child' | 'guardian'): number {
 
 /**
  * Siblings on separate devices in one room feed back into each other, and the
- * group call (§12.8) makes that certain rather than possible.
+ * group call (§5.14, `guardian/pending.ts`'s `startGroupCall()`) makes that
+ * certain rather than possible.
  */
 export interface EchoRisk { sameRoom: boolean; devices: number; advice: string | null }
 

@@ -22,7 +22,7 @@
     "test:fcm": "npm run build && node packages/transport/test/fcm.test.mjs",
     "test:apns": "npm run build && node packages/transport/test/apns.test.mjs",
     "test:notify": "npm run build && node packages/transport/test/notify.test.mjs",
-    "check:markup": "node tools/check-markup.mjs --total 6010",
+    "check:markup": "node tools/check-markup.mjs --total 6072",
     "test:homework": "npm run build && node packages/homework/test/homework.test.mjs",
     "test:snapshot": "npm run build && node packages/homework/test/snapshot.test.mjs",
     "test:measure": "npm run build && node packages/homework/test/measure.test.mjs",
