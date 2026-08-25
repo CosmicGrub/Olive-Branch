@@ -427,6 +427,27 @@ export function registerRoutes(api, pool) {
       // resolution of the identical value, not a fresh policy invented here.
       const realLadderStep = edges.find((e) => e.childId === c.childId)?.ladderStep ?? 'open';
 
+      // The caller's REAL observer-tier flag for THIS child — the sibling of
+      // realLadderStep two lines up, and the same hardcode bug: this route
+      // minted `observerOnly: false` unconditionally instead of reading the
+      // real per-edge value already sitting in `edges`, found by a live
+      // audit (2026-08-24) that ladderStep's own fix (v0.49.35) fixed six
+      // lines away but missed here. rooms.ts's deriveGrant() computes
+      // `canPublish: !principal.observerOnly` from exactly this field — §17.3
+      // /I4 require an observer-only guardian to get `canPublish: false`
+      // ("a parent whose camera and microphone are live in the room IS
+      // participating"), and the old `false` constant made that impossible
+      // to compute correctly for any caller. `?? true` is deliberately NOT
+      // realLadderStep's `?? 'open'` pattern: that default is a documented
+      // business rule for a genuinely absent contact_ladder row, sourced
+      // from authorize.ts's own convention. There is no equivalent "no edge
+      // means full publish" rule anywhere in this codebase, and the outer
+      // gate having already run can('call', ...) means this .find() should
+      // never actually miss — so if it somehow does, §5.18's fail-closed
+      // convention (pool.ts:75) applies: default to the MORE restrictive
+      // reading (observer-only, no publish), never the less restrictive one.
+      const realObserverOnly = edges.find((e) => e.childId === c.childId)?.observerOnly ?? true;
+
       const session = createSession({
         childId: c.childId,
         kind: 'call',
@@ -443,7 +464,7 @@ export function registerRoutes(api, pool) {
 
       const minted = mintToken(
         session,
-        { userId: c.principal.userId, observerOnly: false, isChild: false, roleName: c.principal.roleName },
+        { userId: c.principal.userId, observerOnly: realObserverOnly, isChild: false, roleName: c.principal.roleName },
         edges, now,
       );
       if (!minted.ok) return { status: 403, body: { error: minted.reason } };

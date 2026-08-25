@@ -1,5 +1,5 @@
 /**
- * emergency — the emergency card. MASTERFILE §11.4.
+ * emergency — the emergency card. MASTERFILE §9.6.3.
  *
  * Real, live gap this file closes: `packages/emergency/src/emergency.ts` had
  * ZERO test coverage anywhere in this repo before this pass — not referenced

@@ -85,13 +85,20 @@ device, since the container publishes those same host ports. Nothing about
 how `call_screen.dart`/`api_client.dart` reach the backend changes; only
 how the backend itself is launched and kept alive changed.
 
-Both ports publish to `127.0.0.1` only, not every host interface — a
-device on the same WiFi network can't reach either port directly, only
-through `adb reverse`'s own tunnel to host loopback. This is deliberate:
-both `DEV_LOGIN=1` (server) and the call-room coordinator's own
+All three published ports — `server` (8123), `callroom` (8787), and `db`
+(5434) — bind to `127.0.0.1` only, not every host interface: a device on
+the same WiFi network can't reach any of them directly, only `server`/
+`callroom` through `adb reverse`'s own tunnel to host loopback. This is
+deliberate: both `DEV_LOGIN=1` (server) and the call-room coordinator's own
 `who=dad|ivy` endpoint issue real, valid credentials with no password of
-any kind, so this stack should never be reachable by anything but the host
-machine itself.
+any kind, and `db` is the real Postgres instance `seed-dev.mjs` fills with
+real-shaped family data (a child's name and birth date, a guardian
+identity, an active custody-order pattern, a delivered video-message
+artifact) — so this stack should never be reachable by anything but the
+host machine itself. `db`'s own superuser password is overridable via
+`POSTGRES_PASSWORD` in `.env` (see `.env.example`) if you want it to be
+more than a formality even against another local process on the same
+host.
 
 ## A new migration lands — what to do
 

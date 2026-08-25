@@ -1053,7 +1053,7 @@ export function nineView(): Any {
       ['text scales offered', (A11y as Any).TEXT_SCALES],
       ['collapse to one column at', (A11y as Any).COLLAPSE_TO_ONE_COLUMN_AT ?? '—'],
     ]},
-    { id: 'emergency', title: 'Emergency card', spec: '§11.4', mod: keysOf(Emergency), probes: [
+    { id: 'emergency', title: 'Emergency card', spec: '§9.6.3', mod: keysOf(Emergency), probes: [
       ['US emergency', (Emergency as Any).US_EMERGENCY],
       ['poison control', (Emergency as Any).US_POISON_CONTROL],
       ['review after', (Emergency as Any).REVIEW_AFTER_DAYS + ' days'],
@@ -1067,7 +1067,7 @@ export function nineView(): Any {
       ['a payload with a score', call((GlobalAudit as Any).sweep, { score: 9 })],
       ['banned phrases', ((GlobalAudit as Any).GLOBAL_CHILD_PHRASES || []).slice(0, 6)],
     ]},
-    { id: 'i18n', title: 'Language', spec: '§8.9', mod: keysOf(I18n), probes: [
+    { id: 'i18n', title: 'Language', spec: '§8.4', mod: keysOf(I18n), probes: [
       ['languages', (I18n as Any).LANGS],
       ['right-to-left?', call((I18n as Any).isRtl, 'ar')],
       ['NEVER translated', (I18n as Any).NEVER_TRANSLATED],

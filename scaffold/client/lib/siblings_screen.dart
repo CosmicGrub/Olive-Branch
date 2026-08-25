@@ -7,13 +7,14 @@
 // SiblingSet, ageOf(), openChildren(), closedChildren(), closeFor(),
 // staggerNotice(), STAGGER_FORBIDDEN, auditStagger(), siblingsOf(),
 // shellTabs(). (The `guardian/pending.ts` module named in this group's brief
-// is numbered §12.8-12.11 and covers group calls / the therapist view / the
-// preservation prompt / the ping limit — no sibling logic lives there. The
-// real source of truth for a family's sibling model is family.ts, so that is
-// what this screen ports; MASTERFILE's own authorization notes confirm this
-// is the intended split: "`actor_has_edge()` deliberately does not traverse
-// `sibling_link` — being guardian of one sibling must never confer access to
-// another".)
+// covers group calls / the therapist view / the preservation prompt / the
+// ping limit — cited there by §5.14, §16.2 #11, §10.1b, and §9.9.1
+// respectively, not a §12.8-12.11 range, which does not exist in MASTERFILE
+// — and no sibling logic lives there. The real source of truth for a
+// family's sibling model is family.ts, so that is what this screen ports;
+// MASTERFILE's own authorization notes confirm this is the intended split:
+// "`actor_has_edge()` deliberately does not traverse `sibling_link` — being
+// guardian of one sibling must never confer access to another".)
 //
 // THE INVARIANT THIS SCREEN EXISTS TO ENFORCE, stated in the group brief:
 // sibling links must never WIDEN guardian authority across children. This

@@ -1,5 +1,5 @@
 /**
- * MASTERFILE §11.4 — the emergency card.
+ * MASTERFILE §9.6.3 — the emergency card.
  *
  * A screen existed in MARKUP from v0.6.0. There was no engine behind it, which
  * meant the one surface in this product that might matter at 3 a.m. was a

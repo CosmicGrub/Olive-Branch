@@ -1,16 +1,20 @@
 /**
- * MASTERFILE §12.8–§12.11 — four surfaces that have sat in MARKUP's
- * "cannot be drawn yet" panel across several increments.
+ * Four surfaces extending the guardian shell's adult-side coverage
+ * (MASTERFILE §12.4–§12.7). None of the four has its own MASTERFILE
+ * subsection — §12 stops at §12.7 — so each is cited below by the real
+ * section that actually blocked or scopes it, not a section number of
+ * its own.
  *
  * Each was blocked on something. Three of those things are now settled.
  */
 
 export type Side = 'A' | 'B';
 
-// ======================================= §12.8 the sibling group call =======
+// ================================= the sibling group call — §5.14 ===========
 /**
- * Two children, one parent, one call. It was unbuildable until §17.6 gave
- * siblings a real model.
+ * Two children, one parent, one call. It was unbuildable until §5.14 gave
+ * siblings a real model — `sibling_link` and the one-on-one protection it
+ * names explicitly: "Dad gets twenty minutes with each, separately."
  *
  * THE DESIGN PROBLEM, and it is not technical: **a group call silences the
  * younger child.** A five-year-old and a twelve-year-old on one call is a call
@@ -86,7 +90,7 @@ export function auditGroup(v: unknown): { ok: true } | { ok: false; leaks: strin
   return leaks.length ? { ok: false, leaks: [...new Set(leaks)] } : { ok: true };
 }
 
-// ========================================== §12.9 the therapist's view ======
+// ============================== the therapist's view — §16.2 #11 ============
 /**
  * §16.2 #11 is still open on whether a therapist sees session metadata. The
  * **ladder-only** scope is settled, so the view can be built to that and widened
@@ -138,7 +142,7 @@ export function auditTherapist(v: unknown): { ok: true } | { ok: false; leaks: s
   return leaks.length ? { ok: false, leaks: [...new Set(leaks)] } : { ok: true };
 }
 
-// ======================================= §12.10 the preservation prompt =====
+// ============================= the preservation prompt — §10.1b =============
 /**
  * §10.1b made preservation a standing rule with a 14-day expiry digest for
  * incidental material. The digest existed; **the moment of asking did not.**
@@ -187,7 +191,7 @@ export function auditPrompt(text: string): { ok: true } | { ok: false; found: st
   return found.length ? { ok: false, found } : { ok: true };
 }
 
-// ================================ §12.11 "call me when you can", at the limit
+// ==================== "call me when you can", at the limit — §9.9.1 =========
 /**
  * §9.9 caps pings by age (3/day to 7, 5 to 9, 8 to 12, none from 13). The refusal
  * is **silent** — she taps and nothing happens, which was chosen deliberately so
