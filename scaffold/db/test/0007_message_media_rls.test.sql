@@ -239,7 +239,23 @@ SELECT assert_eq('postgres (superuser, this file''s own default connection) stil
     WHERE id IN ('c0000000-0000-0000-0000-000000000c01','c0000000-0000-0000-0000-000000000c02')),
   2::bigint);
 
--- Leave this file's own rows in place (matching 0003_session.test.sql's own
--- convention of persistent, reusable fixtures) — nothing downstream in
--- verify.sh's suite order depends on their absence, and re-running this file
--- cleans and re-inserts them itself (see the DELETE statements above).
+-- Clean up this file's own media_artifact/delivery_intent/intent_batch rows
+-- — unlike 0003_session.test.sql's own guardianship/child/app_user fixtures
+-- (safely left in place, reused by design), these three tables have no
+-- precedent of persistent fixtures anywhere else in this suite order, and
+-- leaving them WAS a real, live-reproduced bug: packages/db/test/pool.test.mjs
+-- (an unrelated, pre-existing suite, running later in verify.sh's own "DB
+-- suites requiring a real NOSUPERUSER NOBYPASSRLS role" section) hardcodes
+-- its OWN DAD/MOM as the identical raw UUIDs '11111111-...'/'22222222-...'
+-- this file also uses (reused deliberately from 0003_session.test.sql's own
+-- fixtures — see this file's own header) — and its setup-time
+-- `DELETE FROM app_user WHERE id IN (...)` failed with a real FK violation
+-- against this file's own leftover Eli delivery_intent row
+-- (sender_id = '22222222-...'), a CI-only failure this exact fix closes.
+-- The child/app_user/guardianship rows themselves are left alone, matching
+-- 0003's own convention — nothing else in this suite order ever tries to
+-- delete THOSE specific rows.
+DELETE FROM delivery_intent WHERE id IN
+  ('c0000000-0000-0000-0000-000000000c01','c0000000-0000-0000-0000-000000000c02');
+DELETE FROM intent_batch WHERE id = 'c0000000-0000-0000-0000-000000000c03';
+DELETE FROM media_artifact WHERE storage_key IN ('maya-rls-1','eli-rls-1');
