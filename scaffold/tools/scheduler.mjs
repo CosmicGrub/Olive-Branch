@@ -2,7 +2,7 @@
 /**
  * OLIVE BRANCH — scheduled-jobs runner.
  *
- * Two real, disclosed gaps this file closes, both pointing at the same root
+ * Three real, disclosed gaps this file closes, all pointing at the same root
  * cause ("no cron/scheduler exists anywhere in this repo yet"):
  *
  *   - MASTERFILE §20.2b, verbatim: "Still only a terminal/log signal: no cron
@@ -29,6 +29,19 @@
  *     back, a `pending` intent NEVER becomes `ready`, and NOTHING this
  *     product delivers would ever actually go out. That is the sweep below.
  *
+ *   - A gap this file's own FIRST version (v0.49.43) missed entirely, found
+ *     by a later gap-inventory pass: `packages/storage/src/storage.ts`'s
+ *     `reap()` — real, tested, and stating the stakes in its own header
+ *     ("Under the amended [COPPA] Rule the blob IS the regulated personal
+ *     information... A reaper that deletes rows and leaves media is not a
+ *     retention policy") — had zero production callers. So did its SQL half:
+ *     `artifacts_due_for_reaping()` and `reap_tombstone`
+ *     (`db/migrations/0004_auth_and_reaper.sql`), already wired into
+ *     `health_check`'s `retention_breach` row
+ *     (`db/migrations/0009_health_check_canonical.sql`) — the MONITORING
+ *     existed and was already live; only the thing it would ever have
+ *     anything to monitor was missing. See `runMediaReapSweep()` below.
+ *
  * WHAT THIS FILE DOES NOT DO — same honesty discipline as health-alert.mjs's
  * own header:
  *   - Does not touch `materialize.ts`'s or `health-alert.mjs`'s own logic.
@@ -48,8 +61,9 @@
  *     a time-past one.
  *
  * ---------------------------------------------------------------- LOCKING --
- * Two named jobs (`rematerialize`, `health-alert`) can each run at most once
- * at a time, enforced with a real Postgres SESSION-level advisory lock
+ * Three named jobs (`rematerialize`, `reap-media`, `health-alert`) can each
+ * run at most once at a time, enforced with a real Postgres SESSION-level
+ * advisory lock
  * (`pg_try_advisory_lock`), one dedicated connection held for the whole job,
  * keyed per job name (`hashtext('olive_branch_scheduler:' || jobName)`) so
  * the two jobs never contend with each other, only with a second, concurrent
@@ -71,8 +85,9 @@
  *
  * ------------------------------------------------------------------- CLI --
  *   node tools/scheduler.mjs run rematerialize   # one sweep, then exit
+ *   node tools/scheduler.mjs run reap-media      # one reap pass, then exit
  *   node tools/scheduler.mjs run health-alert    # one health check, then exit
- *   node tools/scheduler.mjs run all             # both, in sequence
+ *   node tools/scheduler.mjs run all             # all three, in sequence
  *   node tools/scheduler.mjs loop                # runs `all` on a schedule, forever
  *
  * `loop` is what `docker-compose.dev.yml`'s new, opt-in `scheduler` service
@@ -86,10 +101,17 @@ import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
 import { createPool, withSystemSession, childCtxFor } from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
+import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const HEALTH_ALERT_SCRIPT = join(REPO_ROOT, 'tools', 'health-alert.mjs');
+
+// Same env-var override / same default root server/routes.mjs's own
+// `defaultMediaStorage` uses (see that file's header) — this process needs
+// to delete the SAME real blobs the server writes, not a second, divergent
+// notion of where they live.
+const MEDIA_STORAGE_ROOT = process.env.MEDIA_STORAGE_ROOT ?? join(REPO_ROOT, 'data', 'media');
 
 // -------------------------------------------------------------- logging ---
 // Same flat `key=value` shape as health-alert.mjs's own ALERT lines, so both
@@ -262,6 +284,85 @@ export async function runRematerializeSweep(pool, opts = {}) {
   };
 }
 
+// -------------------------------------------------------------- reap-media -
+export const DEFAULT_REAP_BATCH = 500;
+
+/**
+ * The retention reaper this codebase already fully built and never called.
+ * `packages/storage/src/storage.ts`'s own header states the stakes plainly:
+ * "Under the amended [COPPA] Rule the blob IS the regulated personal
+ * information — voiceprints, face templates, audio. A reaper that deletes
+ * rows and leaves media is not a retention policy." `reap()` itself (blob
+ * first, then row — see its own doc comment for why that order is the only
+ * discoverable-failure one) has been real and tested since before this pass,
+ * exercised only against a fake in-memory `ReaperDb` in
+ * `packages/api/test/stack.test.mjs`. So has the SQL side: migration 0004
+ * added `artifacts_due_for_reaping()` (a partial index on `media_artifact
+ * (expires_at) WHERE preserved = false` sized exactly for this query) and
+ * `reap_tombstone` (a blob whose delete failed, kept for retry — the row it
+ * points at stays undeleted on purpose, so the media stays discoverable);
+ * migration 0009 wired `reap_tombstone` into `health_check`'s own
+ * `retention_breach` row, which `tools/health-alert.mjs` already alerts on.
+ * Every piece existed except the one that matters most: something that
+ * actually calls `artifacts_due_for_reaping()` on a schedule. This is that
+ * caller — the third job below, alongside `rematerialize`/`health-alert`.
+ *
+ * The `ReaperDb` implementation here is intentionally thin, mirroring
+ * `runRematerializeSweep()`'s own direct-SQL style in this same file rather
+ * than adding a fourth `pool.ts` export for three one-line queries this
+ * scheduler is the only caller of.
+ */
+export async function runMediaReapSweep(pool, storage, opts = {}) {
+  const now = opts.now ?? DateTime.utc().toJSDate();
+  const limit = opts.limit ?? DEFAULT_REAP_BATCH;
+
+  const db = {
+    // `_now` is intentionally unused here — `artifacts_due_for_reaping()`
+    // filters on the database's own real `now()`, not a value this process
+    // could inject, which is the correct choice for a production sweep (no
+    // client/server clock skew to reason about). `reap()`'s own belt-and-
+    // braces `expiresAt > now` re-check, below, still runs against the
+    // real `now` this function was called with either way.
+    async dueForReaping(_now, lim) {
+      // Same to_char(... AT TIME ZONE 'UTC', ...) idiom runRematerializeSweep
+      // uses above and pool.ts's loadMessageChain() uses too — a bare
+      // `expires_at::text` renders Postgres's space-separated DateStyle, not
+      // ISO-8601. reap()'s own `new Date(c.expiresAt)` re-check (storage.ts)
+      // happens to parse that format correctly under Node's current V8
+      // engine, but that is an implementation-defined leniency, not a
+      // guarantee — this codebase already paid once to learn not to rely on
+      // it (see runRematerializeSweep's own comment above), so it is not
+      // relied on twice.
+      return withSystemSession(pool, (q) => q(
+        `SELECT artifact_id AS "artifactId", storage_key AS "storageKey",
+                preserved,
+                to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt"
+           FROM artifacts_due_for_reaping($1)`,
+        [lim],
+      ));
+    },
+    async deleteArtifactRow(id) {
+      const deleted = await withSystemSession(pool, (q) => q(
+        `DELETE FROM media_artifact WHERE id = $1 RETURNING id`, [id],
+      ));
+      return deleted.length > 0;
+    },
+    async tombstone(id, key, error) {
+      await withSystemSession(pool, (q) => q(
+        `INSERT INTO reap_tombstone (artifact_id, storage_key, error)
+              VALUES ($1, $2, $3)
+         ON CONFLICT (artifact_id) DO UPDATE
+           SET attempts = reap_tombstone.attempts + 1,
+               last_attempt = now(),
+               error = EXCLUDED.error`,
+        [id, key, error],
+      ));
+    },
+  };
+
+  return reap(db, storage, now, limit);
+}
+
 // ----------------------------------------------------------- health-alert -
 /**
  * `tools/health-alert.mjs` is a standalone top-level script — importing it
@@ -287,7 +388,13 @@ export async function runHealthAlertSubprocess(databaseUrl) {
 }
 
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'reap-media', 'health-alert'];
+
+// One real FilesystemStorage instance, constructed once — same convention
+// as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
+// mainly so packages/db/test/scheduler.test.mjs can inject an isolated
+// MemoryStorage/FilesystemStorage rather than sharing this process-wide one.
+const defaultMediaStorage = new FilesystemStorage(MEDIA_STORAGE_ROOT);
 
 /**
  * Runs one named job under its own advisory lock, with structured
@@ -297,7 +404,7 @@ export const JOB_NAMES = ['rematerialize', 'health-alert'];
  * caller running several jobs in sequence can keep going and still report an
  * honest overall exit code at the end.
  */
-export async function runNamedJob(pool, databaseUrl, jobName) {
+export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultMediaStorage) {
   const startedAt = DateTime.utc();
   logLine({ event: 'start', job: jobName, at: startedAt.toISO() });
 
@@ -305,6 +412,7 @@ export async function runNamedJob(pool, databaseUrl, jobName) {
   try {
     lockResult = await withJobLock(pool, jobName, async () => {
       if (jobName === 'rematerialize') return runRematerializeSweep(pool, {});
+      if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
       if (jobName === 'health-alert') return runHealthAlertSubprocess(databaseUrl);
       throw new Error(`unknown job: ${jobName}`);
     });
@@ -333,6 +441,26 @@ export async function runNamedJob(pool, databaseUrl, jobName) {
       scanned: r.scanned, materialized: r.materialized, expired: r.expired,
       still_pending: r.stillPending, skipped_rows: r.skippedRows,
       batch_limit_hit: r.batchLimitHit, at: DateTime.utc().toISO(),
+    });
+    return { ok: true, skipped: false };
+  }
+
+  if (jobName === 'reap-media') {
+    const r = lockResult.result;
+    // A non-empty `tombstoned` list is not itself a job failure — it means
+    // `reap()` correctly left an undeletable row in place rather than
+    // losing track of its blob (see reap()'s own doc comment on why that
+    // order is the only discoverable-failure one). `retention_breach`
+    // (migration 0004/0009) is what escalates a tombstone that's still
+    // unresolved a day later into a real health-alert breach; logged here
+    // as `status: 'ok'` either way, with the count visible for an operator
+    // tailing logs to notice a pattern before it reaches that threshold.
+    logLine({
+      event: 'end', job: jobName, status: 'ok', duration_ms: durationMs,
+      examined: r.examined, blobs_deleted: r.blobsDeleted,
+      rows_deleted: r.rowsDeleted, tombstoned: r.tombstoned.length,
+      skipped_preserved: r.skippedPreserved, refused_no_clock: r.refusedNoClock,
+      at: DateTime.utc().toISO(),
     });
     return { ok: true, skipped: false };
   }
@@ -434,7 +562,7 @@ export async function loop(pool, databaseUrl) {
 
 // -------------------------------------------------------------------- CLI -
 function usage() {
-  console.error('usage: node tools/scheduler.mjs run <rematerialize|health-alert|all>');
+  console.error('usage: node tools/scheduler.mjs run <rematerialize|reap-media|health-alert|all>');
   console.error('       node tools/scheduler.mjs loop');
 }
 

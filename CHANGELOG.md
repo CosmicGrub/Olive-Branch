@@ -14,6 +14,23 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.46] — 2026-08-25 — Production-readiness Tier B continued: the real COPPA retention reaper finally has a caller
+
+A gap in the same infrastructure family as v0.49.45, found only by this pass's own gap-inventory sweep — not disclosed by v0.49.43, the pass that built the code this closes.
+
+### Fixed
+- **`packages/storage/src/storage.ts`'s `reap()` — the real, tested retention reaper this codebase built specifically because "a reaper that deletes rows and leaves media is not a retention policy" under the amended COPPA Rule — had zero production callers.** So did its SQL half: `artifacts_due_for_reaping()` and `reap_tombstone` (`db/migrations/0004_auth_and_reaper.sql`), a partial index on `media_artifact (expires_at) WHERE preserved = false` sized exactly for this query, sitting unused since it was written. The §20.5 "Closed in v0.10.0" table has named this reaper as built since that version — true of the code, never disclosed that nothing ever called it. The monitoring half was already real and already live: `reap_tombstone`/`retention_breach` feed `health_check` (`db/migrations/0009_health_check_canonical.sql`), and `tools/health-alert.mjs` was already capable of alerting on a stuck tombstone — only the thing it would ever have anything to alert ON was missing.
+- Fixed by giving `tools/scheduler.mjs` a third job, `reap-media`, alongside `rematerialize`/`health-alert` — same advisory-lock discipline, same structured logging. Its `ReaperDb` implementation is direct SQL against `artifacts_due_for_reaping()`/`reap_tombstone`, mirroring `runRematerializeSweep()`'s own established style in the same file rather than adding a fourth `pool.ts` export for three one-line queries this scheduler is the only caller of. Uses the same `to_char(... AT TIME ZONE 'UTC', ...)` timestamp idiom `runRematerializeSweep()` already established, rather than the bare `::text` cast that caused the original rematerialize timestamp bug (v0.49.43) — caught and fixed before it shipped a second time, not after.
+- `docker-compose.prod.yml`'s `scheduler` service (v0.49.45) needed no changes — `run all`/`loop` already run every job in `JOB_NAMES`, so the new job is live in production the moment this ships, with no separate wiring.
+
+### Added
+- `packages/db/test/scheduler.test.mjs` section C — 16 new live-Postgres assertions, run against a real, freshly-migrated database (all 21 migrations, including `0022_backup_reader_role.sql`): a due row's blob and row both go; a preserved row is excluded by the SQL `WHERE` clause itself, never even reaching `reap()`'s own belt-and-braces `skippedPreserved` check (both preservation and the no-expiry guard are effectively unreachable dead code through this real caller, by design — the SQL query is what enforces them here); a not-yet-due row is untouched; an already-tombstoned row is excluded by the SQL `NOT EXISTS`, not re-attempted, and its `attempts` count is left unchanged; and a blob-delete failure leaves the row in place and writes a real `reap_tombstone` row with the real error message, per `reap()`'s own "blob first, then row" design. A second sweep proves the just-written tombstone is honored too, not only a pre-seeded one. `tools/verify.sh`'s scheduler suite label updated to name all three jobs it now covers.
+
+### Verified
+Ran directly against a real WSL Postgres 16, all 21 migrations applied fresh: 45/45 assertions pass (29 pre-existing + 16 new). CLI smoke-tested too — `node tools/scheduler.mjs run reap-media` runs clean against an empty fixture set (`examined=0`), and an unknown job name is still correctly rejected.
+
+---
+
 ## [0.49.45] — 2026-08-25 — Production-readiness Tier B: a persistent media volume and a default-on scheduler for docker-compose.prod.yml
 
 Opens a fresh tier/priority/risk-organized execution pass over a 49-finding gap inventory (5-lens discovery sweep, no build phase). Tier B — highest priority, lowest risk — closes two real gaps in this session's own recently-shipped infrastructure (v0.49.43) before either could bite in a real deployment.

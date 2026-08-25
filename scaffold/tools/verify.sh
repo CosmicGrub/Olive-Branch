@@ -360,7 +360,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
-            "scheduler: rematerialize sweep + lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
+            "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
