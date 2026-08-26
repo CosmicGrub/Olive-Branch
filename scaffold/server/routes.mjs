@@ -27,6 +27,8 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          takeAndGo, themeFor, setChildTheme,
          recordCallStart, recordCallEnd,
          appendHandoverNote, handoverNotesFor,
+         expensesFor, proposeExpense, resolveExpense,
+         medicationsFor, dosesForDate, recordDose, medicalRecordFor, setMedicalRecord,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -1637,6 +1639,273 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         ok: true, seq: entry.seq, authorId: entry.authorId, at: entry.at, body: entry.body,
         whenLabel: DateTime.fromISO(entry.at, { zone: 'utc' }).setZone(tz).toFormat('MMM d, h:mm a'),
       } };
+    },
+  });
+
+  // GET/POST /v1/children/:childId/expenses, POST .../expenses/:expenseId/
+  // accept|dispute|reimburse — real for the first time. Found by this
+  // project's own coordination-layer audit, same pass that closed the
+  // handover log: `expense` (db/migrations/0006_court_tier.sql) has had
+  // real FORCE RLS (`expense_no_child`) since it was first migrated, and
+  // family-graph/src/authorize.ts already had `expense.view`/
+  // `expense.create` in its Action union with a real, unconditional P6
+  // block ("a child role never sees a financial surface") — but nothing
+  // anywhere ever wrote or read a row. `expenses_screen.dart`'s own client
+  // UI was pure in-memory local state with zero network calls.
+  //
+  // Path shape deliberately child-scoped throughout (`/v1/children/:childId/
+  // expenses/:expenseId/accept`), not MASTERFILE §7.7's own bare
+  // `/v1/expenses/:id/accept` sketch — every real route this codebase has
+  // ever registered is child-scoped (api.ts's own A3 discipline: `childId`
+  // from the path only), and a bare id path would need `action: null` +
+  // `identityScopedByHandler` plus a hand-rolled childId lookup before
+  // `can()` could even run, for no real benefit over just keeping the same
+  // shape `handoverNotes`'s own precedent already established. Same "named
+  // to match what actually got built, not retrofitted to a stale
+  // declaration" reasoning that route's own comment gives.
+  const EXPENSE_CATEGORIES = new Set(
+    ['medical', 'school', 'activity', 'clothing', 'childcare', 'other']);
+
+  function invalidExpenseBody(body) {
+    if (!body || typeof body !== 'object') return 'body_must_be_object';
+    if (typeof body.description !== 'string' || !body.description.trim()) {
+      return 'bad_description';
+    }
+    if (!Number.isInteger(body.amountCents) || body.amountCents <= 0) return 'bad_amountCents';
+    if (!EXPENSE_CATEGORIES.has(body.category)) return 'bad_category';
+    if (typeof body.incurredOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.incurredOn)) {
+      return 'bad_incurredOn';
+    }
+    if (!Number.isInteger(body.payerSharePercent)
+        || body.payerSharePercent < 0 || body.payerSharePercent > 100) {
+      return 'bad_payerSharePercent';
+    }
+    if (body.receiptKey !== undefined && body.receiptKey !== null
+        && typeof body.receiptKey !== 'string') {
+      return 'bad_receiptKey';
+    }
+    return null;
+  }
+
+  function expenseToWire(e) {
+    return {
+      id: e.id, paidById: e.paidById, paidByName: e.paidByName,
+      description: e.description,
+      amountCents: e.amountCents, category: e.category, incurredOn: e.incurredOn,
+      receiptKey: e.receiptKey, payerSharePercent: e.splitRule?.payerSharePercent ?? null,
+      status: e.status, createdAt: e.createdAt,
+    };
+  }
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/expenses', action: 'expense.view',
+    handler: async (c) => {
+      // Real, explicit guard on top of RLS — same reasoning the
+      // handover-notes GET route's own comment gives: expensesFor() reads
+      // via a SYSTEM-scoped session, which expense_no_child's RLS does not
+      // block ('system' passes it freely, only 'child' is excluded), and
+      // can()'s own P6_child_financial block already refuses a child at the
+      // outer gate regardless — this is belt-and-suspenders, not the only
+      // lock, matching this file's own established posture everywhere else.
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'P6_child_financial' } };
+      }
+      const entries = await expensesFor(pool, c.childId);
+      return { body: { entries: entries.map(expenseToWire) } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/expenses', action: 'expense.create',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'P6_child_financial' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const reason = invalidExpenseBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      const e = await proposeExpense(pool, c.principal.roleName, c.principal.userId, c.childId, {
+        description: c.body.description.trim(),
+        amountCents: c.body.amountCents, category: c.body.category,
+        incurredOn: c.body.incurredOn, receiptKey: c.body.receiptKey ?? null,
+        payerSharePercent: c.body.payerSharePercent,
+      });
+      return { status: 201, body: expenseToWire(e) };
+    },
+  });
+
+  // One registration per verb rather than a shared `:action` path param —
+  // matches this file's own consistent one-block-per-route style (see the
+  // handover-notes pair just above) over introducing a new dispatch shape
+  // for three routes that differ only in which string they pass through.
+  for (const action of ['accept', 'dispute', 'reimburse']) {
+    api.register({
+      method: 'POST', path: `/v1/children/:childId/expenses/:expenseId/${action}`,
+      action: 'expense.resolve',
+      handler: async (c) => {
+        if (c.principal.roleName === 'child') {
+          return { status: 403, body: { error: 'P6_child_financial' } };
+        }
+        if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+        const e = await resolveExpense(pool, c.principal.roleName, c.principal.userId,
+          c.childId, c.params.expenseId, action);
+        // Honest 404 — a wrong/foreign expenseId (see resolveExpense()'s own
+        // doc comment for why the child_id check inside that query is the
+        // real lateral-privilege boundary here), never a silent 200.
+        if (!e) return { status: 404, body: { error: 'expense_not_found' } };
+        return { body: expenseToWire(e) };
+      },
+    });
+  }
+
+  // GET .../medications, POST .../medications/:medicationId/doses,
+  // GET/PUT .../emergency-card — real for the first time. Found by this
+  // project's own coordination-layer audit, same pass that closed the
+  // handover log and expenses: medication.view/medication.log/
+  // emergency_card.view already existed in family-graph/src/authorize.ts's
+  // Action union with real ROLE_CAPS (guardian/step_parent/sitter/
+  // foster_parent/caseworker, each narrower than the last — sitter can log
+  // a dose but never edit the emergency card; step_parent can view meds but
+  // never log one) — but no table, route, or pool.ts function existed for
+  // either feature. meds_care.dart/emergency_card.dart were pure hardcoded
+  // client state with zero network calls.
+  //
+  // Child-local date resolution duplicated per this file's own established
+  // convention (see the handover-notes GET/POST pair's identical comment)
+  // rather than shared — doseKey()'s own doc comment (meds_care.dart,
+  // packages/care/src/care.ts) is explicit that dose collisions are keyed
+  // on the CHILD's local day, never the server's or a client device's.
+  async function resolveChildLocalDate(q, childId) {
+    const interval = await q(
+      `SELECT tz FROM child_tz_interval
+        WHERE child_id = $1 AND valid @> now()
+        ORDER BY confidence DESC LIMIT 1`,
+      [childId],
+    );
+    let tz = interval[0]?.tz;
+    if (!tz) {
+      const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [childId]);
+      tz = child[0]?.home_tz ?? 'UTC';
+    }
+    return DateTime.utc().setZone(tz).toISODate();
+  }
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/medications', action: 'medication.view',
+    handler: async (c, q) => {
+      // Explicit guard, not just relying on the outer gate: api.ts's own
+      // child-principal path only auto-refuses P6_child_financial/
+      // P7_journal_never (see that file's own authorize block) -- every
+      // OTHER action, medication.view included, passes the outer gate for
+      // a child session by design (a real child-facing route needs to
+      // reach ITS OWN handler that way). §9.6's own "invisible to the
+      // child at every depth" has to be enforced HERE, explicitly, same
+      // pattern the handover-notes/expenses routes above already establish.
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const localDate = await resolveChildLocalDate(q, c.childId);
+      const [medications, doses] = await Promise.all([
+        medicationsFor(pool, c.childId),
+        dosesForDate(pool, c.childId, localDate),
+      ]);
+      return { body: {
+        localDate,
+        medications: medications.map(m => ({
+          id: m.id, name: m.name, dose: m.dose, slots: m.slots,
+          isPrn: m.isPrn, minGapHours: m.minGapHours,
+        })),
+        doses: doses.map(d => ({
+          id: d.id, medicationId: d.medicationId, localDate: d.localDate, slot: d.slot,
+          administeredAt: d.administeredAt, byUserId: d.byUserId, byUserName: d.byUserName,
+          status: d.status,
+        })),
+      } };
+    },
+  });
+
+  const DOSE_STATUSES = new Set(['given', 'skipped', 'refused', 'missed']);
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/medications/:medicationId/doses',
+    action: 'medication.log',
+    handler: async (c, q) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const slot = typeof c.body?.slot === 'string' ? c.body.slot.trim() : '';
+      if (!slot) return { status: 400, body: { error: 'slot_required' } };
+      const status = c.body?.status ?? 'given';
+      if (!DOSE_STATUSES.has(status)) return { status: 400, body: { error: 'bad_status' } };
+      const localDate = await resolveChildLocalDate(q, c.childId);
+      const result = await recordDose(
+        pool, c.principal.roleName, c.principal.userId, c.childId,
+        c.params.medicationId, localDate, slot, status);
+      if (!result.ok) {
+        // Named the parent and the local time, nothing more — §9.6.1's own
+        // "no blame framing" rule, the exact same shape AlreadyAdministered
+        // (care.ts, meds_care.dart) already gives the demo path.
+        return { status: 409, body: {
+          error: 'already_administered', by: result.blockedBy, atIso: result.blockedAtIso,
+        } };
+      }
+      return { status: 201, body: {
+        id: result.dose.id, medicationId: result.dose.medicationId,
+        localDate: result.dose.localDate, slot: result.dose.slot,
+        administeredAt: result.dose.administeredAt, status: result.dose.status,
+      } };
+    },
+  });
+
+  function medicalRecordToWire(r) {
+    return {
+      bloodType: r.bloodType, allergies: r.allergies, conditions: r.conditions,
+      pediatricianName: r.pediatricianName, pediatricianPractice: r.pediatricianPractice,
+      pediatricianPhone: r.pediatricianPhone, insuranceProvider: r.insuranceProvider,
+      insuranceMemberId: r.insuranceMemberId,
+      guardians: r.guardians.map(g => ({ userId: g.userId, name: g.name, phone: g.phone })),
+      medications: r.medications.map(m => ({
+        id: m.id, name: m.name, dose: m.dose, slots: m.slots, isPrn: m.isPrn,
+      })),
+    };
+  }
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/emergency-card', action: 'emergency_card.view',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const record = await medicalRecordFor(pool, c.childId);
+      return { body: medicalRecordToWire(record) };
+    },
+  });
+
+  api.register({
+    method: 'PUT', path: '/v1/children/:childId/emergency-card', action: 'emergency_card.edit',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const body = c.body ?? {};
+      if (body.allergies !== undefined && !Array.isArray(body.allergies)) {
+        return { status: 400, body: { error: 'bad_allergies' } };
+      }
+      if (body.conditions !== undefined && !Array.isArray(body.conditions)) {
+        return { status: 400, body: { error: 'bad_conditions' } };
+      }
+      await setMedicalRecord(pool, c.principal.roleName, c.principal.userId, c.childId, {
+        bloodType: body.bloodType ?? null, allergies: body.allergies ?? [],
+        conditions: body.conditions ?? [], pediatricianName: body.pediatricianName ?? null,
+        pediatricianPractice: body.pediatricianPractice ?? null,
+        pediatricianPhone: body.pediatricianPhone ?? null,
+        insuranceProvider: body.insuranceProvider ?? null,
+        insuranceMemberId: body.insuranceMemberId ?? null,
+      });
+      const record = await medicalRecordFor(pool, c.childId);
+      return { body: medicalRecordToWire(record) };
     },
   });
 

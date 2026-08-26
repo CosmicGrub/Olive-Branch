@@ -130,7 +130,17 @@ class OliveApi {
   static const export_ = '/v1/children/:childId/export';
 
   // --- coordination (§7.7) -----------------------------------------------
+  // Real for the first time as of this pass, same audit/pass that closed
+  // [handoverNotes]/[expenses] above -- server/routes.mjs's own
+  // route-registration comment has the full account. `medication.view`/
+  // `medication.log`/`emergency_card.view` already existed in family-graph/
+  // src/authorize.ts's Action union with real ROLE_CAPS before this pass;
+  // only the table, routes, and this client wiring were missing.
   static const medications   = '/v1/children/:childId/medications';
+  // Two path params, not one -- same reasoning [callEnd]'s own doc comment
+  // gives for why this is pre-substituted rather than going through
+  // [_post]'s single-`:childId` substitution the way [medications] above does.
+  static const medicationDoses = '/v1/children/:childId/medications/:medicationId/doses';
   static const emergencyCard = '/v1/children/:childId/emergency-card';
   // --- parent-to-parent handover log (message_log, real for the first time
   // as of this pass -- see server/routes.mjs's own route-registration
@@ -140,6 +150,24 @@ class OliveApi {
   // this as a real, honest gap, same as [childPresence] above; not
   // retrofitted to a stale declaration.
   static const handoverNotes = '/v1/children/:childId/handover-notes';
+  // --- expenses (§9.6.5, P6) -- real for the first time as of this pass,
+  // same audit/pass that closed [handoverNotes] above. `expense`
+  // (db/migrations/0006_court_tier.sql) has had real FORCE RLS since it was
+  // first migrated; server/routes.mjs's own route-registration comment has
+  // the full account. Path shape deliberately child-scoped throughout
+  // (`.../expenses/:expenseId/accept`), NOT MASTERFILE §7.7's own bare
+  // `/v1/expenses/:id/accept` sketch -- see that comment for why.
+  static const expenses = '/v1/children/:childId/expenses';
+  // Three literal constants, not one shared `:action` template -- server/
+  // routes.mjs registers three distinct concrete routes (a loop over the
+  // three verbs, not a single `:action` path param), and packages/api/test/
+  // contract.test.mjs's own real client/server drift check does an exact,
+  // literal string match against every server-registered path, which a
+  // `:action` placeholder would never satisfy. [resolveExpense] below picks
+  // the right one by `action`.
+  static const expenseAccept = '/v1/children/:childId/expenses/:expenseId/accept';
+  static const expenseDispute = '/v1/children/:childId/expenses/:expenseId/dispute';
+  static const expenseReimburse = '/v1/children/:childId/expenses/:expenseId/reimburse';
 
   // --- guarded by escalation (§8.3) --------------------------------------
   static const settings = '/v1/children/:childId/settings';
@@ -365,6 +393,158 @@ class OliveApi {
   /// [sendMessage]'s own posture on a real rejection.
   Future<Map<String, dynamic>> postHandoverNote(String childId, String body) =>
       _post(handoverNotes, {'body': body}, childId: childId);
+
+  /// `{entries: [{id, paidById, paidByName, description, amountCents,
+  /// category, incurredOn, receiptKey, payerSharePercent, status,
+  /// createdAt}, ...]}` -- GET [expenses], server/routes.mjs's real
+  /// handler. Every real expense for [childId], newest first -- decoding
+  /// into pending-approval vs. ledger views is left to the caller, matching
+  /// [fetchHandoverNotes]'s own posture. Throws [ApiException] on any
+  /// non-2xx response -- notably 403 `P6_child_financial` for a child
+  /// session (expenses_screen.dart's own file header: P6, "no financial or
+  /// expense surface visible to a child role").
+  Future<Map<String, dynamic>> fetchExpenses(String childId) =>
+      _get(expenses, childId: childId);
+
+  /// Proposes ONE new expense for [childId] -- POST [expenses],
+  /// server/routes.mjs's real handler (proposeExpense(), packages/db/src/
+  /// pool.ts). Returns the created row verbatim (`id, paidById, description,
+  /// amountCents, category, incurredOn, receiptKey, payerSharePercent,
+  /// status, createdAt` -- NOT `paidByName`, same "the caller IS the payer,
+  /// by construction" reasoning [postHandoverNote] gives for its own
+  /// missing `authorName`), so a caller can render the just-proposed
+  /// expense immediately without a second round trip. `status` always comes
+  /// back `'proposed'`. Throws [ApiException] on any non-2xx response (e.g.
+  /// 400 `bad_amountCents`/`bad_category`/`bad_description` for an invalid
+  /// body, 403 `P6_child_financial` for a child session).
+  Future<Map<String, dynamic>> proposeExpense(
+    String childId, {
+    required String description,
+    required int amountCents,
+    required String category,
+    required String incurredOn,
+    required int payerSharePercent,
+    String? receiptKey,
+  }) =>
+      _post(expenses, {
+        'description': description, 'amountCents': amountCents, 'category': category,
+        'incurredOn': incurredOn, 'payerSharePercent': payerSharePercent,
+        'receiptKey': ?receiptKey,
+      }, childId: childId);
+
+  /// Resolves one pending expense -- POST [expenseAccept]/[expenseDispute]/
+  /// [expenseReimburse] per [action] ('accept'|'dispute'|'reimburse'),
+  /// server/routes.mjs's real handler (resolveExpense(), packages/db/src/
+  /// pool.ts). Maps expenses_screen.dart's own three inbox actions: `Agree`
+  /// -> `'accept'`, `Decline` -> `'dispute'` (there is no real `declined`
+  /// status -- resolveExpense()'s own doc comment explains why `disputed`
+  /// is the honest closest fit, not an invented one). `Query it` has no
+  /// server route at all yet -- a real, disclosed gap, never silently
+  /// mapped to one of these three. Returns the updated row verbatim, same
+  /// shape [proposeExpense] returns, so a caller can update its own ledger
+  /// view from the real response rather than re-fetching. Throws
+  /// [ApiException] on any non-2xx response -- notably 404
+  /// `expense_not_found` for a wrong or cross-child id (the real
+  /// lateral-privilege boundary lives in `resolveExpense()`'s own
+  /// `WHERE child_id = $childId` clause, not just this client), 403
+  /// `role_lacks_capability` for a coordinator (read-only role, never a
+  /// real decision-maker on the ledger).
+  Future<Map<String, dynamic>> resolveExpense(String childId, String expenseId, String action) {
+    final String path = switch (action) {
+      'accept' => expenseAccept,
+      'dispute' => expenseDispute,
+      'reimburse' => expenseReimburse,
+      _ => throw ArgumentError.value(action, 'action', 'must be accept|dispute|reimburse'),
+    };
+    return _post(
+        path.replaceFirst(':childId', childId).replaceFirst(':expenseId', expenseId), const {});
+  }
+
+  /// `{localDate, medications: [{id, name, dose, slots, isPrn,
+  /// minGapHours}, ...], doses: [{id, medicationId, localDate, slot,
+  /// administeredAt, byUserId, byUserName, status}, ...]}` -- GET
+  /// [medications], server/routes.mjs's real handler. `localDate` and every
+  /// dose's `administeredAt` are already resolved in the CHILD's own local
+  /// frame server-side (the same `child_tz_interval`/`home_tz` resolution
+  /// every other child-local-time read in this client already relies on) --
+  /// `doses` covers every medication for THAT one local day in one round
+  /// trip, matching what meds_care.dart's own `_givenToday()` needs to
+  /// render every medication's dosing state without a fetch per medication.
+  /// Throws [ApiException] on any non-2xx response -- notably 403
+  /// `not_a_child_surface` for a child session (meds_care.dart's own file
+  /// header: "never a surface the child carries").
+  Future<Map<String, dynamic>> fetchMedications(String childId) =>
+      _get(medications, childId: childId);
+
+  /// Records ONE real dose -- POST [medicationDoses], server/routes.mjs's
+  /// real handler (recordDose(), packages/db/src/pool.ts). `status`
+  /// defaults server-side to `'given'` when omitted, matching this
+  /// client's own one real call site (meds_care.dart only ever logs a
+  /// given dose). Returns the created row on success (`id, medicationId,
+  /// localDate, slot, administeredAt, status`). A 409 `already_administered`
+  /// response (`{error, by, atIso}`) is a normal, expected outcome here --
+  /// the real double-dose guard (`medication_dose_no_double_given`, a
+  /// partial unique index, migration 0026) -- so this decodes and returns
+  /// that body directly instead of throwing, mirroring [captureHomework]'s
+  /// own posture for its own normal-but-non-2xx outcome, and only throws
+  /// [ApiException] for a genuinely unexpected status.
+  Future<Map<String, dynamic>> recordMedicationDose(
+    String childId, String medicationId, String slot, {
+    String status = 'given',
+  }) async {
+    final res = await _client.post(
+      _uri(medicationDoses.replaceFirst(':childId', childId)
+          .replaceFirst(':medicationId', medicationId)),
+      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      body: jsonEncode({'slot': slot, 'status': status}),
+    );
+    final body =
+        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 201 || res.statusCode == 409) return body;
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+
+  /// `{bloodType, allergies, conditions, pediatricianName,
+  /// pediatricianPractice, pediatricianPhone, insuranceProvider,
+  /// insuranceMemberId, guardians: [{userId, name, phone}, ...],
+  /// medications: [{id, name, dose, slots, isPrn}, ...]}` -- GET
+  /// [emergencyCard], server/routes.mjs's real handler
+  /// (medicalRecordFor(), packages/db/src/pool.ts). `guardians` is derived
+  /// LIVE from the real guardianship/app_user rows, including
+  /// `phone_e164` -- never a second, storable, driftable copy (see that
+  /// route's own migration header for why). Throws [ApiException] on any
+  /// non-2xx response -- notably 403 `not_a_child_surface` for a child
+  /// session, matching [fetchMedications]'s identical posture.
+  Future<Map<String, dynamic>> fetchEmergencyCard(String childId) =>
+      _get(emergencyCard, childId: childId);
+
+  /// Replace-all write of [childId]'s real medical_record -- PUT
+  /// [emergencyCard], server/routes.mjs's real handler (setMedicalRecord(),
+  /// packages/db/src/pool.ts). `allergies`/`conditions` are the caller's
+  /// ENTIRE new lists for every call, never a delta -- same "replace-all,
+  /// never append" convention [setAvailability] already establishes for a
+  /// different table. Guardian-only: a sitter (a real `emergency_card.view`
+  /// holder) gets 403 `role_lacks_capability`, not P6 (this is medical, not
+  /// financial). Returns the updated record verbatim, same shape
+  /// [fetchEmergencyCard] returns, so a caller can render the just-saved
+  /// card immediately without a second round trip.
+  Future<Map<String, dynamic>> putEmergencyCard(
+    String childId, {
+    String? bloodType,
+    List<String>? allergies,
+    List<String>? conditions,
+    String? pediatricianName,
+    String? pediatricianPractice,
+    String? pediatricianPhone,
+    String? insuranceProvider,
+    String? insuranceMemberId,
+  }) =>
+      _put(emergencyCard, childId: childId, body: {
+        'bloodType': ?bloodType, 'allergies': ?allergies, 'conditions': ?conditions,
+        'pediatricianName': ?pediatricianName, 'pediatricianPractice': ?pediatricianPractice,
+        'pediatricianPhone': ?pediatricianPhone, 'insuranceProvider': ?insuranceProvider,
+        'insuranceMemberId': ?insuranceMemberId,
+      });
 
   /// Checks [pin] against every LIVE guardian of [childId] -- POST
   /// kioskPinVerify, server/routes.mjs's real handler. This is the check

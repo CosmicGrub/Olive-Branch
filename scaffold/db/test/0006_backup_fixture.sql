@@ -120,11 +120,12 @@ ON CONFLICT DO NOTHING;
 
 -- ----------------------------------------------------------------- expense-
 INSERT INTO expense
-  (id, child_id, paid_by, amount_cents, category, incurred_on, split_rule,
+  (id, child_id, paid_by, description, amount_cents, category, incurred_on, split_rule,
    status)
 VALUES
   ('99999999-9999-9999-9999-999999999999',
    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
    '22222222-2222-2222-2222-222222222222',
+   'Backup fixture expense',
    6250, 'medical', '2026-08-10', '{"dad":50,"mom":50}'::jsonb, 'accepted')
 ON CONFLICT DO NOTHING;

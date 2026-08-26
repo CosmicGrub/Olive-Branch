@@ -2329,6 +2329,384 @@ export async function handoverNotesFor(pool: pg.Pool, childId: string): Promise<
   });
 }
 
+/**
+ * The `expense` table (db/migrations/0006_court_tier.sql) has had real
+ * FORCE ROW LEVEL SECURITY (`expense_no_child`) since it was first migrated
+ * -- the identical `current_role_name() IS DISTINCT FROM 'child'` shape
+ * `log_no_child` uses for message_log -- but, exactly like message_log
+ * before this pass, nothing anywhere ever wrote or read a row. Found by
+ * this codebase's own coordination-layer audit (MASTERFILE §20.2b), same
+ * pass that closed the handover log.
+ *
+ * `splitRule` is stored as `{payerSharePercent: number}` -- a real,
+ * disclosed simplification, not a derivation from `custody_order
+ * .cost_split` (that column is real but unconsumed anywhere in this
+ * codebase; MASTERFILE §5.11's own comment already calls it "shipped now,
+ * unused until expenses read it"). Matches expenses_screen.dart's own
+ * `LedgerLine.payerSharePercent` field exactly, so the client's existing
+ * `owedToPayerCents` getter needs no reinterpretation once this is live.
+ */
+export interface Expense {
+  id: string;
+  childId: string;
+  paidById: string;
+  /** Null for a just-proposed expense's own POST response -- the actor IS
+   * the payer by construction, so the caller already knows to render "You"
+   * without a join; only `expensesFor()`'s real per-entry read needs a
+   * display name for whichever party did NOT just call this. */
+  paidByName: string | null;
+  /** db/migrations/0025_expense_description.sql -- the table's only
+   * free-text field, added alongside this pass; see that migration's own
+   * header for why (expenses_screen.dart's demo fixtures always carried
+   * one, the shipped table never had a column for it). */
+  description: string;
+  amountCents: number;
+  category: string;
+  incurredOn: string;
+  receiptKey: string | null;
+  splitRule: { payerSharePercent: number };
+  status: string;
+  createdAt: string;
+}
+
+const EXPENSE_ROW_COLUMNS = `
+  id, child_id, paid_by, description, amount_cents, category,
+  to_char(incurred_on, 'YYYY-MM-DD') AS incurred_on,
+  receipt_key, split_rule, status,
+  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+`;
+
+function rowToExpense(r: any, paidByName: string | null = null): Expense {
+  return {
+    id: r.id, childId: r.child_id, paidById: r.paid_by, paidByName,
+    description: r.description,
+    amountCents: Number(r.amount_cents), category: r.category,
+    incurredOn: r.incurred_on, receiptKey: r.receipt_key,
+    splitRule: r.split_rule, status: r.status, createdAt: r.created_at,
+  };
+}
+
+/**
+ * `payerSharePercent` is what the PAYER keeps; the remainder is owed back
+ * to them -- expenses_screen.dart's own `owedToPayerCents` getter
+ * (`amountCents * (100 - payerSharePercent) / 100`) already assumes this
+ * exact convention, carried over unchanged rather than reinterpreted.
+ * `withSession(..., {childId: null}, ...)` -- same shape `appendHandoverNote`
+ * already uses: `expense_no_child`'s RLS policy (like `log_no_child`) does
+ * not scope by child_id, so there is nothing a narrower session context
+ * would buy here either.
+ */
+export async function proposeExpense(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string,
+  input: { description: string; amountCents: number; category: string; incurredOn: string;
+           receiptKey?: string | null; payerSharePercent: number },
+): Promise<Expense> {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on, receipt_key, split_rule)
+       VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8::jsonb)
+       RETURNING ${EXPENSE_ROW_COLUMNS}`,
+      [childId, actorUserId, input.description, input.amountCents, input.category, input.incurredOn,
+       input.receiptKey ?? null, JSON.stringify({ payerSharePercent: input.payerSharePercent })],
+    );
+    return rowToExpense(rows[0]);
+  });
+}
+
+/**
+ * Deliberately a separate query, not a shared type with `proposeExpense`'s
+ * own INSERT..RETURNING -- same "display-only fields stay out of the
+ * security-critical write path" discipline `handoverNotesFor()` already
+ * documents for its own split from `loadMessageChain()`, even though
+ * `expense` carries no hash chain to protect. System-scoped: the route's
+ * own `action: 'expense.view'` gate (plus the redundant child-role guard
+ * every route in this file adds on top of RLS, see routes.mjs) is the real
+ * authorization boundary, matching `handoverNotesFor()`'s identical
+ * reasoning.
+ */
+export async function expensesFor(pool: pg.Pool, childId: string): Promise<Expense[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT e.id, e.child_id, e.paid_by, u.display_name AS paid_by_name,
+              e.description, e.amount_cents, e.category,
+              to_char(e.incurred_on, 'YYYY-MM-DD') AS incurred_on,
+              e.receipt_key, e.split_rule, e.status,
+              to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+         FROM expense e JOIN app_user u ON u.id = e.paid_by
+        WHERE e.child_id = $1 ORDER BY e.created_at DESC`,
+      [childId],
+    );
+    return rows.map((r: any) => rowToExpense(r, r.paid_by_name));
+  });
+}
+
+/**
+ * Maps expenses_screen.dart's own three inbox actions (`Agree`/`Query it`/
+ * `Decline`) onto `expense.status`'s real CHECK constraint
+ * (`proposed|accepted|disputed|reimbursed` -- no `declined` value exists).
+ * `Agree` -> `accepted` is unambiguous. `Decline` -> `disputed` is a real,
+ * disclosed mapping choice, not an invented status: a declined expense
+ * genuinely IS one somebody needs to follow up on, which is exactly what
+ * `disputed` already means, and adding a fifth status value for a
+ * synonym would be schema churn for no new state. `Query it` has no
+ * server-side equivalent at all yet (there is no "a question was asked"
+ * concept anywhere in this table) -- routes.mjs's own POST handler for it
+ * stays honestly unbuilt rather than silently mapped to one of these three.
+ */
+export const EXPENSE_RESOLUTIONS: Record<string, string> = {
+  accept: 'accepted', dispute: 'disputed', reimburse: 'reimbursed',
+};
+
+/**
+ * `WHERE id = $1 AND child_id = $2` -- not just `WHERE id = $1`. Without the
+ * child_id check, a guardian holding a live edge to child A (and therefore
+ * passing the outer `action:'expense.resolve'` gate) could resolve an
+ * expense belonging to child B just by guessing/observing its id --
+ * `expense_no_child`'s RLS only ever excludes the `child` role, it does
+ * nothing to scope by child, so this query is the actual lateral-privilege
+ * boundary here, the same class of check graph.test.mjs's own "H3 LATERAL
+ * PRIVILEGE" group exists to catch at the authorize.ts layer (this is the
+ * DB-layer analog for a table with no per-child RLS scoping at all).
+ * Returns `null` for a wrong id/child pairing rather than throwing -- an
+ * honest "not found," not a 500, mirroring `recordCallEnd()`'s own
+ * `WHERE ended_at IS NULL` idempotent-miss shape.
+ */
+export async function resolveExpense(
+  pool: pg.Pool, actorRole: string, actorUserId: string,
+  childId: string, expenseId: string, action: string,
+): Promise<Expense | null> {
+  const status = EXPENSE_RESOLUTIONS[action];
+  if (!status) throw Object.assign(new Error(`unknown expense resolution: ${action}`),
+    { code: 'unknown_resolution' });
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `UPDATE expense SET status = $1 WHERE id = $2 AND child_id = $3
+       RETURNING ${EXPENSE_ROW_COLUMNS}`,
+      [status, expenseId, childId],
+    );
+    return rows.length ? rowToExpense(rows[0]) : null;
+  });
+}
+
+/**
+ * medication / medication_dose / medical_record (db/migrations/
+ * 0026_medications_emergency_card.sql) — real for the first time, same
+ * coordination-layer audit and pass that closed the handover log and
+ * expenses (MASTERFILE §20.2b). meds_care.dart's dosing log has a real,
+ * already-ported pure engine behind it (packages/care/src/care.ts's
+ * DoseKey/DoseRecord/recordDose/prnAllowed) but no table anywhere;
+ * emergency_card.dart was pure hardcoded const text.
+ */
+export interface Medication {
+  id: string; name: string; dose: string; slots: string[];
+  isPrn: boolean; minGapHours: number | null;
+}
+
+export interface DoseEntry {
+  id: string; medicationId: string; localDate: string; slot: string;
+  administeredAt: string; byUserId: string; byUserName: string; status: string;
+}
+
+export async function medicationsFor(pool: pg.Pool, childId: string): Promise<Medication[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, name, dose, slots, is_prn, min_gap_hours
+         FROM medication WHERE child_id = $1 AND active ORDER BY created_at ASC`,
+      [childId],
+    );
+    return rows.map((r: any): Medication => ({
+      id: r.id, name: r.name, dose: r.dose, slots: r.slots, isPrn: r.is_prn,
+      minGapHours: r.min_gap_hours === null ? null : Number(r.min_gap_hours),
+    }));
+  });
+}
+
+/**
+ * Every real dose for [childId] on child-LOCAL [localDate] — every
+ * medication's own slots at once, matching what meds_care.dart's own
+ * `_givenToday()` needs to render every med's dosing state in one fetch,
+ * not one round trip per medication.
+ */
+export async function dosesForDate(
+  pool: pg.Pool, childId: string, localDate: string,
+): Promise<DoseEntry[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT d.id, d.medication_id, to_char(d.local_date, 'YYYY-MM-DD') AS local_date,
+              d.slot, to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at,
+              d.by_user_id, u.display_name AS by_user_name, d.status
+         FROM medication_dose d JOIN app_user u ON u.id = d.by_user_id
+        WHERE d.child_id = $1 AND d.local_date = $2::date
+        ORDER BY d.administered_at ASC`,
+      [childId, localDate],
+    );
+    return rows.map((r: any): DoseEntry => ({
+      id: r.id, medicationId: r.medication_id, localDate: r.local_date, slot: r.slot,
+      administeredAt: r.administered_at, byUserId: r.by_user_id, byUserName: r.by_user_name,
+      status: r.status,
+    }));
+  });
+}
+
+/**
+ * Real result shape, mirroring `RecordDoseResult`/`AlreadyAdministered`
+ * (meds_care.dart, packages/care/src/care.ts) exactly, so the route's own
+ * 409 body can carry the same "$by gave this dose at $atLocal" facts the
+ * client's pure `recordDose()` already computes for the demo path — named
+ * the parent and the local time, nothing more (§9.6.1's own "no blame
+ * framing" rule).
+ */
+export type RecordDoseResult =
+  | { ok: true; dose: DoseEntry }
+  | { ok: false; blockedBy: string; blockedAtIso: string };
+
+/**
+ * `local_date` is ALWAYS computed here from [localDate] (the caller — the
+ * route — resolves it via the exact same child_tz_interval/home_tz block
+ * every other child-local-time write in this file already duplicates),
+ * never trusted as a client-supplied value — doseKey()'s own doc comment
+ * is explicit that this must be the CHILD's local day, and a client-chosen
+ * date would let a wrong-timezone device silently create a second dose
+ * record for what is, in the child's own frame, the same slot on the same
+ * day. `medication_dose_no_double_given`'s own partial unique index
+ * (migration 0026) is the real backstop underneath this — a race between
+ * two guardians logging at the exact same moment is caught by Postgres
+ * itself, not just by this function having queried first (a real TOCTOU
+ * gap `ON CONFLICT` closes that a plain SELECT-then-INSERT would not).
+ */
+export async function recordDose(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string,
+  medicationId: string, localDate: string, slot: string, status: string,
+): Promise<RecordDoseResult> {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO medication_dose
+         (medication_id, child_id, local_date, slot, administered_at, by_user_id, status)
+       VALUES ($1, $2, $3::date, $4, now(), $5, $6)
+       ON CONFLICT (medication_id, local_date, slot) WHERE status = 'given' DO NOTHING
+       RETURNING id, medication_id,
+                 to_char(local_date, 'YYYY-MM-DD') AS local_date, slot,
+                 to_char(administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at,
+                 by_user_id, status`,
+      [medicationId, childId, localDate, slot, actorUserId, status],
+    );
+    if (rows.length) {
+      const r = rows[0];
+      return { ok: true, dose: { id: r.id, medicationId: r.medication_id,
+        localDate: r.local_date, slot: r.slot, administeredAt: r.administered_at,
+        byUserId: r.by_user_id, byUserName: '', status: r.status } };
+    }
+    // Blocked — a real 'given' dose already exists for this exact
+    // medication/day/slot. Look it up to name who and when, the same way
+    // the pure recordDose() (care.ts) already does for the demo path.
+    const clash = await q(
+      `SELECT d.by_user_id, u.display_name AS by_user_name,
+              to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at
+         FROM medication_dose d JOIN app_user u ON u.id = d.by_user_id
+        WHERE d.medication_id = $1 AND d.local_date = $2::date AND d.slot = $3 AND d.status = 'given'
+        LIMIT 1`,
+      [medicationId, localDate, slot],
+    );
+    return { ok: false, blockedBy: clash[0]?.by_user_name ?? 'another guardian',
+      blockedAtIso: clash[0]?.administered_at ?? '' };
+  });
+}
+
+export interface MedicalRecord {
+  bloodType: string | null;
+  allergies: string[];
+  conditions: string[];
+  pediatricianName: string | null;
+  pediatricianPractice: string | null;
+  pediatricianPhone: string | null;
+  insuranceProvider: string | null;
+  insuranceMemberId: string | null;
+  guardians: { userId: string; name: string; phone: string | null }[];
+  medications: Medication[];
+}
+
+/**
+ * "Guardians" is NEVER stored on medical_record — derived here, live, from
+ * the real guardianship + app_user.phone_e164 columns (0001_phase0_init
+ * .sql), which already exist and are already the actual source of truth
+ * for who a child's real guardians are. See this migration's own header
+ * for why duplicating that into medical_record would be a second,
+ * driftable copy. `medications` is the same real, active list
+ * `medicationsFor()` returns — folded into this one response so
+ * emergency_card.dart's single fetch gets everything it renders, matching
+ * the demo screen's own "Current medications" section reading from the
+ * same underlying facts meds_care.dart's dosing log does.
+ */
+export async function medicalRecordFor(pool: pg.Pool, childId: string): Promise<MedicalRecord> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT blood_type, allergies, conditions, pediatrician_name, pediatrician_practice,
+              pediatrician_phone, insurance_provider, insurance_member_id
+         FROM medical_record WHERE child_id = $1`,
+      [childId],
+    );
+    const guardianRows = await q(
+      `SELECT g.user_id, u.display_name, u.phone_e164
+         FROM guardianship g JOIN app_user u ON u.id = g.user_id
+        WHERE g.child_id = $1 AND g.role = 'guardian' AND g.closed_at IS NULL
+              AND g.valid @> now()
+        ORDER BY u.display_name ASC`,
+      [childId],
+    );
+    const medications = await medicationsFor(pool, childId);
+    const r = rows[0];
+    return {
+      bloodType: r?.blood_type ?? null,
+      allergies: (r?.allergies as string[] | undefined) ?? [],
+      conditions: (r?.conditions as string[] | undefined) ?? [],
+      pediatricianName: r?.pediatrician_name ?? null,
+      pediatricianPractice: r?.pediatrician_practice ?? null,
+      pediatricianPhone: r?.pediatrician_phone ?? null,
+      insuranceProvider: r?.insurance_provider ?? null,
+      insuranceMemberId: r?.insurance_member_id ?? null,
+      guardians: guardianRows.map((g: any) => (
+        { userId: g.user_id, name: g.display_name, phone: g.phone_e164 })),
+      medications,
+    };
+  });
+}
+
+/**
+ * Upsert — `medical_record.child_id` is a real primary key, not a log, so
+ * this is a genuine replace-all write (matching `setAvailabilityWindows()`'s
+ * own "the caller's entire new set, never a delta" posture for a different
+ * table), never an append. Guardian-only at the route layer
+ * (`emergency_card.edit`, guardian-only in `ROLE_CAPS` — see authorize.ts).
+ */
+export async function setMedicalRecord(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string,
+  fields: { bloodType?: string | null; allergies?: string[]; conditions?: string[];
+            pediatricianName?: string | null; pediatricianPractice?: string | null;
+            pediatricianPhone?: string | null; insuranceProvider?: string | null;
+            insuranceMemberId?: string | null },
+): Promise<void> {
+  await withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    await q(
+      `INSERT INTO medical_record
+         (child_id, blood_type, allergies, conditions, pediatrician_name, pediatrician_practice,
+          pediatrician_phone, insurance_provider, insurance_member_id, updated_at, updated_by)
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, now(), $10)
+       ON CONFLICT (child_id) DO UPDATE SET
+         blood_type = EXCLUDED.blood_type, allergies = EXCLUDED.allergies,
+         conditions = EXCLUDED.conditions, pediatrician_name = EXCLUDED.pediatrician_name,
+         pediatrician_practice = EXCLUDED.pediatrician_practice,
+         pediatrician_phone = EXCLUDED.pediatrician_phone,
+         insurance_provider = EXCLUDED.insurance_provider,
+         insurance_member_id = EXCLUDED.insurance_member_id,
+         updated_at = now(), updated_by = EXCLUDED.updated_by`,
+      [childId, fields.bloodType ?? null, JSON.stringify(fields.allergies ?? []),
+       JSON.stringify(fields.conditions ?? []), fields.pediatricianName ?? null,
+       fields.pediatricianPractice ?? null, fields.pediatricianPhone ?? null,
+       fields.insuranceProvider ?? null, fields.insuranceMemberId ?? null, actorUserId],
+    );
+  });
+}
+
 export async function certifiedExportBundleFor(
   pool: pg.Pool, requestedBy: string, childId: string, now: Date = new Date(),
 ): Promise<CertifiedExportResult> {

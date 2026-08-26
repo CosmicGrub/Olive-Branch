@@ -20,6 +20,8 @@ import 'colour_parent.dart';
 import 'court_export.dart';
 import 'degradation_banner.dart';
 import 'deletion_screen.dart';
+import 'emergency_card.dart';
+import 'expenses_screen.dart';
 import 'expiry_digest.dart';
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
@@ -29,6 +31,7 @@ import 'hub_widgets.dart';
 import 'invitation_screen.dart';
 import 'lock_advisory_screen.dart';
 import 'maturation_ladder.dart';
+import 'meds_care.dart';
 import 'palette_logic.dart';
 import 'push_channel.dart';
 import 'show_guardian.dart';
@@ -310,6 +313,39 @@ class GuardianMoreScreen extends StatelessWidget {
     ));
   }
 
+  /// Same unconditional-open reasoning as [_openHandoverNotes] — P6's own
+  /// second lock (ExpensesScreen's own `viewerRole` gate, never even
+  /// constructed for a non-guardian) plus this hub's own real fact (every
+  /// caller of `GuardianMoreScreen` is, by construction, a guardian shell)
+  /// mean there is no non-guardian path to worry about here; `viewerRole`
+  /// defaults to `ViewerRole.guardian` and is never overridden by this tile.
+  void _openExpenses(BuildContext context) {
+    _open(context, ExpensesScreen(
+      childName: childName,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient,
+    ));
+  }
+
+  /// Same unconditional-open reasoning as [_openExpenses]/[_openHandoverNotes]
+  /// — meds_care.dart has its own real, seeded-in-the-demo-fixture offline
+  /// mode, not an honest-stub snackbar standing in for one.
+  void _openMedsCare(BuildContext context) {
+    _open(context, MedsCareScreen(
+      childName: childName,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient,
+    ));
+  }
+
+  void _openEmergencyCard(BuildContext context) {
+    _open(context, EmergencyCardScreen(
+      childName: childName,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient,
+    ));
+  }
+
   /// There is no persisted client-side session anywhere in this codebase to
   /// clear (every screen calls devLoginFor() fresh — see push_channel.dart's
   /// own "no sign-out/log-out flow anywhere in lib/" note, which this tile
@@ -482,6 +518,21 @@ class GuardianMoreScreen extends StatelessWidget {
               ? 'Real, append-only — court-tier since the day it was written'
               : "Not the child's channel — it's the parents' (demo)",
             onTap: () => _openHandoverNotes(context)),
+          HubTile(icon: Icons.receipt_long_outlined, title: 'Expenses',
+            subtitle: baseUrl != null
+              ? 'Real ledger — P6 enforced twice, in the route and in the RLS'
+              : "Invisible to $childName at every depth (demo)",
+            onTap: () => _openExpenses(context)),
+          HubTile(icon: Icons.medication_outlined, title: 'Meds & care',
+            subtitle: baseUrl != null
+              ? 'Real dosing log — a real double-dose guard, enforced by Postgres'
+              : "Between guardians only — $childName never sees this screen (demo)",
+            onTap: () => _openMedsCare(context)),
+          HubTile(icon: Icons.medical_information_outlined, title: 'Emergency card',
+            subtitle: baseUrl != null
+              ? 'Real, allergy-first — read once, in a hurry'
+              : 'Read once, in a hurry (demo)',
+            onTap: () => _openEmergencyCard(context)),
         ]),
         HubSection(title: 'Preferences', children: [
           HubTile(icon: Icons.palette_outlined, title: 'Theme',

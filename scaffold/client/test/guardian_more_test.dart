@@ -12,10 +12,13 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:olive_client/availability_screen.dart';
 import 'package:olive_client/call_screen.dart';
+import 'package:olive_client/emergency_card.dart';
+import 'package:olive_client/expenses_screen.dart';
 import 'package:olive_client/family_agreement_screen.dart';
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/guardian_setup.dart';
 import 'package:olive_client/handover_notes.dart';
+import 'package:olive_client/meds_care.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
@@ -166,6 +169,134 @@ void main() {
       // authorId matches the threaded-in guardianId -- renders 'You', not
       // the demo fixtures' 'Sarah'/'You' pairing.
       expect(find.textContaining('Running about 15 minutes late'), findsNothing);
+    });
+
+    testWidgets('Expenses opens the real screen with its demo fixtures when no '
+        'live session is threaded in -- P6 still fully enforced in demo mode',
+        (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final tile = find.text('Expenses');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(ExpensesScreen), findsOneWidget);
+      expect(find.textContaining('Orthodontist co-pay'), findsOneWidget);
+    });
+
+    testWidgets('Expenses fetches the REAL expense ledger once a live session is '
+        'threaded in -- the demo fixtures never appear', (t) async {
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/expenses')) {
+          return http.Response(jsonEncode({'entries': <dynamic>[
+            {'id': 'e1', 'paidById': 'dad-1', 'paidByName': 'Dad',
+             'description': 'Real expense from the real server.', 'amountCents': 5000,
+             'category': 'medical', 'incurredOn': '2026-07-01', 'receiptKey': null,
+             'payerSharePercent': 50, 'status': 'proposed',
+             'createdAt': '2026-07-01T12:00:00.000Z'},
+          ]}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      final tile = find.text('Expenses');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(ExpensesScreen), findsOneWidget);
+      expect(find.textContaining('Real expense from the real server.'), findsOneWidget);
+      expect(find.textContaining('Orthodontist co-pay'), findsNothing);
+    });
+
+    testWidgets('Meds & care opens the real screen with its demo fixtures when no '
+        'live session is threaded in', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final tile = find.text('Meds & care');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(MedsCareScreen), findsOneWidget);
+      expect(find.textContaining('Methylphenidate'), findsOneWidget);
+    });
+
+    testWidgets('Meds & care fetches the REAL medication list once a live session '
+        'is threaded in -- the demo fixtures never appear', (t) async {
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/medications')) {
+          return http.Response(jsonEncode({
+            'localDate': '2026-08-04',
+            'medications': [
+              {'id': 'm1', 'name': 'Real med from the real server.', 'dose': '5 mg',
+               'slots': ['morning'], 'isPrn': false, 'minGapHours': null},
+            ],
+            'doses': <dynamic>[],
+          }), 200);
+        }
+        return http.Response(jsonEncode({'allergies': <dynamic>[], 'conditions': <dynamic>[],
+          'guardians': <dynamic>[], 'medications': <dynamic>[]}), 200);
+      });
+      await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      final tile = find.text('Meds & care');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(MedsCareScreen), findsOneWidget);
+      expect(find.textContaining('Real med from the real server.'), findsOneWidget);
+      expect(find.textContaining('Methylphenidate'), findsNothing);
+    });
+
+    testWidgets('Emergency card opens the real screen with its demo fixtures when '
+        'no live session is threaded in', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final tile = find.text('Emergency card');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(EmergencyCardScreen), findsOneWidget);
+      expect(find.textContaining('Claire Solomon'), findsOneWidget);
+    });
+
+    testWidgets('Emergency card fetches the REAL medical record once a live '
+        'session is threaded in -- the demo fixtures never appear', (t) async {
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/emergency-card')) {
+          return http.Response(jsonEncode({
+            'bloodType': null, 'allergies': ['Real allergy from the real server.'],
+            'conditions': <dynamic>[], 'pediatricianName': null, 'pediatricianPractice': null,
+            'pediatricianPhone': null, 'insuranceProvider': null, 'insuranceMemberId': null,
+            'guardians': <dynamic>[], 'medications': <dynamic>[],
+          }), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      final tile = find.text('Emergency card');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(EmergencyCardScreen), findsOneWidget);
+      expect(find.textContaining('Real allergy from the real server.'), findsOneWidget);
+      expect(find.textContaining('Claire Solomon'), findsNothing);
     });
   });
 

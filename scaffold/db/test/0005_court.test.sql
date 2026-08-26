@@ -59,9 +59,9 @@ SELECT must_fail('a non-sha256 hash', $q$
 \echo ''
 \echo '=== EXPENSE ================================================='
 SELECT must_pass('a valid expense', $q$
-  INSERT INTO expense (child_id, paid_by, amount_cents, category, incurred_on, split_rule)
+  INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on, split_rule)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',
-          4500,'medical',current_date,'{"dad":5000,"mom":5000}') $q$);
+          'Orthodontist visit',4500,'medical',current_date,'{"dad":5000,"mom":5000}') $q$);
 SELECT must_fail('a zero amount', $q$
   INSERT INTO expense (child_id, paid_by, amount_cents, category, incurred_on, split_rule)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',

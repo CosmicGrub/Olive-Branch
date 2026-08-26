@@ -11,9 +11,12 @@
 //      renders zero financial content — no dollar figures, no ledger, no
 //      approval actions, nothing to scrape even by a routing mistake.
 //   3. inboxVisibleTo(), the ported §12.7 guard, agrees.
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/expenses_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -209,6 +212,221 @@ void main() {
       // still read from the same state inside the wide two-pane layout.
       expect(find.text('Soccer cleats, size 2'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('live wiring — the real expense-backed routes (server/routes.mjs, '
+      'packages/db/src/pool.ts proposeExpense/expensesFor/resolveExpense)', () {
+    testWidgets('a child viewer sees no financial content even when live params are '
+        'supplied — P6 runs before _load() is ever called', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        fail('no network call should ever happen for a child viewerRole');
+      });
+      await t.pumpWidget(wrap(ExpensesScreen(viewerRole: ViewerRole.child,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock)));
+      await t.pump();
+      expect(find.textContaining(r'$'), findsNothing);
+      expect(find.textContaining('Expenses'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('shows a loading indicator, then real fetched expenses replace the '
+        'demo fixtures, split into pending vs. ledger by real status', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        expect(req.url.path, '/v1/children/child-a/expenses');
+        return http.Response(jsonEncode({'entries': [
+          {'id': 'e1', 'paidById': 'dad-1', 'paidByName': 'Dad',
+           'description': 'Real orthodontist bill', 'amountCents': 12000,
+           'category': 'medical', 'incurredOn': '2026-07-01', 'receiptKey': null,
+           'payerSharePercent': 50, 'status': 'proposed', 'createdAt': '2026-07-01T12:00:00.000Z'},
+          {'id': 'e2', 'paidById': 'mom-1', 'paidByName': 'Mom',
+           'description': 'Real winter coat', 'amountCents': 8900,
+           'category': 'clothing', 'incurredOn': '2026-06-15', 'receiptKey': null,
+           'payerSharePercent': 50, 'status': 'reimbursed', 'createdAt': '2026-06-15T12:00:00.000Z'},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(ExpensesScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock)));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await t.pumpAndSettle();
+
+      // Real data, not the demo fixtures.
+      expect(find.textContaining('Real orthodontist bill'), findsOneWidget);
+      expect(find.textContaining('Real winter coat'), findsOneWidget);
+      expect(find.textContaining('Orthodontist co-pay'), findsNothing);
+      // status='proposed' -> pending pane; status!='proposed' -> ledger pane.
+      expect(find.textContaining('NEEDS YOUR ANSWER (1)'), findsOneWidget);
+      // paidById 'mom-1' != the threaded-in guardianId 'dad-1' -> real name.
+      expect(find.textContaining('Mom paid'), findsOneWidget);
+      expect(find.textContaining(r'$89.00'), findsOneWidget);
+    });
+
+    testWidgets("Agree POSTs 'accept' and renders the SERVER's own returned amount, "
+        "fixing the demo's own hardcoded amountCents: 0 bug", (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'e1', 'paidById': 'mom-1', 'description': 'Real orthodontist bill',
+            'amountCents': 12000, 'category': 'medical', 'incurredOn': '2026-07-01',
+            'receiptKey': null, 'payerSharePercent': 50, 'status': 'accepted',
+            'createdAt': '2026-07-01T12:00:00.000Z',
+          }), 200);
+        }
+        return http.Response(jsonEncode({'entries': [
+          {'id': 'e1', 'paidById': 'mom-1', 'paidByName': 'Mom',
+           'description': 'Real orthodontist bill', 'amountCents': 12000,
+           'category': 'medical', 'incurredOn': '2026-07-01', 'receiptKey': null,
+           'payerSharePercent': 50, 'status': 'proposed', 'createdAt': '2026-07-01T12:00:00.000Z'},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(ExpensesScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.tap(find.widgetWithText(OutlinedButton, 'Agree').first);
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(posts.single.url.path, '/v1/children/child-a/expenses/e1/accept');
+      expect(find.textContaining('NEEDS YOUR ANSWER (0)'), findsOneWidget);
+      // The real server-returned amount, not the demo's hardcoded 0.
+      expect(find.textContaining(r'$120.00'), findsOneWidget);
+    });
+
+    testWidgets("Decline POSTs 'dispute' — the real closest status, not an invented "
+        "'declined' value", (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'e1', 'paidById': 'mom-1', 'description': 'A disputed charge',
+            'amountCents': 500, 'category': 'other', 'incurredOn': '2026-07-01',
+            'receiptKey': null, 'payerSharePercent': 50, 'status': 'disputed',
+            'createdAt': '2026-07-01T12:00:00.000Z',
+          }), 200);
+        }
+        return http.Response(jsonEncode({'entries': [
+          {'id': 'e1', 'paidById': 'mom-1', 'paidByName': 'Mom',
+           'description': 'A disputed charge', 'amountCents': 500,
+           'category': 'other', 'incurredOn': '2026-07-01', 'receiptKey': null,
+           'payerSharePercent': 50, 'status': 'proposed', 'createdAt': '2026-07-01T12:00:00.000Z'},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(ExpensesScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.tap(find.widgetWithText(OutlinedButton, 'Decline').first);
+      await t.pumpAndSettle();
+
+      expect(posts.single.url.path, '/v1/children/child-a/expenses/e1/dispute');
+      expect(find.textContaining('50/50 split · disputed'), findsOneWidget);
+    });
+
+    testWidgets("Query it fires no network call and shows an honest 'not built' "
+        'message, never silently mapped to accept/dispute', (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') { posts.add(req); return http.Response('{}', 200); }
+        return http.Response(jsonEncode({'entries': [
+          {'id': 'e1', 'paidById': 'mom-1', 'paidByName': 'Mom',
+           'description': 'Query me', 'amountCents': 500, 'category': 'other',
+           'incurredOn': '2026-07-01', 'receiptKey': null, 'payerSharePercent': 50,
+           'status': 'proposed', 'createdAt': '2026-07-01T12:00:00.000Z'},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(ExpensesScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.tap(find.widgetWithText(OutlinedButton, 'Query it').first);
+      await t.pump();
+
+      expect(posts, isEmpty);
+      expect(find.textContaining("isn't built yet"), findsOneWidget);
+      // Still pending — Query it never resolves the item.
+      expect(find.textContaining('NEEDS YOUR ANSWER (1)'), findsOneWidget);
+    });
+
+    testWidgets('a real resolve FAILURE shows a visible error and leaves the item '
+        'pending — never a silent no-op', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') return http.Response('server error', 500);
+        return http.Response(jsonEncode({'entries': [
+          {'id': 'e1', 'paidById': 'mom-1', 'paidByName': 'Mom',
+           'description': 'Will fail to resolve', 'amountCents': 500, 'category': 'other',
+           'incurredOn': '2026-07-01', 'receiptKey': null, 'payerSharePercent': 50,
+           'status': 'proposed', 'createdAt': '2026-07-01T12:00:00.000Z'},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(ExpensesScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.tap(find.widgetWithText(OutlinedButton, 'Agree').first);
+      await t.pumpAndSettle();
+
+      expect(find.textContaining("Couldn't send that response"), findsOneWidget);
+      expect(find.textContaining('NEEDS YOUR ANSWER (1)'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a real fetch failure is an honest error with a working retry, never '
+        'a crash or a silent fallback to the demo fixtures', (t) async {
+      int calls = 0;
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        calls++;
+        if (calls == 1) return http.Response('server error', 500);
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await t.pumpWidget(wrap(ExpensesScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining("Couldn't reach the server"), findsOneWidget);
+      expect(t.takeException(), isNull);
+
+      await t.tap(find.text('Try again'));
+      await t.pumpAndSettle();
+      expect(find.textContaining('NEEDS YOUR ANSWER (0)'), findsOneWidget);
+      expect(find.text('Nothing waiting.'), findsOneWidget);
+      expect(calls, 2);
+    });
+
+    testWidgets('with no live params supplied, the demo fixtures render exactly '
+        'as before — no network call, no loading state', (t) async {
+      await t.pumpWidget(wrap(const ExpensesScreen()));
+      await t.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('Orthodontist co-pay'), findsOneWidget);
     });
   });
 }

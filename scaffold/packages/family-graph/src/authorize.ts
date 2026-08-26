@@ -18,10 +18,10 @@ export type Action =
   | 'calendar.view' | 'calendar.edit'
   | 'list.view' | 'list.claim'
   | 'medication.view' | 'medication.log'
-  | 'emergency_card.view'
+  | 'emergency_card.view' | 'emergency_card.edit'
   | 'archive.view' | 'archive.preserve'
   | 'export.raw' | 'export.certified'
-  | 'expense.view' | 'expense.create'
+  | 'expense.view' | 'expense.create' | 'expense.resolve'
   | 'ladder.advance'
   | 'settings'
   | 'journal.read';
@@ -53,7 +53,8 @@ export type Decision = { allow: true } | { allow: false; reason: Deny };
 
 const WRITES: Action[] = [
   'homework.annotate', 'calendar.edit', 'list.claim', 'medication.log',
-  'archive.preserve', 'expense.create', 'ladder.advance', 'settings',
+  'emergency_card.edit',
+  'archive.preserve', 'expense.create', 'expense.resolve', 'ladder.advance', 'settings',
 ];
 
 const CONTACT: Action[] = ['call', 'message'];
@@ -63,8 +64,8 @@ const ROLE_CAPS: Record<Role, Action[]> = {
   guardian: [
     'call','message','homework.view','homework.annotate','calendar.view',
     'calendar.edit','list.view','list.claim','medication.view','medication.log',
-    'emergency_card.view','archive.view','archive.preserve','export.raw',
-    'export.certified','expense.view','expense.create','settings',
+    'emergency_card.view','emergency_card.edit','archive.view','archive.preserve',
+    'export.raw','export.certified','expense.view','expense.create','expense.resolve','settings',
   ],
   step_parent: [
     'call','message','homework.view','calendar.view','list.view',

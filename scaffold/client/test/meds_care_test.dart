@@ -4,9 +4,12 @@
 // "given" dose in the same slot on the same child-local day must be refused,
 // and the refusal message must name the parent and the local time — nothing
 // else, no blame framing.
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/meds_care.dart';
 
@@ -190,6 +193,134 @@ void main() {
 
       await pumpAt(const Size(390, 1600)); // standard phone
       expect(t.getSize(find.byType(ListView)).width, 390);
+    });
+  });
+
+  group('live wiring — the real medication/emergency-card routes '
+      '(server/routes.mjs, packages/db/src/pool.ts recordDose/medicationsFor)', () {
+    testWidgets('shows a loading indicator, then real fetched medications/doses/'
+        'allergies replace the demo fixtures', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/medications')) {
+          return http.Response(jsonEncode({
+            'localDate': '2026-08-04',
+            'medications': [
+              {'id': 'm1', 'name': 'Real Med', 'dose': '10 mg', 'slots': ['morning'],
+               'isPrn': false, 'minGapHours': null},
+            ],
+            'doses': <dynamic>[],
+          }), 200);
+        }
+        if (req.url.path.endsWith('/emergency-card')) {
+          return http.Response(jsonEncode({
+            'bloodType': 'O positive', 'allergies': ['Real allergy'],
+            'conditions': ['Real condition'], 'pediatricianName': null,
+            'pediatricianPractice': null, 'pediatricianPhone': null,
+            'insuranceProvider': null, 'insuranceMemberId': null,
+            'guardians': <dynamic>[], 'medications': <dynamic>[],
+          }), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, MedsCareScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('Real Med'), findsOneWidget);
+      expect(find.textContaining('Methylphenidate'), findsNothing);
+      expect(find.text('Real allergy'), findsOneWidget);
+      expect(find.text('Real condition'), findsOneWidget);
+    });
+
+    testWidgets('logging a dose POSTs to the real route and marks it given', (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'd1', 'medicationId': 'm1', 'localDate': '2026-08-04',
+            'slot': 'morning', 'administeredAt': '2026-08-04T12:00:00.000Z', 'status': 'given',
+          }), 201);
+        }
+        if (req.url.path.endsWith('/medications')) {
+          return http.Response(jsonEncode({
+            'localDate': '2026-08-04',
+            'medications': [
+              {'id': 'm1', 'name': 'Real Med', 'dose': '10 mg', 'slots': ['morning'],
+               'isPrn': false, 'minGapHours': null},
+            ],
+            'doses': <dynamic>[],
+          }), 200);
+        }
+        return http.Response(jsonEncode({'allergies': <dynamic>[], 'conditions': <dynamic>[],
+          'guardians': <dynamic>[], 'medications': <dynamic>[]}), 200);
+      });
+      await pump(t, MedsCareScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Log dose'));
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(posts.single.url.path, '/v1/children/child-a/medications/m1/doses');
+      expect(jsonDecode(posts.single.body), {'slot': 'morning', 'status': 'given'});
+      expect(find.text('Given today'), findsOneWidget);
+    });
+
+    testWidgets('a real 409 already_administered response is decoded into the same '
+        'names-the-parent-and-time banner text the demo path already renders', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          return http.Response(jsonEncode({
+            'error': 'already_administered', 'by': 'Mom', 'atIso': '2026-08-04T13:05:00.000Z',
+          }), 409);
+        }
+        if (req.url.path.endsWith('/medications')) {
+          return http.Response(jsonEncode({
+            'localDate': '2026-08-04',
+            'medications': [
+              {'id': 'm1', 'name': 'Real Med', 'dose': '10 mg', 'slots': ['morning'],
+               'isPrn': false, 'minGapHours': null},
+            ],
+            'doses': <dynamic>[],
+          }), 200);
+        }
+        return http.Response(jsonEncode({'allergies': <dynamic>[], 'conditions': <dynamic>[],
+          'guardians': <dynamic>[], 'medications': <dynamic>[]}), 200);
+      });
+      await pump(t, MedsCareScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Log dose'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('Mom gave this dose at'), findsOneWidget);
+      // Still shows the Log dose control -- the refused attempt never
+      // marked it given.
+      expect(find.text('Given today'), findsNothing);
+    });
+
+    testWidgets('with no live params supplied, the demo fixtures render exactly '
+        'as before — no network call, no loading state', (t) async {
+      await pump(t, const MedsCareScreen());
+      await t.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('Methylphenidate'), findsOneWidget);
     });
   });
 }
