@@ -23,7 +23,27 @@
 // `auditArrivalPayload` — a straight port of care.ts's `auditArrival` — is
 // run against every event this screen ever constructs, so a future edit that
 // tries to smuggle a coordinate back in fails loudly instead of silently.
+//
+// LIVE WIRING (baseUrl/guardianId/childId/httpClient, all optional and
+// additive — same convention expenses_screen.dart/meds_care.dart already
+// establish for a guardian_more.dart screen): when supplied, this screen
+// fetches the real bag manifest + running-late log + arrival status via
+// OliveApi.fetchExchangeBagItems()/fetchExchangeRunningLate()/
+// fetchExchangeArrival() on init, and writes via setExchangeBagItemStatus()/
+// logExchangeRunningLate()/recordExchangeArrival(), minting a fresh
+// devLoginFor() session per call — same reasoning those files' own headers
+// give. Scope, disclosed (matching server/routes.mjs's own registration
+// comment): ONLY the bag manifest/running-late/arrival sections go live —
+// the Handoff/Coming-up sections below stay on `_demoOrder`'s demo data even
+// when this screen IS live-wired, since making those live would mean
+// porting schedule.ts's full timezone-aware `exchanges()`, a separate task.
+// `scheduledAt`/`delayMinutes` on a live arrival are computed server-side
+// from the child's real active custody order, never from this client — a
+// 409 `no_active_custody_order` response (honest absence, no order on file)
+// is shown as a real message, never silently swallowed or guessed around.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'form_factors.dart' as ff;
 
 // ============================================================ schedule.ts ===
@@ -219,9 +239,24 @@ final Order _demoOrder = Order(
 
 const Map<Side, String> _sideNames = <Side, String>{Side.a: 'Mom', Side.b: 'Dad'};
 
+enum _LoadState { ready, loading, error }
+
 class ExchangeScreen extends StatefulWidget {
-  const ExchangeScreen({super.key, this.childName = 'Ivy'});
+  const ExchangeScreen({
+    super.key,
+    this.childName = 'Ivy',
+    this.baseUrl,
+    this.guardianId,
+    this.childId,
+    this.httpClient,
+  });
   final String childName;
+  final String? baseUrl;
+  final String? guardianId;
+  final String? childId;
+  final http.Client? httpClient;
+
+  bool get _isLive => baseUrl != null && guardianId != null && childId != null;
 
   @override
   State<ExchangeScreen> createState() => _ExchangeScreenState();
@@ -230,7 +265,7 @@ class ExchangeScreen extends StatefulWidget {
 class _ExchangeScreenState extends State<ExchangeScreen> {
   final DateTime _today = DateTime.utc(2026, 8, 4);
 
-  late final List<BagItem> _manifest = manifestOrder(<BagItem>[
+  List<BagItem> _manifest = manifestOrder(<BagItem>[
     BagItem(id: 'retainer', label: 'Retainer', essential: true),
     BagItem(id: 'inhaler', label: 'Inhaler', essential: true),
     BagItem(id: 'glasses', label: 'Glasses', essential: true),
@@ -241,30 +276,218 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
 
   final List<RunningLateEntry> _lateLog = <RunningLateEntry>[];
   ArrivalEvent? _arrival;
+  _LoadState _loadState = _LoadState.ready;
+  // Per-item spinner state while a real live toggle is in flight — mirrors
+  // expenses_screen.dart's own `_resolving` Set, same reasoning: disables
+  // that one row's checkboxes so a slow connection can't be double-tapped
+  // into two competing requests. Always empty on the demo path.
+  final Set<String> _togglingItemIds = <String>{};
+  bool _loggingLate = false;
+  bool _loggingArrival = false;
 
-  void _toggleSent(BagItem item) => setState(() => item.sent = !item.sent);
-  void _toggleReturned(BagItem item) => setState(() => item.returned = !item.returned);
+  @override
+  void initState() {
+    super.initState();
+    if (widget._isLive) _load();
+  }
+
+  /// The ONLY place this screen calls the network to READ — mirrors
+  /// expenses_screen.dart/meds_care.dart's own self-fetching pattern: a
+  /// fresh devLoginFor() per load, `api.close()` only on the success path.
+  /// A failure here is a real, honest error state with a retry affordance,
+  /// never a silent fall-back to the demo fixtures.
+  Future<void> _load() async {
+    setState(() => _loadState = _LoadState.loading);
+    try {
+      final String token = await devLoginFor(widget.baseUrl!,
+          userId: widget.guardianId!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
+      final results = await Future.wait([
+        api.fetchExchangeBagItems(widget.childId!),
+        api.fetchExchangeRunningLate(widget.childId!),
+        api.fetchExchangeArrival(widget.childId!),
+      ]);
+      if (widget.httpClient == null) api.close();
+      final List<dynamic> rawItems = results[0]['items'] as List<dynamic>? ?? <dynamic>[];
+      final List<BagItem> items = manifestOrder(rawItems.map((dynamic i) {
+        final Map<String, dynamic> row = i as Map<String, dynamic>;
+        return BagItem(id: row['id'] as String, label: row['label'] as String,
+          essential: row['essential'] as bool? ?? false, sent: row['sent'] as bool? ?? false,
+          returned: row['returned'] as bool? ?? false);
+      }).toList());
+      // Server returns newest-first (running-late log's own GET); this
+      // screen's `_lateLog` is oldest-first internally, same as the demo
+      // path's own append order — build() reverses it for display either way.
+      final List<dynamic> rawLate =
+          (results[1]['entries'] as List<dynamic>? ?? <dynamic>[]).reversed.toList();
+      final List<RunningLateEntry> lateLog = rawLate.map((dynamic e) {
+        final Map<String, dynamic> row = e as Map<String, dynamic>;
+        return RunningLateEntry(
+          loggedAt: DateTime.tryParse(row['loggedAt'] as String? ?? '') ?? DateTime.now(),
+          etaMinutes: row['etaMinutes'] as int? ?? 0);
+      }).toList();
+      final Map<String, dynamic>? rawArrival =
+          results[2]['event'] as Map<String, dynamic>?;
+      final ArrivalEvent? arrival = rawArrival == null ? null : ArrivalEvent(
+        exchangeId: rawArrival['id'] as String,
+        arrivedAt: DateTime.tryParse(rawArrival['arrivedAt'] as String? ?? '') ?? DateTime.now(),
+        delayMinutes: rawArrival['delayMinutes'] as int? ?? 0);
+      if (!mounted) return;
+      setState(() {
+        _manifest = items;
+        _lateLog..clear()..addAll(lateLog);
+        _arrival = arrival;
+        _loadState = _LoadState.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadState = _LoadState.error);
+    }
+  }
+
+  void _toggleSent(BagItem item) {
+    if (!widget._isLive) { setState(() => item.sent = !item.sent); return; }
+    _toggleLive(item, sent: !item.sent);
+  }
+
+  void _toggleReturned(BagItem item) {
+    if (!widget._isLive) { setState(() => item.returned = !item.returned); return; }
+    _toggleLive(item, returned: !item.returned);
+  }
+
+  /// Live path for both toggles above — POSTs exactly the one field that
+  /// changed (setExchangeBagItemStatus()'s own doc comment: omitting a field
+  /// leaves it unchanged server-side), then updates local state from the
+  /// real response rather than assuming the optimistic flip landed.
+  Future<void> _toggleLive(BagItem item, {bool? sent, bool? returned}) async {
+    setState(() => _togglingItemIds.add(item.id));
+    try {
+      final String token = await devLoginFor(widget.baseUrl!,
+          userId: widget.guardianId!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
+      final Map<String, dynamic> row = await api.setExchangeBagItemStatus(
+        widget.childId!, item.id, sent: sent, returned: returned);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      setState(() {
+        item.sent = row['sent'] as bool? ?? item.sent;
+        item.returned = row['returned'] as bool? ?? item.returned;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't update that item — check your connection and try again.")));
+    } finally {
+      if (mounted) setState(() => _togglingItemIds.remove(item.id));
+    }
+  }
 
   // §9.7.3 — one tap, an ETA, immutably logged. Appended only: there is no
   // _editLateEntry and no _deleteLateEntry anywhere in this file.
-  void _logRunningLate(int minutes) => setState(
-    () => _lateLog.add(RunningLateEntry(loggedAt: DateTime.now(), etaMinutes: minutes)));
+  void _logRunningLate(int minutes) {
+    if (!widget._isLive) {
+      setState(() => _lateLog.add(RunningLateEntry(loggedAt: DateTime.now(), etaMinutes: minutes)));
+      return;
+    }
+    _logRunningLateLive(minutes);
+  }
+
+  Future<void> _logRunningLateLive(int minutes) async {
+    setState(() => _loggingLate = true);
+    try {
+      final String token = await devLoginFor(widget.baseUrl!,
+          userId: widget.guardianId!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
+      final Map<String, dynamic> row = await api.logExchangeRunningLate(widget.childId!, minutes);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      setState(() => _lateLog.add(RunningLateEntry(
+        loggedAt: DateTime.tryParse(row['loggedAt'] as String? ?? '') ?? DateTime.now(),
+        etaMinutes: row['etaMinutes'] as int? ?? minutes)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't log that — check your connection and try again.")));
+    } finally {
+      if (mounted) setState(() => _loggingLate = false);
+    }
+  }
 
   void _logArrival() {
-    final DateTime scheduled = DateTime.utc(_today.year, _today.month, _today.day, 18, 0);
-    final ArrivalEvent event = recordArrival('exchange-demo-1', scheduled, DateTime.now());
-    // Defense in depth (see file header): audit the event before it is ever
-    // allowed to reach setState / the widget tree.
-    final ({bool ok, List<String> leaks}) audit = auditArrivalPayload(<String, Object?>{
-      'exchangeId': event.exchangeId, 'arrivedAt': event.arrivedAt.toIso8601String(),
-      'delayMinutes': event.delayMinutes,
-    });
-    assert(audit.ok, 'P3 violation: arrival payload carries ${audit.leaks}');
-    setState(() => _arrival = event);
+    if (!widget._isLive) {
+      final DateTime scheduled = DateTime.utc(_today.year, _today.month, _today.day, 18, 0);
+      final ArrivalEvent event = recordArrival('exchange-demo-1', scheduled, DateTime.now());
+      // Defense in depth (see file header): audit the event before it is
+      // ever allowed to reach setState / the widget tree.
+      final ({bool ok, List<String> leaks}) audit = auditArrivalPayload(<String, Object?>{
+        'exchangeId': event.exchangeId, 'arrivedAt': event.arrivedAt.toIso8601String(),
+        'delayMinutes': event.delayMinutes,
+      });
+      assert(audit.ok, 'P3 violation: arrival payload carries ${audit.leaks}');
+      setState(() => _arrival = event);
+      return;
+    }
+    _logArrivalLive();
+  }
+
+  /// Live path — `scheduledAt`/`delayMinutes` are computed server-side from
+  /// the child's real active custody order, never from this client (see
+  /// file header). A 409 `no_active_custody_order` response is a normal,
+  /// honest outcome (no order on file to time the arrival against) — shown
+  /// as a real message, never silently swallowed.
+  Future<void> _logArrivalLive() async {
+    setState(() => _loggingArrival = true);
+    try {
+      final String token = await devLoginFor(widget.baseUrl!,
+          userId: widget.guardianId!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
+      final Map<String, dynamic> row = await api.recordExchangeArrival(widget.childId!);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      if (row['error'] == 'no_active_custody_order') {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No custody schedule is on file to time this arrival against.')));
+        return;
+      }
+      setState(() => _arrival = ArrivalEvent(
+        exchangeId: row['id'] as String,
+        arrivedAt: DateTime.tryParse(row['arrivedAt'] as String? ?? '') ?? DateTime.now(),
+        delayMinutes: row['delayMinutes'] as int? ?? 0));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't log the arrival — check your connection and try again.")));
+    } finally {
+      if (mounted) setState(() => _loggingArrival = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Loading/error UI mirrors expenses_screen.dart/meds_care.dart's own
+    // established shape — only ever reachable when this screen is
+    // live-wired; the pure demo path never enters either state.
+    if (_loadState == _LoadState.loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_loadState == _LoadState.error) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Exchange')),
+        body: Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.cloud_off, size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text("Couldn't reach the server",
+              style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Try again')),
+          ]),
+        )),
+      );
+    }
     final ({int sleeps, Side nextSide, DateTime onLocalDate})? next =
       sleepsUntilSideChange(_demoOrder, _today);
     final List<Block> upcoming = blocks(_demoOrder, _today,
@@ -292,7 +515,8 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
             child: Column(children: [
               for (final BagItem item in _manifest)
                 _BagRow(item: item, onSent: () => _toggleSent(item),
-                  onReturned: () => _toggleReturned(item)),
+                  onReturned: () => _toggleReturned(item),
+                  busy: _togglingItemIds.contains(item.id)),
             ]))),
           const SizedBox(height: 20),
           const _SectionHeader('Running late'),
@@ -306,7 +530,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
               Wrap(spacing: 8, runSpacing: 8, children: [
                 for (final int m in <int>[10, 20, 30])
                   SizedBox(height: 48, child: OutlinedButton(
-                    onPressed: () => _logRunningLate(m),
+                    onPressed: _loggingLate ? null : () => _logRunningLate(m),
                     child: Text('Running $m min late'))),
               ]),
               if (_lateLog.isNotEmpty) ...[
@@ -329,7 +553,8 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
               const SizedBox(height: 8),
               if (_arrival == null)
                 SizedBox(height: 48, child: FilledButton(
-                  onPressed: _logArrival, child: const Text('Log arrival')))
+                  onPressed: _loggingArrival ? null : _logArrival,
+                  child: const Text('Log arrival')))
               else
                 Text(_arrival!.delayMinutes == 0
                   ? '${widget.childName} arrived — right on time.'
@@ -411,10 +636,15 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _BagRow extends StatelessWidget {
-  const _BagRow({required this.item, required this.onSent, required this.onReturned});
+  const _BagRow({required this.item, required this.onSent, required this.onReturned,
+    this.busy = false});
   final BagItem item;
   final VoidCallback onSent;
   final VoidCallback onReturned;
+  /// True while a real live toggle for THIS item is in flight — disables
+  /// both checkboxes so a slow connection can't be double-tapped into two
+  /// competing requests. Always false on the demo path.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -429,10 +659,10 @@ class _BagRow extends StatelessWidget {
       SizedBox(width: 96, child: CheckboxListTile(dense: true,
         contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading,
         title: Text('sent', style: Theme.of(context).textTheme.labelSmall),
-        value: item.sent, onChanged: (_) => onSent())),
+        value: item.sent, onChanged: busy ? null : (_) => onSent())),
       SizedBox(width: 110, child: CheckboxListTile(dense: true,
         contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading,
         title: Text('returned', style: Theme.of(context).textTheme.labelSmall),
-        value: item.returned, onChanged: (_) => onReturned())),
+        value: item.returned, onChanged: busy ? null : (_) => onReturned())),
     ]));
 }

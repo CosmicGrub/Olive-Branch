@@ -13,6 +13,7 @@ import 'package:http/testing.dart';
 import 'package:olive_client/availability_screen.dart';
 import 'package:olive_client/call_screen.dart';
 import 'package:olive_client/emergency_card.dart';
+import 'package:olive_client/exchange_screen.dart';
 import 'package:olive_client/expenses_screen.dart';
 import 'package:olive_client/family_agreement_screen.dart';
 import 'package:olive_client/guardian_more.dart';
@@ -297,6 +298,51 @@ void main() {
       expect(find.byType(EmergencyCardScreen), findsOneWidget);
       expect(find.textContaining('Real allergy from the real server.'), findsOneWidget);
       expect(find.textContaining('Claire Solomon'), findsNothing);
+    });
+
+    testWidgets('Exchange opens the real screen with its demo fixtures when '
+        'no live session is threaded in', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final tile = find.text('Exchange');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(ExchangeScreen), findsOneWidget);
+      expect(find.text('Mr. Bramble (stuffed bear)'), findsOneWidget);
+    });
+
+    testWidgets('Exchange fetches the REAL bag manifest once a live session is '
+        'threaded in -- the demo fixtures never appear', (t) async {
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/bag-items')) {
+          return http.Response(jsonEncode({'items': [
+            {'id': 'i1', 'label': 'Real bag item from the real server.', 'essential': true,
+             'sent': false, 'returned': false},
+          ]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/running-late')) {
+          return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/arrival')) {
+          return http.Response(jsonEncode({'event': null}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      final tile = find.text('Exchange');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(ExchangeScreen), findsOneWidget);
+      expect(find.text('Real bag item from the real server.'), findsOneWidget);
+      expect(find.text('Mr. Bramble (stuffed bear)'), findsNothing);
     });
   });
 

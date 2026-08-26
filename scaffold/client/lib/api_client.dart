@@ -168,6 +168,23 @@ class OliveApi {
   static const expenseAccept = '/v1/children/:childId/expenses/:expenseId/accept';
   static const expenseDispute = '/v1/children/:childId/expenses/:expenseId/dispute';
   static const expenseReimburse = '/v1/children/:childId/expenses/:expenseId/reimburse';
+  // --- the exchange (§9.7, P3) -- real for the first time as of this pass,
+  // same audit/pass that closed [handoverNotes]/[expenses]/[medications]
+  // above. Backs exchange_screen.dart's bag manifest/running-late log/
+  // arrival sections ONLY -- that screen's Handoff/Coming-up sections stay
+  // on demo data (see its own file header, and server/routes.mjs's
+  // route-registration comment, for the disclosed scope reasoning).
+  static const exchangeBagItems = '/v1/children/:childId/exchange/bag-items';
+  // Two path params, not one -- same reasoning [messageMedia]'s own doc
+  // comment gives for why this is pre-substituted rather than going through
+  // [_post]'s single-`:childId` substitution the way [exchangeBagItems]
+  // above does. Genuinely one server route with a real `:itemId` path
+  // param (like [inboxOpened]'s `:messageId`), NOT an enum of fixed verbs
+  // like [expenseAccept]/[expenseDispute]/[expenseReimburse] -- so this
+  // stays a single constant.
+  static const exchangeBagItemStatus = '/v1/children/:childId/exchange/bag-items/:itemId';
+  static const exchangeRunningLate = '/v1/children/:childId/exchange/running-late';
+  static const exchangeArrival = '/v1/children/:childId/exchange/arrival';
 
   // --- guarded by escalation (§8.3) --------------------------------------
   static const settings = '/v1/children/:childId/settings';
@@ -545,6 +562,90 @@ class OliveApi {
         'pediatricianPhone': ?pediatricianPhone, 'insuranceProvider': ?insuranceProvider,
         'insuranceMemberId': ?insuranceMemberId,
       });
+
+  /// `{items: [{id, label, essential, sent, returned}, ...]}` -- GET
+  /// [exchangeBagItems], server/routes.mjs's real handler (bagItemsFor(),
+  /// packages/db/src/pool.ts). Essential items first, matching
+  /// exchange_screen.dart's own `manifestOrder()`. Throws [ApiException] on
+  /// any non-2xx response -- notably 403 `not_a_child_surface` for a child
+  /// session (this screen is guardian-shell-only, same posture
+  /// [fetchMedications] already has).
+  Future<Map<String, dynamic>> fetchExchangeBagItems(String childId) =>
+      _get(exchangeBagItems, childId: childId);
+
+  /// Toggles ONE bag item's `sent`/`returned` -- POST
+  /// [exchangeBagItemStatus], server/routes.mjs's real handler
+  /// (setBagItemStatus(), packages/db/src/pool.ts). Omitting a field leaves
+  /// it unchanged server-side; only pass the one the caller actually
+  /// toggled, matching exchange_screen.dart's own `_toggleSent`/
+  /// `_toggleReturned` (each flips exactly one flag). Returns the updated
+  /// item verbatim. Throws [ApiException] on any non-2xx response --
+  /// notably 404 `bag_item_not_found` for a wrong or cross-child id (the
+  /// real lateral-privilege boundary lives in `setBagItemStatus()`'s own
+  /// `WHERE child_id = $childId` clause, same shape [resolveExpense]'s own
+  /// doc comment describes for a different table).
+  Future<Map<String, dynamic>> setExchangeBagItemStatus(
+    String childId, String itemId, {
+    bool? sent,
+    bool? returned,
+  }) =>
+      _post(
+        exchangeBagItemStatus.replaceFirst(':childId', childId).replaceFirst(':itemId', itemId),
+        {'sent': ?sent, 'returned': ?returned},
+      );
+
+  /// `{entries: [{id, loggedAt, etaMinutes, reportedByUserId,
+  /// reportedByName}, ...]}`, newest first -- GET [exchangeRunningLate],
+  /// server/routes.mjs's real handler (runningLateLogFor(), packages/db/src/
+  /// pool.ts). Throws [ApiException] on any non-2xx response, same posture
+  /// as [fetchExchangeBagItems].
+  Future<Map<String, dynamic>> fetchExchangeRunningLate(String childId) =>
+      _get(exchangeRunningLate, childId: childId);
+
+  /// Appends ONE new running-late entry -- POST [exchangeRunningLate],
+  /// server/routes.mjs's real handler (logRunningLate(), packages/db/src/
+  /// pool.ts). Insert-only, matching exchange_screen.dart's own file header
+  /// ("there is no _editLateEntry and no _deleteLateEntry"): this class
+  /// exposes no corresponding update/delete method at all, same posture
+  /// [postHandoverNote]'s own doc comment describes for a different
+  /// append-only log. Returns the created row verbatim. Throws
+  /// [ApiException] on any non-2xx response -- notably 400
+  /// `eta_minutes_must_be_positive` for a non-positive value.
+  Future<Map<String, dynamic>> logExchangeRunningLate(String childId, int etaMinutes) =>
+      _post(exchangeRunningLate, {'etaMinutes': etaMinutes}, childId: childId);
+
+  /// `{event: {id, scheduledAt, arrivedAt, delayMinutes} | null}` -- GET
+  /// [exchangeArrival], server/routes.mjs's real handler (arrivalEventFor(),
+  /// packages/db/src/pool.ts). The most recent real arrival event, or
+  /// honestly `null` when none has ever been logged -- same "honest
+  /// absence, not a guess" posture [fetchPresence]'s own `free` field
+  /// already has. Throws [ApiException] on any non-2xx response.
+  Future<Map<String, dynamic>> fetchExchangeArrival(String childId) =>
+      _get(exchangeArrival, childId: childId);
+
+  /// Logs the real arrival event for RIGHT NOW -- POST [exchangeArrival],
+  /// server/routes.mjs's real handler (recordExchangeArrival(),
+  /// packages/db/src/pool.ts). Takes no location parameter -- P3 (§9.7.2),
+  /// structurally: there is nothing here a caller could even pass through.
+  /// `scheduledAt`/`delayMinutes` are computed server-side from the child's
+  /// real active custody order, never from a client-supplied time. A 409
+  /// `no_active_custody_order` response is a normal, honest outcome (no
+  /// order on file to compute a delay against) -- this decodes and returns
+  /// that body directly instead of throwing, mirroring
+  /// [recordMedicationDose]'s own posture for its own normal-but-non-2xx
+  /// outcome, and only throws [ApiException] for a genuinely unexpected
+  /// status.
+  Future<Map<String, dynamic>> recordExchangeArrival(String childId) async {
+    final res = await _client.post(
+      _uri(exchangeArrival, childId),
+      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      body: jsonEncode(const {}),
+    );
+    final body =
+        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 201 || res.statusCode == 409) return body;
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
 
   /// Checks [pin] against every LIVE guardian of [childId] -- POST
   /// kioskPinVerify, server/routes.mjs's real handler. This is the check

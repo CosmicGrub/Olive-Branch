@@ -4,8 +4,11 @@
 // no coordinate may ever reach this screen's widget tree. The rest checks
 // the ported schedule.ts / care.ts logic directly, and the bag manifest /
 // running-late / arrival interactions actually work.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/exchange_screen.dart';
 import 'package:olive_client/form_factors.dart' as ff;
 
@@ -210,6 +213,195 @@ void main() {
 
       await pumpAt(const Size(390, 1800)); // standard phone
       expect(t.getSize(find.byType(ListView)).width, 390);
+    });
+  });
+
+  group('live wiring — the real bag-item/running-late/arrival routes '
+      '(server/routes.mjs, packages/db/src/pool.ts bagItemsFor/logRunningLate/'
+      'recordExchangeArrival)', () {
+    testWidgets('shows a loading indicator, then real fetched bag items/late log/'
+        'arrival replace the demo fixtures', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/bag-items')) {
+          return http.Response(jsonEncode({'items': [
+            {'id': 'i1', 'label': 'Real Backpack Item', 'essential': true,
+             'sent': false, 'returned': false},
+          ]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/running-late')) {
+          return http.Response(jsonEncode({'entries': [
+            {'id': 'l1', 'loggedAt': '2026-08-04T12:00:00.000Z', 'etaMinutes': 15,
+             'reportedByUserId': 'dad-1', 'reportedByName': 'Dad'},
+          ]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/arrival')) {
+          return http.Response(jsonEncode({'event': null}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, ExchangeScreen(
+        childName: 'Ivy', baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await t.pumpAndSettle();
+
+      expect(find.text('Real Backpack Item'), findsOneWidget);
+      expect(find.text('Mr. Bramble (stuffed bear)'), findsNothing);
+      expect(find.textContaining('ETA +15 min'), findsOneWidget);
+      expect(find.text('Log arrival'), findsOneWidget);
+    });
+
+    testWidgets('toggling sent POSTs to the real route and reflects the response', (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST' && req.url.path.contains('/bag-items/')) {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'i1', 'label': 'Real Backpack Item', 'essential': true,
+            'sent': true, 'returned': false,
+          }), 200);
+        }
+        if (req.url.path.endsWith('/exchange/bag-items')) {
+          return http.Response(jsonEncode({'items': [
+            {'id': 'i1', 'label': 'Real Backpack Item', 'essential': true,
+             'sent': false, 'returned': false},
+          ]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/running-late')) {
+          return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+        }
+        return http.Response(jsonEncode({'event': null}), 200);
+      });
+      await pump(t, ExchangeScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock));
+      await t.pumpAndSettle();
+
+      final Checkbox before = t.widget(find.byType(Checkbox).first);
+      expect(before.value, isFalse);
+      await t.tap(find.byType(Checkbox).first);
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(posts.single.url.path, '/v1/children/child-a/exchange/bag-items/i1');
+      expect(jsonDecode(posts.single.body), {'sent': true});
+      final Checkbox after = t.widget(find.byType(Checkbox).first);
+      expect(after.value, isTrue);
+    });
+
+    testWidgets('logging running late POSTs to the real route and appends the '
+        'real entry', (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST' && req.url.path.endsWith('/exchange/running-late')) {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'l2', 'loggedAt': '2026-08-04T12:10:00.000Z', 'etaMinutes': 10,
+            'reportedByUserId': 'dad-1', 'reportedByName': 'Dad',
+          }), 201);
+        }
+        if (req.url.path.endsWith('/exchange/bag-items')) {
+          return http.Response(jsonEncode({'items': <dynamic>[]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/running-late')) {
+          return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+        }
+        return http.Response(jsonEncode({'event': null}), 200);
+      });
+      await pump(t, ExchangeScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('ETA +'), findsNothing);
+      await t.tap(find.text('Running 10 min late'));
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(jsonDecode(posts.single.body), {'etaMinutes': 10});
+      expect(find.textContaining('ETA +10 min'), findsOneWidget);
+    });
+
+    testWidgets('logging arrival POSTs with no body field ever, and renders using '
+        'the real server-computed delayMinutes', (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST' && req.url.path.endsWith('/exchange/arrival')) {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'a1', 'scheduledAt': '2026-08-04T18:00:00.000Z',
+            'arrivedAt': '2026-08-04T18:12:00.000Z', 'delayMinutes': 12,
+          }), 201);
+        }
+        if (req.url.path.endsWith('/exchange/bag-items')) {
+          return http.Response(jsonEncode({'items': <dynamic>[]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/running-late')) {
+          return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+        }
+        return http.Response(jsonEncode({'event': null}), 200);
+      });
+      await pump(t, ExchangeScreen(
+        childName: 'Ivy', baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Log arrival'));
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      // P3, structurally, on the live path too — the real request body
+      // carries no field at all, let alone a location-shaped one.
+      expect(jsonDecode(posts.single.body), <String, dynamic>{});
+      expect(find.textContaining('Ivy arrived — 12 min after'), findsOneWidget);
+    });
+
+    testWidgets('a real 409 no_active_custody_order response shows an honest '
+        'message, never a fabricated arrival', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST' && req.url.path.endsWith('/exchange/arrival')) {
+          return http.Response(jsonEncode({'error': 'no_active_custody_order'}), 409);
+        }
+        if (req.url.path.endsWith('/exchange/bag-items')) {
+          return http.Response(jsonEncode({'items': <dynamic>[]}), 200);
+        }
+        if (req.url.path.endsWith('/exchange/running-late')) {
+          return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+        }
+        return http.Response(jsonEncode({'event': null}), 200);
+      });
+      await pump(t, ExchangeScreen(
+        childName: 'Ivy', baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Log arrival'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('Ivy arrived'), findsNothing);
+      expect(find.text('Log arrival'), findsOneWidget); // still offered, not stuck
+      expect(find.textContaining('No custody schedule'), findsOneWidget);
+    });
+
+    testWidgets('with no live params supplied, the demo fixtures render exactly '
+        'as before — no network call, no loading state', (t) async {
+      await pump(t, const ExchangeScreen());
+      await t.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Mr. Bramble (stuffed bear)'), findsOneWidget);
     });
   });
 }

@@ -21,6 +21,7 @@ import 'court_export.dart';
 import 'degradation_banner.dart';
 import 'deletion_screen.dart';
 import 'emergency_card.dart';
+import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'expiry_digest.dart';
 import 'family_agreement_screen.dart';
@@ -346,6 +347,20 @@ class GuardianMoreScreen extends StatelessWidget {
     ));
   }
 
+  /// Same unconditional-open reasoning as [_openExpenses]/[_openMedsCare] —
+  /// exchange_screen.dart's own demo (a seeded bag manifest, `_demoOrder`)
+  /// is a genuine offline mode already, not a stub. Only the bag manifest/
+  /// running-late/arrival sections go live when baseUrl/guardianId/childId
+  /// are supplied — that file's own header discloses why Handoff/Coming-up
+  /// stay on demo data either way.
+  void _openExchange(BuildContext context) {
+    _open(context, ExchangeScreen(
+      childName: childName,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient,
+    ));
+  }
+
   /// There is no persisted client-side session anywhere in this codebase to
   /// clear (every screen calls devLoginFor() fresh — see push_channel.dart's
   /// own "no sign-out/log-out flow anywhere in lib/" note, which this tile
@@ -533,6 +548,11 @@ class GuardianMoreScreen extends StatelessWidget {
               ? 'Real, allergy-first — read once, in a hurry'
               : 'Read once, in a hurry (demo)',
             onTap: () => _openEmergencyCard(context)),
+          HubTile(icon: Icons.luggage_outlined, title: 'Exchange',
+            subtitle: baseUrl != null
+              ? 'Real bag manifest, running-late log, arrival — never a place, P3'
+              : 'An event, never a place — P3 (demo)',
+            onTap: () => _openExchange(context)),
         ]),
         HubSection(title: 'Preferences', children: [
           HubTile(icon: Icons.palette_outlined, title: 'Theme',
