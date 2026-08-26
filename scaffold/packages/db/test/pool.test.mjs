@@ -58,8 +58,8 @@ await admin.query(
 await admin.query(
   `INSERT INTO child_journal_entry (child_id, body) VALUES ($1, 'a private thought')`, [CHILD]);
 await admin.query(
-  `INSERT INTO expense (child_id, paid_by, amount_cents, category, incurred_on, split_rule)
-   VALUES ($1, $2, 500, 'school', now()::date, '{}')`, [CHILD, DAD]);
+  `INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on, split_rule)
+   VALUES ($1, $2, 'Test fixture expense', 500, 'school', now()::date, '{}')`, [CHILD, DAD]);
 await admin.query('COMMIT');
 
 // A · edgesFor — the actual query, against real rows

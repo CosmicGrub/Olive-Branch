@@ -10,6 +10,12 @@ if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
 
 export const IVY = 'aaaaaaaa-0000-4000-8000-000000000001';
 export const DAD = 'aaaaaaaa-0000-4000-8000-000000000002';
+// Added alongside real device-testing infra for the coordination-layer
+// features (handover notes and its siblings) — every one of those needs a
+// SECOND live guardian to actually exercise guardian-to-guardian
+// coordination (the "You" vs. real-name distinction, a real other party to
+// post a note to). Sequential id, same convention DAD/IVY already use.
+export const MOM = 'aaaaaaaa-0000-4000-8000-000000000003';
 
 const client = new pg.Client({ connectionString: DATABASE_URL });
 await client.connect();
@@ -19,6 +25,9 @@ await client.query(
   `INSERT INTO app_user (id, display_name, home_tz) VALUES ($1, 'Dad', 'America/Chicago')
    ON CONFLICT (id) DO NOTHING`, [DAD]);
 await client.query(
+  `INSERT INTO app_user (id, display_name, home_tz) VALUES ($1, 'Mom', 'America/Denver')
+   ON CONFLICT (id) DO NOTHING`, [MOM]);
+await client.query(
   `INSERT INTO child (id, display_name, birth_date, home_tz)
    VALUES ($1, 'Ivy', '2016-04-02', 'America/New_York')
    ON CONFLICT (id) DO NOTHING`, [IVY]);
@@ -27,6 +36,11 @@ await client.query(
    VALUES ($1, $2, 'guardian', '{"calls":true,"message":true,"calendar.view":true}',
            tstzrange(now() - interval '1 year', null))
    ON CONFLICT (child_id, user_id) DO NOTHING`, [IVY, DAD]);
+await client.query(
+  `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+   VALUES ($1, $2, 'guardian', '{"calls":true,"message":true,"calendar.view":true}',
+           tstzrange(now() - interval '1 year', null))
+   ON CONFLICT (child_id, user_id) DO NOTHING`, [IVY, MOM]);
 await client.query(
   `INSERT INTO child_tz_interval (child_id, tz, valid, source)
    VALUES ($1, 'America/New_York', tstzrange(now() - interval '1 year', null), 'manual')
@@ -60,5 +74,5 @@ await client.query(
   [IVY, DAD, artifact.rows[0].id]);
 
 await client.query('COMMIT');
-console.log(`seeded: child ${IVY} (Ivy), guardian ${DAD} (Dad), one delivered message`);
+console.log(`seeded: child ${IVY} (Ivy), guardians ${DAD} (Dad) + ${MOM} (Mom), one delivered message`);
 await client.end();

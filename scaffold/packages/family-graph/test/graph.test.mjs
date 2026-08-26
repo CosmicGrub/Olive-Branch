@@ -54,8 +54,53 @@ const why = (d) => d.allow ? 'allow' : d.reason;
     why(can('expense.view', [edge()], CHILD_A, NOW, 'child')), 'P6_child_financial');
   check('H2 P6', 'child cannot create expenses',
     why(can('expense.create', [edge()], CHILD_A, NOW, 'child')), 'P6_child_financial');
+  // expense.resolve (accept/dispute/reimburse) -- added alongside the real
+  // expense backend; P6's own startsWith('expense.') check already covers
+  // any new expense.* action without modification, but this is proven here
+  // rather than assumed.
+  check('H2 P6', 'child cannot resolve expenses either',
+    why(can('expense.resolve', [edge()], CHILD_A, NOW, 'child')), 'P6_child_financial');
   check('H2 P6', 'guardian still can',
     can('expense.view', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  check('H2 P6', 'guardian can resolve',
+    can('expense.resolve', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  // §17.3 observer -- expense.resolve is a real decision, not a read; an
+  // observer-only guardian must be refused the same way expense.create
+  // already is.
+  check('H2 P6', 'an observer-only guardian cannot resolve an expense',
+    why(can('expense.resolve', [edge({ observerOnly: true })], CHILD_A, NOW, 'guardian')),
+    'observer_readonly');
+  // coordinator holds expense.view (read-only, MASTERFILE's own "Read-only
+  // across... the expense ledger") but never expense.resolve -- a real
+  // decision belongs to a guardian party to it, not a court-appointed reader.
+  check('H2 P6', 'a coordinator cannot resolve an expense -- read-only role',
+    why(can('expense.resolve', [edge({ role: 'coordinator' })], CHILD_A, NOW, 'coordinator')),
+    'role_lacks_capability');
+}
+
+// ---------------------------------------------------------------------------
+// H2b -- emergency_card.edit, added alongside the real medications/
+// emergency-card backend. Not P6-blocked (this is medical, not financial)
+// but guardian-only to write: MASTERFILE's own "sitter role readable"
+// carve-out (§7.7/§9.6.3) is read-only, never write.
+// ---------------------------------------------------------------------------
+{
+  check('H2b medical', 'guardian can edit the emergency card',
+    can('emergency_card.edit', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  check('H2b medical', 'a sitter can VIEW the emergency card -- the real, narrow '
+    + 'read carve-out this role exists for',
+    can('emergency_card.view', [edge({ role: 'sitter' })], CHILD_A, NOW, 'sitter').allow, 'true');
+  check('H2b medical', 'a sitter cannot EDIT the emergency card -- read-only, never write',
+    why(can('emergency_card.edit', [edge({ role: 'sitter' })], CHILD_A, NOW, 'sitter')),
+    'role_lacks_capability');
+  check('H2b medical', 'a step_parent can VIEW medications but cannot LOG a dose -- '
+    + 'a real, pre-existing ROLE_CAPS distinction, not new to this pass',
+    why(can('medication.log', [edge({ role: 'step_parent' })], CHILD_A, NOW, 'step_parent')),
+    'role_lacks_capability');
+  // §17.3 observer -- editing the emergency card is a real write.
+  check('H2b medical', 'an observer-only guardian cannot edit the emergency card',
+    why(can('emergency_card.edit', [edge({ observerOnly: true })], CHILD_A, NOW, 'guardian')),
+    'observer_readonly');
 }
 
 // ---------------------------------------------------------------------------

@@ -958,6 +958,226 @@ async function handoverNotesFor(pool, childId) {
     }));
   });
 }
+const EXPENSE_ROW_COLUMNS = `
+  id, child_id, paid_by, description, amount_cents, category,
+  to_char(incurred_on, 'YYYY-MM-DD') AS incurred_on,
+  receipt_key, split_rule, status,
+  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+`;
+function rowToExpense(r, paidByName = null) {
+  return {
+    id: r.id,
+    childId: r.child_id,
+    paidById: r.paid_by,
+    paidByName,
+    description: r.description,
+    amountCents: Number(r.amount_cents),
+    category: r.category,
+    incurredOn: r.incurred_on,
+    receiptKey: r.receipt_key,
+    splitRule: r.split_rule,
+    status: r.status,
+    createdAt: r.created_at
+  };
+}
+async function proposeExpense(pool, actorRole, actorUserId, childId, input) {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on, receipt_key, split_rule)
+       VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8::jsonb)
+       RETURNING ${EXPENSE_ROW_COLUMNS}`,
+      [
+        childId,
+        actorUserId,
+        input.description,
+        input.amountCents,
+        input.category,
+        input.incurredOn,
+        input.receiptKey ?? null,
+        JSON.stringify({ payerSharePercent: input.payerSharePercent })
+      ]
+    );
+    return rowToExpense(rows[0]);
+  });
+}
+async function expensesFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT e.id, e.child_id, e.paid_by, u.display_name AS paid_by_name,
+              e.description, e.amount_cents, e.category,
+              to_char(e.incurred_on, 'YYYY-MM-DD') AS incurred_on,
+              e.receipt_key, e.split_rule, e.status,
+              to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+         FROM expense e JOIN app_user u ON u.id = e.paid_by
+        WHERE e.child_id = $1 ORDER BY e.created_at DESC`,
+      [childId]
+    );
+    return rows.map((r) => rowToExpense(r, r.paid_by_name));
+  });
+}
+const EXPENSE_RESOLUTIONS = {
+  accept: "accepted",
+  dispute: "disputed",
+  reimburse: "reimbursed"
+};
+async function resolveExpense(pool, actorRole, actorUserId, childId, expenseId, action) {
+  const status = EXPENSE_RESOLUTIONS[action];
+  if (!status) throw Object.assign(
+    new Error(`unknown expense resolution: ${action}`),
+    { code: "unknown_resolution" }
+  );
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `UPDATE expense SET status = $1 WHERE id = $2 AND child_id = $3
+       RETURNING ${EXPENSE_ROW_COLUMNS}`,
+      [status, expenseId, childId]
+    );
+    return rows.length ? rowToExpense(rows[0]) : null;
+  });
+}
+async function medicationsFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, name, dose, slots, is_prn, min_gap_hours
+         FROM medication WHERE child_id = $1 AND active ORDER BY created_at ASC`,
+      [childId]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      dose: r.dose,
+      slots: r.slots,
+      isPrn: r.is_prn,
+      minGapHours: r.min_gap_hours === null ? null : Number(r.min_gap_hours)
+    }));
+  });
+}
+async function dosesForDate(pool, childId, localDate) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT d.id, d.medication_id, to_char(d.local_date, 'YYYY-MM-DD') AS local_date,
+              d.slot, to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at,
+              d.by_user_id, u.display_name AS by_user_name, d.status
+         FROM medication_dose d JOIN app_user u ON u.id = d.by_user_id
+        WHERE d.child_id = $1 AND d.local_date = $2::date
+        ORDER BY d.administered_at ASC`,
+      [childId, localDate]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      medicationId: r.medication_id,
+      localDate: r.local_date,
+      slot: r.slot,
+      administeredAt: r.administered_at,
+      byUserId: r.by_user_id,
+      byUserName: r.by_user_name,
+      status: r.status
+    }));
+  });
+}
+async function recordDose(pool, actorRole, actorUserId, childId, medicationId, localDate, slot, status) {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO medication_dose
+         (medication_id, child_id, local_date, slot, administered_at, by_user_id, status)
+       VALUES ($1, $2, $3::date, $4, now(), $5, $6)
+       ON CONFLICT (medication_id, local_date, slot) WHERE status = 'given' DO NOTHING
+       RETURNING id, medication_id,
+                 to_char(local_date, 'YYYY-MM-DD') AS local_date, slot,
+                 to_char(administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at,
+                 by_user_id, status`,
+      [medicationId, childId, localDate, slot, actorUserId, status]
+    );
+    if (rows.length) {
+      const r = rows[0];
+      return { ok: true, dose: {
+        id: r.id,
+        medicationId: r.medication_id,
+        localDate: r.local_date,
+        slot: r.slot,
+        administeredAt: r.administered_at,
+        byUserId: r.by_user_id,
+        byUserName: "",
+        status: r.status
+      } };
+    }
+    const clash = await q(
+      `SELECT d.by_user_id, u.display_name AS by_user_name,
+              to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at
+         FROM medication_dose d JOIN app_user u ON u.id = d.by_user_id
+        WHERE d.medication_id = $1 AND d.local_date = $2::date AND d.slot = $3 AND d.status = 'given'
+        LIMIT 1`,
+      [medicationId, localDate, slot]
+    );
+    return {
+      ok: false,
+      blockedBy: clash[0]?.by_user_name ?? "another guardian",
+      blockedAtIso: clash[0]?.administered_at ?? ""
+    };
+  });
+}
+async function medicalRecordFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT blood_type, allergies, conditions, pediatrician_name, pediatrician_practice,
+              pediatrician_phone, insurance_provider, insurance_member_id
+         FROM medical_record WHERE child_id = $1`,
+      [childId]
+    );
+    const guardianRows = await q(
+      `SELECT g.user_id, u.display_name, u.phone_e164
+         FROM guardianship g JOIN app_user u ON u.id = g.user_id
+        WHERE g.child_id = $1 AND g.role = 'guardian' AND g.closed_at IS NULL
+              AND g.valid @> now()
+        ORDER BY u.display_name ASC`,
+      [childId]
+    );
+    const medications = await medicationsFor(pool, childId);
+    const r = rows[0];
+    return {
+      bloodType: r?.blood_type ?? null,
+      allergies: r?.allergies ?? [],
+      conditions: r?.conditions ?? [],
+      pediatricianName: r?.pediatrician_name ?? null,
+      pediatricianPractice: r?.pediatrician_practice ?? null,
+      pediatricianPhone: r?.pediatrician_phone ?? null,
+      insuranceProvider: r?.insurance_provider ?? null,
+      insuranceMemberId: r?.insurance_member_id ?? null,
+      guardians: guardianRows.map((g) => ({ userId: g.user_id, name: g.display_name, phone: g.phone_e164 })),
+      medications
+    };
+  });
+}
+async function setMedicalRecord(pool, actorRole, actorUserId, childId, fields) {
+  await withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    await q(
+      `INSERT INTO medical_record
+         (child_id, blood_type, allergies, conditions, pediatrician_name, pediatrician_practice,
+          pediatrician_phone, insurance_provider, insurance_member_id, updated_at, updated_by)
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, now(), $10)
+       ON CONFLICT (child_id) DO UPDATE SET
+         blood_type = EXCLUDED.blood_type, allergies = EXCLUDED.allergies,
+         conditions = EXCLUDED.conditions, pediatrician_name = EXCLUDED.pediatrician_name,
+         pediatrician_practice = EXCLUDED.pediatrician_practice,
+         pediatrician_phone = EXCLUDED.pediatrician_phone,
+         insurance_provider = EXCLUDED.insurance_provider,
+         insurance_member_id = EXCLUDED.insurance_member_id,
+         updated_at = now(), updated_by = EXCLUDED.updated_by`,
+      [
+        childId,
+        fields.bloodType ?? null,
+        JSON.stringify(fields.allergies ?? []),
+        JSON.stringify(fields.conditions ?? []),
+        fields.pediatricianName ?? null,
+        fields.pediatricianPractice ?? null,
+        fields.pediatricianPhone ?? null,
+        fields.insuranceProvider ?? null,
+        fields.insuranceMemberId ?? null,
+        actorUserId
+      ]
+    );
+  });
+}
 async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__PURE__ */ new Date()) {
   const edges = await edgesFor(pool, requestedBy);
   const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
@@ -1114,6 +1334,7 @@ function dbPort(pool) {
 }
 export {
   CHALLENGE_TTL_MS,
+  EXPENSE_RESOLUTIONS,
   INVITABLE_ROLES,
   PIN_LOCKOUT_MS,
   PIN_MAX_ATTEMPTS,
@@ -1132,23 +1353,31 @@ export {
   dbPort,
   deactivateAccount,
   deviceTokensFor,
+  dosesForDate,
   edgesFor,
+  expensesFor,
   getGuardianInvite,
   guardiansOfChild,
   handoverNotesFor,
   mediaArtifactFor,
+  medicalRecordFor,
+  medicationsFor,
   parentGuardiansOfChild,
   persistCapturedMessage,
   pinCredentialFor,
+  proposeExpense,
   rawExportBundleFor,
   recordCallEnd,
   recordCallStart,
+  recordDose,
   recordPinAttempt,
   registerDeviceToken,
   removeDeviceTokenSystem,
+  resolveExpense,
   revokeGuardianInvite,
   setAvailabilityWindows,
   setChildTheme,
+  setMedicalRecord,
   setPinCredential,
   storeWebauthnCredential,
   takeAndGo,

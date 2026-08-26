@@ -16,8 +16,25 @@
 // under real pressure benefits from hearing it, not from it talking at her
 // unprompted. Absent [speak], the button reports itself honestly rather than
 // pretending — same posture as the Call buttons below.
+//
+// LIVE WIRING (baseUrl/guardianId/childId/httpClient, all optional and
+// additive — same convention meds_care.dart/expenses_screen.dart already
+// establish): when supplied, this screen fetches the real medical_record
+// (allergies/blood type/pediatrician/insurance) plus the real, LIVE-derived
+// guardians list (name + phone_e164, joined from the actual guardianship/
+// app_user rows — never a second stored copy, see that route's own
+// migration header) via OliveApi.fetchEmergencyCard() on init. The demo's
+// own hardcoded Claire/Marcus/Dr. Priya Nair/BlueBridge content is
+// preserved exactly when no live params are supplied — every existing
+// test in this file keeps passing unchanged. Editing (PUT) is NOT wired
+// into this screen at all — the guardian-facing "set the emergency card"
+// affordance is a real, disclosed follow-up; this pass closes the READ
+// side, which is what §8.13.5's own "read once, in a hurry" framing is
+// actually for.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
+import 'api_client.dart';
 import 'form_factors.dart' as ff;
 
 /// Same "recorded, not glossed over" pattern as child_home.dart's helper —
@@ -40,15 +57,146 @@ const String _cardSpokenText =
     'Pediatrician: Doctor Priya Nair, Riverbend Pediatrics, (617) 555-0177. '
     'Insurance: BlueBridge Family Health. Member ID: BBH-7734-2201.';
 
-class EmergencyCardScreen extends StatelessWidget {
-  const EmergencyCardScreen({super.key, this.speak});
+enum _LoadState { ready, loading, error }
+
+class EmergencyCardScreen extends StatefulWidget {
+  const EmergencyCardScreen({
+    super.key,
+    this.speak,
+    this.childName = 'Ivy',
+    this.baseUrl,
+    this.guardianId,
+    this.childId,
+    this.httpClient,
+  });
 
   /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null means no
   /// read-aloud affordance exists — an honest absence, not a silent no-op.
   final Future<void> Function(String text)? speak;
+  final String childName;
+  final String? baseUrl;
+  final String? guardianId;
+  final String? childId;
+  final http.Client? httpClient;
+
+  bool get _isLive => baseUrl != null && guardianId != null && childId != null;
+
+  @override
+  State<EmergencyCardScreen> createState() => _EmergencyCardScreenState();
+}
+
+/// One real fetched medication, formatted for this screen's own
+/// "Current medications" section — a real, disclosed simplification: the
+/// real `medication` row carries `dose`/`slots`/`isPrn`, never a reason
+/// string ("for wheezing"), so the live schedule text is genuinely
+/// narrower than the demo's own hand-written copy, not a guess dressed up
+/// to look identical.
+class _LiveMedLine {
+  const _LiveMedLine(this.name, this.schedule);
+  final String name;
+  final String schedule;
+}
+
+class _LiveGuardian {
+  const _LiveGuardian(this.name, this.phone);
+  final String name;
+  final String? phone;
+}
+
+class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
+  _LoadState _loadState = _LoadState.ready;
+  String? _bloodType;
+  List<String> _allergies = <String>[];
+  List<_LiveMedLine> _medications = <_LiveMedLine>[];
+  List<_LiveGuardian> _guardians = <_LiveGuardian>[];
+  String? _pediatricianName, _pediatricianPractice, _pediatricianPhone;
+  String? _insuranceProvider, _insuranceMemberId;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget._isLive) _load();
+  }
+
+  /// The ONLY place this screen calls the network — mirrors meds_care.dart's
+  /// own self-fetching pattern. A failure here is a real, honest error
+  /// state with a retry affordance, never a silent fall-back to the demo
+  /// fixtures.
+  Future<void> _load() async {
+    setState(() => _loadState = _LoadState.loading);
+    try {
+      final String token = await devLoginFor(widget.baseUrl!,
+          userId: widget.guardianId!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
+      final Map<String, dynamic> result = await api.fetchEmergencyCard(widget.childId!);
+      if (widget.httpClient == null) api.close();
+      final List<dynamic> rawMeds = result['medications'] as List<dynamic>? ?? <dynamic>[];
+      final List<dynamic> rawGuardians = result['guardians'] as List<dynamic>? ?? <dynamic>[];
+      if (!mounted) return;
+      setState(() {
+        _bloodType = result['bloodType'] as String?;
+        _allergies = (result['allergies'] as List<dynamic>? ?? <dynamic>[]).cast<String>();
+        _medications = rawMeds.map((dynamic m) {
+          final Map<String, dynamic> row = m as Map<String, dynamic>;
+          final List<String> slots = (row['slots'] as List<dynamic>? ?? <dynamic>[]).cast<String>();
+          final bool isPrn = row['isPrn'] as bool? ?? false;
+          final String schedule = isPrn
+            ? '${row['dose']} — as needed' : '${row['dose']} — ${slots.join(', ')}';
+          return _LiveMedLine(row['name'] as String, schedule);
+        }).toList();
+        _guardians = rawGuardians.map((dynamic g) {
+          final Map<String, dynamic> row = g as Map<String, dynamic>;
+          return _LiveGuardian(row['name'] as String, row['phone'] as String?);
+        }).toList();
+        _pediatricianName = result['pediatricianName'] as String?;
+        _pediatricianPractice = result['pediatricianPractice'] as String?;
+        _pediatricianPhone = result['pediatricianPhone'] as String?;
+        _insuranceProvider = result['insuranceProvider'] as String?;
+        _insuranceMemberId = result['insuranceMemberId'] as String?;
+        _loadState = _LoadState.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadState = _LoadState.error);
+    }
+  }
+
+  /// Every real fact on this screen, allergy-first — the live path's own
+  /// version of the file-level `_cardSpokenText` const, built from the
+  /// same real fields the rendered tree shows so the spoken version can
+  /// never drift from what's actually on screen, same discipline that
+  /// const's own doc comment states for the demo path.
+  String _liveSpokenText() {
+    final StringBuffer b = StringBuffer();
+    b.write(_allergies.isEmpty
+      ? 'No allergies on file. ' : 'Allergies: ${_allergies.join('. ')}. ');
+    if (_bloodType != null) b.write('Blood type: $_bloodType. ');
+    if (_medications.isNotEmpty) {
+      b.write('Current medications: ');
+      b.write(_medications.map((_LiveMedLine m) => '${m.name}, ${m.schedule}').join('. '));
+      b.write('. ');
+    }
+    if (_guardians.isNotEmpty) {
+      b.write('Guardians: ');
+      b.write(_guardians.map((_LiveGuardian g) =>
+        g.phone == null ? g.name : '${g.name}, ${g.phone}').join('. '));
+      b.write('. ');
+    }
+    if (_pediatricianName != null) {
+      b.write('Pediatrician: $_pediatricianName');
+      if (_pediatricianPractice != null) b.write(', $_pediatricianPractice');
+      if (_pediatricianPhone != null) b.write('. Phone: $_pediatricianPhone');
+      b.write('. ');
+    }
+    if (_insuranceProvider != null) {
+      b.write('Insurance: $_insuranceProvider.');
+      if (_insuranceMemberId != null) b.write(' Member ID: $_insuranceMemberId.');
+    }
+    return b.toString().trim();
+  }
 
   void _readAloud(BuildContext context) {
-    if (speak == null) {
+    if (widget.speak == null) {
       _notBuiltYet(context, 'Read aloud');
       return;
     }
@@ -57,12 +205,37 @@ class EmergencyCardScreen extends StatelessWidget {
     // ever passes SpeechTrigger.autonomous here is refused for real, not
     // just by convention.
     if (admitSpeech(SpeechTrigger.tap) != null) return;
-    speak!(_cardSpokenText);
+    widget.speak!(widget._isLive ? _liveSpokenText() : _cardSpokenText);
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Emergency card — Ivy'), actions: [
+  Widget build(BuildContext context) {
+    // Loading/error UI mirrors meds_care.dart's own established shape —
+    // only ever reachable when this screen is live-wired; the pure demo
+    // path never enters either state.
+    if (_loadState == _LoadState.loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_loadState == _LoadState.error) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Emergency card — ${widget.childName}')),
+        body: Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.cloud_off, size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text("Couldn't reach the server",
+              style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Try again')),
+          ]),
+        )),
+      );
+    }
+    return Scaffold(
+    appBar: AppBar(title: Text('Emergency card — ${widget.childName}'), actions: [
       IconButton(
         key: const Key('readAloudButton'),
         icon: const Icon(Icons.volume_up_outlined),
@@ -83,11 +256,66 @@ class EmergencyCardScreen extends StatelessWidget {
       // ListView, not a fixed Column: generous text at this size can exceed a
       // small phone's viewport. The allergy card is still first in the tree, so
       // it's on screen before any scrolling on every device this ships to.
-      final Widget content = ListView(
+      final Widget content = widget._isLive
+        ? ListView(
+            key: const Key('emergencyCardList'),
+            padding: const EdgeInsets.all(16),
+            children: [
+              _AllergyCard(allergies: _allergies),
+              const SizedBox(height: 20),
+              if (_bloodType != null) ...[
+                _Section(title: 'Blood type', child: Text(_bloodType!,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
+                const SizedBox(height: 20),
+              ],
+              if (_medications.isNotEmpty) ...[
+                _Section(title: 'Current medications', child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (int i = 0; i < _medications.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      _MedLine(_medications[i].name, _medications[i].schedule),
+                    ],
+                  ])),
+                const SizedBox(height: 20),
+              ],
+              if (_guardians.isNotEmpty) ...[
+                _Section(title: 'Guardians', child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (int i = 0; i < _guardians.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 10),
+                      _ContactLine(name: _guardians[i].name,
+                        phone: _guardians[i].phone ?? 'No phone on file'),
+                    ],
+                  ])),
+                const SizedBox(height: 20),
+              ],
+              if (_pediatricianName != null) ...[
+                _Section(title: 'Pediatrician', child: _ContactLine(
+                  name: _pediatricianPractice == null
+                    ? _pediatricianName! : '$_pediatricianName — $_pediatricianPractice',
+                  phone: _pediatricianPhone ?? 'No phone on file')),
+                const SizedBox(height: 20),
+              ],
+              if (_insuranceProvider != null) ...[
+                _Section(title: 'Insurance', child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_insuranceProvider!, style: const TextStyle(fontSize: 18)),
+                    if (_insuranceMemberId != null) ...[
+                      const SizedBox(height: 4),
+                      Text('Member ID: $_insuranceMemberId', style: const TextStyle(fontSize: 18)),
+                    ],
+                  ])),
+              ],
+              const SizedBox(height: 12),
+            ])
+        : ListView(
         key: const Key('emergencyCardList'),
         padding: const EdgeInsets.all(16),
         children: const [
-          _AllergyCard(),
+          _AllergyCard(allergies: <String>['Peanuts — carries an EpiPen, in her backpack side pocket']),
           SizedBox(height: 20),
           _Section(title: 'Blood type', child: Text('O positive',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
@@ -128,10 +356,12 @@ class EmergencyCardScreen extends StatelessWidget {
           : content;
     })),
   );
+  }
 }
 
 class _AllergyCard extends StatelessWidget {
-  const _AllergyCard();
+  const _AllergyCard({required this.allergies});
+  final List<String> allergies;
 
   @override
   Widget build(BuildContext context) {
@@ -156,7 +386,7 @@ class _AllergyCard extends StatelessWidget {
             Text('ALLERGIES', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
               color: scheme.onErrorContainer, letterSpacing: 0.5)),
             const SizedBox(height: 6),
-            Text('Peanuts — carries an EpiPen, in her backpack side pocket',
+            Text(allergies.isEmpty ? 'None on file' : allergies.join(', '),
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
                 color: scheme.onErrorContainer)),
           ])),
