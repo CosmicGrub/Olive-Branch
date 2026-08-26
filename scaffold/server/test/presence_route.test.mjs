@@ -181,6 +181,27 @@ async function setWindow(guardianId, weekday, startLocal, endLocal) {
     [guardianId, weekday, startLocal, endLocal]);
 }
 
+// Real bug, found live in CI (section D below has the full account): real
+// wall-clock arithmetic (.plus()/.minus()) can cross a real calendar-day
+// boundary, and guardian_availability_window's own CHECK constraint
+// (end_local > start_local, migration 0010) then rejects the INSERT
+// outright whenever that happens. Every window below that brackets "now"
+// (as opposed to section D's now-unrelated far-weekday construction) is
+// clamped to stay within the SAME calendar day as `local` -- this changes
+// nothing about what a test proves (the clamped instant is still validly
+// "before now" or "after now": `local` is by definition always within its
+// own day, so clamping can only ever shrink a window while still leaving
+// `local` inside it), it only removes the crossing-midnight failure mode
+// entirely, rather than merely making it rarer. One honestly-disclosed
+// residual: section C's own tie-break specifically compares two DIFFERENT
+// clamped start times; if `local` ever falls within about 10 real minutes
+// of local midnight, both starts could clamp to the same 00:00 and the
+// test would need re-running rather than asserting a false result -- an
+// astronomically rarer window than the bug this fix actually closes, and
+// not worth a more elaborate construction to close entirely.
+const clampToDay = (dt) => dt.hasSame(local, 'day') ? dt
+  : (dt < local ? local.startOf('day') : local.endOf('day'));
+
 // ===========================================================================
 // (a) on-duty exclusion — DAD1 (on duty, Side A) AND MOM1 both have windows
 //     active right now; DAD1's starts EARLIER (would win an ordinary
@@ -188,8 +209,10 @@ async function setWindow(guardianId, weekday, startLocal, endLocal) {
 //     the only possible winner is MOM1.
 // ===========================================================================
 {
-  await setWindow(DAD1, nowWeekday, hhmm(local.minus({ minutes: 45 })), hhmm(local.plus({ minutes: 45 })));
-  await setWindow(MOM1, nowWeekday, hhmm(local.minus({ minutes: 15 })), hhmm(local.plus({ minutes: 45 })));
+  await setWindow(DAD1, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 45 }))),
+    hhmm(clampToDay(local.plus({ minutes: 45 }))));
+  await setWindow(MOM1, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 15 }))),
+    hhmm(clampToDay(local.plus({ minutes: 45 }))));
 
   const res = await get(CHILD_ONDUTY, dad1Tok);
   check('A on-duty exclusion', 'authorized guardian -> 200', res.status, 200);
@@ -213,8 +236,8 @@ async function setWindow(guardianId, weekday, startLocal, endLocal) {
 //     the CHILD's zone, never either guardian's own.
 // ===========================================================================
 {
-  const end = local.plus({ minutes: 37 });
-  await setWindow(MOM2, nowWeekday, hhmm(local.minus({ minutes: 5 })), hhmm(end));
+  const end = clampToDay(local.plus({ minutes: 37 }));
+  await setWindow(MOM2, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 5 }))), hhmm(end));
   // DAD2 has no window at all for CHILD_SINGLE -- not a candidate this route
   // would ever surface here regardless of exclusion logic.
 
@@ -259,8 +282,10 @@ async function setWindow(guardianId, weekday, startLocal, endLocal) {
 //     silently pick DAD3 and be caught here, not accidentally pass.
 // ===========================================================================
 {
-  await setWindow(MOM3, nowWeekday, hhmm(local.minus({ minutes: 40 })), hhmm(local.plus({ minutes: 40 })));
-  await setWindow(DAD3, nowWeekday, hhmm(local.minus({ minutes: 10 })), hhmm(local.plus({ minutes: 40 })));
+  await setWindow(MOM3, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 40 }))),
+    hhmm(clampToDay(local.plus({ minutes: 40 }))));
+  await setWindow(DAD3, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 10 }))),
+    hhmm(clampToDay(local.plus({ minutes: 40 }))));
 
   const res = await get(CHILD_TIE, dad3Tok);
   check('C tie-break', 'authorized guardian -> 200', res.status, 200);
@@ -282,12 +307,27 @@ async function setWindow(guardianId, weekday, startLocal, endLocal) {
 // ===========================================================================
 {
   // CHILD_NONE: real windows exist for both guardians, but neither covers
-  // "now" -- active exactly 6 hours from now, deliberately far outside any
-  // wrap-aware "spans midnight" edge case.
-  const farStart = local.plus({ hours: 6 });
-  const farEnd = local.plus({ hours: 7 });
-  await setWindow(DAD4, nowWeekday, hhmm(farStart), hhmm(farEnd));
-  await setWindow(MOM4, nowWeekday, hhmm(farStart), hhmm(farEnd));
+  // "now". Real CI bug, found live: an earlier version of this fixture used
+  // a same-weekday +6h/+7h clock-time offset from `local`, on the (false)
+  // assumption that 6-7 real hours is "deliberately far outside any wrap-
+  // aware edge case" -- it is not. Clock-time addition wraps past midnight
+  // for roughly a quarter of all possible real `local` values (any time
+  // from ~17:00 onward), and guardian_availability_window's own real CHECK
+  // (end_local > start_local, migration 0010) then rejects the INSERT
+  // outright -- reproduced exactly this way in CI, not a flake: `local` was
+  // 17:07, farStart/farEnd landed on 23:07/00:07, and the insert failed
+  // with a real constraint violation. This suite runs against genuine
+  // wall-clock time deliberately (proving the route against real time, not
+  // a canned scenario, matching now_route.test.mjs's own precedent) -- so
+  // the fix is a construction that is windows away from "now" without ever
+  // computing a clock time at all: a DIFFERENT weekday entirely.
+  // freeGuardianNow() only ever matches a window on nowWeekday (or
+  // yesterday's weekday, for a genuine overnight wrap) -- three days away
+  // can never coincide with either, for any real `local` value, with no
+  // clock-time arithmetic and nothing left to wrap.
+  const farWeekday = (nowWeekday + 3) % 7;
+  await setWindow(DAD4, farWeekday, '10:00', '11:00');
+  await setWindow(MOM4, farWeekday, '10:00', '11:00');
 
   const noneRes = await get(CHILD_NONE, dad4Tok);
   check('D nobody free', 'CHILD_NONE (two guardians, neither active now) -> 200', noneRes.status, 200);

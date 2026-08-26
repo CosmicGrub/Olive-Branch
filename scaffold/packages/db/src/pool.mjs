@@ -85,7 +85,8 @@ async function activeCustodyOrderFor(pool, childId, nowLocalDate) {
               to_char(exchange_time, 'HH24:MI') AS exchange_time,
               holiday_rules,
               effective_from::text AS effective_from,
-              effective_to::text AS effective_to
+              effective_to::text AS effective_to,
+              side_a_guardian_id, side_b_guardian_id
          FROM custody_order
         WHERE child_id = $1
           AND effective_from <= $2::date
@@ -102,7 +103,12 @@ async function activeCustodyOrderFor(pool, childId, nowLocalDate) {
       exchangeTime: r.exchange_time,
       holidays: r.holiday_rules ?? [],
       effectiveFrom: r.effective_from,
-      effectiveTo: r.effective_to
+      effectiveTo: r.effective_to,
+      // db/migrations/0024_custody_order_side_guardians.sql — NULL on every
+      // legacy row (honest "unmapped", never guessed). See Order's own
+      // field comment (schedule.ts) for the full reasoning.
+      sideAGuardianId: r.side_a_guardian_id,
+      sideBGuardianId: r.side_b_guardian_id
     };
   });
 }
@@ -113,6 +119,18 @@ async function guardiansOfChild(pool, childId) {
       [childId]
     );
     return rows.map((r) => ({ userId: r.user_id }));
+  });
+}
+async function parentGuardiansOfChild(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT DISTINCT eg.user_id, u.display_name
+         FROM effective_guardianship eg
+         JOIN app_user u ON u.id = eg.user_id
+        WHERE eg.child_id = $1 AND eg.role = 'guardian'`,
+      [childId]
+    );
+    return rows.map((r) => ({ userId: r.user_id, name: r.display_name }));
   });
 }
 async function pinCredentialFor(pool, userId) {
@@ -1071,6 +1089,7 @@ export {
   getGuardianInvite,
   guardiansOfChild,
   mediaArtifactFor,
+  parentGuardiansOfChild,
   persistCapturedMessage,
   pinCredentialFor,
   rawExportBundleFor,
