@@ -4,8 +4,11 @@
 // this tree, to delete or edit an entry. Everything else is secondary to
 // that assertion holding across the WHOLE rendered widget tree, not just
 // the entries visible at first paint.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/handover_notes.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -217,6 +220,159 @@ void main() {
       expect(find.byKey(const Key('handoverNotesTwoPaneRow')), findsOneWidget);
       expect(find.textContaining('Wide-pane handover note.'), findsOneWidget);
       expect(t.takeException(), isNull);
+    });
+  });
+
+  group('live wiring — the real message_log-backed routes '
+      '(server/routes.mjs, packages/db/src/pool.ts appendHandoverNote/'
+      'handoverNotesFor)', () {
+    testWidgets('shows a loading indicator, then real fetched entries replace '
+        'the demo fixtures', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        expect(req.url.path, '/v1/children/child-a/handover-notes');
+        expect(req.headers['authorization'], 'Bearer tok');
+        return http.Response(jsonEncode({'entries': [
+          {'seq': 0, 'authorId': 'dad-1', 'authorName': 'Dad',
+           'at': '2026-07-28T16:12:00.000Z', 'body': 'Real note one.',
+           'whenLabel': 'Jul 28, 9:12 AM'},
+          {'seq': 1, 'authorId': 'mom-1', 'authorName': 'Mom',
+           'at': '2026-07-28T16:20:00.000Z', 'body': 'Real note two.',
+           'whenLabel': 'Jul 28, 9:20 AM'},
+        ]}), 200);
+      });
+      await pumpTall(t, wrap(HandoverNotesScreen(
+        baseUrl: 'http://api.test', childId: 'child-a', guardianId: 'dad-1',
+        httpClient: mock)));
+      // Before the fetch resolves this is the real loading state, not the
+      // demo fixtures for one frame.
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await t.pumpAndSettle();
+
+      // The real fetched rows, not the demo fixtures — proves this is
+      // actually live data, not a coincidentally-similar hardcoded list.
+      expect(find.textContaining('Real note one.'), findsOneWidget);
+      expect(find.textContaining('Real note two.'), findsOneWidget);
+      expect(find.textContaining('Running about 15 minutes late'), findsNothing);
+      // authorId 'dad-1' matches the threaded-in guardianId -> 'You';
+      // 'mom-1' does not -> the real authorName, 'Mom'.
+      final Finder noteOneCard = find.ancestor(
+        of: find.textContaining('Real note one.'), matching: find.byType(Card));
+      expect(find.descendant(of: noteOneCard, matching: find.text('You')), findsOneWidget);
+      final Finder noteTwoCard = find.ancestor(
+        of: find.textContaining('Real note two.'), matching: find.byType(Card));
+      expect(find.descendant(of: noteTwoCard, matching: find.text('Mom')), findsOneWidget);
+      // whenLabel is rendered verbatim — no client-side timezone math.
+      expect(find.textContaining('Jul 28, 9:20 AM'), findsOneWidget);
+    });
+
+    testWidgets('adding a note POSTs the real body to the real route and '
+        "renders the SERVER's own returned entry, not a client-guessed one",
+        (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'ok': true, 'seq': 4, 'authorId': 'dad-1',
+            'at': '2026-08-02T15:00:00.000Z', 'body': 'A brand new live note.',
+            'whenLabel': 'Aug 2, 8:00 AM',
+          }), 201);
+        }
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await pumpTall(t, wrap(HandoverNotesScreen(
+        baseUrl: 'http://api.test', childId: 'child-a', guardianId: 'dad-1',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField), 'A brand new live note.');
+      await t.tap(find.text('Add note'));
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(posts.single.url.path, '/v1/children/child-a/handover-notes');
+      expect(posts.single.headers['authorization'], 'Bearer tok');
+      expect(jsonDecode(posts.single.body), {'body': 'A brand new live note.'});
+
+      // The rendered entry uses the SERVER's own whenLabel ('Aug 2, 8:00 AM')
+      // -- proves this isn't _nowLabel()'s demo-only client clock, which
+      // would render today's real wall-clock date instead.
+      expect(find.textContaining('A brand new live note.'), findsOneWidget);
+      expect(find.textContaining('Aug 2, 8:00 AM'), findsOneWidget);
+      final TextField field = t.widget(find.byType(TextField));
+      expect(field.controller!.text, isEmpty);
+    });
+
+    testWidgets('a real POST failure shows a visible, honest error and '
+        'leaves the typed text in place -- never a silent no-op that lets a '
+        'guardian believe the other parent was actually told something',
+        (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') return http.Response('server error', 500);
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await pumpTall(t, wrap(HandoverNotesScreen(
+        baseUrl: 'http://api.test', childId: 'child-a', guardianId: 'dad-1',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField), 'This one will fail to send.');
+      await t.tap(find.text('Add note'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining("Couldn't send that note"), findsOneWidget);
+      // Never rendered as a real Card entry (findsNothing among Cards
+      // specifically -- find.textContaining alone would also match the
+      // still-populated TextField's own EditableText content, which is
+      // exactly what the very next assertion confirms on purpose).
+      expect(find.byType(Card), findsNothing);
+      final TextField field = t.widget(find.byType(TextField));
+      expect(field.controller!.text, 'This one will fail to send.'); // not cleared
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a real fetch failure is an honest error with a working '
+        'retry, never a crash or a silent fallback to the demo fixtures',
+        (t) async {
+      int calls = 0;
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        calls++;
+        if (calls == 1) return http.Response('server error', 500);
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await pumpTall(t, wrap(HandoverNotesScreen(
+        baseUrl: 'http://api.test', childId: 'child-a', guardianId: 'dad-1',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining("Couldn't reach the server"), findsOneWidget);
+      expect(find.textContaining('Running about 15 minutes late'), findsNothing);
+      expect(t.takeException(), isNull);
+
+      await t.tap(find.text('Try again'));
+      await t.pumpAndSettle();
+      expect(find.byType(Card), findsNothing); // real empty list, honestly rendered
+      expect(calls, 2);
+    });
+
+    testWidgets('with no live params supplied, the demo fixtures render '
+        'exactly as before -- no network call, no loading state', (t) async {
+      await pumpTall(t, wrap(const HandoverNotesScreen()));
+      await t.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('Running about 15 minutes late'), findsOneWidget);
     });
   });
 }

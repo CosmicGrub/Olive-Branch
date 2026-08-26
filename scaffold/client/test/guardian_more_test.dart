@@ -15,6 +15,7 @@ import 'package:olive_client/call_screen.dart';
 import 'package:olive_client/family_agreement_screen.dart';
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/guardian_setup.dart';
+import 'package:olive_client/handover_notes.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
@@ -122,6 +123,49 @@ void main() {
 
       expect(find.text("Couldn't load the agreement"), findsOneWidget);
       expect(find.textContaining('No live backend is wired'), findsOneWidget);
+    });
+
+    testWidgets("Handover notes opens the real screen with its demo fixtures "
+        'when no live session is threaded in -- an intentional demo mode, '
+        'unlike Availability above, not an honest-stub snackbar', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final tile = find.text('Handover notes');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(HandoverNotesScreen), findsOneWidget);
+      expect(find.textContaining('Running about 15 minutes late'), findsOneWidget);
+    });
+
+    testWidgets('Handover notes fetches the REAL message_log once a live '
+        'session is threaded in -- the demo fixtures never appear', (t) async {
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/handover-notes')) {
+          return http.Response(jsonEncode({'entries': <dynamic>[
+            {'seq': 0, 'authorId': 'dad-1', 'authorName': 'Dad',
+             'at': '2026-07-28T16:12:00.000Z', 'body': 'Real note from the real server.',
+             'whenLabel': 'Jul 28, 9:12 AM'},
+          ]}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      final tile = find.text('Handover notes');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(HandoverNotesScreen), findsOneWidget);
+      expect(find.textContaining('Real note from the real server.'), findsOneWidget);
+      // authorId matches the threaded-in guardianId -- renders 'You', not
+      // the demo fixtures' 'Sarah'/'You' pairing.
+      expect(find.textContaining('Running about 15 minutes late'), findsNothing);
     });
   });
 

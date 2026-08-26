@@ -19,8 +19,38 @@
 // composed digest. Tap-gated per entry (admitSpeech(tap)), never
 // autonomous — a parent scanning a long handover log on a bad day should
 // never have entries start reading themselves.
+//
+// LIVE WIRING (baseUrl/childId/guardianId/httpClient, all optional and
+// additive — same convention AvailabilityScreen/ThemePickerScreen/
+// LiveCourtExportScreen already use for a screen guardian_more.dart's hub
+// opens): when supplied, this screen fetches the real handover log via
+// OliveApi.fetchHandoverNotes() on init and posts new entries via
+// OliveApi.postHandoverNote(), minting a fresh devLoginFor() session per
+// call — same "nothing here should trust a token that might have outlived
+// this widget's own lifecycle" posture guardian_more.dart's own
+// _startRealCall/_liveSetGuardianPin already hold themselves to, rather
+// than InboxScreen's externally-supplied-sessionToken shape (that one's
+// caller, main_live.dart's child shell, holds a persisted child session
+// this hub has no equivalent of). `guardianId` does double duty: it's
+// devLoginFor's own `userId`, AND (matching AvailabilityScreen.guardianId's
+// established meaning) the signed-in guardian's own id, used to decide
+// whether a fetched entry's `authorId` renders as "You" or the real
+// `authorName` the server sends — never trusted over the session for
+// anything the server itself decides (message_log's own log_no_child RLS +
+// this route's own child-role 403 guard are the real authorization
+// boundary either way). `when` for a real fetched or just-posted entry is
+// ALREADY formatted in the child's own resolved zone, server-side
+// (server/routes.mjs's own whenLabel, both routes) — this screen never
+// does its own timezone math for a live entry, the same "conversion
+// belongs on the server side of the wire" discipline every other
+// live-wired screen in this client already follows (no timezone package
+// exists in client/pubspec.yaml). `_nowLabel` below stays exactly what it
+// always was — a demo-only stand-in used ONLY on the pure offline/demo
+// path, never called once this screen is live.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
+import 'api_client.dart';
 import 'form_factors.dart' as ff;
 
 class _HandoverEntry {
@@ -28,8 +58,17 @@ class _HandoverEntry {
   final String author, when, text;
 }
 
+enum _LoadState { ready, loading, error }
+
 class HandoverNotesScreen extends StatefulWidget {
-  const HandoverNotesScreen({super.key, this.speak});
+  const HandoverNotesScreen({
+    super.key,
+    this.speak,
+    this.baseUrl,
+    this.childId,
+    this.guardianId,
+    this.httpClient,
+  });
 
   /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null reports
   /// itself honestly on tap (same "recorded, not glossed over" posture as
@@ -38,6 +77,16 @@ class HandoverNotesScreen extends StatefulWidget {
   /// a real, working feature that's only ever missing its platform wiring,
   /// not a capability this screen refuses to offer.
   final Future<void> Function(String text)? speak;
+  final String? baseUrl;
+  final String? childId;
+  /// The signed-in guardian's own id — devLoginFor's `userId` AND the "You"
+  /// comparison; see this file's LIVE WIRING header.
+  final String? guardianId;
+  /// Injectable for tests (package:http/testing.dart's MockClient) — matches
+  /// AvailabilityScreen/LiveCourtExportScreen's own convention.
+  final http.Client? httpClient;
+
+  bool get _isLive => baseUrl != null && childId != null && guardianId != null;
 
   @override
   State<HandoverNotesScreen> createState() => _HandoverNotesScreenState();
@@ -58,17 +107,115 @@ class _HandoverNotesScreenState extends State<HandoverNotesScreen> {
   ];
 
   final TextEditingController _controller = TextEditingController();
+  _LoadState _loadState = _LoadState.ready;
+  bool _posting = false;
 
-  void _addEntry() {
-    final String text = _controller.text.trim();
-    if (text.isEmpty) return;
-    setState(() {
-      _entries.add(_HandoverEntry(author: 'You', when: _nowLabel(), text: text));
-      _controller.clear();
-    });
+  @override
+  void initState() {
+    super.initState();
+    if (widget._isLive) _load();
   }
 
-  // Simple demo-precision timestamp — no intl dependency for a preview build.
+  /// Renders a fetched/posted row's `authorId` as "You" for the signed-in
+  /// guardian's own entries, the real `authorName` otherwise — matches the
+  /// demo fixtures' own author labeling exactly, just driven by real data.
+  /// Falls back to 'A parent' only for the theoretical case of a real row
+  /// whose author is neither the caller nor named (author_id always joins
+  /// to a real app_user row server-side — see pool.ts's handoverNotesFor()
+  /// — so this fallback is defensive, not an expected path).
+  String _authorLabel(String authorId, String? authorName) =>
+      authorId == widget.guardianId ? 'You' : (authorName ?? 'A parent');
+
+  /// The ONLY place this screen calls the network to READ — mirrors
+  /// LiveCourtExportScreen's own self-fetching pattern exactly: a fresh
+  /// devLoginFor() per load, never a cached token (see this file's LIVE
+  /// WIRING header), and `api.close()` only on the success path, same as
+  /// that screen's own _load() — if devLoginFor/fetchHandoverNotes throws,
+  /// there is either no [api] yet or a short-lived one this preview build
+  /// doesn't chase down, matching that established precedent rather than
+  /// inventing a stricter cleanup path here alone. A failure here is a
+  /// real, honest error state with a retry affordance (InboxScreen's own
+  /// established shape), never a silent fall-back to the demo fixtures and
+  /// never an unhandled exception.
+  Future<void> _load() async {
+    setState(() => _loadState = _LoadState.loading);
+    try {
+      final String token = await devLoginFor(widget.baseUrl!,
+          userId: widget.guardianId!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
+      final Map<String, dynamic> result = await api.fetchHandoverNotes(widget.childId!);
+      if (widget.httpClient == null) api.close();
+      final List<dynamic> raw = result['entries'] as List<dynamic>? ?? <dynamic>[];
+      final List<_HandoverEntry> fetched = raw.map((dynamic e) {
+        final Map<String, dynamic> row = e as Map<String, dynamic>;
+        return _HandoverEntry(
+          author: _authorLabel(row['authorId'] as String? ?? '', row['authorName'] as String?),
+          when: row['whenLabel'] as String? ?? '',
+          text: row['body'] as String? ?? '',
+        );
+      }).toList();
+      if (!mounted) return;
+      setState(() {
+        _entries..clear()..addAll(fetched);
+        _loadState = _LoadState.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadState = _LoadState.error);
+    }
+  }
+
+  Future<void> _addEntry() async {
+    final String text = _controller.text.trim();
+    if (text.isEmpty) return;
+    if (!widget._isLive) {
+      setState(() {
+        _entries.add(_HandoverEntry(author: 'You', when: _nowLabel(), text: text));
+        _controller.clear();
+      });
+      return;
+    }
+    // A real, court-tier append — see this file's own P8 header. A failure
+    // here must be a visible, honest error (an ApiException the guardian
+    // can see and retry), never a silent no-op that lets her believe the
+    // other parent was actually told something.
+    setState(() => _posting = true);
+    try {
+      final String token = await devLoginFor(widget.baseUrl!,
+          userId: widget.guardianId!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
+      final Map<String, dynamic> row = await api.postHandoverNote(widget.childId!, text);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      setState(() {
+        // POST's own response already carries a real seq/whenLabel — see
+        // OliveApi.postHandoverNote's own doc comment for why this never
+        // re-fetches the whole list just to render the entry it already
+        // has. author is always 'You' here (the caller IS this entry's
+        // author, by construction) — _authorLabel still routes through the
+        // same real comparison rather than a literal, so a mismatched or
+        // missing widget.guardianId fails honestly to 'A parent' instead of
+        // silently asserting an identity this screen never verified.
+        _entries.add(_HandoverEntry(
+          author: _authorLabel(row['authorId'] as String? ?? '', null),
+          when: row['whenLabel'] as String? ?? '',
+          text: row['body'] as String? ?? text,
+        ));
+        _controller.clear();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't send that note — check your connection and try again.")));
+    } finally {
+      if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  // Simple demo-precision timestamp — no intl dependency for a preview
+  // build. Demo/offline path ONLY -- a live entry's `when` is always the
+  // server's own whenLabel (see this file's LIVE WIRING header); this never
+  // runs once widget._isLive is true.
   String _nowLabel() {
     const List<String> months = <String>['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -87,6 +234,32 @@ class _HandoverNotesScreenState extends State<HandoverNotesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Loading/error UI mirrors InboxScreen's own established shape (same
+    // icon, same wording pattern, same real retry action) — both only ever
+    // reachable when this screen is live-wired; the pure demo path (no live
+    // params) never enters either state, matching _loadState's own initial
+    // value of _LoadState.ready.
+    if (_loadState == _LoadState.loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_loadState == _LoadState.error) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Handover notes')),
+        body: Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.cloud_off, size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text("Couldn't reach the server",
+              style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Try again')),
+          ]),
+        )),
+      );
+    }
     final List<_HandoverEntry> newestFirst = _entries.reversed.toList();
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
@@ -107,9 +280,14 @@ class _HandoverNotesScreenState extends State<HandoverNotesScreen> {
             border: OutlineInputBorder()),
           minLines: 1, maxLines: 4,
           textInputAction: TextInputAction.send,
-          onSubmitted: (_) => _addEntry())),
+          onSubmitted: _posting ? null : (_) => _addEntry())),
         const SizedBox(width: 8),
-        FilledButton(onPressed: _addEntry, child: const Text('Add note')),
+        FilledButton(
+          onPressed: _posting ? null : _addEntry,
+          child: _posting
+            ? const SizedBox(width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Text('Add note')),
       ]),
     ];
 

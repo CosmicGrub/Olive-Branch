@@ -6,7 +6,7 @@ import { can, type Edge, type Deny } from '../../family-graph/src/authorize.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
 import {
-  verifyChain, certify, authorizeExport,
+  verifyChain, certify, authorizeExport, append,
   type LogEntry, type Attestation, type ChainFault, type ExportDenial,
 } from '../../ledger/src/ledger.ts';
 import { sha256Hex } from '../../ledger/src/sha256.ts';
@@ -2210,10 +2210,11 @@ export type CertifiedExportResult =
  * `at` is a real timestamptz round-tripped as ISO-8601 with millisecond
  * precision + 'Z' (`to_char(... , 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`) — the
  * exact format `entryHash()` must see to reproduce the hash a writer
- * computed at INSERT time. Nothing in this codebase writes message_log rows
- * yet (handover_notes.dart's UI has no backend behind it either — a
- * separate, real gap this pass does not close, see this function's own test
- * fixtures for the one place that format is exercised end to end today).
+ * computed at INSERT time. `appendHandoverNote()` below (added by this
+ * project's own post-audit coordination-layer pass) is the first thing in
+ * this codebase that writes a message_log row — see its own doc comment for
+ * how it produces `at` in exactly this format so a hash computed at write
+ * time matches what a read computes back.
  */
 async function loadMessageChain(
   q: Query, childId: string,
@@ -2229,6 +2230,103 @@ async function loadMessageChain(
     seq: Number(r.seq), childId, authorId: r.author_id, at: r.at,
     body: r.body, prevHash: r.prev_hash, hash: r.hash,
   }));
+}
+
+/**
+ * The first real writer of message_log — see loadMessageChain()'s own doc
+ * comment for why `at` must be produced in this exact ISO-8601-with-
+ * milliseconds shape (JS's own `Date.prototype.toISOString()` already
+ * produces it verbatim: 'YYYY-MM-DDTHH:mm:ss.sssZ', the same shape
+ * `to_char(... , 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` reads back). append()
+ * (ledger.ts) computes seq/prevHash/hash correctly from the current chain
+ * tip; message_log's own real DB trigger (enforce_log_chain,
+ * 0006_court_tier.sql) then REJECTS the insert if the chain linkage is
+ * wrong, but does not compute it for you and does not verify the hash
+ * itself is correct — verifyChain(), the application-level check, is what
+ * catches THAT class of tampering, at export time.
+ *
+ * pg_advisory_xact_lock, keyed per child via the same hashtext()-based
+ * pattern tools/scheduler.mjs's own job locking already uses, serializes
+ * concurrent appends to the SAME child's log within one transaction —
+ * without it, two guardians adding a note within the same request window
+ * could both read the same tip and race to insert the same next seq,
+ * surfacing as a confusing raw constraint-violation error instead of
+ * simply queuing behind each other the way two people typing notes seconds
+ * apart would expect. A different child's lock never contends; a hashtext()
+ * collision across two DIFFERENT real child ids is an accepted, vanishingly
+ * rare cost of this exact pattern, the same one scheduler.mjs's own job
+ * locking already accepts.
+ */
+export async function appendHandoverNote(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string, body: string,
+): Promise<LogEntry> {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    await q(`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, [`handover-notes:${childId}`]);
+
+    const tip = await q(
+      `SELECT seq, hash FROM message_log WHERE child_id = $1 ORDER BY seq DESC LIMIT 1`,
+      [childId],
+    );
+    // append() only ever reads the LAST element's seq/hash -- the other
+    // fields here are placeholders, never read, never written anywhere.
+    const tipChain: LogEntry[] = tip.length
+      ? [{ seq: Number(tip[0].seq), childId, authorId: '', at: '', body: '',
+           prevHash: '', hash: tip[0].hash }]
+      : [];
+
+    const at = new Date().toISOString();
+    const entry = append(tipChain, { childId, authorId: actorUserId, at, body });
+
+    await q(
+      `INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+       VALUES ($1, $2, $3, $4::timestamptz, $5, $6, $7)`,
+      [childId, entry.seq, actorUserId, at, body, entry.prevHash, entry.hash],
+    );
+
+    return entry;
+  });
+}
+
+/**
+ * The real handover-notes read — thin wrapper over loadMessageChain(),
+ * exported (that function itself stays module-private, used internally by
+ * certifiedExportBundleFor() too) so the new GET route has a real function
+ * to call. system-scoped: the ROUTE's own action:'message' gate (matching
+ * GET .../inbox's identical precedent) is what authorizes the caller before
+ * this ever runs, not a second internal can() check — this table has no
+ * per-guardian RLS narrowing of its own to route around (log_no_child only
+ * blocks the child role, see that policy's own migration comment), so
+ * there is nothing here for a narrower session to buy.
+ */
+export interface HandoverNote {
+  seq: number; authorId: string; authorName: string; at: string; body: string;
+}
+
+/**
+ * A dedicated query, deliberately NOT loadMessageChain() — that function
+ * (and the LogEntry shape it returns) exists for hash-chain verification,
+ * a security-critical shape shared with court export; adding a display-
+ * only authorName field to it would blur "the exact bytes entryHash()
+ * covers" with "what a UI wants to show," which is exactly the kind of
+ * quiet scope-widening a security-relevant type should never absorb for
+ * convenience. This route's own real need — showing "Sarah" or "You"
+ * rather than a bare UUID — gets its own small, honest query instead.
+ */
+export async function handoverNotesFor(pool: pg.Pool, childId: string): Promise<HandoverNote[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT ml.seq, ml.author_id, u.display_name AS author_name,
+              to_char(ml.at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at,
+              ml.body
+         FROM message_log ml JOIN app_user u ON u.id = ml.author_id
+        WHERE ml.child_id = $1 ORDER BY ml.seq ASC`,
+      [childId],
+    );
+    return rows.map((r: any): HandoverNote => ({
+      seq: Number(r.seq), authorId: r.author_id, authorName: r.author_name,
+      at: r.at, body: r.body,
+    }));
+  });
 }
 
 export async function certifiedExportBundleFor(

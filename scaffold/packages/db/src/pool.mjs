@@ -5,7 +5,8 @@ import { can } from "../../family-graph/src/authorize.ts";
 import {
   verifyChain,
   certify,
-  authorizeExport
+  authorizeExport,
+  append
 } from "../../ledger/src/ledger.ts";
 import { sha256Hex } from "../../ledger/src/sha256.ts";
 import {
@@ -912,6 +913,51 @@ async function loadMessageChain(q, childId) {
     hash: r.hash
   }));
 }
+async function appendHandoverNote(pool, actorRole, actorUserId, childId, body) {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    await q(`SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, [`handover-notes:${childId}`]);
+    const tip = await q(
+      `SELECT seq, hash FROM message_log WHERE child_id = $1 ORDER BY seq DESC LIMIT 1`,
+      [childId]
+    );
+    const tipChain = tip.length ? [{
+      seq: Number(tip[0].seq),
+      childId,
+      authorId: "",
+      at: "",
+      body: "",
+      prevHash: "",
+      hash: tip[0].hash
+    }] : [];
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    const entry = append(tipChain, { childId, authorId: actorUserId, at, body });
+    await q(
+      `INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+       VALUES ($1, $2, $3, $4::timestamptz, $5, $6, $7)`,
+      [childId, entry.seq, actorUserId, at, body, entry.prevHash, entry.hash]
+    );
+    return entry;
+  });
+}
+async function handoverNotesFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT ml.seq, ml.author_id, u.display_name AS author_name,
+              to_char(ml.at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at,
+              ml.body
+         FROM message_log ml JOIN app_user u ON u.id = ml.author_id
+        WHERE ml.child_id = $1 ORDER BY ml.seq ASC`,
+      [childId]
+    );
+    return rows.map((r) => ({
+      seq: Number(r.seq),
+      authorId: r.author_id,
+      authorName: r.author_name,
+      at: r.at,
+      body: r.body
+    }));
+  });
+}
 async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__PURE__ */ new Date()) {
   const edges = await edgesFor(pool, requestedBy);
   const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
@@ -1073,6 +1119,7 @@ export {
   PIN_MAX_ATTEMPTS,
   acceptGuardianInvite,
   activeCustodyOrderFor,
+  appendHandoverNote,
   attemptPinFor,
   availabilityFor,
   bootstrapGuardianInvite,
@@ -1088,6 +1135,7 @@ export {
   edgesFor,
   getGuardianInvite,
   guardiansOfChild,
+  handoverNotesFor,
   mediaArtifactFor,
   parentGuardiansOfChild,
   persistCapturedMessage,
