@@ -85,6 +85,13 @@ prohibition and an enforced one.
 - [ ] `0001_constraints.test.sql` green in CI against a fresh database
 - [ ] Golden time suite green: `npm run test:golden` → 24 passed
 - [ ] Backups exclude nothing — `preserved` artifacts are irreplaceable (§9.8).
-      See `docs/backup-and-restore.md` for the actual procedure and the real,
-      executed round-trip proof (`tools/backup-restore-verify.sh`) that this
-      box means something.
+      Two real, separate targets, not one: `tools/backup-db.sh` (Postgres —
+      the row that SAYS an artifact is preserved) AND `tools/backup-media.sh`
+      (the `olive-prod-media` volume — the actual bytes that row points at).
+      Found and closed as a real gap by this project's own post-tier audit:
+      the `backup` Compose service ran only the first of these until then,
+      so a restore left every `preserved` row pointing at nothing. See
+      `docs/backup-and-restore.md` for the actual procedure and the real,
+      executed round-trip proof (`tools/backup-restore-verify.sh` for
+      Postgres; a direct tar/diff round trip for media — see that document's
+      own "how this was verified" section for exactly what each covers).

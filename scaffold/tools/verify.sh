@@ -95,6 +95,7 @@ for spec in \
   "print fulfilment|packages/print/test/print.test.mjs" \
   "filesystem storage adapter|packages/storage/test/storage.test.mjs" \
   "signed-URL media serving route|server/test/signed_media_route.test.mjs" \
+  "media signing secret persistence (MEDIA_SIGNING_SECRET)|server/test/media_signing_secret.test.mjs" \
   "emergency card|packages/emergency/test/emergency.test.mjs" \
   "global child-payload sweep|packages/globalaudit/test/globalaudit.test.mjs" \
   "observer tier (§17.3)|packages/observer/test/observer.test.mjs" \

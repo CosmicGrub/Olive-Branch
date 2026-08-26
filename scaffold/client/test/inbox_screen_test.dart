@@ -205,6 +205,82 @@ void main() {
         expect(receipt.sessionToken, 'real-session-tok');
       });
 
+      testWidgets('opening a live, unwatched message fires a real, best-effort '
+          'POST .../inbox/:id/opened — the actual server-side persistence gap this '
+          'pass closes (MASTERFILE §7.3 declared this route long before anything '
+          'ever called it)', (tester) async {
+        final List<http.Request> posts = <http.Request>[];
+        final MockClient mock = MockClient((http.Request req) async {
+          if (req.method == 'POST') {
+            posts.add(req);
+            return http.Response(jsonEncode({'ok': true}), 200);
+          }
+          return http.Response(jsonEncode({'entries': [
+            {'id': 'real-1', 'sender_name': 'Dad', 'deliveredAtLabel': '7:04 AM',
+              'state': 'delivered'},
+          ]}), 200);
+        });
+        await tester.pumpWidget(wrap(InboxScreen(
+          childName: 'Ivy', messages: const <InboxMessage>[],
+          baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok',
+          httpClient: mock)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.textContaining('New — tap to watch'));
+        await tester.pumpAndSettle();
+
+        expect(posts, hasLength(1));
+        expect(posts.single.url.path, '/v1/children/child-a/inbox/real-1/opened');
+        expect(posts.single.headers['authorization'], 'Bearer tok');
+      });
+
+      testWidgets('a real markInboxOpened FAILURE never blocks or delays reaching '
+          'the receipt screen — best-effort record-keeping, same posture as '
+          'OliveApi.endCall', (tester) async {
+        final MockClient mock = MockClient((http.Request req) async {
+          if (req.method == 'POST') return http.Response('server error', 500);
+          return http.Response(jsonEncode({'entries': [
+            {'id': 'real-1', 'sender_name': 'Dad', 'deliveredAtLabel': '7:04 AM',
+              'state': 'delivered'},
+          ]}), 200);
+        });
+        await tester.pumpWidget(wrap(InboxScreen(
+          childName: 'Ivy', messages: const <InboxMessage>[],
+          baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok',
+          httpClient: mock)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.textContaining('New — tap to watch'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ReceiptScreen), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('opening an ALREADY-watched message does not re-fire the '
+          'best-effort POST — nothing new happened server-side to record',
+          (tester) async {
+        final List<http.Request> posts = <http.Request>[];
+        final MockClient mock = MockClient((http.Request req) async {
+          if (req.method == 'POST') { posts.add(req); return http.Response('{}', 200); }
+          return http.Response(jsonEncode({'entries': [
+            {'id': 'real-1', 'sender_name': 'Dad', 'deliveredAtLabel': '7:04 AM',
+              'state': 'opened'},
+          ]}), 200);
+        });
+        await tester.pumpWidget(wrap(InboxScreen(
+          childName: 'Ivy', messages: const <InboxMessage>[],
+          baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok',
+          httpClient: mock)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.textContaining('Watched'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ReceiptScreen), findsOneWidget);
+        expect(posts, isEmpty);
+      });
+
       testWidgets('a real fetch failure is an honest error with a working retry, '
           'never a crash or a silent fallback to the demo fixture', (tester) async {
         int calls = 0;

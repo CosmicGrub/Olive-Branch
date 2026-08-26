@@ -167,6 +167,16 @@ services:
       # from silently drifting apart if that fallback's derivation ever
       # changes.
       MEDIA_STORAGE_ROOT: /app/data/media
+      # Same `:?`-required discipline as SESSION_SECRET above, and the same
+      # real bug that discipline exists to prevent: without a persisted
+      # value, routes.mjs's own FilesystemStorage minted a fresh random
+      # signing secret every process start, silently invalidating every
+      # outstanding signed media URL on the next restart (a routine
+      # `restart: always` recovery, an OOM kill under this service's own
+      # 512m limit, a rolling redeploy) and structurally forbidding ever
+      # scaling this service past one replica — found by this project's own
+      # post-tier audit.
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — see .env.prod.example (openssl rand -hex 32) — use a DIFFERENT value than any dev .env}
     ports:
       - "127.0.0.1:${SERVER_HOST_PORT:-8123}:8123"
     volumes:
@@ -244,7 +254,18 @@ services:
     volumes:
       - ./tools:/tools:ro
       - ${BACKUP_DIR:-./backups}:/backups
-    entrypoint: ["bash", "/tools/backup-db.sh", "/backups"]
+      # Real bug, found by this project's own post-tier audit: this service
+      # backed up Postgres and NOTHING else, while docs/backup-and-restore.md
+      # and db/DEPLOYMENT.md's own checklist both claimed "Backups exclude
+      # nothing — preserved artifacts are irreplaceable." Both were false —
+      # a database restore alone leaves every media_artifact.storage_key
+      # pointing at bytes that no longer exist anywhere. Read-only: this
+      # service only ever needs to READ the volume to back it up, same
+      # least-privilege posture backup_reader's own SELECT-only grant above
+      # already applies to the database side.
+      - olive-prod-media:/media:ro
+    entrypoint: ["bash", "-c",
+      "bash /tools/backup-db.sh /backups && bash /tools/backup-media.sh /media /backups"]
 
   # NOT profile-gated, unlike docker-compose.dev.yml's own `scheduler`
   # service — a deliberate divergence from that file's pattern, not an
@@ -276,6 +297,28 @@ services:
     environment:
       DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
       SCHEDULER_HOUR_UTC: "${SCHEDULER_HOUR_UTC:-3}"
+      # Real bug, found by this project's own post-tier audit: without this,
+      # `reap-media`'s `FilesystemStorage` falls back to the exact same
+      # literal path string `server` uses (both share one image/WORKDIR), so
+      # `storage.delete()` LOOKED correct but silently ran against THIS
+      # container's own empty, disconnected writable layer, not the real
+      # volume below — every delete() hit ENOENT, returned false (not a
+      # throw, so reap()'s own tombstone-on-failure path never fired), and
+      # the media_artifact row was deleted anyway. Net effect: the DB record
+      # proving retention was honored disappears; the actual blob (a
+      # child's face or voice) is orphaned on `server`'s volume forever,
+      # invisible to every future sweep — exactly the "reaper that deletes
+      # rows and leaves media is not a retention policy" failure
+      # packages/storage/src/storage.ts's own header names as the reason
+      # this feature exists at all. Pinned explicitly, same reasoning as
+      # `server`'s own identical comment above.
+      MEDIA_STORAGE_ROOT: /app/data/media
+    volumes:
+      # The other half of the same fix — without this mount, the env var
+      # above points at a path that exists but is never the real volume.
+      # Same named volume `server` writes to; `reap-media` needs to delete
+      # the exact bytes `server` wrote, not a private copy.
+      - olive-prod-media:/app/data/media
     command: ["node", "tools/scheduler.mjs", "loop"]
     deploy:
       resources:

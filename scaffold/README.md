@@ -191,8 +191,10 @@ than this list ever did; cross-checked against it directly below.
       own "future + undelivered only" behavior, `delivery.test.mjs`'s 37
       probes); the sweep half — no cron or scheduler anywhere in this repo
       actually called it — is now closed by `tools/scheduler.mjs`, a real
-      Postgres advisory-lock-guarded job runner (`rematerialize` +
-      `health-alert` jobs). Wired into `docker-compose.dev.yml` as an
+      Postgres advisory-lock-guarded job runner (`rematerialize`,
+      `reap-media`, and `health-alert` jobs — the middle one added v0.49.46,
+      missed by this line until this project's own post-tier audit caught
+      it). Wired into `docker-compose.dev.yml` as an
       **opt-in** Compose service (a background sweep is a real footgun
       against a live debug session, so it is not part of dev's default
       `up -d`) — but wired into `docker-compose.prod.yml` as part of the

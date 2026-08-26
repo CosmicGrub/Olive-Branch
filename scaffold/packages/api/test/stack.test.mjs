@@ -245,6 +245,111 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
   // Idempotent: a second pass over already-reaped keys must not error.
   const again = await reap(db, st, new Date(NOW));
   check('E reaper', 'second pass is safe', again.examined, 4);
+
+  // mk() above is deliberately fixed to its own 4-row fixture (dueForReaping
+  // closes over mk()'s own local `rows`, not anything reassigned on the
+  // returned object afterward) — the three blocks below build their own
+  // minimal db/storage fakes directly rather than fighting that shape.
+
+  // blobsAlreadyGone — storage.delete() resolving false (its own "true if
+  // it existed" contract), NOT a throw. Found by this project's own
+  // post-tier audit: this used to be silently merged into blobsDeleted,
+  // indistinguishable from a real delete. The row is still safely deleted
+  // (the invariant this function protects — "the blob is gone" — holds
+  // either way), but the count is kept separate so a real spike is visible
+  // as its own operational signal.
+  {
+    const gRows = [{ artifactId: 'g1', storageKey: 'k/never-existed', preserved: false,
+      expiresAt: '2026-07-01T00:00:00Z' }];
+    const gDeleted = [], gTombs = [];
+    // Never put() at all — st.delete() on a key that was never written
+    // resolves false, exactly like a blob that's already been cleaned up.
+    const gSt = new MemoryStorage();
+    const gDb = {
+      dueForReaping: async () => gRows,
+      deleteArtifactRow: async (id) => { gDeleted.push(id); return true; },
+      tombstone: async (id, key, err) => { gTombs.push({ id, key, err }); },
+    };
+    const rg = await reap(gDb, gSt, new Date(NOW));
+    check('E reaper', 'a blob that was already gone is NOT counted as a real delete',
+      rg.blobsDeleted, 0);
+    check('E reaper', 'it IS counted separately, not silently dropped',
+      rg.blobsAlreadyGone, 1);
+    check('E reaper', 'the row is still deleted — the blob being gone either way is '
+      + 'not itself an error', gDeleted.includes('g1'), 'true');
+    check('E reaper', 'no tombstone for an already-gone blob — this is not a failure',
+      gTombs.length, 0);
+  }
+
+  // Row delete fails AFTER a successful blob delete — found by this
+  // project's own post-tier audit: this call used to be unguarded, so a
+  // thrown error here propagated out of reap()'s whole loop, killing every
+  // OTHER candidate in the same batch, and left the row un-tombstoned so
+  // dueForReaping()'s own ORDER BY guaranteed the SAME row would be
+  // returned first again on every future sweep — a single transient
+  // failure could indefinitely block every other family's overdue media
+  // behind it. Two candidates prove both halves: the poisoned one is
+  // tombstoned, not thrown, AND the one behind it still gets examined.
+  {
+    const hRows = [
+      { artifactId: 'h1', storageKey: 'k/row-delete-fails', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+      { artifactId: 'h2', storageKey: 'k/behind-the-poisoned-row', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+    ];
+    const hDeleted = [], hTombs = [];
+    const hSt = new MemoryStorage();
+    for (const r of hRows) await hSt.put(r.storageKey, Buffer.from('bytes'));
+    const hDb = {
+      dueForReaping: async () => hRows,
+      deleteArtifactRow: async (id) => {
+        if (id === 'h1') throw new Error('connection reset');
+        hDeleted.push(id); return true;
+      },
+      tombstone: async (id, key, err) => { hTombs.push({ id, key, err }); },
+    };
+    const rh = await reap(hDb, hSt, new Date(NOW));
+    check('E reaper', 'a row-delete failure does not throw out of reap() — the whole '
+      + 'sweep completing at all is the proof', rh.examined, 2);
+    check('E reaper', "the poisoned row's blob is genuinely gone (delete ran before the "
+      + 'row-delete failure)', await hSt.exists('k/row-delete-fails'), 'false');
+    check('E reaper', 'the poisoned row is tombstoned so it is discoverable and excluded '
+      + 'from future sweeps, not silently left to loop forever', rh.tombstoned, ['h1']);
+    check('E reaper', "the poisoned row's own tombstone records the REAL failure, "
+      + 'distinguishable from a blob-delete failure', hTombs[0]?.err,
+      'row delete failed after blob delete resolved: connection reset');
+    check('E reaper', 'the candidate BEHIND the poisoned one is still examined and '
+      + 'reaped normally — this is the actual poison-pill fix, not just "does not crash"',
+      hDeleted.includes('h2'), 'true');
+    check('E reaper', "the poisoned row's own tombstone is the only one written",
+      hTombs.length, 1);
+  }
+
+  // Even the tombstone WRITE itself failing must not crash the sweep — the
+  // degraded outcome is "retried next sweep," never "every candidate after
+  // this one in tonight's batch is never examined."
+  {
+    const kRows = [
+      { artifactId: 'k1', storageKey: 'k/row-delete-and-tombstone-fail', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+      { artifactId: 'k2', storageKey: 'k/still-examined', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+    ];
+    const kSt = new MemoryStorage();
+    for (const r of kRows) await kSt.put(r.storageKey, Buffer.from('bytes'));
+    const kDb = {
+      dueForReaping: async () => kRows,
+      deleteArtifactRow: async () => { throw new Error('db unreachable'); },
+      tombstone: async () => { throw new Error('db unreachable'); },
+    };
+    let threw = false;
+    let rk;
+    try { rk = await reap(kDb, kSt, new Date(NOW)); } catch { threw = true; }
+    check('E reaper', 'a tombstone write ALSO failing does not propagate out of reap()',
+      threw, false);
+    check('E reaper', 'the candidate behind a doubly-failed row is still examined',
+      rk?.examined, 2);
+  }
 }
 
 // ===========================================================================

@@ -10,7 +10,7 @@
 // time.ts's exports are all pure (no DB access). Day-part classification
 // (school/bedtime/etc.) is NOT wired yet -- a real follow-up, not silently
 // glossed over.
-import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
+import { createHash, timingSafeEqual, randomUUID, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
@@ -61,8 +61,27 @@ const DEFAULT_MEDIA_STORAGE_ROOT =
 // .../media into, rather than a second, independently-constructed
 // FilesystemStorage that would hold its own independent secret and could
 // never verify a URL the first instance minted.
-export const defaultMediaStorage =
-  new FilesystemStorage(process.env.MEDIA_STORAGE_ROOT ?? DEFAULT_MEDIA_STORAGE_ROOT);
+//
+// Real bug, found by this project's own post-tier audit: FilesystemStorage's
+// own signing secret used to default to a fresh randomBytes(32) EVERY
+// process start, with nothing anywhere reading a configured value — fine
+// within one running process (mint and verify always agree with each other
+// here), but every real server restart (a routine `restart: always`
+// recovery, an OOM kill under docker-compose.prod.yml's 512m limit, a
+// rolling redeploy) silently invalidated every outstanding signed URL still
+// inside its 5-minute TTL, and structurally forbids ever scaling `server`
+// past one replica (two processes would each mint a different secret and
+// neither could verify the other's URLs). MEDIA_SIGNING_SECRET, hex-encoded
+// (same `openssl rand -hex 32` convention SESSION_SECRET already uses),
+// makes the secret survive a restart and be shared across replicas when
+// set; falling back to a fresh random secret when unset keeps a bare local
+// dev run working exactly as before, at the same "URLs won't survive a
+// restart" cost that already existed for every deployment before this fix.
+const mediaSigningSecret = process.env.MEDIA_SIGNING_SECRET
+  ? Buffer.from(process.env.MEDIA_SIGNING_SECRET, 'hex')
+  : randomBytes(32);
+export const defaultMediaStorage = new FilesystemStorage(
+  process.env.MEDIA_STORAGE_ROOT ?? DEFAULT_MEDIA_STORAGE_ROOT, mediaSigningSecret);
 
 /**
  * Same fallback and env var name `tools/local-call-room-server.mjs` already
@@ -767,6 +786,29 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // same schedule/status-adjacent fit for the same undocumented gap.
     method: 'GET', path: '/v1/children/:childId/presence', action: 'calendar.view',
     handler: async (c, q) => {
+      // Real bug, found by this project's own post-tier audit: calendar.view
+      // alone is far wider than this route was ever meant to admit — it is
+      // also held by sitter/coordinator/caseworker/trusted_adult, none of
+      // whom this feature's own design intended as callers (ChildHome, and
+      // by extension the child herself, is the sole real consumer this was
+      // built for). A live, NAMED-PARENT reachability signal ("Dad is free
+      // right now, until 4:15 PM") is materially more sensitive than the
+      // static schedule/pattern data calendar.view otherwise gates — this
+      // narrows the caller to exactly the child herself, or a real
+      // parent-role guardian (the SAME role parentGuardiansOfChild() below
+      // already restricts the response's own candidate list to, per §5.27.2
+      // "only a parent... not a stepparent, a caregiver... or a
+      // coordinator" — that principle previously governed who could be
+      // SHOWN, not who could ASK).
+      // Fetched once, reused below for both this gate and Step 2's own
+      // candidate list — the same 'guardian'-role query, not two.
+      const parents = await parentGuardiansOfChild(pool, c.childId);
+      const isChildSelf = c.principal.roleName === 'child' && c.principal.childId === c.childId;
+      if (!isChildSelf
+        && !(c.principal.userId && parents.some(g => g.userId === c.principal.userId))) {
+        return { status: 403, body: { error: 'not_a_parent_of_child' } };
+      }
+
       // Same tz-resolution block as /now and /custody-order, duplicated a
       // third time rather than shared — matching those two routes' own
       // explicit "small duplication, not worth a shared helper here"
@@ -814,8 +856,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // guardian happens to be on duty) naturally falls through to
       // `{ free: null }` below via this list being empty — no special case
       // needed, and no distinguishable state that would leak "you only have
-      // one parent" through this card (§5.27.3's sibling concern).
-      const parents = await parentGuardiansOfChild(pool, c.childId);
+      // one parent" through this card (§5.27.3's sibling concern). `parents`
+      // is the SAME list already fetched above for the caller gate.
       const candidates = parents.filter(g => g.userId !== onDutyGuardianId);
       if (!candidates.length) return { body: { free: null } };
 
@@ -920,6 +962,64 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
           ? relativeInboxLabel(r.materialized_at, tz, nowUtc) : '',
       }));
       return { body: { entries } };
+    },
+  });
+
+  // POST /v1/children/:childId/inbox/:id/opened — real bug, found by this
+  // project's own post-tier audit: MASTERFILE §7.3 declared this route as
+  // part of the API surface ("POST /v1/inbox/:id/opened — receipt, recorded
+  // in child-local time") for as long as this document has had an API
+  // reference section, but it was never built. inbox_screen.dart's own
+  // _open() only ever flipped `watched` in LOCAL widget state
+  // (setState(() => _messages[i] = m.markWatched())) — real, but invisible
+  // to the server, so nothing persisted past that one screen instance. This
+  // stayed harmless while the inbox was demo-only; it stopped being
+  // harmless the moment GET .../inbox and receipt_screen.dart's live caller
+  // (both this same tier) made the whole path genuinely live — every
+  // previously-watched message re-materializes as "New" and the unread
+  // badge never actually clears, on every fresh load.
+  //
+  // Real path shape deviates from MASTERFILE §7.3's own bare
+  // /v1/inbox/:id/opened — child-scoped under /v1/children/:childId/..., the
+  // same convention every other real child-facing route this codebase has
+  // ever actually built uses (A3's own childId-match check needs a childId
+  // in the path to check against); MASTERFILE corrected to match, not left
+  // silently stale a second time.
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/inbox/:messageId/opened', action: 'message',
+    handler: async (c, q) => {
+      // Real authorization, narrower than the outer action check alone:
+      // "opened" means SHE watched it — a guardian's own read of the same
+      // inbox (action: 'message' admits her too, same as the GET route
+      // above) must never be able to mark a receipt watched on the child's
+      // behalf. This is deliberately an in-handler check, not a capability
+      // list entry — the same pattern already established at this file's
+      // other identity-scoped-beyond-action routes.
+      if (c.principal.roleName !== 'child' || c.principal.childId !== c.childId) {
+        return { status: 403, body: { error: 'child_session_required' } };
+      }
+      // delivered -> opened only. A row still 'pending'/'ready' has not
+      // reached her yet regardless of what the client claims; an already-
+      // 'opened' row makes this a safe no-op (real re-opens, offline-queued
+      // duplicate calls); 'expired'/'revoked' must never be resurrected into
+      // 'opened' by a stale client request racing a server-side sweep.
+      const updated = await q(
+        `UPDATE delivery_intent SET state = 'opened'
+          WHERE id = $1 AND child_id = $2 AND state = 'delivered'
+          RETURNING id`,
+        [c.params.messageId, c.childId],
+      );
+      if (updated.length) return { status: 200, body: { ok: true } };
+      // Idempotent success for a row already 'opened' — distinguished from
+      // a genuine not-found/wrong-state so a client retry (or two tabs
+      // racing) never sees a false error for something that already
+      // happened.
+      const already = await q(
+        `SELECT 1 FROM delivery_intent WHERE id = $1 AND child_id = $2 AND state = 'opened'`,
+        [c.params.messageId, c.childId],
+      );
+      if (already.length) return { status: 200, body: { ok: true } };
+      return { status: 404, body: { error: 'message_not_found_or_not_yet_delivered' } };
     },
   });
 

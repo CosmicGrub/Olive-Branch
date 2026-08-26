@@ -190,8 +190,19 @@ export interface ReapCandidate {
 export interface ReapResult {
   examined: number;
   blobsDeleted: number;
+  // storage.delete() returned false (its own "true if it existed"
+  // contract) rather than throwing — the blob was already gone, so the row
+  // is still safely deleted below, but this is recorded SEPARATELY from
+  // blobsDeleted rather than silently merged into it: a real spike here is
+  // itself an operational signal (e.g. this process was pointed at the
+  // wrong storage root, the exact bug this project's own post-tier audit
+  // found and fixed in both docker-compose files), not proof retention
+  // worked. See reap()'s own loop body for where this is set.
+  blobsAlreadyGone: number;
   rowsDeleted: number;
-  tombstoned: string[];      // blob delete failed; retry required
+  tombstoned: string[];      // blob delete failed OR row delete failed
+                             // after a successful/no-op blob delete; retry
+                             // required either way — see reap()'s own body.
   skippedPreserved: number;
   refusedNoClock: number;
 }
@@ -218,10 +229,22 @@ export async function reap(
   db: ReaperDb, storage: StoragePort, now: Date, limit = 500,
 ): Promise<ReapResult> {
   const out: ReapResult = {
-    examined: 0, blobsDeleted: 0, rowsDeleted: 0,
+    examined: 0, blobsDeleted: 0, blobsAlreadyGone: 0, rowsDeleted: 0,
     tombstoned: [], skippedPreserved: 0, refusedNoClock: 0,
   };
   const candidates = await db.dueForReaping(now, limit);
+
+  // Best-effort tombstone write — used on BOTH failure paths below. Never
+  // allowed to itself throw: this function's whole point is that one bad
+  // candidate must not stop the rest of the batch from being examined, and
+  // a tombstone write failing on top of an already-failed delete is
+  // exactly the kind of compounding failure that must degrade to "retried
+  // next sweep," not "the rest of tonight's 500 candidates are never
+  // looked at."
+  const tombstoneBestEffort = async (id: string, key: string, reason: string) => {
+    out.tombstoned.push(id);
+    try { await db.tombstone(id, key, reason); } catch { /* retried next sweep */ }
+  };
 
   for (const c of candidates) {
     out.examined++;
@@ -236,15 +259,37 @@ export async function reap(
     if (new Date(c.expiresAt) > now) { continue; }
 
     try {
-      await storage.delete(c.storageKey);
-      out.blobsDeleted++;
+      // storage.delete()'s own contract: resolves `true` if a blob existed
+      // and was deleted, `false` if it never existed, THROWS on a real I/O
+      // failure. The boolean is real signal, not noise — see
+      // blobsAlreadyGone's own doc comment on ReapResult.
+      const existed = await storage.delete(c.storageKey);
+      if (existed) out.blobsDeleted++; else out.blobsAlreadyGone++;
     } catch (e) {
-      out.tombstoned.push(c.artifactId);
-      await db.tombstone(c.artifactId, c.storageKey,
+      await tombstoneBestEffort(c.artifactId, c.storageKey,
         e instanceof Error ? e.message : String(e));
       continue;                 // row survives so the blob stays discoverable
     }
-    if (await db.deleteArtifactRow(c.artifactId)) out.rowsDeleted++;
+
+    try {
+      if (await db.deleteArtifactRow(c.artifactId)) out.rowsDeleted++;
+    } catch (e) {
+      // Found by this project's own post-tier audit: this call used to be
+      // unguarded. The blob is ALREADY gone at this point (the try block
+      // above either deleted it or found it already gone), so a failed row
+      // delete here leaves a row pointing at nothing — it MUST be
+      // discoverable the same way a failed blob delete already is (a real
+      // reap_tombstone row), not a thrown exception that propagates out of
+      // this whole loop. An unguarded throw here previously killed the
+      // rest of the batch outright, and because the row survived
+      // un-tombstoned, dueForReaping()'s own `ORDER BY expires_at` and its
+      // `NOT EXISTS (SELECT 1 FROM reap_tombstone ...)` filter guaranteed
+      // the SAME row would be returned first again on every future sweep —
+      // a single transient failure could indefinitely block every other
+      // family's overdue media behind it.
+      await tombstoneBestEffort(c.artifactId, c.storageKey,
+        `row delete failed after blob delete resolved: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
   return out;
 }
