@@ -24,6 +24,7 @@ import 'expiry_digest.dart';
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
 import 'guardian_setup.dart';
+import 'handover_notes.dart';
 import 'hub_widgets.dart';
 import 'invitation_screen.dart';
 import 'lock_advisory_screen.dart';
@@ -293,6 +294,22 @@ class GuardianMoreScreen extends StatelessWidget {
     ));
   }
 
+  /// Unlike [_openAvailability] above, this ALWAYS opens the real screen —
+  /// HandoverNotesScreen has a genuine, intentional offline demo mode of its
+  /// own (four seeded fixture entries, real append-only invariant enforced
+  /// purely client-side), not a "not connected" stub standing in for one —
+  /// same reasoning [_openThemePicker] already gives for its own unconditional
+  /// open. When baseUrl/guardianId ARE supplied, the screen fetches and posts
+  /// against the real message_log-backed routes instead (see that file's own
+  /// LIVE WIRING header); when they aren't, this is exactly the demo build
+  /// this hub already was before this pass.
+  void _openHandoverNotes(BuildContext context) {
+    _open(context, HandoverNotesScreen(
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient,
+    ));
+  }
+
   /// There is no persisted client-side session anywhere in this codebase to
   /// clear (every screen calls devLoginFor() fresh — see push_channel.dart's
   /// own "no sign-out/log-out flow anywhere in lib/" note, which this tile
@@ -460,6 +477,11 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.event_available_outlined, title: 'Availability',
             subtitle: 'When he can actually be reached, honestly rendered',
             onTap: () => _openAvailability(context)),
+          HubTile(icon: Icons.chat_outlined, title: 'Handover notes',
+            subtitle: baseUrl != null
+              ? 'Real, append-only — court-tier since the day it was written'
+              : "Not the child's channel — it's the parents' (demo)",
+            onTap: () => _openHandoverNotes(context)),
         ]),
         HubSection(title: 'Preferences', children: [
           HubTile(icon: Icons.palette_outlined, title: 'Theme',

@@ -132,6 +132,14 @@ class OliveApi {
   // --- coordination (§7.7) -----------------------------------------------
   static const medications   = '/v1/children/:childId/medications';
   static const emergencyCard = '/v1/children/:childId/emergency-card';
+  // --- parent-to-parent handover log (message_log, real for the first time
+  // as of this pass -- see server/routes.mjs's own route-registration
+  // comment for the full account, and handover_notes.dart's file header for
+  // the P8 append-only invariant this backs). No MASTERFILE §7 row declares
+  // this route yet -- that section's own new scoping note already discloses
+  // this as a real, honest gap, same as [childPresence] above; not
+  // retrofitted to a stale declaration.
+  static const handoverNotes = '/v1/children/:childId/handover-notes';
 
   // --- guarded by escalation (§8.3) --------------------------------------
   static const settings = '/v1/children/:childId/settings';
@@ -325,6 +333,38 @@ class OliveApi {
   /// response, same posture as every other read in this class.
   Future<Map<String, dynamic>> fetchPresence(String childId) =>
       _get(childPresence, childId: childId);
+
+  /// `{entries: [{seq, authorId, authorName, at, body, whenLabel}, ...]}` --
+  /// GET [handoverNotes], server/routes.mjs's real handler. `whenLabel` is
+  /// already formatted in the CHILD's own resolved zone, server-side --
+  /// this class never does its own timezone math, same discipline
+  /// [fetchInbox]'s own `deliveredAtLabel` already follows (no timezone
+  /// package exists in client/pubspec.yaml). Throws [ApiException] on any
+  /// non-2xx response -- notably 403 `not_the_childs_channel` for a child
+  /// session, the real guard handover_notes.dart's own file header
+  /// explains ("Not the child's... it's the parents'").
+  Future<Map<String, dynamic>> fetchHandoverNotes(String childId) =>
+      _get(handoverNotes, childId: childId);
+
+  /// Appends ONE new entry to [childId]'s real parent-to-parent handover
+  /// log -- POST [handoverNotes], server/routes.mjs's real handler
+  /// (appendHandoverNote(), packages/db/src/pool.ts): a real hash-chain
+  /// append (message_log's own append-only + chain-linkage triggers,
+  /// db/migrations/0006_court_tier.sql), never an edit or delete -- see
+  /// handover_notes.dart's own file header for why this class exposes no
+  /// corresponding update/delete method at all, not even one that always
+  /// fails. Returns `{ok, seq, authorId, at, body, whenLabel}` -- NOT
+  /// `authorName` (unlike [fetchHandoverNotes]'s per-entry shape): the
+  /// caller of this method is, by construction, the entry's own author, so
+  /// a real display label never needs one -- `authorId == ` the caller's
+  /// own known guardian id is enough to render "You" without a second
+  /// round trip. `whenLabel` IS included, same reasoning -- see that
+  /// route's own comment for why. Throws [ApiException] on any
+  /// non-2xx response (e.g. 400 `empty_body` for a whitespace-only note,
+  /// 403 `not_the_childs_channel` for a child session), exactly like
+  /// [sendMessage]'s own posture on a real rejection.
+  Future<Map<String, dynamic>> postHandoverNote(String childId, String body) =>
+      _post(handoverNotes, {'body': body}, childId: childId);
 
   /// Checks [pin] against every LIVE guardian of [childId] -- POST
   /// kioskPinVerify, server/routes.mjs's real handler. This is the check

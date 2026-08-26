@@ -368,6 +368,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
             "presence route: on-duty exclusion + tie-break (real DB)|server/test/presence_route.test.mjs" \
+            "handover-notes route: real message_log writer (real DB)|server/test/handover_notes_route.test.mjs" \
             "inbox route (real DB, real RLS)|server/test/inbox_route.test.mjs" \
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" ; do

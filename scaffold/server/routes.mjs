@@ -26,6 +26,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          acceptGuardianInvite, revokeGuardianInvite, bootstrapGuardianInvite,
          takeAndGo, themeFor, setChildTheme,
          recordCallStart, recordCallEnd,
+         appendHandoverNote, handoverNotesFor,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -1514,6 +1515,128 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         }
         throw e; // -> Api.handle's catch-all -> 500, logged there
       }
+    },
+  });
+
+  // GET/POST /v1/children/:childId/handover-notes — the parent-to-parent
+  // handover log, real for the first time. Found by this project's own
+  // post-tier audit: message_log (db/migrations/0006_court_tier.sql) has
+  // had real RLS, a real append-only trigger, and a real hash-chain
+  // enforcement trigger since v0.something-early, and certifiedExport
+  // BundleFor() has been able to READ and verify it since v0.14.0 — but
+  // nothing anywhere ever WROTE a row. handover_notes.dart's own UI is
+  // pure in-memory local state with zero network calls (confirmed by
+  // grepping the file for any http/OliveApi/api. reference — none exist).
+  // Court export's own "the message log backs a certified export" claim
+  // had no real data behind it in production until this pair of routes.
+  //
+  // Path deliberately NOT /v1/children/:childId/handover — that path is
+  // already the real §9.8.4 majority take-and-go route just above, an
+  // entirely different feature this codebase happens to also call
+  // "handover." No MASTERFILE §7 row currently declares this route at all
+  // (a real, disclosed gap in that section's own aspirational sketch, per
+  // its own new scoping note) — named to match handover_notes.dart's own
+  // client-facing name, not retrofitted to a stale declaration.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/handover-notes', action: 'message',
+    handler: async (c, q) => {
+      // Real bug in this route's own first draft, found by its own first
+      // test: handoverNotesFor() reads via a SYSTEM-scoped session
+      // (message_log's own log_no_child RLS policy only excludes the
+      // 'child' role — 'system' passes it freely), so without this guard a
+      // child session reaches the outer action:'message' gate exactly the
+      // same way she legitimately does for her OWN inbox (can()'s real
+      // behavior for a child principal — see the presence route above),
+      // and the system-scoped read behind it would hand her the real
+      // parent-to-parent log content regardless. "Not the child's... it's
+      // the parents'" (handover_notes.dart's own header) has to be
+      // enforced HERE, explicitly — the DB policy alone does not reach a
+      // system-role read.
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_the_childs_channel' } };
+      }
+      const entries = await handoverNotesFor(pool, c.childId);
+      // whenLabel: this codebase's own established convention (relativeInboxLabel
+      // above, /now's local-time fields) is that ALL timezone-aware display
+      // formatting happens HERE, once, server-side -- client/pubspec.yaml has
+      // no timezone/intl package at all. Unlike relativeInboxLabel's "sleeps,
+      // not dates" wording (§8.2.5, child-facing), this content is strictly
+      // guardian-facing (the 403 above enforces that), so there's no reason
+      // to avoid a real calendar date -- format matches handover_notes.dart's
+      // own pre-existing demo fixture shape ("Jul 28, 4:12 PM") exactly, so
+      // wiring this in doesn't change what a guardian who's used the demo
+      // already expects to see. Resolved the same way /now resolves hers
+      // (child_tz_interval, falling back to child.home_tz) -- duplicated
+      // here rather than shared, matching this file's own existing precedent
+      // for that block (see the comment at the exchange route above).
+      let tz;
+      {
+        const interval = await q(
+          `SELECT tz FROM child_tz_interval
+            WHERE child_id = $1 AND valid @> now()
+            ORDER BY confidence DESC LIMIT 1`,
+          [c.childId],
+        );
+        tz = interval[0]?.tz;
+        if (!tz) {
+          const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
+          tz = child[0]?.home_tz ?? 'UTC';
+        }
+      }
+      return { body: { entries: entries.map(e => ({
+        seq: e.seq, authorId: e.authorId, authorName: e.authorName, at: e.at, body: e.body,
+        whenLabel: DateTime.fromISO(e.at, { zone: 'utc' }).setZone(tz).toFormat('MMM d, h:mm a'),
+      })) } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/handover-notes', action: 'message',
+    handler: async (c, q) => {
+      // Real guard, not just relying on the RLS backstop: message_log's own
+      // log_no_child policy (0006_court_tier.sql) would correctly refuse a
+      // child-role write at the DB layer too (current_role_name() IS
+      // DISTINCT FROM 'child' — FORCE RLS, no owner bypass), but a clear
+      // 403 here is a better failure mode than letting a request reach a
+      // raw Postgres permission error. A child session passes the outer
+      // action:'message' capability check (can()'s own real behavior for a
+      // child principal — see this file's own precedent at the presence
+      // route above), so this cannot be left to the outer gate alone.
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_the_childs_channel' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const body = typeof c.body?.body === 'string' ? c.body.body.trim() : '';
+      if (!body) return { status: 400, body: { error: 'empty_body' } };
+      const entry = await appendHandoverNote(
+        pool, c.principal.roleName, c.principal.userId, c.childId, body);
+      // whenLabel here too, same reasoning as the GET handler just above --
+      // a caller that just posted needs a real display label for the entry
+      // it immediately renders, and this route is the ONLY place that entry
+      // exists yet (a client that instead re-fetched the whole list just to
+      // get a label would trade one honest round trip for two, and would
+      // flash the loading state across the entries this guardian can
+      // already see). Duplicated rather than shared with GET's own block --
+      // matches this file's own stated convention for this exact query
+      // (see the GET handler's comment just above).
+      let tz;
+      {
+        const interval = await q(
+          `SELECT tz FROM child_tz_interval
+            WHERE child_id = $1 AND valid @> now()
+            ORDER BY confidence DESC LIMIT 1`,
+          [c.childId],
+        );
+        tz = interval[0]?.tz;
+        if (!tz) {
+          const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
+          tz = child[0]?.home_tz ?? 'UTC';
+        }
+      }
+      return { status: 201, body: {
+        ok: true, seq: entry.seq, authorId: entry.authorId, at: entry.at, body: entry.body,
+        whenLabel: DateTime.fromISO(entry.at, { zone: 'utc' }).setZone(tz).toFormat('MMM d, h:mm a'),
+      } };
     },
   });
 
