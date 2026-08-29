@@ -183,7 +183,9 @@ class ChildHome extends StatelessWidget {
               builder: (_) => ShowcaseScreen(childName: childName)))),
           _Tile(icon: Icons.more_horiz, label: 'More for you',
             onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => ChildMoreScreen(childName: childName)))),
+              builder: (_) => ChildMoreScreen(childName: childName,
+                baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                httpClient: httpClient)))),
         ]),
       if (sleepsUntilHandover != null) ...[
         const SizedBox(height: 12),

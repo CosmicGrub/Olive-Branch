@@ -2,6 +2,8 @@ import pg from "pg";
 import { DateTime } from "luxon";
 import { newChallenge, verifyPin } from "../../auth/src/auth.ts";
 import { can } from "../../family-graph/src/authorize.ts";
+import { writeCareNote } from "../../guardian/src/guardian.ts";
+import { MIN_SEAL_YEARS, MAX_SEAL_TO_AGE } from "../../maturation/src/maturation.ts";
 import {
   verifyChain,
   certify,
@@ -1292,6 +1294,146 @@ async function recordExchangeArrival(pool, actorRole, actorUserId, childId, nowL
     } };
   });
 }
+async function careNotesFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT c.id, c.from_user_id, u.display_name AS from_user_name, c.items,
+              to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+              to_char(c.expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at
+         FROM care_note c JOIN app_user u ON u.id = c.from_user_id
+        WHERE c.child_id = $1 AND c.expires_at > now()
+        ORDER BY c.created_at DESC`,
+      [childId]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      fromUserId: r.from_user_id,
+      fromUserName: r.from_user_name,
+      items: r.items,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at
+    }));
+  });
+}
+async function writeCareNoteRow(pool, actorRole, actorUserId, childId, items) {
+  const nowIso = DateTime.utc().toISO();
+  const result = writeCareNote("pending", childId, actorUserId, items, nowIso);
+  if (!result.ok) return result;
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO care_note (child_id, from_user_id, items, created_at, expires_at)
+       VALUES ($1, $2, $3::jsonb, $4, $5)
+       RETURNING id, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+                 to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at`,
+      [childId, actorUserId, JSON.stringify(result.note.items), nowIso, result.note.expiresAt]
+    );
+    const r = rows[0];
+    return { ok: true, entry: {
+      id: r.id,
+      fromUserId: actorUserId,
+      fromUserName: "",
+      items: result.note.items,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at
+    } };
+  });
+}
+async function lettersFor(pool, childId) {
+  return withSession(pool, { roleName: "child", userId: null, childId }, async (q) => {
+    const rows = await q(
+      `SELECT id, written_at_age, open_at_age,
+              to_char(written_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS written_at,
+              to_char(opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS opened_at,
+              CASE WHEN opened_at IS NOT NULL THEN body ELSE NULL END AS body
+         FROM letter WHERE child_id = $1
+        ORDER BY written_at ASC`,
+      [childId]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      writtenAtAge: r.written_at_age,
+      openAtAge: r.open_at_age,
+      writtenAt: r.written_at,
+      openedAt: r.opened_at,
+      body: r.body
+    }));
+  });
+}
+async function sealLetterRow(pool, childId, openAtAge, body, childLocalDate) {
+  return withSession(pool, { roleName: "child", userId: null, childId }, async (q) => {
+    const childRows = await q(
+      `SELECT EXTRACT(YEAR FROM age($2::date, birth_date))::int AS current_age
+         FROM child WHERE id = $1`,
+      [childId, childLocalDate]
+    );
+    if (!childRows.length) return { ok: false, reason: "child_not_found" };
+    const writtenAtAge = Number(childRows[0].current_age);
+    if (openAtAge - writtenAtAge < MIN_SEAL_YEARS) return { ok: false, reason: "too_soon" };
+    if (openAtAge > MAX_SEAL_TO_AGE) return { ok: false, reason: "too_far" };
+    const rows = await q(
+      `INSERT INTO letter (child_id, written_at_age, open_at_age, body)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, written_at_age, open_at_age,
+                 to_char(written_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS written_at`,
+      [childId, writtenAtAge, openAtAge, body]
+    );
+    const r = rows[0];
+    return { ok: true, letter: {
+      id: r.id,
+      writtenAtAge: r.written_at_age,
+      openAtAge: r.open_at_age,
+      writtenAt: r.written_at,
+      openedAt: null,
+      body: null
+    } };
+  });
+}
+async function openLetterRow(pool, childId, letterId, childLocalDate) {
+  return withSession(pool, { roleName: "child", userId: null, childId }, async (q) => {
+    const existing = await q(
+      `SELECT l.id, l.open_at_age, l.opened_at,
+              EXTRACT(YEAR FROM age($3::date, c.birth_date))::int AS current_age
+         FROM letter l JOIN child c ON c.id = l.child_id
+        WHERE l.id = $1 AND l.child_id = $2`,
+      [letterId, childId, childLocalDate]
+    );
+    if (!existing.length) return { ok: false, reason: "not_found" };
+    const row = existing[0];
+    if (row.opened_at) return { ok: false, reason: "already_open" };
+    const currentAge = Number(row.current_age);
+    if (currentAge < row.open_at_age) {
+      return { ok: false, reason: "not_yet", yearsLeft: row.open_at_age - currentAge };
+    }
+    const rows = await q(
+      `UPDATE letter SET opened_at = now()
+        WHERE id = $1 AND child_id = $2 AND opened_at IS NULL
+       RETURNING id, written_at_age, open_at_age,
+                 to_char(written_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS written_at,
+                 to_char(opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS opened_at,
+                 body`,
+      [letterId, childId]
+    );
+    if (!rows.length) return { ok: false, reason: "already_open" };
+    const r = rows[0];
+    return { ok: true, letter: {
+      id: r.id,
+      writtenAtAge: r.written_at_age,
+      openAtAge: r.open_at_age,
+      writtenAt: r.written_at,
+      openedAt: r.opened_at,
+      body: r.body
+    } };
+  });
+}
+async function deleteLetterRow(pool, childId, letterId) {
+  return withSession(pool, { roleName: "child", userId: null, childId }, async (q) => {
+    const rows = await q(
+      `DELETE FROM letter WHERE id = $1 AND child_id = $2 RETURNING id`,
+      [letterId, childId]
+    );
+    return rows.length > 0;
+  });
+}
 async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__PURE__ */ new Date()) {
   const edges = await edgesFor(pool, requestedBy);
   const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
@@ -1460,6 +1602,7 @@ export {
   availabilityFor,
   bagItemsFor,
   bootstrapGuardianInvite,
+  careNotesFor,
   certifiedExportBundleFor,
   childCtxFor,
   consumeChallenge,
@@ -1468,6 +1611,7 @@ export {
   createPool,
   dbPort,
   deactivateAccount,
+  deleteLetterRow,
   deviceTokensFor,
   dosesForDate,
   edgesFor,
@@ -1475,10 +1619,12 @@ export {
   getGuardianInvite,
   guardiansOfChild,
   handoverNotesFor,
+  lettersFor,
   logRunningLate,
   mediaArtifactFor,
   medicalRecordFor,
   medicationsFor,
+  openLetterRow,
   parentGuardiansOfChild,
   persistCapturedMessage,
   pinCredentialFor,
@@ -1494,6 +1640,7 @@ export {
   resolveExpense,
   revokeGuardianInvite,
   runningLateLogFor,
+  sealLetterRow,
   setAvailabilityWindows,
   setBagItemStatus,
   setChildTheme,
@@ -1507,5 +1654,6 @@ export {
   webauthnCredentialById,
   webauthnCredentialsForUser,
   withSession,
-  withSystemSession
+  withSystemSession,
+  writeCareNoteRow
 };

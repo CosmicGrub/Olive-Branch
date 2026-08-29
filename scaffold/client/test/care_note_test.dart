@@ -4,8 +4,11 @@
 // a care note is not evidence (7-day TTL, never in the court log), and the
 // child never sees it. The tone guard is enforced BEFORE a note is created
 // — a rejected note must never enter the sent list at all.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/care_note.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -181,6 +184,98 @@ void main() {
       expect(find.byKey(const Key('careNoteTwoPaneRow')), findsOneWidget);
       expect(find.text('Wide-pane care note.'), findsOneWidget);
       expect(t.takeException(), isNull);
+    });
+  });
+
+  group('live wiring — the real care-note route '
+      '(server/routes.mjs, packages/db/src/pool.ts careNotesFor/writeCareNoteRow)', () {
+    testWidgets('shows a loading indicator, then real fetched notes replace '
+        'the empty demo start', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/care-notes')) {
+          return http.Response(jsonEncode({'entries': [
+            {'id': 'n1', 'fromUserId': 'dad-1', 'fromUserName': 'Dad',
+             'items': [{'kind': 'mood', 'note': 'Real note from the real server.'}],
+             'createdAt': '2026-08-04T08:00:00.000Z', 'expiresAt': '2026-08-11T08:00:00.000Z'},
+          ]}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await t.pumpWidget(wrap(CareNoteScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock)));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await t.pumpAndSettle();
+
+      expect(find.text('Real note from the real server.'), findsOneWidget);
+    });
+
+    testWidgets('sending a note POSTs to the real route and appends the real response',
+        (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'n2', 'items': [{'kind': 'mood', 'note': 'A real morning note.'}],
+            'createdAt': '2026-08-04T09:00:00.000Z', 'expiresAt': '2026-08-11T09:00:00.000Z',
+          }), 201);
+        }
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await t.pumpWidget(wrap(CareNoteScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField), 'A real morning note.');
+      await t.tap(find.text('Send note'));
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(posts.single.url.path, '/v1/children/child-a/care-notes');
+      expect(jsonDecode(posts.single.body), {
+        'items': [{'kind': 'mood', 'note': 'A real morning note.'}],
+      });
+      expect(find.text('A real morning note.'), findsOneWidget);
+    });
+
+    testWidgets('a real 400 accusatory response is decoded into the same guidance '
+        'banner text the demo path already renders', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          return http.Response(jsonEncode({'error': 'accusatory', 'found': ['you always']}), 400);
+        }
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await t.pumpWidget(wrap(CareNoteScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField), 'You always do this.');
+      await t.tap(find.text('Send note'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('without "you always"'), findsOneWidget);
+      // Same proof the demo-path test above uses: the sent list is only
+      // ever populated by _NoteTile, which always wraps in a Card, so zero
+      // Cards here proves the rejected note never joined it.
+      expect(find.byType(Card), findsNothing);
+    });
+
+    testWidgets('with no live params supplied, the demo fixtures render exactly '
+        'as before — no network call, no loading state', (t) async {
+      await t.pumpWidget(wrap(const CareNoteScreen()));
+      await t.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Send note'), findsOneWidget);
     });
   });
 }

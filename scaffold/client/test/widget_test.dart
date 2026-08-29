@@ -58,6 +58,7 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(tile));
     await tester.tap(find.text(tile));
     await tester.pumpAndSettle();
     expect(find.textContaining(expectedText), findsOneWidget,
@@ -75,6 +76,10 @@ void main() {
   testWidgets('GuardianHome Handover notes tile reaches the real screen',
       (WidgetTester tester) => expectGuardianTileReaches(
         tester, 'Handover notes', "can't be edited or removed"));
+
+  testWidgets('GuardianHome Care note tile reaches the real screen',
+      (WidgetTester tester) =>
+        expectGuardianTileReaches(tester, 'Care note', 'Not evidence'));
 
   // CallScreen's initState kicks off a real (async) fetch to the room-
   // coordination server via dart:io HttpClient. flutter_test stubs every

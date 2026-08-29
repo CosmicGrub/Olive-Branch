@@ -7,9 +7,13 @@
 // child-facing screen, and the hub itself holds up across every width
 // MASTERFILE mandates testing — including the Fold5's 344px cover screen,
 // the narrowest surface this app supports.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/child_more.dart';
+import 'package:olive_client/letters_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
@@ -40,6 +44,42 @@ void main() {
       await t.tap(find.text('My journal'));
       await t.pumpAndSettle();
       expect(find.textContaining('Ivy'), findsWidgets);
+    });
+  });
+
+  group('live wiring — baseUrl/childId/sessionToken/httpClient thread through '
+      'to LettersScreen (the first live-wiring this hub has ever carried)', () {
+    testWidgets('Letters to me reaches the real LettersScreen and fetches with '
+        'the passed session — no devLoginFor() call', (t) async {
+      bool fetchedLetters = false;
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path.endsWith('/letters')) {
+          fetchedLetters = true;
+          expect(req.url.path, '/v1/children/real-child-1/letters');
+          expect(req.headers['authorization'], 'Bearer real-token-1');
+          return http.Response(jsonEncode({'letters': <dynamic>[]}), 200);
+        }
+        // A call to dev-login here would mean this screen minted its OWN
+        // session instead of reusing the one passed in — a real regression.
+        return http.Response('not found', 404);
+      });
+      await t.pumpWidget(wrap(ChildMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', childId: 'real-child-1', sessionToken: 'real-token-1',
+        httpClient: mock)));
+      await t.tap(find.text('Letters to me'));
+      await t.pumpAndSettle();
+
+      expect(find.byType(LettersScreen), findsOneWidget);
+      expect(fetchedLetters, isTrue);
+    });
+
+    testWidgets('with no live params supplied, Letters to me still opens its '
+        'demo fixtures — no network call, no loading state', (t) async {
+      await t.pumpWidget(wrap(const ChildMoreScreen(childName: 'Ivy', childAge: 9)));
+      await t.tap(find.text('Letters to me'));
+      await t.pumpAndSettle();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('No letters yet. Write one whenever you feel like it.'), findsOneWidget);
     });
   });
 

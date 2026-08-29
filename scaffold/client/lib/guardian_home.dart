@@ -182,7 +182,9 @@ class GuardianHome extends StatelessWidget {
                   builder: (_) => const MorningBriefingScreen()))),
               _GTile(icon: Icons.favorite_border, label: 'Care note',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => CareNoteScreen(childName: childName)))),
+                  builder: (_) => CareNoteScreen(childName: childName,
+                    baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+                    httpClient: availabilityHttpClient)))),
               _GTile(icon: Icons.more_horiz, label: 'More',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => GuardianMoreScreen(childName: childName,

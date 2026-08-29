@@ -185,6 +185,20 @@ class OliveApi {
   static const exchangeBagItemStatus = '/v1/children/:childId/exchange/bag-items/:itemId';
   static const exchangeRunningLate = '/v1/children/:childId/exchange/running-late';
   static const exchangeArrival = '/v1/children/:childId/exchange/arrival';
+  // --- care notes (§12.5) -- real for the first time as of this pass, same
+  // audit/pass that closed [handoverNotes]/[expenses]/[medications]/the
+  // exchange above.
+  static const careNotes = '/v1/children/:childId/care-notes';
+  // --- letters to her future self (§21.4, §21.8) -- real for the first
+  // time as of this pass. The ONE child-owned, guardian-excluded surface in
+  // this whole client -- see letters_screen.dart's own file header and
+  // server/routes.mjs's route-registration comment for the full account.
+  static const letters = '/v1/children/:childId/letters';
+  // Two path params, not one -- same reasoning [messageMedia]'s own doc
+  // comment gives for why this is pre-substituted rather than going through
+  // [_post]'s single-`:childId` substitution the way [letters] above does.
+  static const letterOpen = '/v1/children/:childId/letters/:letterId/open';
+  static const letterDelete = '/v1/children/:childId/letters/:letterId';
 
   // --- guarded by escalation (§8.3) --------------------------------------
   static const settings = '/v1/children/:childId/settings';
@@ -645,6 +659,101 @@ class OliveApi {
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 201 || res.statusCode == 409) return body;
     throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+
+  /// `{entries: [{id, fromUserId, fromUserName, items: [{kind, note}, ...],
+  /// createdAt, expiresAt}, ...]}`, newest first, NOT-YET-EXPIRED only --
+  /// GET [careNotes], server/routes.mjs's real handler (careNotesFor(),
+  /// packages/db/src/pool.ts). Throws [ApiException] on any non-2xx
+  /// response -- notably 403 `not_a_child_surface` for a child session
+  /// (care_note.dart's own file header: "the child never sees it").
+  Future<Map<String, dynamic>> fetchCareNotes(String childId) =>
+      _get(careNotes, childId: childId);
+
+  /// Writes ONE real care note -- POST [careNotes], server/routes.mjs's
+  /// real handler (writeCareNoteRow(), packages/db/src/pool.ts). The real
+  /// tone guard (packages/guardian/src/guardian.ts's CARE_NOTE_BANNED) runs
+  /// server-side before the row is ever written -- a 400 `accusatory`
+  /// response (`{error, found}`) is a normal, expected outcome here, not a
+  /// bug, so this decodes and returns that body directly instead of
+  /// throwing, mirroring [recordMedicationDose]'s own posture for its own
+  /// normal-but-non-2xx outcome. `items` is always exactly the one
+  /// `{kind, note}` pair this client's own one real call site sends
+  /// (care_note.dart never batches).
+  Future<Map<String, dynamic>> writeCareNote(String childId, String kind, String note) async {
+    final res = await _client.post(
+      _uri(careNotes, childId),
+      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      body: jsonEncode({
+        'items': [
+          {'kind': kind, 'note': note},
+        ],
+      }),
+    );
+    final body =
+        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 201 || res.statusCode == 400) return body;
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+
+  /// `{letters: [{id, writtenAtAge, openAtAge, writtenAt, openedAt,
+  /// body}, ...]}`, oldest first -- GET [letters], server/routes.mjs's real
+  /// handler (lettersFor(), packages/db/src/pool.ts). `body` is real,
+  /// decoded text ONLY for a letter whose `openedAt` is non-null -- the
+  /// server never sends it earlier, structurally, regardless of how old she
+  /// really is (see that route's own comment for why age alone never
+  /// reveals it). Throws [ApiException] on any non-2xx response -- notably
+  /// 403 `not_a_guardian_surface` for anyone who is not the owning child
+  /// (letters_screen.dart's own file header: no guardian code path exists
+  /// here at all).
+  Future<Map<String, dynamic>> fetchLetters(String childId) =>
+      _get(letters, childId: childId);
+
+  /// Seals ONE real letter -- POST [letters], server/routes.mjs's real
+  /// handler (sealLetterRow(), packages/db/src/pool.ts). `writtenAtAge` is
+  /// NEVER sent by this client -- the server computes it from her real
+  /// `birth_date`, never trusted from here. Returns the created row
+  /// verbatim (`openedAt` always `null`, `body` omitted -- a just-sealed
+  /// letter is never immediately readable). Throws [ApiException] on any
+  /// non-2xx response -- notably 400 `too_soon`/`too_far` if [openAtAge]
+  /// somehow violates MIN_SEAL_YEARS/MAX_SEAL_TO_AGE despite this screen's
+  /// own `_availableAges` already filtering to valid choices.
+  Future<Map<String, dynamic>> sealLetter(String childId, String body, int openAtAge) =>
+      _post(letters, {'body': body, 'openAtAge': openAtAge}, childId: childId);
+
+  /// Opens ONE real letter -- POST [letterOpen], server/routes.mjs's real
+  /// handler (openLetterRow(), packages/db/src/pool.ts). Takes no age
+  /// parameter at all -- structurally nothing here for a caller to lie
+  /// about; the server computes her real current age itself. A 409
+  /// `not_yet`/`already_open` response (`{error, yearsLeft}`) is a normal,
+  /// honest outcome -- this decodes and returns that body directly instead
+  /// of throwing, same posture as [writeCareNote]'s own 400 handling above.
+  /// A real 200 carries the real `body` text for the first time. Throws
+  /// [ApiException] only for a genuinely unexpected status, notably 404
+  /// `letter_not_found`.
+  Future<Map<String, dynamic>> openLetter(String childId, String letterId) async {
+    final res = await _client.post(
+      _uri(letterOpen.replaceFirst(':childId', childId).replaceFirst(':letterId', letterId)),
+      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      body: jsonEncode(const {}),
+    );
+    final body =
+        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 200 || res.statusCode == 409) return body;
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+
+  /// Deletes ONE real letter, read or not -- DELETE [letterDelete],
+  /// server/routes.mjs's real handler (deleteLetterRow(), packages/db/src/
+  /// pool.ts). §2.10 -- it is hers; delete without ever having read it is
+  /// the one early exit this class offers on a letter, read never is.
+  /// Returns `true` once the real row is gone. Throws [ApiException] on any
+  /// non-2xx response -- notably 404 `letter_not_found` for a wrong or
+  /// already-deleted id.
+  Future<bool> deleteLetter(String childId, String letterId) async {
+    final path = letterDelete.replaceFirst(':childId', childId).replaceFirst(':letterId', letterId);
+    final body = await _delete(path, const {});
+    return body['deleted'] as bool? ?? true;
   }
 
   /// Checks [pin] against every LIVE guardian of [childId] -- POST
