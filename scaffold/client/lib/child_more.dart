@@ -8,7 +8,15 @@
 // "every new screen must be reachable" holds without crowding her home
 // screen. No settings affordance lives here either — every entry below
 // pushes a real, named destination, matching child_home.dart's own rule.
+//
+// baseUrl/childId/sessionToken/httpClient (optional and additive): reused
+// unchanged from child_home.dart's own already-authenticated session
+// (child_home_live.dart's own `_load()`), threaded through to
+// LettersScreen — the first live-wiring this hub has ever carried. See
+// letters_screen.dart's own file header for why that screen reuses this
+// session directly rather than minting its own via devLoginFor().
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'collection_screen.dart';
 import 'colour_daily.dart';
 import 'colouring_screen.dart';
@@ -28,9 +36,21 @@ import 'teach_me.dart';
 import 'weeks_screen.dart';
 
 class ChildMoreScreen extends StatelessWidget {
-  const ChildMoreScreen({super.key, this.childName = 'Ivy', this.childAge = 9});
+  const ChildMoreScreen({
+    super.key,
+    this.childName = 'Ivy',
+    this.childAge = 9,
+    this.baseUrl,
+    this.childId,
+    this.sessionToken,
+    this.httpClient,
+  });
   final String childName;
   final int childAge;
+  final String? baseUrl;
+  final String? childId;
+  final String? sessionToken;
+  final http.Client? httpClient;
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -47,7 +67,9 @@ class ChildMoreScreen extends StatelessWidget {
             onTap: () => _open(context, JournalScreen(childName: childName))),
           HubTile(icon: Icons.markunread_mailbox_outlined, title: 'Letters to me',
             subtitle: 'Write one now, open it when you are older',
-            onTap: () => _open(context, LettersScreen(childName: childName, currentAge: childAge))),
+            onTap: () => _open(context, LettersScreen(childName: childName, currentAge: childAge,
+              childId: childId ?? 'demo-child',
+              baseUrl: baseUrl, sessionToken: sessionToken, httpClient: httpClient))),
           HubTile(icon: Icons.timeline_outlined, title: 'Growing up',
             subtitle: 'What you get to do next, and when',
             onTap: () => _open(context, MaturationLadderScreen(

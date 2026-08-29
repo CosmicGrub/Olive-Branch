@@ -3,8 +3,11 @@
 // The invariant that matters most: a sealed letter's content never renders
 // anywhere until it is both due AND explicitly opened — not early, and not
 // merely because the current age caught up to the open age.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/letters_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -283,6 +286,144 @@ void main() {
       expect(find.textContaining("Sealed until you're 18"), findsOneWidget);
       expect(find.text('Dear future me, hello from the wide layout.'), findsNothing);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('live wiring — the real letter route (server/routes.mjs, '
+      'packages/db/src/pool.ts lettersFor/sealLetterRow/openLetterRow/deleteLetterRow)', () {
+    testWidgets('shows a loading indicator, then real fetched letters replace the '
+        'empty demo start — an unopened letter\'s real body never renders', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path.endsWith('/letters')) {
+          return http.Response(jsonEncode({'letters': [
+            {'id': 'l1', 'writtenAtAge': 11, 'openAtAge': 18,
+             'writtenAt': '2026-08-04T00:00:00.000Z', 'openedAt': null, 'body': null},
+          ]}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await t.pumpWidget(wrap(LettersScreen(childName: 'Maya', currentAge: 11,
+        childId: 'child-a', baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock)));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await t.pumpAndSettle();
+
+      expect(find.textContaining("Sealed until you're 18"), findsOneWidget);
+      // No devLoginFor() call anywhere here — this screen reuses the
+      // passed-in sessionToken directly (see file header); a request to
+      // /v1/auth/dev-login would 404 against this MockClient and fail the
+      // load, so a successful load itself proves that path was never hit.
+    });
+
+    testWidgets('sealing POSTs to the real route and never sends writtenAtAge', (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.method == 'POST' && req.url.path.endsWith('/letters')) {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'l2', 'writtenAtAge': 11, 'openAtAge': 18,
+            'writtenAt': '2026-08-04T00:00:00.000Z', 'openedAt': null,
+          }), 201);
+        }
+        return http.Response(jsonEncode({'letters': <dynamic>[]}), 200);
+      });
+      await t.pumpWidget(wrap(LettersScreen(childName: 'Maya', currentAge: 11,
+        childId: 'child-a', baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField), 'Dear future me, a real seal.');
+      await t.pump();
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Seal it'));
+      await t.tap(find.widgetWithText(FilledButton, 'Seal it'));
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(jsonDecode(posts.single.body),
+        {'body': 'Dear future me, a real seal.', 'openAtAge': 18});
+      expect(find.textContaining("Sealed until you're 18"), findsOneWidget);
+    });
+
+    testWidgets('opening a real due letter reveals the real server-sent body', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.method == 'POST' && req.url.path.endsWith('/open')) {
+          return http.Response(jsonEncode({
+            'id': 'l3', 'writtenAtAge': 9, 'openAtAge': 12,
+            'writtenAt': '2023-01-01T00:00:00.000Z',
+            'openedAt': '2026-08-04T00:00:00.000Z',
+            'body': 'The real, server-revealed text.',
+          }), 200);
+        }
+        return http.Response(jsonEncode({'letters': [
+          {'id': 'l3', 'writtenAtAge': 9, 'openAtAge': 12,
+           'writtenAt': '2023-01-01T00:00:00.000Z', 'openedAt': null, 'body': null},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(LettersScreen(childName: 'Maya', currentAge: 12,
+        childId: 'child-a', baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      expect(find.text('Open it'), findsOneWidget);
+      await t.tap(find.text('Open it'));
+      await t.pumpAndSettle();
+
+      expect(find.text('The real, server-revealed text.'), findsOneWidget);
+    });
+
+    testWidgets('a real 409 not_yet response shows an honest message, never a '
+        'fabricated open', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.method == 'POST' && req.url.path.endsWith('/open')) {
+          return http.Response(jsonEncode({'error': 'not_yet', 'yearsLeft': 3}), 409);
+        }
+        return http.Response(jsonEncode({'letters': [
+          {'id': 'l4', 'writtenAtAge': 9, 'openAtAge': 15,
+           'writtenAt': '2023-01-01T00:00:00.000Z', 'openedAt': null, 'body': null},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(LettersScreen(childName: 'Maya', currentAge: 15,
+        childId: 'child-a', baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Open it'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('Not quite yet'), findsOneWidget);
+      expect(find.textContaining('3 more year'), findsOneWidget);
+    });
+
+    testWidgets('deleting DELETEs the real route and removes it from the real list',
+        (t) async {
+      final List<http.Request> deletes = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.method == 'DELETE') {
+          deletes.add(req);
+          return http.Response(jsonEncode({'deleted': true}), 200);
+        }
+        return http.Response(jsonEncode({'letters': [
+          {'id': 'l5', 'writtenAtAge': 9, 'openAtAge': 18,
+           'writtenAt': '2023-01-01T00:00:00.000Z', 'openedAt': null, 'body': null},
+        ]}), 200);
+      });
+      await t.pumpWidget(wrap(LettersScreen(childName: 'Maya', currentAge: 11,
+        childId: 'child-a', baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining("Sealed until you're 18"), findsOneWidget);
+      await t.tap(find.byIcon(Icons.delete_outline));
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(FilledButton, 'Delete it'));
+      await t.pumpAndSettle();
+
+      expect(deletes, hasLength(1));
+      expect(deletes.single.url.path, '/v1/children/child-a/letters/l5');
+      expect(find.textContaining("Sealed until you're 18"), findsNothing);
+    });
+
+    testWidgets('with no live params supplied, the demo fixtures render exactly '
+        'as before — no network call, no loading state', (t) async {
+      await t.pumpWidget(wrap(const LettersScreen(childName: 'Maya', currentAge: 11)));
+      await t.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('No letters yet. Write one whenever you feel like it.'), findsOneWidget);
     });
   });
 }

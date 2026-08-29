@@ -31,6 +31,8 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          medicationsFor, dosesForDate, recordDose, medicalRecordFor, setMedicalRecord,
          bagItemsFor, setBagItemStatus, runningLateLogFor, logRunningLate,
          arrivalEventFor, recordExchangeArrival,
+         careNotesFor, writeCareNoteRow,
+         lettersFor, sealLetterRow, openLetterRow, deleteLetterRow,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -2026,6 +2028,162 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         return { status: 409, body: { error: result.error } };
       }
       return { status: 201, body: result.event };
+    },
+  });
+
+  // GET/POST .../care-notes — real for the first time, same
+  // coordination-layer audit that closed the handover log, expenses,
+  // medications/emergency-card, and the exchange. care_note.dart's own
+  // writeCareNote()/CARE_NOTE_TTL_DAYS/CARE_NOTE_BANNED are a real,
+  // already-tested pure port of packages/guardian/src/guardian.ts's §12.5
+  // section, reused directly here (writeCareNoteRow(), packages/db/src/
+  // pool.ts) rather than re-implemented — the tone guard runs BEFORE a row
+  // is ever written, matching that file's own "enforced before a note is
+  // ever created" posture.
+  //
+  // `care_note.view`/`care_note.write` are new Actions
+  // (family-graph/src/authorize.ts) — guardian-only routes, same
+  // explicit-child-guard requirement as every other coordination route in
+  // this file: the outer gate only auto-refuses a child for P6/P7, and
+  // care_note.view/write are neither.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/care-notes', action: 'care_note.view',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const entries = await careNotesFor(pool, c.childId);
+      return { body: { entries } };
+    },
+  });
+
+  const CARE_KINDS = new Set(['sleep', 'appetite', 'mood', 'health', 'school', 'social', 'other']);
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/care-notes', action: 'care_note.write',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const rawItems = Array.isArray(c.body?.items) ? c.body.items : null;
+      if (!rawItems || !rawItems.length) return { status: 400, body: { error: 'items_required' } };
+      const items = [];
+      for (const it of rawItems) {
+        const kind = it?.kind;
+        const note = typeof it?.note === 'string' ? it.note : '';
+        if (!CARE_KINDS.has(kind)) return { status: 400, body: { error: 'bad_kind' } };
+        items.push({ kind, note });
+      }
+      const result = await writeCareNoteRow(
+        pool, c.principal.roleName, c.principal.userId, c.childId, items);
+      if (!result.ok) {
+        // Same §9.6.1-style "name the reason, nothing else" posture every
+        // other real rejection in this file already has -- 'found' names
+        // WHICH banned phrase, never a rewritten/sanitized version of her text.
+        return { status: 400, body: { error: result.reason, found: result.found } };
+      }
+      return { status: 201, body: {
+        id: result.entry.id, items: result.entry.items,
+        createdAt: result.entry.createdAt, expiresAt: result.entry.expiresAt,
+      } };
+    },
+  });
+
+  // GET/POST .../letters, POST .../letters/:letterId/open,
+  // DELETE .../letters/:letterId — real for the first time, same
+  // coordination-layer audit. letters_screen.dart's own sealLetter()/
+  // openLetter()/deleteLetter()/lettersDue() are a real, already-tested
+  // pure port of packages/maturation/src/maturation.ts's §21.4/§21.8
+  // section -- see db/migrations/0028's own header, and pool.ts's own
+  // LetterMeta/sealLetterRow/openLetterRow/deleteLetterRow doc comments,
+  // for the full account of what is and is not reused verbatim.
+  //
+  // `letter` is a new Action deliberately listed in NO role's ROLE_CAPS
+  // (family-graph/src/authorize.ts) -- structurally unreachable via any
+  // guardian edge. Every route below still carries its own explicit
+  // `roleName !== 'child'` guard anyway, the INVERSE of every other
+  // coordination route in this file (which excludes the child) -- this is
+  // the one child-owned, guardian-excluded feature in this whole file, and
+  // the guard reads that way on purpose. `letter_owner_only` (0028) is the
+  // real backstop underneath even this: a bug in this route-level check
+  // would still be caught at the RLS layer, the same "second lock, not the
+  // only one" posture authorize.ts's own file header describes.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/letters', action: 'letter',
+    handler: async (c) => {
+      if (c.principal.roleName !== 'child') {
+        return { status: 403, body: { error: 'not_a_guardian_surface' } };
+      }
+      const letters = await lettersFor(pool, c.childId);
+      return { body: { letters } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/letters', action: 'letter',
+    handler: async (c, q) => {
+      if (c.principal.roleName !== 'child') {
+        return { status: 403, body: { error: 'not_a_guardian_surface' } };
+      }
+      const body = typeof c.body?.body === 'string' ? c.body.body.trim() : '';
+      const openAtAge = c.body?.openAtAge;
+      if (!body) return { status: 400, body: { error: 'body_required' } };
+      if (typeof openAtAge !== 'number' || !Number.isInteger(openAtAge)) {
+        return { status: 400, body: { error: 'open_at_age_required' } };
+      }
+      const localDate = await resolveChildLocalDate(q, c.childId);
+      const result = await sealLetterRow(pool, c.childId, openAtAge, body, localDate);
+      if (!result.ok) {
+        // Honest refusal, real reasons — 'child_not_found' is only
+        // reachable if the session's own childId somehow names no real row
+        // (defensive; the outer gate already validated a real edge/identity).
+        return { status: 400, body: { error: result.reason } };
+      }
+      return { status: 201, body: {
+        id: result.letter.id, writtenAtAge: result.letter.writtenAtAge,
+        openAtAge: result.letter.openAtAge, writtenAt: result.letter.writtenAt,
+        openedAt: null,
+      } };
+    },
+  });
+
+  api.register({
+    // §21.4's real invariant: NOBODY can open a sealed letter early, not
+    // even her. currentAge is computed server-side inside openLetterRow()
+    // itself from her real birth_date -- this route never reads an age off
+    // the request at all, structurally, so there is nothing here a future
+    // edit could even try to trust from the client.
+    method: 'POST', path: '/v1/children/:childId/letters/:letterId/open', action: 'letter',
+    handler: async (c, q) => {
+      if (c.principal.roleName !== 'child') {
+        return { status: 403, body: { error: 'not_a_guardian_surface' } };
+      }
+      const localDate = await resolveChildLocalDate(q, c.childId);
+      const result = await openLetterRow(pool, c.childId, c.params.letterId, localDate);
+      if (!result.ok) {
+        if (result.reason === 'not_found') return { status: 404, body: { error: 'letter_not_found' } };
+        return { status: 409, body: { error: result.reason, yearsLeft: result.yearsLeft } };
+      }
+      return { body: {
+        id: result.letter.id, writtenAtAge: result.letter.writtenAtAge,
+        openAtAge: result.letter.openAtAge, writtenAt: result.letter.writtenAt,
+        openedAt: result.letter.openedAt, body: result.letter.body,
+      } };
+    },
+  });
+
+  api.register({
+    // §2.10 — she can delete without ever having read it; it is hers. The
+    // only early exit this file ever offers on a letter — read never is.
+    method: 'DELETE', path: '/v1/children/:childId/letters/:letterId', action: 'letter',
+    handler: async (c) => {
+      if (c.principal.roleName !== 'child') {
+        return { status: 403, body: { error: 'not_a_guardian_surface' } };
+      }
+      const deleted = await deleteLetterRow(pool, c.childId, c.params.letterId);
+      if (!deleted) return { status: 404, body: { error: 'letter_not_found' } };
+      return { body: { deleted: true } };
     },
   });
 

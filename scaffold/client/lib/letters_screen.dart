@@ -18,12 +18,42 @@
 //   - She CAN delete a letter without ever having read it — it is hers
 //     (§2.10) — but delete is the only early exit; read never is.
 //
-// One deliberate adaptation from the TS shape: the real backend stores a
-// letter's text in a separate media_artifact row referenced by `artifactId`.
-// This demo has no artifact store, so the letter's body text is carried
-// directly on the Dart Letter object instead — an honest simplification for
-// a screen with no backend yet, not a silent behavior change.
+// One deliberate adaptation from the TS shape: the REAL backend
+// (db/migrations/0028_care_note_letter.sql) stores `body` directly on the
+// `letter` table rather than routing it through `media_artifact` the way
+// maturation.ts's own `Letter.artifactId` field speculates — that table's
+// retention/preservation model assumes a guardian explicitly preserves
+// something that would otherwise expire, and a letter has no guardian
+// preserver and is never on a retention clock at all ("It gets kept
+// forever," this screen's own copy). See that migration's own header for
+// the full account. `Letter.body` below is nullable for exactly this
+// reason: the server never sends real text for a letter this session
+// hasn't opened, structurally, so `null` here is an honest "not fetched
+// yet," never a placeholder.
+//
+// LIVE WIRING (baseUrl/sessionToken/httpClient, optional and additive):
+// reached through child_home.dart -> child_more.dart, both of which
+// already carry these three from ONE real child login
+// (child_home_live.dart's own `_load()`) — this screen reuses that
+// already-authenticated session directly rather than minting its own via
+// devLoginFor(), the same established pattern homework_screen.dart/
+// capture_gate.dart already use for a live screen reached through this
+// exact chain. There is no guardianId anywhere in this wiring, matching
+// this file's own "no guardian code path" invariant. When supplied, this
+// screen fetches her real letters via OliveApi.fetchLetters() on init,
+// seals via OliveApi.sealLetter(), opens via OliveApi.openLetter(), and
+// deletes via OliveApi.deleteLetter(). `writtenAtAge` is NEVER sent by
+// this client on seal, and no age is ever sent on open at all — the server
+// computes her real current age itself from her real birth_date every
+// time, never trusted from here (server/routes.mjs's own route comments
+// have the full account). A 409 `not_yet`/`already_open` open response is
+// shown as a real, honest message rather than silently retried or hidden —
+// the UI only ever offers "Open it" once client-side age math already
+// agrees it should be ready, so this path is a genuine defensive fallback
+// for a stale client or a real race, not the normal case.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'form_factors.dart' as ff;
 
 // ============ ported from packages/maturation/src/maturation.ts (letters) ==
@@ -47,7 +77,11 @@ class Letter {
   final int writtenAtAge;
   final int openAtAge;
   final DateTime writtenAt;
-  final String body;
+  /// Nullable — see file header. The demo path always carries a real
+  /// string; the live path only ever does once `openedAt` is non-null,
+  /// since the server never sends real text for a letter this session
+  /// hasn't opened.
+  final String? body;
   final DateTime? openedAt;
   /// Literal, unconditional true — see file header. There is deliberately no
   /// way to construct a Letter with this false.
@@ -110,6 +144,8 @@ List<Letter> lettersDue(List<Letter> letters, int age) =>
 
 const _candidateOpenAges = <int>[12, 14, 16, 18, 21, 25];
 
+enum _LoadState { ready, loading, error }
+
 class LettersScreen extends StatefulWidget {
   const LettersScreen({
     super.key,
@@ -117,12 +153,29 @@ class LettersScreen extends StatefulWidget {
     required this.currentAge,
     this.childId = 'demo-child',
     this.initialLetters = const [],
+    this.baseUrl,
+    this.sessionToken,
+    this.httpClient,
   });
 
   final String childName;
   final int currentAge;
   final String childId;
   final List<Letter> initialLetters;
+  /// Live-session wiring, reached through child_home.dart -> child_more
+  /// .dart, both of which already carry these three from a single real
+  /// child login (child_home_live.dart's own `_load()`) -- this screen
+  /// reuses that ALREADY-authenticated session directly, the same
+  /// established pattern homework_screen.dart/capture_gate.dart already use
+  /// for a live screen reached through this exact chain, rather than
+  /// minting its own fresh devLoginFor() session the way every guardian
+  /// screen in this codebase does (there is no equivalent single guardian
+  /// login to reuse today — see expenses_screen.dart's own header).
+  final String? baseUrl;
+  final String? sessionToken;
+  final http.Client? httpClient;
+
+  bool get _isLive => baseUrl != null && sessionToken != null;
 
   @override
   State<LettersScreen> createState() => _LettersScreenState();
@@ -133,6 +186,12 @@ class _LettersScreenState extends State<LettersScreen> {
   final _controller = TextEditingController();
   late int _selectedOpenAge;
   int _nextId = 1;
+  _LoadState _loadState = _LoadState.ready;
+  bool _sealing = false;
+  // Per-letter id in flight (open or delete) — mirrors expenses_screen
+  // .dart's own `_resolving` Set, same reasoning: disables that one
+  // letter's buttons so a slow connection can't be double-tapped.
+  final Set<String> _busyIds = <String>{};
 
   List<int> get _availableAges => _candidateOpenAges
       .where((a) => a - widget.currentAge >= minSealYears && a <= maxSealToAge)
@@ -145,6 +204,7 @@ class _LettersScreenState extends State<LettersScreen> {
     final avail = _availableAges;
     _selectedOpenAge = avail.contains(18) ? 18 : (avail.isNotEmpty ? avail.first : widget.currentAge + minSealYears);
     _controller.addListener(_onTextChanged);
+    if (widget._isLive) _load();
   }
 
   void _onTextChanged() => setState(() {});
@@ -156,27 +216,132 @@ class _LettersScreenState extends State<LettersScreen> {
     super.dispose();
   }
 
+  /// The ONLY place this screen calls the network to READ — reuses the
+  /// already-authenticated session (see file header) instead of minting
+  /// its own via devLoginFor(); `api.close()` still runs on the success
+  /// path when no client was injected, same reasoning every other screen's
+  /// own `_load()` already has — that closes the OliveApi instance's own
+  /// internal http.Client, unrelated to whose session token it was handed.
+  Future<void> _load() async {
+    setState(() => _loadState = _LoadState.loading);
+    try {
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      final Map<String, dynamic> result = await api.fetchLetters(widget.childId);
+      if (widget.httpClient == null) api.close();
+      final List<dynamic> raw = result['letters'] as List<dynamic>? ?? <dynamic>[];
+      final List<Letter> letters = raw.map((dynamic e) {
+        final Map<String, dynamic> row = e as Map<String, dynamic>;
+        return Letter(
+          id: row['id'] as String, childId: widget.childId,
+          writtenAtAge: row['writtenAtAge'] as int, openAtAge: row['openAtAge'] as int,
+          writtenAt: DateTime.tryParse(row['writtenAt'] as String? ?? '') ?? DateTime.now(),
+          body: row['body'] as String?,
+          openedAt: DateTime.tryParse(row['openedAt'] as String? ?? ''));
+      }).toList();
+      if (!mounted) return;
+      setState(() {
+        _letters = letters;
+        _loadState = _LoadState.ready;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadState = _LoadState.error);
+    }
+  }
+
   void _seal() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    final result = sealLetter(id: 'local-${_nextId++}', childId: widget.childId,
-      writtenAtAge: widget.currentAge, openAtAge: _selectedOpenAge, body: text,
-      at: DateTime.now());
-    if (!result.ok) {
-      // Only reachable if _availableAges is ever empty and the fallback
-      // above picked something invalid — say so plainly rather than eating
-      // her letter silently.
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text("That one can't be sealed yet — try picking a later age.")));
+    if (!widget._isLive) {
+      final result = sealLetter(id: 'local-${_nextId++}', childId: widget.childId,
+        writtenAtAge: widget.currentAge, openAtAge: _selectedOpenAge, body: text,
+        at: DateTime.now());
+      if (!result.ok) {
+        // Only reachable if _availableAges is ever empty and the fallback
+        // above picked something invalid — say so plainly rather than
+        // eating her letter silently.
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("That one can't be sealed yet — try picking a later age.")));
+        return;
+      }
+      setState(() { _letters.insert(0, result.letter!); _controller.clear(); });
       return;
     }
-    setState(() { _letters.insert(0, result.letter!); _controller.clear(); });
+    _sealLive(text);
+  }
+
+  /// Live path — `writtenAtAge` is never sent; the server computes her real
+  /// current age from her real birth_date and validates it against
+  /// [_selectedOpenAge] itself (see file header).
+  Future<void> _sealLive(String text) async {
+    setState(() => _sealing = true);
+    try {
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      final Map<String, dynamic> row =
+          await api.sealLetter(widget.childId, text, _selectedOpenAge);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      setState(() {
+        _letters.insert(0, Letter(
+          id: row['id'] as String, childId: widget.childId,
+          writtenAtAge: row['writtenAtAge'] as int, openAtAge: row['openAtAge'] as int,
+          writtenAt: DateTime.tryParse(row['writtenAt'] as String? ?? '') ?? DateTime.now(),
+          body: null, openedAt: null));
+        _controller.clear();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't seal that letter — check your connection and try again.")));
+    } finally {
+      if (mounted) setState(() => _sealing = false);
+    }
   }
 
   void _open(Letter l) {
-    final result = openLetter(l, widget.currentAge, DateTime.now());
-    if (!result.ok) return; // defensive only — the open button is hidden until this succeeds
-    setState(() => _letters = [for (final x in _letters) x.id == l.id ? result.letter! : x]);
+    if (!widget._isLive) {
+      final result = openLetter(l, widget.currentAge, DateTime.now());
+      if (!result.ok) return; // defensive only — the open button is hidden until this succeeds
+      setState(() => _letters = [for (final x in _letters) x.id == l.id ? result.letter! : x]);
+      return;
+    }
+    _openLive(l);
+  }
+
+  /// Live path — takes no age parameter at all; the server computes her
+  /// real current age itself inside openLetterRow() (see file header). A
+  /// 409 `not_yet`/`already_open` response is shown as a real message, a
+  /// genuine defensive fallback for a stale client or a real race, never
+  /// silently ignored.
+  Future<void> _openLive(Letter l) async {
+    setState(() => _busyIds.add(l.id));
+    try {
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      final Map<String, dynamic> row = await api.openLetter(widget.childId, l.id);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      if (row['error'] == 'not_yet' || row['error'] == 'already_open') {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          row['error'] == 'already_open'
+            ? "That letter's already open."
+            : "Not quite yet — ${row['yearsLeft']} more year"
+              "${row['yearsLeft'] == 1 ? '' : 's'} to go.")));
+        return;
+      }
+      final Letter opened = Letter(
+        id: row['id'] as String, childId: widget.childId,
+        writtenAtAge: row['writtenAtAge'] as int, openAtAge: row['openAtAge'] as int,
+        writtenAt: DateTime.tryParse(row['writtenAt'] as String? ?? '') ?? l.writtenAt,
+        body: row['body'] as String?,
+        openedAt: DateTime.tryParse(row['openedAt'] as String? ?? '') ?? DateTime.now());
+      setState(() => _letters = [for (final x in _letters) x.id == l.id ? opened : x]);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't open that letter — check your connection and try again.")));
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(l.id));
+    }
   }
 
   Future<void> _confirmDelete(Letter l) async {
@@ -189,11 +354,53 @@ class _LettersScreenState extends State<LettersScreen> {
         FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete it')),
       ],
     ));
-    if (confirmed == true) setState(() => _letters = deleteLetter(_letters, l.id));
+    if (confirmed != true) return;
+    if (!widget._isLive) {
+      setState(() => _letters = deleteLetter(_letters, l.id));
+      return;
+    }
+    setState(() => _busyIds.add(l.id));
+    try {
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      await api.deleteLetter(widget.childId, l.id);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      setState(() => _letters = deleteLetter(_letters, l.id));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Couldn't delete that letter — check your connection and try again.")));
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(l.id));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Loading/error UI mirrors expenses_screen.dart/care_note.dart's own
+    // established shape — only ever reachable when this screen is
+    // live-wired; the pure demo path never enters either state.
+    if (_loadState == _LoadState.loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_loadState == _LoadState.error) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Letters to future you')),
+        body: Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.cloud_off, size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text("Couldn't reach the server",
+              style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Try again')),
+          ]),
+        )),
+      );
+    }
     final scheme = Theme.of(context).colorScheme;
     final avail = _availableAges;
 
@@ -229,7 +436,8 @@ class _LettersScreenState extends State<LettersScreen> {
           const SizedBox(height: 16),
           SizedBox(width: double.infinity, height: 48,
             child: FilledButton.icon(
-              onPressed: (avail.isEmpty || _controller.text.trim().isEmpty) ? null : _seal,
+              onPressed: (avail.isEmpty || _controller.text.trim().isEmpty || _sealing)
+                ? null : _seal,
               icon: const Icon(Icons.lock_outline),
               label: const Text('Seal it'))),
         ]))),
@@ -252,7 +460,8 @@ class _LettersScreenState extends State<LettersScreen> {
       else
         for (final l in _letters)
           _LetterTile(key: ValueKey(l.id), letter: l, currentAge: widget.currentAge,
-            onOpen: () => _open(l), onDelete: () => _confirmDelete(l)),
+            onOpen: () => _open(l), onDelete: () => _confirmDelete(l),
+            busy: _busyIds.contains(l.id)),
     ];
 
     return Scaffold(
@@ -310,11 +519,15 @@ class _LettersScreenState extends State<LettersScreen> {
 
 class _LetterTile extends StatelessWidget {
   const _LetterTile({super.key, required this.letter, required this.currentAge,
-    required this.onOpen, required this.onDelete});
+    required this.onOpen, required this.onDelete, this.busy = false});
   final Letter letter;
   final int currentAge;
   final VoidCallback onOpen;
   final VoidCallback onDelete;
+  /// True while a real live open/delete for THIS letter is in flight —
+  /// disables both buttons so a slow connection can't be double-tapped.
+  /// Always false on the demo path.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -336,7 +549,7 @@ class _LetterTile extends StatelessWidget {
               Expanded(child: Text(
                 opened ? 'Opened' : (ready ? 'Ready whenever you want' : "Sealed until you're ${letter.openAtAge}"),
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
-            IconButton(tooltip: 'Delete this letter', onPressed: onDelete,
+            IconButton(tooltip: 'Delete this letter', onPressed: busy ? null : onDelete,
                 icon: const Icon(Icons.delete_outline)),
             ]),
             const SizedBox(height: 4),
@@ -344,11 +557,12 @@ class _LetterTile extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             if (opened) ...[
               const SizedBox(height: 12),
-              Text(letter.body, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35)),
+              Text(letter.body ?? '',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35)),
             ] else if (ready) ...[
               const SizedBox(height: 12),
               SizedBox(width: double.infinity, height: 48,
-                child: FilledButton.tonal(onPressed: onOpen, child: const Text('Open it'))),
+                child: FilledButton.tonal(onPressed: busy ? null : onOpen, child: const Text('Open it'))),
             ],
           ]),
         ),

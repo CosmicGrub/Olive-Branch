@@ -3,6 +3,8 @@ import { DateTime } from 'luxon';
 import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
 import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
 import { can, type Edge, type Deny } from '../../family-graph/src/authorize.ts';
+import { writeCareNote, type CareItem } from '../../guardian/src/guardian.ts';
+import { MIN_SEAL_YEARS, MAX_SEAL_TO_AGE } from '../../maturation/src/maturation.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
 import {
@@ -2867,6 +2869,228 @@ export async function recordExchangeArrival(
     const r = rows[0];
     return { ok: true, event: { id: r.id, scheduledAt: r.scheduled_at, arrivedAt: r.arrived_at,
       delayMinutes: r.delay_minutes } };
+  });
+}
+
+/**
+ * care_note (db/migrations/0028_care_note_letter.sql) — real for the first
+ * time, same coordination-layer audit and pass that closed the handover log,
+ * expenses, medications/emergency-card, and the exchange (MASTERFILE
+ * §20.2b). `writeCareNote()` (packages/guardian/src/guardian.ts) is real and
+ * already tested — the tone guard (CARE_NOTE_BANNED) and the real TTL
+ * computation (CARE_NOTE_TTL_DAYS) both run HERE, reused directly rather
+ * than duplicated, before a single row is ever written — a rejected note
+ * never reaches the INSERT below, matching care_note.dart's own "enforced
+ * before a note is ever created, not applied afterward as a filter" posture.
+ */
+export interface CareNoteEntry {
+  id: string; fromUserId: string; fromUserName: string;
+  items: { kind: string; note: string }[]; createdAt: string; expiresAt: string;
+}
+
+/** Every real, NOT-YET-EXPIRED note for [childId] — an expired note is
+ * simply excluded from every read from here on; this function never
+ * deletes a row (no reaper exists for this table, a real, disclosed choice:
+ * `expires_at` is about court-log/evidentiary status, not storage
+ * lifetime — see the table's own migration header). */
+export async function careNotesFor(pool: pg.Pool, childId: string): Promise<CareNoteEntry[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT c.id, c.from_user_id, u.display_name AS from_user_name, c.items,
+              to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+              to_char(c.expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at
+         FROM care_note c JOIN app_user u ON u.id = c.from_user_id
+        WHERE c.child_id = $1 AND c.expires_at > now()
+        ORDER BY c.created_at DESC`,
+      [childId],
+    );
+    return rows.map((r: any): CareNoteEntry => ({
+      id: r.id, fromUserId: r.from_user_id, fromUserName: r.from_user_name,
+      items: r.items, createdAt: r.created_at, expiresAt: r.expires_at,
+    }));
+  });
+}
+
+export type WriteCareNoteRowResult =
+  | { ok: true; entry: CareNoteEntry }
+  | { ok: false; reason: 'empty' | 'accusatory'; found?: string[] };
+
+export async function writeCareNoteRow(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string,
+  items: CareItem[],
+): Promise<WriteCareNoteRowResult> {
+  const nowIso = DateTime.utc().toISO()!;
+  // The pure engine's own `id` param is discarded below — the real row gets
+  // its own id from the table's `DEFAULT uuid_generate_v4()`; this call's
+  // only real jobs are the tone guard and the real expiresAt computation.
+  const result = writeCareNote('pending', childId, actorUserId, items, nowIso);
+  if (!result.ok) return result;
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO care_note (child_id, from_user_id, items, created_at, expires_at)
+       VALUES ($1, $2, $3::jsonb, $4, $5)
+       RETURNING id, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+                 to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at`,
+      [childId, actorUserId, JSON.stringify(result.note.items), nowIso, result.note.expiresAt],
+    );
+    const r = rows[0];
+    return { ok: true, entry: { id: r.id, fromUserId: actorUserId, fromUserName: '',
+      items: result.note.items, createdAt: r.created_at, expiresAt: r.expires_at } };
+  });
+}
+
+/**
+ * letter (db/migrations/0028_care_note_letter.sql) — real for the first
+ * time, same pass as care_note above. CHILD-owned, guardian-excluded — see
+ * the migration's own header for the full RLS/authorization account
+ * (`letter_owner_only`, the new `letter` Action never listed in any role's
+ * ROLE_CAPS). Only MIN_SEAL_YEARS/MAX_SEAL_TO_AGE are reused directly from
+ * packages/maturation/src/maturation.ts (real constants, not duplicated
+ * magic numbers) — sealLetter()/openLetter() themselves are NOT called
+ * here: their real signatures carry an `artifactId`, and this table
+ * deliberately stores `body` directly instead (see the migration's own
+ * header for why forcing this through media_artifact's retention/
+ * preservation model would be the wrong fit), so reusing those functions
+ * verbatim would be misleading, not simplifying.
+ */
+export interface LetterMeta {
+  id: string; writtenAtAge: number; openAtAge: number; writtenAt: string;
+  openedAt: string | null;
+  /** Only ever present once `openedAt` is non-null — see lettersFor()'s own
+   * doc comment for the real, structural reason this is never a client-side
+   * "hide the text" decision. */
+  body: string | null;
+}
+
+/**
+ * Every real letter for [childId], oldest first. `body` is `null` in the
+ * SQL projection itself — not filtered afterward in JS — for every letter
+ * where `opened_at IS NULL`, regardless of how old she really is: age alone
+ * only ever unlocks the OPEN action (openLetterRow() below); it never, by
+ * itself, reveals the text. The guard lives in the query, the same
+ * discipline exchange_arrival_event's missing location column already
+ * established for a different invariant (P3).
+ */
+export async function lettersFor(pool: pg.Pool, childId: string): Promise<LetterMeta[]> {
+  return withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
+    const rows = await q(
+      `SELECT id, written_at_age, open_at_age,
+              to_char(written_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS written_at,
+              to_char(opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS opened_at,
+              CASE WHEN opened_at IS NOT NULL THEN body ELSE NULL END AS body
+         FROM letter WHERE child_id = $1
+        ORDER BY written_at ASC`,
+      [childId],
+    );
+    return rows.map((r: any): LetterMeta => ({
+      id: r.id, writtenAtAge: r.written_at_age, openAtAge: r.open_at_age,
+      writtenAt: r.written_at, openedAt: r.opened_at, body: r.body,
+    }));
+  });
+}
+
+export type SealLetterResult =
+  | { ok: true; letter: LetterMeta }
+  | { ok: false; reason: 'too_soon' | 'too_far' | 'child_not_found' };
+
+/**
+ * `writtenAtAge` is ALWAYS computed here, from the child's real
+ * `birth_date` and [childLocalDate] (the caller resolves this the same
+ * child_tz_interval/home_tz way every other child-local write in this file
+ * already does) — never trusted from the client, same discipline
+ * medication_dose.local_date and exchange_arrival_event.scheduled_at
+ * already established. `openAtAge` IS legitimately client-supplied (a real
+ * choice, "open it when I turn ___"), but validated against the REAL
+ * writtenAtAge computed here, never a client-claimed one — a lying client
+ * cannot seal something open "immediately" by understating her own age.
+ */
+export async function sealLetterRow(
+  pool: pg.Pool, childId: string, openAtAge: number, body: string, childLocalDate: string,
+): Promise<SealLetterResult> {
+  return withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
+    const childRows = await q(
+      `SELECT EXTRACT(YEAR FROM age($2::date, birth_date))::int AS current_age
+         FROM child WHERE id = $1`,
+      [childId, childLocalDate],
+    );
+    if (!childRows.length) return { ok: false, reason: 'child_not_found' };
+    const writtenAtAge = Number(childRows[0].current_age);
+    if (openAtAge - writtenAtAge < MIN_SEAL_YEARS) return { ok: false, reason: 'too_soon' };
+    if (openAtAge > MAX_SEAL_TO_AGE) return { ok: false, reason: 'too_far' };
+    const rows = await q(
+      `INSERT INTO letter (child_id, written_at_age, open_at_age, body)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, written_at_age, open_at_age,
+                 to_char(written_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS written_at`,
+      [childId, writtenAtAge, openAtAge, body],
+    );
+    const r = rows[0];
+    return { ok: true, letter: { id: r.id, writtenAtAge: r.written_at_age,
+      openAtAge: r.open_at_age, writtenAt: r.written_at, openedAt: null, body: null } };
+  });
+}
+
+export type OpenLetterResult =
+  | { ok: true; letter: LetterMeta }
+  | { ok: false; reason: 'already_open' | 'not_yet' | 'not_found'; yearsLeft?: number };
+
+/**
+ * Nobody can open it early — not a guardian (structurally unreachable, see
+ * this table's own RLS/Action) and not her either: [currentAge] is computed
+ * from her real birth_date, exactly like sealLetterRow() above, never
+ * trusted from the client. A too-early attempt is a real, honest refusal
+ * naming how many years are left — never a silent no-op and never a
+ * guessed/fabricated open.
+ */
+export async function openLetterRow(
+  pool: pg.Pool, childId: string, letterId: string, childLocalDate: string,
+): Promise<OpenLetterResult> {
+  return withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
+    const existing = await q(
+      `SELECT l.id, l.open_at_age, l.opened_at,
+              EXTRACT(YEAR FROM age($3::date, c.birth_date))::int AS current_age
+         FROM letter l JOIN child c ON c.id = l.child_id
+        WHERE l.id = $1 AND l.child_id = $2`,
+      [letterId, childId, childLocalDate],
+    );
+    if (!existing.length) return { ok: false, reason: 'not_found' };
+    const row = existing[0];
+    if (row.opened_at) return { ok: false, reason: 'already_open' };
+    const currentAge = Number(row.current_age);
+    if (currentAge < row.open_at_age) {
+      return { ok: false, reason: 'not_yet', yearsLeft: row.open_at_age - currentAge };
+    }
+    const rows = await q(
+      `UPDATE letter SET opened_at = now()
+        WHERE id = $1 AND child_id = $2 AND opened_at IS NULL
+       RETURNING id, written_at_age, open_at_age,
+                 to_char(written_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS written_at,
+                 to_char(opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS opened_at,
+                 body`,
+      [letterId, childId],
+    );
+    // A concurrent open between the check above and this UPDATE is a real,
+    // if narrow, race — WHERE opened_at IS NULL means the loser here gets
+    // an honest 0-row result rather than a silently-overwritten opened_at.
+    if (!rows.length) return { ok: false, reason: 'already_open' };
+    const r = rows[0];
+    return { ok: true, letter: { id: r.id, writtenAtAge: r.written_at_age,
+      openAtAge: r.open_at_age, writtenAt: r.written_at, openedAt: r.opened_at, body: r.body } };
+  });
+}
+
+/** She can delete without ever having read it — it is hers (§2.10) — the
+ * only early exit; read never is. No update function exists for `body`
+ * anywhere in this file: a letter is write-once. */
+export async function deleteLetterRow(
+  pool: pg.Pool, childId: string, letterId: string,
+): Promise<boolean> {
+  return withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
+    const rows = await q(
+      `DELETE FROM letter WHERE id = $1 AND child_id = $2 RETURNING id`,
+      [letterId, childId],
+    );
+    return rows.length > 0;
   });
 }
 

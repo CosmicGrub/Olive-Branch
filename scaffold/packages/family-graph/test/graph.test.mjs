@@ -104,6 +104,68 @@ const why = (d) => d.allow ? 'allow' : d.reason;
 }
 
 // ---------------------------------------------------------------------------
+// H2c -- care_note.view/write, added alongside the real care_note backend.
+// Deliberately excludes coordinator: MASTERFILE's own "a care note is
+// outside the court-tier log" (care_note.dart's file header) means a
+// coordinator must never see one, unlike medication.view/emergency_card
+// .view which every court-tier role legitimately holds.
+// ---------------------------------------------------------------------------
+{
+  check('H2c care note', 'guardian can write a care note',
+    can('care_note.write', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  check('H2c care note', 'a sitter can write a care note -- she is the one on '
+    + 'shift to notice, same reasoning medication.log already has for her',
+    can('care_note.write', [edge({ role: 'sitter' })], CHILD_A, NOW, 'sitter').allow, 'true');
+  check('H2c care note', 'a step_parent can VIEW a care note but cannot WRITE one -- '
+    + 'the same view/write split medication.view/medication.log already has for this role',
+    why(can('care_note.write', [edge({ role: 'step_parent' })], CHILD_A, NOW, 'step_parent')),
+    'role_lacks_capability');
+  check('H2c care note', 'a coordinator cannot even VIEW a care note -- it is '
+    + 'deliberately outside the court-tier record',
+    why(can('care_note.view', [edge({ role: 'coordinator' })], CHILD_A, NOW, 'coordinator')),
+    'role_lacks_capability');
+  check('H2c care note', 'a trusted_adult has no care-note access at all',
+    why(can('care_note.view', [edge({ role: 'trusted_adult' })], CHILD_A, NOW, 'trusted_adult')),
+    'role_lacks_capability');
+  // §17.3 observer -- writing a care note is a real write.
+  check('H2c care note', 'an observer-only guardian cannot write a care note',
+    why(can('care_note.write', [edge({ observerOnly: true })], CHILD_A, NOW, 'guardian')),
+    'observer_readonly');
+}
+
+// ---------------------------------------------------------------------------
+// H2d -- `letter`, added alongside the real letters backend. The ONE
+// child-owned, guardian-excluded Action in this whole union -- see
+// db/migrations/0028_care_note_letter.sql's own header. Listed in NO
+// role's ROLE_CAPS, so every guardian-shaped role is refused via the
+// ordinary role_lacks_capability path even holding a real, live, unrestricted
+// edge -- there is no scope override or court tier that admits one.
+// ---------------------------------------------------------------------------
+{
+  const allRoles = ['guardian', 'step_parent', 'trusted_adult', 'sitter',
+    'coordinator', 'foster_parent', 'caseworker', 'therapist'];
+  let leaked = 0;
+  for (const role of allRoles) {
+    const d = can('letter', [edge({ role, scope: { letter: true } })],
+      CHILD_A, NOW, role, { court: true });
+    if (d.allow) leaked++;
+  }
+  check('H2d letter', 'no guardian-shaped role can ever reach letter, '
+    + 'even with a scope override and court tier', leaked, 0);
+  check('H2d letter', 'the real reason is role_lacks_capability, not a scope/tier fluke',
+    why(can('letter', [edge()], CHILD_A, NOW, 'guardian')), 'role_lacks_capability');
+  // The child's own real reachability is NOT provable through can() with a
+  // real edge (a child principal is always called with edges=[] --
+  // api.ts's own outer-gate design, see server/routes.mjs's own comment on
+  // the /letters routes) -- it is the ABSENCE of a p6/p7 special case for
+  // 'letter' that lets a child session's request reach the route handler at
+  // all, proven here the same way H1 proves P7's own presence.
+  check('H2d letter', "'letter' is not P6/P7-blocked -- the child path relies on "
+    + 'that absence, not an explicit allow',
+    why(can('letter', [], CHILD_A, NOW, 'child')), 'no_edge');
+}
+
+// ---------------------------------------------------------------------------
 // H3 — LATERAL PRIVILEGE. Guardian of one sibling must not reach the other.
 //      sibling_link creates a traversal path; this is the obvious escalation.
 // ---------------------------------------------------------------------------

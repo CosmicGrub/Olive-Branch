@@ -22,8 +22,18 @@ export type Action =
   | 'archive.view' | 'archive.preserve'
   | 'export.raw' | 'export.certified'
   | 'expense.view' | 'expense.create' | 'expense.resolve'
+  | 'care_note.view' | 'care_note.write'
   | 'ladder.advance'
   | 'settings'
+  // Child-only, by construction: never listed in ANY role's ROLE_CAPS below.
+  // api.ts's own outer gate calls can(action, [], childId, 'child') for a
+  // child principal (empty edges, always), so this Action is unreachable
+  // via the normal guardian-edge path no matter what a future edit does to
+  // ROLE_CAPS elsewhere -- there is no edge to grant it through. Backs
+  // letters_screen.dart's own real, structural claim: "not a guardian
+  // (there is no guardian code path in this file at all) and not her,
+  // either [until real]" -- see db/migrations/0028's own header.
+  | 'letter'
   | 'journal.read';
 
 export interface Edge {
@@ -53,7 +63,7 @@ export type Decision = { allow: true } | { allow: false; reason: Deny };
 
 const WRITES: Action[] = [
   'homework.annotate', 'calendar.edit', 'list.claim', 'medication.log',
-  'emergency_card.edit',
+  'emergency_card.edit', 'care_note.write',
   'archive.preserve', 'expense.create', 'expense.resolve', 'ladder.advance', 'settings',
 ];
 
@@ -65,24 +75,32 @@ const ROLE_CAPS: Record<Role, Action[]> = {
     'call','message','homework.view','homework.annotate','calendar.view',
     'calendar.edit','list.view','list.claim','medication.view','medication.log',
     'emergency_card.view','emergency_card.edit','archive.view','archive.preserve',
-    'export.raw','export.certified','expense.view','expense.create','expense.resolve','settings',
+    'export.raw','export.certified','expense.view','expense.create','expense.resolve',
+    'care_note.view','care_note.write','settings',
   ],
   step_parent: [
     'call','message','homework.view','calendar.view','list.view',
-    'medication.view','emergency_card.view','archive.view',
+    'medication.view','emergency_card.view','archive.view','care_note.view',
   ],
   trusted_adult: ['call','message','calendar.view','archive.view'],
-  // Time-boxed. Needs the emergency card and the medication log, nothing else.
-  sitter: ['emergency_card.view','medication.view','medication.log','calendar.view'],
+  // Time-boxed. Needs the emergency card, the medication log, and enough
+  // day-to-day context to leave a real one -- "she skipped her nap" is
+  // exactly what a sitter, not a step_parent, is on shift to notice.
+  sitter: ['emergency_card.view','medication.view','medication.log','calendar.view',
+    'care_note.view','care_note.write'],
   foster_parent: [
     'call','message','homework.view','homework.annotate','calendar.view',
     'calendar.edit','list.view','list.claim','medication.view','medication.log',
-    'emergency_card.view','archive.view',
+    'emergency_card.view','archive.view','care_note.view','care_note.write',
   ],
   // Court-appointed. Reads the record, advances the ladder, touches nothing
-  // the child experiences.
+  // the child experiences. NEVER care_note.view -- care_note.dart's own file
+  // header is explicit that a note is deliberately outside the §13
+  // tamper-evident log precisely so it can never become a court exhibit;
+  // granting a coordinator a read here would be that exact leak.
   coordinator: ['calendar.view','expense.view','export.certified','ladder.advance'],
-  caseworker: ['calendar.view','medication.view','emergency_card.view','ladder.advance'],
+  caseworker: ['calendar.view','medication.view','emergency_card.view',
+    'care_note.view','ladder.advance'],
   therapist: ['ladder.advance'],
 };
 
