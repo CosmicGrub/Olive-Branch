@@ -1178,6 +1178,120 @@ async function setMedicalRecord(pool, actorRole, actorUserId, childId, fields) {
     );
   });
 }
+async function bagItemsFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, label, essential, sent, returned
+         FROM exchange_bag_item WHERE child_id = $1
+        ORDER BY essential DESC, label ASC`,
+      [childId]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      label: r.label,
+      essential: r.essential,
+      sent: r.sent,
+      returned: r.returned
+    }));
+  });
+}
+async function setBagItemStatus(pool, actorRole, actorUserId, childId, itemId, fields) {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `UPDATE exchange_bag_item
+          SET sent = COALESCE($3, sent), returned = COALESCE($4, returned), updated_at = now()
+        WHERE id = $1 AND child_id = $2
+        RETURNING id, label, essential, sent, returned`,
+      [itemId, childId, fields.sent ?? null, fields.returned ?? null]
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { id: r.id, label: r.label, essential: r.essential, sent: r.sent, returned: r.returned };
+  });
+}
+async function runningLateLogFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT l.id, to_char(l.logged_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS logged_at,
+              l.eta_minutes, l.reported_by_user_id, u.display_name AS reported_by_name
+         FROM exchange_running_late_log l JOIN app_user u ON u.id = l.reported_by_user_id
+        WHERE l.child_id = $1
+        ORDER BY l.logged_at DESC`,
+      [childId]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      loggedAt: r.logged_at,
+      etaMinutes: r.eta_minutes,
+      reportedByUserId: r.reported_by_user_id,
+      reportedByName: r.reported_by_name
+    }));
+  });
+}
+async function logRunningLate(pool, actorRole, actorUserId, childId, etaMinutes) {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO exchange_running_late_log (child_id, eta_minutes, reported_by_user_id)
+       VALUES ($1, $2, $3)
+       RETURNING id, to_char(logged_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS logged_at,
+                 eta_minutes, reported_by_user_id`,
+      [childId, etaMinutes, actorUserId]
+    );
+    const r = rows[0];
+    return {
+      id: r.id,
+      loggedAt: r.logged_at,
+      etaMinutes: r.eta_minutes,
+      reportedByUserId: r.reported_by_user_id,
+      reportedByName: ""
+    };
+  });
+}
+async function arrivalEventFor(pool, childId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, to_char(scheduled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS scheduled_at,
+              to_char(arrived_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS arrived_at,
+              delay_minutes
+         FROM exchange_arrival_event WHERE child_id = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [childId]
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return {
+      id: r.id,
+      scheduledAt: r.scheduled_at,
+      arrivedAt: r.arrived_at,
+      delayMinutes: r.delay_minutes
+    };
+  });
+}
+async function recordExchangeArrival(pool, actorRole, actorUserId, childId, nowLocalDate) {
+  const order = await activeCustodyOrderFor(pool, childId, nowLocalDate);
+  if (!order) return { ok: false, error: "no_active_custody_order" };
+  const scheduledAt = DateTime.fromISO(`${nowLocalDate}T${order.exchangeTime}`, { zone: order.orderTz });
+  const arrivedAt = DateTime.utc();
+  const delayMinutes = Math.max(0, Math.round(arrivedAt.diff(scheduledAt, "minutes").minutes));
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO exchange_arrival_event
+         (child_id, scheduled_at, arrived_at, delay_minutes, reported_by_user_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, to_char(scheduled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS scheduled_at,
+                 to_char(arrived_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS arrived_at,
+                 delay_minutes`,
+      [childId, scheduledAt.toUTC().toISO(), arrivedAt.toISO(), delayMinutes, actorUserId]
+    );
+    const r = rows[0];
+    return { ok: true, event: {
+      id: r.id,
+      scheduledAt: r.scheduled_at,
+      arrivedAt: r.arrived_at,
+      delayMinutes: r.delay_minutes
+    } };
+  });
+}
 async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__PURE__ */ new Date()) {
   const edges = await edgesFor(pool, requestedBy);
   const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
@@ -1341,8 +1455,10 @@ export {
   acceptGuardianInvite,
   activeCustodyOrderFor,
   appendHandoverNote,
+  arrivalEventFor,
   attemptPinFor,
   availabilityFor,
+  bagItemsFor,
   bootstrapGuardianInvite,
   certifiedExportBundleFor,
   childCtxFor,
@@ -1359,6 +1475,7 @@ export {
   getGuardianInvite,
   guardiansOfChild,
   handoverNotesFor,
+  logRunningLate,
   mediaArtifactFor,
   medicalRecordFor,
   medicationsFor,
@@ -1370,12 +1487,15 @@ export {
   recordCallEnd,
   recordCallStart,
   recordDose,
+  recordExchangeArrival,
   recordPinAttempt,
   registerDeviceToken,
   removeDeviceTokenSystem,
   resolveExpense,
   revokeGuardianInvite,
+  runningLateLogFor,
   setAvailabilityWindows,
+  setBagItemStatus,
   setChildTheme,
   setMedicalRecord,
   setPinCredential,

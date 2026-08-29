@@ -29,6 +29,8 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          appendHandoverNote, handoverNotesFor,
          expensesFor, proposeExpense, resolveExpense,
          medicationsFor, dosesForDate, recordDose, medicalRecordFor, setMedicalRecord,
+         bagItemsFor, setBagItemStatus, runningLateLogFor, logRunningLate,
+         arrivalEventFor, recordExchangeArrival,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -1906,6 +1908,124 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       });
       const record = await medicalRecordFor(pool, c.childId);
       return { body: medicalRecordToWire(record) };
+    },
+  });
+
+  // GET/POST .../exchange/bag-items, GET/POST .../exchange/running-late,
+  // GET/POST .../exchange/arrival — real for the first time, same
+  // coordination-layer audit that closed the handover log, expenses, and
+  // medications/emergency-card. exchange_screen.dart's bag manifest/
+  // running-late log/arrival sections have real, already-ported pure logic
+  // (packages/care/src/care.ts's manifestOrder/recordArrival/auditArrival)
+  // but no table, route, or pool.ts function existed for any of it.
+  //
+  // action: 'calendar.view'/'calendar.edit' — no dedicated Action exists for
+  // "the exchange" in family-graph/src/authorize.ts's Action union (a real,
+  // disclosed gap, same reasoning as the pre-existing GET .../now and
+  // GET .../custody-order routes above, which hit the identical gap for
+  // schedule-adjacent reads and made the same closest-existing-action
+  // choice). This screen is guardian-shell-only (exchange_screen.dart's own
+  // file header), so every route below still carries its own explicit
+  // child-role guard exactly like the handover-notes/expenses/medications
+  // routes above — the outer gate in api.ts only auto-refuses a child
+  // principal for P6_child_financial/P7_journal_never, and calendar.view/
+  // calendar.edit are neither.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/exchange/bag-items', action: 'calendar.view',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const items = await bagItemsFor(pool, c.childId);
+      return { body: { items } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/exchange/bag-items/:itemId',
+    action: 'calendar.edit',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const body = c.body ?? {};
+      if (body.sent !== undefined && typeof body.sent !== 'boolean') {
+        return { status: 400, body: { error: 'bad_sent' } };
+      }
+      if (body.returned !== undefined && typeof body.returned !== 'boolean') {
+        return { status: 400, body: { error: 'bad_returned' } };
+      }
+      const item = await setBagItemStatus(
+        pool, c.principal.roleName, c.principal.userId, c.childId, c.params.itemId,
+        { sent: body.sent, returned: body.returned });
+      if (!item) return { status: 404, body: { error: 'bag_item_not_found' } };
+      return { body: item };
+    },
+  });
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/exchange/running-late', action: 'calendar.view',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const entries = await runningLateLogFor(pool, c.childId);
+      return { body: { entries } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/exchange/running-late', action: 'calendar.edit',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const etaMinutes = c.body?.etaMinutes;
+      if (typeof etaMinutes !== 'number' || !Number.isFinite(etaMinutes) || etaMinutes <= 0) {
+        return { status: 400, body: { error: 'eta_minutes_must_be_positive' } };
+      }
+      const entry = await logRunningLate(
+        pool, c.principal.roleName, c.principal.userId, c.childId, Math.round(etaMinutes));
+      return { status: 201, body: entry };
+    },
+  });
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/exchange/arrival', action: 'calendar.view',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const event = await arrivalEventFor(pool, c.childId);
+      return { body: { event } };
+    },
+  });
+
+  api.register({
+    // No location parameter is ever read off c.body here — P3 (§9.7.2),
+    // structurally: there is nothing to smuggle a coordinate through even if
+    // a future edit wanted to. `scheduled_at` is computed server-side by
+    // recordExchangeArrival() itself, from the child's real active custody
+    // order — never trusted from the client, same discipline
+    // resolveChildLocalDate() already established for medication doses above.
+    method: 'POST', path: '/v1/children/:childId/exchange/arrival', action: 'calendar.edit',
+    handler: async (c, q) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const localDate = await resolveChildLocalDate(q, c.childId);
+      const result = await recordExchangeArrival(
+        pool, c.principal.roleName, c.principal.userId, c.childId, localDate);
+      if (!result.ok) {
+        // Honest absence — no active custody order to compute a scheduled
+        // time from, never a guessed/fabricated one (same posture the /now
+        // route above takes for sleepsUntilHandover).
+        return { status: 409, body: { error: result.error } };
+      }
+      return { status: 201, body: result.event };
     },
   });
 

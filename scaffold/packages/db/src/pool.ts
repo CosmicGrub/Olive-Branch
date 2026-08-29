@@ -2707,6 +2707,169 @@ export async function setMedicalRecord(
   });
 }
 
+/**
+ * exchange_bag_item / exchange_running_late_log / exchange_arrival_event
+ * (db/migrations/0027_exchange.sql) — real for the first time, same
+ * coordination-layer audit and pass that closed the handover log, expenses,
+ * and medications/emergency-card (MASTERFILE §20.2b). exchange_screen.dart
+ * has real, already-ported pure logic (packages/care/src/care.ts's
+ * manifestOrder/unpacked/recordArrival/auditArrival) but no table anywhere.
+ *
+ * Scope, disclosed (see 0027's own header): bag manifest + running-late log
+ * + arrival event ONLY — the Handoff/Coming-up sections stay on demo data.
+ */
+export interface BagItem {
+  id: string; label: string; essential: boolean; sent: boolean; returned: boolean;
+}
+
+export async function bagItemsFor(pool: pg.Pool, childId: string): Promise<BagItem[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, label, essential, sent, returned
+         FROM exchange_bag_item WHERE child_id = $1
+        ORDER BY essential DESC, label ASC`,
+      [childId],
+    );
+    return rows.map((r: any): BagItem => ({
+      id: r.id, label: r.label, essential: r.essential, sent: r.sent, returned: r.returned,
+    }));
+  });
+}
+
+/**
+ * Toggles ONLY `sent`/`returned` — matching exchange_screen.dart's own
+ * `_toggleSent`/`_toggleReturned` (there is no "rename item" or "delete
+ * item" affordance anywhere in that screen, so none is built here either).
+ * `WHERE id = $1 AND child_id = $2` is the same lateral-privilege guard
+ * `resolveExpense()` established: a guardian with a real edge to a
+ * DIFFERENT child can never flip a bag item by guessing its id.
+ */
+export async function setBagItemStatus(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string,
+  itemId: string, fields: { sent?: boolean; returned?: boolean },
+): Promise<BagItem | null> {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `UPDATE exchange_bag_item
+          SET sent = COALESCE($3, sent), returned = COALESCE($4, returned), updated_at = now()
+        WHERE id = $1 AND child_id = $2
+        RETURNING id, label, essential, sent, returned`,
+      [itemId, childId, fields.sent ?? null, fields.returned ?? null],
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { id: r.id, label: r.label, essential: r.essential, sent: r.sent, returned: r.returned };
+  });
+}
+
+export interface RunningLateEntry {
+  id: string; loggedAt: string; etaMinutes: number;
+  reportedByUserId: string; reportedByName: string;
+}
+
+export async function runningLateLogFor(
+  pool: pg.Pool, childId: string,
+): Promise<RunningLateEntry[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT l.id, to_char(l.logged_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS logged_at,
+              l.eta_minutes, l.reported_by_user_id, u.display_name AS reported_by_name
+         FROM exchange_running_late_log l JOIN app_user u ON u.id = l.reported_by_user_id
+        WHERE l.child_id = $1
+        ORDER BY l.logged_at DESC`,
+      [childId],
+    );
+    return rows.map((r: any): RunningLateEntry => ({
+      id: r.id, loggedAt: r.logged_at, etaMinutes: r.eta_minutes,
+      reportedByUserId: r.reported_by_user_id, reportedByName: r.reported_by_name,
+    }));
+  });
+}
+
+/**
+ * §9.7.3 — insert-only. No update/delete function exists for this table
+ * anywhere in this file, matching the append-only schema comment (0027).
+ */
+export async function logRunningLate(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string, etaMinutes: number,
+): Promise<RunningLateEntry> {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO exchange_running_late_log (child_id, eta_minutes, reported_by_user_id)
+       VALUES ($1, $2, $3)
+       RETURNING id, to_char(logged_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS logged_at,
+                 eta_minutes, reported_by_user_id`,
+      [childId, etaMinutes, actorUserId],
+    );
+    const r = rows[0];
+    return { id: r.id, loggedAt: r.logged_at, etaMinutes: r.eta_minutes,
+      reportedByUserId: r.reported_by_user_id, reportedByName: '' };
+  });
+}
+
+export interface ArrivalEvent {
+  id: string; scheduledAt: string; arrivedAt: string; delayMinutes: number;
+}
+
+/** Most recent arrival event, or null (honest absence — no exchange logged yet). */
+export async function arrivalEventFor(pool: pg.Pool, childId: string): Promise<ArrivalEvent | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, to_char(scheduled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS scheduled_at,
+              to_char(arrived_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS arrived_at,
+              delay_minutes
+         FROM exchange_arrival_event WHERE child_id = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [childId],
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { id: r.id, scheduledAt: r.scheduled_at, arrivedAt: r.arrived_at,
+      delayMinutes: r.delay_minutes };
+  });
+}
+
+export type RecordArrivalResult =
+  | { ok: true; event: ArrivalEvent }
+  | { ok: false; error: 'no_active_custody_order' };
+
+/**
+ * `scheduled_at` is NEVER client-supplied (same discipline as
+ * medication_dose.local_date) — resolved here from the child's real active
+ * custody_order via `activeCustodyOrderFor()` (exchange_time/order_tz),
+ * combined with [nowLocalDate] (the caller resolves this the same
+ * child_tz_interval/home_tz way every other child-local write in this file
+ * already does). No location parameter exists on this function's signature —
+ * P3 (§9.7.2), structurally: there is nothing here a future caller could
+ * even pass through. Honest absence, not a guessed default: a child with no
+ * active custody order gets a real `no_active_custody_order` error, the same
+ * "never fabricate a countdown/schedule" posture activeCustodyOrderFor()'s
+ * own callers (the /now route) already take for sleepsUntilHandover.
+ */
+export async function recordExchangeArrival(
+  pool: pg.Pool, actorRole: string, actorUserId: string, childId: string, nowLocalDate: string,
+): Promise<RecordArrivalResult> {
+  const order = await activeCustodyOrderFor(pool, childId, nowLocalDate);
+  if (!order) return { ok: false, error: 'no_active_custody_order' };
+  const scheduledAt = DateTime.fromISO(`${nowLocalDate}T${order.exchangeTime}`, { zone: order.orderTz });
+  const arrivedAt = DateTime.utc();
+  const delayMinutes = Math.max(0, Math.round(arrivedAt.diff(scheduledAt, 'minutes').minutes));
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    const rows = await q(
+      `INSERT INTO exchange_arrival_event
+         (child_id, scheduled_at, arrived_at, delay_minutes, reported_by_user_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, to_char(scheduled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS scheduled_at,
+                 to_char(arrived_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS arrived_at,
+                 delay_minutes`,
+      [childId, scheduledAt.toUTC().toISO(), arrivedAt.toISO(), delayMinutes, actorUserId],
+    );
+    const r = rows[0];
+    return { ok: true, event: { id: r.id, scheduledAt: r.scheduled_at, arrivedAt: r.arrived_at,
+      delayMinutes: r.delay_minutes } };
+  });
+}
+
 export async function certifiedExportBundleFor(
   pool: pg.Pool, requestedBy: string, childId: string, now: Date = new Date(),
 ): Promise<CertifiedExportResult> {
