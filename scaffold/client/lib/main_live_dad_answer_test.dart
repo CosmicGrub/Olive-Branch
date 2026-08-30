@@ -268,14 +268,14 @@ class _OliveLiveDadAnswerTestState extends State<_OliveLiveDadAnswerTest> {
                 onPressed: () async {
                   final data = await _fetchTokenAndBridgeToIvy();
                   if (!context.mounted) return;
-                  Navigator.of(context).push(MaterialPageRoute<void>(
+                  unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
                     builder: (_) => CallScreen(
                       who: 'dad',
                       displayName: 'Dad',
                       knownToken: data['token'] as String,
                       knownWsURL: data['wsURL'] as String?,
                     ),
-                  ));
+                  )));
                 },
               ),
             ),

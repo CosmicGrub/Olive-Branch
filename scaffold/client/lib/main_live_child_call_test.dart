@@ -349,14 +349,14 @@ class _OliveLiveChildCallTestState extends State<_OliveLiveChildCallTest> {
                 onPressed: () async {
                   final data = await _fetchTokenAndBridgeToDad();
                   if (!context.mounted) return;
-                  Navigator.of(context).push(MaterialPageRoute<void>(
+                  unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
                     builder: (_) => CallScreen(
                       who: 'ivy',
                       displayName: 'Ivy',
                       knownToken: data['token'] as String,
                       knownWsURL: data['wsURL'] as String?,
                     ),
-                  ));
+                  )));
                 },
               ),
             ),
