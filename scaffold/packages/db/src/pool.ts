@@ -945,6 +945,44 @@ export async function recordCallEnd(
 }
 
 /**
+ * MASTERFILE §16.2 #6 REVERSED AGAIN — real join route support. Under
+ * LiveKit, joining a call requires a real, signed, per-identity token — not
+ * a bare room name the way Jitsi's own SDK allowed. The callee's device
+ * therefore needs to re-mint her OWN token for a call someone else already
+ * started, which means reconstructing enough of the original
+ * session-runtime SessionRecord to call mintToken() a second time. Every
+ * field below already lives on call_log (recordCallStart() above writes all
+ * of it) — this is a read, not a new persistence decision.
+ *
+ * Returns null for a row that doesn't exist, doesn't belong to this child,
+ * or has already ended — the route decides what each of those means (404
+ * vs 410 vs something else), this function just reports the honest absence.
+ */
+export async function callSessionFor(
+  pool: pg.Pool, childId: string, sessionId: string,
+): Promise<{
+  id: string; childId: string; roomName: string; startedBy: string;
+  authorizedUserIds: string[]; ladderStep: string; recorded: boolean;
+  endedAt: string | null;
+} | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at
+         FROM call_log WHERE id = $1 AND child_id = $2`,
+      [sessionId, childId],
+    );
+    if (!rows.length) return null;
+    const row = rows[0];
+    if (row.ended_at) return null;
+    return {
+      id: row.id, childId: row.child_id, roomName: row.room_name, startedBy: row.started_by,
+      authorizedUserIds: row.participant_ids, ladderStep: row.ladder_step,
+      recorded: row.recorded, endedAt: row.ended_at,
+    };
+  });
+}
+
+/**
  * db/migrations/0011_account_deletion.sql — account deletion, for real.
  * MASTERFILE §2.10, §2.11, §9.8, prohibition P8.
  * client/lib/deletion_screen.dart's `whatDeletionKeeps` / `whatDeletionRemoves`
