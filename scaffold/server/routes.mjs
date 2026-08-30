@@ -987,6 +987,115 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     },
   });
 
+  api.register({
+    // GET /v1/children/:childId/ribbon — MASTERFILE §20.2b's oldest open
+    // gap, closed: "GuardianHome has no live-data screen" (first confirmed
+    // v0.49.15, still true at v0.49.57). guardian_home.dart's own header has
+    // said since it was written, "All times arrive pre-rendered from /now
+    // and /ribbon so the client does no zone maths" — /now has existed and
+    // been real all along; this is the second, previously-only-declared
+    // half (api_client.dart's own `OliveApi.childRibbon` path constant
+    // existed with zero server route or client fetch method behind it —
+    // confirmed via a real repo-wide grep before writing this, not assumed).
+    // Guardian-only, same real parentGuardiansOfChild() gate /presence above
+    // uses — no child-self branch, since GuardianHome has no child-facing
+    // caller anywhere in this client.
+    method: 'GET', path: '/v1/children/:childId/ribbon', action: 'calendar.view',
+    handler: async (c, q) => {
+      const parents = await parentGuardiansOfChild(pool, c.childId);
+      if (!(c.principal.userId && parents.some(g => g.userId === c.principal.userId))) {
+        return { status: 403, body: { error: 'not_a_parent_of_child' } };
+      }
+
+      // Same tz-resolution block /now and /presence both already duplicate a
+      // third time rather than share — matching those two routes' own
+      // explicit "small duplication, not worth a shared helper here"
+      // comments just above.
+      const nowUtc = DateTime.utc();
+      const interval = await q(
+        `SELECT tz FROM child_tz_interval
+          WHERE child_id = $1 AND valid @> $2::timestamptz
+          ORDER BY confidence DESC LIMIT 1`,
+        [c.childId, nowUtc.toJSDate()],
+      );
+      let tz = interval[0]?.tz;
+      if (!tz) {
+        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
+        if (!child.length) return { status: 404, body: { error: 'child_not_found' } };
+        tz = child[0].home_tz;
+      }
+      const local = nowUtc.setZone(tz);
+      // Sun=0..Sat=6, matching /presence's own nowWeekday convention just
+      // above (packages/delivery-engine/src/materialize.ts,
+      // 0010_availability.sql's weekday column) — NOT Luxon's native
+      // 1=Monday..7=Sunday ISO weekday.
+      const nowWeekday = local.weekday % 7;
+
+      // childCtxFor() already runs the real, tested day-part query
+      // materialize()/tools/scheduler.mjs rely on — reused exactly, not
+      // reimplemented. Its own effective-date filter (WHERE effective @>
+      // CURRENT_DATE) is unrelated to child-local "today": that's a
+      // pre-existing property of this shared function, not introduced here
+      // (see this route's own README-adjacent disclosure below). This route
+      // ADDITIONALLY filters to today's WEEKDAY specifically — a filter
+      // childCtxFor()'s other two callers (tools/scheduler.mjs, POST
+      // .../messages) have no use for, since they resolve one specific
+      // instant, not "today's whole schedule for a home screen" — so the
+      // filter belongs here, not inside childCtxFor() itself.
+      const ctx = await childCtxFor(pool, c.childId);
+      if (!ctx) return { status: 404, body: { error: 'child_not_found' } };
+      // DISCLOSED, not silently papered over: childCtxFor()'s own day_part
+      // query filters on Postgres CURRENT_DATE (server date), not the
+      // child-local date `local`/`nowLocalDate` resolve just above — near a
+      // midnight boundary this route's `dayParts` could reflect a different
+      // calendar day than its own /now sibling's `childLocalTime` does. A
+      // real, pre-existing property of a function this route reuses rather
+      // than something this route introduces; fixing it would also affect
+      // childCtxFor()'s other two callers and is out of scope here.
+      // day_part.days_of_week is NOT NULL and, per every real seed/fixture
+      // in this repo (db/test/0002_seed.sql), always an explicit, fully-
+      // populated array ('{0,1,2,3,4,5,6}' for an every-day part) — never
+      // empty as a "no restriction" sentinel. A plain .includes() check is
+      // therefore the real filter, not a defensive fallback for a shape
+      // that doesn't occur.
+      const dayParts = ctx.dayParts
+        .filter(p => p.daysOfWeek.includes(nowWeekday))
+        .map(p => ({ kind: p.kind, startsLocal: p.startsLocal, endsLocal: p.endsLocal, reachable: p.reachable }));
+
+      // The child's own real display name — GET /v1/me has no analog for a
+      // GUARDIAN caller (that route returns the CALLER's own name, per its
+      // own header). One-line lookup, not folded into childCtxFor() — that
+      // function's other two callers have no use for a display name at all.
+      const child = await q(`SELECT display_name FROM child WHERE id = $1`, [c.childId]);
+      const childName = child[0]?.display_name ?? null;
+
+      // The CALLING guardian's own windows, today only — availabilityFor()
+      // returns every co-guardian's windows (the /presence route above
+      // reads all of them for its own tie-break); this route only needs the
+      // caller's own "you" ribbon.
+      const actorWindows = (await availabilityFor(pool, c.childId))
+        .filter(w => w.guardianId === c.principal.userId && w.weekday === nowWeekday)
+        .map(w => ({ startLocal: w.startLocal, endLocal: w.endLocal, note: w.note }));
+
+      return { body: {
+        childName,
+        dayParts,
+        actorWindows,
+        // DELIBERATELY omitted, not a forgotten field: an honest overlap
+        // sentence ("Both free 7–8 PM her time") needs a real definition of
+        // "child free" this route has no confirmed answer for yet — is an
+        // uncovered gap in her day-part schedule "free," or merely
+        // "unstructured, not necessarily reachable"? A wrong invented
+        // definition here is worse than the honest absence GuardianHome's
+        // own `overlapLabel` field already renders as nothing (it's
+        // nullable, matching ChildHome's own `sleepsUntilHandover`/
+        // `presence` precedent for exactly this class of gap) — see
+        // guardian_home_live.dart's own header for the full account. Needs
+        // sign-off before implementing, not a guess shipped quietly.
+      } };
+    },
+  });
+
   // The response's top-level key is `entries`, not `messages` — a real,
   // previously undiscovered bug, found only while writing this route's
   // first-ever HTTP-level test (server/test/inbox_route.test.mjs, added

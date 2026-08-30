@@ -4,6 +4,13 @@
 // Renders MARKUP screen 05. The dual clock is persistent and the CHILD's time is
 // dominant; the parent never performs a timezone calculation (§8.2.3). All times
 // arrive pre-rendered from /now and /ribbon so the client does no zone maths.
+// Both are real routes as of v0.49.57 (server/routes.mjs) — this widget
+// itself stays a pure StatelessWidget taking plain values either way, same
+// as it always has; see guardian_home_live.dart (new this pass) for the
+// wrapper that actually fetches them. This screen's own STILL-static
+// callers (main.dart's offline demo, invariants_test.dart) are unaffected —
+// nothing here changed except `childStateSentence` becoming nullable (see
+// its own field doc comment).
 //
 // Action grid below mirrors child_home.dart's tile pattern — parity of
 // structure, not just of read-only status. Three tiles are real, genuinely
@@ -57,12 +64,20 @@ class RibbonBand {
 class GuardianHome extends StatelessWidget {
   const GuardianHome({super.key, required this.childName,
     required this.childLocalTime, required this.childZoneAbbr,
-    required this.actorLocalTime, required this.childStateSentence,
+    required this.actorLocalTime, this.childStateSentence,
     required this.childBands, required this.actorBands, this.overlapLabel,
     this.baseUrl, this.guardianId, this.childId, this.availabilityHttpClient});
 
   final String childName, childLocalTime, childZoneAbbr, actorLocalTime;
-  final String childStateSentence;
+  /// Nullable since v0.49.57 (was required) — no live route exists yet that
+  /// derives a real one-sentence status ("Winding down for bed") the way
+  /// /now and /ribbon derive every other field on this widget. Null renders
+  /// as nothing, the same honest-absence posture ChildHome's own
+  /// `sleepsUntilHandover`/`presence` fields already established for
+  /// exactly this class of gap — see guardian_home_live.dart's own header
+  /// for the fuller account. Every existing demo/test call site still
+  /// passes a real literal string here; this change is purely additive.
+  final String? childStateSentence;
   final List<RibbonBand> childBands, actorBands;
   final String? overlapLabel;
 
@@ -104,9 +119,11 @@ class GuardianHome extends StatelessWidget {
             // Actor time is subordinate, always.
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 4),
-            Text(childStateSentence, style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            if (childStateSentence != null) ...[
+              const SizedBox(height: 4),
+              Text(childStateSentence!, style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ],
             const SizedBox(height: 12),
             SizedBox(width: double.infinity, height: 48,
               child: FilledButton(

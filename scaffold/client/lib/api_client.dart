@@ -379,6 +379,25 @@ class OliveApi {
   Future<Map<String, dynamic>> fetchNow(String childId) => _get(childNow, childId: childId);
   Future<Map<String, dynamic>> fetchInbox(String childId) => _get(inbox, childId: childId);
 
+  /// `{childName, dayParts: [{kind, startsLocal, endsLocal, reachable}, ...],
+  /// actorWindows: [{startLocal, endLocal, note}, ...]}` — GET [childRibbon],
+  /// server/routes.mjs's real handler (v0.49.57, MASTERFILE §20.2b —
+  /// GuardianHome's own long-standing "no live-data screen" gap). Guardian-
+  /// only: this path constant existed since before this client had a caller
+  /// for it (see its own declaration above) with zero server route behind
+  /// it — the real route is narrowed to a real parent guardian of `childId`,
+  /// not the wider `calendar.view` grant [fetchNow]/[fetchInbox] both admit.
+  /// `dayParts`/`actorWindows` are both already filtered to TODAY server-
+  /// side (the child's own resolved weekday for the former, the calling
+  /// guardian's own for the latter) — no client-side date/weekday filtering
+  /// needed on top of this. `overlapLabel` is deliberately absent from the
+  /// wire — see routes.mjs's own comment at this route for why (an honest
+  /// "child free" definition has no confirmed answer yet); decoding that
+  /// absence into GuardianHome's own nullable `overlapLabel` field is left
+  /// to the caller, matching [fetchPresence]'s own `free` decode above.
+  Future<Map<String, dynamic>> fetchRibbon(String childId) =>
+      _get(childRibbon, childId: childId);
+
   /// Marks delivery_intent's own row for [messageId] `opened` — POST
   /// [inboxOpened], server/routes.mjs's real handler. Idempotent: an
   /// already-opened message (a real re-open, or an offline-queued duplicate
