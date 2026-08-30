@@ -87,11 +87,22 @@ services:
       # never ships with auth disabled — see .env.example to opt in.
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
       DEV_LOGIN: "${DEV_LOGIN:-0}"
-      # server/routes.mjs's real POST /v1/children/:childId/calls route
-      # needs this too now, not just callroom — same value, same reasoning
-      # as the identical line below (point it at the self-hosted stack once
-      # Step 2 is up; defaults to the public server otherwise).
-      JITSI_SERVER_URL: https://192.168.1.175:8443
+      # MASTERFILE §16.2 #6 REVERSED AGAIN — server/routes.mjs's real
+      # POST /v1/children/:childId/calls route now needs a real LiveKit
+      # Cloud project, not a LAN-IP self-hosted Jitsi address; same three
+      # values, same reasoning as the identical block below on `callroom`.
+      # Optional here (not `:?`-required, unlike SESSION_SECRET/
+      # MEDIA_SIGNING_SECRET above): most of this dev stack — every screen
+      # except a real call attempt — works with none of the three set;
+      # routes.mjs itself already fails loudly (500 call_backend
+      # _unconfigured) on an actual call POST if they're missing, which is
+      # the right place for that failure to surface, not a hard container
+      # -start requirement that would block testers who aren't touching
+      # calls today. Set all three from ./.env (untracked — see
+      # .env.example) once a real LiveKit Cloud project exists.
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       # Pinned to the same absolute path the volume below mounts — see
       # docker-compose.prod.yml's matching line for why this is written
       # explicitly rather than left to server/routes.mjs's own
@@ -143,13 +154,16 @@ services:
     # only calls into packages/session-runtime directly (see its own file
     # header), it never talks to Postgres or the main server.
     environment:
-      # Point this at the self-hosted Jitsi stack's real LAN address, not
-      # its default (public meet.jit.si) — see tools/jitsi-selfhost/'s own
-      # README for why the default exists and what it's for. Update this
-      # if the dev machine's LAN IP or the self-hosted stack's port ever
-      # changes; same staleness caution as generate-dev-cert.sh's own
-      # header and network_security_config.xml's LAN-IP entry.
-      JITSI_SERVER_URL: https://192.168.1.175:8443
+      # MASTERFILE §16.2 #6 REVERSED AGAIN — local-call-room-server.mjs
+      # itself now exits loudly at boot (see its own header) if any of
+      # these three is unset; unlike `server` above, this container's
+      # entire job is minting real call tokens, so there is no sense in
+      # which it can usefully run without them. tools/jitsi-selfhost/'s own
+      # README documents the now-superseded self-hosted LAN-address path
+      # this replaces, left in place per §21.7 rather than deleted.
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       # Required inside a container: local-call-room-server.mjs now binds
       # 127.0.0.1 by default (see its own header), which would make it
       # unreachable through Docker's own port-forwarding — the forwarder
