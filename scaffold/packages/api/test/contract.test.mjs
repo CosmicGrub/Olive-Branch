@@ -20,11 +20,13 @@
  * suite exists to catch before it ships.
  *
  * The reverse is NOT required: api_client.dart intentionally declares paths
- * (ribbon, overlap, messages, batches, ping, journal, medications,
- * emergency-card, settings) with no server implementation yet — see that
- * file's own header comment — so this suite does not fail on a Dart
- * constant the server hasn't grown into yet, only on a server route the
- * Dart contract has no name for.
+ * (overlap, batches, ping, journal, settings) with no server implementation
+ * yet — see that file's own header comment — so this suite does not fail on
+ * a Dart constant the server hasn't grown into yet, only on a server route
+ * the Dart contract has no name for. `ribbon` closed this pass (v0.49.57,
+ * MASTERFILE §20.2b) — `messages`/`medications`/`emergency-card` had
+ * already closed earlier and this comment simply hadn't been updated to
+ * match; corrected here rather than left to drift further.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

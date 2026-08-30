@@ -21,22 +21,16 @@
 import 'package:flutter/material.dart';
 import 'calendar_day_logic.dart';
 
-const Map<String, Color> _dayPartColor = <String, Color>{
-  'wake': Color(0xFFFFB74D),
-  'before_school': Color(0xFFFFD54F),
-  'school': Color(0xFF64B5F6),
-  'after_school': Color(0xFF81C784),
-  'activity': Color(0xFFFF8A65),
-  'dinner': Color(0xFFE57373),
-  'wind_down': Color(0xFF9575CD),
-  'bedtime': Color(0xFF7986CB),
-  'asleep': Color(0xFF3949AB),
-  'free': Color(0xFF4DD0E1),
-};
-
-const Color _fallbackColor = Color(0xFFBDBDBD);
-
-Color _colorFor(String kind) => _dayPartColor[kind] ?? _fallbackColor;
+// _colorFor(kind) used to be a private copy of these ten values, kept
+// deliberately separate per this file's own header (no shared RibbonBand/
+// _Ribbon widget code with guardian_home.dart). v0.49.57: the VALUES
+// themselves (not any widget code) moved to calendar_day_logic.dart's own
+// dayPartColor() — the same shared-lookup treatment dayPartLabel()/
+// dayPartGlyph() already got — so guardian_home_live.dart's new ribbon
+// (§20.2b) renders the same kind in the same color this screen already
+// does, without a second, driftable copy of the same ten hex values. Zero
+// pixel change here: same values, one fewer place they're written down.
+Color _colorFor(String kind) => dayPartColor(kind);
 
 // One friendly, concrete line per day-part — shown only when she taps a card
 // open. Kept short on purpose: this is a glance tool, not a reading test.

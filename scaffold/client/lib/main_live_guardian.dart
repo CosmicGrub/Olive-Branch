@@ -12,27 +12,21 @@
 // point's own tree." This file is that wiring, for the pieces that don't
 // need a server endpoint this repo doesn't have yet.
 //
-// Deliberately does NOT boot into the real GuardianHome (guardian_home.dart)
-// — that widget needs dual-clock/ribbon data from a `/ribbon` endpoint
-// (see its own header: "All times arrive pre-rendered from /now and
-// /ribbon") that api_client.dart only declares a path constant for
-// (`OliveApi.childRibbon`) with no real server route and no client fetch
-// method behind it — a `guardian_home_live.dart` honestly can't be written
-// yet without inventing fake ribbon data, which this codebase's own
-// established discipline (see child_home_live.dart's header on `presence`)
-// treats as worse than an honest gap. Building the real endpoint is its own,
-// separate, larger piece of work — tracked, not done here.
+// v0.49.57: now boots into the real, live GuardianHome (guardian_home_live
+// .dart) — MASTERFILE §20.2b's own longest-standing tracked gap, closed.
+// The `/ribbon` endpoint this file's own header used to describe as
+// missing (api_client.dart's `OliveApi.childRibbon` — a dead path constant
+// with no server route or client fetch method behind it) is real now
+// (server/routes.mjs, GET .../ribbon); guardian_home_live.dart is what it
+// unblocks. GuardianHome's own "More" tile still reaches GuardianMoreScreen
+// exactly as it always has (guardian_home.dart:188-198, unmodified) — this
+// file's own boot target is the only thing that changed.
 //
-// Boots straight into GuardianMoreScreen instead: every tile it needs
-// (baseUrl/guardianId/childId) is a plain identifier, not ribbon-computed
-// display data, so it's honestly buildable today with zero fabricated
-// fields. The real "Call $childName" tile (guardian_more.dart's Calls
-// section) and the real kiosk-PIN-setup wiring (GuardianSetupScreen.
-// setGuardianPin) both live under this hub, which is the actual reason this
-// file exists — see MASTERFILE's own note on this pass for the fuller
-// tiered plan (this tier; a real /ribbon endpoint + guardian_home_live.dart;
-// a real first-time guardian-device onboarding UX to replace this dev
-// shortcut entirely).
+// Real, disclosed gap this live wrapper carries forward, not invented here:
+// `childStateSentence`/`overlapLabel` both render as nothing (no real
+// data source for either exists yet) — see guardian_home_live.dart's own
+// header for the full account of what's real and what's still an honest
+// absence.
 //
 // `flutter run --target=lib/main_live_guardian.dart
 //   --dart-define=OLIVE_API_BASE_URL=http://<host>:8123`
@@ -42,7 +36,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'api_client.dart';
-import 'guardian_more.dart';
+import 'guardian_home_live.dart';
 import 'push_channel.dart';
 import 'theme.dart';
 
@@ -128,9 +122,9 @@ class _OliveLiveGuardianState extends State<OliveLiveGuardian> {
           curve: Curves.easeInOut,
           child: child!,
         ),
-        // GuardianMoreScreen already owns a Scaffold+AppBar ('More') — see
-        // its own build() method; no wrapping Scaffold needed here.
-        home: const GuardianMoreScreen(
+        // LiveGuardianHomeScreen owns its own Scaffold in every _LoadState —
+        // see its own build() method; no wrapping Scaffold needed here.
+        home: const LiveGuardianHomeScreen(
           baseUrl: _defaultBaseUrl,
           guardianId: _defaultGuardianId,
           childId: _defaultChildId,
