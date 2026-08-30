@@ -15,13 +15,18 @@ name: publish-image
 # that needs NO separately-provisioned registry credential, because GHCR
 # authenticates against the token every Actions run already has.
 #
-# WHAT IT IS NOT: verified to actually run green against the real olive-
-# branch repository. This session has no live GitHub Actions access — no way
-# to trigger this workflow, watch it run, or confirm the push actually
-# lands in this repo's package registry. Everything below is correct by
-# careful reading of GitHub's own documented GHCR + GITHUB_TOKEN pattern,
-# not by having watched it succeed here. Treat the first real run of this
-# workflow as the actual test, and expect to iterate on it then.
+# WHAT IT IS NOT (yet): confirmed to actually PUSH an image to this repo's
+# package registry. Its first real run (2026-08-30, chained after PR #82's
+# merge to main) DID happen and DID fail — `docker build` refused every tag
+# below outright ("repository name must be lowercase", since
+# github.repository_owner is this repo's real, mixed-case GitHub login,
+# CosmicGrub) — found and fixed below (see "Compute a lowercase image
+# repository"), but that fix itself has not yet had its OWN first real run
+# confirmed green as of this writing. The GHCR-authentication half (login,
+# permissions:) is confirmed real: the login step succeeded before the
+# build step's tag error stopped the run, so GITHUB_TOKEN + `packages:
+# write` genuinely authenticates against ghcr.io in this repo, unverified
+# only for the actual push.
 #
 # TWO REAL, MANUAL PREREQUISITES THIS FILE CANNOT SATISFY ON ITS OWN:
 #
@@ -72,12 +77,27 @@ jobs:
           # for every run and scoped by the `permissions:` block above.
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Real bug, found by this repo's own first real run of this workflow
+      # (2026-08-30, chained after PR #82's merge to main): `docker build`
+      # refused every tag below with "repository name must be lowercase" —
+      # `github.repository_owner` resolves to this repo's real GitHub login,
+      # `CosmicGrub`, and OCI registry names are case-sensitive-refusing,
+      # lowercase-only, unlike GitHub's own account-name casing rules. This
+      # file's own header already flagged itself as unverified against a
+      # real run and expected to iterate here — this is that iteration.
+      # `${{ }}` expressions have no built-in lowercase function, so this
+      # step computes it with a real shell `tr` and hands the result to
+      # every later step via $GITHUB_ENV, rather than repeating the
+      # same inline `tr` at each of the four call sites below.
+      - name: Compute a lowercase image repository (GHCR requires it)
+        run: echo "IMAGE_REPO=ghcr.io/$(echo '${{ github.repository_owner }}/olive-branch' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Build
         working-directory: scaffold
         run: |
           docker build \
-            -t ghcr.io/${{ github.repository_owner }}/olive-branch:${{ github.event.workflow_run.head_sha }} \
-            -t ghcr.io/${{ github.repository_owner }}/olive-branch:latest \
+            -t ${{ env.IMAGE_REPO }}:${{ github.event.workflow_run.head_sha }} \
+            -t ${{ env.IMAGE_REPO }}:latest \
             .
 
       # docker-compose.prod.yml's own default IMAGE_TAG is "latest" — a real
@@ -86,5 +106,5 @@ jobs:
       # deliberately, not as the routine deploy path.
       - name: Push
         run: |
-          docker push ghcr.io/${{ github.repository_owner }}/olive-branch:${{ github.event.workflow_run.head_sha }}
-          docker push ghcr.io/${{ github.repository_owner }}/olive-branch:latest
+          docker push ${{ env.IMAGE_REPO }}:${{ github.event.workflow_run.head_sha }}
+          docker push ${{ env.IMAGE_REPO }}:latest
