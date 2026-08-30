@@ -293,5 +293,41 @@ void main() {
       expect(screen.knownToken, isNull);
       expect(screen.knownWsURL, isNull);
     });
+
+    testWidgets('a real knownToken skips the join call entirely and wins '
+        'over sessionId when both are supplied -- the one real dev-only '
+        'case (local-call-room-server.mjs\'s own process-lifetime-fixed '
+        "room, no real call_log row for a sessionId to resolve against) "
+        "where a caller already has a real, correctly-bound token and has "
+        'no reason to mint a second one', (tester) async {
+      await tester.pumpWidget(wrap(const CallKnockScreen(
+        from: 'Dad', who: 'ivy', displayName: 'Ivy',
+        knownToken: 'already-bound-token', knownWsURL: 'wss://dev.test',
+        // A real sessionId AND real auth context are ALSO supplied here,
+        // deliberately, to prove knownToken really does win rather than
+        // merely being the only thing present.
+        sessionId: 's1', baseUrl: 'http://127.0.0.1:1', childId: 'child-1',
+        sessionToken: 'tok')));
+
+      // Bounded pumps inside runAsync, not pumpAndSettle -- the same two
+      // real reasons call_screen_test.dart's own onCallEnd tests and
+      // guardian_more_test.dart's own real-call-start test already
+      // document: a real knownToken means CallScreen's _startCall()
+      // constructs a real livekit_client Room() and calls connect(), which
+      // (a) shows an always-animating "Joining…" spinner pumpAndSettle
+      // would wait forever on, and (b) starts Room's own uncancelable
+      // internal TTLMap timer, which FakeAsync's end-of-test invariant
+      // check doesn't tolerate outside a real event loop.
+      await tester.tap(find.byKey(const Key('answerButton_Answer')));
+      await tester.runAsync(() async {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+      });
+
+      expect(find.byType(CallScreen), findsOneWidget);
+      final screen = tester.widget<CallScreen>(find.byType(CallScreen));
+      expect(screen.knownToken, 'already-bound-token');
+      expect(screen.knownWsURL, 'wss://dev.test');
+    });
   });
 }

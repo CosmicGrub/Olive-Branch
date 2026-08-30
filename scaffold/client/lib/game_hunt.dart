@@ -30,7 +30,7 @@
 // the id of a real `media_artifact` — a photograph, put through the same
 // quality-gated capture flow §9.1's homework screen formalises. No camera
 // plugin is wired into this preview build (pubspec.yaml carries only
-// jitsi_meet_flutter_sdk, and this file does not add to it — see the
+// livekit_client, and this file does not add to it — see the
 // per-group "new files only" constraint this build was made under), so
 // "Found it!" below generates a placeholder artifact id locally rather than
 // a real photograph. The state machine it drives (submitFind, huntProgress,

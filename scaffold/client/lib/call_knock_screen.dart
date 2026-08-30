@@ -71,6 +71,8 @@ class CallKnockScreen extends StatefulWidget {
     this.baseUrl,
     this.childId,
     this.sessionToken,
+    this.knownToken,
+    this.knownWsURL,
     this.speak,
     this.onTimedOut,
   });
@@ -107,6 +109,20 @@ class CallKnockScreen extends StatefulWidget {
   final String? baseUrl;
   final String? childId;
   final String? sessionToken;
+
+  /// An ALREADY-resolved token/wsURL pair, bypassing [OliveApi.joinCall]
+  /// entirely — for the one real case where resolving through the real
+  /// production join route genuinely doesn't apply: main_live_dad_answer
+  /// _test.dart's/main_live_child_call_test.dart's own dev-only,
+  /// process-lifetime-fixed room-server session has no real `call_log` row
+  /// for [sessionId] to resolve against at all (see local-call-room-server
+  /// .mjs's own header on why that dev-only bridge carries a
+  /// pre-minted, already-identity-bound token instead of a sessionId for
+  /// that specific leg). Checked BEFORE [sessionId] in [_handleAnswer] —
+  /// when both are supplied, this wins, since a caller that already HAS a
+  /// real, correctly-bound token has no reason to mint a second one.
+  final String? knownToken;
+  final String? knownWsURL;
 
   /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null reports
   /// itself honestly on tap, same posture as emergency_card.dart's own
@@ -167,6 +183,18 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
 
   Future<void> _handleAnswer() async {
     _timeoutTimer?.cancel();
+
+    // Already resolved — no real join call to make at all. See
+    // [CallKnockScreen.knownToken]'s own doc comment for the one real case
+    // this is for.
+    if (widget.knownToken != null) {
+      if (!mounted) return;
+      unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        builder: (_) => CallScreen(
+          who: widget.who, displayName: widget.displayName,
+          knownToken: widget.knownToken, knownWsURL: widget.knownWsURL))));
+      return;
+    }
 
     // No real join call to make: either this screen was opened some way
     // other than a real push (a test, or a future non-push call site), or
@@ -326,6 +354,11 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
 /// already-authenticated screen constructs this handler
 /// (main_live.dart's/main_live_guardian.dart's own session bootstrap), the
 /// same session that was already live when the push arrived.
+/// `knownToken`/`knownWsURL` — see [CallKnockScreen.knownToken]'s own doc
+/// comment for the one real dev-only case these are for. Real production
+/// pushes never supply these (a real push carries only kind/ref/callHandle
+/// — push.ts's own content-free `PushInput` shape has no room for a raw
+/// token, and shouldn't grow one just for this).
 void Function(PushPointer pointer) buildCallIncomingHandler({
   required GlobalKey<NavigatorState> navigatorKey,
   required String from,
@@ -334,6 +367,8 @@ void Function(PushPointer pointer) buildCallIncomingHandler({
   String? baseUrl,
   String? childId,
   String? sessionToken,
+  String? knownToken,
+  String? knownWsURL,
 }) {
   return (PushPointer pointer) {
     if (pointer.kind != 'call_incoming') return;
@@ -342,6 +377,7 @@ void Function(PushPointer pointer) buildCallIncomingHandler({
     navigator.push(MaterialPageRoute<void>(
       builder: (_) => CallKnockScreen(
         from: from, who: who, displayName: displayName, sessionId: pointer.ref,
-        baseUrl: baseUrl, childId: childId, sessionToken: sessionToken)));
+        baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+        knownToken: knownToken, knownWsURL: knownWsURL)));
   };
 }

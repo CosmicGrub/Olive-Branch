@@ -149,12 +149,28 @@ function handlePendingCallRoute(req, res, get, set) {
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => {
       try {
-        const { token, wsURL } = JSON.parse(raw || '{}');
-        if (typeof token !== 'string' || !token) {
+        const body = JSON.parse(raw || '{}');
+        // Deliberately shape-agnostic — this slot is a dumb pass-through,
+        // not a validator of what it carries. Two real, different-shaped
+        // payloads legitimately land here: {sessionId} from
+        // main_live_guardian_call_test.dart's bridge (the REAL production
+        // call-start route's own sessionId, meant to be resolved through
+        // the real POST .../join route — see call_knock_screen.dart's own
+        // header for why a bare token can't be bridged for THAT leg: it
+        // would be minted for the CALLER's identity, and using it as the
+        // callee would mean impersonating the caller), and {token, wsURL}
+        // from main_live_dad_answer_test.dart's own FAB (a dev-only,
+        // process-lifetime-fixed room with no real call_log row to resolve
+        // a sessionId against, so the caller fetches and bridges the
+        // RECEIVER's own correctly-identity-bound token directly instead —
+        // see that file's own _fetchRoomAndBridgeToIvy doc comment). The
+        // receiving poll loop decides what it got; this route just needs a
+        // real, non-empty JSON object, not a specific field.
+        if (typeof body !== 'object' || body === null || Object.keys(body).length === 0) {
           res.writeHead(400, { 'content-type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'token required' }));
+          return res.end(JSON.stringify({ error: 'a non-empty JSON body is required' }));
         }
-        set({ token, wsURL: wsURL ?? LIVEKIT_URL });
+        set(body);
         res.writeHead(204);
         res.end();
       } catch {
