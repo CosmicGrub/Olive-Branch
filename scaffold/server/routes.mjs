@@ -1058,9 +1058,21 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // empty as a "no restriction" sentinel. A plain .includes() check is
       // therefore the real filter, not a defensive fallback for a shape
       // that doesn't occur.
+      // Real bug, caught live in CI, not found locally (no reachable
+      // Postgres in this environment to catch it against): childCtxFor()'s
+      // own query casts day_part's `time` columns straight to text
+      // (`starts_local::text`), which Postgres renders as "HH:MM:SS", not
+      // the "HH:mm" shape DayPartLite's own doc comment documents and this
+      // route's response is supposed to honor. availabilityFor()'s own
+      // query already avoids this exact trap with an explicit
+      // `to_char(..., 'HH24:MI')` — mirrored here by truncating rather than
+      // reformatting childCtxFor() itself (a shared function with two other
+      // real callers this route has no business reformatting output for).
+      const hhmm = (t) => t.slice(0, 5);
       const dayParts = ctx.dayParts
         .filter(p => p.daysOfWeek.includes(nowWeekday))
-        .map(p => ({ kind: p.kind, startsLocal: p.startsLocal, endsLocal: p.endsLocal, reachable: p.reachable }));
+        .map(p => ({ kind: p.kind, startsLocal: hhmm(p.startsLocal), endsLocal: hhmm(p.endsLocal),
+          reachable: p.reachable }));
 
       // The child's own real display name — GET /v1/me has no analog for a
       // GUARDIAN caller (that route returns the CALLER's own name, per its

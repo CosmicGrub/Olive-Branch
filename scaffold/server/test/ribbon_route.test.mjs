@@ -204,13 +204,17 @@ const get = (childId, tokv) => api.handle(
   check('B actor windows', 'it is DAD\'s own today window, with the real start/end/note',
     `${w.startLocal}-${w.endLocal}-${w.note}`, '17:00-20:00-evenings');
 
-  // MOM has a real, live edge to CHILD too -- her own ribbon must show HER
-  // window, not DAD's, proving the filter keys off the caller, not the
-  // child.
+  // MOM has a real, live edge to CHILD too, AND her own real seeded window
+  // for today -- her own ribbon must show HER window (with HER note), not
+  // DAD's, proving the filter keys off the caller, not the child. A real
+  // bug in an earlier draft of this test asserted MOM saw ZERO windows,
+  // which was simply wrong -- she has one seeded for herself, right above.
   const momTok = tok(MOM, 'guardian');
   const momRes = await get(CHILD, momTok);
-  check('B actor windows', "MOM's own /ribbon call sees zero windows (she has none seeded for herself)",
-    (momRes.body.actorWindows ?? []).length, 0);
+  check('B actor windows', "MOM's own /ribbon call sees exactly HER OWN one window",
+    (momRes.body.actorWindows ?? []).length, 1);
+  check('B actor windows', "and it is genuinely HERS, not DAD's -- proven by the note text",
+    momRes.body.actorWindows[0]?.note, "co-guardian, must not leak into DAD's ribbon");
 }
 
 // ===========================================================================
