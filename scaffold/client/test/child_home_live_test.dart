@@ -410,8 +410,8 @@ void main() {
       final screen = t.widget<CallScreen>(find.byType(CallScreen));
       expect(screen.who, 'ivy');
       expect(screen.displayName, 'Ruth');
-      expect(screen.knownRoom, isNull);
-      // No knownRoom -- CallScreen's own _fetchRoom() hits the local dev
+      expect(screen.knownToken, isNull);
+      // No knownToken -- CallScreen's own _fetchToken() hits the local dev
       // room server (tools/local-call-room-server.mjs), unreachable in this
       // test sandbox, so it lands on its own real error state. The same
       // signal call_knock_screen_test.dart's own "reaches the real

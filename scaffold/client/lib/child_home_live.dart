@@ -235,7 +235,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
 
   // Real watch -> phone "Call Dad" handler (§21.5) -- see file header for
   // the full path and why this specific screen (CallScreen(who: 'ivy', ...),
-  // no knownRoom) is the honest target. Reads `_childName` live rather than
+  // no knownToken) is the honest target. Reads `_childName` live rather than
   // closing over it at registration time, since `listenForCallDad` above
   // runs in `initState()` before `_childName` has a real fetched value --
   // by the time any real watch tap can plausibly arrive (well after this

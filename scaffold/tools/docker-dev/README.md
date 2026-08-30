@@ -37,9 +37,12 @@ Does NOT replace:
   two never collide.
 - **`tools/jitsi-selfhost/`'s own compose stack** — a separate, larger,
   independently-documented piece of infrastructure (see that directory's
-  own README). This stack's `callroom` service can point at it
-  (`JITSI_SERVER_URL` in `docker-compose.dev.yml`) but doesn't start or
-  manage it.
+  own README), now superseded by MASTERFILE §16.2 #6's second reversal
+  back to LiveKit Cloud (left in place per §21.7, not deleted). This
+  stack's `callroom` service points at a real LiveKit Cloud project
+  instead (`LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` in
+  `docker-compose.dev.yml`) — a hosted service, not something this stack
+  starts or manages either way.
 - **Production deployment.** This is a single-stage dev image (see the
   `Dockerfile`'s own header) that ships the whole repo plus
   `node_modules`, runs `npm run build` inside the image, and has no

@@ -13,6 +13,7 @@
  */
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { createSession, mintToken, TOKEN_TTL_SECONDS } from '../src/rooms.mjs';
+import { mintLiveKitToken } from '../src/livekit-token.mjs';
 
 const URL_HTTP = 'http://127.0.0.1:7880';
 const KEY = 'devkey', SECRET = 'devsecret_at_least_32_chars_long_xx';
@@ -45,6 +46,12 @@ const jwtFor = async (grant, identity, ttl = TOKEN_TTL_SECONDS) => {
   at.addGrant(grant);
   return at.toJwt();
 };
+
+/** Decodes a JWT's payload without verifying the signature — used only to
+ * inspect what mintLiveKitToken() actually put on the wire (section O2), not
+ * as a substitute for the real server's own verdict, which every check in
+ * this file gets from a genuine Twirp round-trip instead. */
+const jwtPayload = (jwt) => JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8'));
 
 /** Raw Twirp call so we see the server's own verdict, not an SDK wrapper's. */
 const twirp = async (method, token, body = {}) => {
@@ -117,6 +124,61 @@ const twirp = async (method, token, body = {}) => {
   const r = await twirp('ListParticipants', joinTok, { room: other.roomName });
   check('O live I2', "join token refused for another child's room",
     r.status === 401 || r.status === 403, 'true');
+}
+
+// ===========================================================================
+// O2 · mintLiveKitToken() ITSELF, PROVEN AGAINST A REAL SERVER
+//
+// Section O above proves I2 using jwtFor() — a hand-rolled AccessToken call
+// built for THIS test file, mirroring but not actually exercising the real
+// production serialization step. This section calls the genuine
+// mintLiveKitToken() (packages/session-runtime/src/livekit-token.ts,
+// MASTERFILE §16.2 #6 REVERSED AGAIN) directly, so what gets proven here is
+// that OUR shipped code's own JWT output is accepted/refused correctly by a
+// real server — not a hand-built equivalent of it. Same I2 shape as O, kept
+// as its own section rather than folded in so a future change to jwtFor()
+// alone can never accidentally cover for a real mintLiveKitToken() drift.
+// ===========================================================================
+{
+  const s = createSession({ childId: CHILD_A, kind: 'call', createdBy: DAD,
+    authorizedUserIds: [DAD, CHILD_A], ladderStep: 'open' });
+  const guardianMint = mintToken(s, { userId: DAD, observerOnly: false,
+    isChild: false, roleName: 'guardian' }, [edge()], new Date());
+  check('O2 live mintLiveKitToken', 'guardian mint succeeded', guardianMint.ok, 'true');
+
+  const guardianJwt = await mintLiveKitToken(guardianMint.token, KEY, SECRET);
+  for (const method of ['ListRooms', 'CreateRoom', 'DeleteRoom',
+                        'ListParticipants', 'RemoveParticipant']) {
+    const r = await twirp(method, guardianJwt, { room: s.roomName, identity: DAD });
+    check('O2 live mintLiveKitToken', `real mintLiveKitToken() output REFUSED for ${method}`,
+      r.status === 401 || r.status === 403, 'true');
+  }
+
+  // Decode fidelity, NOT a server-side positive-join proof — this Twirp
+  // HTTP probe has no way to drive a real WebRTC/ICE handshake, which is
+  // what an actual "the server let a client join" proof would need. What
+  // this DOES prove: the real, shipped mintLiveKitToken() signed the exact
+  // identity/room mintToken() decided, not a substitute value — a real bug
+  // class this would catch (a field silently swapped or dropped on the way
+  // into AccessToken.addGrant()) that the negative battery above cannot,
+  // since a wrong-but-still-non-admin token would pass every refusal check
+  // here too.
+  const decoded = jwtPayload(guardianJwt);
+  check('O2 live mintLiveKitToken', 'server-bound JWT sub matches mintToken() identity',
+    decoded.sub, guardianMint.token.identity);
+  check('O2 live mintLiveKitToken', 'server-bound JWT grant.room matches the real room',
+    decoded.video?.room, s.roomName);
+  check('O2 live mintLiveKitToken', 'server-bound JWT carries no roomCreate/roomAdmin/roomList',
+    decoded.video?.roomCreate === undefined && decoded.video?.roomAdmin === undefined
+      && decoded.video?.roomList === undefined, 'true');
+
+  // And the SAME real cross-room refusal I2 proves in section O, against our
+  // real output instead of jwtFor()'s hand-rolled one.
+  const other = createSession({ childId: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    kind: 'call', createdBy: DAD, authorizedUserIds: [DAD], ladderStep: 'open' });
+  const r2 = await twirp('ListParticipants', guardianJwt, { room: other.roomName });
+  check('O2 live mintLiveKitToken', "real mintLiveKitToken() output refused for another child's room",
+    r2.status === 401 || r2.status === 403, 'true');
 }
 
 // ===========================================================================

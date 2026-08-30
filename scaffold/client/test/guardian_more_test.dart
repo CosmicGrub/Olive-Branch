@@ -372,7 +372,7 @@ void main() {
     });
 
     testWidgets("reaches the REAL CallScreen via a real POST to "
-        "OliveApi.calls -- the actual per-call-minted room/serverURL, not "
+        "OliveApi.calls -- the actual per-call-minted token/wsURL, not "
         "CallScreen's own dev-room-server fallback -- and fires "
         'onCallStarted with the decoded response', (t) async {
       final mock = MockClient((req) async {
@@ -381,8 +381,8 @@ void main() {
         }
         if (req.method == 'POST' && req.url.path == '/v1/children/child-1/calls') {
           return http.Response(jsonEncode({
-            'room': 'real-room-abc',
-            'serverURL': 'https://jitsi.test',
+            'token': 'real-lk-token-abc',
+            'wsURL': 'wss://project.livekit.cloud',
             'identity': 'dad-1',
             'rang': false,
             'sessionId': 'session-xyz',
@@ -398,35 +398,41 @@ void main() {
       final callTile = find.text('Call Ivy');
       await t.ensureVisible(callTile);
       await t.pumpAndSettle();
+      // Once CallScreen is reached with a real knownToken, its own
+      // _startCall() skips its dev-room-server fetch entirely and
+      // constructs a real livekit_client Room() -- see call_screen.dart's
+      // own doc comment on why that's lazy, not eager: Room's constructor
+      // starts a real internal cache-cleanup Timer.periodic with no
+      // dispose()/cancel() anywhere in the SDK (confirmed by reading
+      // TTLMap's own source), so it outlives normal widget disposal.
+      // Every OTHER test in this file never reaches Room() at all (no real
+      // knownToken to skip the fetch with), so this is the one place in
+      // this suite that needs tester.runAsync()'s real event loop instead
+      // of FakeAsync's own strict, synthetic one -- a real background
+      // timer created inside runAsync isn't tracked by FakeAsync's own
+      // end-of-test "no pending timers" invariant the way one created
+      // directly inside a bare testWidgets body would be.
       await t.tap(callTile);
-      // Deliberately bounded pumps, not pumpAndSettle: once CallScreen is
-      // reached with a real knownRoom, its own _startCall() skips
-      // _fetchRoom() entirely and goes straight into the real
-      // JitsiMeet().join() platform-channel call, which this widget-test
-      // sandbox has no handler for and which shows an always-animating
-      // CircularProgressIndicator while pending -- pumpAndSettle would
-      // wait for that animation to finish, which it never does. This test
-      // only needs CallScreen's own constructor fields (below), not its
-      // resolved-call state, so it stops pumping the moment the real
-      // Navigator push transition has visibly landed.
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 500));
+      await t.runAsync(() async {
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 500));
+      });
 
       expect(find.byType(CallScreen), findsOneWidget);
       final screen = t.widget<CallScreen>(find.byType(CallScreen));
       // The real proof this isn't the old dev-room-server call site
       // (guardian_more.dart's OLD `const CallScreen(who: 'dad', ...)`, no
-      // knownRoom at all): the exact room/serverURL this mock's real POST
+      // knownToken at all): the exact token/wsURL this mock's real POST
       // response carried made it all the way through, unmodified.
-      expect(screen.knownRoom, 'real-room-abc');
-      expect(screen.knownServerURL, 'https://jitsi.test');
+      expect(screen.knownToken, 'real-lk-token-abc');
+      expect(screen.knownWsURL, 'wss://project.livekit.cloud');
       expect(screen.who, 'dad');
       expect(screen.displayName, 'Dad');
       // onCallStarted fired with the real decoded body, not a placeholder
       // — the same observation seam main_live_guardian_call_test.dart's own
       // dev-only pending-call bridge relies on.
       expect(started, isNotNull);
-      expect(started!['room'], 'real-room-abc');
+      expect(started!['token'], 'real-lk-token-abc');
       // The real call-end wiring (2026-08-23): a real sessionId in the
       // response means CallScreen gets a real onCallEnd callback, not the
       // null every earlier call site left it at.

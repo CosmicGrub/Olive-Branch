@@ -53,8 +53,9 @@
 // anywhere in this repo) — a real `call_incoming` push genuinely cannot be
 // delivered here, full stop. `_pollForIncomingCall` below polls
 // local-call-room-server.mjs's own dev-only GET /pending-call (see that
-// file's header for the fuller account) and, on seeing a real room the
-// guardian side just minted, feeds it into the SAME real, tested
+// file's header, and this function's own doc comment, for the fuller
+// account of the two real shapes that can land there) and, on seeing
+// something new, feeds it into the SAME real, tested
 // `buildCallIncomingHandler` callback `main_live.dart`'s own real
 // `PushChannel.onForegroundPointer` wiring uses — a real `PushPointer`, a
 // real `CallKnockScreen`, a real Answer button, a real `CallScreen` join.
@@ -68,7 +69,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'call_knock_screen.dart' show buildCallIncomingHandler;
-import 'call_screen.dart';
+import 'call_screen.dart' show CallScreen, devRoomServerBase;
 import 'child_home_live.dart';
 import 'push_channel.dart';
 import 'theme.dart';
@@ -83,15 +84,95 @@ const _defaultChildId = String.fromEnvironment('OLIVE_CHILD_ID',
 // call_screen.dart's own devRoomServerBase, for the identical reason.
 const _pendingCallUrl = 'http://127.0.0.1:8787/pending-call';
 
-Future<AppTheme> _fetchInitialTheme() async {
+// The REVERSE leg — see local-call-room-server.mjs's own header on
+// POST/GET /pending-call-for-dad for the fuller account. Bridged from here
+// (rather than left for CallScreen's own internal _fetchToken to handle)
+// because the guardian side needs to learn his own token BEFORE this
+// device joins the call, not after — same reason
+// main_live_guardian_call_test.dart's own _bridgeToPendingCall bridges
+// post-mint rather than leaving CallScreen to fetch silently.
+const _pendingCallForDadUrl = 'http://127.0.0.1:8787/pending-call-for-dad';
+
+/// Fetches THIS device's own token (who=ivy, to actually join herself) AND,
+/// separately, DAD's own correctly-identity-bound token (who=dad) to bridge
+/// to his device — two real fetches against the same shared dev session,
+/// not one token reused for both. A real, previously-shipped mistake this
+/// pass found and fixed: bridging Ivy's OWN token to Dad's poll target
+/// would mean his device joining the room AS Ivy — a real identity
+/// impersonation, the exact class of bug I3 exists to prevent everywhere
+/// else in this codebase. local-call-room-server.mjs's dev-only session is
+/// process-lifetime-fixed and hands out a real, correctly-bound token to
+/// anyone who asks who=dad|ivy — asking twice, once per real identity, is
+/// the honest way to get two devices each their own real token for the
+/// same real room. Mirrors main_live_guardian_call_test.dart's own
+/// _bridgeToPendingCall in spirit: real data, best-effort bridge, never lets
+/// a failed bridge POST block the real call this device is about to join.
+Future<Map<String, dynamic>> _fetchTokenAndBridgeToDad() async {
+  final client = HttpClient();
+  try {
+    final ivyUri = Uri.parse('$devRoomServerBase/room?who=ivy');
+    final ivyRequest = await client.getUrl(ivyUri).timeout(const Duration(seconds: 6));
+    final ivyResponse = await ivyRequest.close().timeout(const Duration(seconds: 6));
+    final ivyBody = await ivyResponse.transform(utf8.decoder).join();
+    if (ivyResponse.statusCode != 200) {
+      throw Exception('Room server refused (${ivyResponse.statusCode}): $ivyBody');
+    }
+    final ivyData = jsonDecode(ivyBody) as Map<String, dynamic>;
+
+    try {
+      final dadUri = Uri.parse('$devRoomServerBase/room?who=dad');
+      final dadRequest = await client.getUrl(dadUri).timeout(const Duration(seconds: 6));
+      final dadResponse = await dadRequest.close().timeout(const Duration(seconds: 6));
+      final dadBody = await dadResponse.transform(utf8.decoder).join();
+      if (dadResponse.statusCode != 200) {
+        throw Exception('Room server refused Dad\'s own token (${dadResponse.statusCode}): $dadBody');
+      }
+      final dadData = jsonDecode(dadBody) as Map<String, dynamic>;
+
+      final bridgeRequest = await client.postUrl(Uri.parse(_pendingCallForDadUrl))
+          .timeout(const Duration(seconds: 3));
+      bridgeRequest.headers.contentType = ContentType.json;
+      bridgeRequest.write(jsonEncode({
+        'token': dadData['token'],
+        'wsURL': dadData['wsURL'],
+      }));
+      await bridgeRequest.close().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint('[olive.calltest] pending-call-for-dad bridge POST failed: $e');
+    }
+    return ivyData;
+  } finally {
+    client.close();
+  }
+}
+
+/// Bundles the theme fetch with a real child session token this device
+/// keeps around for the rest of its lifetime — needed now that
+/// [_pollForIncomingCall] has a real join call to make on Ivy's behalf
+/// (see [CallKnockScreen.baseUrl]/[childId]/[sessionToken]'s own doc
+/// comment). One real [devLoginFor] call serves both needs rather than
+/// logging in twice; a login failure here means BOTH the theme falls back
+/// to [defaultAppTheme] AND the token stays null (buildCallIncomingHandler's
+/// sessionId path degrades to CallScreen's own token-fetch fallback in that
+/// case — see this file's `_pollForIncomingCall`).
+class _Bootstrap {
+  const _Bootstrap({required this.theme, required this.childSessionToken});
+  final AppTheme theme;
+  final String? childSessionToken;
+}
+
+Future<_Bootstrap> _bootstrap() async {
   try {
     final token = await devLoginFor(_defaultBaseUrl, childId: _defaultChildId);
     final api = OliveApi(_defaultBaseUrl, token);
     final wire = await api.fetchTheme(_defaultChildId);
     api.close();
-    return AppTheme.fromWire(wire['theme'] as Map<String, dynamic>?);
+    return _Bootstrap(
+      theme: AppTheme.fromWire(wire['theme'] as Map<String, dynamic>?),
+      childSessionToken: token,
+    );
   } catch (_) {
-    return defaultAppTheme;
+    return const _Bootstrap(theme: defaultAppTheme, childSessionToken: null);
   }
 }
 
@@ -103,13 +184,20 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('[olive.push] background handler not registered at boot: $e');
   }
-  final initialTheme = await _fetchInitialTheme();
-  runApp(_OliveLiveChildCallTest(initialTheme: initialTheme));
+  final boot = await _bootstrap();
+  runApp(_OliveLiveChildCallTest(
+    initialTheme: boot.theme,
+    childSessionToken: boot.childSessionToken,
+  ));
 }
 
 class _OliveLiveChildCallTest extends StatefulWidget {
-  const _OliveLiveChildCallTest({this.initialTheme = defaultAppTheme});
+  const _OliveLiveChildCallTest({
+    this.initialTheme = defaultAppTheme,
+    this.childSessionToken,
+  });
   final AppTheme initialTheme;
+  final String? childSessionToken;
 
   @override
   State<_OliveLiveChildCallTest> createState() => _OliveLiveChildCallTestState();
@@ -125,7 +213,7 @@ class _OliveLiveChildCallTestState extends State<_OliveLiveChildCallTest> {
   // _OliveLiveState carries one.
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   Timer? _pendingCallPoll;
-  String? _lastSeenRoom;
+  String? _lastSeenKey;
 
   @override
   void initState() {
@@ -133,17 +221,41 @@ class _OliveLiveChildCallTestState extends State<_OliveLiveChildCallTest> {
     _pendingCallPoll = Timer.periodic(const Duration(seconds: 1), (_) => _pollForIncomingCall());
   }
 
-  /// GET /pending-call every tick; on a room this device hasn't already
+  /// GET /pending-call every tick; on a payload this device hasn't already
   /// shown a knock screen for, feeds it into the real
   /// buildCallIncomingHandler callback as a real PushPointer — see this
   /// file's own header for the fuller account of what's real (everything
   /// downstream of this one call) and what isn't (the poll itself, standing
-  /// in for an undeliverable real FCM push). `_lastSeenRoom` is deliberately
-  /// never cleared: a guardian's next real call always mints a genuinely
-  /// different room (server/test/calls_route.test.mjs's own I1 assertion),
-  /// so a plain not-equal check is enough to dedupe every poll tick against
-  /// an already-answered-or-showing call without needing the dev server to
-  /// clear its own state on read.
+  /// in for an undeliverable real FCM push).
+  ///
+  /// `/pending-call` has TWO real writers, per local-call-room-server.mjs's
+  /// own header — Dad's device can start a call two different ways, and
+  /// each bridges a different real shape:
+  ///  - main_live_guardian_call_test.dart's "Call Ivy" tile (the REAL
+  ///    production `POST /v1/children/:childId/calls` route) bridges
+  ///    `{sessionId}` — resolved here through the real production join
+  ///    route (`pointer.ref` == sessionId, `buildCallIncomingHandler`'s own
+  ///    `baseUrl`/`childId`/`sessionToken` params), the same route
+  ///    call_knock_screen.dart's real Answer button uses for a genuine
+  ///    push. `widget.childSessionToken` is null only if this device's own
+  ///    boot-time [devLoginFor] failed — CallKnockScreen then falls back to
+  ///    CallScreen's own token-fetch (its own doc comment covers that).
+  ///  - main_live_dad_answer_test.dart's "Call Ivy (test)" FAB (a dev-only,
+  ///    process-lifetime-fixed room-server session with no real `call_log`
+  ///    row to resolve a sessionId against) bridges an already-resolved
+  ///    `{token, wsURL}` instead — fed straight through as
+  ///    `knownToken`/`knownWsURL`, bypassing the join route entirely (see
+  ///    CallKnockScreen.knownToken's own doc comment; it's checked BEFORE
+  ///    sessionId there, so supplying both would be harmless, but only one
+  ///    is ever actually present per payload here).
+  ///
+  /// `_lastSeenKey` is deliberately never cleared: a guardian's next real
+  /// call always mints a genuinely different session id (server/test
+  /// /calls_route.test.mjs's own I1 assertion) and this dev-only room
+  /// server mints a genuinely different token every request, so a plain
+  /// not-equal check on whichever identifying field is present is enough
+  /// to dedupe every poll tick without needing the dev server to clear its
+  /// own state on read.
   Future<void> _pollForIncomingCall() async {
     final client = HttpClient();
     try {
@@ -156,12 +268,22 @@ class _OliveLiveChildCallTestState extends State<_OliveLiveChildCallTest> {
       }
       final body = await response.transform(utf8.decoder).join();
       final decoded = jsonDecode(body) as Map<String, dynamic>;
-      final room = decoded['room'] as String?;
-      if (room == null || room == _lastSeenRoom) return;
-      _lastSeenRoom = room;
+      final sessionId = decoded['sessionId'] as String?;
+      final token = decoded['token'] as String?;
+      final wsURL = decoded['wsURL'] as String?;
+      final key = sessionId ?? token;
+      if (key == null || key == _lastSeenKey) return;
+      _lastSeenKey = key;
       buildCallIncomingHandler(
         navigatorKey: _navigatorKey, from: 'Dad', who: 'ivy', displayName: 'Ivy',
-      )(PushPointer(kind: 'call_incoming', ref: 'dev-test-poll', callHandle: room));
+        baseUrl: _defaultBaseUrl, childId: _defaultChildId,
+        sessionToken: widget.childSessionToken,
+        knownToken: token, knownWsURL: wsURL,
+        // ref must be non-null regardless of which shape this payload is —
+        // when knownToken is present, CallKnockScreen never reads ref at
+        // all (see its own _handleAnswer priority order), so the sessionId
+        // fallback to a stand-in string is safe.
+      )(PushPointer(kind: 'call_incoming', ref: sessionId ?? 'dev-test-poll'));
     } catch (_) {
       // Best-effort, every tick — a dev server that isn't running yet (or a
       // transient network hiccup) must never crash this poll loop or show
@@ -218,8 +340,24 @@ class _OliveLiveChildCallTestState extends State<_OliveLiveChildCallTest> {
                 foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
                 icon: const Icon(Icons.science_outlined),
                 label: const Text('Call Dad (test)'),
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const CallScreen(who: 'ivy', displayName: 'Ivy'))),
+                // Fetches + bridges Dad's own token BEFORE navigating (see
+                // _fetchTokenAndBridgeToDad's own doc comment) so his
+                // device's own poll loop can show a real CallKnockScreen
+                // for this call, not just independently join the same
+                // known room blind — and so it joins AS Dad, not as a
+                // second Ivy.
+                onPressed: () async {
+                  final data = await _fetchTokenAndBridgeToDad();
+                  if (!context.mounted) return;
+                  unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => CallScreen(
+                      who: 'ivy',
+                      displayName: 'Ivy',
+                      knownToken: data['token'] as String,
+                      knownWsURL: data['wsURL'] as String?,
+                    ),
+                  )));
+                },
               ),
             ),
           ]),

@@ -151,7 +151,7 @@ class GuardianMoreScreen extends StatelessWidget {
   final void Function(AppTheme)? onThemeApplied;
 
   /// Fires once [_startRealCall] below has a real, successfully-started
-  /// call — the decoded POST calls response verbatim (room/serverURL/
+  /// call — the decoded POST calls response verbatim (token/wsURL/
   /// identity/rang). Every real call site leaves this null; it exists
   /// purely as an observation seam for a dev-only test entry point that
   /// needs to know a real call just started without this hub knowing or
@@ -165,8 +165,8 @@ class GuardianMoreScreen extends StatelessWidget {
 
   /// Real call-start — POST OliveApi.calls (server/routes.mjs's real
   /// handler), then opens the real [CallScreen] already joined to the room
-  /// that call just minted (`knownRoom`/`knownServerURL`, so this device
-  /// never falls back to [CallScreen]'s own dev-room-server fetch). Same
+  /// that call just minted (`knownToken`/`knownWsURL`, so this device never
+  /// falls back to [CallScreen]'s own dev-room-server fetch). Same
   /// devLoginFor-per-call posture as [_liveSetGuardianPin] above, for the
   /// same reason: nothing here should trust a token that might have
   /// outlived this (stateless) widget's own lifecycle.
@@ -186,7 +186,7 @@ class GuardianMoreScreen extends StatelessWidget {
       final sessionId = started['sessionId'] as String?;
       if (context.mounted) {
         _open(context, CallScreen(who: 'dad', displayName: 'Dad',
-          knownRoom: started['room'] as String?, knownServerURL: started['serverURL'] as String?,
+          knownToken: started['token'] as String?, knownWsURL: started['wsURL'] as String?,
           onCallEnd: sessionId == null ? null : () => _endRealCall(url, gid, childId, sessionId)));
       }
     } catch (e) {

@@ -1,5 +1,37 @@
 # Manual verification — call vs. kiosk lock-task (§16.2 #6 / §5.20)
 
+**SUPERSEDED, MASTERFILE §16.2 #6 REVERSED AGAIN — the specific conflict
+this procedure verifies no longer exists in the current architecture.**
+Everything below (Provenance included) documents real, hard-won work under
+the self-hosted-Jitsi build and stays here as real project history, per
+this same document's own §21.7 discipline (cited below) — not deleted, not
+edited away.
+
+**What changed:** Jitsi's SDK opened a call in its own separate
+`singleTask` Android Activity (`WrapperJitsiMeetActivity`), which lock-task
+pinning refused to launch as a second task — that specific conflict is
+what every step below verifies the fix for. LiveKit Cloud (the current
+call backend — see `docs/superpowers/specs/2026-08-29-livekit-call
+-migration-design.md`) renders a call as a normal Flutter route inside the
+SAME already-pinned Activity. No second Activity is ever launched, so
+there is no `Attempted Lock Task Mode violation` left to guard against by
+this specific mechanism — `kiosk_channel.dart`'s own `beginCallHandoff()`
+is no longer called anywhere (see that file's own doc comment).
+
+**What is NOT superseded — a real, open gap, not assumed closed by
+inference:** whether the device genuinely STAYS pinned throughout a real
+LiveKit call, and correctly reports a mid-call defeat (Procedure step 7),
+has never been verified against the new architecture at all. Removing a
+mechanism because its ORIGINAL problem no longer applies is not the same
+claim as "the new code has no kiosk-lock problem of its own" — that needs
+its own real device pass, tracked in the migration spec's own testing
+plan, before this can be marked genuinely closed for the current
+architecture. Until then, treat kiosk-lock-during-a-call as **unverified
+under LiveKit**, not as inheriting the "pass" this document's Provenance
+section recorded for the old one.
+
+---
+
 **Why this exists as a manual procedure, not just a test.** The bug this
 guards against — `WrapperJitsiMeetActivity` refused as a lock-task violation,
 `call_screen.dart`'s "Joining…" spinner hanging forever — produces **no

@@ -378,7 +378,25 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
-  out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
+  # MASTERFILE §16.2 #6 REVERSED AGAIN — server/test/calls_route.test.mjs
+  # imports routes.mjs directly, which now reads LIVEKIT_URL/LIVEKIT_
+  # API_KEY/LIVEKIT_API_SECRET from process.env at import time and fails
+  # loudly (500 call_backend_unconfigured) if any is unset — a real gap
+  # this loop had until CI's own first run against this migration surfaced
+  # it (calls_route ran 0 passed, 0 failed, then a raw TypeError decoding
+  # `undefined` as a JWT). Applied to the whole loop, not scoped to just
+  # that one suite: harmless for every other route test here (none of them
+  # touch LIVEKIT_*), and keeping one shared block simpler than a
+  # per-suite special case. Same devkey/devsecret pair this file's own
+  # `livekit-server` fetch step below already uses for live.test.mjs — a
+  # real, structurally-valid key/secret pair, never a call to any real
+  # LiveKit Cloud project, matching this suite's own header (it only
+  # decodes the minted JWT locally; it never round-trips it against a
+  # server — that proof lives in live.test.mjs instead).
+  out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" \
+        LIVEKIT_URL="wss://verify-sh.invalid" LIVEKIT_API_KEY="devkey" \
+        LIVEKIT_API_SECRET="devsecret_at_least_32_chars_long_xx" \
+        node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
   f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
   record "$name" "${p:-0}" "${f:-0}"

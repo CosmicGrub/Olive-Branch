@@ -30,13 +30,27 @@
 // `call_incoming` push still carries only `kind`/`ref`/`callHandle` — no
 // caller name (push.ts's own `PushInput` — content-free by design) — so
 // `from`/`who`/`displayName` below are still supplied by the caller
-// constructing this screen (`buildCallIncomingHandler`'s own params),
-// hardcoded the same way `CallScreen`'s own other call sites already are;
-// `callHandle` itself is real and DOES flow through now — see `knownRoom`
-// below and `CallScreen.knownRoom`'s own doc comment for the full path.
+// constructing this screen (`buildCallIncomingHandler`'s own params).
+//
+// MASTERFILE §16.2 #6 REVERSED AGAIN — Answer now makes a real, second
+// server round-trip, and that's a genuine behavior change from the Jitsi
+// build this replaces, worth naming plainly. Jitsi let a callee join with
+// just a bare room name — `callHandle` alone was enough. LiveKit requires a
+// real, signed, per-identity token to join at all, which this device never
+// had for a call someone else started. `POST /v1/children/:childId/calls
+// /:sessionId/join` (server/routes.mjs, api_client.dart's own [OliveApi
+// .joinCall]) closes that gap — mints THIS device's own token for the
+// EXISTING session, gated by the same real mintToken() I4 check every
+// other mint uses. `pointer.ref` (== the real session id, `push_channel
+// .dart`'s own [PushPointer.ref] doc comment: "an opaque handle a caller
+// resolves through the authenticated API, post unlock" — this is precisely
+// that resolution) is what makes the join call possible; `pointer
+// .callHandle` (the room name) is no longer sufficient on its own and is
+// not used by this screen at all anymore.
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
+import 'api_client.dart';
 import 'call_knock.dart';
 import 'call_screen.dart';
 import 'push_channel.dart' show PushPointer;
@@ -53,7 +67,12 @@ class CallKnockScreen extends StatefulWidget {
     required this.from,
     required this.who,
     required this.displayName,
-    this.knownRoom,
+    this.sessionId,
+    this.baseUrl,
+    this.childId,
+    this.sessionToken,
+    this.knownToken,
+    this.knownWsURL,
     this.speak,
     this.onTimedOut,
   });
@@ -67,14 +86,43 @@ class CallKnockScreen extends StatefulWidget {
   final String who;
   final String displayName;
 
-  /// The real room the caller is already in — [PushPointer.callHandle] from
-  /// the `call_incoming` push that opened this screen, passed straight
-  /// through to [CallScreen.knownRoom] on Answer/Just talking so this device
-  /// joins the SAME room instead of minting a new one. Null only if this
-  /// screen is ever opened some other way than a real push (a test, or a
-  /// future non-push call site) — [CallScreen] falls back to its own
-  /// `_fetchRoom()` exactly as it always did when this is null.
-  final String? knownRoom;
+  /// The real session id the caller already started —
+  /// [PushPointer.ref] from the `call_incoming` push that opened this
+  /// screen. Resolved into a real, signed, per-identity LiveKit token on
+  /// Answer/Just talking via [OliveApi.joinCall] (see this file's own
+  /// header for why that real second round-trip is now required at all).
+  /// Null only if this screen is ever opened some other way than a real
+  /// push (a test, or a future non-push call site) — Answer/Just talking
+  /// then fall back to [CallScreen]'s own token-fetch exactly as they
+  /// always did when nothing was known ahead of time.
+  final String? sessionId;
+
+  /// Real auth context for the [OliveApi.joinCall] call above — the same
+  /// baseUrl/sessionToken shape every other authenticated screen in this
+  /// client already threads through (e.g. availability_screen.dart's own
+  /// params). All three (this, [childId], [sessionToken]) are required
+  /// together whenever [sessionId] is non-null; a real push-driven knock
+  /// always has an already-authenticated session available to supply them
+  /// from (main_live.dart's/main_live_guardian.dart's own bootstrap), so
+  /// this is never a case of "authenticated enough to receive a push but
+  /// not enough to answer it."
+  final String? baseUrl;
+  final String? childId;
+  final String? sessionToken;
+
+  /// An ALREADY-resolved token/wsURL pair, bypassing [OliveApi.joinCall]
+  /// entirely — for the one real case where resolving through the real
+  /// production join route genuinely doesn't apply: main_live_dad_answer
+  /// _test.dart's/main_live_child_call_test.dart's own dev-only,
+  /// process-lifetime-fixed room-server session has no real `call_log` row
+  /// for [sessionId] to resolve against at all (see local-call-room-server
+  /// .mjs's own header on why that dev-only bridge carries a
+  /// pre-minted, already-identity-bound token instead of a sessionId for
+  /// that specific leg). Checked BEFORE [sessionId] in [_handleAnswer] —
+  /// when both are supplied, this wins, since a caller that already HAS a
+  /// real, correctly-bound token has no reason to mint a second one.
+  final String? knownToken;
+  final String? knownWsURL;
 
   /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null reports
   /// itself honestly on tap, same posture as emergency_card.dart's own
@@ -91,7 +139,7 @@ class CallKnockScreen extends StatefulWidget {
   State<CallKnockScreen> createState() => _CallKnockScreenState();
 }
 
-enum _KnockOutcome { waiting, notNow }
+enum _KnockOutcome { waiting, answering, notNow, joinFailed }
 
 class _CallKnockScreenState extends State<CallKnockScreen> {
   _KnockOutcome _outcome = _KnockOutcome.waiting;
@@ -133,11 +181,57 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     if (mounted) Navigator.of(context).maybePop();
   }
 
-  void _handleAnswer() {
+  Future<void> _handleAnswer() async {
     _timeoutTimer?.cancel();
-    Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-      builder: (_) => CallScreen(
-        who: widget.who, displayName: widget.displayName, knownRoom: widget.knownRoom)));
+
+    // Already resolved — no real join call to make at all. See
+    // [CallKnockScreen.knownToken]'s own doc comment for the one real case
+    // this is for.
+    if (widget.knownToken != null) {
+      if (!mounted) return;
+      unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        builder: (_) => CallScreen(
+          who: widget.who, displayName: widget.displayName,
+          knownToken: widget.knownToken, knownWsURL: widget.knownWsURL))));
+      return;
+    }
+
+    // No real join call to make: either this screen was opened some way
+    // other than a real push (a test, or a future non-push call site), or
+    // it genuinely has nothing to resolve — CallScreen falls back to its
+    // own token-fetch exactly as it always did in that case.
+    if (widget.sessionId == null || widget.baseUrl == null ||
+        widget.childId == null || widget.sessionToken == null) {
+      if (!mounted) return;
+      unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        builder: (_) => CallScreen(who: widget.who, displayName: widget.displayName))));
+      return;
+    }
+
+    setState(() => _outcome = _KnockOutcome.answering);
+    try {
+      final api = OliveApi(widget.baseUrl!, widget.sessionToken!);
+      final joined = await api.joinCall(widget.childId!, widget.sessionId!);
+      api.close();
+      if (!mounted) return;
+      unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        builder: (_) => CallScreen(
+          who: widget.who, displayName: widget.displayName,
+          knownToken: joined['token'] as String, knownWsURL: joined['wsURL'] as String))));
+    } catch (e) {
+      // Honest, not alarming — the same calm posture knockUnanswered() and
+      // _handleNotNow() below already established for "this didn't happen,"
+      // just for a real join failure instead of a timeout: most likely the
+      // caller already hung up (a real 404 — the session ended before she
+      // tapped Answer), or a real network hiccup. Logged for anyone
+      // debugging, never shown to her as an error.
+      debugPrint('[olive.call] join failed: $e');
+      if (!mounted) return;
+      setState(() => _outcome = _KnockOutcome.joinFailed);
+      _notNowDismissTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (mounted) Navigator.of(context).maybePop();
+      });
+    }
   }
 
   void _handleNotNow() {
@@ -182,7 +276,12 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
       child: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: _outcome == _KnockOutcome.notNow ? _notNowBody() : _waitingBody(),
+          child: switch (_outcome) {
+            _KnockOutcome.notNow => _notNowBody(),
+            _KnockOutcome.answering => _answeringBody(),
+            _KnockOutcome.joinFailed => _joinFailedBody(),
+            _KnockOutcome.waiting => _waitingBody(),
+          },
         ),
       ),
     ),
@@ -215,6 +314,27 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     Text(notNowOutcome.line, key: const Key('notNowLine'),
       textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
   ]);
+
+  /// Brief, calm — the real join call (OliveApi.joinCall) is a genuine
+  /// network round-trip now, unlike the old bare-room-name join, so a short
+  /// transitional state is honest rather than leaving the buttons looking
+  /// unresponsive.
+  Widget _answeringBody() => const Column(mainAxisSize: MainAxisSize.min, children: [
+    CircularProgressIndicator(),
+    SizedBox(height: 16),
+    Text('Connecting…'),
+  ]);
+
+  /// Same calm, non-blaming posture as _notNowBody()/knockUnanswered() —
+  /// most likely the caller already hung up before she tapped Answer (a
+  /// real 404) — never a red error screen for something that isn't her
+  /// fault and that she can't act on anyway.
+  Widget _joinFailedBody() => Column(mainAxisSize: MainAxisSize.min, children: [
+    const Icon(Icons.check_circle_outline, size: 40),
+    const SizedBox(height: 16),
+    Text('That call has ended.', key: const Key('joinFailedLine'),
+      textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
+  ]);
 }
 
 /// The real, tested integration point for `PushChannel.onForegroundPointer`
@@ -226,11 +346,29 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
 /// assumption `CallScreen`'s own existing call sites already make — a real
 /// push carries no caller identity to resolve one from (push.ts's own
 /// content-free `PushInput` shape).
+///
+/// `baseUrl`/`childId`/`sessionToken` are the real auth context
+/// [CallKnockScreen.baseUrl]/[childId]/[sessionToken] need to make the real
+/// join call on Answer (see this file's own header for why that real
+/// second round-trip is now required under LiveKit) — supplied by whichever
+/// already-authenticated screen constructs this handler
+/// (main_live.dart's/main_live_guardian.dart's own session bootstrap), the
+/// same session that was already live when the push arrived.
+/// `knownToken`/`knownWsURL` — see [CallKnockScreen.knownToken]'s own doc
+/// comment for the one real dev-only case these are for. Real production
+/// pushes never supply these (a real push carries only kind/ref/callHandle
+/// — push.ts's own content-free `PushInput` shape has no room for a raw
+/// token, and shouldn't grow one just for this).
 void Function(PushPointer pointer) buildCallIncomingHandler({
   required GlobalKey<NavigatorState> navigatorKey,
   required String from,
   required String who,
   required String displayName,
+  String? baseUrl,
+  String? childId,
+  String? sessionToken,
+  String? knownToken,
+  String? knownWsURL,
 }) {
   return (PushPointer pointer) {
     if (pointer.kind != 'call_incoming') return;
@@ -238,6 +376,8 @@ void Function(PushPointer pointer) buildCallIncomingHandler({
     if (navigator == null) return;
     navigator.push(MaterialPageRoute<void>(
       builder: (_) => CallKnockScreen(
-        from: from, who: who, displayName: displayName, knownRoom: pointer.callHandle)));
+        from: from, who: who, displayName: displayName, sessionId: pointer.ref,
+        baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+        knownToken: knownToken, knownWsURL: knownWsURL)));
   };
 }

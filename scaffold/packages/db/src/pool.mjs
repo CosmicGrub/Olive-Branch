@@ -423,6 +423,28 @@ async function recordCallEnd(pool, childId, sessionId) {
     return rows.length > 0;
   });
 }
+async function callSessionFor(pool, childId, sessionId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at
+         FROM call_log WHERE id = $1 AND child_id = $2`,
+      [sessionId, childId]
+    );
+    if (!rows.length) return null;
+    const row = rows[0];
+    if (row.ended_at) return null;
+    return {
+      id: row.id,
+      childId: row.child_id,
+      roomName: row.room_name,
+      startedBy: row.started_by,
+      authorizedUserIds: row.participant_ids,
+      ladderStep: row.ladder_step,
+      recorded: row.recorded,
+      endedAt: row.ended_at
+    };
+  });
+}
 async function deactivateAccount(pool, userId, callerRoleName = "guardian") {
   if (!userId) throw new Error("deactivateAccount: userId required");
   if (callerRoleName === "child") {
@@ -1602,6 +1624,7 @@ export {
   availabilityFor,
   bagItemsFor,
   bootstrapGuardianInvite,
+  callSessionFor,
   careNotesFor,
   certifiedExportBundleFor,
   childCtxFor,

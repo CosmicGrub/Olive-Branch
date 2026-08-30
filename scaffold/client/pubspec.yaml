@@ -10,7 +10,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  jitsi_meet_flutter_sdk: ^13.1.0
+  # MASTERFILE §16.2 #6 REVERSED AGAIN — LiveKit Cloud replaces self-hosted
+  # Jitsi. See docs/superpowers/specs/2026-08-29-livekit-call-migration-design
+  # .md. Official LiveKit Flutter SDK (livekit/client-sdk-flutter on GitHub,
+  # published as livekit_client on pub.dev) — confirmed actively maintained
+  # (2.8.1 latest stable as of this migration), cross-platform (iOS/Android/
+  # Web). Unlike jitsi_meet_flutter_sdk, this is room/track primitives, not a
+  # prebuilt call UI — call_screen.dart builds its own, deliberately (see
+  # that file's own header for why that's the right tradeoff here).
+  livekit_client: ^2.8.1
   http: ^1.2.2
   # Real homework-photo capture (§9.1, §20.2b) -- capture_gate.dart's real
   # path. Federated across android/ios/linux/macos/web/windows
@@ -54,14 +62,6 @@ dependencies:
   # platform's native, offline speech synthesizer (AVSpeechSynthesizer,
   # android.speech.tts.TextToSpeech, ...), never a network call.
   flutter_tts: ^4.2.0
-
-# See third_party/PATCH.md. Compile-time-only fix for a hardcoded
-# compileSdkVersion 34 in the published package's own android/build.gradle,
-# which conflicts with its own transitive androidx.media3:1.8.0 dependency
-# (media3 requires compileSdk >= 35). Remove once upstream ships a fix.
-dependency_overrides:
-  jitsi_meet_flutter_sdk:
-    path: third_party/jitsi_meet_flutter_sdk_patched
 
 dev_dependencies:
   flutter_test:

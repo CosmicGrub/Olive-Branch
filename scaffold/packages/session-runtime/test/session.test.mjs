@@ -11,6 +11,7 @@ import {
   createSession, mintToken, deriveGrant, newRoomName, roomNameLeaks,
   TOKEN_TTL_SECONDS, FORBIDDEN_GRANTS,
 } from '../src/rooms.mjs';
+import { mintLiveKitToken } from '../src/livekit-token.mjs';
 import {
   initialState, onLockTaskExited, onBackgrounded, submitChildPin, escalate,
   breakGlass, canRender, isEscalated, lockAdvisory,
@@ -299,6 +300,64 @@ async function onWire(token) {
     canRender(base, 'settings_root', NOW), 'false');
   check('§8.3 render', 'child cannot render the PIN gate from child_home',
     canRender(base, 'pin_gate', NOW), 'false');
+}
+
+// ---------------------------------------------------------------------------
+// MASTERFILE §16.2 #6 REVERSED AGAIN — mintLiveKitToken() is pure
+// serialization of mintToken()'s own output (see livekit-token.ts's own doc
+// comment). These checks prove it round-trips faithfully through the real
+// SDK, on the wire — decoded exactly the way onWire() above already proves
+// mintToken()'s raw grant does, not just compared as in-memory objects.
+// ---------------------------------------------------------------------------
+{
+  const DEVKEY = 'devkey', DEVSECRET = 'devsecret_at_least_32_chars_long_xx';
+  const s = session({ ladderStep: 'supervised' });
+  const minted = mintToken(s, { userId: DAD, observerOnly: false, isChild: false, roleName: 'guardian' },
+    [edge()], NOW);
+  check('LK mint', 'a supervised, authorized guardian mints ok', minted.ok, 'true');
+
+  const jwt = await mintLiveKitToken(minted.token, DEVKEY, DEVSECRET);
+  check('LK mint', 'produces a real three-part JWT', jwt.split('.').length, '3');
+
+  // Decoded the same way onWire() above decodes any token — reading what a
+  // real LiveKit server would actually receive, not our intermediate object.
+  const claims = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString());
+  check('LK mint', 'identity claim (sub) matches the minted identity',
+    claims.sub, minted.token.identity);
+  check('LK mint', 'video grant room matches the minted room',
+    claims.video?.room, minted.token.grant.room);
+  check('LK mint', 'video grant roomJoin is true',
+    claims.video?.roomJoin, 'true');
+  check('LK mint', 'video grant canPublish matches the minted grant',
+    claims.video?.canPublish, minted.token.grant.canPublish);
+  check('LK mint', 'video grant canSubscribe matches the minted grant',
+    claims.video?.canSubscribe, minted.token.grant.canSubscribe);
+  // I2 — never roomAdmin/roomCreate/roomList/roomRecord/ingressAdmin on a
+  // call token, on the wire, not just absent from our own Grant type.
+  for (const forbidden of FORBIDDEN_GRANTS) {
+    if (forbidden === 'recorder' || forbidden === 'agent') continue; // not VideoGrant keys
+    check('LK mint', `I2 — ${forbidden} is not granted on the wire`,
+      claims.video?.[forbidden] ?? false, 'false');
+  }
+  // I5 — TTL is minutes, not hours: a real exp claim, and it's TOKEN_TTL_SECONDS
+  // out from nbf, not unset (an AccessToken with no ttl never expires). nbf,
+  // not iat — confirmed by decoding a real minted token directly: this SDK
+  // version emits nbf/exp, no iat claim at all.
+  check('LK mint', 'I5 — exp claim is present', typeof claims.exp, 'number');
+  check('LK mint', 'I5 — expires TOKEN_TTL_SECONDS after issuance',
+    claims.exp - claims.nbf, TOKEN_TTL_SECONDS);
+
+  // An observer-only guardian's real canPublish:false must survive the SAME
+  // round trip — the exact regression class calls_route.test.mjs's own H2
+  // check already guards server-side; this proves it also survives minting
+  // into a real LiveKit JWT, not just the in-memory Grant.
+  const obsMinted = mintToken(s,
+    { userId: DAD, observerOnly: true, isChild: false, roleName: 'guardian' },
+    [edge()], NOW);
+  const obsJwt = await mintLiveKitToken(obsMinted.token, DEVKEY, DEVSECRET);
+  const obsClaims = JSON.parse(Buffer.from(obsJwt.split('.')[1], 'base64url').toString());
+  check('LK mint', 'an observer-only guardian gets canPublish:false on the wire',
+    obsClaims.video?.canPublish, 'false');
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,18 @@ import { registerRoutes } from '../routes.mjs';
 import { issueSession } from '../../packages/auth/src/auth.mjs';
 import { roomNameLeaks } from '../../packages/session-runtime/src/rooms.mjs';
 
+/**
+ * MASTERFILE §16.2 #6 REVERSED AGAIN — the route now returns a real, signed
+ * LiveKit `token` instead of a bare `room` string; the room name lives
+ * inside the JWT's own `video.room` claim. Decoded exactly the way
+ * session.test.mjs's own onWire() decodes any minted token — reading what a
+ * real LiveKit server actually receives, not re-parsing our own response
+ * shape as if that were the thing under test.
+ */
+function roomFromToken(jwt) {
+  return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString()).video?.room;
+}
+
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? DATABASE_URL;
 if (!DATABASE_URL) {
@@ -45,6 +57,16 @@ const CHILD_C = '22222222-3333-1234-1234-444444444444';
 // observer_only=true. See section H's own comment for what this proves.
 const CHILD_D = '33333333-4444-1234-1234-555555555555';
 
+// I's own fixture — a SECOND real guardian of CHILD, with a real,
+// unrestricted edge (so can('call', ...) genuinely passes for her), who was
+// never a party to any specific call. Distinguishes the join route's two
+// real refusal reasons: no edge at all (not_authorized, already covered by
+// section C) vs a real edge but never invited to THIS session
+// (not_a_participant) — the actual new authorization boundary this route
+// introduces, per this file's own established discipline of testing the
+// real boundary, not just "some denial happened."
+const MOM = 'cccccccc-1234-1234-1234-cccccccccccc';
+
 const cleanup = async () => {
   await admin.query(`DELETE FROM call_log WHERE child_id IN ($1, $2, $3, $4)`,
     [CHILD, CHILD_B, CHILD_C, CHILD_D]);
@@ -53,13 +75,14 @@ const cleanup = async () => {
     await admin.query(`DELETE FROM guardianship WHERE child_id = $1`, [cid]);
     await admin.query(`DELETE FROM child WHERE id = $1`, [cid]);
   }
-  await admin.query(`DELETE FROM app_user WHERE id = $1`, [DAD]);
+  await admin.query(`DELETE FROM app_user WHERE id IN ($1, $2)`, [DAD, MOM]);
 };
 
 await cleanup();
 await admin.query('BEGIN');
 await admin.query(
-  `INSERT INTO app_user (id, display_name, home_tz) VALUES ($1,'Dad','America/Chicago')`, [DAD]);
+  `INSERT INTO app_user (id, display_name, home_tz) VALUES
+     ($1,'Dad','America/Chicago'), ($2,'Mom','America/Chicago')`, [DAD, MOM]);
 await admin.query(
   `INSERT INTO child (id, display_name, birth_date, home_tz) VALUES
      ($1,'Ivy','2016-04-02','America/New_York'),
@@ -69,6 +92,9 @@ await admin.query(
 await admin.query(
   `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
      ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`, [CHILD, DAD]);
+await admin.query(
+  `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
+     ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`, [CHILD, MOM]);
 const supervisedGship = await admin.query(
   `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
      ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null)) RETURNING id`,
@@ -95,9 +121,15 @@ const dadTok = issueSession(SECRET,
   { userId: DAD, roleName: 'guardian', childId: null, escalated: false }, NOW);
 const childTok = issueSession(SECRET,
   { userId: null, roleName: 'child', childId: CHILD, escalated: false }, NOW);
+const momTok = issueSession(SECRET,
+  { userId: MOM, roleName: 'guardian', childId: null, escalated: false }, NOW);
 
 const post = (childId, tok) => api.handle(
   'POST', `/v1/children/${childId}/calls`,
+  tok ? { authorization: `Bearer ${tok}` } : {}, '',
+);
+const join = (childId, sessionId, tok) => api.handle(
+  'POST', `/v1/children/${childId}/calls/${sessionId}/join`,
   tok ? { authorization: `Bearer ${tok}` } : {}, '',
 );
 
@@ -107,13 +139,16 @@ const post = (childId, tok) => api.handle(
 {
   const res = await post(CHILD, dadTok);
   check('A success', 'a valid guardian call-start returns 201', res.status, 201);
-  check('A success', 'response names a real room string',
-    typeof res.body.room === 'string' && res.body.room.length > 0, 'true');
+  check('A success', 'response carries a real signed token',
+    typeof res.body.token === 'string' && res.body.token.split('.').length === 3, 'true');
+  const room = roomFromToken(res.body.token);
+  check('A success', 'the token\'s own video.room claim names a real room string',
+    typeof room === 'string' && room.length > 0, 'true');
   check('A success', 'room name does not leak the child or guardian id (I1)',
-    roomNameLeaks(res.body.room, [CHILD, DAD]), 'false');
+    roomNameLeaks(room, [CHILD, DAD]), 'false');
   check('A success', 'identity is the caller\'s own userId (I3), never client-supplied',
     res.body.identity, DAD);
-  check('A success', 'serverURL is present', typeof res.body.serverURL === 'string', 'true');
+  check('A success', 'wsURL is present', typeof res.body.wsURL === 'string', 'true');
   check('A success', 'rang is a real boolean, not a placeholder',
     typeof res.body.rang, 'boolean');
 
@@ -122,7 +157,7 @@ const post = (childId, tok) => api.handle(
   // the way tools/local-call-room-server.mjs's own dev-only design is.
   const res2 = await post(CHILD, dadTok);
   check('A success', 'a second call mints a genuinely different room',
-    res.body.room === res2.body.room, 'false');
+    room === roomFromToken(res2.body.token), 'false');
 }
 
 // ===========================================================================
@@ -193,7 +228,7 @@ const post = (childId, tok) => api.handle(
   check('F call_log', 'a real row is written for an ordinary open-ladder call', row.rowCount, 1);
   check('F call_log', 'child_id matches the real call', row.rows[0]?.child_id, CHILD);
   check('F call_log', 'started_by is the real calling guardian', row.rows[0]?.started_by, DAD);
-  check('F call_log', 'room_name matches the real minted room', row.rows[0]?.room_name, before.body.room);
+  check('F call_log', 'room_name matches the real minted room', row.rows[0]?.room_name, roomFromToken(before.body.token));
   check('F call_log', 'ladder_step is the real edge value, open by default', row.rows[0]?.ladder_step, 'open');
   check('F call_log', 'recorded is false for an open-ladder call', row.rows[0]?.recorded, false);
   check('F call_log', 'ended_at is null — the call has not ended yet', row.rows[0]?.ended_at, null);
@@ -288,7 +323,7 @@ const post = (childId, tok) => api.handle(
   check('H1 observer-only', 'an observer-only guardian can still start a call — §17.3 is read-only, ' +
     'not no-access; \'call\' is absent from authorize.ts\'s WRITES list', res.status, 201);
   check('H1 observer-only', 'the call is genuinely accepted, not silently downgraded to a denial',
-    typeof res.body.room === 'string' && res.body.room.length > 0, 'true');
+    typeof roomFromToken(res.body.token) === 'string' && roomFromToken(res.body.token).length > 0, 'true');
 
   const routesSrc = readFileSync(new URL('../routes.mjs', import.meta.url), 'utf8');
   const callStartAt = routesSrc.indexOf(`path: '/v1/children/:childId/calls'`);
@@ -305,6 +340,56 @@ const post = (childId, tok) => api.handle(
   check('H2 wiring', 'that identifier is sourced from this caller\'s real per-edge observerOnly — ' +
     'not a fresh literal or an unrelated variable',
     /edges\.find\(.*?\)\??\.observerOnly/.test(handlerSrc), 'true');
+}
+
+// ===========================================================================
+// I · the real join route — MASTERFILE §16.2 #6 REVERSED AGAIN, Option B.
+//     LiveKit requires a real per-identity token to join at all, unlike
+//     Jitsi's bare-room-name join — so the callee (almost always the child
+//     answering a real call_incoming push) needs her own real mint of an
+//     EXISTING session, not a fresh one. See routes.mjs's own comment on
+//     this route for the fuller account.
+// ===========================================================================
+{
+  const started = await post(CHILD, dadTok);
+  const startedRoom = roomFromToken(started.body.token);
+
+  // The child answering — the actual case this route exists for.
+  const childJoin = await join(CHILD, started.body.sessionId, childTok);
+  check('I join', 'the child can join the call she was rung for', childJoin.status, 200);
+  check('I join', 'she lands in the SAME room the guardian already started',
+    roomFromToken(childJoin.body.token), startedRoom);
+  check('I join', 'her identity is her own childId (I3), never client-supplied',
+    childJoin.body.identity, CHILD);
+  check('I join', 'her display name is real, not the caller\'s',
+    childJoin.body.displayName, 'Ivy');
+
+  // The original caller re-minting her own token (e.g. after a dropped
+  // connection) — the same session, the same real authorization she always
+  // had.
+  const dadRejoin = await join(CHILD, started.body.sessionId, dadTok);
+  check('I join', 'the original caller can also re-mint her own token', dadRejoin.status, 200);
+  check('I join', 'she lands in the same room too',
+    roomFromToken(dadRejoin.body.token), startedRoom);
+
+  // A real, authorized-in-general guardian who was never part of THIS call.
+  const momJoin = await join(CHILD, started.body.sessionId, momTok);
+  check('I join', 'a real guardian never invited to this session is refused', momJoin.status, 403);
+  check('I join', 'the reason is the real not_a_participant, not a generic denial',
+    momJoin.body.error, 'not_a_participant');
+
+  check('I join', 'a nonexistent session is a real 404',
+    (await join(CHILD, 'not-a-real-session-id', dadTok)).status, 404);
+
+  const ended = await api.handle('POST', `/v1/children/${CHILD}/calls/${started.body.sessionId}/end`,
+    { authorization: `Bearer ${dadTok}` }, '');
+  check('I join', 'ending the call first is a real 200', ended.status, 200);
+  const joinAfterEnd = await join(CHILD, started.body.sessionId, childTok);
+  check('I join', 'joining an already-ended call is refused, not silently allowed',
+    joinAfterEnd.status, 404);
+
+  check('I join', 'an unauthenticated join attempt is refused',
+    (await join(CHILD, started.body.sessionId, null)).status, 401);
 }
 
 await cleanup();

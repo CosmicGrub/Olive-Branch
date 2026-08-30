@@ -584,9 +584,15 @@ export const UNDER_CONSTRUCTION: Record<string, string> = {
   video: 'Live video needs a LiveKit server and a real device camera. Token '
        + 'minting and room lifecycle ARE verified against a running server '
        + '(21 assertions) — the media stream is not wired into this demo.',
-  kiosk: 'The Android and Windows kiosk modules need a device build environment. '
-       + 'The defeat state machine and the cross-language channel contract are '
-       + 'tested; the native side has never been compiled.',
+  kiosk: 'The Android kiosk bridge is real and CLOSED (v0.43.0) — '
+       + 'flutter analyze/test clean, live-device-verified on a real Fold5 '
+       + '(startLockTask, MANUAL_VERIFY_call_lock_task.md). The Windows kiosk '
+       + 'bridge (client/windows/runner/kiosk_bridge.{h,cpp}) compiles clean via '
+       + 'cl.exe /W4 directly but has not run through flutter build windows in '
+       + 'this environment — no local Visual Studio Build Tools "Desktop '
+       + 'development with C++" workload. Neither native side is wired into this '
+       + 'browser demo, which is a stub renderer only — that half of the gap this '
+       + 'entry originally described.',
   captions: 'Live captions and translation are specified in §8.4 and not built.',
   ocr_live: 'OCR runs against real tesseract in the test suite. Wiring a camera '
           + 'into the browser demo would add nothing the quality gate does not '
@@ -597,8 +603,13 @@ export const UNDER_CONSTRUCTION: Record<string, string> = {
           + 'renders their transcripts and child views rather than an '
           + 'interactive board — the board is a Flutter widget, not a browser one.',
   more_games: 'Checkers, Battleship, word search with parent-hidden words, '
-            + 'hangman and chess are designed but not built. Chess should use '
-            + 'chess.js rather than hand-rolled rules — castling, en passant, '
-            + 'promotion, stalemate and threefold repetition are a classic '
-            + 'underestimate.',
+            + 'hangman, and chess are all real, built, and wired into '
+            + 'games_hub.dart (game_checkers.dart, game_battleship.dart, '
+            + 'game_wordsearch.dart, game_hangman.dart, game_chess.dart — the '
+            + 'last a full hand-rolled rules engine: castling, en passant, '
+            + 'promotion, stalemate, threefold repetition, and fifty-move all '
+            + 'covered, since no pure-Dart chess.js equivalent exists in this '
+            + 'repo). Same demo-scoping as games_ui above, not an unbuilt '
+            + 'feature: each is a Flutter widget, not a browser one, so this '
+            + 'demo cannot render an interactive board for any of them.',
 };

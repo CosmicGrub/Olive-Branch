@@ -520,21 +520,23 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
 </script>
 <script type="application/json" id="tl-manifest">
 {
-  "version": "0.49.56",
-  "spec": "0.49.56",
+  "version": "0.49.57",
+  "spec": "0.49.57",
   "nodeOnly": [
     { "module": "api/api", "dep": "node:http" },
     { "module": "auth/auth", "dep": "node:crypto" },
     { "module": "auth/attestation", "dep": "node:crypto" },
     { "module": "session-runtime/rooms", "dep": "node:crypto" },
+    { "module": "session-runtime/livekit-token", "dep": "livekit-server-sdk" },
     { "module": "storage/storage", "dep": "node:crypto" },
     { "module": "db/pool", "dep": "pg" },
     { "module": "homework/measure", "dep": "pngjs" },
+    { "module": "homework/capture-route", "dep": "tesseract.js" },
     { "module": "transport/fcm", "dep": "node:crypto" },
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 6725,
+  "assertions": 6767,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",

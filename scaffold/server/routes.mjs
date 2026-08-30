@@ -25,7 +25,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          createGuardianInvite, getGuardianInvite,
          acceptGuardianInvite, revokeGuardianInvite, bootstrapGuardianInvite,
          takeAndGo, themeFor, setChildTheme,
-         recordCallStart, recordCallEnd,
+         recordCallStart, recordCallEnd, callSessionFor,
          appendHandoverNote, handoverNotesFor,
          expensesFor, proposeExpense, resolveExpense,
          medicationsFor, dosesForDate, recordDose, medicalRecordFor, setMedicalRecord,
@@ -41,6 +41,7 @@ import { parseAttestationObject, extractCredentialPublicKey } from '../packages/
 import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
 import { CHANNELS } from '../packages/devices/src/devices.mjs';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
+import { mintLiveKitToken } from '../packages/session-runtime/src/livekit-token.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage } from '../packages/storage/src/storage.mjs';
 
@@ -91,14 +92,20 @@ export const defaultMediaStorage = new FilesystemStorage(
   process.env.MEDIA_STORAGE_ROOT ?? DEFAULT_MEDIA_STORAGE_ROOT, mediaSigningSecret);
 
 /**
- * Same fallback and env var name `tools/local-call-room-server.mjs` already
- * uses, on purpose — this route is the real, authenticated replacement for
- * that dev-only script's `/room` endpoint, not a second, independently-
- * configured path to the same self-hosted Jitsi stack. See docker-compose
- * .dev.yml's `server` service for where this gets set in the containerized
- * dev stack.
+ * MASTERFILE §16.2 #6 REVERSED AGAIN — LiveKit Cloud, not self-hosted Jitsi.
+ * See docs/superpowers/specs/2026-08-29-livekit-call-migration-design.md.
+ *
+ * Same env var names `tools/local-call-room-server.mjs` uses, on purpose —
+ * this route is the real, authenticated replacement for that dev-only
+ * script's `/room` endpoint, not a second, independently-configured path to
+ * the same LiveKit project. No fallback default for the key/secret (unlike
+ * the old JITSI_SERVER_URL's public-server fallback): a call route that
+ * silently minted tokens against no real LiveKit project would fail in a
+ * more confusing way, later, than failing loudly here if these are unset.
  */
-const JITSI_SERVER_URL = process.env.JITSI_SERVER_URL ?? 'https://meet.jit.si';
+const LIVEKIT_URL = process.env.LIVEKIT_URL;
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 
 /**
  * LOCAL DEV/TEST ONLY — same honesty convention server/index.mjs's own
@@ -575,18 +582,36 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       try {
         await recordCallStart(pool, {
           id: session.id, childId: c.childId, startedBy: c.principal.userId,
-          participantIds: [c.principal.userId], roomName: session.roomName,
+          // Widened from [c.principal.userId] to the real, full
+          // session.authorizedUserIds — MASTERFILE §16.2 #6 REVERSED AGAIN's
+          // own join route below needs this to re-mint a real token for the
+          // child (or a real second guardian) later, and 0018_call_log.sql's
+          // own header comment already anticipated exactly this: "a future
+          // second-guardian-join route... should be able to append to this
+          // same column without a further migration." Narrowing this to just
+          // the caller was never a deliberate choice, just unfinished.
+          participantIds: session.authorizedUserIds, roomName: session.roomName,
           ladderStep: realLadderStep, recorded: minted.token.recorded, rang,
         });
       } catch (e) {
         console.error(`[call_log] failed to record call start for session ${session.id}:`, e);
       }
 
+      // Loud, not silent: an unconfigured LiveKit project must never look
+      // like a successful call start. minted.ok already proved this caller
+      // is genuinely authorized — this is a deployment-config failure, not
+      // an authorization one, so 500 (our fault), not 403 (their fault).
+      if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+        console.error(`[call] LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET not set — cannot mint a real call token for session ${session.id}`);
+        return { status: 500, body: { error: 'call_backend_unconfigured' } };
+      }
+      const token = await mintLiveKitToken(minted.token, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+
       return {
         status: 201,
         body: {
-          room: session.roomName,
-          serverURL: JITSI_SERVER_URL,
+          token,
+          wsURL: LIVEKIT_URL,
           identity: minted.token.identity,
           displayName: 'Dad',
           rang,
@@ -631,6 +656,70 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // calls to this route for one session — the second is a real, honest
       // 200 with ended:false, never an error.
       return { status: 200, body: { ended } };
+    },
+  });
+
+  // ===========================================================================
+  // MASTERFILE §16.2 #6 REVERSED AGAIN — the real join route Option B of
+  // docs/superpowers/specs/2026-08-29-livekit-call-migration-design.md
+  // settled on. Jitsi's own SDK let a callee join with just a bare room
+  // name (no per-identity token needed); LiveKit requires a real, signed
+  // JWT to join at all. So the callee — almost always the child answering
+  // a real call_incoming push, per this route's own doc comment on
+  // call_screen.dart's CallKnockScreen — needs a real server round-trip of
+  // her own before she can join, which is the one thing this route exists
+  // to close. Deliberately narrow: this mints a token ONLY for a principal
+  // already listed in the session's own real authorizedUserIds (participant
+  // _ids) — reusing mintToken()'s own I4 check faithfully, not loosening
+  // it. An arbitrary second guardian who was never part of the original
+  // call is refused here exactly as mintToken() already refuses her — the
+  // real "N-guardian join" feature 0018_call_log.sql's own header comment
+  // names is still a separate, later piece of work, not built by this route.
+  // ===========================================================================
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/calls/:sessionId/join',
+    action: 'call',
+    handler: async (c) => {
+      const session = await callSessionFor(pool, c.childId, c.params.sessionId);
+      // Same honest-absence posture as every other "not found OR not yours"
+      // route in this file — a 404 here reveals nothing about whether the
+      // session exists for a DIFFERENT child than the one in the URL.
+      if (!session) return { status: 404, body: { error: 'call_not_found' } };
+
+      // The child's own "identity" for token-minting purposes is her own
+      // childId, not a userId she doesn't have — the exact same convention
+      // this route's own call-start sibling already uses for
+      // authorizedUserIds, and tools/local-call-room-server.mjs's dev-only
+      // session already uses for the identical reason (see that file's own
+      // header). A guardian principal's real userId is used as-is.
+      const isChild = c.principal.roleName === 'child';
+      const userId = isChild ? c.childId : c.principal.userId;
+      if (!userId) return { status: 400, body: { error: 'no_user_identity' } };
+
+      const edges = isChild ? [] : await edgesFor(pool, userId);
+      const minted = mintToken(
+        { id: session.id, childId: session.childId, roomName: session.roomName,
+          kind: 'call', createdBy: session.startedBy, authorizedUserIds: session.authorizedUserIds,
+          ladderStep: session.ladderStep, recorded: session.recorded,
+          createdAt: new Date().toISOString(), endedAt: session.endedAt },
+        { userId, observerOnly: false, isChild, roleName: c.principal.roleName },
+        edges, new Date(),
+      );
+      if (!minted.ok) return { status: 403, body: { error: minted.reason } };
+
+      if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+        console.error(`[call] LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET not set — cannot mint a real join token for session ${session.id}`);
+        return { status: 500, body: { error: 'call_backend_unconfigured' } };
+      }
+      const token = await mintLiveKitToken(minted.token, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+
+      return {
+        status: 200,
+        body: {
+          token, wsURL: LIVEKIT_URL, identity: minted.token.identity,
+          displayName: isChild ? 'Ivy' : 'Dad',
+        },
+      };
     },
   });
 

@@ -16,7 +16,7 @@
 //     shown and are never resurfaced to her as "you used to like this".
 //
 // No settings affordance, no score, no streak. This preview build has no
-// camera plugin wired up (see pubspec.yaml — jitsi_meet_flutter_sdk is the
+// camera plugin wired up (see pubspec.yaml — livekit_client is the
 // only media dependency, for calls), so "capture" below is an honest
 // stand-in: she picks from a small deck of things she could be holding up,
 // or writes a line, rather than the app pretending to open a camera it does
