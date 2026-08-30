@@ -10,15 +10,20 @@
 // main_live_guardian.dart. MASTERFILE §7, §16.2 #6.
 //
 // Byte-for-byte main_live_guardian.dart, with exactly one addition:
-// GuardianMoreScreen.onCallStarted wired to POST the real room a real call
-// just minted to local-call-room-server.mjs's dev-only /pending-call
+// GuardianMoreScreen.onCallStarted wired to POST the real session id a real
+// call just minted to local-call-room-server.mjs's dev-only /pending-call
 // endpoint — see that file's own header comment on why this one hop (and
 // only this one hop) is bridged rather than real, and why the bridge lives
 // here and not in main_live_guardian.dart or guardian_more.dart itself.
 // main_live_child_call_test.dart's own FAB-adjacent poll loop is the other
 // half; together they let a real two-device test show a REAL knock screen
 // on the child device when the guardian device taps "Call Ivy", with no
-// real FCM/APNs credential anywhere in the loop.
+// real FCM/APNs credential anywhere in the loop. The child's own device
+// then makes a real POST .../calls/:sessionId/join call to mint her own
+// token for that real session — call_knock_screen.dart's own real Answer
+// handler, unmodified, not a dev-only shortcut around it (see
+// _bridgeToPendingCall's own doc comment for why a token can't be bridged
+// directly here the way it can be for the reverse leg's dev-only room).
 //
 // `flutter run --target=lib/main_live_guardian_call_test.dart
 //   --dart-define=OLIVE_API_BASE_URL=http://<host>:8123`
@@ -46,6 +51,17 @@ const _defaultGuardianId = String.fromEnvironment('OLIVE_GUARDIAN_ID',
 // call_screen.dart's own devRoomServerBase, for the identical reason.
 const _pendingCallUrl = 'http://127.0.0.1:8787/pending-call';
 
+/// MASTERFILE §16.2 #6 REVERSED AGAIN — bridges the real session id, not a
+/// token. `started` is the real, unmodified `POST /v1/children/:childId
+/// /calls` response, which carries a token minted for THIS device's own
+/// identity (Dad) — bridging that token to the child's device would mean
+/// her device joining the room AS Dad, a real identity impersonation, not
+/// a shortcut. `started['sessionId']` is what the child's device actually
+/// needs: it lets her own device call the real `POST .../calls/:sessionId
+/// /join` route (call_knock_screen.dart's own real Answer handler) and
+/// mint a token for HER OWN identity, for the exact same real session —
+/// the honest, production-shaped path, not a dev-only shortcut around it.
+///
 /// Fire-and-forget by design: a failed bridge POST must never surface as a
 /// visible error on the real call-start path it's riding along with — the
 /// real call already succeeded by the time this runs (see guardian_more
@@ -60,8 +76,7 @@ Future<void> _bridgeToPendingCall(Map<String, dynamic> started) async {
         .timeout(const Duration(seconds: 3));
     request.headers.contentType = ContentType.json;
     request.write(jsonEncode({
-      'room': started['room'],
-      'serverURL': started['serverURL'],
+      'sessionId': started['sessionId'],
     }));
     await request.close().timeout(const Duration(seconds: 3));
   } catch (e) {

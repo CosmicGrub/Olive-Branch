@@ -32,44 +32,63 @@
  *   LIVEKIT_URL=wss://<project>.livekit.cloud LIVEKIT_API_KEY=... \
  *     LIVEKIT_API_SECRET=... node tools/local-call-room-server.mjs
  *
- * GET /room?who=dad|ivy -> { room, serverURL, identity, displayName }
+ * GET /room?who=dad|ivy -> { token, wsURL, identity, displayName }
  *
  * POST/GET /pending-call — a SEPARATE, later addition: a real live-device
- * test of the real `POST /v1/children/:childId/calls` route (routes.mjs)
- * needs the child device to actually see a knock screen when the guardian
+ * test needs the child device to actually see a knock screen when Dad's
  * device starts a call, same as a real `call_incoming` push would trigger
  * (see call_knock_screen.dart's own buildCallIncomingHandler). No real
  * FCM/APNs credential exists in this environment (push_channel.dart's own
  * header — no google-services.json in this repo, confirmed, not merely
  * assumed) — that push genuinely cannot be delivered here, full stop, not
  * a bug in routes.mjs or notify.mjs. This is a same-spirit dev-only stand-in
- * for THAT ONE missing hop, not a new production feature: the guardian's
- * real call-start POSTs the real token it just minted here; the child
- * device's dev-only test entry polls it every ~1s and, on seeing a new
- * token, feeds it into the exact same real PushPointer-driven handler a real
- * push would have. Everything on either side of this one hop — the real
- * server route, the real session mint, the real LiveKit join, the real knock
- * UI and its Answer button — is unmodified, real, tested code; only the
- * undeliverable transport in between is bridged, and only in this
- * LOCAL-DEV/TEST-ONLY file, never in routes.mjs or any shipped client
+ * for THAT ONE missing hop, not a new production feature. Dad's device can
+ * start a call two different real ways, and each POSTs a different real
+ * shape here — the child's own dev-test poll loop
+ * (main_live_child_call_test.dart's own _pollForIncomingCall) tells them
+ * apart by which fields are present:
+ *  - main_live_guardian_call_test.dart's "Call Ivy" tile (the REAL
+ *    production `POST /v1/children/:childId/calls` route) bridges
+ *    `{sessionId}` via its own _bridgeToPendingCall — the real session id,
+ *    not a token; see that function's own doc comment on why a token can't
+ *    be bridged for this leg (it would be minted for Dad's own identity,
+ *    and Ivy's device using it directly would mean impersonating him). Her
+ *    device resolves it into her OWN token via the real
+ *    `POST .../calls/:sessionId/join` route, same as a genuine push would.
+ *  - main_live_dad_answer_test.dart's "Call Ivy (test)" FAB (this dev-only,
+ *    process-lifetime-fixed session, with no real `call_log` row for a
+ *    sessionId to resolve against) bridges an already-resolved
+ *    `{token, wsURL}` via its own _fetchTokenAndBridgeToIvy instead — Ivy's
+ *    own separately-minted, correctly-identity-bound token (a second
+ *    GET /room?who=ivy, distinct from the GET /room?who=dad Dad's device
+ *    uses to join himself), fed straight through as
+ *    `knownToken`/`knownWsURL`, bypassing the join route entirely.
+ * Either way, everything on either side of this one hop — the real server
+ * route (when there is one), the real session mint, the real LiveKit join,
+ * the real knock UI and its Answer button — is unmodified, real, tested
+ * code; only the undeliverable transport in between is bridged, and only in
+ * this LOCAL-DEV/TEST-ONLY file, never in routes.mjs or any shipped client
  * screen. In-memory, single most-recent value, no auth — same posture as
  * /room above, for the same reason (see that endpoint's own comment).
  *
  * POST/GET /pending-call-for-dad — the REVERSE leg of the same idea, added
  * for a live two-direction call test (§16.2 #6 Step 2 verification): the
- * CHILD device's own "Call Dad (test)" FAB (main_live_child_call_test.dart)
- * now bridges the room it fetched to THIS separate slot, and the GUARDIAN
- * device's own dev-test entry (main_live_dad_answer_test.dart) polls it,
- * feeding a new room into the identical real buildCallIncomingHandler /
- * CallKnockScreen / Answer-button path — just with who='dad' instead of
- * 'ivy'. A genuinely separate slot from /pending-call, not a shared one:
- * the child's own poll loop would otherwise see a room it just posted for
- * ITSELF and show a fake "incoming call from Dad" for a call it just
- * placed. Neither leg here goes through the real production call-start
- * route the way /pending-call's guardian leg optionally can — both call-test
- * entry points' FABs call the real, unmodified CallScreen class directly
- * against this same dev room server, so this reverse leg is real end-to-end
- * from the room-fetch onward, same as the forward leg always was.
+ * CHILD device's own "Call Dad (test)" FAB (main_live_child_call_test.dart,
+ * _fetchTokenAndBridgeToDad) fetches Dad's own separately-minted,
+ * correctly-identity-bound token (a second GET /room?who=dad, distinct
+ * from the GET /room?who=ivy it uses to join herself) and bridges THAT —
+ * `{token, wsURL}`, not a sessionId — to THIS separate slot, because this
+ * dev-only, process-lifetime-fixed session has no real `call_log` row for
+ * a sessionId to resolve against the way the real production route above
+ * does. The GUARDIAN device's own dev-test entry
+ * (main_live_dad_answer_test.dart) polls it, feeding the already-resolved
+ * token into the identical real buildCallIncomingHandler / CallKnockScreen
+ * / Answer-button path (as `knownToken`/`knownWsURL`, bypassing the join
+ * route entirely — see CallKnockScreen.knownToken's own doc comment) —
+ * just with who='dad' instead of 'ivy'. A genuinely separate slot from
+ * /pending-call, not a shared one: the child's own poll loop would
+ * otherwise see a token it just fetched for ITSELF and show a fake
+ * "incoming call from Dad" for a call it just placed.
  */
 import { createServer } from 'node:http';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
@@ -126,16 +145,16 @@ console.log(`Session room: ${session.roomName}`);
 let pendingCall = null;
 
 // A SECOND, separate slot for the reverse leg: /pending-call (above) is
-// guardian-starts/child-polls; this is child-starts/guardian-polls, added
-// for a live two-direction call-connectivity test where the CHILD device's
-// own "Call Dad (test)" FAB (main_live_child_call_test.dart) needs the
-// GUARDIAN device to genuinely detect and answer via a real CallKnockScreen
-// too, not just independently join the same known room. Kept as a fully
+// Dad-starts/Ivy-polls; this is Ivy-starts/Dad-polls, added for a live
+// two-direction call-connectivity test where the CHILD device's own "Call
+// Dad (test)" FAB (main_live_child_call_test.dart) needs the GUARDIAN
+// device to genuinely detect and answer via a real CallKnockScreen too, not
+// just independently join the same known session blind. Kept as a fully
 // separate variable/route rather than reusing /pending-call's single slot:
-// that slot's own poller (the child's _pollForIncomingCall) would otherwise
-// pick up a room THIS device itself just posted and show itself a fake
-// "incoming call from Dad" for a call it just placed — two directions need
-// two slots, not one shared one.
+// that slot's own poller (Ivy's own _pollForIncomingCall) would otherwise
+// pick up a token THIS device itself just fetched for Dad and show itself a
+// fake "incoming call from Dad" for a call it just placed — two directions
+// need two slots, not one shared one.
 let pendingCallForDad = null;
 
 /** Shared GET/POST handling for one pending-call slot. `get()`/`set()` close
@@ -151,21 +170,20 @@ function handlePendingCallRoute(req, res, get, set) {
       try {
         const body = JSON.parse(raw || '{}');
         // Deliberately shape-agnostic — this slot is a dumb pass-through,
-        // not a validator of what it carries. Two real, different-shaped
-        // payloads legitimately land here: {sessionId} from
-        // main_live_guardian_call_test.dart's bridge (the REAL production
-        // call-start route's own sessionId, meant to be resolved through
-        // the real POST .../join route — see call_knock_screen.dart's own
-        // header for why a bare token can't be bridged for THAT leg: it
-        // would be minted for the CALLER's identity, and using it as the
-        // callee would mean impersonating the caller), and {token, wsURL}
-        // from main_live_dad_answer_test.dart's own FAB (a dev-only,
-        // process-lifetime-fixed room with no real call_log row to resolve
-        // a sessionId against, so the caller fetches and bridges the
-        // RECEIVER's own correctly-identity-bound token directly instead —
-        // see that file's own _fetchRoomAndBridgeToIvy doc comment). The
-        // receiving poll loop decides what it got; this route just needs a
-        // real, non-empty JSON object, not a specific field.
+        // not a validator of what it carries. This file's own header
+        // documents which real callers write which real shape to which
+        // slot — /pending-call sees BOTH {sessionId} (from
+        // main_live_guardian_call_test.dart's real production call-start)
+        // and {token, wsURL} (from main_live_dad_answer_test.dart's own
+        // dev-only FAB), while /pending-call-for-dad only ever sees
+        // {token, wsURL} (from main_live_child_call_test.dart's own FAB).
+        // Every {token, wsURL} payload here carries the RECEIVER's own
+        // separately-minted, correctly-identity-bound token, never the
+        // sender's own — see either FAB's own _fetchTokenAndBridgeTo*
+        // doc comment for why (bridging the sender's own token would mean
+        // the receiver impersonating the sender). The receiving poll loop
+        // decides what it got; this route just needs a real, non-empty
+        // JSON object, not a specific field.
         if (typeof body !== 'object' || body === null || Object.keys(body).length === 0) {
           res.writeHead(400, { 'content-type': 'application/json' });
           return res.end(JSON.stringify({ error: 'a non-empty JSON body is required' }));
