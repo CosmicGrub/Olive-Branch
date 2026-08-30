@@ -1,69 +1,72 @@
-// OLIVE BRANCH — real-time call, Jitsi Meet + Jitsi Videobridge. UNVERIFIED
-// (no Flutter toolchain in tools/verify.sh's automated pipeline — manually
-// built and run via `flutter analyze` / `flutter test` this session).
-// §5.19/§5.23 the call. §16.2 #6 (originally "stay on Cloud [LiveKit]") was
-// reversed in favor of Jitsi — see the decision note in MASTERFILE.md.
+// OLIVE BRANCH — real-time call, LiveKit Cloud. UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline — manually built and
+// run via `flutter analyze` / `flutter test` this session; real two-device
+// verification is next, pending a real LiveKit Cloud project). §5.19/§5.23
+// the call. §16.2 #6 REVERSED AGAIN — this build was self-hosted Jitsi Meet
+// + Jitsi Videobridge; LiveKit Cloud replaces it. See
+// docs/superpowers/specs/2026-08-29-livekit-call-migration-design.md for
+// the full account of why (real, lived self-host operational cost this
+// session; the structural distance/quality ceiling of one self-hosted JVB
+// instance vs LiveKit's real global edge network) and what it does and does
+// not cover.
 //
-// This build points at the public meet.jit.si server by default so the
-// original bug stays reproducible: meet.jit.si puts new rooms in a
-// moderator-approval lobby the app can never clear (v0.46.0, verified on two
-// physical devices — see the §16.2 #6 callout in MASTERFILE.md). §16.2 #6
-// Step 2 (self-host Prosody/Jicofo/JVB) is now staged, not yet
-// device-verified — see tools/jitsi-selfhost/README.md for setup and the
-// real constraints it surfaced (UDP media can't ride the `adb reverse` trick
-// below; the self-hosted stack's cert is self-signed). Point
-// local-call-room-server.mjs at it with JITSI_SERVER_URL once ready to try.
 // The one thing the two devices still need to agree on is which room to
 // join, and that coordination reuses real, tested logic —
 // packages/session-runtime/src/rooms.mjs's newRoomName()/mintToken(), which
 // still enforce I1 (room name never guessable) and I4 (authorization gate)
-// — served locally by scaffold/tools/local-call-room-server.mjs. That server
-// is LOCAL DEV/TEST ONLY, not a stand-in for the production API.
+// — served locally by scaffold/tools/local-call-room-server.mjs, or for
+// real by server/routes.mjs's POST /v1/children/:childId/calls and
+// /calls/:sessionId/join routes. mintLiveKitToken()
+// (packages/session-runtime/src/livekit-token.mjs) turns that same real
+// grant into the signed JWT LiveKit actually requires to let anyone join at
+// all — pure serialization, not a new authorization decision (see that
+// file's own header).
 //
-// §8.1 — the child side has no settings affordance at any depth. The feature
-// flags below strip Jitsi's own settings/server-change/security UI on both
-// sides. A 2026-08-23 audit found this header's own claim was NOT actually
-// true in code: `FeatureFlags.settingsEnabled` was never set, so Jitsi's
-// native Settings screen stayed reachable mid-call on both devices,
-// including the child's kiosk-locked one — fixed below, alongside two more
-// findings from the same audit: `chatEnabled` was never disabled for the
-// child (Jitsi's native, unmoderated, unarchived free-text chat was live
-// for her, unlike every other text surface in this app), and PiP-related
-// flags applied identically regardless of role despite MASTERFILE already
-// declaring PiP a guardian-only, structural decision. `_featureFlagsFor()`
-// below makes all three real, role-conditional facts instead of one flat
-// constant silently applied to both roles alike.
+// A REAL, STRUCTURAL DIFFERENCE FROM THE JITSI BUILD THIS REPLACES, worth
+// naming plainly: Jitsi's SDK handed this screen a complete, prebuilt
+// native call UI (mute/camera/hangup, participant tiles, its own settings/
+// chat/lobby screens) that this file spent real effort stripping down for
+// §8.1 (no settings affordance anywhere for the child) and the child-only
+// chat-disable audit named in this file's own prior header. LiveKit is
+// room/track primitives, not a UI — so THIS file now builds its own real,
+// minimal call screen below. That is a genuine trade: more code here, but
+// none of it is spent fighting someone else's meeting-app chrome, and
+// nothing resembling Jitsi's own settings/chat/lobby screens exists to
+// disable in the first place, because none of it was ever built. §8.1 is
+// satisfied by construction, not a flag.
+//
+// A SECOND real, structural difference: LiveKit is an SFU — media is
+// ALWAYS relayed through it, for every participant count, with no P2P mode
+// to disable. Jitsi defaulted P2P to ON for exactly-two-participant calls
+// (config.js's own config.p2p.enabled: true) and needed real, layered
+// defense-in-depth (ENABLE_P2P=0 server-side, this file's own
+// iceTransportPolicy: 'relay' override) to guarantee §5.21.1 ("all media is
+// relayed, always" — neither device may ever learn the other's real IP, a
+// protective-order-relevant safety requirement). LiveKit's architecture
+// never offers that path at all — §5.21.1 holds structurally here, not by
+// a flag that has to be remembered and kept in sync across two layers.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
-import 'kiosk_channel.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
+import 'degradation_banner.dart';
 
 /// LOCAL DEV/TEST ONLY — tools/local-call-room-server.mjs. Not a production
 /// endpoint.
 ///
-/// Loopback rather than a LAN IP, on purpose: a hardcoded LAN address (the
-/// previous value here, 192.168.1.78) goes stale the moment the dev
-/// machine's network changes, and silently breaks two-device testing with
-/// no clue why. `127.0.0.1` on the *device* reaches the dev machine's
-/// `local-call-room-server.mjs` over `adb reverse tcp:8787 tcp:8787`, run
-/// once per physical device before installing — see that script's own
-/// header. This works over USB regardless of whether the phones and the
-/// dev machine share a WiFi network at all.
+/// Loopback rather than a LAN IP, on purpose: a hardcoded LAN address goes
+/// stale the moment the dev machine's network changes, and silently breaks
+/// two-device testing with no clue why. `127.0.0.1` on the *device* reaches
+/// the dev machine's `local-call-room-server.mjs` over
+/// `adb reverse tcp:8787 tcp:8787`, run once per physical device before
+/// installing — see that script's own header. This works over USB
+/// regardless of whether the phones and the dev machine share a WiFi
+/// network at all — and, unlike the self-hosted-Jitsi build this replaces,
+/// nothing else here needs that trick: the actual call media reaches
+/// LiveKit Cloud over the device's own normal internet connection, real
+/// WiFi or cellular, no LAN/adb-reverse/self-signed-cert dance required.
 const devRoomServerBase = 'http://127.0.0.1:8787';
-
-/// The Jitsi deployment itself — a real per-deployment constant, not
-/// per-call data. `_fetchRoom()`'s own response already carries this (dev-
-/// room-server/the real POST /v1/children/:childId/calls route both read
-/// the identical JITSI_SERVER_URL env var server-side, see routes.mjs's own
-/// comment on why), but a `call_incoming` push cannot: push.ts's own
-/// content-free PushInput carries only kind/ref/callHandle, deliberately —
-/// see that file's own header for why a push payload is not the place for
-/// deployment config. A knock answered from call_knock_screen.dart has a
-/// real room name (the push's callHandle) but needs this constant to know
-/// where to actually find it.
-const _defaultJitsiServerURL = String.fromEnvironment('OLIVE_JITSI_SERVER_URL',
-    defaultValue: 'https://meet.jit.si');
 
 /// 'ivy' is the only child identity any real call site uses (child_home
 /// .dart, call_knock_screen.dart's own answer path); every other value —
@@ -72,154 +75,139 @@ const _defaultJitsiServerURL = String.fromEnvironment('OLIVE_JITSI_SERVER_URL',
 /// child principal outright (child_cannot_start_call), so 'who' and "which
 /// side of the ladder can this device leave kiosk lock" already agree in
 /// every real call path this client has. A top-level function, not a
-/// private method on [_CallScreenState], so [callFeatureFlagsFor] below and
-/// this can both be exercised directly by a widget test without needing to
-/// pump a whole [CallScreen] and force it through its own real (and, in a
-/// test sandbox, unavoidably platform-channel-hanging) join attempt.
+/// private method on [_CallScreenState], so a widget test can exercise it
+/// directly without needing to pump a whole [CallScreen] and force it
+/// through its own real (and, in a test sandbox, unavoidably platform-
+/// channel-hanging) join attempt.
 bool isGuardianWho(String who) => who != 'ivy';
 
-/// Real, role-conditional feature flags — found and fixed by a 2026-08-23
-/// audit named in this file's own header. Jitsi's native Settings UI is off
-/// for EVERY role (closes a real containment gap on the kiosk-locked child
-/// device); native in-call chat is off for the child specifically
-/// (unmoderated, unarchived, unlike every other text surface in this app —
-/// never routed anywhere, simply disabled).
-///
-/// PiP is enabled for BOTH roles as of 2026-08-24 — an explicit, informed
-/// decision, not the default this file originally shipped with (guardian-
-/// only, matching MASTERFILE's then-"structural conclusion"). Real PiP for
-/// a kiosk-locked child device is a genuine tension with what that lock
-/// exists to guarantee — a PiP window is not full-screen, so whatever sits
-/// behind it is reachable — and this was accepted deliberately, not
-/// invented unilaterally: she can now shrink a call to a small window the
-/// same way her father can, and reach the rest of her own app underneath
-/// it exactly the way any other Android PiP works. The mitigation is
-/// native, not a Dart-side assumption: see kiosk_channel.dart's own
-/// [KioskChannel.start] doc comment and KioskBridge.kt's
-/// ACTION_CALL_ACTIVITY_DESTROYED for the real re-pin-on-every-resume fix
-/// this decision required — MainActivity re-pins on every resume while a
-/// call handoff is outstanding, and the original one-shot handoff flag
-/// would have left the child's device unpinned after a real call end if
-/// PiP had been entered even once during that same call.
-///
-/// Deliberately NOT paired with an auto-navigate-to-an-activity feature: a
-/// same-2026-08-24 attempt to have a PiP entry automatically open a
-/// drawing screen behind it was built, live-tested, and found genuinely
-/// unreachable for the path a child would actually use (pressing Home) —
-/// Android's own WindowManagerService re-asserts the launcher as the PiP
-/// host once Home has been pressed (`RootWindowContainer
-/// .startHomeOnTaskDisplayArea`, confirmed via dumpsys, not assumed), and
-/// no ordinary app-level call reliably overrides that. Reverted rather than
-/// shipped half-working; she can still reach Doodle Desk on her own, from
-/// her own menu, the same way she always could — PiP just doesn't try to
-/// take her there automatically. No custom "shrink to a mini window" UI
-/// exists anywhere in this file for either role: once `_jitsiMeet.join()`
-/// hands off, Jitsi's own native Activity — not this screen's build() —
-/// owns the entire display; setting `pip.enabled: true` here is what makes
-/// Jitsi's own native in-call toolbar/Home-press offer real PiP entry.
-Map<String, Object?> callFeatureFlagsFor(bool isGuardian) => {
-  FeatureFlags.welcomePageEnabled: false,
-  FeatureFlags.preJoinPageEnabled: false,
-  FeatureFlags.inviteEnabled: false,
-  FeatureFlags.addPeopleEnabled: false,
-  FeatureFlags.recordingEnabled: false,
-  FeatureFlags.liveStreamingEnabled: false,
-  FeatureFlags.meetingPasswordEnabled: false,
-  FeatureFlags.serverUrlChangeEnabled: false,
-  FeatureFlags.securityOptionEnabled: false,
-  FeatureFlags.meetingNameEnabled: false,
-  FeatureFlags.calenderEnabled: false,
-  FeatureFlags.helpButtonEnabled: false,
-  FeatureFlags.kickOutEnabled: false,
-  FeatureFlags.lobbyModeEnabled: false,
-  // The fix — omitted before this pass despite this file's own header
-  // already claiming it was done.
-  FeatureFlags.settingsEnabled: false,
-  FeatureFlags.chatEnabled: isGuardian,
-  // 2026-08-24 — real PiP for BOTH roles now (was guardian-only). See this
-  // function's own doc comment above for the full account of why, and for
-  // the native re-pin fix this decision required.
-  FeatureFlags.pipEnabled: true,
-  FeatureFlags.pipWhileScreenSharingEnabled: true,
+/// Maps the hysteresis ladder's three video tiers (degradation_banner.dart's
+/// own `Quality` enum, already real, tested, and unchanged by this
+/// migration) onto LiveKit's own per-track subscription quality — the real
+/// mechanism (`RemoteTrackPublication.setVideoQuality`) that actually asks
+/// the SFU to serve a different simulcast layer, not a cosmetic label.
+lk.VideoQuality videoQualityFor(Quality q) => switch (q) {
+  Quality.q720 => lk.VideoQuality.HIGH,
+  Quality.q360 => lk.VideoQuality.MEDIUM,
+  Quality.q180 => lk.VideoQuality.LOW,
 };
+
+/// ConnectionQuality.poor/lost are the only two states this hysteresis
+/// treats as "strained" — .unknown (no report yet) and .good/.excellent are
+/// both "the connection is fine," matching this app's own "never blame a
+/// connection that's merely unreported" posture (degradation_banner.dart's
+/// own streamBanned list already refuses to name a network as the problem;
+/// treating .unknown as strained would do exactly that on every call's
+/// first ~second, before LiveKit has reported anything real yet).
+Condition conditionFor(lk.ConnectionQuality q) =>
+    (q == lk.ConnectionQuality.poor || q == lk.ConnectionQuality.lost)
+        ? Condition.strained
+        : Condition.good;
 
 class CallScreen extends StatefulWidget {
   const CallScreen({
     super.key,
     required this.who,
     required this.displayName,
-    this.kiosk,
-    this.knownRoom,
-    this.knownServerURL,
+    this.knownToken,
+    this.knownWsURL,
     this.onCallEnd,
   });
 
   /// 'dad' or 'ivy' — matches local-call-room-server.mjs's fixed identities.
   final String who;
   final String displayName;
-  /// Injectable for widget tests; defaults to the real platform channel —
-  /// mirrors kiosk_shell.dart's own `channel` param.
-  final KioskChannel? kiosk;
-  /// When [knownRoom] is supplied, [_fetchRoom] is skipped entirely and the
-  /// call joins THIS exact room instead — the room a caller already minted
-  /// (via the real `POST /v1/children/:childId/calls` route, or the room
-  /// name a `call_incoming` push carried) rather than a possibly-different
-  /// one this screen would otherwise fetch fresh from
-  /// `local-call-room-server.mjs`. This is what lets a knock answered from
-  /// call_knock_screen.dart join the room the CALLER is already in, instead
-  /// of two devices independently minting two different rooms and never
-  /// actually meeting. [knownServerURL] is optional even then — a push
-  /// payload carries no deployment config (see [_defaultJitsiServerURL]'s
-  /// own doc comment), only [knownRoom]; supplied together (the real POST
-  /// route's own response shape), [knownServerURL] wins over the constant.
-  /// Both null (the default) is byte-for-byte the original behavior — every
-  /// existing call site (child_home.dart, guardian_home.dart,
-  /// main_live_child_call_test.dart) is unaffected.
-  final String? knownRoom;
-  final String? knownServerURL;
+  /// When supplied, [_fetchToken] is skipped entirely and the call connects
+  /// with THIS exact, already-minted token instead — either the real
+  /// `POST /v1/children/:childId/calls` route's response (the caller
+  /// starting a fresh call) or the real `POST
+  /// /v1/children/:childId/calls/:sessionId/join` route's response (the
+  /// callee answering a knock for an EXISTING call — see call_knock_screen
+  /// .dart's own doc comment on why answering needs a real second server
+  /// round-trip under LiveKit, unlike the bare-room-name join the Jitsi
+  /// build this replaces got away with). Both null (the default) is
+  /// byte-for-byte the dev-room-server fetch path every existing call site
+  /// not answering a real knock already uses (child_home.dart,
+  /// guardian_home.dart, main_live_child_call_test.dart). Always supplied
+  /// together when either is — there is no real call site left that has one
+  /// without the other, unlike the old Jitsi build's `knownServerURL`
+  /// (optional even with `knownRoom` set, because a push payload carried no
+  /// deployment config); a real LiveKit join always needs both a token AND
+  /// the project URL it was signed for.
+  final String? knownToken;
+  final String? knownWsURL;
 
   /// Fires once, right before this screen navigates away on a real,
-  /// SDK-reported `readyToClose` — never on the error path (nothing was
+  /// SDK-reported room disconnect — never on the error path (nothing was
   /// ever really joined there to end). Deliberately a caller-supplied
   /// callback rather than this screen knowing a baseUrl/session/childId/
-  /// sessionId itself: mirrors guardian_more.dart's own onCallStarted
-  /// seam, keeping CallScreen decoupled from OliveApi entirely, same as
-  /// it already is today. A real call site supplies one that calls the
+  /// sessionId itself: mirrors guardian_more.dart's own onCallStarted seam,
+  /// keeping CallScreen decoupled from OliveApi entirely, same as it
+  /// already was under Jitsi. A real call site supplies one that calls the
   /// real POST /v1/children/:childId/calls/:sessionId/end route
   /// (guardian_more.dart's own `_startRealCall`); null here is a safe,
-  /// honest no-op for every call site that doesn't have a real sessionId
-  /// to close (e.g. the dev room server's fixed session has none).
+  /// honest no-op for every call site that doesn't have a real sessionId to
+  /// close (e.g. the dev room server's fixed session has none).
   final Future<void> Function()? onCallEnd;
 
   @override
   State<CallScreen> createState() => _CallScreenState();
 }
 
-enum _CallStatus { fetchingRoom, joining, inCall, error }
+enum _CallStatus { fetchingToken, joining, inCall, error }
 
 class _CallScreenState extends State<CallScreen> {
-  final _jitsiMeet = JitsiMeet();
-  late final KioskChannel _kiosk;
-  _CallStatus _status = _CallStatus.fetchingRoom;
+  // Deliberately NOT constructed eagerly (e.g. `= lk.Room()` at declaration)
+  // — livekit_client's own Room constructor starts a real, periodic
+  // internal cache-cleanup timer (Engine's PendingTrackQueue -> TTLMap,
+  // confirmed by reading that class's own source: no dispose()/cancel()
+  // exists on it at all, so Room.dispose() cannot stop it once started).
+  // Constructing this only right before an actual connect() attempt means
+  // a call that never gets past _fetchToken() (no real dev room server or
+  // network reachable — the exact case every existing widget test in
+  // call_screen_test.dart already exercises) never starts that timer at
+  // all, rather than leaking one flutter_test's own pending-timer check
+  // would otherwise catch on every single test in this file.
+  lk.Room? _room;
+  lk.EventsListener<lk.RoomEvent>? _listener;
+  _CallStatus _status = _CallStatus.fetchingToken;
   String? _errorMessage;
+
+  lk.VideoTrack? _localVideoTrack;
+  lk.VideoTrack? _remoteVideoTrack;
+  lk.RemoteTrackPublication? _remoteVideoPublication;
+  String? _remoteName;
+
+  // Real live call quality (folded into this migration, MASTERFILE §5.28/
+  // §8.14) — degradation_banner.dart's own hysteresis state machine,
+  // completely unchanged, fed a real ConnectionQuality report instead of
+  // the "(demo)" screen's clock-driven fake wobble. See conditionFor()'s
+  // own doc comment for why .unknown is never treated as strained.
+  StreamState _stream = newStream();
+  StreamNotice? _notice;
+  lk.ConnectionQuality _lastKnownQuality = lk.ConnectionQuality.unknown;
+  Timer? _qualityTicker;
+  static const _qualityTickMs = 250; // matches degradation_banner.dart's own _tickMs exactly
+
+  // livekit_client exposes setMicrophoneEnabled()/setCameraEnabled() but no
+  // matching isXEnabled() getter (confirmed by reading LocalParticipant's
+  // own source, not assumed) — tracked here instead, toggled only by this
+  // screen's own two calls to those setters, so it can never drift from
+  // what was actually last requested.
+  bool _micEnabled = true;
+  bool _cameraEnabled = true;
 
   @override
   void initState() {
     super.initState();
-    _kiosk = widget.kiosk ?? KioskChannel();
     _startCall();
   }
 
-  /// 'ivy' is the only child identity any real call site uses (child_home
-  /// .dart, call_knock_screen.dart's own answer path); every other value —
-  /// today only 'dad' — is a guardian. A real, tested distinction, not a
-  /// guess: guardian_more.dart's own real call-start route already refuses
-  /// a child principal outright (child_cannot_start_call), so 'who' and
-  /// "which side of the ladder can this device leave kiosk lock" already
-  /// agree in every real call path this client has.
+  /// 'ivy' is the only child identity any real call site uses — see
+  /// isGuardianWho's own doc comment for the fuller account.
   bool get _isGuardian => isGuardianWho(widget.who);
 
-  Future<Map<String, dynamic>> _fetchRoom() async {
+  Future<Map<String, dynamic>> _fetchToken() async {
     final client = HttpClient();
     try {
       final uri = Uri.parse('$devRoomServerBase/room?who=${widget.who}');
@@ -237,100 +225,50 @@ class _CallScreenState extends State<CallScreen> {
 
   Future<void> _startCall() async {
     setState(() {
-      _status = _CallStatus.fetchingRoom;
+      _status = _CallStatus.fetchingToken;
       _errorMessage = null;
     });
     try {
-      final String room;
-      final String serverURL;
-      if (widget.knownRoom != null) {
-        room = widget.knownRoom!;
-        serverURL = widget.knownServerURL ?? _defaultJitsiServerURL;
+      final String token;
+      final String wsURL;
+      if (widget.knownToken != null) {
+        token = widget.knownToken!;
+        wsURL = widget.knownWsURL!;
       } else {
-        final data = await _fetchRoom();
-        room = data['room'] as String;
-        serverURL = data['serverURL'] as String;
+        final data = await _fetchToken();
+        token = data['token'] as String;
+        wsURL = data['wsURL'] as String;
       }
 
       if (!mounted) return;
       setState(() => _status = _CallStatus.joining);
 
-      final options = JitsiMeetConferenceOptions(
-        serverURL: serverURL,
-        room: room,
-        userInfo: JitsiMeetUserInfo(displayName: widget.displayName),
-        configOverrides: {
-          'startWithAudioMuted': false,
-          'startWithVideoMuted': false,
-          'subject': 'Olive Branch call',
-          // §5.21.1: "all media is relayed, always" — neither device may
-          // ever learn the other's real IP address, a protective-order-
-          // relevant safety requirement, not a quality/performance choice.
-          // The self-hosted stack now sets this server-side too
-          // (tools/jitsi-selfhost/olive.env's ENABLE_P2P=0) — that's the
-          // robust enforcement point, since a server default holds no
-          // matter what any given client does. This client-side override
-          // is defense-in-depth for the day this build points at some
-          // OTHER Jitsi deployment (a different self-host, or back at a
-          // public server for a quick repro) that hasn't made the same
-          // choice — direct P2P defaults ON upstream (confirmed live:
-          // config.js's own config.p2p.enabled: true), which is exactly
-          // what this policy forbids. `iceTransportPolicy: 'relay'`
-          // (2026-08-23) is the same defense-in-depth idea applied one
-          // layer deeper: MASTERFILE §5.21.1 named this as a residual gap
-          // after the ENABLE_P2P=0 fix, but lib-jitsi-meet only documents
-          // `iceTransportPolicy` as a P2P-CONNECTION setting (confirmed
-          // against upstream docs, not guessed) — with P2P already
-          // disabled there is no live P2P path for it to apply to today.
-          // Kept here anyway, nested under the same 'p2p' key, for the
-          // identical reason `enabled: false` already is: the day P2P is
-          // ever re-enabled on some other deployment this build points at,
-          // this ensures that path can still only negotiate a TURN-relayed
-          // candidate, never a direct one.
-          'p2p': {'enabled': false, 'iceTransportPolicy': 'relay'},
-        },
-        featureFlags: callFeatureFlagsFor(_isGuardian),
-      );
+      // §16.2 #6 / §5.20 — the OLD Jitsi build had to hand kiosk lock-task
+      // pinning off to a second native Activity here (its own SDK opened
+      // calls in a separate singleTask Activity, which lock-task pinning
+      // refuses to launch as a second task). A LiveKit call is this same
+      // screen, in this same Activity — no second Activity is ever
+      // launched, so that handoff has no problem left to solve. Not called
+      // here. kiosk_channel.dart's own beginCallHandoff() is left in place,
+      // unremoved, pending real kiosk-lock verification on the Fold5 with a
+      // real LiveKit project (see this migration's own spec's testing
+      // plan) — this comment is the disclosed reasoning for why that
+      // verification is expected to confirm removal, not a guess presented
+      // as settled.
 
-      // §16.2 #6 / §5.20 — the SDK opens the call in its own singleTask
-      // Activity, which kiosk lock-task pinning refuses to launch as a
-      // second task (`E/ActivityTaskManager: Attempted Lock Task Mode
-      // violation`, confirmed on a real Galaxy Z Fold5 — see the MASTERFILE
-      // §16.2 #6 callout). Without this, `_jitsiMeet.join` below never
-      // actually starts the native Activity and this screen hangs on
-      // "Joining…" forever with no error. Hand the pin off to that Activity
-      // instead of just dropping it — see kiosk_channel.dart's
-      // beginCallHandoff doc comment. A no-op when this device isn't
-      // kiosk-locked at all (e.g. the guardian side placing the call).
-      if (await _kiosk.mode() != 'none') {
-        await _kiosk.beginCallHandoff();
-      }
+      // Only constructed here, not eagerly — see the field's own doc
+      // comment for why (a real, un-cancellable internal SDK timer).
+      final room = lk.Room();
+      _room = room;
+      _listener = room.createListener()..listen(_handleRoomEvent);
+      _qualityTicker = Timer.periodic(
+        const Duration(milliseconds: _qualityTickMs), (_) => _tickQuality());
 
-      final listener = JitsiMeetEventListener(
-        conferenceJoined: (url) {
-          if (mounted) setState(() => _status = _CallStatus.inCall);
-        },
-        // conferenceTerminated and readyToClose are NOT the same moment —
-        // on a real dropped connection they can fire tens of seconds apart.
-        // Only readyToClose ("no meeting is happening at this point", per
-        // the SDK's own docs) is the safe-to-navigate-away signal; popping
-        // on both double-pops the Navigator stack past this screen.
-        conferenceTerminated: (url, error) {
-          if (error != null) debugPrint('Jitsi conference terminated: $error');
-        },
-        readyToClose: () {
-          // Fire-and-forget, deliberately: popping the Navigator must never
-          // wait on a network call, and a failed end-call POST must never
-          // strand the user on a screen that already knows the call is
-          // over. See widget.onCallEnd's own doc comment for what this is
-          // and is not (record-keeping only — no server-side media
-          // revocation happens here, a real, disclosed, separate gap).
-          widget.onCallEnd?.call();
-          if (mounted) Navigator.of(context).maybePop();
-        },
-      );
+      await room.connect(wsURL, token);
+      await room.localParticipant?.setCameraEnabled(true);
+      await room.localParticipant?.setMicrophoneEnabled(true);
 
-      await _jitsiMeet.join(options, listener);
+      if (mounted) setState(() => _status = _CallStatus.inCall);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -340,19 +278,132 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  void _handleRoomEvent(lk.RoomEvent event) {
+    if (event is lk.RoomDisconnectedEvent) {
+      // Fire-and-forget, deliberately: popping the Navigator must never
+      // wait on a network call, and a failed end-call POST must never
+      // strand the user on a screen that already knows the call is over.
+      // See widget.onCallEnd's own doc comment for what this is and is not
+      // (record-keeping only — no server-side media revocation happens
+      // here, a real, disclosed, separate gap).
+      widget.onCallEnd?.call();
+      if (mounted) Navigator.of(context).maybePop();
+      return;
+    }
+    if (event is lk.ParticipantConnectedEvent) {
+      final p = event.participant;
+      if (mounted) setState(() => _remoteName = p.name.isNotEmpty ? p.name : p.identity);
+      return;
+    }
+    if (event is lk.ParticipantDisconnectedEvent) {
+      if (mounted) {
+        setState(() {
+          _remoteName = null;
+          _remoteVideoTrack = null;
+          _remoteVideoPublication = null;
+        });
+      }
+      return;
+    }
+    if (event is lk.LocalTrackPublishedEvent) {
+      final t = event.publication.track;
+      if (t is lk.LocalVideoTrack && mounted) setState(() => _localVideoTrack = t);
+      return;
+    }
+    if (event is lk.TrackSubscribedEvent) {
+      final track = event.track;
+      if (track is lk.VideoTrack && mounted) {
+        setState(() {
+          _remoteVideoTrack = track;
+          _remoteVideoPublication = event.publication;
+        });
+      }
+      return;
+    }
+    if (event is lk.TrackUnsubscribedEvent) {
+      if (event.track is lk.VideoTrack && mounted) {
+        setState(() {
+          _remoteVideoTrack = null;
+          _remoteVideoPublication = null;
+        });
+      }
+      return;
+    }
+    if (event is lk.ParticipantConnectionQualityUpdatedEvent) {
+      // Only the remote participant's own reported quality drives the
+      // ladder — our own local publish quality isn't what this exists to
+      // protect against, and LiveKit reports both under the same event
+      // type.
+      if (event.participant is! lk.LocalParticipant) {
+        _lastKnownQuality = event.connectionQuality;
+      }
+      return;
+    }
+  }
+
+  /// Runs every _qualityTickMs off a real Timer, exactly the way the
+  /// "(demo)" screen's own _tick() always did — the only thing that
+  /// changed is _lastKnownQuality now comes from a real
+  /// ParticipantConnectionQualityUpdatedEvent instead of a manual "wobble
+  /// the line" test control. evaluate()/noticeFor()/markTold() are called
+  /// completely unmodified from degradation_banner.dart.
+  void _tickQuality() {
+    final result = evaluate(_stream, StreamTick(conditionFor(_lastKnownQuality), _qualityTickMs));
+    if (result.changed != StreamChange.none) {
+      _remoteVideoPublication?.setVideoQuality(videoQualityFor(result.state.quality));
+    }
+    final notice = noticeFor(result.state);
+    if (!mounted) return;
+    setState(() {
+      _stream = notice != null ? markTold(result.state) : result.state;
+      if (notice != null) _notice = notice;
+    });
+  }
+
+  @override
+  void dispose() {
+    _qualityTicker?.cancel();
+    _listener?.dispose();
+    _room?.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: switch (_status) {
-        _CallStatus.fetchingRoom => const _Status(message: 'Finding the call…'),
-        _CallStatus.joining => const _Status(message: 'Joining…'),
-        _CallStatus.inCall => const _Status(message: 'In call'),
-        _CallStatus.error => _ErrorState(
+    backgroundColor: Colors.black,
+    body: switch (_status) {
+      _CallStatus.fetchingToken => const Center(child: _Status(message: 'Finding the call…')),
+      _CallStatus.joining => const Center(child: _Status(message: 'Joining…')),
+      _CallStatus.inCall => _InCallView(
+          localTrack: _localVideoTrack,
+          remoteTrack: _remoteVideoTrack,
+          remoteName: _remoteName,
+          notice: _notice,
+          isGuardian: _isGuardian,
+          onHangUp: () async {
+            // Non-null by construction: this branch only renders once
+            // _startCall() has already reached _CallStatus.inCall, which
+            // only happens after _room was assigned.
+            await _room?.disconnect();
+          },
+          onToggleMic: () async {
+            await _room?.localParticipant?.setMicrophoneEnabled(!_micEnabled);
+            if (mounted) setState(() => _micEnabled = !_micEnabled);
+          },
+          onToggleCamera: () async {
+            await _room?.localParticipant?.setCameraEnabled(!_cameraEnabled);
+            if (mounted) setState(() => _cameraEnabled = !_cameraEnabled);
+          },
+          micEnabled: _micEnabled,
+          cameraEnabled: _cameraEnabled,
+        ),
+      _CallStatus.error => Center(
+          child: _ErrorState(
             message: _errorMessage ?? 'Could not start the call.',
             onRetry: _startCall,
           ),
-      },
-    ),
+        ),
+    },
   );
 }
 
@@ -361,9 +412,9 @@ class _Status extends StatelessWidget {
   final String message;
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
-    const CircularProgressIndicator(),
+    const CircularProgressIndicator(color: Colors.white),
     const SizedBox(height: 16),
-    Text(message),
+    Text(message, style: const TextStyle(color: Colors.white)),
   ]);
 }
 
@@ -377,13 +428,114 @@ class _ErrorState extends StatelessWidget {
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       const Icon(Icons.call_end, size: 40, color: Colors.redAccent),
       const SizedBox(height: 12),
-      Text(message, textAlign: TextAlign.center),
+      Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white)),
       const SizedBox(height: 16),
       FilledButton(onPressed: onRetry, child: const Text('Try again')),
       TextButton(
         onPressed: () => Navigator.of(context).maybePop(),
-        child: const Text('Back'),
+        child: const Text('Back', style: TextStyle(color: Colors.white70)),
       ),
     ]),
+  );
+}
+
+/// The real, minimal call UI this migration requires (see this file's own
+/// header for why building this is the right trade, not a regression).
+/// Deliberately plain: a full-bleed remote tile with a small local self-view
+/// in the corner, the exact real DegradationBanner this app already has and
+/// tested, and three controls — mic, camera, hang up. No chat, no settings,
+/// no lobby toggle, no invite-people UI exists here at all — §8.1 held by
+/// construction, not a flag remembered per role the way the Jitsi build
+/// needed (`callFeatureFlagsFor`'s own now-removed role-conditional chat
+/// flag).
+class _InCallView extends StatelessWidget {
+  const _InCallView({
+    required this.localTrack,
+    required this.remoteTrack,
+    required this.remoteName,
+    required this.notice,
+    required this.isGuardian,
+    required this.onHangUp,
+    required this.onToggleMic,
+    required this.onToggleCamera,
+    required this.micEnabled,
+    required this.cameraEnabled,
+  });
+
+  final lk.VideoTrack? localTrack;
+  final lk.VideoTrack? remoteTrack;
+  final String? remoteName;
+  final StreamNotice? notice;
+  final bool isGuardian;
+  final Future<void> Function() onHangUp;
+  final Future<void> Function() onToggleMic;
+  final Future<void> Function() onToggleCamera;
+  final bool micEnabled;
+  final bool cameraEnabled;
+
+  @override
+  Widget build(BuildContext context) => Stack(children: [
+    Positioned.fill(
+      child: remoteTrack != null
+          ? lk.VideoTrackRenderer(remoteTrack!)
+          : Container(
+              color: const Color(0xFF1A1A1A),
+              alignment: Alignment.center,
+              child: Text(
+                remoteName == null ? 'Waiting for the other side…' : '$remoteName is connecting…',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ),
+    ),
+    DegradationBanner(notice: notice),
+    if (localTrack != null)
+      Positioned(
+        top: 16, right: 16, width: 110, height: 150,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: lk.VideoTrackRenderer(localTrack!, mirrorMode: lk.VideoViewMirrorMode.mirror),
+        ),
+      ),
+    Positioned(
+      left: 0, right: 0, bottom: 32,
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        _CallControlButton(
+          icon: micEnabled ? Icons.mic : Icons.mic_off,
+          onPressed: onToggleMic,
+        ),
+        const SizedBox(width: 24),
+        _CallControlButton(
+          icon: Icons.call_end,
+          backgroundColor: Colors.redAccent,
+          onPressed: onHangUp,
+        ),
+        const SizedBox(width: 24),
+        _CallControlButton(
+          icon: cameraEnabled ? Icons.videocam : Icons.videocam_off,
+          onPressed: onToggleCamera,
+        ),
+      ]),
+    ),
+  ]);
+}
+
+class _CallControlButton extends StatelessWidget {
+  const _CallControlButton({required this.icon, required this.onPressed, this.backgroundColor});
+  final IconData icon;
+  final Future<void> Function() onPressed;
+  final Color? backgroundColor;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: backgroundColor ?? Colors.white24,
+    shape: const CircleBorder(),
+    child: InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onPressed,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Icon(icon, color: Colors.white, size: 28),
+      ),
+    ),
   );
 }

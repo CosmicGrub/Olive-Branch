@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/call_knock.dart';
 import 'package:olive_client/call_knock_screen.dart';
+import 'package:olive_client/call_screen.dart' show CallScreen;
 import 'package:olive_client/push_channel.dart' show PushPointer;
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -214,6 +215,83 @@ void main() {
         navigatorKey: navigatorKey, from: 'Dad', who: 'ivy', displayName: 'Ivy');
       expect(() => handler(const PushPointer(kind: 'call_incoming', ref: 'r3')),
         returnsNormally);
+    });
+
+    // MASTERFILE §16.2 #6 REVERSED AGAIN — the real join call needs the
+    // SESSION id (PushPointer.ref), not the old room-name-shaped
+    // callHandle, to resolve through OliveApi.joinCall. Proven directly on
+    // the constructed widget, not just "navigation happened" — a real
+    // regression (silently reverting to callHandle) would pass every other
+    // test in this group but fail only this one.
+    testWidgets('the constructed CallKnockScreen.sessionId is the real '
+        "pointer.ref, never callHandle -- callHandle alone can't mint a "
+        'real LiveKit join token', (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navigatorKey,
+        home: const Scaffold(body: Text('home')),
+      ));
+
+      final handler = buildCallIncomingHandler(
+        navigatorKey: navigatorKey, from: 'Dad', who: 'ivy', displayName: 'Ivy',
+        baseUrl: 'http://example.test', childId: 'child-1', sessionToken: 'tok');
+      handler(const PushPointer(kind: 'call_incoming', ref: 'the-real-session-id',
+        callHandle: 'a-room-name-not-a-session-id'));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<CallKnockScreen>(find.byType(CallKnockScreen));
+      expect(screen.sessionId, 'the-real-session-id');
+      expect(screen.baseUrl, 'http://example.test');
+      expect(screen.childId, 'child-1');
+      expect(screen.sessionToken, 'tok');
+    });
+  });
+
+  group('the real join call — MASTERFILE §16.2 #6 REVERSED AGAIN', () {
+    testWidgets('with a real sessionId/baseUrl/childId/sessionToken, '
+        'Answer reaches a calm (never red) outcome when the join call '
+        "genuinely fails -- the real network is unreachable in this "
+        "sandbox, the same honest failure every other screen's own "
+        'real-backend test in this client already relies on',
+        (tester) async {
+      await tester.pumpWidget(wrap(const CallKnockScreen(
+        from: 'Dad', who: 'ivy', displayName: 'Ivy',
+        sessionId: 's1', baseUrl: 'http://127.0.0.1:1', childId: 'child-1',
+        sessionToken: 'tok')));
+
+      await tester.tap(find.byKey(const Key('answerButton_Answer')));
+      // Not asserting on the transitional "Connecting…" state here — a
+      // real network call against an invalid port can fail fast enough
+      // (within the same microtask flush a bare pump() allows) that
+      // there's no reliable frame where it's guaranteed visible; the
+      // _answeringBody() state itself is real and reachable (setState
+      // fires synchronously before the await), just not something this
+      // test can pin to an exact frame without a fake/injectable HTTP
+      // client this screen doesn't have a seam for yet.
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('joinFailedLine')), findsOneWidget);
+      expect(find.text('That call has ended.'), findsOneWidget);
+      // Same calm posture as _notNowBody() — no red, no "error", no
+      // "failed" language anywhere on screen.
+      expect(find.textContaining('error'), findsNothing);
+      expect(find.textContaining('Error'), findsNothing);
+      expect(find.textContaining('failed'), findsNothing);
+    });
+
+    testWidgets('without a real sessionId, Answer falls back to '
+        "CallScreen's own token-fetch exactly as it always did -- the "
+        'non-push call site (a test, or a future non-push entry point) '
+        'this fallback exists for', (tester) async {
+      await tester.pumpWidget(wrap(const CallKnockScreen(
+        from: 'Dad', who: 'ivy', displayName: 'Ivy')));
+
+      await tester.tap(find.byKey(const Key('answerButton_Answer')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Try again'), findsOneWidget);
+      final screen = tester.widget<CallScreen>(find.byType(CallScreen));
+      expect(screen.knownToken, isNull);
+      expect(screen.knownWsURL, isNull);
     });
   });
 }

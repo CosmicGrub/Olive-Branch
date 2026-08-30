@@ -288,9 +288,9 @@ class OliveApi {
   // fuller account. [startCall] below is the real caller this constant's
   // own comment used to say didn't exist yet — guardian_more.dart's "Call
   // $childName" tile is the one real call site; call_screen.dart's own
-  // room-fetch still falls back to the dev room server when a caller (like
+  // token-fetch still falls back to the dev room server when a caller (like
   // main_live_child_call_test.dart's "Call Dad (test)" FAB) never supplies
-  // a [CallScreen.knownRoom] to begin with.
+  // a [CallScreen.knownToken] to begin with.
   static const calls = '/v1/children/:childId/calls';
 
   // POST .../calls/:sessionId/end — real call-end record-keeping, added
@@ -299,6 +299,18 @@ class OliveApi {
   // comment for why this is pre-substituted rather than going through
   // [_post]'s single-`:childId` substitution the way [calls] above does.
   static const callEnd = '/v1/children/:childId/calls/:sessionId/end';
+
+  // POST .../calls/:sessionId/join — MASTERFILE §16.2 #6 REVERSED AGAIN.
+  // The real route the callee (almost always the child answering a
+  // call_incoming push — call_knock_screen.dart's own real Answer path)
+  // uses to mint HER OWN LiveKit token for an EXISTING call, gated by the
+  // same real mintToken() I4 check every other mint uses. Did not exist
+  // under the Jitsi build this replaces: a bare room name (the old
+  // [CallScreen.knownRoom]) was enough to join there; LiveKit requires a
+  // real per-identity signed token to join at all. See routes.mjs's own
+  // comment on this route, and docs/superpowers/specs/2026-08-29-livekit
+  // -call-migration-design.md, for the fuller account.
+  static const callJoin = '/v1/children/:childId/calls/:sessionId/join';
 
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
@@ -795,10 +807,10 @@ class OliveApi {
   /// mintToken, a genuinely new room per call — never the same room twice),
   /// then attempts a real `call_incoming` push via notifyDevices(), and
   /// records a real call_log row (2026-08-23). Returns the decoded body
-  /// verbatim — `room`/`serverURL`/`identity`/`rang`/`sessionId` — the same
-  /// shape [CallScreen.knownRoom]/[knownServerURL] expect, plus `sessionId`
-  /// for [endCall] below, so a caller can pass this straight through
-  /// without re-deriving anything.
+  /// verbatim — `token`/`wsURL`/`identity`/`rang`/`sessionId` — the same
+  /// shape [CallScreen.knownToken]/[knownWsURL] expect, plus `sessionId`
+  /// for [endCall]/[joinCall] below, so a caller can pass this straight
+  /// through without re-deriving anything.
   ///
   /// Throws [ApiException] on any non-2xx response (e.g. 403
   /// child_cannot_start_call for a child session, 403 no_edge for a
@@ -807,6 +819,19 @@ class OliveApi {
   /// swallowed into "nothing happened."
   Future<Map<String, dynamic>> startCall(String childId) =>
       _post(calls, const {}, childId: childId);
+
+  /// The callee's own real join — see [callJoin]'s own doc comment for the
+  /// fuller account of why this route exists at all. Returns
+  /// `token`/`wsURL`/`identity`/`displayName`, the same shape [startCall]'s
+  /// own response carries, ready to pass straight into
+  /// [CallScreen.knownToken]/[knownWsURL]. Throws [ApiException] on any
+  /// non-2xx response — 404 for a nonexistent or already-ended session, 403
+  /// not_a_participant for a real, otherwise-authorized principal who was
+  /// simply never part of THIS specific call (proven live: server/test
+  /// /calls_route.test.mjs's own section I).
+  Future<Map<String, dynamic>> joinCall(String childId, String sessionId) => _post(
+      callJoin.replaceFirst(':childId', childId).replaceFirst(':sessionId', sessionId),
+      const {});
 
   /// Marks call_log's own row for [sessionId] ended — POST [callEnd],
   /// server/routes.mjs's real handler (2026-08-23). Idempotent: returns
