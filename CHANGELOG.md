@@ -14,6 +14,39 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.65] — 2026-09-01 — ChildHome gets a real tile hierarchy: intuitivism pass, sub-project 2
+
+`child_home.dart` had rendered a single flat, equal-weight 9-tile grid since v0.44.0 (Homework, Play together, More games, My list, Messages, My day, Storyteller, Show & tell, More for you) — every destination the same visual weight, and the grid itself hardcoded `crossAxisCount: 2` with `form_factors.dart` (this project's real posture system, `columnsAt()`/`postureFor()`) imported nowhere in the file, a real inconsistency with `game_picker.dart`'s own migration onto that system back in v0.49.17. This closes both: a real, evidence-grounded 3-tier visual hierarchy, and posture-awareness.
+
+### Added — the 3-tier hierarchy
+Produced by a 5-agent research Workflow (`wf_a47bcfa5-fd1`) rather than invented preference — an audit of every real caller/test of `ChildHome`/`_Tile`, MASTERFILE/CHANGELOG's own stated importance signals for each of the 9 destinations, binding §8.4/§8.11.1/§8.13/§2.1 constraints, and the ad-hoc local-play games' navigation placement question, synthesized into a full design spec (`docs/superpowers/specs/2026-08-31-intuitivism-navigation-density-design.md`). Every tier placement traces to a citation or is disclosed as a judgment call, never presented as settled fact where it isn't:
+- **Hero** (1 tile, full-width, not inside any GridView): **My day** — the only tile MASTERFILE calls a "signature element" (§8.2.2).
+- **Featured** (larger cells, posture-aware): **Play together, Messages, Storyteller, Show & tell**. Storyteller/Show & tell both carry real MASTERFILE centrality citations; Play together/Messages are disclosed structural judgment calls (the most-tapped surface / the one tile with live unread state), not MASTERFILE rankings.
+- **Standard** (previous tile size, posture-aware): **Homework, More games, My list, More for you**. "More games" is textually, explicitly framed as subordinate ("the second door... not a replacement" — its own v0.44.0 origin text); the other three have no citation either way and default here.
+
+### Added — posture-awareness, closing the real gap
+`child_home.dart` now imports `form_factors.dart` and calls the same `columnsAt(Viewport, textScale)` `game_picker.dart` already established (v0.49.17) — no new breakpoints invented. `LayoutBuilder` sits above the scrollable, the correct structural position for bounded constraints (the same pattern `game_picker.dart` uses). The fixed `mainAxisExtent: 108` literal — exactly the bug class §8.11.1 already documents (`_GameCard`'s 182px fix, `reviewableAt()`'s fix) — is replaced everywhere with text-scale-derived heights, clamped `1.0–1.6` (more conservative than `game_picker.dart`'s own `1.0–2.0`, given this screen's own two-prior-bug history with its "sleeps until" counter dropping below the fold).
+
+### A real, pre-existing bug found and fixed along the way
+`_Sleeps`'s own two-line caption (`"sleeps until\nthe handover"`) sat in a `Row` with no `Expanded`/`Flexible` wrapper — unrelated to this pass's own changes, but surfaced by this pass's first-ever 2.0×-text-scale-at-narrow-width test coverage of this screen: `RenderFlex overflowed by 53 pixels` at the 344px Fold-cover floor. Fixed with `Expanded`, not a hand-tuned width, so it holds at every posture rather than just the two sizes this bug happened to be caught at — exactly the class of bug §8.11.1 exists to prevent, found and fixed rather than left standing because it predates this pass.
+
+### Tests
+`test/child_home_test.dart` (new, 16 assertions): the hierarchy is genuinely real (Hero > Featured > Standard height, `Key('childHomeHero')` contains "My day"), the two grids are genuinely distinguishable (`Key('childHomeFeaturedGrid')`/`Key('childHomeStandardGrid')`), `columnsAt()` at all 4 canonical widths for both grids, the 2.0×-at-344px text-scale regression (the one that caught the `_Sleeps` bug above), a P2-compliance smoke test (no "most played"/"favorite"/rank vocabulary anywhere on the redesigned screen), and the "sleeps until" fold-line regression at all 4 canonical sizes × both 1.0×/2.0× text scale (8 cases) — the direct regression guard for a counter this screen has pushed below the fold twice before. `test/widget_test.dart`'s two Standard-tier tap tests (`Homework`, `My list`) gained a defensive `ensureVisible()` — Featured tier's own tiles (`Play together`, `Messages`, tapped by 8 further `game_*_test.dart` files) stayed visible at the default test viewport without needing one. Full Dart suite passing (2278/2278 — this entry's own original
+2046/2046 claim was against a much older base, before this branch's own rebase onto
+v0.49.64; corrected here to the real post-rebase total, not left stale), `flutter
+analyze` clean.
+
+### Explicitly deferred, not silently dropped
+The ad-hoc local-play games' (PR #85) own navigation entry point is answered by this pass's design spec (Featured tier, once built) but not wired here — PR #85 and PR #87 independently modified the same navigation files (`game_navigation.dart`/`GamePickerScreen`/`games_hub.dart`) with no merge relationship between them; this redesign is deliberately not coupled to resolving that conflict. `GuardianHome`'s own parallel grid, `GamePickerScreen`'s card style, and `games_hub.dart`'s `HubSection` list pattern are untouched.
+
+- **Assertion total: 7049 (placeholder)** — HEAD's own real CI `COMPUTED TOTAL`
+  (7033, v0.49.64) plus this entry's own 16 new Dart tests (2278 vs. the 2262
+  post-v0.49.64 baseline; no new server-side test file); to be synced to CI's
+  real number in a follow-up commit if it differs, per this repo's established
+  convention.
+
+---
+
 ## [0.49.64] — 2026-09-01 — Network resilience: audio-only as a real choice, reconnect-with-consent, relay ICE
 
 Continues the LiveKit-era call screen with real defense-in-depth and graceful-

@@ -2,7 +2,8 @@
 // runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). §8.1.
 //
-// Renders MARKUP screen 01. Three invariants the widget tree must preserve:
+// Renders MARKUP screen 'childHome' (§02). Three invariants the widget tree
+// must preserve:
 //   - Availability is stated in HER frame; his time is the aside. (§4.1)
 //   - Countdown is in sleeps, computed on her local day boundary. (§8.2.5)
 //   - No settings affordance exists at any depth. (§8.1)
@@ -10,11 +11,42 @@
 // The kiosk lock (§5.20) that used to be a dev-preview-only stub here is now
 // real — see kiosk_shell.dart, which wraps this widget from entry_gate.dart
 // rather than living inside it. ChildHome itself stays lock-agnostic.
+//
+// TILE HIERARCHY — intuitivism pass, sub-project 2 (docs/superpowers/specs/
+// 2026-08-31-intuitivism-navigation-density-design.md). This screen renders
+// 9 real destinations (Homework, Play together, More games, My list,
+// Messages, My day, Storyteller, Show & tell, More for you) — previously a
+// single flat, equal-weight 2-column grid with a HARDCODED crossAxisCount
+// (form_factors.dart's postureFor()/columnsAt() were imported nowhere in
+// this file, unlike game_picker.dart, which migrated onto the real posture
+// system back in v0.49.17 — a real, independently-found inconsistency this
+// pass closes). Now a real 3-tier hierarchy — Hero / Featured / Standard —
+// each tier's placement traced to a MASTERFILE/CHANGELOG citation where one
+// exists, and disclosed as a JUDGMENT CALL in the spec's own §1 table where
+// it doesn't:
+//   Hero (1, full-width, not a grid at all): My day — the only tile
+//     MASTERFILE calls a "signature element" (MASTERFILE.md:1728-1729).
+//   Featured (larger cells, posture-aware): Play together, Messages,
+//     Storyteller, Show & tell. Storyteller/Show & tell both carry real
+//     centrality citations; Play together/Messages are disclosed judgment
+//     calls (structural — the most-tapped surface / the one with live
+//     unread state — not a MASTERFILE ranking).
+//   Standard (current size, posture-aware): Homework, More games, My list,
+//     More for you. "More games" is textually, explicitly framed as
+//     subordinate ("the second door... not a replacement" — CHANGELOG.md:
+//     6352-6353); the other three have no citation either way and default
+//     here.
+// The ad-hoc local-play games' own placement (Featured tier, once built) is
+// answered in the spec's §2 but deliberately NOT wired here — PR #85 and
+// PR #87 independently modified the same navigation files with no merge
+// relationship between them; this redesign is not coupled to resolving
+// that conflict.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
+import 'form_factors.dart' as ff;
 import 'game_copy_pattern.dart';
 import 'game_dotsboxes.dart';
 import 'game_draw_together.dart';
@@ -70,129 +102,167 @@ class ChildHome extends StatelessWidget {
   final String? sessionToken;
   final http.Client? httpClient;
 
+  void _openGame(BuildContext playContext, GameKind kind) {
+    // Real cases for every game this codebase has actually built a board
+    // for — Batch C's own two (copyPattern/findIt, the closing batch of Play
+    // Together Phase 1), Batch B's four (sillySentence/wouldYouRather/
+    // twoTruths/twentyQuestions), Batch A's two (drawTogether/guessDoodle),
+    // and a parallel build's (tictactoe/dotsboxes), merged rather than any
+    // pass dropping another's work. `memory` alone stays on the honest
+    // not-built-yet fallback — a separate, still-open photo-source product
+    // decision, deliberately out of scope for this phase (see
+    // game_logic.dart's own note).
+    switch (kind) {
+      case GameKind.story:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => GameStoryScreen(childName: childName)));
+      case GameKind.tictactoe:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => GameTicTacToe(childName: childName)));
+      case GameKind.dotsboxes:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => GameDotsBoxes(childName: childName)));
+      case GameKind.drawTogether:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => DrawTogetherScreen(childName: childName)));
+      case GameKind.guessDoodle:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => GuessDoodleScreen(childName: childName)));
+      case GameKind.sillySentence:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => SillySentenceScreen(childName: childName)));
+      case GameKind.wouldYouRather:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => WouldYouRatherScreen(childName: childName)));
+      case GameKind.twoTruths:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => TwoTruthsScreen(childName: childName)));
+      case GameKind.twentyQuestions:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => TwentyQuestionsScreen(childName: childName)));
+      case GameKind.copyPattern:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => CopyPatternScreen(childName: childName)));
+      case GameKind.findIt:
+        Navigator.of(playContext).push(MaterialPageRoute<void>(
+          builder: (_) => const FindItScreen()));
+      case GameKind.memory:
+        _notBuiltYet(playContext, 'That game');
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    // SingleChildScrollView + Column, NOT ListView: a sliver-backed list only
-    // realizes children near the viewport, silently dropping ones scrolled
-    // below the fold from the widget/element tree entirely — the exact bug
-    // several of the parallel groups independently hit and documented (e.g.
-    // message_banking.dart, letters_screen.dart). This wiring pass's own grid
-    // expansion (adding tiles for every newly-wired screen) pushed the
-    // "sleeps until" counter below the default test viewport and made it
-    // invisible to `find.text`, which is what surfaced this for real rather
-    // than by inspection — same discovery path those groups describe.
-    body: SafeArea(child: SingleChildScrollView(padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
-      const SizedBox(height: 12),
-      if (presence != null) _PresenceCard(presence!, childName: childName),
-      const SizedBox(height: 12),
-      // 64dp minimum targets for pre-readers (§8.4), but a FIXED tile height.
-      //
-      // This was `GridView.count` with the default aspect ratio of 1, which
-      // makes tile height scale with device WIDTH. On a tablet — the actual
-      // target device for a child — two rows of square tiles consumed the whole
-      // viewport and pushed the "sleeps until" counter below the fold, where a
-      // child would never scroll to find it. Caught the first time these
-      // widgets were rendered rather than contract-checked.
-      GridView(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10,
-          mainAxisExtent: 108),
-        children: [
-          _Tile(icon: Icons.edit, label: 'Homework',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => HomeworkScreen(childName: childName,
-                baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                httpClient: httpClient)))),
-          _Tile(icon: Icons.extension, label: 'Play together',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => GamePickerScreen(
-                childName: childName,
-                onPlay: (playContext, kind) {
-                  // Real cases for every game this codebase has actually
-                  // built a board for — Batch C's own two (copyPattern/
-                  // findIt, the closing batch of Play Together Phase 1),
-                  // Batch B's four (sillySentence/wouldYouRather/twoTruths/
-                  // twentyQuestions), Batch A's two (drawTogether/
-                  // guessDoodle), and a parallel build's (tictactoe/
-                  // dotsboxes), merged rather than any pass dropping
-                  // another's work. `memory` alone stays on the honest
-                  // not-built-yet fallback — a separate, still-open
-                  // photo-source product decision, deliberately out of
-                  // scope for this phase (see game_logic.dart's own note).
-                  switch (kind) {
-                    case GameKind.story:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => GameStoryScreen(childName: childName)));
-                    case GameKind.tictactoe:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => GameTicTacToe(childName: childName)));
-                    case GameKind.dotsboxes:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => GameDotsBoxes(childName: childName)));
-                    case GameKind.drawTogether:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => DrawTogetherScreen(childName: childName)));
-                    case GameKind.guessDoodle:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => GuessDoodleScreen(childName: childName)));
-                    case GameKind.sillySentence:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => SillySentenceScreen(childName: childName)));
-                    case GameKind.wouldYouRather:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => WouldYouRatherScreen(childName: childName)));
-                    case GameKind.twoTruths:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => TwoTruthsScreen(childName: childName)));
-                    case GameKind.twentyQuestions:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => TwentyQuestionsScreen(childName: childName)));
-                    case GameKind.copyPattern:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => CopyPatternScreen(childName: childName)));
-                    case GameKind.findIt:
-                      Navigator.of(playContext).push(MaterialPageRoute<void>(
-                        builder: (_) => const FindItScreen()));
-                    case GameKind.memory:
-                      _notBuiltYet(playContext, 'That game');
-                  }
-                },
-              )))),
-          _Tile(icon: Icons.casino_outlined, label: 'More games',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => GamesHubScreen(childName: childName)))),
-          _Tile(icon: Icons.star_border, label: 'My list',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const WantsNeedsScreen()))),
-          _Tile(icon: Icons.mail_outline, label: 'Messages', badgeCount: unreadCount,
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => InboxScreen(
-                childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
-                baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                httpClient: httpClient)))),
-          _Tile(icon: Icons.wb_sunny_outlined, label: 'My day',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => MyDayScreen(
-                childName: childName, parts: demoDayParts, nowLocal: hhmmNow())))),
-          _Tile(icon: Icons.auto_stories_outlined, label: 'Storyteller',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => StorytellerScreen(childName: childName)))),
-          _Tile(icon: Icons.photo_camera_outlined, label: 'Show & tell',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => ShowcaseScreen(childName: childName)))),
-          _Tile(icon: Icons.more_horiz, label: 'More for you',
-            onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => ChildMoreScreen(childName: childName,
-                baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                httpClient: httpClient)))),
-        ]),
-      if (sleepsUntilHandover != null) ...[
+    // LayoutBuilder sits ABOVE the scrollable, the same structural position
+    // game_picker.dart's own posture migration (v0.49.17) already
+    // established — inside it, `constraints` are the Scaffold body's real
+    // bounded size, not the scrollable's own unbounded scroll-axis extent.
+    body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
+      final double textScale = MediaQuery.textScalerOf(context).scale(1);
+      final int cross = ff.columnsAt(
+          ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale);
+      // Deliberately more conservative than game_picker.dart's own 1.0-2.0
+      // clamp (its _GameCard fixed-182px bug is exactly the class of thing
+      // this clamp exists to prevent repeating — see this file's own header
+      // and the design spec's §3): this screen ALSO carries the "sleeps
+      // until" counter below everything else, and that counter has been
+      // pushed below the fold by grid growth twice before. Bounding how
+      // much the new Hero+Featured bands can grow at large accessibility
+      // text keeps that risk smaller, not eliminated — see child_home_test
+      // .dart's own fold-line regression coverage.
+      final double heightScale = textScale.clamp(1.0, 1.6);
+
+      return SingleChildScrollView(padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 12),
-        _Sleeps(sleepsUntilHandover!),
-      ],
-    ]))),
+        if (presence != null) _PresenceCard(presence!, childName: childName),
+        const SizedBox(height: 12),
+
+        // ================================================== Hero — My day
+        // Not inside any GridView — a plain full-width band, always
+        // spanning available width regardless of posture. No hero-cell/
+        // variable-span grid mechanism exists anywhere in this codebase
+        // (SliverGridDelegateWithFixedCrossAxisCount is the only delegate
+        // ever used, uniform-cell by construction) — composing a separate
+        // region sidesteps needing one, matching the spec's own §3
+        // reasoning for staying inside a "refine, don't redesign" budget.
+        _Tile(key: const Key('childHomeHero'),
+          icon: Icons.wb_sunny_outlined, label: 'My day', featured: true,
+          hero: true, height: 140 * heightScale,
+          onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => MyDayScreen(
+              childName: childName, parts: demoDayParts, nowLocal: hhmmNow()))),
+        ),
+        const SizedBox(height: 10),
+
+        // ============================================= Featured — larger,
+        // posture-aware grid, directly under Hero.
+        GridView(key: const Key('childHomeFeaturedGrid'),
+          shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cross, mainAxisSpacing: 10, crossAxisSpacing: 10,
+            mainAxisExtent: 132 * heightScale),
+          children: [
+            _Tile(icon: Icons.extension, label: 'Play together', featured: true,
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => GamePickerScreen(
+                  childName: childName,
+                  onPlay: (playContext, kind) => _openGame(playContext, kind),
+                )))),
+            _Tile(icon: Icons.mail_outline, label: 'Messages', featured: true,
+              badgeCount: unreadCount,
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => InboxScreen(
+                  childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
+                  baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                  httpClient: httpClient)))),
+            _Tile(icon: Icons.auto_stories_outlined, label: 'Storyteller', featured: true,
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => StorytellerScreen(childName: childName)))),
+            _Tile(icon: Icons.photo_camera_outlined, label: 'Show & tell', featured: true,
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => ShowcaseScreen(childName: childName)))),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // ============================================= Standard — current
+        // size, posture-aware grid, below Featured. Same GridView shape the
+        // whole screen used to use for all 9 tiles, now scoped to the 4
+        // without an elevation signal (or, for "More games," an explicit
+        // subordinate one — see this file's own header).
+        GridView(key: const Key('childHomeStandardGrid'),
+          shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cross, mainAxisSpacing: 10, crossAxisSpacing: 10,
+            mainAxisExtent: 84 * heightScale),
+          children: [
+            _Tile(icon: Icons.edit, label: 'Homework',
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => HomeworkScreen(childName: childName,
+                  baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                  httpClient: httpClient)))),
+            _Tile(icon: Icons.casino_outlined, label: 'More games',
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => GamesHubScreen(childName: childName)))),
+            _Tile(icon: Icons.star_border, label: 'My list',
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const WantsNeedsScreen()))),
+            _Tile(icon: Icons.more_horiz, label: 'More for you',
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => ChildMoreScreen(childName: childName,
+                  baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                  httpClient: httpClient)))),
+          ],
+        ),
+
+        if (sleepsUntilHandover != null) ...[
+          const SizedBox(height: 12),
+          _Sleeps(sleepsUntilHandover!),
+        ],
+      ]));
+    })),
   );
 }
 
@@ -228,7 +298,8 @@ class _PresenceCard extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.icon, required this.label, this.onTap, this.badgeCount});
+  const _Tile({super.key, required this.icon, required this.label, this.onTap,
+    this.badgeCount, this.featured = false, this.hero = false, this.height});
   final IconData icon;
   final String label;
   // Defaults to the honest not-built-yet acknowledgment; tiles with a real
@@ -239,25 +310,71 @@ class _Tile extends StatelessWidget {
   // data but never rendered anywhere — a declaration with nothing behind it.
   // Optional — null/0 renders no badge at all, not a badge showing "0".
   final int? badgeCount;
+  // Intuitivism sub-project 2 (docs/superpowers/specs/2026-08-31-
+  // intuitivism-navigation-density-design.md, §3) — a shared flag rather
+  // than a second widget class, so Standard/Featured/Hero stay one real
+  // component with one set of invariants (§8.4's 64dp floor, the shared
+  // borderRadius.circular(14) convention with game_picker.dart's cards and
+  // guardian_home.dart's _GTile) instead of three drifting copies.
+  // `featured` bumps icon size and label text style; `hero` additionally
+  // switches the fill to tertiaryContainer and is only ever true for the
+  // single Hero tile. `height`, when supplied, replaces the InkWell child's
+  // own intrinsic sizing with an explicit height — used outside a GridView
+  // (the Hero tile has no gridDelegate-driven mainAxisExtent to size it).
+  final bool featured;
+  final bool hero;
+  final double? height;
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: () => (onTap ?? (c) => _notBuiltYet(c, label))(context),
-    child: Container(constraints: const BoxConstraints(minHeight: 64),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
-        color: Theme.of(context).colorScheme.primaryContainer),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(icon, size: 28),
-          if (badgeCount != null && badgeCount! > 0) ...[
-            const Spacer(),
-            _UnreadBadge(count: badgeCount!),
-          ],
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // §4 constraint compliance: hierarchy is communicated by size/width/
+    // type-scale only. Every fill below is a standard Material ColorScheme
+    // tonal role derived from the active theme (sub-project 1's
+    // colorSchemeFor()) — never her own chosen accent colour, so §8.6.2's
+    // placement budget is satisfied by construction, not later care.
+    final Color fill = hero
+        ? scheme.tertiaryContainer
+        : featured
+            ? scheme.secondaryContainer
+            : scheme.primaryContainer;
+    final Color onFill = hero
+        ? scheme.onTertiaryContainer
+        : featured
+            ? scheme.onSecondaryContainer
+            : scheme.onPrimaryContainer;
+    final Widget tile = InkWell(
+      onTap: () => (onTap ?? (c) => _notBuiltYet(c, label))(context),
+      child: Container(
+        // §8.4 — 64dp minimum touch target for pre-readers. Every tier
+        // clears this floor by construction (Standard's own base height is
+        // already above it even before text-scale growth); this stays the
+        // hard backstop regardless of tier or the `height` override above.
+        constraints: BoxConstraints(minHeight: height ?? 64),
+        height: height,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: fill),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(icon, size: featured ? 36 : 28, color: onFill),
+            if (badgeCount != null && badgeCount! > 0) ...[
+              const Spacer(),
+              _UnreadBadge(count: badgeCount!),
+            ],
+          ]),
+          const Spacer(),
+          Text(label,
+            style: (featured
+                    ? Theme.of(context).textTheme.titleMedium
+                    : Theme.of(context).textTheme.titleSmall)
+                ?.copyWith(fontWeight: FontWeight.w600, color: onFill)),
         ]),
-        const Spacer(),
-        Text(label, style: Theme.of(context).textTheme.titleSmall
-          ?.copyWith(fontWeight: FontWeight.w600)),
-      ])));
+      ),
+    );
+    // The Hero tile alone renders outside any GridView (no cell to fill),
+    // so it needs its own explicit width — every other tier gets width from
+    // its GridView cell already.
+    return hero ? SizedBox(width: double.infinity, child: tile) : tile;
+  }
 }
 
 class _UnreadBadge extends StatelessWidget {
@@ -285,9 +402,20 @@ class _Sleeps extends StatelessWidget {
     // finding).
     Text('$n', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700)),
     const SizedBox(width: 12),
-    // "sleeps", never hours. Children do not think in hours (§8.2.5).
-    Text(n == 1 ? 'sleep until\nthe handover' : 'sleeps until\nthe handover',
-      style: Theme.of(context).textTheme.bodySmall
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+    // Real, pre-existing §8.11.1-class bug found by the intuitivism
+    // sub-project 2 pass's own new text-scale regression coverage — this
+    // widget's own two-line caption had no Expanded/Flexible wrapper, so at
+    // large accessibility text on a narrow screen (2.0x @ 344px Fold-cover)
+    // it overflowed the Row horizontally. Fixed here rather than left as
+    // one more instance of the class of bug this whole pass exists to
+    // avoid repeating; the fix is `Expanded`, not a hand-tuned width, so it
+    // holds at every posture, not just the two sizes this bug happened to
+    // be caught at.
+    Expanded(
+      // "sleeps", never hours. Children do not think in hours (§8.2.5).
+      child: Text(n == 1 ? 'sleep until\nthe handover' : 'sleeps until\nthe handover',
+        style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+    ),
   ]);
 }
