@@ -8,6 +8,16 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Network resilience & ad-hoc mode roadmap, Track B Option 2 —
+         local_discovery.dart's real mDNS (bonsoir). Without
+         CHANGE_WIFI_MULTICAST_STATE, Android does not grant the multicast
+         lock mDNS needs and can silently drop the very packets this
+         feature depends on — found by direct inspection of this manifest
+         before real-device verification, not discovered as a live bug on
+         hardware. ACCESS_WIFI_STATE alongside it is the standard pairing
+         for the same real reason. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

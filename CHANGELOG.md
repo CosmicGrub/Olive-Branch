@@ -14,6 +14,87 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.59] — 2026-09-01 — "Right now, together": five local ad-hoc play games, no internet required
+
+MASTERFILE §9.2's whole catalogue assumed a network path back to a server — async
+turn-based, or live during a call. Nothing worked for two devices in the same room
+on the same WiFi with no internet at all. This ships a wholly separate local
+transport and five real games on top of it, built and hardware-verified across an
+extended pass on this repo's two real test devices (a Galaxy Z Fold 5, a Galaxy Tab
+S9 FE).
+
+### Added — the transport
+- **`local_pairing.dart`'s `LocalPairingController`** — real mDNS discovery via
+  `bonsoir` (broadcast + browse; a query-only library like `multicast_dns` cannot
+  broadcast this device's own presence), turn exchange over one plain HTTP POST per
+  move to a small embedded local server (`local_session.dart`). No LiveKit, no push
+  notification, no account, nothing leaving the WiFi network. Capped at exactly 2
+  physical devices, no mesh; a device can locally host more than one seat.
+- **`local_discovery.dart`**, **`local_play_screen.dart`** — the discovery/pairing
+  UI shell shared by every game below.
+- **`third_party/bonsoir_android_patched/`** — a one-line vendored patch
+  (`compileSdkVersion 33` → `36`) for a real, reproducible Android build failure in
+  `bonsoir_android` 5.1.6 against this app's own `androidx.fragment` transitive
+  dependency; see `third_party/PATCH.md` for the full account and the removal
+  condition once upstream ships a fix.
+- **`AndroidManifest.xml`**: `ACCESS_WIFI_STATE` / `CHANGE_WIFI_MULTICAST_STATE` —
+  without the multicast permission, Android silently drops the packets mDNS depends
+  on; found by inspection before real-device verification, not as a live bug.
+
+### Added — the five games
+- **Uno** (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`/`uno_deck.dart`) — a
+  real seat-based 2–4 seat engine (Skip/Reverse/Draw Two/Wild Draw Four all
+  expressed as real seat-order arithmetic, proven to reduce to 2-seat behavior
+  exactly); 3-tier CPU opponents that see only public information (an opponent's
+  hand count, never its contents); the four house-rule toggles Mattel's own current
+  rules document as legitimate variants (Wild Draw Four Challenge, 7-0, capped
+  same-card-only stacking, arbitrated jump-in); a casino-table visual layer (fanned
+  hands, a one-shot action-card glow, an auto-clearing "UNO!" badge), all grounded
+  in real research into official rules, house-rule community consensus, and the
+  genre's commercial/video-game history.
+- **War** (`game_war.dart`/`war_deck.dart`) — real suit-colored card faces, a
+  genuine 3D flip-reveal animation, correct war/double-war escalation.
+  **Connect 4** (`game_connect4.dart`/`connect4_engine.dart`/`connect4_bot.dart`) —
+  a real minimax + alpha-beta CPU, 3 difficulty tiers, Easy deliberately skipping
+  its own block-check rather than silently reconstructing it via search. **Piece It
+  Together** (`game_puzzle.dart`/`together_puzzle.dart`) — a cooperative
+  shape-placement puzzle, chosen deliberately over a sliding puzzle to avoid that
+  genre's own real solvability-parity bug class. **Pictionary**
+  (`game_pictionary.dart`) — reuses `live_games.ts`'s existing
+  `Pictionary`/`guessDrawing()` engine and `annotation_canvas.dart`'s canvas
+  verbatim rather than building a second one.
+- **`game_seat.dart`** — the shared `Seat`/`SeatRoster` turn-order/roster type Uno's
+  engine walks for its 2–4 seat support.
+- Posture-aware throughout (`form_factors.dart`'s real `Posture`/`postureFor()`):
+  card/piece scale tiers, fan/grid sizing computed from real available width,
+  Pictionary's canvas deliberately exempted (a fixed logical size is what lets a raw
+  stroke coordinate match across two differently-sized devices with zero
+  normalization math — only its chrome is posture-aware).
+- P2 compliant throughout: no score, streak, or rank persists anywhere, including
+  hidden state. Uno's round-end celebration names only who won *this* round.
+
+### Fixed — a real bug, found only by forcing real device postures on real hardware
+All five games' `Scaffold.body` was `SafeArea(child: Padding(child: Center(child:
+body)))`, with no scroll fallback. Forcing the Fold5 to its actual documented
+`foldTabletop` landscape dimensions (~673×420dp, via `adb shell wm size`, not a
+simulator) overflowed the Uno board by close to 300px — confirmed on-screen, not
+guessed. The identical pattern existed verbatim in all 4 other games. Fixed in all
+five by swapping the bare `Center` for `SingleChildScrollView`, the same fix
+pattern `child_home.dart`/`care_note.dart` already use for a short viewport.
+Re-verified live on the Fold5 post-fix: the full board reaches by scrolling, zero
+overflow. `flutter analyze` clean, full `flutter test` suite passing throughout.
+
+### Disclosed, not silently invented
+**Not yet wired into real navigation.** All five are reachable today only through
+dedicated `main_local_*_test.dart` DEV-VERIFICATION-ONLY entry points (the same
+posture as `main_live_child_call_test.dart` and its siblings) — none of
+`child_home.dart`, `guardian_more.dart`, or `game_picker.dart` has a real tile or
+route to any of them yet. Where a same-WiFi, right-now local-play mode belongs
+relative to the existing "Play together" (async, any-network) catalogue is a real
+product/navigation decision, not settled here.
+
+---
+
 ## [0.49.58] — 2026-08-30 — GuardianHome's live-data screen: closing MASTERFILE §20.2b's oldest open gap
 
 `GuardianHome` had no live-data screen at all — first confirmed a real, proven gap at v0.49.15, re-confirmed unchanged through every re-check since (v0.49.30, v0.49.39, v0.49.56), 24+ patch versions with the same finding: `guardian_home.dart` took every field as a plain constructor argument, no fetch of any kind, no `guardian_home_live.dart`, unlike `child_home_live.dart`'s own equivalent for the child side. `main_live_guardian.dart`'s own header explained why in detail: `GuardianHome` needs dual-clock/ribbon data from a `/ribbon` endpoint `api_client.dart` only ever declared a dead path constant for (`OliveApi.childRibbon`), with no server route or client fetch method behind it. This closes it.
