@@ -2560,15 +2560,18 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   //
   // Returns the real bytes base64-encoded in the JSON body — the same
   // convention this whole API already uses in the other direction
-  // (captureHomework's `image` field) — rather than a raw byte stream or a
-  // real signed-URL-serving `/media/:key` endpoint. `StoragePort.signedUrl()`
-  // exists and is real-tested (storage.test.mjs), but nothing in this
-  // codebase serves the URL it produces — building that (an unauthenticated,
-  // signature-verified byte-serving path OUTSIDE api.ts's session-based JSON
-  // contract entirely) is real, separate follow-up work, not silently
-  // folded in here. This route is deliberately the SESSION-authenticated
-  // read path the task asked for, not the differently-authorized signed-URL
-  // one.
+  // (captureHomework's `image` field) — rather than a raw byte stream.
+  // CORRECTED (this comment had gone stale): the signed-URL-serving
+  // `/media/:key` endpoint IS real and built — `signed_media.mjs`,
+  // wired into `server/index.mjs` ahead of `api.handle()`, real tests
+  // (`signed_media_route.test.mjs`, 17/17). `StoragePort.signedUrl()`
+  // (storage.ts) exists and is real-tested too. What was, and until the
+  // next pass still is, missing: nothing in production code calls
+  // `signedUrl()` to actually mint one — every real call site is a test
+  // file (see MASTERFILE §20.2b's own self-correction on this exact
+  // point). This route is deliberately the SESSION-authenticated read
+  // path, base64-in-JSON; a `signedUrl` field alongside it is real,
+  // separate follow-up work, not silently folded in here.
   api.register({
     method: 'GET', path: '/v1/children/:childId/messages/:artifactId/media',
     action: 'message', skipOuterSession: true,

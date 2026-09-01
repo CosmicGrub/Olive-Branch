@@ -29,14 +29,22 @@
 // persistCapturedMessage()). One thing stays honestly short of "fully
 // working," on purpose:
 //
-//  NO LIVE CALL SITE YET. `baseUrl`/`childId`/`sessionToken` must all be
-//  supplied for the button to attempt a real send — inbox_screen.dart,
-//  this screen's only current caller, is still main.dart's offline demo
-//  build (see both files' own headers) and does not supply them. Tapping
-//  "Send one back" from that demo path reports itself honestly ("This
-//  screen isn't connected to a server yet.") rather than doing nothing or
-//  faking success. A live caller (mirroring child_home_live.dart's own
-//  pattern) is real follow-up work, not silently glossed over.
+//  LIVE CALL SITE REAL AS OF v0.49.49 (PR #75) — corrected here, this
+//  header having gone stale after that pass shipped without touching it.
+//  `baseUrl`/`childId`/`sessionToken`/`httpClient` must all be supplied
+//  for the button to attempt a real send, and they genuinely are once
+//  this screen is reached through the real chain: `main_live.dart` →
+//  `LiveChildHomeScreen` (a real, minted session token) → `ChildHome` →
+//  `inbox_screen.dart` (self-fetches via `OliveApi.fetchInbox()`) →
+//  `ReceiptScreen`, threaded straight through at inbox_screen.dart's own
+//  `_open()`. Proven by inbox_screen_test.dart's own "opening a
+//  live-fetched message threads the real live params into ReceiptScreen"
+//  test. `ChildHome` is ALSO still constructable demo-only (main.dart's
+//  `const ChildHome(...)`, no live fields) — reached that way, `baseUrl`/
+//  `childId`/`sessionToken` are null and tapping "Send one back" still
+//  reports itself honestly ("This screen isn't connected to a server
+//  yet.") rather than doing nothing or faking success. Both paths coexist
+//  by design; neither is a stub.
 //
 // FORMERLY a second honest gap here, CLOSED this pass (§20.2b): "NO OBJECT
 // STORAGE ... the recorded file is captured for real on-device but its
