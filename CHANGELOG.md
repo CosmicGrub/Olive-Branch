@@ -14,6 +14,67 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.64] — 2026-09-01 — Network resilience: audio-only as a real choice, reconnect-with-consent, relay ICE
+
+Continues the LiveKit-era call screen with real defense-in-depth and graceful-
+degradation behavior MASTERFILE §5.21/§5.23 already specify but this client
+never enforced under LiveKit.
+
+### Added
+- **`call_modes.dart`** (new) — a deliberately partial 1:1 port of
+  `packages/live/src/modes.ts`: §5.23.1's `CallMode`/`ModeCause`/
+  `answerOptions()`, §5.23.2's `CallTrouble`/degradation-ladder types. NOT
+  ported: push-to-talk and bedtime mode — real, designed features, but
+  nothing in this client calls them yet.
+- **`call_knock_screen.dart`'s "Answer"/"Just talking" buttons now really
+  differ.** Both led to the same video join before this pass — honestly
+  identical, since no ported logic existed to make them differ and inventing
+  one would have been exactly the fabrication §0 forbids. Now: "Answer"
+  joins with video, "Just talking" joins audio-only, carried through a new
+  `CallScreen.initialMode` parameter.
+- **Reconnect-with-resume-consent (§5.23.2, "resuming asks first").** An
+  unexpected disconnect that interrupted a call with the camera on holds it
+  off after a successful reconnect and waits for an explicit tap, rather
+  than silently resuming transmission the moment the network recovers. Mode
+  is broadcast to the other participant over a real-time LiveKit data
+  message (`LocalParticipant.publishData`), deliberately NOT participant
+  metadata — every real token this client mints sets
+  `canUpdateOwnMetadata: false`, confirmed against a real minted token, not
+  assumed from SDK docs.
+- **Relay-only ICE** (`RTCIceTransportPolicy.relay`) as real defense-in-depth
+  — LiveKit's SFU architecture has no peer-to-peer path to disable in the
+  first place, but this forces the client's own IP to never negotiate a
+  host/srflx candidate toward anything else. Spiked against the actual
+  installed SDK (livekit_client 2.11.0) before writing, not guessed.
+- **`adaptiveStream`/`dynacast`** — a real `RoomOptions` this client never
+  constructed at all; both default off in this SDK version.
+- **`camera_controls.dart`** (new) — a 1:1 semantic port of
+  `packages/live/src/camera.ts` (§5.24), real tests behind it, deliberately
+  NOT yet wired into `call_screen.dart` — shipping the logic ahead of its UI
+  integration is this pass's disclosed scope, not an oversight.
+- **`security.ts`** gets a real status comment (no logic change): every
+  export in that file is imported only by the demo/its own test, never the
+  real call path — §5.21.1's relay policy IS enforced today, just by
+  different LiveKit-native code now; §5.21.2/§5.21.3 have no live caller
+  yet.
+- **`.env.example`** documents the `LIVEKIT_URL`/`LIVEKIT_API_KEY`/
+  `LIVEKIT_API_SECRET` vars the LiveKit migration (v0.49.57) added but never
+  documented in this file.
+
+No dedicated MARKUP screen entry — `call_screen.dart`/`call_knock_screen.dart`,
+the tracked screens, are unchanged in their rendered shape (the same three
+answer buttons); only what happens after the tap differs. `flutter analyze`
+clean, full Dart suite passing (2262/2262 — this entry's own 2074/2074 claim
+was against a much older base, before this branch's own rebase onto v0.49.63;
+corrected here to the real post-rebase total, not left stale).
+- **Assertion total: 7033 (placeholder)** — HEAD's own real CI `COMPUTED
+  TOTAL` (6989, v0.49.63) plus this entry's own 44 new Dart tests (2262 vs.
+  the 2218 post-v0.49.63 baseline; no new server-side test file); to be
+  synced to CI's real number in a follow-up commit if it differs, per this
+  repo's established convention.
+
+---
+
 ## [0.49.63] — 2026-09-01 — The notification gate goes live: real day-part wiring on /now and the send-time guard
 
 `gate()` (`packages/delivery-engine/src/gate.ts`, MASTERFILE §6.4) has existed,
