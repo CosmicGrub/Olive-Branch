@@ -26,6 +26,9 @@ import 'expenses_screen.dart';
 import 'expiry_digest.dart';
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
+import 'game_navigation.dart';
+import 'game_picker.dart';
+import 'games_hub.dart';
 import 'guardian_setup.dart';
 import 'handover_notes.dart';
 import 'hub_widgets.dart';
@@ -428,6 +431,26 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.photo_camera_back_outlined, title: 'Show me — your side',
             subtitle: 'What she has shown you, and what is still waiting',
             onTap: () => _open(context, ShowGuardianScreen(childName: childName, childAge: childAge))),
+        ]),
+        HubSection(title: 'Play together', children: [
+          // The SAME real screen her own "Play together" tile opens — see
+          // game_picker.dart's own [GamePickerScreen.extraSections] and
+          // game_navigation.dart's own header for why this is one shared
+          // catalogue and one shared onPlay wiring, reachable from both
+          // sides, rather than a second hand-copied list that could drift.
+          // Real today for genuine co-located, same-room play (a weekend
+          // visit, a school pickup) — these are local pass-and-play boards,
+          // so opening this from a guardian's own device works exactly the
+          // way opening it from hers does. What this tile does NOT yet do
+          // is start a session on HER device remotely from here — that's
+          // the live in-call games work (live_games.dart), not this one.
+          HubTile(icon: Icons.extension_outlined, title: 'Play together',
+            subtitle: 'Everything she can play, the same list she sees',
+            onTap: () => _open(context, GamePickerScreen(
+              childName: childName,
+              onPlay: buildGameNavigator(childName),
+              extraSections: [MoreGamesSections(childName: childName)],
+            ))),
         ]),
         HubSection(title: 'Calls', children: [
           HubTile(icon: Icons.call_outlined, title: 'Call $childName',

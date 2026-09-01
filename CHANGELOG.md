@@ -444,6 +444,50 @@ product/navigation decision, not settled here.
 
 ---
 
+## [0.49.66] — 2026-09-01 — One screen for every choice she has
+
+Before this pass, `child_home.dart`'s "Play together" tile opened the age-gated
+`GameKind` catalogue grid, and `games_hub.dart`'s separate "More games" tile
+opened a second screen for the checkers/chess/battleship/word-game cluster — a
+real, avoidable split with no product reason behind it.
+
+### Added
+- **`GamePickerScreen.extraSections`** — a new `List<Widget>?` slot, null by
+  default (every existing call site and test renders exactly as before this
+  field existed), rendered below the age-gated grid inside the same scroll
+  view.
+- **`MoreGamesSections`** (new, in `games_hub.dart`) — the real section list
+  extracted out of `GamesHubScreen`, pure extraction (same widget tree), now
+  reachable by a second caller. `GamesHubScreen` itself is untouched and still
+  exists in its own right for any caller that wants just that half on its own.
+- **`game_navigation.dart`** (new) — extracts the `GameKind` → screen switch
+  itself into `buildGameNavigator()`, shared by both real call sites
+  (`child_home.dart`, `guardian_more.dart`) so they can never independently
+  drift the way two hand-maintained copies of the same switch eventually
+  would.
+- **New test**: `widget_test.dart`'s "the game picker's consolidated
+  extraSections reach a real games_hub.dart screen from the SAME 'Play
+  together' tile" drives the real path end to end — tap "Play together,"
+  scroll the SAME resulting screen, reach a real `GameCheckers` by tapping
+  "Checkers." Proves the consolidation actually works, not only that the grid
+  still renders.
+
+### Reconciled with the tile hierarchy this branch rebased onto (v0.49.65)
+This branch was forked before v0.49.65's 3-tier hierarchy existed, back when
+`child_home.dart` still rendered its old flat 9-tile grid with its own
+Standard-tier "More games" tile opening `GamesHubScreen` directly. Rebasing
+onto v0.49.65 surfaced the exact split this entry exists to close, one tier
+over: with `extraSections` now folding the "More games" catalogue into "Play
+together" itself, a separate Standard-tier "More games" tile would just
+relocate the redundancy rather than remove it. Resolved by deleting that
+tile — `child_home.dart` now has one door onto the games catalogue, not two —
+matching `guardian_more.dart`'s own already-consolidated "Play together" tile,
+which never grew a second one in the first place.
+
+`flutter analyze` clean, 2031/2031 tests passing in isolation.
+
+---
+
 ## [0.49.58] — 2026-08-30 — GuardianHome's live-data screen: closing MASTERFILE §20.2b's oldest open gap
 
 `GuardianHome` had no live-data screen at all — first confirmed a real, proven gap at v0.49.15, re-confirmed unchanged through every re-check since (v0.49.30, v0.49.39, v0.49.56), 24+ patch versions with the same finding: `guardian_home.dart` took every field as a plain constructor argument, no fetch of any kind, no `guardian_home_live.dart`, unlike `child_home_live.dart`'s own equivalent for the child side. `main_live_guardian.dart`'s own header explained why in detail: `GuardianHome` needs dual-clock/ribbon data from a `/ribbon` endpoint `api_client.dart` only ever declared a dead path constant for (`OliveApi.childRibbon`), with no server route or client fetch method behind it. This closes it.
