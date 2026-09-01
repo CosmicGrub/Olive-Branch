@@ -50,6 +50,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
+import 'call_modes.dart';
 import 'degradation_banner.dart';
 
 /// LOCAL DEV/TEST ONLY — tools/local-call-room-server.mjs. Not a production
@@ -80,6 +81,37 @@ const devRoomServerBase = 'http://127.0.0.1:8787';
 /// through its own real (and, in a test sandbox, unavoidably platform-
 /// channel-hanging) join attempt.
 bool isGuardianWho(String who) => who != 'ivy';
+
+/// §5.21.1 — "all media is relayed, always." LiveKit's SFU architecture
+/// never offers a peer-to-peer path to negotiate in the first place (see
+/// this file's own header), so this is real defense-in-depth rather than
+/// the load-bearing control it was under Jitsi — the same posture
+/// `security.ts`'s own (dead, pre-LiveKit) `CallPolicy` already documented
+/// as the right trade: "both parties are exposed to us rather than to each
+/// other." Forcing relay-only ICE means this client's own IP is visible
+/// exclusively to LiveKit's edge, never negotiated as a host/srflx
+/// candidate toward anything else. Spiked against the installed SDK
+/// (livekit_client 2.11.0) before writing this, not guessed: `RTCIceTransportPolicy
+/// .relay` is a real field the SDK's own internal TURN-connectivity check
+/// already exercises (`connection_check/checks/turn.dart`), not a
+/// speculative API.
+const _connectOptions = lk.ConnectOptions(
+  rtcConfiguration: lk.RTCConfiguration(iceTransportPolicy: lk.RTCIceTransportPolicy.relay),
+);
+
+/// Network-resilience roadmap A1 — `adaptiveStream`/`dynacast` both default
+/// to `false` in this SDK version; a repo-wide search before this change
+/// found this client never constructed a `RoomOptions` at all, so neither
+/// was ever on despite MASTERFILE's own accessibility table promising
+/// "audio-only fallback, SVC/simulcast... rural grandparent, school wifi."
+/// `adaptiveStream` asks the SFU to serve a lower simulcast layer to a
+/// subscriber whose own tile is small/off-screen; `dynacast` stops
+/// publishing a layer nobody is currently subscribed to. Neither changes
+/// what §5.28's own hysteresis ladder does — that's still
+/// `RemoteTrackPublication.setVideoQuality()`, unchanged — this is a
+/// separate, complementary SDK-level saving that applies before the
+/// ladder's own logic ever has to step in.
+final _roomOptions = const lk.RoomOptions(adaptiveStream: true, dynacast: true);
 
 /// Maps the hysteresis ladder's three video tiers (degradation_banner.dart's
 /// own `Quality` enum, already real, tested, and unchanged by this
@@ -112,11 +144,21 @@ class CallScreen extends StatefulWidget {
     this.knownToken,
     this.knownWsURL,
     this.onCallEnd,
+    this.initialMode = CallMode.video,
   });
 
   /// 'dad' or 'ivy' — matches local-call-room-server.mjs's fixed identities.
   final String who;
   final String displayName;
+
+  /// MASTERFILE §5.23.1 — audio-only as a CHOICE, not a punishment. Set by
+  /// whichever real answer she tapped (call_knock_screen.dart's "Answer" vs
+  /// "Just talking" — see [CallKnockScreen.answerOptions]) or by the
+  /// equivalent choice on the originating side. Defaults to video: every
+  /// existing call site that doesn't yet offer the choice (a bare "Call
+  /// $childName" tile with no mode picker) keeps behaving exactly as before
+  /// this field existed.
+  final CallMode initialMode;
   /// When supplied, [_fetchToken] is skipped entirely and the call connects
   /// with THIS exact, already-minted token instead — either the real
   /// `POST /v1/children/:childId/calls` route's response (the caller
@@ -154,7 +196,7 @@ class CallScreen extends StatefulWidget {
   State<CallScreen> createState() => _CallScreenState();
 }
 
-enum _CallStatus { fetchingToken, joining, inCall, error }
+enum _CallStatus { fetchingToken, joining, inCall, reconnecting, error }
 
 class _CallScreenState extends State<CallScreen> {
   // Deliberately NOT constructed eagerly (e.g. `= lk.Room()` at declaration)
@@ -195,7 +237,46 @@ class _CallScreenState extends State<CallScreen> {
   // screen's own two calls to those setters, so it can never drift from
   // what was actually last requested.
   bool _micEnabled = true;
-  bool _cameraEnabled = true;
+  // MASTERFILE §5.23.1 — starts from her real choice (Answer vs Just
+  // talking), not always-on. Audio is never affected by mode — §8.14's
+  // NEVER_SHED / call_audio holds regardless of which button she tapped.
+  late bool _cameraEnabled = widget.initialMode == CallMode.video;
+
+  /// What the OTHER participant's own mode is, as far as this device knows
+  /// — read from their real LiveKit participant metadata (never inferred
+  /// from their video track alone, which can also be absent for reasons
+  /// that aren't a chosen mode at all: still connecting, a real network
+  /// drop). Assumed video until told otherwise — matches this file's own
+  /// "never blame an unreported state" posture elsewhere (conditionFor's own
+  /// doc comment).
+  CallMode _remoteMode = CallMode.video;
+
+  /// MASTERFILE §5.23.2 — "resuming asks first." Set when an UNEXPECTED
+  /// disconnect interrupts a call that had a real camera on; a successful
+  /// reconnect then holds the camera off and waits for her own tap here,
+  /// rather than a dropped-and-recovered connection silently starting to
+  /// transmit her room again the moment the wifi came back.
+  bool _awaitingResumeConsent = false;
+
+  // Reconnect-on-unexpected-disconnect state — see _attemptReconnect's own
+  // doc comment for the real, root-caused bug this exists to recover from
+  // (a confirmed livekit_client SDK race, not a network/product issue).
+  // _lastToken/_lastWsURL are the same grant already proven to work for
+  // THIS call — a LiveKit token is a reusable room-access grant, not a
+  // one-shot value, and TOKEN_TTL_SECONDS (10 min server-side) comfortably
+  // outlives the few-second gap a reconnect attempt needs.
+  String? _lastToken;
+  String? _lastWsURL;
+  // Set right before the user's own hang-up disconnects the room, so
+  // RoomDisconnectedEvent can tell "she hung up" apart from "the SDK
+  // dropped us" — only the latter should trigger a reconnect.
+  bool _hangingUp = false;
+  int _reconnectAttempts = 0;
+  static const _maxReconnectAttempts = 2;
+  // Reentrancy guard — see _handleRoomEvent's own RoomDisconnectedEvent
+  // branch for why a single bad connection can fire this event more than
+  // once and must not spawn more than one concurrent reconnect attempt.
+  bool _reconnecting = false;
 
   @override
   void initState() {
@@ -223,11 +304,61 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  /// Publishes THIS device's own real mode to the other side — the real
+  /// transport for [modeForOther]'s line ("Voice only just now.") to
+  /// actually reach him, since MASTERFILE §5.23.1 requires he be told the
+  /// call is voice-only, not left to guess from an absent video track
+  /// (which also happens for reasons that aren't a chosen mode at all —
+  /// still connecting, a real network drop).
+  ///
+  /// A real-time DATA MESSAGE ([LocalParticipant.publishData]), deliberately
+  /// NOT participant metadata ([LocalParticipant.setMetadata]) — every real
+  /// grant this client's own tokens carry sets `canUpdateOwnMetadata: false`
+  /// (packages/session-runtime/src/rooms.ts, tested by session.test.mjs's
+  /// own I2 assertion: "no self-renaming in a child's room"), so a
+  /// metadata-based version of this would be silently rejected server-side
+  /// on every real call this app ever makes — confirmed directly against a
+  /// real token minted by local-call-room-server.mjs this session, not
+  /// assumed from the SDK docs alone. `canPublishData` IS granted (true for
+  /// a publishing participant), and a transient UI signal like this one is
+  /// exactly what that permission is for — it carries no identity claim,
+  /// unlike metadata. Mode only, never the cause — [causeNeverDisclosed]
+  /// holds by construction here: the payload has no field for one to leak
+  /// through in the first place. Best-effort: a failed publish must never
+  /// block or fail the call itself.
+  Future<void> _publishMode() async {
+    final mode = _cameraEnabled ? CallMode.video : CallMode.audioOnly;
+    try {
+      await _room?.localParticipant?.publishData(
+        utf8.encode(jsonEncode({'mode': mode == CallMode.audioOnly ? 'audio_only' : 'video'})),
+        reliable: true,
+        topic: 'olive.call_mode');
+    } catch (e) {
+      debugPrint('[olive.call] publishData(mode) failed (non-fatal, mode stays local-only): $e');
+    }
+  }
+
+  /// Real switch, mid-call, for HERSELF only — canSwitchOwnCamera() is true,
+  /// canSwitchOthersCamera() is false, and this method has no way to reach
+  /// anyone else's [_room] to violate that even by mistake.
+  Future<void> _setMode(CallMode mode) async {
+    final wantsCamera = mode == CallMode.video;
+    if (wantsCamera == _cameraEnabled) return;
+    await _room?.localParticipant?.setCameraEnabled(wantsCamera);
+    if (mounted) setState(() => _cameraEnabled = wantsCamera);
+    unawaited(_publishMode());
+  }
+
   Future<void> _startCall() async {
     setState(() {
       _status = _CallStatus.fetchingToken;
       _errorMessage = null;
     });
+    // Fresh call attempt (first try, or "Try again" after a real error) —
+    // neither a stale hang-up flag nor a stale retry budget from a
+    // previous attempt should carry over into this one.
+    _hangingUp = false;
+    _reconnectAttempts = 0;
     try {
       final String token;
       final String wsURL;
@@ -239,6 +370,8 @@ class _CallScreenState extends State<CallScreen> {
         token = data['token'] as String;
         wsURL = data['wsURL'] as String;
       }
+      _lastToken = token;
+      _lastWsURL = wsURL;
 
       if (!mounted) return;
       setState(() => _status = _CallStatus.joining);
@@ -258,36 +391,108 @@ class _CallScreenState extends State<CallScreen> {
 
       // Only constructed here, not eagerly — see the field's own doc
       // comment for why (a real, un-cancellable internal SDK timer).
-      final room = lk.Room();
+      final room = lk.Room(roomOptions: _roomOptions);
       _room = room;
       _listener = room.createListener()..listen(_handleRoomEvent);
       _qualityTicker = Timer.periodic(
         const Duration(milliseconds: _qualityTickMs), (_) => _tickQuality());
 
-      await room.connect(wsURL, token);
-      await room.localParticipant?.setCameraEnabled(true);
+      await room.connect(wsURL, token, connectOptions: _connectOptions);
+      // Respects her real choice — §5.23.1, not always-on. Mic is still
+      // unconditional: audio is §8.14's NEVER_SHED, never gated by mode.
+      await room.localParticipant?.setCameraEnabled(_cameraEnabled);
       await room.localParticipant?.setMicrophoneEnabled(true);
+      unawaited(_publishMode());
 
       if (mounted) setState(() => _status = _CallStatus.inCall);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _status = _CallStatus.error;
-        _errorMessage = '$error';
+        _errorMessage = _honestErrorMessage(error);
       });
     }
   }
 
+  /// Network-resilience roadmap, Track B Option 1 — "the call is simply
+  /// unavailable offline" needs an HONEST unavailable state, not a raw
+  /// exception surfacing on screen. Before this, a genuine no-connectivity
+  /// failure ('$error' on a [SocketException]/[TimeoutException]) would show
+  /// text like "Failed host lookup" or "OS Error: No address associated with
+  /// hostname" verbatim — exactly the kind of technical, alarming phrasing
+  /// degradation_banner.dart's own [streamBanned] list already exists to
+  /// keep off a child's screen mid-call, just never applied to the
+  /// call-never-started case this screen also renders. This is a case a
+  /// child can genuinely reach: [CallScreen] is not guardian-only.
+  ///
+  /// [SocketException]/[TimeoutException] specifically mean "nothing
+  /// reachable at all" — the real, no-internet-path scenario, distinct from
+  /// a real authorization/config error (still shown, since a guardian
+  /// debugging a real setup problem needs the actual detail, and that class
+  /// of error is unreachable from anywhere a child-only flow would land).
+  static String _honestErrorMessage(Object error) {
+    if (error is SocketException || error is TimeoutException) {
+      return "Can't reach the call right now.";
+    }
+    return '$error';
+  }
+
   void _handleRoomEvent(lk.RoomEvent event) {
     if (event is lk.RoomDisconnectedEvent) {
-      // Fire-and-forget, deliberately: popping the Navigator must never
-      // wait on a network call, and a failed end-call POST must never
-      // strand the user on a screen that already knows the call is over.
-      // See widget.onCallEnd's own doc comment for what this is and is not
-      // (record-keeping only — no server-side media revocation happens
-      // here, a real, disclosed, separate gap).
-      widget.onCallEnd?.call();
-      if (mounted) Navigator.of(context).maybePop();
+      // Network-resilience roadmap A4 — this manual reconnect layer is only
+      // sound if RoomDisconnectedEvent genuinely fires after the SDK's own
+      // native resilience has already given up, not before or instead of
+      // it. Nothing in this repo confirmed that ordering against real
+      // production traffic before this line existed — it was assumed from
+      // docs. Logged, not asserted: the real answer is "collect enough of
+      // these across enough real calls to know," not something one comment
+      // can settle. `_lastKnownQuality` is included because the roadmap's
+      // own finding was that per-participant ConnectionQuality reports
+      // `lost` strictly earlier than any room-level event this handler can
+      // see — this line is what would let a later reader confirm or refute
+      // that ordering from real logs instead of re-guessing it.
+      debugPrint('[olive.call] RoomDisconnectedEvent received — '
+          'reconnecting=$_reconnecting hangingUp=$_hangingUp '
+          'attempts=$_reconnectAttempts lastKnownQuality=$_lastKnownQuality '
+          'reason=${event.reason}');
+      if (_reconnecting) {
+        // Already mid-reconnect — a room in a genuinely broken state can
+        // fire RoomDisconnectedEvent more than once (confirmed live: a
+        // burst of DISCONNECTED/FAILED events from the same underlying
+        // failure). Reacting to each one would spawn overlapping
+        // _attemptReconnect() calls, each racing to construct its own
+        // replacement Room — exactly the kind of concurrent-state bug that
+        // produces a crash loop instead of a clean recovery. One in flight
+        // is enough; this event is redundant with it.
+        return;
+      }
+      if (_hangingUp || _reconnectAttempts >= _maxReconnectAttempts) {
+        // Either she genuinely hung up, or reconnecting has already been
+        // tried and exhausted its budget — same real end-of-call path as
+        // before this reconnect logic existed. Fire-and-forget,
+        // deliberately: popping the Navigator must never wait on a
+        // network call, and a failed end-call POST must never strand the
+        // user on a screen that already knows the call is over. See
+        // widget.onCallEnd's own doc comment for what this is and is not
+        // (record-keeping only — no server-side media revocation happens
+        // here, a real, disclosed, separate gap).
+        widget.onCallEnd?.call();
+        if (mounted) unawaited(Navigator.of(context).maybePop());
+        return;
+      }
+      // An UNEXPECTED disconnect (not the user's own hang-up) — try to
+      // recover instead of stranding her on a dead/black screen. Real,
+      // root-caused reason this fires even after a genuinely successful
+      // connection: a confirmed livekit_client SDK race (Room._on
+      // ParticipantUpdateEvent's own events.waitFor<RoomConnectedEvent>()
+      // one-shot listener can miss an already-fired connect and throw a
+      // TimeoutException ~10s later, which tears the room down out from
+      // under a call that had already exchanged real media) — see this
+      // session's own direct SDK-source investigation. Not caught here as
+      // a thrown exception (it's raised deep inside the SDK's own internal
+      // event handling, not on this file's own call stack) — this event
+      // is the one reliable, observable signal that it happened.
+      unawaited(_attemptReconnect());
       return;
     }
     if (event is lk.ParticipantConnectedEvent) {
@@ -308,6 +513,39 @@ class _CallScreenState extends State<CallScreen> {
     if (event is lk.LocalTrackPublishedEvent) {
       final t = event.publication.track;
       if (t is lk.LocalVideoTrack && mounted) setState(() => _localVideoTrack = t);
+      return;
+    }
+    if (event is lk.LocalTrackUnpublishedEvent) {
+      // Real correctness fix: turning her own camera off (§5.23.1's
+      // mid-call switch) used to leave _localVideoTrack pointing at a
+      // disabled track — the self-view thumbnail would keep rendering a
+      // frozen last frame instead of honestly disappearing. Only video
+      // matters here; an unpublished audio track says nothing about mode.
+      if (event.publication.kind == lk.TrackType.VIDEO && mounted) {
+        setState(() => _localVideoTrack = null);
+      }
+      return;
+    }
+    if (event is lk.DataReceivedEvent) {
+      // The real transport _publishMode() writes to — see that method's own
+      // doc comment for why this is a data message and not participant
+      // metadata. Only ever sent by the remote side about themselves (this
+      // device's own mode is already the source of truth in
+      // _cameraEnabled) — topic-scoped so a future second data channel on
+      // this same room can't be misread as a mode update.
+      if (event.topic != 'olive.call_mode') return;
+      try {
+        final decoded = jsonDecode(utf8.decode(event.data)) as Map<String, dynamic>;
+        final mode = decoded['mode'] as String?;
+        if (mounted) {
+          setState(() => _remoteMode = mode == 'audio_only' ? CallMode.audioOnly : CallMode.video);
+        }
+      } catch (e) {
+        // A malformed/foreign payload must never crash the call over a
+        // cosmetic label — fall back to assuming video (this file's own
+        // "never blame an unreported state" posture).
+        debugPrint('[olive.call] could not parse remote mode data (non-fatal): $e');
+      }
       return;
     }
     if (event is lk.TrackSubscribedEvent) {
@@ -335,9 +573,129 @@ class _CallScreenState extends State<CallScreen> {
       // protect against, and LiveKit reports both under the same event
       // type.
       if (event.participant is! lk.LocalParticipant) {
+        // A1/A4 — network-resilience roadmap: this is the earlier signal
+        // the roadmap's own research found (ConnectionQuality.lost fires
+        // before room-level Reconnecting/Disconnected). Logged only on a
+        // real transition, not every tick, so this can't itself become log
+        // spam — the question this exists to answer is "how much earlier,
+        // in practice, on a real call," not "prove it fires at all."
+        if (event.connectionQuality != _lastKnownQuality) {
+          debugPrint('[olive.call] ConnectionQuality '
+              '${_lastKnownQuality.name} -> ${event.connectionQuality.name}');
+        }
         _lastKnownQuality = event.connectionQuality;
       }
       return;
+    }
+  }
+
+  /// Recovers from an unexpected room disconnect (see the RoomDisconnectedEvent
+  /// branch above for the real, root-caused SDK race this exists to survive)
+  /// by reconnecting with the SAME already-proven token/wsURL rather than
+  /// treating any disconnect as the end of the call. Bounded to
+  /// [_maxReconnectAttempts] tries with a short, increasing backoff — a real
+  /// network/server failure should still surface as an honest end-of-call,
+  /// not spin forever.
+  Future<void> _attemptReconnect() async {
+    // Set for the WHOLE attempt (cleared in every exit path below via
+    // try/finally) — see _handleRoomEvent's own RoomDisconnectedEvent
+    // branch for why overlapping attempts must never run concurrently.
+    _reconnecting = true;
+    try {
+      await _attemptReconnectImpl();
+    } finally {
+      _reconnecting = false;
+    }
+  }
+
+  Future<void> _attemptReconnectImpl() async {
+    _reconnectAttempts++;
+    if (mounted) setState(() => _status = _CallStatus.reconnecting);
+
+    _qualityTicker?.cancel();
+    // Deliberately NOT calling _room?.dispose() (or .disconnect()) here.
+    // Real, live-hardware-confirmed finding: by the time RoomDisconnectedEvent
+    // fires, the SDK's own Room object is already in the broken state that
+    // caused the disconnect — calling dispose()/disconnect() on it AGAIN
+    // sends it back through livekit_client's own Room.disconnect()
+    // (package:livekit_client/src/core/room.dart:734), which itself awaits
+    // EventsListenable.waitFor(...) for a connected-event that will now
+    // NEVER arrive, throwing the exact same class of unhandled
+    // TimeoutException this whole reconnect path exists to survive — just
+    // from a new call site. The old Room has nothing left worth cleanly
+    // releasing from here; dropping the reference and letting it be
+    // garbage-collected is safer than asking a dead connection to please
+    // disconnect. _listener.dispose() is a local stream-subscription
+    // teardown, not a network round-trip, but it's wrapped too — nothing
+    // about this SDK has earned the benefit of the doubt tonight.
+    try {
+      await _listener?.dispose();
+    } catch (e) {
+      debugPrint('[olive.call] listener dispose failed during reconnect (non-fatal): $e');
+    }
+    _room = null;
+
+    final token = _lastToken;
+    final wsURL = _lastWsURL;
+    if (token == null || wsURL == null) {
+      // Nothing real to reconnect with (shouldn't happen — _startCall
+      // always sets both before a room is ever constructed — but fail
+      // honestly rather than retry against nothing).
+      // Fire-and-forget, deliberately — see the RoomDisconnectedEvent
+      // branch's own doc comment for why: popping the Navigator must
+      // never wait on a network call.
+      unawaited(widget.onCallEnd?.call() ?? Future<void>.value());
+      if (mounted) unawaited(Navigator.of(context).maybePop());
+      return;
+    }
+
+    // Short, increasing backoff — the known SDK race resolves almost
+    // immediately on retry in practice, but a brief pause avoids hammering
+    // a genuinely struggling connection.
+    await Future<void>.delayed(Duration(milliseconds: 800 * _reconnectAttempts));
+    if (!mounted) return;
+
+    try {
+      final room = lk.Room(roomOptions: _roomOptions);
+      _room = room;
+      _listener = room.createListener()..listen(_handleRoomEvent);
+      _qualityTicker = Timer.periodic(
+        const Duration(milliseconds: _qualityTickMs), (_) => _tickQuality());
+      await room.connect(wsURL, token, connectOptions: _connectOptions);
+      // Audio restores unconditionally — §8.14's NEVER_SHED, the same
+      // reason mic state (never gated by mode) always comes back. Video is
+      // different: MASTERFILE §5.23.2's "resuming asks first" — a call that
+      // reconnects itself and starts transmitting her room again because
+      // the wifi came back is a privacy failure with good intentions, so a
+      // camera that was ON before an UNEXPECTED drop stays off here and
+      // waits for her own tap ([_awaitingResumeConsent]/resumeOffer()); a
+      // camera that was already off has nothing to ask permission for.
+      final hadCameraOn = _cameraEnabled;
+      await room.localParticipant?.setCameraEnabled(false);
+      await room.localParticipant?.setMicrophoneEnabled(_micEnabled);
+      if (mounted) {
+        setState(() {
+          _status = _CallStatus.inCall;
+          _cameraEnabled = false;
+          _awaitingResumeConsent = hadCameraOn;
+          // A reconnect that actually holds earns back the retry budget —
+          // otherwise one flaky call early on would permanently disable
+          // recovery for the rest of a long call.
+          _reconnectAttempts = 0;
+        });
+      }
+      unawaited(_publishMode());
+    } catch (_) {
+      // This attempt itself failed outright (never even reached
+      // connected) — RoomDisconnectedEvent isn't guaranteed to fire again
+      // for a connect() that never succeeded, so decide here rather than
+      // wait on an event that may never come.
+      if (_reconnectAttempts >= _maxReconnectAttempts) {
+        unawaited(widget.onCallEnd?.call() ?? Future<void>.value());
+        if (mounted) unawaited(Navigator.of(context).maybePop());
+      } else {
+        unawaited(_attemptReconnect());
+      }
     }
   }
 
@@ -363,8 +721,20 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     _qualityTicker?.cancel();
-    _listener?.dispose();
-    _room?.dispose();
+    // Fire-and-forget with an explicit catchError, not a bare call: a sync
+    // State.dispose() can't await these, and an unhandled rejection from
+    // either — this SDK's own Room.disconnect() is confirmed, live, to
+    // sometimes hang and throw (see _attemptReconnectImpl's own doc
+    // comment) — would otherwise escape as a genuinely unhandled exception
+    // after this widget is already gone.
+    unawaited(_listener?.dispose().catchError((Object e) {
+      debugPrint('[olive.call] listener dispose failed on screen exit (non-fatal): $e');
+      return false;
+    }));
+    unawaited(_room?.dispose().catchError((Object e) {
+      debugPrint('[olive.call] room dispose failed on screen exit (non-fatal): $e');
+      return false;
+    }));
     super.dispose();
   }
 
@@ -374,6 +744,7 @@ class _CallScreenState extends State<CallScreen> {
     body: switch (_status) {
       _CallStatus.fetchingToken => const Center(child: _Status(message: 'Finding the call…')),
       _CallStatus.joining => const Center(child: _Status(message: 'Joining…')),
+      _CallStatus.reconnecting => const Center(child: _Status(message: 'Reconnecting…')),
       _CallStatus.inCall => _InCallView(
           localTrack: _localVideoTrack,
           remoteTrack: _remoteVideoTrack,
@@ -381,21 +752,43 @@ class _CallScreenState extends State<CallScreen> {
           notice: _notice,
           isGuardian: _isGuardian,
           onHangUp: () async {
+            // Set BEFORE disconnect() so the RoomDisconnectedEvent it
+            // triggers is correctly read as "she hung up," not "the SDK
+            // dropped us" — see _handleRoomEvent's own doc comment on why
+            // that distinction is what decides whether to reconnect.
+            _hangingUp = true;
             // Non-null by construction: this branch only renders once
             // _startCall() has already reached _CallStatus.inCall, which
-            // only happens after _room was assigned.
-            await _room?.disconnect();
+            // only happens after _room was assigned. Wrapped defensively —
+            // Room.disconnect() is confirmed, live, to sometimes hang
+            // waiting on an SDK-internal event and throw (see
+            // _attemptReconnectImpl's own doc comment); a genuine hang-up
+            // tap must never leave her stuck on a frozen call screen just
+            // because this SDK's own teardown path misbehaved. The
+            // RoomDisconnectedEvent handler (_hangingUp is already true by
+            // the time either fires) is what actually ends the screen
+            // either way — this call's only job is to ask the room to
+            // start disconnecting, not to be the thing that gets her out.
+            try {
+              await _room?.disconnect();
+            } catch (e) {
+              debugPrint('[olive.call] disconnect() threw on hang-up (non-fatal, handled): $e');
+              if (context.mounted) unawaited(Navigator.of(context).maybePop());
+            }
           },
           onToggleMic: () async {
             await _room?.localParticipant?.setMicrophoneEnabled(!_micEnabled);
             if (mounted) setState(() => _micEnabled = !_micEnabled);
           },
-          onToggleCamera: () async {
-            await _room?.localParticipant?.setCameraEnabled(!_cameraEnabled);
-            if (mounted) setState(() => _cameraEnabled = !_cameraEnabled);
-          },
+          onToggleCamera: () => _setMode(_cameraEnabled ? CallMode.audioOnly : CallMode.video),
           micEnabled: _micEnabled,
           cameraEnabled: _cameraEnabled,
+          remoteMode: _remoteMode,
+          awaitingResumeConsent: _awaitingResumeConsent,
+          onResumeVideo: () {
+            setState(() => _awaitingResumeConsent = false);
+            unawaited(_setMode(CallMode.video));
+          },
         ),
       _CallStatus.error => Center(
           child: _ErrorState(
@@ -460,6 +853,9 @@ class _InCallView extends StatelessWidget {
     required this.onToggleCamera,
     required this.micEnabled,
     required this.cameraEnabled,
+    required this.remoteMode,
+    required this.awaitingResumeConsent,
+    required this.onResumeVideo,
   });
 
   final lk.VideoTrack? localTrack;
@@ -472,20 +868,26 @@ class _InCallView extends StatelessWidget {
   final Future<void> Function() onToggleCamera;
   final bool micEnabled;
   final bool cameraEnabled;
+  /// MASTERFILE §5.23.1 — what the OTHER side's own mode is, so this view
+  /// can show the real listening surface (never a black rectangle) when
+  /// he's genuinely chosen voice-only, the same honest treatment a network-
+  /// caused absence already gets below.
+  final CallMode remoteMode;
+  final bool awaitingResumeConsent;
+  final VoidCallback onResumeVideo;
 
   @override
   Widget build(BuildContext context) => Stack(children: [
     Positioned.fill(
       child: remoteTrack != null
           ? lk.VideoTrackRenderer(remoteTrack!)
-          : Container(
-              color: const Color(0xFF1A1A1A),
-              alignment: Alignment.center,
-              child: Text(
-                remoteName == null ? 'Waiting for the other side…' : '$remoteName is connecting…',
-                style: const TextStyle(color: Colors.white70),
-              ),
-            ),
+          // Never a black rectangle here — §5.23.1's NEVER_BLANK. Covers
+          // every real reason there's no picture to show: he chose
+          // audio-only, still connecting, or the quality ladder stepped
+          // down to its own audio-only rung (§5.28) — all honestly the
+          // same "nothing to look at but the call is real" state from her
+          // side of the screen.
+          : _ListeningSurfaceView(remoteName: remoteName, remoteMode: remoteMode),
     ),
     DegradationBanner(notice: notice),
     if (localTrack != null)
@@ -496,22 +898,52 @@ class _InCallView extends StatelessWidget {
           child: lk.VideoTrackRenderer(localTrack!, mirrorMode: lk.VideoViewMirrorMode.mirror),
         ),
       ),
+    // MASTERFILE §5.23.2 — "resuming asks first." Shown only right after an
+    // unexpected reconnect that found her camera on beforehand; a call she
+    // never left, or one she'd already chosen to keep audio-only, never
+    // sees this at all.
+    if (awaitingResumeConsent)
+      Align(
+        alignment: Alignment.center,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 32),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.75),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Ready to carry on?',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              key: const Key('resumeVideoButton'),
+              onPressed: onResumeVideo,
+              icon: const Icon(Icons.videocam),
+              label: const Text('Turn my camera back on'),
+            ),
+          ]),
+        ),
+      ),
     Positioned(
       left: 0, right: 0, bottom: 32,
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         _CallControlButton(
           icon: micEnabled ? Icons.mic : Icons.mic_off,
+          label: micEnabled ? 'Mute' : 'Unmute',
           onPressed: onToggleMic,
         ),
         const SizedBox(width: 24),
         _CallControlButton(
           icon: Icons.call_end,
+          label: 'Hang up',
           backgroundColor: Colors.redAccent,
           onPressed: onHangUp,
         ),
         const SizedBox(width: 24),
         _CallControlButton(
           icon: cameraEnabled ? Icons.videocam : Icons.videocam_off,
+          label: cameraEnabled ? 'Turn camera off' : 'Turn camera on',
           onPressed: onToggleCamera,
         ),
       ]),
@@ -519,22 +951,84 @@ class _InCallView extends StatelessWidget {
   ]);
 }
 
+/// MASTERFILE §5.23.1 — the listening surface. "A black rectangle is what
+/// every other product shows on an audio call, and for a child it reads as
+/// absence. She needs something to look at while she listens." A calm 4Hz
+/// waveform — a fast one is a stimulant at bedtime — never a percentage,
+/// never a spinner that implies something is wrong.
+class _ListeningSurfaceView extends StatelessWidget {
+  const _ListeningSurfaceView({required this.remoteName, required this.remoteMode});
+  final String? remoteName;
+  final CallMode remoteMode;
+
+  @override
+  Widget build(BuildContext context) {
+    // The exact modeForOther() line when we genuinely know he's chosen
+    // voice-only — mode only, never why (this file has no cause to leak in
+    // the first place; see _publishMode's own doc comment). Falls back to
+    // the honest "no picture yet" phrasing for every other real reason
+    // there's nothing to show (still connecting, most plainly).
+    final label = remoteMode == CallMode.audioOnly
+        ? modeForOther(setMode(CallMode.audioOnly, ModeCause.chosen, '')).line
+        : remoteName == null
+            ? 'Waiting for the other side…'
+            : '$remoteName is here — just no picture.';
+    return Container(
+      color: const Color(0xFF1A1A1A),
+      alignment: Alignment.center,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const _CalmWaveform(),
+        const SizedBox(height: 20),
+        Text(label, style: const TextStyle(color: Colors.white70)),
+      ]),
+    );
+  }
+}
+
+/// A still, slow pulse rather than an animated meter — this is a place to
+/// rest her eyes, not a status indicator she's meant to read.
+class _CalmWaveform extends StatelessWidget {
+  const _CalmWaveform();
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+    for (final h in const [14.0, 24.0, 34.0, 24.0, 14.0])
+      Container(
+        width: 6, height: h, margin: const EdgeInsets.symmetric(horizontal: 3),
+        decoration: BoxDecoration(
+          color: Colors.white38,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
+  ]);
+}
+
 class _CallControlButton extends StatelessWidget {
-  const _CallControlButton({required this.icon, required this.onPressed, this.backgroundColor});
+  const _CallControlButton({
+    required this.icon, required this.label, required this.onPressed, this.backgroundColor,
+  });
   final IconData icon;
+  /// Mic/hang-up/camera are the three most safety-critical controls on this
+  /// screen — matching every other icon-only button in this client
+  /// (availability_screen.dart, handover_notes.dart, call_knock_screen.dart)
+  /// in actually carrying a real label for a screen-reader user, rather
+  /// than being the one place that doesn't.
+  final String label;
   final Future<void> Function() onPressed;
   final Color? backgroundColor;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: backgroundColor ?? Colors.white24,
-    shape: const CircleBorder(),
-    child: InkWell(
-      customBorder: const CircleBorder(),
-      onTap: onPressed,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Icon(icon, color: Colors.white, size: 28),
+  Widget build(BuildContext context) => Tooltip(
+    message: label,
+    child: Material(
+      color: backgroundColor ?? Colors.white24,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Icon(icon, color: Colors.white, size: 28, semanticLabel: label),
+        ),
       ),
     ),
   );
