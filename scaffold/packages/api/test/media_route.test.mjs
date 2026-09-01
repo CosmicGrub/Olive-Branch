@@ -30,6 +30,7 @@ import { createPool, dbPort } from '../../db/src/pool.mjs';
 import { registerRoutes } from '../../../server/routes.mjs';
 import { issueSession } from '../../auth/src/auth.mjs';
 import { FilesystemStorage } from '../../storage/src/storage.mjs';
+import { serveSignedMedia } from '../../../server/signed_media.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? DATABASE_URL;
@@ -127,6 +128,19 @@ const get = (p, tok) => api.handle('GET', p,
 // (server or storage) would show up as a real mismatch, not pass by luck.
 const REAL_BYTES = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
 const b64 = REAL_BYTES.toString('base64');
+
+/** A minimal fake http.ServerResponse -- same convention
+ * server/test/signed_media_route.test.mjs's own fakeRes() already
+ * established, reused here (not imported -- that file's copy is
+ * module-private) to prove section F's signedUrl field is a genuinely
+ * servable URL against THIS SAME storage instance, not just a
+ * plausible-looking string. */
+function fakeRes() {
+  const res = { statusCode: null, headers: null, body: null };
+  res.writeHead = (status, headers) => { res.statusCode = status; res.headers = headers; };
+  res.end = (body) => { res.body = body; };
+  return res;
+}
 
 // ===========================================================================
 // A · the real roundtrip — upload real bytes, land on real disk, read back
@@ -268,6 +282,50 @@ let uploadedKey;
     + 'never a 500 or an empty-but-200 body', dl.status, 404);
   check('E orphaned row', 'reason is media_not_found, distinct from '
     + 'artifact_not_found', dl.body.error, 'media_not_found');
+}
+
+// ===========================================================================
+// F · signed URL minting — the real remaining half of MASTERFILE §20.2b's
+//     StoragePort gap: signedUrl()/verifySignedKey() and
+//     server/signed_media.mjs's own GET /media/:key route were both already
+//     real and real-tested, but nothing anywhere in this codebase ever
+//     CALLED signedUrl() to mint one. This group proves the full mint ->
+//     serve chain end to end, through the actual HTTP-shaped
+//     serveSignedMedia() entry point on the SAME storage instance the
+//     download route above minted against -- not merely that the response
+//     body contains a plausible-looking string.
+// ===========================================================================
+{
+  const up = await post(`/v1/children/${CHILD}/media`, dadTok, { bytes: b64 });
+  const send = await post(`/v1/children/${CHILD}/messages`, dadTok,
+    { storageKey: up.body.storageKey, durationMs: 1000 });
+  const artifactId = send.body.artifactId;
+
+  const dl = await get(`/v1/children/${CHILD}/messages/${artifactId}/media`, dadTok);
+  check('F signed URL', 'the download response still carries the real base64 bytes '
+    + 'unchanged -- signedUrl is additive, not a replacement',
+    Buffer.from(dl.body.bytes, 'base64').equals(REAL_BYTES), 'true');
+  check('F signed URL', 'the download response names a real, non-empty signedUrl',
+    typeof dl.body.signedUrl === 'string' && dl.body.signedUrl.startsWith('/media/'), 'true');
+
+  // The real proof: feed the minted URL into the actual signed-URL-serving
+  // route (the same one server/index.mjs wires GET /media/:key to), against
+  // the identical `storage` instance -- a genuine mint -> verify -> serve
+  // roundtrip, not a shape assertion.
+  const res = fakeRes();
+  await serveSignedMedia(dl.body.signedUrl, res, storage);
+  check('F signed URL', 'the minted URL genuinely serves 200 through the real '
+    + 'signed-media route', res.statusCode, 200);
+  check('F signed URL', 'and serves the exact same real bytes, byte-for-byte',
+    Buffer.isBuffer(res.body) && res.body.equals(REAL_BYTES), 'true');
+
+  // A tampered signature is refused -- proving this is a real cryptographic
+  // signature, not an unverified opaque token that happens to look like one.
+  const tampered = dl.body.signedUrl.slice(0, -1) + (dl.body.signedUrl.endsWith('a') ? 'b' : 'a');
+  const tamperedRes = fakeRes();
+  await serveSignedMedia(tampered, tamperedRes, storage);
+  check('F signed URL', 'a tampered signature is refused, never served',
+    tamperedRes.statusCode, 403);
 }
 
 for (const cid of [CHILD, CHILD_B]) {
