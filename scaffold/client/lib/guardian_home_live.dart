@@ -97,6 +97,8 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
   String _childLocalTime = '';
   String _childZoneAbbr = '';
   String _actorLocalTime = '';
+  String? _dayPart;
+  bool? _reachable;
   List<RibbonBand> _childBands = const [];
   List<RibbonBand> _actorBands = const [];
 
@@ -125,6 +127,14 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
         // parent-guardian one.
         _childLocalTime = now['childLocalTime'] as String;
         _childZoneAbbr = now['zoneAbbr'] as String;
+        // Real as of this pass — send_time_guard.dart's own live path
+        // reads these straight through GuardianHome rather than doing a
+        // second fetch. Both genuinely nullable on the wire (a null
+        // dayPart/reachable is /now's own honest-absence answer if the
+        // server-side gate() call comes back empty), not just Dart-side
+        // defensive casting.
+        _dayPart = now['dayPart'] as String?;
+        _reachable = now['reachable'] as bool?;
         // /ribbon — real, new this pass. childName has no GET /v1/me analog
         // for a guardian caller (that route returns the CALLER's own name).
         _childName = (ribbon['childName'] as String?) ?? 'her';
@@ -196,6 +206,8 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
             guardianId: widget.guardianId,
             childId: widget.childId,
             availabilityHttpClient: widget.httpClient,
+            dayPart: _dayPart,
+            reachable: _reachable,
           )),
         ])));
     }

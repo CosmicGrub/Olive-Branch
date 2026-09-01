@@ -8,15 +8,30 @@
 //
 //  1. The notification gate (packages/delivery-engine/src/gate.ts,
 //     MASTERFILE §6.4) — blocks arrivals during asleep/school and tells the
-//     SENDER, live, before he sends into the wrong hour.
+//     SENDER, live, before he sends into the wrong hour. REAL as of this
+//     pass when [dayPart]/[reachable] are supplied (guardian_home.dart's
+//     own live path threads through what guardian_home_live.dart already
+//     fetched from the real GET /now route — see that route's own header
+//     for why this screen reads /now's plain fields rather than gate.ts's
+//     richer, actor-timezone-aware `recipientContext()`, which /now has no
+//     "actor" concept to carry). Falls back to the ORIGINAL demo behavior
+//     (a manually-toggled fake hour) when either is null — every existing
+//     demo/test call site keeps behaving exactly as before this pass.
 //  2. The anchor distinction (MASTERFILE §6.4's own framing, restated in the
 //     §03 MARKUP row): "next bedtime" and "the night of June 1st" are
 //     different promises. Only a daypart-relative anchor may drift when her
-//     schedule changes; a specific calendar date never does.
+//     schedule changes; a specific calendar date never does. STILL DEMO-
+//     ONLY, disclosed rather than silently left looking real alongside
+//     guard 1's new live path: no real per-child bedtime-schedule source
+//     exists anywhere in this codebase yet for [_bedtimeLabel] to read from
+//     — a real, separate, larger gap (a day-part *authoring* API,
+//     MASTERFILE §7.2's undelivered `GET/PUT .../day-parts`), not something
+//     this pass invents an answer for.
 //
 // §8.2.3 applies throughout: her time is dominant, his is never shown as
 // arithmetic against it (no "+1", no raw offset, no UTC).
 import 'package:flutter/material.dart';
+import 'calendar_day_logic.dart' show dayPartLabel;
 
 // ===================================== §6.4 the notification gate (ported) ==
 class DayPart {
@@ -102,8 +117,30 @@ AnchorPreview resolveAnchor(SendAnchor anchor, {
 /// MARKUP screen "sendguard". A message composer that demonstrates both
 /// guards live rather than just describing them.
 class SendTimeGuardScreen extends StatefulWidget {
-  const SendTimeGuardScreen({super.key, this.childName = 'Ivy'});
+  const SendTimeGuardScreen({super.key, this.childName = 'Ivy',
+    this.childLocalTime, this.zoneAbbr, this.dayPart, this.reachable});
+
   final String childName;
+
+  /// Real, already-fetched /now data — see this file's own header for why
+  /// guardian_home.dart threads these through rather than this screen
+  /// doing a second live fetch. All four null together in every existing
+  /// demo/test call site (main.dart's static demo, guardian_home_test.dart)
+  /// — that combination is what keeps the original manually-toggled demo
+  /// behavior below active, not a broken/loading live state.
+  final String? childLocalTime;
+  final String? zoneAbbr;
+  final String? dayPart;
+  final bool? reachable;
+
+  /// True only when guardian_home_live.dart's real /now fetch supplied
+  /// BOTH a local-time string and a real (non-null) reachable verdict —
+  /// [dayPart] alone is deliberately not part of this check, since gate()
+  /// itself never sets a `reason`/dayPart when the child IS reachable (see
+  /// gate.ts's own doc comment) — a real "she's in free time right now"
+  /// result is [reachable] == true with [dayPart] == null, not an
+  /// incomplete fetch.
+  bool get _isLive => childLocalTime != null && reachable != null;
 
   @override
   State<SendTimeGuardScreen> createState() => _SendTimeGuardScreenState();
@@ -142,7 +179,24 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final prompt = recipientContext(_localHour, _demoHours[_localHour]!, 'her time');
+    // Real /now data when guardian_home.dart's live path supplied it;
+    // otherwise the original manually-toggled demo hour, unchanged — see
+    // SendTimeGuardScreen._isLive's own doc comment. Live never offers a
+    // specific "Deliver at X" time (deferLabel stays null): /now's own
+    // documented MASTERFILE §7.2 contract is {localTime, zone, dayPart,
+    // reachable} only — gate()'s richer deferTo needs the actor's own
+    // timezone to render honestly (§8.2.3, never a raw offset), which /now
+    // has no "actor" concept to supply. A real, disclosed scope trim, not
+    // silently dropped.
+    final prompt = widget._isLive
+      ? GuardPrompt(
+          localTimeLabel: widget.childLocalTime!,
+          zoneAbbr: widget.zoneAbbr ?? 'her time',
+          reachable: widget.reachable!,
+          dayPartName: widget.dayPart != null ? dayPartLabel(widget.dayPart!) : 'now',
+          deferLabel: null,
+        )
+      : recipientContext(_localHour, _demoHours[_localHour]!, 'her time');
     final anchorPreview = resolveAnchor(_anchor,
       currentBedtimeLabel: _bedtimeLabel, specificDateLabel: 'June 1st');
 
@@ -177,20 +231,31 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
                 Wrap(spacing: 8, runSpacing: 8, children: [
                   SizedBox(height: 48, child: OutlinedButton(
                     onPressed: _sendNow, child: const Text('Send now anyway'))),
-                  SizedBox(height: 48, child: FilledButton(
-                    onPressed: () => _deferSend(prompt.deferLabel!),
-                    child: Text('Deliver at ${prompt.deferLabel}'))),
+                  // A specific deferred time is only ever offered in the
+                  // demo path (recipientContext() above always sets one) —
+                  // the live path's own prompt deliberately never does, see
+                  // this screen's build() comment on why. No crash either
+                  // way: this button simply doesn't render without one.
+                  if (prompt.deferLabel != null)
+                    SizedBox(height: 48, child: FilledButton(
+                      onPressed: () => _deferSend(prompt.deferLabel!),
+                      child: Text('Deliver at ${prompt.deferLabel}'))),
                 ]),
               if (_confirmation != null) Padding(padding: const EdgeInsets.only(top: 12),
                 child: Text(_confirmation!, style: Theme.of(context).textTheme.bodySmall)),
             ]),
           ),
-          const SizedBox(height: 12),
-          Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, children: [
-            for (final h in _demoHours.entries)
-              ChoiceChip(label: Text(h.value), selected: _localHour == h.key,
-                onSelected: (_) => setState(() { _localHour = h.key; _confirmation = null; })),
-          ])),
+          // Hour-toggle chips only make sense against the demo path's own
+          // fake, player-chosen hour — the live path shows the real "right
+          // now," which isn't something a tap should be able to change.
+          if (!widget._isLive) ...[
+            const SizedBox(height: 12),
+            Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, children: [
+              for (final h in _demoHours.entries)
+                ChoiceChip(label: Text(h.value), selected: _localHour == h.key,
+                  onSelected: (_) => setState(() { _localHour = h.key; _confirmation = null; })),
+            ])),
+          ],
 
           const SizedBox(height: 28),
           const Divider(),

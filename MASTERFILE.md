@@ -1262,6 +1262,30 @@ Drives the guard prompt:
 > ⏰ It's **10:40 PM** for Maya — she's asleep.
 > **Send now** · **Deliver at breakfast (7:00 AM her time)**
 
+> **Status, v0.49.63 — the recipient-side half is real and wired, the
+> sender-side half is real but only partly wired.** `gate()`
+> (`packages/delivery-engine/src/gate.ts`) has existed, faithfully ported
+> and tested, for several releases — this pass is what actually calls it
+> from a real product surface for the first time. `GET
+> /v1/children/:childId/now` (§7.2's own documented contract) now returns
+> real `dayPart`/`reachable` fields alongside its existing
+> `childLocalTime`/`zone`/`sleepsUntilHandover` — one additional
+> `childCtxFor()` call (the same real, tested primitive `/ribbon` already
+> reuses) feeding `gate(ctx, now)` directly. `send_time_guard.dart`'s own
+> guardian-facing screen reads these real fields when
+> `guardian_home_live.dart` supplies them, replacing its own
+> hand-rolled, disconnected 3-part demo schedule — the exact symptom a
+> real-code audit found: the same `GuardianHome` screen showed a real
+> per-child ribbon at the top and a fabricated, un-editable fake schedule
+> one tap away. `recipientContext()`'s own richer, skew-aware shape above
+> — which needs the SENDING guardian's own timezone, a concept `/now` has
+> no route to carry — remains real and tested but genuinely unwired to any
+> route; `send_time_guard.dart`'s live path reads `/now`'s plainer
+> `dayPart`/`reachable` pair instead, and never fabricates a `deferTo` time
+> `/now` doesn't provide (the demo path's own "Deliver at 7:00 AM" button
+> only ever appears in the demo, not the live view). A real, disclosed
+> scope trim, not silently glossed over — see CHANGELOG v0.49.63.
+
 ### 6.5 Message banking
 
 ```ts
@@ -5930,6 +5954,6 @@ not-yet-done piece of navigation work.
 
 ---
 
-*End of MASTERFILE v0.49.59. Amend in place. Bump version. Log in CHANGELOG.
+*End of MASTERFILE v0.49.63. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*

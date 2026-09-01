@@ -8,8 +8,15 @@
 // falling back to child.home_tz, exactly as MASTERFILE §6.1's childZoneAt()
 // describes -- that function was previously only prose, never code, since
 // time.ts's exports are all pure (no DB access). Day-part classification
-// (school/bedtime/etc.) is NOT wired yet -- a real follow-up, not silently
-// glossed over.
+// (school/bedtime/etc.) IS wired as of this pass -- `/now` now also returns
+// `dayPart`/`reachable` via delivery-engine/src/gate.ts's real `gate()`,
+// matching MASTERFILE §7.2's own documented `/now` contract shape. What
+// remains a real, disclosed follow-up: `recipientContext()` (gate.ts's own
+// SENDER-side variant, which additionally needs the sending guardian's own
+// timezone to compute a skew) has no route of its own yet -- `/now` has no
+// "actor" concept to hang that on, so send_time_guard.dart's real rewiring
+// (this same pass) reads `/now`'s plain `dayPart`/`reachable` instead of the
+// richer skew-aware guard prompt gate.ts's own doc comment describes.
 import { createHash, timingSafeEqual, randomUUID, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -35,6 +42,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          lettersFor, sealLetterRow, openLetterRow, deleteLetterRow,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
+import { gate } from '../packages/delivery-engine/src/gate.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
@@ -755,10 +763,26 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const sleepsUntilHandover = order
         ? sleepsUntilSideChange(order, nowLocalDate)?.sleeps ?? null
         : null;
+      // Day-part classification, real as of this pass — MASTERFILE §7.2's
+      // own documented /now contract shape. childCtxFor() is the same
+      // real, tested primitive materialize()/tools/scheduler.mjs/the
+      // /ribbon route above all already reuse rather than reimplement; a
+      // second query here (this route already resolved `tz` itself, above)
+      // is a small, deliberate duplication matching this route's own
+      // established "small duplication, not worth a shared helper here"
+      // posture (see the /ribbon route's identical comment). Honest
+      // absence, not a crash, if ctx somehow comes back null (the tz
+      // resolution above already confirmed the child exists, so this is
+      // defensive, not the expected path) — gate()'s own emergency-bypass
+      // branch is irrelevant here since /now has no priority concept.
+      const ctx = await childCtxFor(pool, c.childId);
+      const g = ctx ? gate(ctx, nowUtc) : null;
       return { body: {
         childLocalTime: local.toFormat('h:mm a'),
         zoneAbbr: local.toFormat('ZZZZ'),
         zone: tz,
+        dayPart: g?.reason ?? null,
+        reachable: g?.allow ?? null,
         sleepsUntilHandover,
       } };
     },

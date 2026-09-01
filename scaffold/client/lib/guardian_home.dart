@@ -67,9 +67,19 @@ class GuardianHome extends StatelessWidget {
     required this.childLocalTime, required this.childZoneAbbr,
     required this.actorLocalTime, this.childStateSentence,
     required this.childBands, required this.actorBands, this.overlapLabel,
-    this.baseUrl, this.guardianId, this.childId, this.availabilityHttpClient});
+    this.baseUrl, this.guardianId, this.childId, this.availabilityHttpClient,
+    this.dayPart, this.reachable});
 
   final String childName, childLocalTime, childZoneAbbr, actorLocalTime;
+  /// Real as of the same /now route send_time_guard.dart's live path now
+  /// reads — see that file's own header for why it takes these as plain
+  /// constructor params (reusing this screen's ALREADY-fetched /now data)
+  /// rather than doing its own second live fetch. Null in every demo/test
+  /// call site, same honest-absence posture as [childStateSentence]/
+  /// [overlapLabel] above; [reachable] genuinely tri-state (true/false/
+  /// unknown), not defaulted to either bool.
+  final String? dayPart;
+  final bool? reachable;
   /// Nullable since v0.49.57 (was required) — no live route exists yet that
   /// derives a real one-sentence status ("Winding down for bed") the way
   /// /now and /ribbon derive every other field on this widget. Null renders
@@ -191,7 +201,9 @@ class GuardianHome extends StatelessWidget {
                   httpClient: availabilityHttpClient)),
               _GTile(icon: Icons.schedule, label: 'Send-time guard',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => SendTimeGuardScreen(childName: childName)))),
+                  builder: (_) => SendTimeGuardScreen(childName: childName,
+                    childLocalTime: childLocalTime, zoneAbbr: childZoneAbbr,
+                    dayPart: dayPart, reachable: reachable)))),
               _GTile(icon: Icons.medical_services_outlined, label: 'Meds & care',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => MedsCareScreen(childName: childName)))),

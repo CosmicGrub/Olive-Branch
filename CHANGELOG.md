@@ -280,6 +280,76 @@ product/navigation decision, not settled here.
 
 ---
 
+## [0.49.63] — 2026-09-01 — The notification gate goes live: real day-part wiring on /now and the send-time guard
+
+`gate()` (`packages/delivery-engine/src/gate.ts`, MASTERFILE §6.4) has existed,
+faithfully ported and tested, for several releases without a single real
+caller in production code — confirmed by a 5-agent re-scoping workflow that
+found the same pattern behind three other stale "Tier D" gap-inventory items
+(see the two doc-fix commits on this branch's sibling PR). This pass gives it
+one.
+
+### Added
+- **`GET /v1/children/:childId/now`** now returns real `dayPart`/`reachable`
+  fields, matching MASTERFILE §7.2's own already-documented contract shape
+  (`{ localTime, zone, dayPart, reachable }`) for the first time. One
+  additional `childCtxFor()` call — the same real, tested primitive the
+  `/ribbon` route already reuses — feeds `gate(ctx, nowUtc)` directly. Honest
+  absence (`null`/`null`), never a crash, if `childCtxFor()` somehow returns
+  nothing (defensive only — this route's own tz-resolution block already
+  confirms the child exists first).
+- **`guardian_home_live.dart`** extracts `dayPart`/`reachable` from its
+  already-existing `/now` fetch (zero new network calls) and threads them
+  into two new, nullable `GuardianHome` fields.
+- **`send_time_guard.dart`**'s live path — real, replacing its own
+  hand-rolled, disconnected 3-part demo schedule (`DayPart`/`demoDayParts`/
+  `currentDayPart()`) whenever `guardian_home.dart` supplies real data:
+  the real fetched local time/day-part render, `dayPartLabel()` (the same
+  shared vocabulary `my_day.dart`'s own Day Ribbon uses) labels the current
+  day-part, and the demo's manually-toggled hour `ChoiceChip`s are hidden
+  (there's nothing to toggle against real "right now" data). The demo path
+  is completely unchanged for every existing call site with no live params
+  supplied.
+
+### Disclosed, not silently invented
+- **`recipientContext()`** (gate.ts's own richer, sender-timezone-aware
+  variant, which computes a real `skewHours` and a specific `deferTo` time)
+  remains real and tested but has no route of its own. `/now` has no
+  "actor" concept to carry a sending guardian's own timezone, so it wasn't
+  extended to call `recipientContext()` instead of the plainer `gate()`.
+  `send_time_guard.dart`'s live "not reachable" state offers only "Send now
+  anyway" — never a fabricated "Deliver at X" time, since `/now` genuinely
+  doesn't provide one. A real, scoped-down follow-up, not a silently
+  dropped feature.
+- **The anchor-distinction guard** ("next bedtime" vs. "the night of June
+  1st") stays demo-only — no real per-child bedtime-schedule source exists
+  anywhere in this codebase for it to read from. That's a separate, larger
+  gap (a day-part *authoring* API — MASTERFILE §7.2's still-unbuilt
+  `GET/PUT .../day-parts`), not something this pass invents an answer for.
+
+### Verified
+- Real Postgres route test (`server/test/now_route.test.mjs`, 16/16) and the
+  full `tools/verify.sh` suite (via a native WSL Postgres cluster,
+  independent of Docker) — zero real test failures; the only non-green
+  suites were the four pre-existing, already-documented WSL-environment
+  gaps (missing Flutter/Android/Wear toolchains, missing LiveKit binary) and
+  the routine assertion-count placeholder drift.
+- 3 new widget tests in `send_time_guard_test.dart` proving the live render
+  (reachable, not-reachable, and reachable-with-no-known-day-part all render
+  correctly, never a null/blank label) and 2 in `guardian_home_live_test.dart`
+  proving the real end-to-end wire: `/now`'s fetched `dayPart`/`reachable`
+  reach the real `GuardianHome` instance, and tapping through to the real
+  `SendTimeGuardScreen` renders the real fetched values, not the demo chips.
+- `flutter analyze` clean, full Dart suite passing (2213 baseline + 5 new tests
+  this pass adds = 2218).
+- **Assertion total: 6989 (placeholder)** — HEAD's own real CI `COMPUTED
+  TOTAL` (6984, v0.49.62) plus this entry's own 5 new Dart tests (no new
+  server-side test file — `now_route.test.mjs` is unchanged, its existing
+  16/16 re-confirmed, not expanded); to be synced to CI's real number in a
+  follow-up commit if it differs, per this repo's established convention.
+
+---
+
 ## [0.49.58] — 2026-08-30 — GuardianHome's live-data screen: closing MASTERFILE §20.2b's oldest open gap
 
 `GuardianHome` had no live-data screen at all — first confirmed a real, proven gap at v0.49.15, re-confirmed unchanged through every re-check since (v0.49.30, v0.49.39, v0.49.56), 24+ patch versions with the same finding: `guardian_home.dart` took every field as a plain constructor argument, no fetch of any kind, no `guardian_home_live.dart`, unlike `child_home_live.dart`'s own equivalent for the child side. `main_live_guardian.dart`'s own header explained why in detail: `GuardianHome` needs dual-clock/ribbon data from a `/ribbon` endpoint `api_client.dart` only ever declared a dead path constant for (`OliveApi.childRibbon`), with no server route or client fetch method behind it. This closes it.
