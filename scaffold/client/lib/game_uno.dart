@@ -1,6 +1,15 @@
-// OLIVE BRANCH — Uno, the ad-hoc local card game. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). Network resilience &
-// ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion. Last of
+// OLIVE BRANCH — Uno, the ad-hoc local card game. CORRECTED marker: this
+// used to read "UNVERIFIED (no Flutter toolchain in tools/verify.sh's
+// automated pipeline)" — stale, disproven by this pass's own CI run, which
+// showed the Dart suite genuinely executing there (2213 passed, 0 failed),
+// alongside a clean Android Kotlin compile, a clean Wear OS compile, and a
+// live LiveKit server (31 passed) — none of that a skip. This file IS
+// verified by CI now; the stale marker itself is a real, disclosed,
+// separate follow-up across the ~78 other client files still carrying it
+// (see CHANGELOG v0.49.60).
+//
+// Network resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
+// expansion. Last of
 // five new local-play activities, and the most complex — the engine
 // underneath (uno_session.dart/uno_bot.dart) is a real, generalized 2-4
 // seat model — see uno_session.dart's own header for the full account.

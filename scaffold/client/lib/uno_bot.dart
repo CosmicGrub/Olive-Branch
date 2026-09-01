@@ -1,6 +1,13 @@
-// OLIVE BRANCH — Uno CPU opponent. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). Network resilience & ad-hoc mode
-// roadmap, Track B Option 2, ad-hoc games expansion.
+// OLIVE BRANCH — Uno CPU opponent. CORRECTED marker: this used to read
+// "UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated
+// pipeline)" — stale, disproven by this pass's own CI run, which showed the
+// Dart suite genuinely executing there (2213 passed, 0 failed); this file IS
+// verified by CI now. The stale marker itself is a real, disclosed,
+// separate follow-up across the ~78 other client files still carrying it
+// (see CHANGELOG v0.49.60).
+//
+// Network resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
+// expansion.
 //
 // Every tier sees only public information — its own hand, the discard
 // top/color, every OTHER seat's card COUNT — never another seat's real

@@ -133,15 +133,20 @@ headroom).
   never overflows). 11 tests, all passing.
 - Full client suite: `flutter analyze` clean, 2213 tests passing, zero
   regressions.
-- **Assertion total unchanged from v0.49.59 (6951):** every change this
-  version makes is Dart/Flutter-only (`game_uno.dart`/`uno_session.dart`/
-  `uno_bot.dart` and their own test files) — `tools/verify.sh`'s own real
-  COMPUTED TOTAL only ever includes the Dart suite's own pass count when a
-  Flutter toolchain is actually present in the environment running it, which
-  CI's own pipeline does not have (`game_uno.dart`'s own header: "UNVERIFIED —
-  no Flutter toolchain in tools/verify.sh's automated pipeline"); no
-  server-side/TypeScript file changed, so CI's real total for this diff is
-  genuinely zero, not estimated.
+- **Correction to this entry's own first draft:** it predicted the assertion
+  total would stay flat at v0.49.59's 6951, reasoning that CI's pipeline has
+  no Flutter toolchain — a stale claim this codebase's own file headers carry
+  in dozens of places (`game_uno.dart` included: "UNVERIFIED — no Flutter
+  toolchain in tools/verify.sh's automated pipeline"), evidently no longer
+  true. CI's real run on this branch showed the Dart suite genuinely
+  executing (2213 passed, 0 failed) alongside a clean Android Kotlin compile,
+  a clean Wear OS compile, and 31 real passes against a live LiveKit server —
+  none of that a skip. Real COMPUTED TOTAL **6979**, synced from CI's own log
+  (`check-markup.mjs --total 6979` passes 44/44), not estimated. The stale
+  "no Flutter toolchain" marker itself is now a real, disclosed, separate
+  follow-up across the ~78 client files still carrying it — this pass only
+  corrects it in the three files it already touches
+  (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`).
 
 ---
 
