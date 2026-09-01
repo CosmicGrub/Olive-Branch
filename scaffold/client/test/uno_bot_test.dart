@@ -96,4 +96,50 @@ void main() {
       expect(move.isDraw, isFalse);
     });
   });
+
+  group('botRemembersToCallUno / botCatchesMissedUno / botChallengesWildDrawFour — '
+      'real, disclosed difficulty-scaled decisions, never omniscient', () {
+    // Statistical checks over a real, large sample -- each function is a
+    // genuine RNG-driven decision, not a fixed lookup, so the real thing
+    // worth proving is "the difficulty axis actually has an effect, in
+    // the right direction, within a wide honest tolerance" rather than
+    // pinning an exact count that would make this test as brittle as the
+    // implementation's own literal thresholds.
+    const trials = 2000;
+
+    test('Hard always remembers to call Uno; Easy forgets often; Normal sits between', () {
+      final rand = Random(7);
+      int trueCount(UnoCpuDifficulty d) =>
+        List.generate(trials, (_) => botRemembersToCallUno(d, rand)).where((b) => b).length;
+      final hard = trueCount(UnoCpuDifficulty.hard);
+      final normal = trueCount(UnoCpuDifficulty.normal);
+      final easy = trueCount(UnoCpuDifficulty.easy);
+      expect(hard, trials, reason: 'Hard is deterministic here — always remembers');
+      expect(normal, greaterThan(easy), reason: 'Normal must remember more often than Easy');
+      expect(easy, lessThan(trials), reason: 'Easy must genuinely forget sometimes — a real catchable moment');
+    });
+
+    test('Hard catches a missed call far more often than Easy', () {
+      final rand = Random(8);
+      int trueCount(UnoCpuDifficulty d) =>
+        List.generate(trials, (_) => botCatchesMissedUno(d, rand)).where((b) => b).length;
+      final hard = trueCount(UnoCpuDifficulty.hard);
+      final normal = trueCount(UnoCpuDifficulty.normal);
+      final easy = trueCount(UnoCpuDifficulty.easy);
+      expect(hard, greaterThan(normal));
+      expect(normal, greaterThan(easy));
+      expect(easy, greaterThan(0), reason: 'Easy must still catch SOMETIMES, not never');
+    });
+
+    test('Easy never challenges a Wild Draw Four; Hard challenges more than Normal', () {
+      final rand = Random(9);
+      int trueCount(UnoCpuDifficulty d) =>
+        List.generate(trials, (_) => botChallengesWildDrawFour(d, rand)).where((b) => b).length;
+      expect(trueCount(UnoCpuDifficulty.easy), 0, reason: 'Easy never bothers to challenge');
+      final normal = trueCount(UnoCpuDifficulty.normal);
+      final hard = trueCount(UnoCpuDifficulty.hard);
+      expect(hard, greaterThan(normal));
+      expect(normal, greaterThan(0), reason: 'Normal must genuinely challenge sometimes');
+    });
+  });
 }

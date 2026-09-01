@@ -107,3 +107,44 @@ UnoBotMove _asMove(UnoCard card, List<UnoCard> hand, Random rand) {
   final isWild = card.type == UnoCardType.wild || card.type == UnoCardType.wildDrawFour;
   return UnoBotMove.play(card, isWild ? _mostHeldColor(hand.where((c) => c != card).toList(), rand) : null);
 }
+
+// ============================================================ Uno-calling
+//
+// A real, disclosed difficulty axis, not omniscience of any kind — the
+// bot has exactly as much information about whether it "should" call Uno
+// or catch an opponent as a real player would (which is to say: none
+// beyond the public hand-count it already had access to). Easy tiers
+// genuinely forget more often and catch less often, giving a real,
+// beatable-in-both-directions stakes moment the same way a human table
+// has one; Hard is a sharp but not psychic opponent.
+
+/// Whether a bot, having just played down to one card, remembers to call
+/// "Uno!" for it immediately. Checked by game_uno.dart right after a
+/// bot's own play brings its hand to exactly one card.
+bool botRemembersToCallUno(UnoCpuDifficulty difficulty, Random rand) => switch (difficulty) {
+  UnoCpuDifficulty.easy => rand.nextDouble() > 0.5,
+  UnoCpuDifficulty.normal => rand.nextDouble() > 0.2,
+  UnoCpuDifficulty.hard => true,
+};
+
+/// Whether [difficulty] notices and catches another seat's real missed
+/// "Uno!" call the instant it gets a look — checked by game_uno.dart
+/// right before each of the bot's own turns, whenever a real
+/// [uno_session.UnoSession.unoVulnerableSeatId] currently names a
+/// different seat.
+bool botCatchesMissedUno(UnoCpuDifficulty difficulty, Random rand) => switch (difficulty) {
+  UnoCpuDifficulty.easy => rand.nextDouble() < 0.2,
+  UnoCpuDifficulty.normal => rand.nextDouble() < 0.5,
+  UnoCpuDifficulty.hard => rand.nextDouble() < 0.9,
+};
+
+/// Whether [difficulty] challenges a Wild Draw Four just played against
+/// it. The bot never sees the real hand the play was made from (no tier
+/// does — that would be the exact omniscience this file's own header
+/// rules out); this is a real, disclosed guess, scaled by difficulty,
+/// not a read of the actual legality.
+bool botChallengesWildDrawFour(UnoCpuDifficulty difficulty, Random rand) => switch (difficulty) {
+  UnoCpuDifficulty.easy => false,
+  UnoCpuDifficulty.normal => rand.nextDouble() < 0.3,
+  UnoCpuDifficulty.hard => rand.nextDouble() < 0.55,
+};

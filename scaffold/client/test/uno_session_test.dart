@@ -231,7 +231,7 @@ void main() {
       expect(r.session.turnSeatId, 'c', reason: 'b is skipped after drawing — turn lands on c, NOT back on a');
     });
 
-    test('Wild Draw Four forces the opponent to draw 4 and requires a chosen color', () {
+    test('Wild Draw Four sets a real pending challenge instead of auto-resolving, and requires a chosen color', () {
       final top = const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5);
       const wd4 = UnoCard(type: UnoCardType.wildDrawFour);
       const spare = UnoCard(type: UnoCardType.number, color: UnoColor.green, number: 9);
@@ -242,9 +242,139 @@ void main() {
       );
       final r = playCard(s, 'a', wd4, chosenColor: UnoColor.blue, rand: Random(1));
       expect(r.accepted, isTrue);
-      expect(r.session.hands['b']!.length, 4);
+      expect(r.session.hands['b']!.length, 0, reason: 'no auto-draw -- the victim has not responded yet');
       expect(r.session.currentColor, UnoColor.blue);
-      expect(r.session.turnSeatId, 'a');
+      expect(r.session.turnSeatId, 'b', reason: 'turn moves to the victim, whose only real actions are accept/challenge');
+      expect(r.session.pendingWildDrawFour, isNotNull);
+      expect(r.session.pendingWildDrawFour!.playerSeatId, 'a');
+      expect(r.session.pendingWildDrawFour!.victimSeatId, 'b');
+      expect(r.session.pendingWildDrawFour!.colorBeforePlay, UnoColor.red);
+      expect(r.session.pendingWildDrawFour!.handBeforePlay, [spare]);
+    });
+
+    test('a normal play or draw is refused while a Wild Draw Four challenge is pending', () {
+      final top = const UnoCard(type: UnoCardType.number, color: UnoColor.blue, number: 5);
+      final s = UnoSession(seatOrder: const ['a', 'b'],
+        drawPile: standardUnoDeck().where((c) => c != top).toList(),
+        discardPile: [top],
+        hands: {'a': const [], 'b': [const UnoCard(type: UnoCardType.number, color: UnoColor.blue, number: 3)]},
+        turnSeatId: 'b', clockwise: true, currentColor: UnoColor.blue, winner: null,
+        unoVulnerableSeatId: null,
+        pendingWildDrawFour: const PendingWildDrawFour(
+          playerSeatId: 'a', victimSeatId: 'b', handBeforePlay: [], colorBeforePlay: UnoColor.blue),
+      );
+      final playAttempt = playCard(s, 'b', s.hands['b']!.first, rand: Random(1));
+      expect(playAttempt.accepted, isFalse);
+      expect(playAttempt.reason, 'pending_wild_draw_four');
+      final drawAttempt = drawCard(s, 'b', Random(1));
+      expect(drawAttempt.accepted, isFalse);
+      expect(drawAttempt.reason, 'pending_wild_draw_four');
+    });
+
+    group('acceptWildDrawFour', () {
+      test('the victim draws 4 and their turn is skipped, matching the pre-challenge-feature behavior', () {
+        final s = UnoSession(seatOrder: const ['a', 'b'],
+          drawPile: standardUnoDeck().take(20).toList(),
+          discardPile: const [UnoCard(type: UnoCardType.wildDrawFour)],
+          hands: const {'a': [], 'b': []}, turnSeatId: 'b', clockwise: true, currentColor: UnoColor.blue, winner: null,
+          pendingWildDrawFour: const PendingWildDrawFour(
+            playerSeatId: 'a', victimSeatId: 'b', handBeforePlay: [], colorBeforePlay: UnoColor.red),
+        );
+        final r = acceptWildDrawFour(s, 'b', Random(1));
+        expect(r.accepted, isTrue);
+        expect(r.session.hands['b']!.length, 4);
+        expect(r.session.turnSeatId, 'a', reason: '2 seats: the seat after the victim is whoever played the card');
+        expect(r.session.pendingWildDrawFour, isNull);
+      });
+
+      test('refuses a seat other than the real named victim', () {
+        final s = UnoSession(seatOrder: const ['a', 'b'],
+          drawPile: standardUnoDeck().take(20).toList(),
+          discardPile: const [UnoCard(type: UnoCardType.wildDrawFour)],
+          hands: const {'a': [], 'b': []}, turnSeatId: 'b', clockwise: true, currentColor: UnoColor.blue, winner: null,
+          pendingWildDrawFour: const PendingWildDrawFour(
+            playerSeatId: 'a', victimSeatId: 'b', handBeforePlay: [], colorBeforePlay: UnoColor.red),
+        );
+        final r = acceptWildDrawFour(s, 'a', Random(1));
+        expect(r.accepted, isFalse);
+        expect(r.reason, 'not_the_victim');
+      });
+    });
+
+    group('challengeWildDrawFour — the real official rule, both outcomes', () {
+      test('succeeds when the player genuinely had a legal alternative: THEY draw 4 instead, no skip for the victim', () {
+        // Player's hand right before playing the WD4 still held a real
+        // legal blue card -- the play was never actually forced.
+        const legalAlternative = UnoCard(type: UnoCardType.number, color: UnoColor.blue, number: 7);
+        final s = UnoSession(seatOrder: const ['a', 'b'],
+          drawPile: standardUnoDeck().take(20).toList(),
+          discardPile: const [UnoCard(type: UnoCardType.wildDrawFour)],
+          hands: const {'a': [legalAlternative], 'b': []}, turnSeatId: 'b', clockwise: true,
+          currentColor: UnoColor.green, winner: null,
+          pendingWildDrawFour: const PendingWildDrawFour(
+            playerSeatId: 'a', victimSeatId: 'b', handBeforePlay: [legalAlternative], colorBeforePlay: UnoColor.blue),
+        );
+        final r = challengeWildDrawFour(s, 'b', Random(1));
+        expect(r.accepted, isTrue);
+        expect(r.challengeSucceeded, isTrue);
+        expect(r.session.hands['a']!.length, 5,
+          reason: 'the ORIGINAL PLAYER draws 4 more, on top of the 1 (legalAlternative) already left in hand');
+        expect(r.session.hands['b'], isEmpty, reason: 'the victim draws nothing -- the play was proven illegal');
+        expect(r.session.turnSeatId, 'b', reason: 'a real, un-skipped turn for the victim -- they were never legitimately forced');
+        expect(r.session.pendingWildDrawFour, isNull);
+      });
+
+      test('fails when the play was genuinely forced: the victim draws 4+2=6 and is still skipped', () {
+        // Player's hand right before playing the WD4 had nothing blue --
+        // the play really was the only option.
+        const offColor = UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 3);
+        final s = UnoSession(seatOrder: const ['a', 'b'],
+          drawPile: standardUnoDeck().take(20).toList(),
+          discardPile: const [UnoCard(type: UnoCardType.wildDrawFour)],
+          hands: const {'a': [offColor], 'b': []}, turnSeatId: 'b', clockwise: true,
+          currentColor: UnoColor.green, winner: null,
+          pendingWildDrawFour: const PendingWildDrawFour(
+            playerSeatId: 'a', victimSeatId: 'b', handBeforePlay: [offColor], colorBeforePlay: UnoColor.blue),
+        );
+        final r = challengeWildDrawFour(s, 'b', Random(1));
+        expect(r.accepted, isTrue);
+        expect(r.challengeSucceeded, isFalse);
+        expect(r.session.hands['b']!.length, 6, reason: 'the real penalty for challenging blind and losing: 4+2');
+        expect(r.session.hands['a']!.length, 1,
+          reason: 'the original player draws nothing new -- unchanged from the 1 (offColor) already left in hand');
+        expect(r.session.turnSeatId, 'a', reason: '2 seats: still skips the victim, same as a plain accept');
+        expect(r.session.pendingWildDrawFour, isNull);
+      });
+
+      test('a wild card in the pre-play hand never counts as a legal alternative on its own', () {
+        // Only a Wild (no chosen color of its own) sat in the hand besides
+        // the WD4 itself -- that is never a "legal alternative color card"
+        // for challenge purposes, matching real Uno rules.
+        const otherWild = UnoCard(type: UnoCardType.wild);
+        final s = UnoSession(seatOrder: const ['a', 'b'],
+          drawPile: standardUnoDeck().take(20).toList(),
+          discardPile: const [UnoCard(type: UnoCardType.wildDrawFour)],
+          hands: const {'a': [otherWild], 'b': []}, turnSeatId: 'b', clockwise: true,
+          currentColor: UnoColor.green, winner: null,
+          pendingWildDrawFour: const PendingWildDrawFour(
+            playerSeatId: 'a', victimSeatId: 'b', handBeforePlay: [otherWild], colorBeforePlay: UnoColor.blue),
+        );
+        final r = challengeWildDrawFour(s, 'b', Random(1));
+        expect(r.challengeSucceeded, isFalse, reason: 'a second Wild is never a real color-matching alternative');
+      });
+
+      test('refuses a seat other than the real named victim', () {
+        final s = UnoSession(seatOrder: const ['a', 'b'],
+          drawPile: standardUnoDeck().take(20).toList(),
+          discardPile: const [UnoCard(type: UnoCardType.wildDrawFour)],
+          hands: const {'a': [], 'b': []}, turnSeatId: 'b', clockwise: true, currentColor: UnoColor.blue, winner: null,
+          pendingWildDrawFour: const PendingWildDrawFour(
+            playerSeatId: 'a', victimSeatId: 'b', handBeforePlay: [], colorBeforePlay: UnoColor.red),
+        );
+        final r = challengeWildDrawFour(s, 'a', Random(1));
+        expect(r.accepted, isFalse);
+        expect(r.reason, 'not_the_victim');
+      });
     });
 
     test('a forced draw that outlasts the draw pile reshuffles the discard (minus the top) rather than crashing', () {
@@ -261,6 +391,126 @@ void main() {
       final r = playCard(s, 'a', drawTwo, rand: Random(3));
       expect(r.accepted, isTrue);
       expect(r.session.hands['b']!.length, 2);
+    });
+  });
+
+  group('calling "Uno!" — vulnerability, declaring, and catching a missed call', () {
+    test('playing down to exactly one card makes that seat vulnerable', () {
+      final top = const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5);
+      final last = const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 2);
+      final s = UnoSession(seatOrder: const ['a', 'b'],
+        drawPile: standardUnoDeck().where((c) => c != top && c != last).toList(),
+        discardPile: [top],
+        hands: {'a': [last, const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 3)], 'b': const []},
+        turnSeatId: 'a', clockwise: true, currentColor: UnoColor.red, winner: null,
+      );
+      final r = playCard(s, 'a', last, rand: Random(1));
+      expect(r.accepted, isTrue);
+      expect(r.session.hands['a']!.length, 1);
+      expect(r.session.unoVulnerableSeatId, 'a');
+    });
+
+    test('declareUnoNow at the moment of play skips vulnerability entirely', () {
+      final top = const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5);
+      final last = const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 2);
+      final s = UnoSession(seatOrder: const ['a', 'b'],
+        drawPile: standardUnoDeck().where((c) => c != top && c != last).toList(),
+        discardPile: [top],
+        hands: {'a': [last, const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 3)], 'b': const []},
+        turnSeatId: 'a', clockwise: true, currentColor: UnoColor.red, winner: null,
+      );
+      final r = playCard(s, 'a', last, rand: Random(1), declareUnoNow: true);
+      expect(r.session.unoVulnerableSeatId, isNull);
+    });
+
+    test('declareUno afterward clears vulnerability, and is a genuine no-op when not actually vulnerable', () {
+      const vulnerable = UnoSession(seatOrder: ['a', 'b'], drawPile: [], discardPile: [
+        UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5),
+      ], hands: {'a': [UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 2)], 'b': []},
+        turnSeatId: 'b', clockwise: true, currentColor: UnoColor.red, winner: null, unoVulnerableSeatId: 'a');
+      final declared = declareUno(vulnerable, 'a');
+      expect(declared.unoVulnerableSeatId, isNull);
+
+      final notVulnerable = declared;
+      final noop = declareUno(notVulnerable, 'a');
+      expect(identical(noop, notVulnerable), isTrue, reason: 'a real no-op, not a fabricated state change');
+    });
+
+    test('catchMissedUno gives the target a real 2-card penalty, out of turn', () {
+      final s = UnoSession(seatOrder: const ['a', 'b'],
+        drawPile: standardUnoDeck().take(20).toList(),
+        discardPile: const [UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5)],
+        hands: const {'a': [UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 2)], 'b': []},
+        turnSeatId: 'b', clockwise: true, currentColor: UnoColor.red, winner: null, unoVulnerableSeatId: 'a');
+      final r = catchMissedUno(s, 'b', Random(1));
+      expect(r.accepted, isTrue);
+      expect(r.session.hands['a']!.length, 3, reason: '1 + a real 2-card penalty');
+      expect(r.session.unoVulnerableSeatId, isNull);
+      expect(r.session.turnSeatId, 'b', reason: 'a catch never consumes or changes anyone\'s turn');
+    });
+
+    test('catching yourself, or catching when nobody is vulnerable, is refused', () {
+      final nobody = UnoSession(seatOrder: const ['a', 'b'], drawPile: standardUnoDeck().take(20).toList(),
+        discardPile: const [UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5)],
+        hands: const {'a': [], 'b': []}, turnSeatId: 'a', clockwise: true, currentColor: UnoColor.red, winner: null);
+      final r1 = catchMissedUno(nobody, 'b', Random(1));
+      expect(r1.accepted, isFalse);
+      expect(r1.reason, 'nobody_vulnerable');
+
+      final vulnerable = nobody.copyWith(unoVulnerableSeatId: 'a');
+      final r2 = catchMissedUno(vulnerable, 'a', Random(1));
+      expect(r2.accepted, isFalse);
+      expect(r2.reason, 'cannot_catch_yourself');
+    });
+
+    test('the catch window closes automatically once any OTHER seat completes a real action -- '
+        'the real, disclosed 3+ seat simplification', () {
+      // b is vulnerable; c (a third seat) takes a real, unrelated action.
+      // The window must close even though c is neither a nor the specific
+      // "next player after b" -- see uno_session.dart's own header.
+      final s = UnoSession(seatOrder: const ['a', 'b', 'c'],
+        drawPile: standardUnoDeck().take(20).toList(),
+        discardPile: const [UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5)],
+        hands: const {'a': [], 'b': [UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 2)],
+          // c starts with 2 (not 0) so drawing lands at 2, not coincidentally
+          // at exactly 1 -- keeps this test isolated to the one real thing
+          // it's checking, not accidentally re-triggering vulnerability for c.
+          'c': [UnoCard(type: UnoCardType.number, color: UnoColor.blue, number: 1)]},
+        turnSeatId: 'c', clockwise: true, currentColor: UnoColor.red, winner: null, unoVulnerableSeatId: 'b');
+      final r = drawCard(s, 'c', Random(1));
+      expect(r.accepted, isTrue);
+      expect(r.session.hands['c']!.length, 2, reason: 'sanity check on the fixture itself');
+      expect(r.session.unoVulnerableSeatId, isNull, reason: 'closed by c\'s own real action, not caught or declared');
+    });
+
+    test('a Draw Two/Wild Draw Four penalty that grows a vulnerable seat\'s hand past one card clears its own vulnerability', () {
+      // b played down to one card and is vulnerable; b is then hit with a
+      // Draw Two before anyone catches or declares -- b's hand grows back
+      // past one, so b should no longer read as vulnerable.
+      final drawTwo = const UnoCard(type: UnoCardType.drawTwo, color: UnoColor.red);
+      const spareOne = UnoCard(type: UnoCardType.number, color: UnoColor.blue, number: 8);
+      const spareTwo = UnoCard(type: UnoCardType.number, color: UnoColor.green, number: 6);
+      final s = UnoSession(seatOrder: const ['a', 'b'],
+        // TWO spares for 'a' matter here, not just one: a hand of just
+        // [drawTwo] would empty out on this very play and trip the
+        // immediate-win branch instead of the draw-two logic actually
+        // under test (see this file's own earlier note on that exact
+        // gotcha) -- and a hand of [drawTwo, oneSpare] would leave 'a'
+        // at exactly one card afterward, triggering a real, SEPARATE new
+        // vulnerability for 'a' itself that would contaminate this test's
+        // own real target (whether b's PRE-EXISTING vulnerability
+        // correctly clears). Two spares keeps 'a' at two cards after the
+        // play -- genuinely not vulnerable -- isolating the one thing
+        // this test checks.
+        drawPile: standardUnoDeck().where((c) => c != drawTwo && c != spareOne && c != spareTwo).toList(),
+        discardPile: const [UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5)],
+        hands: {'a': [drawTwo, spareOne, spareTwo], 'b': [const UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 2)]},
+        turnSeatId: 'a', clockwise: true, currentColor: UnoColor.red, winner: null, unoVulnerableSeatId: 'b');
+      final r = playCard(s, 'a', drawTwo, rand: Random(1));
+      expect(r.accepted, isTrue);
+      expect(r.session.hands['a']!.length, 2, reason: 'sanity check on the fixture itself -- a is not newly vulnerable');
+      expect(r.session.hands['b']!.length, 3);
+      expect(r.session.unoVulnerableSeatId, isNull, reason: 'b now holds 3 cards -- genuinely no longer vulnerable');
     });
   });
 
@@ -309,6 +559,20 @@ void main() {
         var guard = 0;
         while (s.winner == null && guard < 20000) {
           guard++;
+          // A pending Wild Draw Four challenge is a genuinely different
+          // real state -- the turn seat's only valid actions are
+          // accept/challenge, not a normal play/draw. Always accepting
+          // here is a deliberate simulation simplification (both real
+          // challenge outcomes already have dedicated unit coverage
+          // above); the point of this loop is proving turn order and
+          // card conservation hold at every table size, not re-testing
+          // challenge resolution itself.
+          if (s.pendingWildDrawFour != null) {
+            final r = acceptWildDrawFour(s, s.pendingWildDrawFour!.victimSeatId, rand);
+            expect(r.accepted, isTrue);
+            s = r.session;
+            continue;
+          }
           final hand = s.hands[s.turnSeatId]!;
           UnoCard? legal;
           for (final c in hand) {
