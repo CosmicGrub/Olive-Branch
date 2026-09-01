@@ -1,4 +1,5 @@
-// OLIVE BRANCH — kiosk platform channel. UNVERIFIED (no Flutter toolchain). §5.20.
+// OLIVE BRANCH — kiosk platform channel. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real — CHANGELOG v0.49.61). §5.20.
 //
 // Mirrors android/app/.../KioskBridge.kt and windows/runner/kiosk_bridge.{h,cpp}.
 // The constants below are contract-checked against both native implementations,

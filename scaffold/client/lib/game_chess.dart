@@ -1,5 +1,6 @@
-// OLIVE BRANCH — chess. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2, P2.
+// OLIVE BRANCH — chess. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs for
+// real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.2, P2.
 //
 // The rules engine below (ChSide/ChPiece/ChessState/chessLegalMoves/
 // chessMove/chessCoach/chessHandicaps) is written to the same shape as

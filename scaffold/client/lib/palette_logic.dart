@@ -1,5 +1,6 @@
-// OLIVE BRANCH — her colour, palette logic. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline). MASTERFILE §8.6.
+// OLIVE BRANCH — her colour, palette logic. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). MASTERFILE §8.6.
 //
 // A 1:1 semantic port of packages/palette/src/palette.ts, kept close to the
 // TS original (same names, same shapes, same ordering) so the two stay

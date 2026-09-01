@@ -1,7 +1,7 @@
-// OLIVE BRANCH — emergency card. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.6.3,
-// §8.13.5, §8.8.5.
+// OLIVE BRANCH — emergency card. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9.6.3, §8.13.5, §8.8.5.
 //
 // One screen, no navigation, no motion. §8.13.5 calls this a "still" surface:
 // read once, in a hurry, possibly by a frightened child or a sitter who has

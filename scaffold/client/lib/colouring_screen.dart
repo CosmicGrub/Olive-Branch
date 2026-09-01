@@ -1,6 +1,6 @@
-// OLIVE BRANCH — colouring page. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §8.13. Renders MARKUP
-// screen 'colouring'.
+// OLIVE BRANCH — colouring page. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §8.13. Renders MARKUP screen 'colouring'.
 //
 // "Vector, cheap for what it is; her finger's motion is never shed." The
 // scene below is entirely vector Paths built from the canvas size, not a

@@ -1,4 +1,5 @@
-// OLIVE BRANCH — PIN gate. UNVERIFIED (no Flutter toolchain). §8.3, §5.20.
+// OLIVE BRANCH — PIN gate. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real — CHANGELOG v0.49.61). §8.3, §5.20.
 //
 // Rendered one frame after a kiosk defeat. Never shows an error, never shows an
 // adult surface. The keypad order is SHUFFLED because the child is watching the

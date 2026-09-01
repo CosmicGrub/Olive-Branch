@@ -1,8 +1,8 @@
-// OLIVE BRANCH — 20 questions. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.2,
-// §8.11.1, P2. Renders MARKUP screen 'gamePicker' catalogue entry
-// 'twentyQuestions'.
+// OLIVE BRANCH — 20 questions. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — also manually built
+// and run via `flutter analyze` / `flutter test` this session; CHANGELOG
+// v0.49.61). MASTERFILE §9.2, §8.11.1, P2. Renders MARKUP screen
+// 'gamePicker' catalogue entry 'twentyQuestions'.
 //
 // Play Together Phase 1, Batch B (docs/superpowers/specs/
 // 2026-08-20-play-together-phase1-design.md) — fourth of four

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — unified entry point. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline).
+// OLIVE BRANCH — unified entry point. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61).
 //
 // This is a preview build: it renders the real EntryGate (lib/entry_gate.dart,
 // §8.5.0), ChildHome (lib/child_home.dart, MARKUP screen 01, §8.1), and

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — word search. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2.
+// OLIVE BRANCH — word search. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.2.
 //
 // The puzzle engine below (WordSearchPuzzle/buildWordSearch/findWord/
 // wordSearchComplete) is a 1:1 semantic port of the `WORD SEARCH` section of

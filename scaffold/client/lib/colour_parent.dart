@@ -1,5 +1,6 @@
-// OLIVE BRANCH — her colour, guardian view. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline). §8.6.4.
+// OLIVE BRANCH — her colour, guardian view. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). §8.6.4.
 //
 // Renders MARKUP screen 'colourParent'. Read-only, by construction: this file
 // contains no colour picker, no edit affordance, and no callback that could

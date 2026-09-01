@@ -1,7 +1,8 @@
-// OLIVE BRANCH — the closing ritual. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). Renders MARKUP screen
-// "closingRitual". MASTERFILE §9.13.1.
+// OLIVE BRANCH — the closing ritual. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). Renders MARKUP screen "closingRitual". MASTERFILE
+// §9.13.1.
 //
 // A 1:1 semantic port of packages/live/src/around.ts's closing-ritual slice
 // (beginClosing/closingNext/skipClosing/closingLines/GOODBYES) — same names,

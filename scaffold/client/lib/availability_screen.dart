@@ -1,6 +1,7 @@
-// OLIVE BRANCH — guardian availability. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9, MARKUP
+// OLIVE BRANCH — guardian availability. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9, MARKUP
 // screen 'availability' — "when he can actually be reached, honestly
 // rendered." Renders MARKUP screen 'availability'.
 //

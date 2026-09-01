@@ -1,8 +1,8 @@
-// OLIVE BRANCH — copy the pattern. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.2,
-// §8.11.1, §8.13, §8.4, P2. Renders MARKUP screen 'gamePicker' catalogue
-// entry 'copyPattern'.
+// OLIVE BRANCH — copy the pattern. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9.2, §8.11.1, §8.13, §8.4, P2. Renders
+// MARKUP screen 'gamePicker' catalogue entry 'copyPattern'.
 //
 // Play Together Phase 1, Batch C (docs/superpowers/specs/
 // 2026-08-20-play-together-phase1-design.md) — first of two younger-age,

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — the entry gate. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.5.0.
+// OLIVE BRANCH — the entry gate. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.5.0.
 //
 // Renders MARKUP screen "welcome". A role question, NOT an age gate —
 // AgeStep (§8.5, onboarding.dart's TS sibling) already guards against a

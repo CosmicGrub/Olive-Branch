@@ -1,6 +1,6 @@
 // OLIVE BRANCH — the archive data model and the Year Book compiler.
-// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline).
-// MASTERFILE §2.10, §9.8, §9.8.2.
+// No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
+// automated pipeline — CHANGELOG v0.49.61). MASTERFILE §2.10, §9.8, §9.8.2.
 //
 // A 1:1 semantic port of packages/archive/src/archive.ts's `Artifact`,
 // `YearBookSection`, `YearBook`, and `compileYearBook()` — same field names,

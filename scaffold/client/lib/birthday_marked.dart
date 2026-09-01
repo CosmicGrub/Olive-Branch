@@ -1,5 +1,6 @@
-// OLIVE BRANCH — her birthday, marked. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.7.5, §8.7.6, MASTERFILE P2.
+// OLIVE BRANCH — her birthday, marked. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.7.5, §8.7.6, MASTERFILE P2.
 //
 // Renders MARKUP screen 'bdMarked'. Confirms the permanent calendar marker
 // markBirthday() just created — `deletableByGuardian: false`, because a

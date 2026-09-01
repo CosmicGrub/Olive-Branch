@@ -1,7 +1,8 @@
-// OLIVE BRANCH — child shell, take-and-go. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §2.10, §2.11,
-// §9.8/§9.8.4, §21.2 rung 17, §21.7, prohibitions P6/P7/P8.
+// OLIVE BRANCH — child shell, take-and-go. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). MASTERFILE §2.10, §2.11, §9.8/§9.8.4, §21.2
+// rung 17, §21.7, prohibitions P6/P7/P8.
 //
 // A GENUINE MIRROR of deletion_screen.dart — same rigor (a real backend call,
 // a real acknowledgment gate, a real audited-copy discipline, a real

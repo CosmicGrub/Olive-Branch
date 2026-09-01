@@ -14,6 +14,256 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.61] — 2026-09-01 — Stale "no Flutter toolchain" marker corrected across the rest of the client
+
+Pure doc/comment correction, no behavioral change. v0.49.60's own "Tests" section
+found and disclosed that `game_uno.dart`/`uno_session.dart`/`uno_bot.dart`'s
+`UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline)` header
+claim was stale — a real CI run on this branch had already shown the Dart suite
+genuinely executing (2213 passed, 0 failed) alongside a clean Android Kotlin
+compile, a clean Wear OS compile, and 31 real passes against a live LiveKit
+server — and flagged the identical claim still sitting in "the ~78 other client
+files" as a real, disclosed, separate follow-up. This is that follow-up.
+
+### Fixed
+- **77 remaining files under `scaffold/client/lib/`** carried the same stale
+  claim (three had already been corrected in v0.49.60). A fresh grep is the
+  real, counted total as of this pass — not the "~78 other" figure v0.49.60's
+  own entry estimated, which this pass does not attempt to reconcile further;
+  77 is what a literal `grep -rl` over the current tree returns, no more, no
+  less. A second, independent CI run — GitHub Actions run `33471475222` on PR
+  #85 — reconfirmed the same result this pass's own header correction relies
+  on: `flutter test` genuinely executing (2213 passed, 0 failed), Android
+  Kotlin and Wear OS both compiling clean, and 31 assertions against a live
+  LiveKit server, none of it a skip. Every one of the 77 headers now reads
+  "Verified by CI" instead, citing this entry, in the same voice v0.49.60's
+  own three corrected files already established rather than a copy-pasted
+  boilerplate line. `flutter analyze`: 0 issues (unchanged — no source logic
+  touched, headers only).
+
+---
+
+## [0.49.60] — 2026-08-31 — Uno, remodeled after the real Xbox Live Arcade reference; a card-size customization suite
+
+The owner asked for the Uno table to match a specific real reference as closely
+as possible — the 2006 Xbox Live Arcade UNO (Carbonated Games) — watched
+frame-by-frame for this pass, not worked from memory or a generic "digital Uno"
+guess, and for the engine underneath it to be modeled on the same reference.
+
+### Changed — the table (`game_uno.dart`)
+- The real 4-seat 360°-around-the-table arrangement (top-left/top-right/left/
+  bottom, not the old top-vs-bottom-only 2-seat layout) — the 2-seat case
+  (always true for vsPeer, a real 2-device transport limit) keeps its own
+  original layout unchanged.
+- A curved turn-direction indicator (two opposing arcs with real arrowheads)
+  around the shared pile, flipping the instant Reverse flips it.
+- A discard "trail" — the last two thrown cards fanned at a slight overlap
+  behind the current top card, not one flat card floating alone.
+- A visibly larger single card the instant a hand drops to one.
+- **Deliberately diverged from the reference, disclosed rather than silently
+  copied:** no avatar icon next to a seat's name (this app has never shown one
+  anywhere) and no Xbox controller button prompts — a touch app offers the same
+  information as real on-screen buttons instead. The reference's own round/game
+  screens show a numeric points table racing to a target score, exactly the
+  pattern MASTERFILE P2 permanently bans; put to the owner directly rather than
+  copied or silently dropped — this screen still only ever reports who won the
+  one round, never a point tally.
+- **vsCpu now offers a real 2/3/4 seat-count choice** (matching the reference's
+  own 4-seat table) on top of the engine's own pre-existing, already-tested 2-4
+  seat turn-order support — vsPeer stays exactly 2 seats, a real transport
+  limit (this app's local pairing is a literal 2-device handshake), not a
+  scope choice.
+
+### Added — the real Wild Draw Four challenge (`uno_session.dart`)
+Official Uno rules include this as a base rule, not a house-rule toggle —
+v0.49.59 shipped Wild Draw Four as auto-resolving with no challenge option, a
+real gap now closed (see the correction below). A victim may now challenge
+whether the player genuinely had no legal same-color alternative at the moment
+of play; the play is held as a real `PendingWildDrawFour` (a snapshot of the
+hand/color at play time, since the session is otherwise forward-only) until
+the victim accepts or challenges. `acceptWildDrawFour()`/
+`challengeWildDrawFour()`, both re-validated authoritatively, never trusting
+the initiating device's own local legality check.
+
+### Added — calling "Uno!" (`uno_session.dart`/`uno_bot.dart`)
+Also a real gap in v0.49.59 (there was no such mechanic at all, despite that
+entry's own claim otherwise — see the correction below). A seat becomes
+vulnerable the instant its hand drops to one card; any OTHER seat may catch it
+for a real 2-card penalty. Disclosed simplification for a 3-4 seat table: the
+catch window closes the instant ANY other seat completes a real action, not
+only once "the specific next player" acts (the stricter reading needs
+meaningfully more state tracking for a real-world-imperceptible difference in
+a family card game). `declareUno()`/`catchMissedUno()`. CPU seats make real,
+disclosed, difficulty-scaled guesses (`botRemembersToCallUno`/
+`botCatchesMissedUno`/`botChallengesWildDrawFour`) — never omniscient about a
+human's real hand or intentions, the same discipline `connect4_bot.dart`
+already holds itself to.
+
+### Added — a card-size customization suite (`game_uno.dart`)
+A real slider on the picker screen, with a live preview card that grows as it
+slides right and shrinks as it slides left — the exact same effective size the
+real game will render, never an approximation of one. Two layers, deliberately
+kept separate: the existing device-derived scale (`_cardScaleFor`, keyed off
+`form_factors.dart`'s own postures) stays the real "does this fit THIS screen"
+layer; this pass adds a bounded personal-preference multiplier on top of it, so
+the same slider position reads as a different absolute size on different real
+devices — the point, not a bug. The shrink direction is capped per-posture so
+it can never take a card below the existing §8.4 64dp touch-target floor: on a
+baseline posture (a Fold closed, a phone) the slider can only grow, since
+there's no real headroom above the floor to give back; a tablet or desktop
+window that already scaled up has real room to shrink back toward that same
+floor. The shared pile (draw pile/discard/turn-direction ring) grows by a
+deliberately dampened share of the same slider, not the full amount — letting
+it grow by the same amount the hand does produced a real `RenderFlex` overflow
+on a narrow device at the slider's own top end, found by this pass's own
+widget test, not assumed. Playability at any point on the slider, on any
+device, is guaranteed by a real horizontal-scroll fallback in the hand fan
+(`_HandFan`) for the case a large card size and a long hand genuinely can't
+both fit — every card stays reachable (scroll, then tap; tap has always worked
+alongside drag) rather than silently rendering past the screen edge, which
+neither `Center` nor `SingleChildScrollView` would otherwise catch or flag.
+Verified live on both the Fold5 (grown to ~159%, a real 4-seat table, no
+overflow) and the tablet (shrunk to its own real floor, 82% — a different
+number than the Fold5's, correctly, since the two devices have different real
+headroom).
+
+### Fixed
+- A latent, pre-existing leaked-`Timer` bug in `_maybeRunCpuTurn()` — three
+  call sites used a bare, uncancellable `Future.delayed`, safe against acting
+  on a disposed widget (`if (!mounted) return`) but not against the underlying
+  platform Timer itself, which flutter_test's own harness correctly flagged at
+  teardown once this pass added the screen's first-ever widget test. A single
+  trackable `Timer? _cpuActionTimer`, cancelled before every new schedule and
+  in `dispose()`, closes it for real.
+- **Correction to the v0.49.59 entry below and its matching MARKUP.html/
+  MASTERFILE.md rows:** those originally claimed Uno already had "the four
+  house-rule toggles Mattel's own current rules document as legitimate
+  variants (Wild Draw Four Challenge, 7-0, capped same-card-only stacking,
+  arbitrated jump-in)" and "an auto-clearing 'UNO!' badge." Neither was true —
+  a real doc/code mismatch from that entry's own original writing, not a later
+  regression, found and fixed in this pass rather than built on top of
+  silently. Wild Draw Four Challenge and Uno-calling are real as of this
+  version (above); 7-0, capped same-card-only stacking, and arbitrated jump-in
+  remain genuinely unimplemented, each its own separate, disclosed follow-up.
+
+### Tests
+- `uno_session_test.dart` — new coverage for the WD4-refused-while-pending
+  invariant, `acceptWildDrawFour`, `challengeWildDrawFour` (4 cases), and the
+  full "calling Uno!" mechanic (7 cases). 39 tests, all passing.
+- `uno_bot_test.dart` — 3 new statistical tests (2000-trial samples) proving
+  the difficulty axis moves in the right direction for all three new CPU
+  decisions, with honest bounds (Easy must still forget/catch/challenge
+  sometimes, except where the design makes it deterministic). 9 tests, all
+  passing.
+- `game_uno_test.dart` — this screen's first-ever widget test file: the mode
+  picker, vsCpu at every real seat count (2-4), the draw pile, responsive
+  rendering at all four canonical widths, and the card-size suite (the slider
+  actually resizes the real in-game hand, and an extreme size + a long hand
+  never overflows). 11 tests, all passing.
+- Full client suite: `flutter analyze` clean, 2213 tests passing, zero
+  regressions.
+- **Correction to this entry's own first draft:** it predicted the assertion
+  total would stay flat at v0.49.59's 6951, reasoning that CI's pipeline has
+  no Flutter toolchain — a stale claim this codebase's own file headers carry
+  in dozens of places (`game_uno.dart` included: "UNVERIFIED — no Flutter
+  toolchain in tools/verify.sh's automated pipeline"), evidently no longer
+  true. CI's real run on this branch showed the Dart suite genuinely
+  executing (2213 passed, 0 failed) alongside a clean Android Kotlin compile,
+  a clean Wear OS compile, and 31 real passes against a live LiveKit server —
+  none of that a skip. Real COMPUTED TOTAL **6979**, synced from CI's own log
+  (`check-markup.mjs --total 6979` passes 44/44), not estimated. The stale
+  "no Flutter toolchain" marker itself is now a real, disclosed, separate
+  follow-up across the ~78 client files still carrying it — this pass only
+  corrects it in the three files it already touches
+  (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`).
+
+---
+
+## [0.49.59] — 2026-09-01 — "Right now, together": five local ad-hoc play games, no internet required
+
+MASTERFILE §9.2's whole catalogue assumed a network path back to a server — async
+turn-based, or live during a call. Nothing worked for two devices in the same room
+on the same WiFi with no internet at all. This ships a wholly separate local
+transport and five real games on top of it, built and hardware-verified across an
+extended pass on this repo's two real test devices (a Galaxy Z Fold 5, a Galaxy Tab
+S9 FE).
+
+### Added — the transport
+- **`local_pairing.dart`'s `LocalPairingController`** — real mDNS discovery via
+  `bonsoir` (broadcast + browse; a query-only library like `multicast_dns` cannot
+  broadcast this device's own presence), turn exchange over one plain HTTP POST per
+  move to a small embedded local server (`local_session.dart`). No LiveKit, no push
+  notification, no account, nothing leaving the WiFi network. Capped at exactly 2
+  physical devices, no mesh; a device can locally host more than one seat.
+- **`local_discovery.dart`**, **`local_play_screen.dart`** — the discovery/pairing
+  UI shell shared by every game below.
+- **`third_party/bonsoir_android_patched/`** — a one-line vendored patch
+  (`compileSdkVersion 33` → `36`) for a real, reproducible Android build failure in
+  `bonsoir_android` 5.1.6 against this app's own `androidx.fragment` transitive
+  dependency; see `third_party/PATCH.md` for the full account and the removal
+  condition once upstream ships a fix.
+- **`AndroidManifest.xml`**: `ACCESS_WIFI_STATE` / `CHANGE_WIFI_MULTICAST_STATE` —
+  without the multicast permission, Android silently drops the packets mDNS depends
+  on; found by inspection before real-device verification, not as a live bug.
+
+### Added — the five games
+- **Uno** (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`/`uno_deck.dart`) — a
+  real seat-based 2–4 seat engine (Skip/Reverse/Draw Two/Wild Draw Four all
+  expressed as real seat-order arithmetic, proven to reduce to 2-seat behavior
+  exactly); 3-tier CPU opponents that see only public information (an opponent's
+  hand count, never its contents); a first casino-table visual layer (fanned
+  hands, a one-shot action-card glow). **Correction, found and fixed in the
+  v0.49.60 entry below:** this bullet originally also claimed "the four
+  house-rule toggles Mattel's own current rules document as legitimate variants
+  (Wild Draw Four Challenge, 7-0, capped same-card-only stacking, arbitrated
+  jump-in)" and "an auto-clearing 'UNO!' badge" — neither was real at this
+  version. Wild Draw Four auto-resolved with no challenge option, there was no
+  "Uno!"-calling/catch mechanic at all, and none of the four house-rule variants
+  were wired in — a real doc/code mismatch from this entry's own original
+  writing, not a later regression; see v0.49.60 for what's actually real now.
+- **War** (`game_war.dart`/`war_deck.dart`) — real suit-colored card faces, a
+  genuine 3D flip-reveal animation, correct war/double-war escalation.
+  **Connect 4** (`game_connect4.dart`/`connect4_engine.dart`/`connect4_bot.dart`) —
+  a real minimax + alpha-beta CPU, 3 difficulty tiers, Easy deliberately skipping
+  its own block-check rather than silently reconstructing it via search. **Piece It
+  Together** (`game_puzzle.dart`/`together_puzzle.dart`) — a cooperative
+  shape-placement puzzle, chosen deliberately over a sliding puzzle to avoid that
+  genre's own real solvability-parity bug class. **Pictionary**
+  (`game_pictionary.dart`) — reuses `live_games.ts`'s existing
+  `Pictionary`/`guessDrawing()` engine and `annotation_canvas.dart`'s canvas
+  verbatim rather than building a second one.
+- **`game_seat.dart`** — the shared `Seat`/`SeatRoster` turn-order/roster type Uno's
+  engine walks for its 2–4 seat support.
+- Posture-aware throughout (`form_factors.dart`'s real `Posture`/`postureFor()`):
+  card/piece scale tiers, fan/grid sizing computed from real available width,
+  Pictionary's canvas deliberately exempted (a fixed logical size is what lets a raw
+  stroke coordinate match across two differently-sized devices with zero
+  normalization math — only its chrome is posture-aware).
+- P2 compliant throughout: no score, streak, or rank persists anywhere, including
+  hidden state. Uno's round-end celebration names only who won *this* round.
+
+### Fixed — a real bug, found only by forcing real device postures on real hardware
+All five games' `Scaffold.body` was `SafeArea(child: Padding(child: Center(child:
+body)))`, with no scroll fallback. Forcing the Fold5 to its actual documented
+`foldTabletop` landscape dimensions (~673×420dp, via `adb shell wm size`, not a
+simulator) overflowed the Uno board by close to 300px — confirmed on-screen, not
+guessed. The identical pattern existed verbatim in all 4 other games. Fixed in all
+five by swapping the bare `Center` for `SingleChildScrollView`, the same fix
+pattern `child_home.dart`/`care_note.dart` already use for a short viewport.
+Re-verified live on the Fold5 post-fix: the full board reaches by scrolling, zero
+overflow. `flutter analyze` clean, full `flutter test` suite passing throughout.
+
+### Disclosed, not silently invented
+**Not yet wired into real navigation.** All five are reachable today only through
+dedicated `main_local_*_test.dart` DEV-VERIFICATION-ONLY entry points (the same
+posture as `main_live_child_call_test.dart` and its siblings) — none of
+`child_home.dart`, `guardian_more.dart`, or `game_picker.dart` has a real tile or
+route to any of them yet. Where a same-WiFi, right-now local-play mode belongs
+relative to the existing "Play together" (async, any-network) catalogue is a real
+product/navigation decision, not settled here.
+
+---
+
 ## [0.49.58] — 2026-08-30 — GuardianHome's live-data screen: closing MASTERFILE §20.2b's oldest open gap
 
 `GuardianHome` had no live-data screen at all — first confirmed a real, proven gap at v0.49.15, re-confirmed unchanged through every re-check since (v0.49.30, v0.49.39, v0.49.56), 24+ patch versions with the same finding: `guardian_home.dart` took every field as a plain constructor argument, no fetch of any kind, no `guardian_home_live.dart`, unlike `child_home_live.dart`'s own equivalent for the child side. `main_live_guardian.dart`'s own header explained why in detail: `GuardianHome` needs dual-clock/ribbon data from a `/ribbon` endpoint `api_client.dart` only ever declared a dead path constant for (`OliveApi.childRibbon`), with no server route or client fetch method behind it. This closes it.

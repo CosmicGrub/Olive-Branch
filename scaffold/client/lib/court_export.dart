@@ -1,5 +1,6 @@
-// OLIVE BRANCH — court export. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §2.11, §16.1 #3, P8.
+// OLIVE BRANCH — court export. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §2.11, §16.1 #3, P8.
 // Renders MARKUP screen 'export': "The archive assembled for the one reader
 // who must trust it; chunked under the transfer ceiling."
 //

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — kiosk shell. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §5.20, §8.3.
+// OLIVE BRANCH — kiosk shell. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §5.20, §8.3.
 //
 // Wraps the child side of the app. Owns a LockController-driven LockState,
 // engages the native lock on mount via kiosk_channel.dart, and renders

@@ -62,11 +62,26 @@ dependencies:
   # platform's native, offline speech synthesizer (AVSpeechSynthesizer,
   # android.speech.tts.TextToSpeech, ...), never a network call.
   flutter_tts: ^4.2.0
+  # Network-resilience roadmap, Track B Option 2 — local-only game/reading
+  # sync for the "no internet path at all" case, never audio/video (see
+  # local_session.dart's own header). bonsoir does both halves of real mDNS
+  # service discovery — BROADCASTING this device's own presence and
+  # BROWSING for the other side's — which a query-only package like
+  # multicast_dns does not; confirmed actively maintained, cross-platform
+  # (Android/iOS/macOS) against pub.dev's own listing before adding.
+  bonsoir: ^5.1.11
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+
+# See third_party/PATCH.md for the full account of each entry below — never
+# a change to a plugin's own Kotlin/Java source, only a stale build-metadata
+# literal that blocks the app from building at all.
+dependency_overrides:
+  bonsoir_android:
+    path: third_party/bonsoir_android_patched
 
 flutter:
   uses-material-design: true

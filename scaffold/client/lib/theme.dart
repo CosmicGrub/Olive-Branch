@@ -1,6 +1,7 @@
-// OLIVE BRANCH — theme catalog. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §8.1,
+// OLIVE BRANCH — theme catalog. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §8.1,
 // `docs/superpowers/specs/2026-08-21-intuitivism-visual-foundation-design.md`.
 //
 // Replaces the app's own stock-template default —

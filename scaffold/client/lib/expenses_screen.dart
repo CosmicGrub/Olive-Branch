@@ -1,7 +1,8 @@
-// OLIVE BRANCH — guardian shell, expenses. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.6.5,
-// prohibition P6. Renders MARKUP screen 'expenses'.
+// OLIVE BRANCH — guardian shell, expenses. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). MASTERFILE §9.6.5, prohibition P6. Renders
+// MARKUP screen 'expenses'.
 //
 // P6: "Any financial or expense surface visible to a child role. No totals,
 // no summaries, no notifications, no 'Dad paid for this.'" §9.6.5 says this

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — her colour, first pick. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.6.
+// OLIVE BRANCH — her colour, first pick. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.6.
 //
 // Renders MARKUP screen 'colourPick'. Twelve curated swatches, not a colour
 // picker — a free picker hands a five-year-old #FEFEFE and no explanation.

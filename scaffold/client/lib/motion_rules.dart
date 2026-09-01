@@ -1,5 +1,6 @@
-// OLIVE BRANCH — motion rules. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §8.13.
+// OLIVE BRANCH — motion rules. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §8.13.
 //
 // A partial port of packages/motion/src/motion.ts — only the subset this
 // group's screens actually consult, per the project's own "port what you

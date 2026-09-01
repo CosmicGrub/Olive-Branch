@@ -1,7 +1,8 @@
 // OLIVE BRANCH — shared layout for Batch B's four curated-prompt activities.
-// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline —
-// manually built and run via `flutter analyze` / `flutter test` this
-// session). MASTERFILE §9.2, §8.11.1, P2.
+// No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
+// automated pipeline — also manually built and run via `flutter analyze` /
+// `flutter test` this session; CHANGELOG v0.49.61). MASTERFILE §9.2,
+// §8.11.1, P2.
 //
 // Play Together Phase 1, Batch B — Silly Sentence Maker, Would You Rather,
 // Two Truths and a Tall Tale, and 20 Questions (game_silly_sentence.dart,

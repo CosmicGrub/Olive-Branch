@@ -1,5 +1,6 @@
-// OLIVE BRANCH — first run, who's here. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.5.3.
+// OLIVE BRANCH — first run, who's here. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.5.3.
 //
 // Renders MARKUP screen 'obWho'. §17.1 — with one guardian in the family
 // graph, no choice is presented at all; she is TOLD who is here, never asked

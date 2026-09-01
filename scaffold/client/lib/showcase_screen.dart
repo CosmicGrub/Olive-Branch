@@ -1,6 +1,6 @@
-// OLIVE BRANCH — child shell, "show me". UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.10. Renders MARKUP
-// screen 'showcase'.
+// OLIVE BRANCH — child shell, "show me". No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). MASTERFILE §9.10. Renders MARKUP screen 'showcase'.
 //
 // She shows; he sees. Two doors in, both real:
 //   - An ask waiting for her, from a parent, by name — never a count, never

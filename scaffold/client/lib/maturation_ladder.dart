@@ -1,7 +1,7 @@
-// OLIVE BRANCH — the maturation ladder. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §21. Renders
-// MARKUP screen 'ladder'.
+// OLIVE BRANCH — the maturation ladder. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §21. Renders MARKUP screen 'ladder'.
 //
 // A close port of the ladder/grant-record half of
 // packages/maturation/src/maturation.ts: LADDER, MaturationGrant,

@@ -1,6 +1,6 @@
-// OLIVE BRANCH — child shell, my day. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §8.2, §8.2.2, §8.4.
-// Renders MARKUP screen 'myday'.
+// OLIVE BRANCH — child shell, my day. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §8.2, §8.2.2, §8.4. Renders MARKUP screen 'myday'.
 //
 // The Day Ribbon, in HER frame — the child-facing sibling of the ribbon
 // guardian_home.dart renders for the guardian. Two invariants:

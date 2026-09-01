@@ -1,7 +1,7 @@
-// OLIVE BRANCH — the co-op story game. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.2, P2.
-// Renders MARKUP screen 'story'.
+// OLIVE BRANCH — the co-op story game. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9.2, P2. Renders MARKUP screen 'story'.
 //
 // A 1:1 semantic port of the 'story' branch of packages/games/src/games.ts's
 // generic game engine (CATALOGUE's story entry, newGame()'s story base,

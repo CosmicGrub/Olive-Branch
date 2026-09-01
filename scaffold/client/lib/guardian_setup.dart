@@ -1,5 +1,6 @@
-// OLIVE BRANCH — grown-up account setup. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.5.0, §11.
+// OLIVE BRANCH — grown-up account setup. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). §8.5.0, §11.
 //
 // Renders MARKUP screen 'guardianSetup'. Reached from the entry gate's
 // "grown-up's device" choice (entry_gate.dart) or from accepting an

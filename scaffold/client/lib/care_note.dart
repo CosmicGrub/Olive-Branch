@@ -1,7 +1,8 @@
-// OLIVE BRANCH — guardian shell, care note. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §12.5
-// (guardian.ts). Renders MARKUP screen 'careNote'.
+// OLIVE BRANCH — guardian shell, care note. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). MASTERFILE §12.5 (guardian.ts). Renders
+// MARKUP screen 'careNote'.
 //
 // 1:1 port of packages/guardian/src/guardian.ts's §12.5 section: CareKind,
 // CareItem, CareNote, CARE_NOTE_TTL_DAYS, CARE_NOTE_BANNED, writeCareNote(),
