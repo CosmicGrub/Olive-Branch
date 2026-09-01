@@ -1,6 +1,41 @@
 /**
  * MASTERFILE §5.21 — call security.
  *
+ * STATUS, confirmed by a real repo-wide search this session (network-
+ * resilience roadmap, item A6): every export in this file — `callPolicy`/
+ * `CallPolicy`, `sharePreflight`/`SharePreflight`, `decideE2ee`/
+ * `E2eeDecision`, `RESIDUAL_RISKS` — is imported ONLY by `demo/src/play.ts`
+ * (a review/demo screen) and `packages/activities/test/activities.test.mjs`
+ * (that demo's own test). NOTHING in the real call path — `server/routes
+ * .mjs`, `packages/session-runtime/src/rooms.ts`/`livekit-token.mjs`, or
+ * the Flutter client — imports any of it. This is real, correct, tested
+ * design; it was simply never wired into a real screen, and predates the
+ * Jitsi→LiveKit migration by enough that "unwired" reads differently for
+ * each concern below:
+ *
+ *   - §5.21.1's relay-only ICE policy IS enforced for real today — just not
+ *     through this file. LiveKit's SFU architecture has no peer-to-peer
+ *     path to disable in the first place (see client/lib/call_screen.dart's
+ *     own header), and that same file now also sets
+ *     `RTCIceTransportPolicy.relay` directly via the SDK's own
+ *     `ConnectOptions`, as real defense-in-depth. `callPolicy()`'s own
+ *     `iceTransportPolicy: 'relay'` guarantee is correct and still true in
+ *     spirit; it is simply enforced by different, LiveKit-native code now.
+ *   - §5.21.2 (screen-share window-scoping/disclosure) and §5.21.3 (the
+ *     E2EE/recording decision) have NO live enforcement anywhere in this
+ *     app yet. There is no real screen-share feature in the LiveKit-era
+ *     call screen at all, and no real supervised-recording flow either —
+ *     this file's own design for both is ready and tested, waiting for a
+ *     real caller, not something a reader should assume is already live.
+ *   - §5.21.4's `RESIDUAL_RISKS` register is documentation, not enforcement
+ *     — accurate regardless of what does or doesn't call the functions
+ *     above.
+ *
+ * Kept, not deleted: this is correct, real design work with real tests
+ * behind it, and the honest fix for "looks live, isn't" is a clear label,
+ * not throwing away logic a real screen-share or supervised-recording
+ * feature would otherwise have to re-derive from MASTERFILE from scratch.
+ *
  * THE LEAK THIS FILE EXISTS FOR:
  *
  * WebRTC prefers a peer-to-peer path. When it succeeds, each side learns the

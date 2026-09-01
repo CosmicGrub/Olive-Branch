@@ -13,12 +13,14 @@
 // here.
 //
 // "Answer" and "Just talking" are BOTH real answers that lead to the same
-// place: a real `CallScreen` join. lifecycle.ts's own `ANSWER_WORDS` names
-// three words but specifies no technical difference between the first two
-// — inventing an audio-only mode for "Just talking" that the TS source
-// never described would be exactly the fabrication MASTERFILE §0 forbids.
-// Both are honestly identical in behavior here; only the word she tapped
-// differs.
+// place: a real `CallScreen` join. They now differ in exactly one respect —
+// MASTERFILE §5.23.1's own real, ported logic (call_modes.dart's
+// `answerOptions()`/`CallMode`, a 1:1 port of packages/live/src/modes.ts):
+// "Answer" joins with video, "Just talking" joins audio-only, and
+// [CallScreen.initialMode] is what actually carries that choice through.
+// Nothing else about the two paths differs — same join call, same identity,
+// same everything else — so this is still one real answer path with a
+// single real parameter, not two invented ones.
 //
 // REACHABILITY. `buildCallIncomingHandler` (this file, bottom) is now wired
 // as `main_live.dart`'s own `PushChannel.onForegroundPointer` — that build's
@@ -52,6 +54,7 @@ import 'package:flutter/material.dart';
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'api_client.dart';
 import 'call_knock.dart';
+import 'call_modes.dart' show CallMode;
 import 'call_screen.dart';
 import 'push_channel.dart' show PushPointer;
 
@@ -181,7 +184,11 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     if (mounted) Navigator.of(context).maybePop();
   }
 
-  Future<void> _handleAnswer() async {
+  /// [mode] is the one real difference between "Answer" (video) and "Just
+  /// talking" (audioOnly) — see this file's own header for why that's the
+  /// full extent of the difference. Everything else below is unchanged by
+  /// which one she tapped.
+  Future<void> _handleAnswer(CallMode mode) async {
     _timeoutTimer?.cancel();
 
     // Already resolved — no real join call to make at all. See
@@ -191,7 +198,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
       if (!mounted) return;
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         builder: (_) => CallScreen(
-          who: widget.who, displayName: widget.displayName,
+          who: widget.who, displayName: widget.displayName, initialMode: mode,
           knownToken: widget.knownToken, knownWsURL: widget.knownWsURL))));
       return;
     }
@@ -204,7 +211,8 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
         widget.childId == null || widget.sessionToken == null) {
       if (!mounted) return;
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-        builder: (_) => CallScreen(who: widget.who, displayName: widget.displayName))));
+        builder: (_) => CallScreen(
+          who: widget.who, displayName: widget.displayName, initialMode: mode))));
       return;
     }
 
@@ -216,7 +224,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
       if (!mounted) return;
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         builder: (_) => CallScreen(
-          who: widget.who, displayName: widget.displayName,
+          who: widget.who, displayName: widget.displayName, initialMode: mode,
           knownToken: joined['token'] as String, knownWsURL: joined['wsURL'] as String))));
     } catch (e) {
       // Honest, not alarming — the same calm posture knockUnanswered() and
@@ -295,6 +303,12 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     const SizedBox(height: 8),
     const Text(_notNowHelperText, textAlign: TextAlign.center),
     const SizedBox(height: 32),
+    // answerWords' own order ('Answer', 'Just talking', 'Not now') is what
+    // decides mode here — the first real answer is video, the second is
+    // audioOnly (call_modes.dart's own answerOptions() names them in this
+    // same order, kind-tagged; matched positionally here rather than
+    // importing that richer type just to re-derive what answerWords
+    // already says plainly).
     ...answerWords.map((word) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: SizedBox(
@@ -303,7 +317,9 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
             ? OutlinedButton(key: Key('answerButton_$word'),
                 onPressed: _handleNotNow, child: Text(word))
             : FilledButton(key: Key('answerButton_$word'),
-                onPressed: _handleAnswer, child: Text(word)),
+                onPressed: () => _handleAnswer(
+                  word == 'Just talking' ? CallMode.audioOnly : CallMode.video),
+                child: Text(word)),
       ),
     )),
   ]);

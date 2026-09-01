@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/call_knock.dart';
 import 'package:olive_client/call_knock_screen.dart';
+import 'package:olive_client/call_modes.dart' show CallMode;
 import 'package:olive_client/call_screen.dart' show CallScreen;
 import 'package:olive_client/push_channel.dart' show PushPointer;
 
@@ -23,7 +24,8 @@ void main() {
     }
   });
 
-  testWidgets('tapping Answer navigates to the real CallScreen', (tester) async {
+  testWidgets('tapping Answer navigates to the real CallScreen, in video mode',
+      (tester) async {
     await tester.pumpWidget(wrap(const CallKnockScreen(
       from: 'Dad', who: 'ivy', displayName: 'Ivy')));
 
@@ -36,11 +38,12 @@ void main() {
     // CallScreen" tests already use to prove real navigation happened, not
     // just a widget-type check.
     expect(find.text('Try again'), findsOneWidget);
+    expect(tester.widget<CallScreen>(find.byType(CallScreen)).initialMode, CallMode.video);
   });
 
-  testWidgets("tapping 'Just talking' ALSO reaches the real CallScreen -- "
-      "both real answers lead to the same place, honestly, since the source "
-      "specifies no technical difference between them", (tester) async {
+  testWidgets("tapping 'Just talking' ALSO reaches the real CallScreen, but in "
+      'audio-only mode -- MASTERFILE §5.23.1: the one real difference between '
+      'the two real answers, ported from packages/live/src/modes.ts', (tester) async {
     await tester.pumpWidget(wrap(const CallKnockScreen(
       from: 'Dad', who: 'ivy', displayName: 'Ivy')));
 
@@ -48,6 +51,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Try again'), findsOneWidget);
+    expect(tester.widget<CallScreen>(find.byType(CallScreen)).initialMode, CallMode.audioOnly);
   });
 
   testWidgets("tapping 'Not now' shows the real gentle line, then quietly "
