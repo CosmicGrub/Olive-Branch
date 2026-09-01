@@ -14,6 +14,22 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.62] — 2026-09-01 — `StoragePort.signedUrl()` gets its first real production caller
+
+MASTERFILE §20.2b's own "Correction, found by this project's own post-tier audit" left a specific, narrow gap disclosed rather than closed: `StoragePort.signedUrl()` and `server/signed_media.mjs`'s real `GET /media/:key?exp=...&sig=...` route had both been real and real-tested since v0.49.49, but nothing anywhere in this codebase ever *called* `signedUrl()` in production code — the URL-serving half of the object-storage gap was complete infrastructure with nothing feeding it, "functionally dead code from an end-to-end perspective." This closes it.
+
+### Added
+- **`GET /v1/children/:childId/messages/:artifactId/media` now also returns a real `signedUrl`** (`server/routes.mjs`) — minted via `storage.signedUrl(artifact.storageKey, SIGNED_URL_TTL_SECONDS, Date.now())`, the exact same `FilesystemStorage` instance `server/signed_media.mjs`'s route verifies and serves against (`defaultMediaStorage`, shared via `registerRoutes()`'s own injectable `storage` parameter). This route had already run the real authorization check (`mediaArtifactFor()`'s double child-scoping) and already held `artifact.storageKey` in hand for the existing base64 read, so minting the second URL costs nothing extra.
+
+### Additive, not a replacement
+The existing base64 `bytes`/`kind` fields are unchanged and returned exactly as before — `signedUrl` is a new, third field alongside them, never in place of them. Every existing caller (`OliveApi.fetchMessageMedia()` in `client/lib/api_client.dart`, which only ever reads `body['bytes']`) is completely unaffected. No client screen requests or renders the signed URL yet — every message still plays back through the base64 path. Wiring an actual lighter-weight consumer onto it (a native `<video>`/`<img>` src, avoiding a base64 JSON round-trip for a large recording) is real, separate, undecided follow-up work, not invented here.
+
+### Tests
+- **`packages/api/test/media_route.test.mjs`** — new "F signed URL" group, real Postgres + real filesystem. Proves the full mint → verify → serve chain end to end, not just that the response body contains a plausible-looking string: feeds the minted `signedUrl` straight into the actual `serveSignedMedia()` handler (the same one `server/index.mjs` wires `GET /media/:key` to) against the identical `storage` instance, confirms the exact same real bytes come back byte-for-byte, and confirms a tampered signature is refused (403) — proving this is a real cryptographic signature, not an unverified opaque token. Also re-confirms the pre-existing base64 `bytes` field is untouched. 5 new assertions; the suite's existing A–E groups (25 assertions) re-run unchanged.
+- **Assertion total: 6984 (placeholder)** — HEAD's own real CI `COMPUTED TOTAL` (6979, v0.49.61) plus this entry's own 5 new server-side assertions; to be synced to CI's real number in a follow-up commit if it differs, per this repo's established convention.
+
+---
+
 ## [0.49.61] — 2026-09-01 — Stale "no Flutter toolchain" marker corrected across the rest of the client
 
 Pure doc/comment correction, no behavioral change. v0.49.60's own "Tests" section

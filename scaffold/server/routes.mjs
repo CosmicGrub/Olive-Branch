@@ -43,7 +43,7 @@ import { CHANNELS } from '../packages/devices/src/devices.mjs';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
 import { mintLiveKitToken } from '../packages/session-runtime/src/livekit-token.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
-import { FilesystemStorage } from '../packages/storage/src/storage.mjs';
+import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
 
 /**
  * MASTERFILE §20.2b's own gap, closed here: "`StoragePort` has no
@@ -2561,17 +2561,30 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // Returns the real bytes base64-encoded in the JSON body — the same
   // convention this whole API already uses in the other direction
   // (captureHomework's `image` field) — rather than a raw byte stream.
-  // CORRECTED (this comment had gone stale): the signed-URL-serving
+  // CORRECTED (this comment had gone stale, PR #89): the signed-URL-serving
   // `/media/:key` endpoint IS real and built — `signed_media.mjs`,
   // wired into `server/index.mjs` ahead of `api.handle()`, real tests
   // (`signed_media_route.test.mjs`, 17/17). `StoragePort.signedUrl()`
-  // (storage.ts) exists and is real-tested too. What was, and until the
-  // next pass still is, missing: nothing in production code calls
-  // `signedUrl()` to actually mint one — every real call site is a test
-  // file (see MASTERFILE §20.2b's own self-correction on this exact
-  // point). This route is deliberately the SESSION-authenticated read
-  // path, base64-in-JSON; a `signedUrl` field alongside it is real,
-  // separate follow-up work, not silently folded in here.
+  // (storage.ts) exists and is real-tested too. What PR #89's own
+  // correction still flagged as missing — nothing in production code
+  // called `signedUrl()` to actually mint one — is CLOSED by this pass:
+  // `signedUrl` (new this pass) is now minted right here, alongside the
+  // existing session-authenticated `bytes` read this route already
+  // provides, not instead of it. This route already ran the real
+  // authorization check (`mediaArtifactFor()`'s double child-scoping) and
+  // already has `artifact.storageKey` in hand, so computing the second,
+  // unauthenticated URL costs nothing extra and adds no new code path for a
+  // caller who never asks for it. Every existing caller (fetchMessageMedia
+  // in api_client.dart) only ever reads `bytes`/`kind` and is unaffected —
+  // this is additive, not a replacement. A future caller that wants a
+  // lighter-weight, token-free fetch (a native `<video>`/`<img>` src, a
+  // large recording a base64 JSON round-trip would otherwise bloat) now has
+  // a real, working, already-tested one to reach for — see
+  // packages/api/test/media_route.test.mjs's "F signed URL" group and
+  // server/test/signed_media_route.test.mjs for both halves of the proof
+  // (this route mints it; that route verifies and serves it). No client
+  // code consumes it yet — wiring an actual player onto it is separate,
+  // undecided follow-up work, not invented here.
   api.register({
     method: 'GET', path: '/v1/children/:childId/messages/:artifactId/media',
     action: 'message', skipOuterSession: true,
@@ -2585,7 +2598,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // had real bytes behind it at all. Either way: an honest 404, not a
       // 500 or an empty-but-200 body pretending there was something there.
       if (!bytes) return { status: 404, body: { error: 'media_not_found' } };
-      return { body: { bytes: bytes.toString('base64'), kind: artifact.kind } };
+      const signedUrl = storage.signedUrl(artifact.storageKey, SIGNED_URL_TTL_SECONDS, Date.now());
+      return { body: { bytes: bytes.toString('base64'), kind: artifact.kind, signedUrl } };
     },
   });
 }
