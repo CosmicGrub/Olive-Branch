@@ -47,6 +47,10 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("My child's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — intuitivism sub-project 2's
+    // 3-tier hierarchy moved "My list" further down than the default
+    // 800x600 test viewport shows without a scroll step.
+    await tester.ensureVisible(find.text('My list'));
     await tester.tap(find.text('My list'));
     await tester.pumpAndSettle();
     expect(find.text('Things I want'), findsOneWidget);
@@ -155,6 +159,8 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("My child's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — see the 'My list' test above.
+    await tester.ensureVisible(find.text('Homework'));
     await tester.tap(find.text('Homework'));
     await tester.pumpAndSettle();
     expect(find.text('Take a photo'), findsOneWidget);
