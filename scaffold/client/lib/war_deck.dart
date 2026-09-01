@@ -1,5 +1,6 @@
-// OLIVE BRANCH — a real, standard 52-card deck. Network resilience & ad-hoc
-// mode roadmap, Track B Option 2, ad-hoc games expansion (see the "Ad-Hoc
+// OLIVE BRANCH — a real, standard 52-card deck. UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline). Network resilience &
+// ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion (see the "Ad-Hoc
 // Play Expansion" plan) — the first real card-deck primitive in this
 // codebase, built for game_war.dart and later reused (its shuffle
 // algorithm, not its types — Uno's cards are color+type, not rank+suit) by

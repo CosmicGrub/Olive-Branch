@@ -1,8 +1,9 @@
 // OLIVE BRANCH — WAR, real-device verification entry point. DEV
 // VERIFICATION ONLY, same posture as every other main_live_*_test.dart in
 // this repo (see main_live_child_call_test.dart's own header for the
-// fuller account of what that status means). Network resilience & ad-hoc
-// mode roadmap, Track B Option 2, ad-hoc games expansion.
+// fuller account of what that status means). UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline). Network resilience &
+// ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion.
 //
 // Deliberately the SIMPLEST possible entry point, mirroring
 // main_live_local_play_test.dart exactly: no backend, no devLoginFor, no

@@ -1,5 +1,7 @@
-// OLIVE BRANCH — a real, standard 108-card Uno deck. Network resilience &
-// ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion. Hand-
+// OLIVE BRANCH — a real, standard 108-card Uno deck. UNVERIFIED (no
+// Flutter toolchain in tools/verify.sh's automated pipeline). Network
+// resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
+// expansion. Hand-
 // rolled, not a TS port — same reasoning as war_deck.dart/
 // connect4_engine.dart/together_puzzle.dart's own headers: no
 // packages/games/src counterpart exists for this, and every game in this

@@ -1,4 +1,5 @@
-// OLIVE BRANCH — Uno, the ad-hoc local card game engine. Network
+// OLIVE BRANCH — Uno, the ad-hoc local card game engine. UNVERIFIED (no
+// Flutter toolchain in tools/verify.sh's automated pipeline). Network
 // resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
 // expansion. Fifth and last of five new local-play activities, and the
 // most complex — see the "Ad-Hoc Play Expansion" plan for the full

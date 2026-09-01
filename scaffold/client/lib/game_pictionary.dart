@@ -1,4 +1,5 @@
-// OLIVE BRANCH — Local Pictionary, the ad-hoc drawing game. Network
+// OLIVE BRANCH — Local Pictionary, the ad-hoc drawing game. UNVERIFIED (no
+// Flutter toolchain in tools/verify.sh's automated pipeline). Network
 // resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
 // expansion. Third of five new local-play activities — reuses far more
 // than it builds new: live_games.dart's own Pictionary/PictionaryGuess/

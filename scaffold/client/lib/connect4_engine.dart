@@ -1,6 +1,7 @@
-// OLIVE BRANCH — Connect 4, pure board logic. Network resilience & ad-hoc
-// mode roadmap, Track B Option 2, ad-hoc games expansion. Hand-rolled, not
-// a TS port — same reasoning as war_deck.dart's own header: no
+// OLIVE BRANCH — Connect 4, pure board logic. UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline). Network resilience &
+// ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion.
+// Hand-rolled, not a TS port — same reasoning as war_deck.dart's own header: no
 // packages/games/src counterpart exists for this game, and this file's
 // whole reason to exist is a game that never touches a server (the point
 // of local ad-hoc play). game_chess.dart already establishes real

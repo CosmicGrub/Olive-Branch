@@ -1,4 +1,5 @@
-// OLIVE BRANCH — Connect 4, the ad-hoc local board game. Network
+// OLIVE BRANCH — Connect 4, the ad-hoc local board game. UNVERIFIED (no
+// Flutter toolchain in tools/verify.sh's automated pipeline). Network
 // resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
 // expansion. Builds on local_pairing.dart (shared foundation),
 // connect4_engine.dart (board/rules), and connect4_bot.dart (CPU

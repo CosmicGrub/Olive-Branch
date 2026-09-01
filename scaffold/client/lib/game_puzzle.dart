@@ -1,6 +1,7 @@
 // OLIVE BRANCH — Piece It Together, the ad-hoc cooperative puzzle screen.
-// Network resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
-// expansion. Builds on local_pairing.dart (transport) and
+// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated
+// pipeline). Network resilience & ad-hoc mode roadmap, Track B Option 2,
+// ad-hoc games expansion. Builds on local_pairing.dart (transport) and
 // together_puzzle.dart (engine) — same pattern as game_war.dart/
 // game_connect4.dart/game_pictionary.dart.
 //

@@ -1,4 +1,5 @@
-// OLIVE BRANCH — Uno CPU opponent. Network resilience & ad-hoc mode
+// OLIVE BRANCH — Uno CPU opponent. UNVERIFIED (no Flutter toolchain in
+// tools/verify.sh's automated pipeline). Network resilience & ad-hoc mode
 // roadmap, Track B Option 2, ad-hoc games expansion.
 //
 // Every tier sees only public information — its own hand, the discard

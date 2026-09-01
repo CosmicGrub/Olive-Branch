@@ -1,4 +1,7 @@
-// OLIVE BRANCH — local device discovery, for ad-hoc mode. VERIFIED on real
+// OLIVE BRANCH — local device discovery, for ad-hoc mode. UNVERIFIED by
+// tools/verify.sh's own automated pipeline specifically (no Flutter
+// toolchain to compile Dart at all) — a distinct claim from the real
+// hardware verification below, not a contradiction of it. VERIFIED on real
 // hardware (2026-08-30) — real bidirectional mDNS discovery between a real
 // Fold5 and a real Galaxy Tab on the same LAN, each resolving the other's
 // real broadcast (host, port, role, name) and correctly filtering out its

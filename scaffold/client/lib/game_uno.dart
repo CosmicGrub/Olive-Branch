@@ -1,9 +1,12 @@
-// OLIVE BRANCH — Uno, the ad-hoc local card game. Network resilience &
+// OLIVE BRANCH — Uno, the ad-hoc local card game. UNVERIFIED (no Flutter
+// toolchain in tools/verify.sh's automated pipeline). Network resilience &
 // ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion. Last of
-// five new local-play activities, and the most complex — see
-// uno_session.dart's own header for the real, disclosed v1 scope trim
-// (core two-seat rules only; no roster/team-mode/house-rule-toggle UI in
-// this pass, each a real, separate follow-up).
+// five new local-play activities, and the most complex — the engine
+// underneath (uno_session.dart/uno_bot.dart) is a real, generalized 2-4
+// seat model, not hardcoded to two — see uno_session.dart's own header for
+// the full account. This screen itself still ships exactly 2 human seats
+// (CPU-seat-picker/team-mode/house-rule-toggle UI is a real, separate,
+// not-yet-built follow-up — the engine/bot underneath already support it).
 //
 // TWO MODES, same real boundary connect4_bot.dart's own vs-CPU/vs-peer
 // split already established: **vs CPU is fully local** (one device, no

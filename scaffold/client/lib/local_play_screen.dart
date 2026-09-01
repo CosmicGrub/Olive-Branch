@@ -1,4 +1,7 @@
-// OLIVE BRANCH — local play, no internet required. VERIFIED on real
+// OLIVE BRANCH — local play, no internet required. UNVERIFIED by
+// tools/verify.sh's own automated pipeline specifically (no Flutter
+// toolchain to compile Dart at all) — a distinct claim from the real
+// hardware verification below, not a contradiction of it. VERIFIED on real
 // hardware (2026-08-30): a real Fold5 (dad) and a real Galaxy Tab (ivy),
 // both on the same LAN, found each other via mDNS and played real rounds of
 // Twenty Questions end to end — Round 1 through Round 2, each side's own

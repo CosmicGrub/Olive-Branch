@@ -1,4 +1,7 @@
-// OLIVE BRANCH — local session transport, for ad-hoc mode. VERIFIED on real
+// OLIVE BRANCH — local session transport, for ad-hoc mode. UNVERIFIED by
+// tools/verify.sh's own automated pipeline specifically (no Flutter
+// toolchain to compile Dart at all) — a distinct claim from the real
+// hardware verification below, not a contradiction of it. VERIFIED on real
 // hardware (2026-08-30), after fixing a real bug this exact verification
 // caught: see [LocalSessionServer.start]'s own doc comment for the VPN-
 // interface failure a real two-device run surfaced, and

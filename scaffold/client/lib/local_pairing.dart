@@ -1,5 +1,8 @@
 // OLIVE BRANCH — local pairing, the shared foundation under every ad-hoc
-// local-play activity. VERIFIED on real hardware (2026-08-30): the real
+// local-play activity. UNVERIFIED by tools/verify.sh's own automated
+// pipeline specifically (it has no Flutter toolchain to compile Dart at
+// all) — that is a distinct claim from the real hardware verification
+// below, not a contradiction of it. VERIFIED on real hardware (2026-08-30): the real
 // Fold5 + Galaxy Tab pair found each other and played Twenty Questions
 // through this controller exactly as before the extraction (Round 1
 // through Round 2, both directions). The real peer-lost/re-found recovery

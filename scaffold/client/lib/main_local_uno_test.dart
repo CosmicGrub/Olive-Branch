@@ -1,7 +1,8 @@
 // OLIVE BRANCH — UNO, real-device verification entry point. DEV
 // VERIFICATION ONLY, same posture as every other main_live_*_test.dart in
-// this repo. Network resilience & ad-hoc mode roadmap, Track B Option 2,
-// ad-hoc games expansion.
+// this repo. UNVERIFIED (no Flutter toolchain in tools/verify.sh's
+// automated pipeline). Network resilience & ad-hoc mode roadmap, Track B
+// Option 2, ad-hoc games expansion.
 //
 // `flutter run --target=lib/main_local_uno_test.dart
 //   --dart-define=OLIVE_ROLE=ivy` on one device, `OLIVE_ROLE=dad` on the
