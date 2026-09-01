@@ -26,7 +26,7 @@ import 'form_factors.dart' as ff;
 import 'game_logic.dart';
 
 class GamePickerScreen extends StatelessWidget {
-  const GamePickerScreen({super.key, this.childName, this.childAge = 7, this.onPlay});
+  const GamePickerScreen({super.key, this.childName, this.childAge = 7, this.onPlay, this.extraSections});
 
   /// Her own name, not an id — used only for a warm greeting. Optional so
   /// this screen is usable standalone.
@@ -42,27 +42,36 @@ class GamePickerScreen extends StatelessWidget {
   /// file never has to import another group's screen to compile.
   final void Function(BuildContext context, GameKind kind)? onPlay;
 
+  /// Rendered below the age-gated grid, inside the same scroll view — the
+  /// real seam that lets "all the kid's choices" live in this ONE screen
+  /// rather than split across "Play together" and a separate "More games"
+  /// door. Null by default (every existing call site, and every test in
+  /// game_picker_test.dart, renders exactly as before this field existed).
+  /// A `List<Widget>` rather than a single child so a caller (child_home
+  /// .dart, guardian_more.dart) can pass games_hub.dart's own
+  /// [MoreGamesSections] straight through without this file ever having to
+  /// import the individual game screens that live behind it — the same
+  /// import-decoupling this file's own header already commits to for the
+  /// grid above.
+  final List<Widget>? extraSections;
+
   @override
   Widget build(BuildContext context) {
     final games = forAge(childAge);
     return Scaffold(
       appBar: AppBar(title: const Text('Games')),
       body: SafeArea(
+        // LayoutBuilder wraps the WHOLE scroll view, not just the grid —
+        // deliberately. A GridView (or anything else) that reads its own
+        // constraints from a LayoutBuilder nested INSIDE a ListView sees an
+        // unbounded main-axis extent (that is what makes the list
+        // scrollable at all), not the real viewport height — columnsAt()
+        // fed that would compute the wrong posture. Measuring out here,
+        // before the scroll view exists, is what keeps this the same real
+        // viewport size/textScale the rest of this file's own comments
+        // already describe, regardless of how much [extraSections] content
+        // now scrolls below the grid.
         child: LayoutBuilder(builder: (context, constraints) {
-          // v0.49.17 — migrated off a hand-rolled 420/680px breakpoint onto
-          // form_factors.dart's real, tested posture system (columnsAt()),
-          // the same fix court_export.dart already got and this exact file's
-          // own header used to cite as the anti-pattern still standing here.
-          // One real, intentional behavior change this migration carries:
-          // the old breakpoint gave 3 columns from 680px (any Fold-unfolded
-          // or tablet width); columnsAt() reserves 3 for genuine desktop
-          // width (>=1024px, matching FORM_FACTORS' own `desktop` row) and
-          // gives a 10-inch tablet (800px, `tabletLarge`) 2 columns, same as
-          // the Fold5's unfolded main screen — which also gives each card
-          // more real width for its blurb, not less. textScale-aware for the
-          // same §8.8 reason court_export.dart's columnsAt() call already is:
-          // a large accessibility text size on a nominally-wide screen should
-          // still degrade toward fewer columns.
           final double textScale = MediaQuery.textScalerOf(context).scale(1);
           final int cross = ff.columnsAt(
               ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale);
@@ -78,37 +87,60 @@ class GamePickerScreen extends StatelessWidget {
                     .bodyMedium
                     ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 16),
-            GridView(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              // Explicit mainAxisExtent, not an aspect ratio — see
-              // child_home.dart's note on GridView.count scaling tile
-              // height with device width on this engine build. Found while
-              // adding this same migration's textScale-aware column test: a
-              // FIXED 182 regardless of textScale is a real, pre-existing
-              // §8.8 bug — at 1 column / 2.0x text the five lines of card
-              // content (icon, title up to 2 lines, blurb up to 2 lines, the
-              // competitive/co-op row) genuinely need more vertical room
-              // than 1x text does, and a bigger accessibility text size is
-              // exactly the case columnsAt() already degrades WIDTH for two
-              // lines above — this closes the matching HEIGHT gap rather
-              // than leaving it half-fixed.
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cross,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                mainAxisExtent: 182 * textScale.clamp(1.0, 2.0),
-              ),
-              children: [
-                for (final g in games)
-                  _GameCard(meta: g, onTap: () => (onPlay ?? _notBuiltYet)(context, g.kind)),
-              ],
-            ),
+            GameCatalogueGrid(games: games, onPlay: onPlay, crossAxisCount: cross, textScale: textScale),
+            ...?extraSections,
           ]);
         }),
       ),
     );
   }
+}
+
+/// The age-gated grid itself, factored out of [GamePickerScreen] so
+/// games_hub.dart's own consolidated section can render the identical real
+/// grid rather than a second, hand-copied one. Pure extraction — same
+/// widget tree this file always produced, just reachable by a second
+/// caller now.
+///
+/// Takes [crossAxisCount]/[textScale] as plain values rather than measuring
+/// them itself via its own LayoutBuilder — see [GamePickerScreen.build]'s
+/// own comment for why self-measuring here would silently break the moment
+/// this widget is used inside a scroll view (which every real caller does).
+class GameCatalogueGrid extends StatelessWidget {
+  const GameCatalogueGrid({
+    super.key, required this.games, required this.crossAxisCount, required this.textScale, this.onPlay,
+  });
+  final List<GameMeta> games;
+  final int crossAxisCount;
+  final double textScale;
+  final void Function(BuildContext context, GameKind kind)? onPlay;
+
+  @override
+  Widget build(BuildContext context) => GridView(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    // Explicit mainAxisExtent, not an aspect ratio — see child_home.dart's
+    // note on GridView.count scaling tile height with device width on this
+    // engine build. Found while adding this same migration's
+    // textScale-aware column test: a FIXED 182 regardless of textScale is
+    // a real, pre-existing §8.8 bug — at 1 column / 2.0x text the five
+    // lines of card content (icon, title up to 2 lines, blurb up to 2
+    // lines, the competitive/co-op row) genuinely need more vertical room
+    // than 1x text does, and a bigger accessibility text size is exactly
+    // the case columnsAt() already degrades WIDTH for two lines above —
+    // this closes the matching HEIGHT gap rather than leaving it
+    // half-fixed.
+    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: crossAxisCount,
+      mainAxisSpacing: 16,
+      crossAxisSpacing: 16,
+      mainAxisExtent: 182 * textScale.clamp(1.0, 2.0),
+    ),
+    children: [
+      for (final g in games)
+        _GameCard(meta: g, onTap: () => (onPlay ?? _notBuiltYet)(context, g.kind)),
+    ],
+  );
 }
 
 void _notBuiltYet(BuildContext context, GameKind kind) {

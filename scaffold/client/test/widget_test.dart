@@ -4,10 +4,12 @@
 // reachable through the single real entry gate a family would see, not just
 // that each widget renders in isolation (see test/invariants_test.dart for
 // the per-widget behavioral checks, §8.1/§8.2/§8.3).
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:olive_client/exchange_screen.dart';
 import 'package:olive_client/expenses_screen.dart';
+import 'package:olive_client/game_checkers.dart';
 import 'package:olive_client/game_dotsboxes.dart';
 import 'package:olive_client/game_tictactoe.dart';
 import 'package:olive_client/main.dart';
@@ -174,6 +176,30 @@ void main() {
     await tester.tap(find.text('Play together'));
     await tester.pumpAndSettle();
     expect(find.text('Games'), findsOneWidget);
+  });
+
+  testWidgets(
+      "the game picker's consolidated extraSections reach a real "
+      "games_hub.dart screen from the SAME 'Play together' tile — no "
+      "separate 'More games' door",
+      (WidgetTester tester) async {
+    // A tall surface so games_hub.dart's MoreGamesSections have somewhere
+    // real to scroll to below the age-gated grid, matching
+    // game_copy_pattern_test.dart's own established pattern for the same
+    // "reach it via scrolling on the real consolidated screen" case.
+    await tester.binding.setSurfaceSize(const Size(900, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play together'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Checkers'), 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('Checkers'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameCheckers), findsOneWidget);
   });
 
   testWidgets("the game picker's Three in a row card reaches the real GameTicTacToe screen",

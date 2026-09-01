@@ -14,9 +14,9 @@
 //
 // TILE HIERARCHY — intuitivism pass, sub-project 2 (docs/superpowers/specs/
 // 2026-08-31-intuitivism-navigation-density-design.md). This screen renders
-// 9 real destinations (Homework, Play together, More games, My list,
-// Messages, My day, Storyteller, Show & tell, More for you) — previously a
-// single flat, equal-weight 2-column grid with a HARDCODED crossAxisCount
+// 8 real tile destinations (Homework, Play together, My list, Messages,
+// My day, Storyteller, Show & tell, More for you) — previously a single
+// flat, equal-weight 2-column grid with a HARDCODED crossAxisCount
 // (form_factors.dart's postureFor()/columnsAt() were imported nowhere in
 // this file, unlike game_picker.dart, which migrated onto the real posture
 // system back in v0.49.17 — a real, independently-found inconsistency this
@@ -31,35 +31,25 @@
 //     centrality citations; Play together/Messages are disclosed judgment
 //     calls (structural — the most-tapped surface / the one with live
 //     unread state — not a MASTERFILE ranking).
-//   Standard (current size, posture-aware): Homework, More games, My list,
-//     More for you. "More games" is textually, explicitly framed as
-//     subordinate ("the second door... not a replacement" — CHANGELOG.md:
-//     6352-6353); the other three have no citation either way and default
+//   Standard (current size, posture-aware): Homework, My list, More for
+//     you. No citation either way for any of the three — they default
 //     here.
-// The ad-hoc local-play games' own placement (Featured tier, once built) is
-// answered in the spec's §2 but deliberately NOT wired here — PR #85 and
-// PR #87 independently modified the same navigation files with no merge
-// relationship between them; this redesign is not coupled to resolving
-// that conflict.
+// "More games" is deliberately NOT one of the 8 tiles above — PR #87's own
+// real nav consolidation (v0.49.66, merged into this same reconciliation)
+// folded it into "Play together"'s own `extraSections`, the same one door
+// guardian_more.dart's own mirrored tile already uses, rather than keeping
+// a second Standard-tier tile that would just relocate the exact redundant
+// split PR #87 was written to close. The ad-hoc local-play games' own
+// placement (Featured tier, once built) is a real, separate, still-open
+// question — answered in the spec's §2 but deliberately NOT wired here.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
 import 'form_factors.dart' as ff;
-import 'game_copy_pattern.dart';
-import 'game_dotsboxes.dart';
-import 'game_draw_together.dart';
-import 'game_find_it.dart';
-import 'game_guess_doodle.dart';
-import 'game_logic.dart';
+import 'game_navigation.dart';
 import 'game_picker.dart';
-import 'game_silly_sentence.dart';
-import 'game_story.dart';
-import 'game_tictactoe.dart';
-import 'game_twenty_questions.dart';
-import 'game_two_truths.dart';
-import 'game_would_you_rather.dart';
 import 'games_hub.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
@@ -101,55 +91,6 @@ class ChildHome extends StatelessWidget {
   final String? childId;
   final String? sessionToken;
   final http.Client? httpClient;
-
-  void _openGame(BuildContext playContext, GameKind kind) {
-    // Real cases for every game this codebase has actually built a board
-    // for — Batch C's own two (copyPattern/findIt, the closing batch of Play
-    // Together Phase 1), Batch B's four (sillySentence/wouldYouRather/
-    // twoTruths/twentyQuestions), Batch A's two (drawTogether/guessDoodle),
-    // and a parallel build's (tictactoe/dotsboxes), merged rather than any
-    // pass dropping another's work. `memory` alone stays on the honest
-    // not-built-yet fallback — a separate, still-open photo-source product
-    // decision, deliberately out of scope for this phase (see
-    // game_logic.dart's own note).
-    switch (kind) {
-      case GameKind.story:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GameStoryScreen(childName: childName)));
-      case GameKind.tictactoe:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GameTicTacToe(childName: childName)));
-      case GameKind.dotsboxes:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GameDotsBoxes(childName: childName)));
-      case GameKind.drawTogether:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => DrawTogetherScreen(childName: childName)));
-      case GameKind.guessDoodle:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GuessDoodleScreen(childName: childName)));
-      case GameKind.sillySentence:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => SillySentenceScreen(childName: childName)));
-      case GameKind.wouldYouRather:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => WouldYouRatherScreen(childName: childName)));
-      case GameKind.twoTruths:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => TwoTruthsScreen(childName: childName)));
-      case GameKind.twentyQuestions:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => TwentyQuestionsScreen(childName: childName)));
-      case GameKind.copyPattern:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => CopyPatternScreen(childName: childName)));
-      case GameKind.findIt:
-        Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => const FindItScreen()));
-      case GameKind.memory:
-        _notBuiltYet(playContext, 'That game');
-    }
-  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -204,11 +145,20 @@ class ChildHome extends StatelessWidget {
             crossAxisCount: cross, mainAxisSpacing: 10, crossAxisSpacing: 10,
             mainAxisExtent: 132 * heightScale),
           children: [
+            // ONE door onto every real choice she has — the age-gated Play
+            // Together grid AND the rest of the catalogue (checkers, chess,
+            // battleship, word search…) that used to sit behind a separate
+            // "More games" tile, now folded in as extraSections instead of
+            // a second Standard-tier tile — see game_navigation.dart's own
+            // header for why onPlay is one real shared function, not two
+            // hand-copied switches (guardian_more.dart's own mirrored tile
+            // uses the exact same one).
             _Tile(icon: Icons.extension, label: 'Play together', featured: true,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => GamePickerScreen(
                   childName: childName,
-                  onPlay: (playContext, kind) => _openGame(playContext, kind),
+                  onPlay: buildGameNavigator(childName),
+                  extraSections: [MoreGamesSections(childName: childName)],
                 )))),
             _Tile(icon: Icons.mail_outline, label: 'Messages', featured: true,
               badgeCount: unreadCount,
@@ -229,9 +179,14 @@ class ChildHome extends StatelessWidget {
 
         // ============================================= Standard — current
         // size, posture-aware grid, below Featured. Same GridView shape the
-        // whole screen used to use for all 9 tiles, now scoped to the 4
-        // without an elevation signal (or, for "More games," an explicit
-        // subordinate one — see this file's own header).
+        // whole screen used to use for all 9 tiles, now scoped to the 3
+        // without an elevation signal. "More games" no longer has its own
+        // tile here — the same real, avoidable split this file's own header
+        // used to describe (a second door onto part of the same catalogue)
+        // is now closed the other way: it's folded into "Play together"'s
+        // own extraSections above, not kept as a second Standard entry that
+        // would just move the redundancy rather than remove it (matching
+        // guardian_more.dart's own identical consolidation).
         GridView(key: const Key('childHomeStandardGrid'),
           shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -243,9 +198,6 @@ class ChildHome extends StatelessWidget {
                 builder: (_) => HomeworkScreen(childName: childName,
                   baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
                   httpClient: httpClient)))),
-            _Tile(icon: Icons.casino_outlined, label: 'More games',
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => GamesHubScreen(childName: childName)))),
             _Tile(icon: Icons.star_border, label: 'My list',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const WantsNeedsScreen()))),
