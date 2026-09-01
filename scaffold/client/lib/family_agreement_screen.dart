@@ -1,7 +1,8 @@
 // OLIVE BRANCH — guardian shell, family agreement (read-only custody order).
-// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline —
-// manually built and run via `flutter analyze` / `flutter test` this
-// session). MASTERFILE §5.4, §9.4, §4.1.
+// Verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
+// automated pipeline — also manually built and run via `flutter analyze` /
+// `flutter test` this session; CHANGELOG v0.49.61). MASTERFILE §5.4, §9.4,
+// §4.1.
 //
 // No TS package in this codebase names a bespoke "family agreement" data
 // model — grepped, there is none. Same posture deletion_screen.dart's own

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — child shell, home. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.1.
+// OLIVE BRANCH — child shell, home. Verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.1.
 //
 // Renders MARKUP screen 01. Three invariants the widget tree must preserve:
 //   - Availability is stated in HER frame; his time is the aside. (§4.1)

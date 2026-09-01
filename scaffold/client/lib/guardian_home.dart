@@ -1,5 +1,6 @@
-// OLIVE BRANCH — guardian shell, home. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.2.
+// OLIVE BRANCH — guardian shell, home. Verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.2.
 //
 // Renders MARKUP screen 05. The dual clock is persistent and the CHILD's time is
 // dominant; the parent never performs a timezone calculation (§8.2.3). All times

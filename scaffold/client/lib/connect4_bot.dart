@@ -1,6 +1,7 @@
-// OLIVE BRANCH — Connect 4 CPU opponent. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline). Network resilience & ad-hoc
-// mode roadmap, Track B Option 2, ad-hoc games expansion.
+// OLIVE BRANCH — Connect 4 CPU opponent. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). Network resilience & ad-hoc mode roadmap, Track B
+// Option 2, ad-hoc games expansion.
 //
 // Not a perfect-play oracle, deliberately: Connect 4 is a solved game
 // (first player wins with correct center play), and a bot that always

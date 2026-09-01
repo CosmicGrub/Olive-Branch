@@ -1,7 +1,8 @@
-// OLIVE BRANCH — guardian shell, busy fork. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). Renders MARKUP screen
-// "busyFork". MASTERFILE §9.13.4.
+// OLIVE BRANCH — guardian shell, busy fork. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). Renders MARKUP screen "busyFork". MASTERFILE
+// §9.13.4.
 //
 // A 1:1 semantic port of packages/live/src/around.ts's busy-fork slice
 // (busyFork/BUSY_BANNED/auditBusyFork/attemptVisibleToChild).

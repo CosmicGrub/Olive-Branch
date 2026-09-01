@@ -1,6 +1,6 @@
-// OLIVE BRANCH — games hub. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). Navigation-wiring-pass addition,
-// not a single MARKUP screen of its own.
+// OLIVE BRANCH — games hub. Verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// Navigation-wiring-pass addition, not a single MARKUP screen of its own.
 //
 // game_picker.dart's own catalogue only ever renders cards for its four
 // ported GameKind values (tictactoe, dotsboxes, memory, story) and honestly

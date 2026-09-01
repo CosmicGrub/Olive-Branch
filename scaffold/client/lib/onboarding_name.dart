@@ -1,5 +1,6 @@
-// OLIVE BRANCH — first run, her name. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.5.1.
+// OLIVE BRANCH — first run, her name. Verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.5.1.
 //
 // Renders MARKUP screen 'obName'. Spelling your own name is very often the
 // first thing a child learns to write, so this is the correct opening: she

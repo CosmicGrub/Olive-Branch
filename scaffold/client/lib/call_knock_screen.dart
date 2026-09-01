@@ -1,7 +1,7 @@
-// OLIVE BRANCH — the knock screen. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §5.25.2,
-// §8.8.5, §9.13.4.
+// OLIVE BRANCH — the knock screen. Verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §5.25.2, §8.8.5, §9.13.4.
 //
 // The real UI on top of call_knock.dart's ported logic. "A ring demands
 // answering. A knock waits" — so this screen is deliberately calm: no

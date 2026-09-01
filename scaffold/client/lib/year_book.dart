@@ -1,6 +1,7 @@
-// OLIVE BRANCH — the Year Book. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §2.10, §9.8.2.
-// Renders MARKUP screen 'yearbook': "A year of her, preserved."
+// OLIVE BRANCH — the Year Book. Verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §2.10, §9.8.2. Renders MARKUP screen 'yearbook':
+// "A year of her, preserved."
 //
 // This screen is a thin UI over `compileYearBook()` (archive_models.dart, a
 // 1:1 port of packages/archive/src/archive.ts) — every number on it, printable

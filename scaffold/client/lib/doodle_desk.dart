@@ -1,6 +1,6 @@
-// OLIVE BRANCH — doodle desk. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.12.4, §8.13, §8.1.
-// Renders MARKUP screen 'doodle'.
+// OLIVE BRANCH — doodle desk. Verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.12.4, §8.13, §8.1. Renders MARKUP screen 'doodle'.
 //
 // "Free strokes plus six stamps, alongside colouring rather than replacing
 // it — a blank canvas has no finish line, so there is no score or

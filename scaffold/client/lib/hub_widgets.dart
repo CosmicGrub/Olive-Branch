@@ -1,7 +1,7 @@
 // OLIVE BRANCH — shared list-tile chrome for the navigation hubs the
 // wiring pass adds (games_hub.dart, child_more.dart, guardian_more.dart).
-// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated
-// pipeline).
+// Verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
+// automated pipeline — CHANGELOG v0.49.61).
 //
 // Not a MARKUP screen itself — pure presentation plumbing, the same role
 // onboarding_shared.dart's ChildOnboardingScaffold plays for that group.

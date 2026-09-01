@@ -1,7 +1,7 @@
 // OLIVE BRANCH — the common canvas-hosting wrapper Batch A's own spec
-// required both canvas screens to share. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline). MASTERFILE §9.2, §9.12.4,
-// §8.11.1, §8.13.
+// required both canvas screens to share. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). MASTERFILE §9.2, §9.12.4, §8.11.1, §8.13.
 //
 // Audit-fix (v0.49.22): `docs/superpowers/specs/
 // 2026-08-20-play-together-phase1-design.md` (line ~74) explicitly required

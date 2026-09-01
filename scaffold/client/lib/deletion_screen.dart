@@ -1,7 +1,8 @@
-// OLIVE BRANCH — guardian shell, deletion. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §2.10, §2.11,
-// §9.8, prohibition P8. Renders MARKUP screen 'deletion'.
+// OLIVE BRANCH — guardian shell, deletion. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). MASTERFILE §2.10, §2.11, §9.8, prohibition
+// P8. Renders MARKUP screen 'deletion'.
 //
 // No TS package in this codebase names a "deletion" module — §15 Safety and
 // §16.1 #3 state the principles (the archive belongs to the child, raw

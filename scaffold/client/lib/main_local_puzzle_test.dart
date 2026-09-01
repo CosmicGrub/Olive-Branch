@@ -1,8 +1,9 @@
 // OLIVE BRANCH — PIECE IT TOGETHER, real-device verification entry point.
 // DEV VERIFICATION ONLY, same posture as every other main_live_*_test.dart
-// in this repo. UNVERIFIED (no Flutter toolchain in tools/verify.sh's
-// automated pipeline). Network resilience & ad-hoc mode roadmap, Track B
-// Option 2, ad-hoc games expansion.
+// in this repo. Verified by CI (a Flutter toolchain now runs for real in
+// tools/verify.sh's automated pipeline — CHANGELOG v0.49.61). Network
+// resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
+// expansion.
 //
 // `flutter run --target=lib/main_local_puzzle_test.dart
 //   --dart-define=OLIVE_ROLE=ivy` on one device, `OLIVE_ROLE=dad` on the

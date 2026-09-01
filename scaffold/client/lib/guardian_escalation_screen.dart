@@ -1,6 +1,7 @@
-// OLIVE BRANCH — guardian escalation. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §5.20, §8.3.
+// OLIVE BRANCH — guardian escalation. Verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §5.20, §8.3.
 //
 // The screen `escalate()` (lock_controller.dart) never had anywhere to go.
 // That function — PIN + biometric, §8.3 — was ported and unit-tested from

@@ -1,7 +1,8 @@
 // OLIVE BRANCH — Piece It Together, the ad-hoc cooperative puzzle engine.
-// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated
-// pipeline). Network resilience & ad-hoc mode roadmap, Track B Option 2,
-// ad-hoc games expansion. Fourth of five new local-play activities — the first with no
+// Verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
+// automated pipeline — CHANGELOG v0.49.61). Network resilience & ad-hoc
+// mode roadmap, Track B Option 2, ad-hoc games expansion. Fourth of five
+// new local-play activities — the first with no
 // existing analogue anywhere in this codebase to reuse.
 //
 // Hand-rolled, not a TS port: same reasoning as war_deck.dart/

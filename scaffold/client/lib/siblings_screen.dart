@@ -1,7 +1,8 @@
-// OLIVE BRANCH — guardian shell, siblings. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §21.7, §5.17.
-// Renders MARKUP screen 'siblings'.
+// OLIVE BRANCH — guardian shell, siblings. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). MASTERFILE §21.7, §5.17. Renders MARKUP
+// screen 'siblings'.
 //
 // Ported from packages/maturation/src/family.ts's siblings section: Child,
 // SiblingSet, ageOf(), openChildren(), closedChildren(), closeFor(),

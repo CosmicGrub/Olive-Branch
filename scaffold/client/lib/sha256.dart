@@ -1,6 +1,7 @@
 // OLIVE BRANCH — portable SHA-256, the primitive the court export's
-// tamper-evident chain is built on. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §16.1 #3.
+// tamper-evident chain is built on. Verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §16.1 #3.
 //
 // A 1:1 port of packages/ledger/src/sha256.ts. That file exists in the first
 // place because packages/ledger/src/ledger.ts originally called `node:crypto`,

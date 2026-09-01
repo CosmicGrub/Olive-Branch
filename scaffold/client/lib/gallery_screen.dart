@@ -1,7 +1,7 @@
-// OLIVE BRANCH — the gallery. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.10.11.
-// Renders MARKUP screen 'gallery': "Year-grouped works; past two thousand,
-// paginate by era."
+// OLIVE BRANCH — the gallery. Verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.10.11. Renders MARKUP screen 'gallery': "Year-grouped
+// works; past two thousand, paginate by era."
 //
 // "A five-year-old's best work is usually made of cardboard and glue." The
 // gallery is medium-agnostic on purpose: a photographed cardboard dragon and

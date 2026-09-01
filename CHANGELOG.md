@@ -14,6 +14,35 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.61] — 2026-09-01 — Stale "no Flutter toolchain" marker corrected across the rest of the client
+
+Pure doc/comment correction, no behavioral change. v0.49.60's own "Tests" section
+found and disclosed that `game_uno.dart`/`uno_session.dart`/`uno_bot.dart`'s
+`UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline)` header
+claim was stale — a real CI run on this branch had already shown the Dart suite
+genuinely executing (2213 passed, 0 failed) alongside a clean Android Kotlin
+compile, a clean Wear OS compile, and 31 real passes against a live LiveKit
+server — and flagged the identical claim still sitting in "the ~78 other client
+files" as a real, disclosed, separate follow-up. This is that follow-up.
+
+### Fixed
+- **77 remaining files under `scaffold/client/lib/`** carried the same stale
+  claim (three had already been corrected in v0.49.60). A fresh grep is the
+  real, counted total as of this pass — not the "~78 other" figure v0.49.60's
+  own entry estimated, which this pass does not attempt to reconcile further;
+  77 is what a literal `grep -rl` over the current tree returns, no more, no
+  less. A second, independent CI run — GitHub Actions run `33471475222` on PR
+  #85 — reconfirmed the same result this pass's own header correction relies
+  on: `flutter test` genuinely executing (2213 passed, 0 failed), Android
+  Kotlin and Wear OS both compiling clean, and 31 assertions against a live
+  LiveKit server, none of it a skip. Every one of the 77 headers now reads
+  "Verified by CI" instead, citing this entry, in the same voice v0.49.60's
+  own three corrected files already established rather than a copy-pasted
+  boilerplate line. `flutter analyze`: 0 issues (unchanged — no source logic
+  touched, headers only).
+
+---
+
 ## [0.49.60] — 2026-08-31 — Uno, remodeled after the real Xbox Live Arcade reference; a card-size customization suite
 
 The owner asked for the Uno table to match a specific real reference as closely

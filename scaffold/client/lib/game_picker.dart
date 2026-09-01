@@ -1,6 +1,6 @@
-// OLIVE BRANCH — child shell, game hub. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2. Renders MARKUP
-// screen 'gamePicker'.
+// OLIVE BRANCH — child shell, game hub. Verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §9.2. Renders MARKUP screen 'gamePicker'.
 //
 // The central hub every other game screen is reached from. MARKUP's line for
 // this surface is "shipped means rendered" — every catalogue entry gets a

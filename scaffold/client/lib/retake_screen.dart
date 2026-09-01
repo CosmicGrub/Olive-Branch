@@ -1,6 +1,6 @@
-// OLIVE BRANCH — homework retake. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.1, §8.13.5. Renders
-// MARKUP screen 'retake'.
+// OLIVE BRANCH — homework retake. Verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §9.1, §8.13.5. Renders MARKUP screen 'retake'.
 //
 // "Plain, actionable advice — 'Hold still and try again.' No jargon." The
 // copy shown here is EXACTLY homework_quality_gate.dart's `advice` string —

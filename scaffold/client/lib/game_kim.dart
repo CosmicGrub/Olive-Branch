@@ -1,5 +1,6 @@
-// OLIVE BRANCH — Kim's game. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2.
+// OLIVE BRANCH — Kim's game. Verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.2.
 //
 // Unlike checkers/battleship/word search, there is no `packages/games`
 // source for this title — MASTERFILE §9.2 describes it only in prose:

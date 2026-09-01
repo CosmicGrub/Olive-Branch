@@ -1,6 +1,6 @@
-// OLIVE BRANCH — child shell, the quieting. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline). MASTERFILE §21.5. Renders MARKUP
-// screen 'quieting'.
+// OLIVE BRANCH — child shell, the quieting. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). MASTERFILE §21.5. Renders MARKUP screen 'quieting'.
 //
 // A 1:1 port of the QUIETING table and its pure helpers from
 // packages/maturation/src/maturation.ts, with new child-facing copy — the TS

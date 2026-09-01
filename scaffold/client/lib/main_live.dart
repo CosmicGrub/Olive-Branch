@@ -1,5 +1,6 @@
-// OLIVE BRANCH — live-backend entry point. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline). MASTERFILE §7.
+// OLIVE BRANCH — live-backend entry point. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). MASTERFILE §7.
 //
 // A SEPARATE build target from lib/main.dart, on purpose: main.dart is an
 // intentionally offline, backend-independent preview build (see its own

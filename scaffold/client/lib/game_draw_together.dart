@@ -1,8 +1,8 @@
-// OLIVE BRANCH — draw together. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.2, §9.12.4,
-// §8.11.1, §8.13, P2. Renders MARKUP screen 'gamePicker' catalogue entry
-// 'drawTogether'.
+// OLIVE BRANCH — draw together. Verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9.2, §9.12.4, §8.11.1, §8.13, P2. Renders
+// MARKUP screen 'gamePicker' catalogue entry 'drawTogether'.
 //
 // A thin wrapper around annotation_canvas.dart's AnnotationCanvas — the
 // SAME shared engine doodle_desk.dart already uses (see that file's own

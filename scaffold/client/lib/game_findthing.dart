@@ -1,7 +1,8 @@
-// OLIVE BRANCH — find the thing. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.12.2,
-// §8.14. Renders MARKUP screen 'findThing'.
+// OLIVE BRANCH — find the thing. Verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9.12.2, §8.14. Renders MARKUP screen
+// 'findThing'.
 //
 // A 1:1 semantic port of the find-the-thing section of
 // packages/activities/src/activities.ts (FindTarget, FindScene,

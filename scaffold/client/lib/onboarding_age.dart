@@ -1,5 +1,6 @@
-// OLIVE BRANCH — first run, her age. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.5.2.
+// OLIVE BRANCH — first run, her age. Verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.5.2.
 //
 // Renders MARKUP screen 'obAge'. Age sets the §21 capability rungs and the
 // ping band (§9.9) — it is not a reading test, so she taps a number rather

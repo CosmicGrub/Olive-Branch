@@ -1,7 +1,8 @@
-// OLIVE BRANCH — guardian shell, the book. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.11.6.
-// Renders MARKUP screen 'theBook'.
+// OLIVE BRANCH — guardian shell, the book. Verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). MASTERFILE §9.11.6. Renders MARKUP screen
+// 'theBook'.
 //
 // "He collects the favourites and prints them: a bound volume of the stories
 // they read together." Guardian-only, calm and a little more information-
