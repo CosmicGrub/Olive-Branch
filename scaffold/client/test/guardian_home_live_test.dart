@@ -19,9 +19,10 @@ Map<String, dynamic> _window(String startLocal, String endLocal, {String? note})
 
 /// Real server shape for GET .../now (routes.mjs's real handler — see
 /// child_home_live_test.dart's own identically-shaped fixture).
-Map<String, dynamic> _nowBody({String childLocalTime = '4:15 PM', String zoneAbbr = 'EDT'}) =>
+Map<String, dynamic> _nowBody({String childLocalTime = '4:15 PM', String zoneAbbr = 'EDT',
+        String? dayPart, bool? reachable}) =>
     {'childLocalTime': childLocalTime, 'zoneAbbr': zoneAbbr, 'zone': 'America/New_York',
-      'sleepsUntilHandover': null};
+      'sleepsUntilHandover': null, 'dayPart': dayPart, 'reachable': reachable};
 
 /// Real server shape for GET .../ribbon (routes.mjs's real handler, new this
 /// pass) — deliberately never includes an `overlapLabel` key at all, mirroring
@@ -155,6 +156,40 @@ void main() {
       // contiguous rectangles (my_day.dart's own _bandRects precedent), one
       // logical band, not two different day-parts.
       expect(find.byTooltip(dayPartLabel('asleep')), findsNWidgets(2));
+    });
+
+    testWidgets('real dayPart/reachable from /now thread through to the '
+        'real GuardianHome instance, not fabricated or dropped', (t) async {
+      final mock = _mock(now: _nowBody(dayPart: 'school', reachable: false));
+      await t.pumpWidget(wrap(LiveGuardianHomeScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-a', childId: 'child-a',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      final home = t.widget<GuardianHome>(find.byType(GuardianHome));
+      expect(home.dayPart, 'school');
+      expect(home.reachable, isFalse);
+    });
+
+    testWidgets('reaches the real, live SendTimeGuardScreen end to end — '
+        'GET /now\'s real dayPart/reachable render there, not the demo '
+        'ChoiceChip hour-toggle', (t) async {
+      final mock = _mock(now: _nowBody(
+        childLocalTime: '9:14 PM', zoneAbbr: 'EST', dayPart: 'asleep', reachable: false));
+      await t.pumpWidget(wrap(LiveGuardianHomeScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-a', childId: 'child-a',
+        httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.ensureVisible(find.text('Send-time guard'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Send-time guard'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining("It's 9:14 PM for Ivy — she is sleep."), findsOneWidget);
+      expect(find.text('Send now anyway'), findsOneWidget);
+      // The demo hour chips must not appear on the real live path.
+      expect(find.text('10:40 PM'), findsNothing);
     });
 
     testWidgets('shows a retry affordance when the server is unreachable, never a crash',
