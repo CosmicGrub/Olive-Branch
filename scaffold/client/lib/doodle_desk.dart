@@ -1,4 +1,4 @@
-// OLIVE BRANCH — doodle desk. Verified by CI (a Flutter toolchain now runs
+// OLIVE BRANCH — doodle desk. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
 // for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
 // MASTERFILE §9.12.4, §8.13, §8.1. Renders MARKUP screen 'doodle'.
 //

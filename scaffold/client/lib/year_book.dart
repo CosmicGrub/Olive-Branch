@@ -1,4 +1,4 @@
-// OLIVE BRANCH — the Year Book. Verified by CI (a Flutter toolchain now
+// OLIVE BRANCH — the Year Book. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
 // runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). MASTERFILE §2.10, §9.8.2. Renders MARKUP screen 'yearbook':
 // "A year of her, preserved."

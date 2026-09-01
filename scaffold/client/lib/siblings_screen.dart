@@ -1,4 +1,4 @@
-// OLIVE BRANCH — guardian shell, siblings. Verified by CI (a Flutter
+// OLIVE BRANCH — guardian shell, siblings. No longer UNVERIFIED — verified by CI (a Flutter
 // toolchain now runs for real in tools/verify.sh's automated pipeline —
 // also manually built and run via `flutter analyze` / `flutter test` this
 // session; CHANGELOG v0.49.61). MASTERFILE §21.7, §5.17. Renders MARKUP

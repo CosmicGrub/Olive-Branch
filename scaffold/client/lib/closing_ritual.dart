@@ -1,4 +1,4 @@
-// OLIVE BRANCH — the closing ritual. Verified by CI (a Flutter toolchain
+// OLIVE BRANCH — the closing ritual. No longer UNVERIFIED — verified by CI (a Flutter toolchain
 // now runs for real in tools/verify.sh's automated pipeline — also manually
 // built and run via `flutter analyze` / `flutter test` this session;
 // CHANGELOG v0.49.61). Renders MARKUP screen "closingRitual". MASTERFILE

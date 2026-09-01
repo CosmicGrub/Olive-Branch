@@ -1,4 +1,4 @@
-// OLIVE BRANCH — child shell, my day. Verified by CI (a Flutter toolchain
+// OLIVE BRANCH — child shell, my day. No longer UNVERIFIED — verified by CI (a Flutter toolchain
 // now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). MASTERFILE §8.2, §8.2.2, §8.4. Renders MARKUP screen 'myday'.
 //

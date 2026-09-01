@@ -1,5 +1,5 @@
 // OLIVE BRANCH — shared layout for Batch B's four curated-prompt activities.
-// Verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
+// No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
 // automated pipeline — also manually built and run via `flutter analyze` /
 // `flutter test` this session; CHANGELOG v0.49.61). MASTERFILE §9.2,
 // §8.11.1, P2.

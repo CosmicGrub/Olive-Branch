@@ -1,4 +1,4 @@
-// OLIVE BRANCH — her colour, guardian view. Verified by CI (a Flutter
+// OLIVE BRANCH — her colour, guardian view. No longer UNVERIFIED — verified by CI (a Flutter
 // toolchain now runs for real in tools/verify.sh's automated pipeline —
 // CHANGELOG v0.49.61). §8.6.4.
 //

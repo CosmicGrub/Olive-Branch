@@ -1,4 +1,4 @@
-// OLIVE BRANCH — child shell, weeks. Verified by CI (a Flutter toolchain
+// OLIVE BRANCH — child shell, weeks. No longer UNVERIFIED — verified by CI (a Flutter toolchain
 // now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). MASTERFILE §8.2, §8.2.5, P3. Renders MARKUP screen 'weeks':
 // "Custody rhythm as she experiences it; countdowns in sleeps."

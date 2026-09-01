@@ -1,4 +1,4 @@
-// OLIVE BRANCH — guess the doodle. Verified by CI (a Flutter toolchain now
+// OLIVE BRANCH — guess the doodle. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
 // runs for real in tools/verify.sh's automated pipeline — also manually
 // built and run via `flutter analyze` / `flutter test` this session;
 // CHANGELOG v0.49.61). MASTERFILE §9.2, §9.12.4, §8.11.1, §8.13, P2. Renders

@@ -1,4 +1,4 @@
-// OLIVE BRANCH — first run, her age. Verified by CI (a Flutter toolchain
+// OLIVE BRANCH — first run, her age. No longer UNVERIFIED — verified by CI (a Flutter toolchain
 // now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). §8.5.2.
 //

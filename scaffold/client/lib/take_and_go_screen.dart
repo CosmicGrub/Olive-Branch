@@ -1,4 +1,4 @@
-// OLIVE BRANCH — child shell, take-and-go. Verified by CI (a Flutter
+// OLIVE BRANCH — child shell, take-and-go. No longer UNVERIFIED — verified by CI (a Flutter
 // toolchain now runs for real in tools/verify.sh's automated pipeline —
 // also manually built and run via `flutter analyze` / `flutter test` this
 // session; CHANGELOG v0.49.61). MASTERFILE §2.10, §2.11, §9.8/§9.8.4, §21.2

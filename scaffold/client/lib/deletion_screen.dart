@@ -1,4 +1,4 @@
-// OLIVE BRANCH — guardian shell, deletion. Verified by CI (a Flutter
+// OLIVE BRANCH — guardian shell, deletion. No longer UNVERIFIED — verified by CI (a Flutter
 // toolchain now runs for real in tools/verify.sh's automated pipeline —
 // also manually built and run via `flutter analyze` / `flutter test` this
 // session; CHANGELOG v0.49.61). MASTERFILE §2.10, §2.11, §9.8, prohibition

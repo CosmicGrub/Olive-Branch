@@ -1,5 +1,5 @@
 // OLIVE BRANCH — guardian shell, family agreement (read-only custody order).
-// Verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
+// No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs for real in tools/verify.sh's
 // automated pipeline — also manually built and run via `flutter analyze` /
 // `flutter test` this session; CHANGELOG v0.49.61). MASTERFILE §5.4, §9.4,
 // §4.1.

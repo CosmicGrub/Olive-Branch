@@ -1,4 +1,4 @@
-// OLIVE BRANCH — child shell, inbox. Verified by CI (a Flutter toolchain
+// OLIVE BRANCH — child shell, inbox. No longer UNVERIFIED — verified by CI (a Flutter toolchain
 // now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). MASTERFILE §8.2, §9.5. Renders
 // MARKUP screen 'inbox': "Async messages materialised by the delivery

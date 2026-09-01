@@ -1,4 +1,4 @@
-// OLIVE BRANCH — who is here. Verified by CI (a Flutter toolchain now runs
+// OLIVE BRANCH — who is here. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
 // for real in tools/verify.sh's automated pipeline — also manually built
 // and run via `flutter analyze` / `flutter test` this session; CHANGELOG
 // v0.49.61). MASTERFILE §17.1, §8.5.3.

@@ -1,4 +1,4 @@
-// OLIVE BRANCH — homework retake. Verified by CI (a Flutter toolchain now
+// OLIVE BRANCH — homework retake. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
 // runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). MASTERFILE §9.1, §8.13.5. Renders MARKUP screen 'retake'.
 //

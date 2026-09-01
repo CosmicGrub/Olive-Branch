@@ -1,4 +1,4 @@
-// OLIVE BRANCH — child shell, "show me". Verified by CI (a Flutter
+// OLIVE BRANCH — child shell, "show me". No longer UNVERIFIED — verified by CI (a Flutter
 // toolchain now runs for real in tools/verify.sh's automated pipeline —
 // CHANGELOG v0.49.61). MASTERFILE §9.10. Renders MARKUP screen 'showcase'.
 //

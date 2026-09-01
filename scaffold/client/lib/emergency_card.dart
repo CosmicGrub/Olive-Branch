@@ -1,4 +1,4 @@
-// OLIVE BRANCH — emergency card. Verified by CI (a Flutter toolchain now
+// OLIVE BRANCH — emergency card. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
 // runs for real in tools/verify.sh's automated pipeline — also manually
 // built and run via `flutter analyze` / `flutter test` this session;
 // CHANGELOG v0.49.61). MASTERFILE §9.6.3, §8.13.5, §8.8.5.

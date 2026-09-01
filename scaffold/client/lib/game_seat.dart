@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the shared seat/roster type for ad-hoc local-play games
-// that need more than two players. Verified by CI (a Flutter toolchain now
+// that need more than two players. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
 // runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). Network resilience & ad-hoc mode roadmap, Track B Option 2,
 // ad-hoc games expansion.

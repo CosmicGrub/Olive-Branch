@@ -1,5 +1,5 @@
 // OLIVE BRANCH — portable SHA-256, the primitive the court export's
-// tamper-evident chain is built on. Verified by CI (a Flutter toolchain now
+// tamper-evident chain is built on. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
 // runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). MASTERFILE §16.1 #3.
 //

@@ -1,4 +1,4 @@
-// OLIVE BRANCH — battleship. Verified by CI (a Flutter toolchain now runs
+// OLIVE BRANCH — battleship. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
 // for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
 // MASTERFILE §9.2.
 //

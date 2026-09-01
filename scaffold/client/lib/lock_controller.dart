@@ -1,4 +1,4 @@
-// OLIVE BRANCH — child lock state machine. Verified by CI (a Flutter
+// OLIVE BRANCH — child lock state machine. No longer UNVERIFIED — verified by CI (a Flutter
 // toolchain now runs for real in tools/verify.sh's automated pipeline —
 // CHANGELOG v0.49.61). MASTERFILE §5.20, §8.3.
 //

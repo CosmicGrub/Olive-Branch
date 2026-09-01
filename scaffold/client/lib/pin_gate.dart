@@ -1,4 +1,4 @@
-// OLIVE BRANCH — PIN gate. Verified by CI (a Flutter toolchain now runs
+// OLIVE BRANCH — PIN gate. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
 // for real — CHANGELOG v0.49.61). §8.3, §5.20.
 //
 // Rendered one frame after a kiosk defeat. Never shows an error, never shows an

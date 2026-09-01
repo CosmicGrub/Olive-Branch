@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the common canvas-hosting wrapper Batch A's own spec
-// required both canvas screens to share. Verified by CI (a Flutter
+// required both canvas screens to share. No longer UNVERIFIED — verified by CI (a Flutter
 // toolchain now runs for real in tools/verify.sh's automated pipeline —
 // CHANGELOG v0.49.61). MASTERFILE §9.2, §9.12.4, §8.11.1, §8.13.
 //

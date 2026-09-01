@@ -1,4 +1,4 @@
-// OLIVE BRANCH — the entry gate. Verified by CI (a Flutter toolchain now
+// OLIVE BRANCH — the entry gate. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
 // runs for real in tools/verify.sh's automated pipeline — CHANGELOG
 // v0.49.61). §8.5.0.
 //
