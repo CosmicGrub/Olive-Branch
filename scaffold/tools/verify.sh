@@ -84,6 +84,7 @@ for spec in \
   "i18n bilingual/translation (§8.4)|packages/i18n/test/i18n.test.mjs" \
   "maturation ladder|packages/maturation/test/maturation.test.mjs" \
   "games|packages/games/test/games.test.mjs" \
+  "jokebook|packages/jokes/test/jokes.test.mjs" \
   "games (checkers, battleship, hangman, chess)|packages/games/test/games2.test.mjs" \
   "games (kim's game, scavenger hunt, the chain)|packages/games/test/games3.test.mjs" \
   "live (latency floor, pictionary)|packages/live/test/live.test.mjs" \

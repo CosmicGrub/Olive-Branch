@@ -14,6 +14,85 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.67] — 2026-09-06 — The jokebook: a quick one, and another, and another
+
+A fixed, hand-written library of kid-friendly jokes — dad jokes, puns, wordplay,
+plain silliness, knock-knocks — she reaches for when she wants a quick one. Reads
+the setup, taps for the punchline, asks for another; stars the ones she likes;
+holds one up to tell a parent. Designed through a real brainstorm
+(`docs/superpowers/specs/2026-09-01-jokebook-design.md`), each decision recorded
+with its reason rather than defaulted.
+
+### Added
+- **`packages/jokes/src/jokes.ts`** (new) — `CATALOGUE` (58 jokes), `forAge()`
+  (the same floor mechanic as `games.ts`: `age >= minAge`), `byId()`,
+  `randomJoke(age, excludeId, pick)` (never the one she just heard; `pick` is
+  injectable so tests are deterministic), favourites (`star`/`unstar`/
+  `isStarred`/`favouritesChildView`) and the same runtime `auditChildView()`
+  P2 check `library.ts` keeps. Each joke's `minAge` is a **comprehension
+  floor, not a content rating** — every joke is appropriate for every age; the
+  floor only stops a joke she can't get yet from landing flat. Nothing is gated
+  above 12; a teenager keeps the whole book. An internal `category` tag keeps
+  the mix honest (a test refuses any category exceeding half the book) and is
+  deliberately not surfaced as a picker — she asked for a joke, not a genre.
+- **`joke_logic.dart`** (new) — 1:1 port, no Flutter import, same posture as
+  `storyteller_logic.dart`.
+- **`jokebook_screen.dart`** (new) — `JokebookScreen`: ask card → joke card
+  with the punchline genuinely absent from the tree until tapped (that tap IS
+  the comic timing) → revealed card with star / "Tell me another!" / "Tell Dad
+  this one"; a starred shelf beneath, or beside on wide postures via
+  `columnsAt()`. Modelled on `storyteller_screen.dart`'s card rhythm, not
+  invented fresh. And `JokebookSection` — a `HubSection` + one `HubTile`, the
+  same chrome `games_hub.dart` uses, so it reads as part of the same list.
+- **Where it lives** — a new **"Just for laughs"** block in "Play together"'s
+  `extraSections`, at both real call sites (`child_home.dart`,
+  `guardian_more.dart`), after `MoreGamesSections`. No new ChildHome tile:
+  `extraSections` is the mechanism v0.49.66 built and hardware-verified for
+  exactly "one more catalogue behind the one door," and a 4th Standard-tier
+  tile would reopen the count v0.49.65/.66 just closed at 3.
+- **"Tell Dad this one"** — honest about what this preview build can do. There
+  is no child→guardian message send anywhere in this client yet
+  (`showcase_screen.dart`'s "she shows; he sees" is a disclosed UI-only
+  stand-in for the same reason), so this sends nothing and never says it does:
+  it shows the whole joke large with "Read it out on your next call, or hold
+  your screen up to the camera" — a real thing she can do tonight. A real send
+  is a separate follow-up once that channel exists; faking one would teach her
+  a message arrived when it didn't.
+- **Tests** — `packages/jokes/test/jokes.test.mjs` (33 assertions, registered
+  in `package.json` and `tools/verify.sh`), `joke_logic_test.dart` (17),
+  `jokebook_screen_test.dart` (17): the beat, the age floor across 25 draws at
+  age 4, the favourites round-trip, a P2 vocabulary sweep at every stage, the
+  tell-a-parent sheet never using "sent/sending/delivered/message", §8.1 no
+  settings affordance, §8.4 48dp star, the four-width responsive sweep, and
+  the real path from `GamePickerScreen`'s own `extraSections` into the screen.
+
+### Fixed — a real, pre-existing build fragility, found by adding one package
+`package.json`'s `build` script was a single 75-step `&&` chain of esbuild
+calls, sitting one entry short of Windows cmd.exe's 8191-character
+command-line limit (npm runs scripts through cmd.exe there). Adding the jokes
+package tipped it over: "The command line is too long." Linux/CI never hit the
+limit, so CI was unaffected; local verification on Windows was broken
+outright. Moved into **`tools/build.mjs`** (new): the same esbuild invocations
+as data, one row each, generated mechanically from the existing chain rather
+than retyped, run through esbuild's own API with a flag mapper that refuses
+any flag it doesn't recognise so nothing can be silently dropped. Verified:
+all 76 outputs present, and both special-flag cases (games2's `--bundle
+--external`, pool's `--packages=external`) preserved verbatim — games2's own
+suite still 72/72.
+
+### Found and fixed by this pass's own tests before any device saw it
+"Tap for the punchline"'s label sat in a `Row` with no `Flexible` — an 85px
+overflow at every canonical width under the test font, and a real risk at
+large text scales on the 344px cover floor. Exactly the bug class §8.11.1
+documents; fixed with `Flexible` + wrap, not a hand-tuned width.
+
+`flutter analyze` clean, full Dart suite 2313/2313 (2279 + 34 new). Assertion
+count computed as 7050 (CI's confirmed v0.49.66 total) + 34 Dart + 33
+jokes-suite = 7117; to be synced to CI's real number in a follow-up commit if
+it differs, per this repo's established convention.
+
+---
+
 ## [0.49.66] — 2026-09-01 — One screen for every choice she has
 
 Before this pass, `child_home.dart`'s "Play together" tile opened the age-gated

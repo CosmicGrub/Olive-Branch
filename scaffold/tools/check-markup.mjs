@@ -231,7 +231,14 @@ if (!DEMO) {
 // ═══════════════════════════════════════════════════════════════════════════
 {
   const pkgJson = JSON.parse(R('/scaffold/package.json'));
-  const buildScript = pkgJson.scripts.build;
+  // v0.49.67: the esbuild entry list moved out of package.json's build
+  // script (which had outgrown Windows cmd.exe's command-line limit) into
+  // tools/build.mjs, one row per entry. Scan both, so this list is right
+  // whichever file carries the entries — without this, the build script
+  // alone matched nothing and E2/F1-F4 passed VACUOUSLY while E5 flagged
+  // every node-only declaration as stale. Found by running this checker
+  // against the moved list, not assumed.
+  const buildScript = (pkgJson.scripts.build + '\n' + R('/scaffold/tools/build.mjs'));
   // File-name group allows a hyphen (v0.49.57 fix) — it used to be
   // [a-z0-9_]+ only, which silently failed to match ANY hyphenated .ts
   // filename (e.g. capture-route.ts, livekit-token.ts) at every one of
@@ -321,7 +328,7 @@ if (!DEMO) {
   };
   const allSrc = (() => {
     const pkgJson = JSON.parse(R('/scaffold/package.json'));
-    const mods = [...new Set([...pkgJson.scripts.build
+    const mods = [...new Set([...(pkgJson.scripts.build + '\n' + R('/scaffold/tools/build.mjs'))
       .matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_-]+)\.ts/g)]
       .map(m => `${m[1]}|${m[2]}`))];
     return mods.map(m => srcOf(...m.split('|'))).join('\n');
@@ -383,7 +390,7 @@ if (!DEMO) {
   const behaviourless = [];
   {
     const pkgJson = JSON.parse(R('/scaffold/package.json'));
-    for (const m of [...new Set([...pkgJson.scripts.build
+    for (const m of [...new Set([...(pkgJson.scripts.build + '\n' + R('/scaffold/tools/build.mjs'))
       .matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_-]+)\.ts/g)]
       .map(x => `${x[1]}|${x[2]}`))]) {
       const [pkg, file] = m.split('|');

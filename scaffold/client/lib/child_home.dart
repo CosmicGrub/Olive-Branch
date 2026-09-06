@@ -53,6 +53,7 @@ import 'game_picker.dart';
 import 'games_hub.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
+import 'jokebook_screen.dart';
 import 'my_day.dart';
 import 'showcase_screen.dart';
 import 'storyteller_screen.dart';
@@ -158,7 +159,10 @@ class ChildHome extends StatelessWidget {
                 builder: (_) => GamePickerScreen(
                   childName: childName,
                   onPlay: buildGameNavigator(childName),
-                  extraSections: [MoreGamesSections(childName: childName)],
+                  extraSections: [
+                    MoreGamesSections(childName: childName),
+                    JokebookSection(childName: childName),
+                  ],
                 )))),
             _Tile(icon: Icons.mail_outline, label: 'Messages', featured: true,
               badgeCount: unreadCount,
