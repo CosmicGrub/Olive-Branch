@@ -118,6 +118,33 @@ const FALLBACK_GLYPH = '•';
  * §8.4 — the architecture is already a visual-schedule tool. Day-parts, ordered,
  * with "what happens next" marked, is close to what occupational therapists
  * build by hand for autistic children, so the marginal cost is near zero.
+ *
+ * PRECISION CHECKED, not just assumed: this comparison is the exact same
+ * shape as gate.ts's own `hhmm >= p.startsLocal && hhmm < p.endsLocal` — a
+ * width mismatch between `nowLocal` and a part's `startsLocal`/`endsLocal`
+ * (e.g. a raw Postgres `time::text` cast, 'HH:mm:ss', on one side against a
+ * luxon/hand-formatted 'HH:mm' on the other) would silently skip that
+ * part's own first minute the same way it did there before pool.ts's
+ * `childCtxFor()` fix. Traced every real caller of this function
+ * (demo/src/bridge.ts's `strip()`, client/lib/my_day.dart,
+ * client/lib/inbox_screen.dart, packages/ledger/test/phase3.test.mjs,
+ * client/test/calendar_day_logic_test.dart) plus this file's own nearest
+ * relative, packages/custody/src/schedule.ts's `isWindowActiveNow()` (same
+ * wrap-aware shape, doesn't call this function but shares the bug class):
+ * every one of them supplies both sides as already-consistent 'HH:mm'
+ * width — bridge.ts's DAYPARTS are hand-written literals against
+ * `luxon.toFormat('HH:mm')`; my_day.dart/inbox_screen.dart use
+ * calendar_day_logic.dart's own `hhmmNow()` (manually zero-padded, 5 chars)
+ * against literal `demoDayParts`; schedule.ts's real DB-backed windows come
+ * from pool.ts's `availabilityFor()`, which already formats via
+ * `to_char(..., 'HH24:MI')`, never a bare `::text` cast. No live path
+ * currently calls this function against server-fetched day-parts at all —
+ * server/routes.mjs's `/ribbon` route (the one real consumer of
+ * `childCtxFor()`'s day-parts client-side) hands the Dart client
+ * `bandsFromDayParts()`-shaped data (guardian_home_live.dart), which uses
+ * `minutesSinceMidnight()` — numeric parsing, immune to this class of bug
+ * by construction — not this function. No code change needed here; leave
+ * this note as the record that it was checked, not skipped.
  */
 export function scheduleStrip(parts: DayPartLite[], nowLocal: string): StripSegment[] {
   const sorted = [...parts].sort((a, b) => a.startsLocal.localeCompare(b.startsLocal));

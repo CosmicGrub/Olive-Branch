@@ -12,7 +12,7 @@ import {
   type LogEntry, type Attestation, type ChainFault, type ExportDenial,
 } from '../../ledger/src/ledger.ts';
 import { sha256Hex } from '../../ledger/src/sha256.ts';
-import type { ArtifactRow, IntentRow } from '../../messaging/src/pipeline.ts';
+import { retentionOnOpen, type ArtifactRow, type IntentRow } from '../../messaging/src/pipeline.ts';
 import type { ChildCtx } from '../../delivery-engine/src/materialize.ts';
 import type { Platform } from '../../transport/src/push.ts';
 import type { Channel } from '../../devices/src/devices.ts';
@@ -1173,8 +1173,15 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
     // daterange` column; a day-part outside its effective window is not part
     // of her CURRENT schedule, and materialize() has no other way to exclude
     // a superseded one.
+    // substring(...::text from 1 for 5) truncates Postgres's second-precision
+    // time cast ('12:00:00') down to gate.ts's own 'HH:mm' width ('12:00') --
+    // without this, `hhmm >= p.startsLocal` string-compares a 5-char value
+    // against an 8-char one and is FALSE for the entire minute the local
+    // clock reads exactly a row's own start boundary, silently skipping that
+    // day-part for one minute a day. See gate.ts's `hhmm` comment.
     const dpRows = await q(
-      `SELECT kind, starts_local::text AS starts_local, ends_local::text AS ends_local,
+      `SELECT kind, substring(starts_local::text from 1 for 5) AS starts_local,
+              substring(ends_local::text from 1 for 5) AS ends_local,
               days_of_week, reachable
          FROM day_part
         WHERE child_id = $1 AND effective @> CURRENT_DATE`,
@@ -1934,6 +1941,41 @@ export async function mediaArtifactFor(
     );
     if (!rows.length) return null;
     return { storageKey: rows[0].storage_key as string, kind: rows[0].kind as string };
+  });
+}
+
+/**
+ * §10.1 — retentionOnOpen() (packages/messaging/src/pipeline.ts) is real
+ * and tested, and had zero production callers until server/routes.mjs's
+ * `POST .../inbox/:id/opened` handler started calling this wrapper: that
+ * route is the ONE place `delivery_intent.state = 'opened'` is ever
+ * written, and runs under the CHILD's own caller-scoped session —
+ * `media_artifact`'s own RLS (0023_message_media_delivery_rls.sql,
+ * `media_artifact_adult_edge`/`media_artifact_system_all`) admits NO
+ * policy for the `child` role at all, so an UPDATE run under that route's
+ * own `q` silently touches zero rows (FORCE ROW LEVEL SECURITY with no
+ * matching policy, not an error) rather than the real write it looks like
+ * — confirmed by running it that way first, not assumed. Same
+ * `withSystemSession` shape `mediaArtifactFor()` immediately above already
+ * uses for the identical reason (a route that runs as the child still
+ * needs a real read/write against a table she has no RLS policy on).
+ */
+export async function applyRetentionOnOpen(
+  pool: pg.Pool, artifactId: string, openedAtIso: string,
+): Promise<void> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT expires_at, preserved FROM media_artifact WHERE id = $1`, [artifactId]);
+    if (!rows.length) return; // the same honest "nothing to update" mediaArtifactFor() allows
+    const expiresAt = rows[0].expires_at as Date | null;
+    const newExpiry = retentionOnOpen(
+      expiresAt ? expiresAt.toISOString() : null,
+      DateTime.fromISO(openedAtIso, { zone: 'utc' }),
+      rows[0].preserved as boolean,
+    );
+    if (newExpiry) {
+      await q(`UPDATE media_artifact SET expires_at = $2 WHERE id = $1`, [artifactId, newExpiry]);
+    }
   });
 }
 

@@ -48,6 +48,13 @@ const List<String> _weekdayNames = <String>[
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
 ];
 
+// A UI-only bound — "at work", "with grandma," not a paragraph. The real
+// guard against accusatory CONTENT is server-side (server/routes.mjs's
+// invalidAvailabilityBody(), reusing AVAILABILITY_NOTE_BANNED); this number
+// exists only so the field itself looks and behaves like the short caption
+// it is, with no server-side counterpart asserting the same limit.
+const int _availabilityNoteMaxLength = 60;
+
 class _MyWindow {
   _MyWindow({required this.startLocal, required this.endLocal, this.note});
   TimeOfDay startLocal;
@@ -107,6 +114,15 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   final Map<int, List<Map<String, dynamic>>> _extraMineByDay = <int, List<Map<String, dynamic>>>{};
   List<_CoGuardianWindow> _others = <_CoGuardianWindow>[];
 
+  // One controller per weekday's note field, created lazily the first time
+  // that day's row renders with a window set (_noteControllerFor below) —
+  // NOT recreated on every build, so typing doesn't fight cursor position.
+  // _clearDay disposes and removes a day's entry so a later "Set a window"
+  // on the same day starts with a genuinely empty note, not a resurrected
+  // stale one; _load() disposes and clears all of them up front, in case a
+  // future reload path ever re-fetches into an already-populated screen.
+  final Map<int, TextEditingController> _noteControllers = <int, TextEditingController>{};
+
   bool _saving = false;
   String? _saveError;
 
@@ -114,6 +130,29 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _noteControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  TextEditingController _noteControllerFor(int weekday, String? initial) =>
+      _noteControllers.putIfAbsent(weekday, () => TextEditingController(text: initial ?? ''));
+
+  // Server-side tone guard is the real enforcement (server/routes.mjs's
+  // invalidAvailabilityBody(), reusing AVAILABILITY_NOTE_BANNED from
+  // packages/guardian/src/guardian.ts) — this only keeps _mine's model in
+  // sync with what the guardian typed. An empty/whitespace-only note stores
+  // as null, matching how this screen already treats "no note" everywhere
+  // else (e.g. the Save payload's own `if (note != null)` guard).
+  void _setNote(int weekday, String value) {
+    final existing = _mine[weekday];
+    if (existing == null) return;
+    existing.note = value.trim().isEmpty ? null : value;
   }
 
   static TimeOfDay _parseHHmm(String s) {
@@ -126,6 +165,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
 
   Future<void> _load() async {
     setState(() => _state = _LoadState.loading);
+    for (final c in _noteControllers.values) {
+      c.dispose();
+    }
+    _noteControllers.clear();
     try {
       final token = await devLoginFor(widget.baseUrl,
           userId: widget.guardianId, client: widget.httpClient);
@@ -209,7 +252,10 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     setState(() => existing.endLocal = picked);
   }
 
-  void _clearDay(int weekday) => setState(() => _mine[weekday] = null);
+  void _clearDay(int weekday) => setState(() {
+        _mine[weekday] = null;
+        _noteControllers.remove(weekday)?.dispose();
+      });
 
   Future<void> _save() async {
     final api = _api;
@@ -382,32 +428,53 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Row(children: [
-          SizedBox(width: 92, child: Text(_weekdayNames[weekday],
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
-          Expanded(child: w == null
-            ? TextButton(
-                onPressed: () => _pickStart(weekday),
-                child: const Text('Set a window'))
-            // Wrap, not Row: at a two-pane split's narrower pane width this
-            // card has roughly half the horizontal room it always used to,
-            // and a bare Row of two TextButtons could overflow. Wrap falls
-            // back to a second line there instead — at full single-column
-            // width (this card's usual case) everything still fits on one
-            // line, so nothing visibly changes.
-            : Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                TextButton(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            SizedBox(width: 92, child: Text(_weekdayNames[weekday],
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+            Expanded(child: w == null
+              ? TextButton(
                   onPressed: () => _pickStart(weekday),
-                  child: Text(w.startLocal.format(context))),
-                const Text('–'),
-                TextButton(
-                  onPressed: () => _pickEnd(weekday),
-                  child: Text(w.endLocal.format(context))),
-              ])),
-          if (w != null) IconButton(
-            icon: Icon(Icons.close, size: 18, color: scheme.onSurfaceVariant),
-            tooltip: 'Clear ${_weekdayNames[weekday]}',
-            onPressed: () => _clearDay(weekday),
+                  child: const Text('Set a window'))
+              // Wrap, not Row: at a two-pane split's narrower pane width this
+              // card has roughly half the horizontal room it always used to,
+              // and a bare Row of two TextButtons could overflow. Wrap falls
+              // back to a second line there instead — at full single-column
+              // width (this card's usual case) everything still fits on one
+              // line, so nothing visibly changes.
+              : Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  TextButton(
+                    onPressed: () => _pickStart(weekday),
+                    child: Text(w.startLocal.format(context))),
+                  const Text('–'),
+                  TextButton(
+                    onPressed: () => _pickEnd(weekday),
+                    child: Text(w.endLocal.format(context))),
+                ])),
+            if (w != null) IconButton(
+              icon: Icon(Icons.close, size: 18, color: scheme.onSurfaceVariant),
+              tooltip: 'Clear ${_weekdayNames[weekday]}',
+              onPressed: () => _clearDay(weekday),
+            ),
+          ]),
+          // A note is context for a window, so it only exists once a window
+          // does — see file header, this is a NEW field previously read-only
+          // (values from other guardians/pre-existing data displayed via
+          // _otherRow below, never authored here at all until this pass).
+          if (w != null) Padding(
+            padding: const EdgeInsets.only(left: 92, right: 4, bottom: 6),
+            child: TextField(
+              key: ValueKey('availabilityNote_$weekday'),
+              controller: _noteControllerFor(weekday, w.note),
+              maxLength: _availabilityNoteMaxLength,
+              style: Theme.of(context).textTheme.bodySmall,
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: 'Note (optional) — e.g. "at work"',
+                counterText: '',
+              ),
+              onChanged: (value) => _setNote(weekday, value),
+            ),
           ),
         ]),
       ),

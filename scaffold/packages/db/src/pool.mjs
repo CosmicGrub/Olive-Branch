@@ -11,6 +11,7 @@ import {
   append
 } from "../../ledger/src/ledger.ts";
 import { sha256Hex } from "../../ledger/src/sha256.ts";
+import { retentionOnOpen } from "../../messaging/src/pipeline.ts";
 import {
   handover
 } from "../../archive/src/archive.ts";
@@ -518,7 +519,8 @@ async function childCtxFor(pool, childId) {
       [childId]
     );
     const dpRows = await q(
-      `SELECT kind, starts_local::text AS starts_local, ends_local::text AS ends_local,
+      `SELECT kind, substring(starts_local::text from 1 for 5) AS starts_local,
+              substring(ends_local::text from 1 for 5) AS ends_local,
               days_of_week, reachable
          FROM day_part
         WHERE child_id = $1 AND effective @> CURRENT_DATE`,
@@ -842,6 +844,24 @@ async function mediaArtifactFor(pool, childId, artifactId) {
     );
     if (!rows.length) return null;
     return { storageKey: rows[0].storage_key, kind: rows[0].kind };
+  });
+}
+async function applyRetentionOnOpen(pool, artifactId, openedAtIso) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT expires_at, preserved FROM media_artifact WHERE id = $1`,
+      [artifactId]
+    );
+    if (!rows.length) return;
+    const expiresAt = rows[0].expires_at;
+    const newExpiry = retentionOnOpen(
+      expiresAt ? expiresAt.toISOString() : null,
+      DateTime.fromISO(openedAtIso, { zone: "utc" }),
+      rows[0].preserved
+    );
+    if (newExpiry) {
+      await q(`UPDATE media_artifact SET expires_at = $2 WHERE id = $1`, [artifactId, newExpiry]);
+    }
   });
 }
 async function registerDeviceToken(pool, principal, platform, token, channel) {
@@ -1619,6 +1639,7 @@ export {
   acceptGuardianInvite,
   activeCustodyOrderFor,
   appendHandoverNote,
+  applyRetentionOnOpen,
   arrivalEventFor,
   attemptPinFor,
   availabilityFor,

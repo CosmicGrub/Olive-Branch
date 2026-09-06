@@ -40,6 +40,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          arrivalEventFor, recordExchangeArrival,
          careNotesFor, writeCareNoteRow,
          lettersFor, sealLetterRow, openLetterRow, deleteLetterRow,
+         applyRetentionOnOpen,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -52,6 +53,7 @@ import { createSession, mintToken } from '../packages/session-runtime/src/rooms.
 import { mintLiveKitToken } from '../packages/session-runtime/src/livekit-token.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
+import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
 
 /**
  * MASTERFILE §20.2b's own gap, closed here: "`StoragePort` has no
@@ -131,6 +133,16 @@ export const RP_ORIGIN = `https://${RP_ID}`;
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/** §12.5's pattern (packages/guardian/src/guardian.ts) applied to a note
+ * field the CHILD actually reads (see AVAILABILITY_NOTE_BANNED's own header
+ * for why that makes this the more, not less, exposed of the two). Mirrors
+ * writeCareNote()'s own check exactly: lowercase, substring, first match
+ * wins — no partial credit for "mostly fine" phrasing. */
+function accusatoryAvailabilityNote(note) {
+  const lower = note.toLowerCase();
+  return AVAILABILITY_NOTE_BANNED.filter((phrase) => lower.includes(phrase));
+}
+
 /**
  * Validates the PUT /v1/me/availability body shape before it ever reaches
  * pool.mjs's setAvailabilityWindows() — a 400 with a specific reason here is
@@ -145,7 +157,14 @@ function invalidAvailabilityBody(body) {
     if (typeof w.startLocal !== 'string' || !HHMM.test(w.startLocal)) return 'bad_startLocal';
     if (typeof w.endLocal !== 'string' || !HHMM.test(w.endLocal)) return 'bad_endLocal';
     if (w.endLocal <= w.startLocal) return 'endLocal_before_startLocal';
-    if (w.note !== undefined && w.note !== null && typeof w.note !== 'string') return 'bad_note';
+    if (w.note !== undefined && w.note !== null) {
+      if (typeof w.note !== 'string') return 'bad_note';
+      // The tone guard — enforced before persistence, same posture
+      // writeCareNoteRow() already established for care notes: a rejected
+      // note never reaches setAvailabilityWindows() below, not written and
+      // filtered on the way back out.
+      if (accusatoryAvailabilityNote(w.note).length) return 'accusatory_note';
+    }
   }
   return null;
 }
@@ -1247,20 +1266,46 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const updated = await q(
         `UPDATE delivery_intent SET state = 'opened'
           WHERE id = $1 AND child_id = $2 AND state = 'delivered'
-          RETURNING id`,
+          RETURNING id, payload_ref`,
         [c.params.messageId, c.childId],
       );
-      if (updated.length) return { status: 200, body: { ok: true } };
       // Idempotent success for a row already 'opened' — distinguished from
       // a genuine not-found/wrong-state so a client retry (or two tabs
       // racing) never sees a false error for something that already
-      // happened.
-      const already = await q(
-        `SELECT 1 FROM delivery_intent WHERE id = $1 AND child_id = $2 AND state = 'opened'`,
+      // happened. Re-fetched (not just checked) so the retention step below
+      // runs on this path too — retentionOnOpen() is safe to re-apply on
+      // every reopen (it shortens, never lengthens, §10.1), so a second
+      // real open of the same message is not treated any differently from
+      // the first for retention purposes, only for the state transition.
+      const opened = updated.length ? updated : await q(
+        `SELECT id, payload_ref FROM delivery_intent
+          WHERE id = $1 AND child_id = $2 AND state = 'opened'`,
         [c.params.messageId, c.childId],
       );
-      if (already.length) return { status: 200, body: { ok: true } };
-      return { status: 404, body: { error: 'message_not_found_or_not_yet_delivered' } };
+      if (!opened.length) {
+        return { status: 404, body: { error: 'message_not_found_or_not_yet_delivered' } };
+      }
+      // retentionOnOpen() (packages/messaging/src/pipeline.ts, §10.1) has
+      // existed, real and tested, since before this route did — nothing
+      // ever called it. A message's real "opened" moment (this handler,
+      // the only place `state = 'opened'` is ever written) is exactly when
+      // the 30-day post-open window should start; before this it never
+      // did, so retention silently never shortened on open regardless of
+      // how long ago she actually watched something.
+      //
+      // Delegated to pool.mjs's applyRetentionOnOpen() rather than done
+      // inline against this handler's own `q` — this route runs under the
+      // CHILD's own caller-scoped session (the whole point of the
+      // child_session_required check above), and media_artifact's RLS
+      // (0023) admits no policy for the `child` role at all. An inline
+      // UPDATE against `q` here would silently touch zero rows (FORCE ROW
+      // LEVEL SECURITY with no matching policy, not an error) — confirmed
+      // by running it that way first, not assumed. applyRetentionOnOpen()
+      // opens its own system-scoped session internally, the same shape
+      // mediaArtifactFor() (this same file's real caller for the media
+      // download route) already uses for the identical reason.
+      await applyRetentionOnOpen(pool, opened[0].payload_ref, DateTime.utc().toISO());
+      return { status: 200, body: { ok: true } };
     },
   });
 

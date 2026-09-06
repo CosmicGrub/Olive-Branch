@@ -22,16 +22,57 @@
  * void, and the result carries `channelAdvice()`'s guardian-facing copy so
  * a future caller has it ready. See the per-device loop below for the exact
  * channel-resolution rule and its honesty caveat.
+ *
+ * THE §6.4 GATE, NOW REAL HERE TOO. Before this pass, `gate()`
+ * (packages/delivery-engine/src/gate.ts) was wired into exactly one real
+ * surface: the read-only `GET /v1/children/:childId/now` route (see
+ * server/routes.mjs's own top-of-file comment and MASTERFILE §6.4's
+ * v0.49.63 status note) — a client-side send-time-guard display, not the
+ * actual push-dispatch path. `notifyDevices()` itself never consulted it:
+ * the one real production caller (the calls route, `call_incoming`) rang a
+ * child's device with no asleep/school check at all. Now: for a
+ * CHILD-targeted `target` (this gate has no guardian-side equivalent —
+ * `childCtxFor()`'s day-part rows are keyed by `child_id`; see its own
+ * header), `childCtxFor()` + `gate()` run once, before the per-device loop,
+ * exactly matching the `/now` route's own real primitives (not
+ * reimplemented). A blocked batch is skipped entirely — every device gets
+ * `code: 'gated_quiet_hours'`, mirroring the existing `no_push_capability`
+ * skip shape below — rather than fired into a sleeping child's lock screen.
+ *
+ * SCOPE, DISCLOSED: this is a HARD skip, not the deferred-retry
+ * `gate()`/`GateResult.deferTo` otherwise supports. There is no queue or
+ * scheduler anywhere in this codebase that could re-attempt a deferred push
+ * later (tools/scheduler.mjs's own header names exactly this — "a real
+ * delivery/send worker that actually pushes a `ready` intent to a device"
+ * — as a separate, still-open gap, not something this pass invents). A
+ * `call_incoming` push is also, structurally, not a good candidate for
+ * "deliver 8 hours later" even once such a worker exists — the guardian is
+ * calling NOW, not composing a message for later — so a hard skip is the
+ * honest behavior today, not a placeholder for one this file pretends to
+ * have built.
+ *
+ * ALSO DISCLOSED: `NotifyInput.priority` defaults to `'normal'`, so a
+ * `call_incoming` push is now itself subject to the asleep/school gate like
+ * any other arrival. Nothing in this codebase has ever set `'emergency'`
+ * priority anywhere, and MASTERFILE §6.4's own gate() contract names
+ * `'emergency'` as the ONLY bypass that exists — inventing a
+ * calls-always-bypass rule here, with no product decision on record for it,
+ * would be exactly the kind of unscoped call this codebase's own established
+ * practice (see RLS-01's scoping, this same batch) argues against. A future
+ * caller that has an actual emergency-call concept sets `priority:
+ * 'emergency'` explicitly; nothing here decides that concept exists.
  */
+import { DateTime } from 'luxon';
 import type pg from 'pg';
 import { buildPush, sendGuard, type PushInput, type PushPayload, type PushKind } from './push.ts';
 import { sendFcm } from './fcm.ts';
-import { sendApns } from './apns.ts';
+import { sendApns, openApnsSession, type ApnsSession, type Http2SessionLike } from './apns.ts';
 import {
-  deviceTokensFor, removeDeviceTokenSystem,
+  deviceTokensFor, removeDeviceTokenSystem, childCtxFor,
   type DeviceOwner, type DeviceTokenRow,
 } from '../../db/src/pool.ts';
 import { type Channel, admitDevice, channelAdvice } from '../../devices/src/devices.ts';
+import { gate, type Priority } from '../../delivery-engine/src/gate.ts';
 
 export interface NotifyInput {
   kind: PushKind;
@@ -40,6 +81,13 @@ export interface NotifyInput {
   /** call_incoming only. */
   callRoomHandle?: string;
   collapseKey?: string;
+  /**
+   * MASTERFILE §6.4's gate() contract: `'emergency'` is the one priority the
+   * asleep/school gate never blocks. Defaults to `'normal'` — see this
+   * file's own header for why nothing here invents an automatic bypass for
+   * `call_incoming`.
+   */
+  priority?: Priority;
 }
 
 export interface DeviceSendResult {
@@ -47,7 +95,10 @@ export interface DeviceSendResult {
   platform: 'android' | 'ios';
   ok: boolean;
   /** Present only when ok:false — one of buildPush/sendGuard/fcm/apns's own
-   * thrown `.code`s, e.g. 'fcm_config_missing', 'apns_send_failed'. */
+   * thrown `.code`s, e.g. 'fcm_config_missing', 'apns_send_failed'; or
+   * 'no_push_capability' (admitDevice() skip, below) or
+   * 'gated_quiet_hours' (MASTERFILE §6.4 gate() skip, this file's own
+   * header) — neither of which reaches fcm.ts/apns.ts at all. */
   code?: string;
   /**
    * Present only when ok:false — `String(e.message)` from whichever of
@@ -105,7 +156,24 @@ export interface NotifyDeviceDeps {
   buildPush?: (input: PushInput) => PushPayload;
   sendGuard?: (p: PushPayload) => PushPayload;
   sendFcm?: (p: PushPayload) => Promise<unknown>;
-  sendApns?: (p: PushPayload) => Promise<unknown>;
+  /**
+   * `opts.session` is P2's batch-level shared-session param (apns.ts's own
+   * `sendApns()` header) — declared here too so a real, non-overridden
+   * `sendApns` can still be called with it below without an arity error;
+   * a test override that ignores the second parameter (every existing one
+   * in notify.test.mjs) remains perfectly valid, same as before this pass.
+   */
+  sendApns?: (p: PushPayload, opts?: { session?: Http2SessionLike }) => Promise<unknown>;
+  /**
+   * Test-only injection seam, added this pass (P2). Defaults to the real
+   * `openApnsSession` — same "pass nothing, get the real thing" rule as
+   * every other seam here. Exists so a test can prove the actual
+   * session-sharing behavior (one object handed to every iOS sendApns()
+   * call in a batch, closed exactly once) without needing a real Apple
+   * credential or a real HTTP/2 socket — see notify.test.mjs's own new
+   * section for what this seam is used to prove.
+   */
+  openApnsSession?: typeof openApnsSession;
   /**
    * Test-only injection seam, added v0.49.14. `admitDevice()`'s `ok:false`
    * ("silent_device") branch cannot currently be reached with real data —
@@ -173,6 +241,18 @@ function resolveChannel(device: DeviceTokenRow): Channel {
  * here — never handed to fcm.ts/apns.ts at all — rather than fired into the
  * void and left for the platform to (maybe) report back as a failure. See
  * `resolveChannel()` above for the exact, honestly-limited resolution rule.
+ *
+ * P1 (this pass): for a CHILD-targeted `target`, the MASTERFILE §6.4
+ * asleep/school gate now runs ONCE, before any device is touched — see this
+ * file's own header for the full reasoning, the hard-skip-not-defer scope,
+ * and why `call_incoming` gets no automatic bypass.
+ *
+ * P2 (this pass): the per-device sends now run CONCURRENTLY
+ * (`Promise.all`), not one at a time, and every iOS send in the batch shares
+ * one real HTTP/2 session (`openApnsSession()`, apns.ts) instead of each
+ * paying for its own connect/close — see apns.ts's own header for the
+ * ownership contract. Neither change alters this function's own contract
+ * above: one result per device, one device's failure never touches another's.
  */
 export async function notifyDevices(
   pool: pg.Pool, target: DeviceOwner, input: NotifyInput, deps: NotifyDeviceDeps = {},
@@ -183,10 +263,31 @@ export async function notifyDevices(
   const _sendApns = deps.sendApns ?? sendApns;
   const _admitDevice = deps.admitDevice ?? admitDevice;
   const _removeDeviceTokenSystem = deps.removeDeviceTokenSystem ?? removeDeviceTokenSystem;
+  const _openApnsSession = deps.openApnsSession ?? openApnsSession;
 
   const devices: DeviceTokenRow[] = await deviceTokensFor(pool, target);
-  const results: DeviceSendResult[] = [];
 
+  // ---- P1: MASTERFILE §6.4 recipient-side gate — see this file's header --
+  if ('childId' in target) {
+    const ctx = await childCtxFor(pool, target.childId);
+    const g = ctx ? gate(ctx, DateTime.utc(), input.priority ?? 'normal') : null;
+    if (g && !g.allow) {
+      return devices.map((device): DeviceSendResult => ({
+        deviceTokenId: device.id, platform: device.platform, ok: false,
+        code: 'gated_quiet_hours',
+        message: `blocked by day-part '${g.reason}'`
+          + (g.deferTo ? `; next reachable window starts ${g.deferTo.toUTC().toISO()}` : ''),
+      }));
+    }
+  }
+
+  // ---- admission pass: resolve each device's real §8.11.4 channel now, so
+  // the concurrent send pass below only ever touches devices already known
+  // capable of push. Order of `results` does not need to match `devices` —
+  // every existing caller (notify.test.mjs) looks results up by
+  // deviceTokenId, never by array position, for exactly this reason.
+  const results: DeviceSendResult[] = [];
+  const admitted: DeviceTokenRow[] = [];
   for (const device of devices) {
     const channel = resolveChannel(device);
     const admission = _admitDevice(channel);
@@ -197,9 +298,28 @@ export async function notifyDevices(
         code: 'no_push_capability',
         advice: admission.ok ? (channelAdvice(channel) ?? undefined) : admission.note,
       });
-      continue;
+    } else {
+      admitted.push(device);
     }
+  }
 
+  // ---- P2: one shared APNs session for this batch's iOS sends. Best-effort
+  // ONLY — if opening it throws for any reason (missing credentials, a real
+  // connect failure), this silently falls back to no shared session, and
+  // each iOS send below opens/closes its own exactly as it always has.
+  // Nothing downstream needs to know which happened: sendApns() without
+  // `opts.session` is byte-for-byte its pre-P2 behavior, so a batch that
+  // couldn't get a shared session is not a batch that failed, only one that
+  // didn't get the optimization. This is deliberate, not an oversight — see
+  // notify.test.mjs's own "no override" section (E), which depends on a
+  // missing-credential environment producing the SAME apns_config_missing
+  // per device it always has, not a new batch-level failure shape.
+  let apnsSession: ApnsSession | null = null;
+  if (admitted.some((d) => d.platform === 'ios')) {
+    try { apnsSession = _openApnsSession(); } catch { apnsSession = null; }
+  }
+
+  const sendToOneDevice = async (device: DeviceTokenRow): Promise<DeviceSendResult> => {
     try {
       const payload = _buildPush({
         kind: input.kind,
@@ -214,9 +334,9 @@ export async function notifyDevices(
       _sendGuard(payload);
 
       if (device.platform === 'android') await _sendFcm(payload);
-      else await _sendApns(payload);
+      else await _sendApns(payload, apnsSession ? { session: apnsSession.session } : {});
 
-      results.push({ deviceTokenId: device.id, platform: device.platform, ok: true });
+      return { deviceTokenId: device.id, platform: device.platform, ok: true };
     } catch (e: any) {
       const code = e?.code ?? 'unknown_error';
       const message = String(e?.message ?? e);
@@ -228,8 +348,19 @@ export async function notifyDevices(
         try { pruned = await _removeDeviceTokenSystem(pool, device.id); }
         catch { /* best-effort cleanup; the send failure is still reported below */ }
       }
-      results.push({ deviceTokenId: device.id, platform: device.platform, ok: false, code, message, pruned });
+      return { deviceTokenId: device.id, platform: device.platform, ok: false, code, message, pruned };
     }
+  };
+
+  try {
+    const sent = await Promise.all(admitted.map(sendToOneDevice));
+    results.push(...sent);
+  } finally {
+    // Whichever devices settled — Promise.all above only resolves once ALL
+    // of them have, success or reported-failure alike; sendToOneDevice()
+    // itself never rejects — so by the time control reaches here, nothing
+    // is still using this session.
+    apnsSession?.close();
   }
   return results;
 }

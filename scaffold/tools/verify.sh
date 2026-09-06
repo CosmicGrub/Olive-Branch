@@ -363,6 +363,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \
+            "db RLS coverage — no table silently missing from health_check (real DB)|packages/db/test/rls_coverage.test.mjs" \
             "messages route (real DB)|packages/api/test/messages_route.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \

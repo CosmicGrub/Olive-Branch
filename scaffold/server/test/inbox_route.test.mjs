@@ -51,6 +51,7 @@ const ALL_CHILDREN = [CHILD, CHILD_STRANGER];
 
 const cleanup = async () => {
   await admin.query(`DELETE FROM delivery_intent WHERE child_id = ANY($1::uuid[])`, [ALL_CHILDREN]);
+  await admin.query(`DELETE FROM media_artifact WHERE child_id = ANY($1::uuid[])`, [ALL_CHILDREN]);
   await admin.query(`DELETE FROM guardianship WHERE child_id = ANY($1::uuid[])`, [ALL_CHILDREN]);
   await admin.query(`DELETE FROM child WHERE id = ANY($1::uuid[])`, [ALL_CHILDREN]);
   await admin.query(`DELETE FROM app_user WHERE id = ANY($1::uuid[])`, [[DAD, STEPMOM, SITTER]]);
@@ -262,6 +263,79 @@ const stateOf = async (id) => {
   const alreadyOpenedRes = await markOpened(CHILD, MSG_OPENED, childTok);
   check('E mark opened', 'a message that was ALREADY opened before this section ever ran '
     + 'is also an idempotent 200', alreadyOpenedRes.status, 200);
+}
+
+// ===========================================================================
+// F · retentionOnOpen() actually runs now — G2. packages/messaging/src/
+//     pipeline.ts's retentionOnOpen()/openReceipt() are real, tested, and
+//     had zero production callers: this route is the ONE place `state =
+//     'opened'` is ever written, and before this pass it never touched
+//     media_artifact.expires_at at all. A real media_artifact this time
+//     (unlike sections A-E's payload_ref, which deliberately points at
+//     nothing — see this file's own comment on why that's fine for THOSE
+//     assertions), so the retention write has something real to shorten.
+// ===========================================================================
+{
+  const RETAIN_ARTIFACT = randomUUID();
+  const RETAIN_MSG = randomUUID();
+  const PRESERVED_ARTIFACT = randomUUID();
+  const PRESERVED_MSG = randomUUID();
+  await admin.query(
+    `INSERT INTO media_artifact
+       (id, child_id, author_id, kind, storage_key, captured_at, captured_tz,
+        preserved, preserved_by, preserved_at, expires_at)
+     VALUES
+       ($1, $3, $4, 'video_msg', 'k/retain-on-open', now(), 'America/Chicago',
+        false, null, null, now() + interval '90 days'),
+       ($2, $3, $4, 'video_msg', 'k/preserved-stays-null', now(), 'America/Chicago',
+        true, $4, now(), null)`,
+    [RETAIN_ARTIFACT, PRESERVED_ARTIFACT, CHILD, DAD]);
+  await admin.query(
+    `INSERT INTO delivery_intent
+       (id, child_id, sender_id, payload_kind, payload_ref, policy, state,
+        expires_at, materialized_at)
+     VALUES
+       ($1, $4, $5, 'video_msg', $2, 'immediate', 'delivered',
+        now() + interval '90 days', now()),
+       ($6, $4, $5, 'video_msg', $3, 'immediate', 'delivered',
+        now() + interval '90 days', now())`,
+    [RETAIN_MSG, RETAIN_ARTIFACT, PRESERVED_ARTIFACT, CHILD, DAD, PRESERVED_MSG]);
+
+  const expiresBefore = (await admin.query(
+    `SELECT expires_at FROM media_artifact WHERE id = $1`, [RETAIN_ARTIFACT])).rows[0].expires_at;
+  check('F retention on open', 'starts on its full 90-day unopened clock, the real '
+    + 'precondition this section assumes', expiresBefore > new Date(Date.now() + 89 * 86400000), true);
+
+  const res = await markOpened(CHILD, RETAIN_MSG, childTok);
+  check('F retention on open', 'marking it opened still succeeds', res.status, 200);
+
+  const artifactAfter = (await admin.query(
+    `SELECT expires_at FROM media_artifact WHERE id = $1`, [RETAIN_ARTIFACT])).rows[0];
+  const daysLeft = (artifactAfter.expires_at.getTime() - Date.now()) / 86400000;
+  check('F retention on open', 'opening it for real shortens expires_at down toward the '
+    + '30-day post-open window (§10.1) -- not left on its original 90-day unopened clock',
+    daysLeft < 31 && daysLeft > 0, true);
+
+  const secondOpen = await markOpened(CHILD, RETAIN_MSG, childTok);
+  check('F retention on open', 'a second, idempotent open succeeds too', secondOpen.status, 200);
+  const artifactStill = (await admin.query(
+    `SELECT expires_at FROM media_artifact WHERE id = $1`, [RETAIN_ARTIFACT])).rows[0];
+  check('F retention on open', 'and never LENGTHENS the clock on a later re-open '
+    + '-- retentionOnOpen()\'s own "shortens, never lengthens" guarantee, proved through '
+    + 'the real route, not just the pure function in isolation',
+    artifactStill.expires_at.getTime() <= artifactAfter.expires_at.getTime(), true);
+
+  const preservedRes = await markOpened(CHILD, PRESERVED_MSG, childTok);
+  check('F retention on open', 'opening a PRESERVED artifact\'s message still succeeds',
+    preservedRes.status, 200);
+  const preservedAfter = (await admin.query(
+    `SELECT expires_at, preserved FROM media_artifact WHERE id = $1`,
+    [PRESERVED_ARTIFACT])).rows[0];
+  check('F retention on open', 'a preserved artifact is never put on a retention clock by '
+    + 'opening it -- retentionOnOpen() returns null for preserved=true, and the route '
+    + 'correctly does not write anything in that case', preservedAfter.expires_at, null);
+  check('F retention on open', 'and it is still marked preserved -- untouched, not silently '
+    + 'un-preserved', preservedAfter.preserved, true);
 }
 
 await cleanup();

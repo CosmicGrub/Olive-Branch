@@ -124,6 +124,17 @@ Color dayPartColor(String kind) => _dayPartColor[kind] ?? fallbackDayPartColor;
 /// asleep 20:00→06:30 is handled the same way the TS handles it), and flag
 /// the segment right after it as "next". The glyph is static — no pulse, no
 /// spin — same "§8.13 gets no icon exception" rule the TS docstring states.
+///
+/// PRECISION CHECKED (phase3.ts's own `scheduleStrip()` header has the full
+/// trace, done the same pass gate.ts/pool.ts's boundary-minute string-width
+/// bug was found and fixed): `String.compareTo` below is Dart's lexicographic
+/// compare, the same shorter-is-less-than-its-own-prefix trap JS `<`/`>=`
+/// has. Both real callers (my_day.dart, inbox_screen.dart) pass `hhmmNow()`
+/// (manually zero-padded, always 5 chars) against literal `demoDayParts`
+/// (also 5 chars) — never a live-fetched value here. The one real `/ribbon`
+/// consumer, guardian_home_live.dart, does not call this function at all —
+/// it uses `minutesSinceMidnight()` (numeric, immune by construction) via
+/// `bandsFromDayParts()` instead. No change needed.
 List<StripSegment> scheduleStrip(List<DayPartLite> parts, String nowLocal) {
   final List<DayPartLite> sorted = List<DayPartLite>.of(parts)
     ..sort((DayPartLite a, DayPartLite b) => a.startsLocal.compareTo(b.startsLocal));

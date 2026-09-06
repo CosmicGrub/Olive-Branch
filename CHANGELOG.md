@@ -14,6 +14,89 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.69] — 2026-09-06 — Roadmap batch 2: the gate now runs on the actual send path
+
+Continues the 47-item backlog batch 1 triaged (see the 0.49.68 entry below).
+This batch closes four items, three of them real "built but never actually
+wired to anything" gaps rather than missing features — the same class of
+bug batch 1's own retrospective flagged as the dominant pattern in this
+codebase.
+
+### Fixed — security & correctness
+- **`notifyDevices()` never consulted the §6.4 asleep/school gate — the one
+  real production caller (`call_incoming`, the calls route) rang a
+  sleeping or in-school child's device with no check at all.** `gate()`
+  (`packages/delivery-engine/src/gate.ts`) had exactly one real caller
+  before this pass: the read-only `GET /now` route, a display, never a
+  send-time block. Fixed by resolving `childCtxFor()` + `gate()` once
+  inside `notifyDevices()` (`packages/transport/src/notify.ts`), before any
+  device is touched, for every CHILD-targeted send — a blocked batch is
+  skipped entirely (`code: 'gated_quiet_hours'`), not fired and left for
+  the OS to maybe silence. Deliberately a hard skip, not the deferred-retry
+  `deferTo` otherwise supports — no queue/scheduler in this codebase can
+  re-attempt a push later yet, and a live call has nothing meaningful to
+  defer to regardless. `NotifyInput.priority` defaults to `'normal'`, so
+  `call_incoming` is now itself subject to the gate like any other arrival;
+  nothing in this codebase has ever set `'emergency'` priority anywhere, so
+  no automatic calls-always-bypass rule was invented here. Landed alongside
+  a real performance fix in the same file: per-device sends now run
+  concurrently (`Promise.all`) instead of serially, and every iOS send in a
+  batch shares one real HTTP/2 session (`openApnsSession()`,
+  `packages/transport/src/apns.ts`) instead of paying a fresh connect/close
+  per device — best-effort only, silently falling back to the old
+  one-session-per-send behavior if opening the shared session fails.
+- **`health_check`'s tracked-table list fell behind a real RLS migration a
+  fourth time.** `db/migrations/0026_medications_emergency_card.sql` gave
+  `medication_dose` real, forced RLS, but only its siblings
+  `medication`/`medical_record` were ever added to `health_check`'s own
+  view. Closed with a new automated backstop, not another manual patch —
+  `packages/db/test/rls_coverage.test.mjs` derives the real RLS-enabled
+  table list from `pg_class` itself and asserts none is missing from
+  `health_check`'s own view SQL and that every RLS-enabled table also
+  carries `FORCE ROW LEVEL SECURITY`. Failed exactly where the gap was on
+  its first real run; fixed via `db/migrations/0029_rls_coverage_fix.sql`.
+  `tools/health-alert.mjs`'s header no longer pins a specific migration
+  number (it had already gone stale on that exact line twice) — it now
+  points at this test as the standing defense instead.
+- **A message's retention clock never actually shortened when she opened
+  it.** `packages/messaging/src/pipeline.ts`'s `retentionOnOpen()`
+  (shortens-never-lengthens, real and tested well before this pass) had no
+  production caller — `POST /v1/children/:childId/inbox/:messageId/opened`
+  marked a message opened and stopped there. A real bug was found wiring
+  this in, not just a missing call: the naive first attempt ran the
+  `media_artifact` UPDATE under the route's own child-role session, and
+  that table's RLS (0023) admits no policy for `child` at all — under
+  `FORCE ROW LEVEL SECURITY` the UPDATE silently touched zero rows, no
+  error. Fixed with a new `applyRetentionOnOpen()` (`packages/db/src/
+  pool.ts`), scoped through `withSystemSession()` the same way
+  `mediaArtifactFor()` already is.
+- **Guardian availability notes had no tone guard, and no way to author one
+  at all.** `invalidAvailabilityBody()` checked only that a note was a
+  string; `availability_screen.dart` had no field to type one into — a note
+  only ever arrived pre-existing in fetched data. An availability note is
+  served straight to the CHILD's own session (more exposed than a care
+  note, which always renders `visibleToChild: false`), so it gets the exact
+  same refusal care notes already get: a new `AVAILABILITY_NOTE_BANNED`
+  export (`packages/guardian/src/guardian.ts`, reusing `CARE_NOTE_BANNED`
+  directly — one word list, not two to keep in sync by hand), enforced
+  server-side before persistence, plus a real, bounded `TextField` in
+  `_dayRow()`.
+
+### Investigated, no change needed
+- **Traced every real caller of `scheduleStrip()`** (`packages/phase3/src/
+  phase3.ts`) — the same boundary-minute string-width comparison shape
+  `gate()` had, fixed earlier this batch via `pool.ts`'s `childCtxFor()`
+  truncation — for the identical risk (a raw DB time cast on one side, a
+  formatted `'HH:mm'` string on the other). `demo/src/bridge.ts`,
+  `client/lib/my_day.dart`, `client/lib/inbox_screen.dart`, and
+  `packages/custody/src/schedule.ts`'s own parallel `isWindowActiveNow()`
+  all already compare consistent 5-character `'HH:mm'` widths on both
+  sides — confirmed, not assumed. No live path today calls `scheduleStrip()`
+  against server-fetched day-parts at all; the one real `/ribbon` consumer
+  (`guardian_home_live.dart`) uses numeric `minutesSinceMidnight()`
+  parsing instead, immune to this bug class by construction. Documented
+  in place at each traced call site rather than left as tribal knowledge.
+
 ## [0.49.68] — 2026-09-06 — Roadmap batch 1: 21 real, verified fixes across the app
 
 A re-audit of every open item across two published upgrade atlases, a
