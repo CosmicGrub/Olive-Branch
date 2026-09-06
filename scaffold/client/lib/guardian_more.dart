@@ -33,6 +33,7 @@ import 'guardian_setup.dart';
 import 'handover_notes.dart';
 import 'hub_widgets.dart';
 import 'invitation_screen.dart';
+import 'jokebook_screen.dart';
 import 'lock_advisory_screen.dart';
 import 'maturation_ladder.dart';
 import 'meds_care.dart';
@@ -449,7 +450,10 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, GamePickerScreen(
               childName: childName,
               onPlay: buildGameNavigator(childName),
-              extraSections: [MoreGamesSections(childName: childName)],
+              extraSections: [
+                MoreGamesSections(childName: childName),
+                JokebookSection(childName: childName),
+              ],
             ))),
         ]),
         HubSection(title: 'Calls', children: [

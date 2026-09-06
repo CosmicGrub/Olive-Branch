@@ -1939,3 +1939,28 @@ export const GAMES_ALL = [
 
 export const gamesForAge = (age: number) => GAMES_ALL.filter(g => age >= g.minAge);
 export { CHESS_HANDICAPS, HANGMAN_LIVES, BS_SIZE, FLEET };
+
+// ---------------------------------------------------------------- jokebook --
+// packages/jokes — bridged so the engine room sees it (check-markup E2) and
+// so the same forAge()/randomJoke()/favourites the Flutter client ports are
+// the ones a browser visitor could drive. No demo screen renders these yet;
+// shell.html's manifest says so under notDemoed rather than pretending.
+import { forAge as jokesForAge, randomJoke, star as jokeStar, unstar as jokeUnstar,
+  isStarred as jokeIsStarred, favouritesChildView as jokeShelf,
+} from '../../packages/jokes/src/jokes.ts';
+
+export function jkOne(age: number, excludeId?: string): Any {
+  return randomJoke(age, excludeId ?? null);
+}
+export function jkForAge(age: number): Any { return jokesForAge(age); }
+export function jkStar(id: string): Any {
+  S.jokeFavs = jokeStar(S.jokeFavs ?? [], id, new Date().toISOString());
+  return jkShelfView();
+}
+export function jkUnstar(id: string): Any {
+  S.jokeFavs = jokeUnstar(S.jokeFavs ?? [], id);
+  return jkShelfView();
+}
+export function jkStarred(id: string): boolean { return jokeIsStarred(S.jokeFavs ?? [], id); }
+/** Her shelf, newest first, titles only — P2. */
+export function jkShelfView(): Any { return jokeShelf(S.jokeFavs ?? []); }
