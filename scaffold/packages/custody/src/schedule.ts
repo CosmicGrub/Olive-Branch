@@ -269,6 +269,15 @@ export interface FreeGuardian {
  * window at all today; that is a real, disclosed, PRE-EXISTING gap in the
  * availability feature itself (this constraint predates this presence
  * feature), not something introduced or silently left broken here.
+ *
+ * PRECISION CHECKED (same pass that fixed gate.ts/pool.ts's boundary-minute
+ * bug — see phase3.ts's `scheduleStrip()` header for the full trace): this
+ * function's two string args are never mismatched width in practice.
+ * `nowLocalHHMM` (server/routes.mjs's `/presence` handler) is luxon's
+ * `local.toFormat('HH:mm')`; `startLocal`/`endLocal` (pool.ts's
+ * `availabilityFor()`) are Postgres `to_char(w.start_local, 'HH24:MI')` —
+ * both always exactly 5 characters, never a bare `::text` cast. No change
+ * needed.
  */
 function isWindowActiveNow(startLocal: string, endLocal: string, nowLocalHHMM: string): boolean {
   return startLocal <= endLocal

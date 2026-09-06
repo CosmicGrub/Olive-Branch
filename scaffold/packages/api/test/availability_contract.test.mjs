@@ -189,12 +189,21 @@ function makeFakePool() {
   check('B validate', 'a non-array body → 400', notArray.status, 400);
   check('B validate', 'reason is specific', notArray.body.error, 'body_must_be_array');
 
+  // ---- availability-note-tone-guard: same §12.5 pattern as care notes,
+  // applied here because this note IS served to the child (unlike a care
+  // note) — see AVAILABILITY_NOTE_BANNED's own header in guardian.ts.
+  const accusatory = await hit('PUT', '/v1/me/availability', dadTok,
+    JSON.stringify([{ weekday: 1, startLocal: '09:00', endLocal: '12:00',
+      note: "busy, unlike at your house she gets to relax" }]));
+  check('B validate', 'a note containing a banned accusatory phrase → 400', accusatory.status, 400);
+  check('B validate', 'reason is specific', accusatory.body.error, 'accusatory_note');
+
   // ---- role guard -----------------------------------------------------------
   const asChild = await hit('PUT', '/v1/me/availability', childTok, goodBody);
   check('B guard', 'a child session cannot write availability → 403', asChild.status, 403);
   check('B guard', 'reason names the guard', asChild.body.error, 'guardian_only');
 
-  check('B guard', 'none of the 4 rejected requests above reached the write path (still just 1 DELETE + 2 INSERTs)',
+  check('B guard', 'none of the 5 rejected requests above reached the write path (still just 1 DELETE + 2 INSERTs)',
     writes.length, 3);
 }
 

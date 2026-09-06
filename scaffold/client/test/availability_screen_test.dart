@@ -189,6 +189,88 @@ void main() {
         'weekday': 5, 'startLocal': '08:00', 'endLocal': '10:00', 'note': 'school run',
       });
     });
+
+    testWidgets('a guardian can actually author a note — availability-note-tone-guard '
+        '(previously read-only; server-side tone guard is server/routes.mjs\'s own job, '
+        'proven separately in availability_contract.test.mjs)', (t) async {
+      final captured = <Map<String, dynamic>>[];
+      await pumpTall(t, AvailabilityScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        httpClient: mockFor(
+          windows: <Map<String, dynamic>>[
+            {'guardianId': 'dad-1', 'guardianName': 'Dad', 'weekday': 2,
+              'startLocal': '09:00', 'endLocal': '12:00', 'note': null},
+          ],
+          capturedPuts: captured,
+        )));
+      await t.pumpAndSettle();
+
+      final noteField = find.byKey(const Key('availabilityNote_2'));
+      expect(noteField, findsOneWidget); // the field exists once a window does
+      await t.enterText(noteField, 'at work');
+      await t.pump();
+
+      await t.tap(find.text('Save'));
+      await t.pumpAndSettle();
+      expect(captured.single, <String, dynamic>{
+        'weekday': 2, 'startLocal': '09:00', 'endLocal': '12:00', 'note': 'at work',
+      });
+    });
+
+    testWidgets('clearing a day also discards its note, not just its window', (t) async {
+      final captured = <Map<String, dynamic>>[];
+      await pumpTall(t, AvailabilityScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        httpClient: mockFor(
+          windows: <Map<String, dynamic>>[
+            {'guardianId': 'dad-1', 'guardianName': 'Dad', 'weekday': 3,
+              'startLocal': '09:00', 'endLocal': '12:00', 'note': 'with grandma'},
+          ],
+          capturedPuts: captured,
+        )));
+      await t.pumpAndSettle();
+
+      await t.tap(find.widgetWithIcon(IconButton, Icons.close).first);
+      await t.pump();
+      expect(find.byKey(const Key('availabilityNote_3')), findsNothing);
+
+      // Every OTHER weekday also reads "Set a window" now (this fixture only
+      // ever populated Wednesday) — scope to Wednesday's own Card so this
+      // doesn't accidentally set Sunday's window instead.
+      final wednesdayCard = find.ancestor(of: find.text('Wednesday'), matching: find.byType(Card));
+      await t.tap(find.descendant(of: wednesdayCard, matching: find.text('Set a window')));
+      await t.pumpAndSettle(); // real Material time picker opens
+      await t.tap(find.text('OK'));
+      await t.pumpAndSettle();
+
+      final freshField = find.byKey(const Key('availabilityNote_3'));
+      expect(freshField, findsOneWidget);
+      expect((t.widget<TextField>(freshField)).controller?.text, '');
+
+      await t.tap(find.text('Save'));
+      await t.pumpAndSettle();
+      expect(captured.single['note'], null); // no resurrected 'with grandma'
+    });
+
+    testWidgets('an all-whitespace note is stored as no note at all, not a blank string', (t) async {
+      final captured = <Map<String, dynamic>>[];
+      await pumpTall(t, AvailabilityScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        httpClient: mockFor(
+          windows: <Map<String, dynamic>>[
+            {'guardianId': 'dad-1', 'guardianName': 'Dad', 'weekday': 4,
+              'startLocal': '09:00', 'endLocal': '12:00', 'note': null},
+          ],
+          capturedPuts: captured,
+        )));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byKey(const Key('availabilityNote_4')), '   ');
+      await t.pump();
+      await t.tap(find.text('Save'));
+      await t.pumpAndSettle();
+      expect(captured.single.containsKey('note'), false);
+    });
   });
 
   group('AvailabilityScreen — responsive two-pane split (§8.11.1, form_factors.dart)', () {

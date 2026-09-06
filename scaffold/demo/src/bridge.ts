@@ -354,6 +354,10 @@ export function lists() {
            claimWant: claimNeed(items[3], 'dad') };
 }
 
+// PRECISION CHECKED (phase3.ts's own scheduleStrip() header has the full
+// trace): DAYPARTS below is hand-written 'HH:mm' literals, and `nowLocal`
+// here is luxon's `toFormat('HH:mm')` — same 5-char width both sides, no
+// gate.ts-class boundary-minute risk.
 export function strip() {
   const n = now();
   const zone = resolveZone(CTX.tzIntervals, n, CTX.homeTz);

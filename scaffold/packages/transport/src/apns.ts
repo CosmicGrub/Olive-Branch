@@ -142,6 +142,51 @@ export interface Http2Like {
 export interface ApnsSendOk { ok: true; apnsId: string | null }
 
 /**
+ * A real HTTP/2 session opened once and reused across several sendApns()
+ * calls — packages/transport/src/notify.ts's `notifyDevices()` opens one per
+ * batch, for that batch's iOS sends, instead of the one-session-per-send
+ * cost `sendApns()` otherwise pays on its own (see this session's own
+ * `session.on('error', ...)` handler below for the one piece of lifecycle
+ * management a SHARED session still needs that an owned one already got from
+ * `sendApns()` itself).
+ */
+export interface ApnsSession { session: Http2SessionLike; close(): void }
+
+/**
+ * Opens one real HTTP/2 session for a caller to pass into several sendApns()
+ * calls via `opts.session` — see notifyDevices()'s own header for why this
+ * exists (P2, one connection per push-batch rather than per device). Runs
+ * the SAME config checks sendApns() runs first (readCreds/readTopic) so a
+ * missing-credential environment fails here exactly the way it already fails
+ * inside a plain sendApns() call — never a surprise only this path produces.
+ *
+ * Ownership: the caller closes the returned session exactly once, after
+ * every sendApns() call it was passed to has settled. A session passed to
+ * sendApns() via `opts.session` is never closed BY sendApns() itself — see
+ * that function's own `ownsSession` comment. This function's own
+ * `session.on('error', ...)` handler exists only so a session-wide failure
+ * can't crash the process as an unhandled EventEmitter 'error' (Node's
+ * default for a zero-listener 'error' event) — each individual sendApns()
+ * call sharing this session still gets its own stream-level `req.on('error',
+ * ...)` for a genuine per-request failure signal, unchanged from the
+ * owned-session path below.
+ */
+export function openApnsSession(opts: { host?: string; http2Impl?: Http2Like } = {}): ApnsSession {
+  readCreds();
+  readTopic();
+  const host = opts.host ?? process.env.APNS_HOST ?? APNS_HOST_PRODUCTION;
+  const h2: Http2Like = opts.http2Impl ?? (nodeHttp2 as unknown as Http2Like);
+  let session: Http2SessionLike;
+  try {
+    session = h2.connect(host);
+  } catch (e: any) {
+    throw apnsError('apns_connect_failed', `APNs HTTP/2 connect failed: ${e?.message ?? e}`);
+  }
+  session.on('error', () => { try { session.close(); } catch { /* already gone */ } });
+  return { session, close: () => { try { session.close(); } catch { /* already closed */ } } };
+}
+
+/**
  * Sends one push via APNs HTTP/2. THROWS on any failure — config
  * (apns_config_missing/invalid), transport (apns_connect_failed/
  * apns_stream_failed) and API-level (apns_send_failed) alike, all as
@@ -149,42 +194,62 @@ export interface ApnsSendOk { ok: true; apnsId: string | null }
  *
  * `err.deviceGone === true` marks Apple's own definitive dead-token signals
  * (Unregistered, BadDeviceToken) — notify.ts prunes the row on these.
+ *
+ * `opts.session` (P2) — a session obtained from openApnsSession(), reused
+ * across a whole notifyDevices() batch instead of this call opening its own.
+ * When provided, the ownership rule flips: `ownsSession` below is false, so
+ * neither the 'end' path nor either 'error' path closes it — the CALLER
+ * closes a shared session exactly once, after the whole batch has settled,
+ * not this individual call. When omitted (every existing caller, still the
+ * default), behavior is byte-for-byte what it always was: connect, use,
+ * close, every single call.
  */
 export function sendApns(
   payload: PushPayload,
-  opts: { host?: string; http2Impl?: Http2Like; now?: number } = {},
+  opts: { host?: string; http2Impl?: Http2Like; now?: number; session?: Http2SessionLike } = {},
 ): Promise<ApnsSendOk> {
   const creds = readCreds();
   const topic = readTopic();
   const now = opts.now ?? Date.now();
   const jwt = mintProviderToken(creds, now);
-  const host = opts.host ?? process.env.APNS_HOST ?? APNS_HOST_PRODUCTION;
-  const h2: Http2Like = opts.http2Impl ?? (nodeHttp2 as unknown as Http2Like);
   const apnsTopic = payload.apns?.topicSuffix ? `${topic}${payload.apns.topicSuffix}` : topic;
   const body = JSON.stringify(toApnsRequestBody(payload));
+  const ownsSession = !opts.session;
 
   return new Promise<ApnsSendOk>((resolve, reject) => {
     let session: Http2SessionLike;
-    try {
-      session = h2.connect(host);
-    } catch (e: any) {
-      reject(apnsError('apns_connect_failed', `APNs HTTP/2 connect failed: ${e?.message ?? e}`));
-      return;
+    if (opts.session) {
+      session = opts.session;
+    } else {
+      const host = opts.host ?? process.env.APNS_HOST ?? APNS_HOST_PRODUCTION;
+      const h2: Http2Like = opts.http2Impl ?? (nodeHttp2 as unknown as Http2Like);
+      try {
+        session = h2.connect(host);
+      } catch (e: any) {
+        reject(apnsError('apns_connect_failed', `APNs HTTP/2 connect failed: ${e?.message ?? e}`));
+        return;
+      }
     }
-    session.on('error', (err: Error) => {
-      // Close on the way out — otherwise a session that failed with its own
-      // 'error' event still holds an open socket. h2.connect() opens one
-      // fresh session per sendApns() call with no pooling, so a batch of
-      // sends during a flaky network path (mid-write RST_STREAM, transient
-      // connection error) would otherwise accumulate open HTTP/2
-      // sessions/sockets in a long-running Node process, one per failure,
-      // eventually risking file-descriptor/socket exhaustion unrelated to
-      // the actual send outcome. session.close() on an already-erroring
-      // session is safe (node:http2 tolerates closing a session that's
-      // mid-teardown).
-      session.close();
-      reject(apnsError('apns_connect_failed', `APNs HTTP/2 session error: ${err.message}`));
-    });
+    const closeIfOwned = () => { if (ownsSession) session.close(); };
+
+    if (ownsSession) {
+      session.on('error', (err: Error) => {
+        // Close on the way out — otherwise a session that failed with its own
+        // 'error' event still holds an open socket. h2.connect() opens one
+        // fresh session per sendApns() call with no pooling, so a batch of
+        // sends during a flaky network path (mid-write RST_STREAM, transient
+        // connection error) would otherwise accumulate open HTTP/2
+        // sessions/sockets in a long-running Node process, one per failure,
+        // eventually risking file-descriptor/socket exhaustion unrelated to
+        // the actual send outcome. session.close() on an already-erroring
+        // session is safe (node:http2 tolerates closing a session that's
+        // mid-teardown). A SHARED session (opts.session, P2) skips this: its
+        // own opener (openApnsSession()) already attached this exact
+        // handler once for the whole batch, and closes it once, not per-send.
+        session.close();
+        reject(apnsError('apns_connect_failed', `APNs HTTP/2 session error: ${err.message}`));
+      });
+    }
 
     const req = session.request({
       ':method': 'POST',
@@ -205,15 +270,16 @@ export function sendApns(
     req.on('data', (chunk: string) => { responseBody += chunk; });
     req.on('error', (err: Error) => {
       // Same reasoning as session.on('error') above — a stream-level error
-      // (e.g. mid-write RST_STREAM) must not leave the session it belongs to
-      // open. This is the fix for the review finding: previously only the
+      // (e.g. mid-write RST_STREAM) must not leave an OWNED session open.
+      // This is the fix for the review finding: previously only the
       // clean 'end' path below ever called session.close(), so BOTH error
-      // branches leaked a socket per failed send.
-      session.close();
+      // branches leaked a socket per failed send. A shared session (P2) is
+      // left alone here — it belongs to the whole batch, not this one send.
+      closeIfOwned();
       reject(apnsError('apns_stream_failed', `APNs HTTP/2 stream error: ${err.message}`));
     });
     req.on('end', () => {
-      session.close();
+      closeIfOwned();
       if (status === 200) {
         resolve({ ok: true, apnsId: null });
         return;

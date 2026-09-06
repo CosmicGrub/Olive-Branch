@@ -303,6 +303,187 @@ const dadP = { roleName: 'guardian', userId: DAD, childId: null };
   await admin.query(`DELETE FROM device_token WHERE id = $1`, [id]);
 }
 
+// ===========================================================================
+// G · P1 — MASTERFILE §6.4's recipient-side gate, now real INSIDE
+// notifyDevices() itself, not just the read-only GET /now route (see this
+// file's own header for the full before/after). Real child + real day_part
+// rows, no gate()/childCtxFor() injection anywhere in this section — a real,
+// reachable-with-real-data path, per NotifyDeviceDeps's own "only add a seam
+// when a real path genuinely can't be reached with real data" discipline.
+// ===========================================================================
+{
+  const CHILD = 'c1111111-1111-1111-1111-111111111111';
+  await admin.query(`DELETE FROM device_token WHERE owner_child_id = $1`, [CHILD]);
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+  await admin.query(`DELETE FROM child WHERE id = $1`, [CHILD]);
+  await admin.query(
+    `INSERT INTO child (id, display_name, birth_date, home_tz)
+     VALUES ($1, 'Ivy', '2016-04-02', 'America/Chicago')`, [CHILD]);
+  const childP = { roleName: 'child', userId: null, childId: CHILD };
+  const childDeviceId = await registerDeviceToken(pool, childP, 'android', 'tok-notify-G-child');
+
+  // Three OVERLAPPING reachable:false windows, not two complementary ones.
+  // This was originally a deliberate workaround for a real precision
+  // mismatch found while writing this section: childCtxFor() cast
+  // starts_local/ends_local via Postgres's `time::text` (seconds-precision,
+  // e.g. '12:00:00') while gate()'s `hhmm` is luxon's minute-precision
+  // 'HH:mm' (e.g. '12:00'); JS string comparison treats the shorter string
+  // as LESS than the longer one it's a prefix of, so a two-row split at
+  // exact boundaries would have made this section's result depend on which
+  // minute it happened to run in. That mismatch is now fixed at the source
+  // — childCtxFor() (packages/db/src/pool.ts) truncates the `::text` cast
+  // to 'HH:mm' width before gate() ever sees it, and
+  // packages/delivery-engine/test/delivery.test.mjs's "G4b boundary minute"
+  // section locks down gate()'s own comparison operators at exact boundary
+  // minutes — so the overlap below is no longer load-bearing, just left in
+  // place as harmless belt-and-suspenders since it costs nothing here.
+  await admin.query(
+    `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+     VALUES
+       ($1, 'asleep', '00:00', '09:00', ARRAY[0,1,2,3,4,5,6]::smallint[], false,
+        daterange(CURRENT_DATE - 1, CURRENT_DATE + 1)),
+       ($1, 'school', '08:00', '17:00', ARRAY[0,1,2,3,4,5,6]::smallint[], false,
+        daterange(CURRENT_DATE - 1, CURRENT_DATE + 1)),
+       ($1, 'asleep', '16:00', '01:00', ARRAY[0,1,2,3,4,5,6]::smallint[], false,
+        daterange(CURRENT_DATE - 1, CURRENT_DATE + 1))`,
+    [CHILD]);
+
+  // G1 · a CHILD-targeted call_incoming push is blocked, not fired — the
+  // real production caller (server/routes.mjs's calls route) sends exactly
+  // this kind, and MASTERFILE §6.4's own text ("block arrivals during
+  // asleep/school") names no calls-specific exception.
+  const calls = [];
+  const blocked = await notifyDevices(pool, { childId: CHILD },
+    { kind: 'call_incoming', ref: 'r10', callRoomHandle: 'room-g1' },
+    { sendFcm: async (p) => { calls.push(p.token); return { ok: true }; } });
+
+  check('G1 gate blocks', 'exactly one result, for the one real device', blocked.length, 1);
+  check('G1 gate blocks', 'the device is reported as gated, not sent to', blocked[0]?.ok, 'false');
+  check('G1 gate blocks', 'carries the gated_quiet_hours code', blocked[0]?.code, 'gated_quiet_hours');
+  check('G1 gate blocks', 'the message names which day-part blocked it',
+    /asleep|school/.test(blocked[0]?.message ?? ''), 'true');
+  check('G1 gate blocks', 'sendFcm was NEVER called — blocked before any per-device send',
+    calls.length, 0);
+
+  // G2 · 'emergency' priority bypasses the SAME blocking day-parts —
+  // gate.ts's own contract, now reachable via NotifyInput.priority.
+  const emergency = await notifyDevices(pool, { childId: CHILD },
+    { kind: 'call_incoming', ref: 'r11', callRoomHandle: 'room-g2', priority: 'emergency' },
+    { sendFcm: async (p) => { calls.push(p.token); return { ok: true }; } });
+  check('G2 emergency bypass', 'an emergency-priority send is NOT blocked by the same day-parts',
+    emergency[0]?.ok, 'true');
+  check('G2 emergency bypass', 'sendFcm WAS called this time',
+    calls.includes('tok-notify-G-child'), 'true');
+
+  // G3 · remove every day-part row — an honest absence (no day-part
+  // classified for "now") allows through, same as gate.ts's own
+  // `current === undefined` fallthrough; `message_ready`, not
+  // `call_incoming`, to also prove the gate isn't call-kind-specific.
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+  const calls2 = [];
+  const open = await notifyDevices(pool, { childId: CHILD },
+    { kind: 'message_ready', ref: 'r12' },
+    { sendFcm: async (p) => { calls2.push(p.token); return { ok: true }; } });
+  check('G3 no day-part = open', 'the send goes through with no day-part rows at all',
+    open[0]?.ok, 'true');
+  check('G3 no day-part = open', 'sendFcm WAS called', calls2.includes('tok-notify-G-child'), 'true');
+
+  // G4 · the gate is CHILD-scoped only (childCtxFor()'s day-part rows are
+  // keyed by child_id; there is no guardian equivalent) — a guardian-
+  // targeted ({userId}) send is never subject to it, proven here with a
+  // real device right after this same section proved the gate itself works.
+  const dadDeviceId = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-G4-guardian');
+  const calls3 = [];
+  const guardianSend = await notifyDevices(pool, { userId: DAD },
+    { kind: 'message_ready', ref: 'r13' },
+    { sendFcm: async (p) => { calls3.push(p.token); return { ok: true }; } });
+  check('G4 guardian ungated', "a {userId} target never reaches the 'childId' in target branch",
+    guardianSend[0]?.ok, 'true');
+  check('G4 guardian ungated', 'sendFcm WAS called (no gate consulted for a guardian target)',
+    calls3.includes('tok-notify-G4-guardian'), 'true');
+
+  await admin.query(`DELETE FROM device_token WHERE id = $1 OR id = $2`, [childDeviceId, dadDeviceId]);
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+  await admin.query(`DELETE FROM child WHERE id = $1`, [CHILD]);
+}
+
+// ===========================================================================
+// H · P2 — the per-device fan-out runs concurrently, and every iOS send in
+// one notifyDevices() batch shares ONE real session object rather than
+// opening its own. Proven via the new openApnsSession seam (NotifyDeviceDeps)
+// — no real Apple credential or real HTTP/2 socket needed to prove the
+// SHARING itself, exactly the reasoning notify.test.mjs's own header already
+// gives for why deps seams exist at all.
+// ===========================================================================
+{
+  const androidId = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-H-android');
+  const ios1 = await registerDeviceToken(pool, dadP, 'ios', 'tok-notify-H-ios-1');
+  const ios2 = await registerDeviceToken(pool, dadP, 'ios', 'tok-notify-H-ios-2');
+
+  let opens = 0, closes = 0;
+  const fakeSession = { marker: 'shared-session-h' };
+  const sessionsSeenByApns = [];
+  const results = await notifyDevices(pool, { userId: DAD },
+    { kind: 'message_ready', ref: 'r14' },
+    {
+      sendFcm: async () => ({ ok: true }),
+      sendApns: async (_p, opts) => { sessionsSeenByApns.push(opts?.session); return { ok: true }; },
+      openApnsSession: () => {
+        opens++;
+        return { session: fakeSession, close: () => { closes++; } };
+      },
+    });
+
+  check('H1 session sharing', 'all three devices report success', results.every(r => r.ok), 'true');
+  check('H1 session sharing', 'openApnsSession was called exactly ONCE for the whole batch (not per iOS device)',
+    opens, 1);
+  check('H1 session sharing', 'both iOS sends received the SAME session object',
+    sessionsSeenByApns.length === 2 && sessionsSeenByApns[0] === fakeSession
+      && sessionsSeenByApns[1] === fakeSession, 'true');
+  check('H1 session sharing', 'the shared session was closed exactly ONCE, after both sends settled',
+    closes, 1);
+
+  await admin.query(`DELETE FROM device_token WHERE id = $1 OR id = $2 OR id = $3`,
+    [androidId, ios1, ios2]);
+}
+
+{
+  // H2 · an all-Android batch never opens a session at all — the
+  // optimization is scoped to batches that actually have an iOS send. A
+  // FRESH device set, isolated from H1's (already deleted above) — this
+  // batch must contain no iOS device at all for the assertion to mean
+  // anything.
+  const androidOnlyId = await registerDeviceToken(pool, dadP, 'android', 'tok-notify-H2-android');
+  let opens2 = 0;
+  await notifyDevices(pool, { userId: DAD }, { kind: 'message_ready', ref: 'r15' },
+    {
+      sendFcm: async () => ({ ok: true }),
+      openApnsSession: () => { opens2++; return { session: {}, close: () => {} }; },
+    });
+  check('H2 android-only skips session', 'openApnsSession is never called for a batch with no iOS device',
+    opens2, 0);
+  await admin.query(`DELETE FROM device_token WHERE id = $1`, [androidOnlyId]);
+}
+
+{
+  // H3 · if opening the shared session itself throws (missing credentials,
+  // a real connect failure), the batch degrades gracefully — each iOS send
+  // still gets attempted with no session, exactly pre-P2 behavior, rather
+  // than the whole batch failing over an optimization that didn't pan out.
+  const iosOnlyId = await registerDeviceToken(pool, dadP, 'ios', 'tok-notify-H3-ios');
+  const sessionsSeenH3 = [];
+  const resultsH3 = await notifyDevices(pool, { userId: DAD }, { kind: 'message_ready', ref: 'r16' },
+    {
+      sendApns: async (_p, opts) => { sessionsSeenH3.push(opts?.session); return { ok: true }; },
+      openApnsSession: () => { throw Object.assign(new Error('boom'), { code: 'apns_config_missing' }); },
+    });
+  check('H3 graceful fallback', 'iOS sends still succeed when opening the shared session throws',
+    resultsH3.filter(r => r.platform === 'ios').every(r => r.ok), 'true');
+  check('H3 graceful fallback', 'each iOS send falls back to no session (undefined), not a crash',
+    sessionsSeenH3.every(s => s === undefined), 'true');
+  await admin.query(`DELETE FROM device_token WHERE id = $1`, [iosOnlyId]);
+}
+
 await admin.query(`DELETE FROM device_token WHERE owner_user_id = $1`, [DAD]);
 await admin.query(`DELETE FROM app_user WHERE id = $1`, [DAD]);
 await admin.end();
