@@ -1686,13 +1686,40 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // certified specifically.
       const result = await rawExportBundleFor(pool, c.principal, c.childId);
       if (!result.ok) return { status: 403, body: { error: result.reason } };
+      // Real, was not before: each delivered artifact's storageKey is a
+      // storage-layer reference, not a fetchable URL -- a guardian who
+      // downloaded a raw export and opened it later found bare keys where
+      // her photos/videos should have been, the same dead-wire pattern the
+      // message-media route (`GET .../media`, above) already closed for its
+      // own single-artifact case. Same fix, same primitive
+      // (`storage.signedUrl()`), applied here to every artifact in the
+      // bundle. Computed fresh on THIS enriched copy only, AFTER
+      // `bundleHash`/`bundleJson` were already derived from `result.bundle`
+      // -- a signed URL carries a time-limited signature, so folding it into
+      // the hashed bytes would make the same export's hash verify
+      // differently depending on when it was downloaded. `bundleHash` keeps
+      // meaning exactly what it always has: a hash over the durable data,
+      // not over a convenience field that expires.
+      const enrichedBundle = {
+        ...result.bundle,
+        delivered: result.bundle.delivered.map((d) => ({
+          ...d,
+          artifact: d.artifact ? {
+            ...d.artifact,
+            signedUrl: storage.signedUrl(d.artifact.storageKey, SIGNED_URL_TTL_SECONDS, Date.now()),
+          } : null,
+        })),
+      };
       return { body: {
-        bundle: result.bundle,
+        bundle: enrichedBundle,
         // The EXACT string bundleHash was computed over -- client/lib/
         // deletion_screen.dart hashes and persists THIS field, not a
         // client-side re-serialization of `bundle`, so "the hash on this
         // file verifies" is never a false negative caused by a JSON
         // encoder disagreeing with Node on key order or number formatting.
+        // Deliberately still `result.serialized`/`result.bundleHash` --
+        // the PRE-enrichment values -- not re-derived from `enrichedBundle`,
+        // for the exact reason given above.
         bundleJson: result.serialized,
         exportRecordId: result.recordId,
         bundleHash: result.bundleHash,

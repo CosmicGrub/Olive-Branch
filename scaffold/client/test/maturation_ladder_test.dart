@@ -355,4 +355,65 @@ void main() {
       });
     }
   });
+
+  group('proactive child reveal — §21.9 C, mirrored onto the child side', () {
+    // childSeenRungReveals is app-run-scoped (module-level), by design — see
+    // its own doc comment. Cleared before each test here so this group's
+    // own assertions don't depend on what order other tests in this file
+    // happened to run in, or what age they used.
+    setUp(() => childSeenRungReveals.clear());
+
+    testWidgets('a newly-crossed rung pushes a real full-screen reveal, unprompted',
+        (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
+      // Deliver the postFrameCallback's own push AND let its route
+      // transition finish — a single pump() only delivers the callback
+      // itself, not the animated MaterialPageRoute it schedules.
+      await tester.pumpAndSettle();
+      expect(find.text('Her own list'), findsWidgets); // the rung's real title
+      expect(find.textContaining('Your list is yours now'), findsOneWidget); // its real ceremony text
+      expect(find.byKey(const Key('rungRevealDismiss')), findsOneWidget);
+    });
+
+    testWidgets('dismissing the reveal returns to the ladder underneath, unharmed',
+        (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('rungRevealDismiss')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('rungRevealDismiss')), findsNothing);
+      expect(find.textContaining('Ivy'), findsWidgets); // back on the real ladder screen
+    });
+
+    testWidgets('the same rung is never revealed a second time this app run', (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('rungRevealDismiss')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('rungRevealDismiss')));
+      await tester.pumpAndSettle();
+
+      // A fresh navigation to the SAME rung state — same posture as a real
+      // app run where she leaves this screen and comes back.
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
+      await tester.pump();
+      expect(find.byKey(const Key('rungRevealDismiss')), findsNothing);
+    });
+
+    testWidgets('the guardian viewer never gets this reveal — it is child-only',
+        (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.guardian,
+        now: DateTime(2026, 1, 1))));
+      await tester.pump();
+      expect(find.byKey(const Key('rungRevealDismiss')), findsNothing);
+    });
+  });
 }

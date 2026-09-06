@@ -208,6 +208,17 @@ IconData grantIcon(Grant g) => switch (g) {
   Grant.everything => Icons.celebration_outlined,
 };
 
+/// App-wide, in-memory (same disclosed-not-durable posture as
+/// `_announcement` below, and the same "real app-wide singleton, not a
+/// per-screen-instance one" fix shared_gallery.dart's `demoAppGallery`
+/// already established): which grants she has already been proactively
+/// shown the reveal for, this app run. Without this at module level (not a
+/// State field), navigating away and back to this screen would re-show the
+/// exact same "just reached" reveal every time, since `recordGrants()` has
+/// no real backend to remember against — see this file's own header on
+/// [_MaturationLadderScreenState.initState].
+final Set<Grant> childSeenRungReveals = <Grant>{};
+
 enum LadderViewer { child, guardian }
 
 /// MARKUP screen 'ladder'. One widget, two tones: [LadderViewer.child] is
@@ -262,6 +273,32 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
     // C) needs server-side state to survive a relaunch. In-memory here, it
     // only survives this one dismiss — disclosed rather than faked durable.
     _announcement = note == null ? null : withName(note, widget.childName);
+
+    // The child-facing counterpart to the guardian banner above — before
+    // this pass, a rung she'd just reached was invisible to her unless she
+    // navigated here herself and tapped the right tile open (three real
+    // taps deep: More → Growing-up ladder → the tile). Proactive now,
+    // mirroring the guardian's own one-time-announcement contract, not a
+    // second, drifting mechanism — same `result.newly` this initState
+    // already computed, filtered against the app-run-scoped `seen` set so
+    // it never resurfaces on a later visit to this same screen.
+    if (widget.viewer == LadderViewer.child) {
+      final List<Rung> toReveal = [
+        for (final MaturationGrant g in result.newly)
+          if (!childSeenRungReveals.contains(g.grant))
+            _ladder.firstWhere((Rung r) => r.grant == g.grant),
+      ];
+      if (toReveal.isNotEmpty) {
+        for (final Rung r in toReveal) {
+          childSeenRungReveals.add(r.grant);
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => _RungRevealScreen(rung: toReveal.first, childName: widget.childName)));
+        });
+      }
+    }
   }
 
   Future<void> _openMoveLater(Rung rung) async {
@@ -343,6 +380,45 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
           ],
         );
       })),
+    );
+  }
+}
+
+/// The proactive, full-screen counterpart to the per-rung tile's own
+/// ceremony text (below, in _RungTile) — same words, shown once, without
+/// requiring her to have already found and expanded the right tile
+/// herself. §8.13 motion budget: one entrance fade, nothing loops, no
+/// celebrate()-style repeat. No settings affordance (§8.1) — a single
+/// dismiss action and nothing else.
+class _RungRevealScreen extends StatelessWidget {
+  const _RungRevealScreen({required this.rung, required this.childName});
+  final Rung rung;
+  final String childName;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: SafeArea(child: Center(child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: AnimatedOpacity(
+          opacity: 1, duration: const Duration(milliseconds: 260),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(grantIcon(rung.grant), size: 56, color: scheme.primary),
+            const SizedBox(height: 20),
+            Text(grantTitle(rung.grant), textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            Text(rung.ceremony, textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4)),
+            const SizedBox(height: 28),
+            SizedBox(height: 52, width: 200, child: FilledButton(
+              key: const Key('rungRevealDismiss'),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it!'))),
+          ]),
+        ),
+      ))),
     );
   }
 }

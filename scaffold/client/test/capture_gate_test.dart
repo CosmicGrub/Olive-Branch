@@ -164,6 +164,10 @@ void main() {
       expect(captured!.problems, isNotNull, reason: 'the real path always carries a problem list');
       expect(captured!.problems!.single.text, '12 + 27 = ____');
       expect(captured!.problems!.single.hint, 'Start at the first number and count on.');
+      // The exact bytes just POSTed for OCR, kept for display — before this
+      // pass they fell out of scope right after the POST and never reached
+      // the outcome at all.
+      expect(captured!.photo, <int>[1, 2, 3]);
       expect(find.byType(CaptureGateScreen), findsNothing);
       expect(find.byType(RetakeScreen), findsNothing);
     });

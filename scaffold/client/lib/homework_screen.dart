@@ -46,6 +46,8 @@
 // P2/P6 checked explicitly by this file's test: no score, streak, or
 // completion badge for finishing a worksheet, and no financial surface
 // anywhere near it.
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
@@ -105,6 +107,9 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
   /// server response. Null after a SIMULATED capture — homework_screen's
   /// own _demoProblems fallback is what renders in that case.
   List<HomeworkProblemResult>? _realProblems;
+  /// Her own photo, real path only — see HomeworkCaptureOutcome.photo's own
+  /// doc comment for why this exists at all.
+  Uint8List? _realPhoto;
 
   /// Which DEMO-path problems currently show a revealed hint (index ->
   /// verdict) — the real path never needs this: a real problem's hint is
@@ -125,7 +130,10 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
         childId: widget.childId,
         sessionToken: widget.sessionToken,
         httpClient: widget.httpClient,
-        onCaptured: (outcome) => _realProblems = outcome.problems,
+        onCaptured: (outcome) {
+          _realProblems = outcome.problems;
+          _realPhoto = outcome.photo;
+        },
       )));
     if (ok == true && mounted) setState(() => _captured = true);
   }
@@ -180,6 +188,21 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
               child: _captured
                   ? Column(key: const ValueKey('problems'), children: [
                       const SizedBox(height: 8),
+                      // Real path only — the simulated path correctly shows
+                      // nothing extra here, preserving this file's own
+                      // honest real-vs-simulated split. Same crossfade the
+                      // problems list below already uses, not a second
+                      // animation invented for this.
+                      if (_realPhoto != null)
+                        AnimatedSwitcher(
+                          duration: Duration(milliseconds: fadeMs),
+                          child: ClipRRect(
+                            key: const ValueKey('realPhotoThumbnail'),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.memory(_realPhoto!,
+                              height: 140, width: double.infinity, fit: BoxFit.cover)),
+                        ),
+                      if (_realPhoto != null) const SizedBox(height: 12),
                       Align(alignment: Alignment.centerLeft,
                         child: Text('Photo looks good — here\'s what we found:',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(

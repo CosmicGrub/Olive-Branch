@@ -28,6 +28,26 @@ void main() {
       expect(find.textContaining('Ready to print'), findsOneWidget);
     });
 
+    testWidgets('shows a real cumulative total across every year, not just the selected one',
+        (WidgetTester tester) async {
+      await pumpScreen(tester);
+      final Finder total = find.textContaining('Her archive so far');
+      expect(total, findsOneWidget);
+      final String text = tester.widget<Text>(total).data!;
+      // A real computed total, not a placeholder — matches
+      // "N pieces across M years/year".
+      expect(text, matches(RegExp(r'Her archive so far: \d+ pieces across \d+ years?\.')));
+      // No printed "0 pieces" — the demo archive genuinely has content.
+      expect(text.contains('0 pieces'), isFalse);
+
+      // Switching the SELECTED year must not change the cumulative total —
+      // it is a sum across every year, computed once, independent of
+      // which single year's book is currently on screen.
+      await tester.tap(find.widgetWithText(ChoiceChip, '2023'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.textContaining('Her archive so far')).data, text);
+    });
+
     testWidgets('switching to a sparse year shows the honest "not a book yet" state',
         (WidgetTester tester) async {
       await pumpScreen(tester);

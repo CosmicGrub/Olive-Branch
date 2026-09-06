@@ -164,6 +164,35 @@ class GuardianMoreScreen extends StatelessWidget {
   /// behavior is identical whether or not anything is listening).
   final void Function(Map<String, dynamic> started)? onCallStarted;
 
+  /// The Deletion tile used to be the one sibling in this file's "Archive"
+  /// section never given the live identity Court export/Availability/the
+  /// real-call tiles above all already get — a bare `const DeletionScreen()`
+  /// that silently fell back to demo defaults even inside a real live
+  /// session, on the single screen whose action is irreversible. Same
+  /// devLoginFor-per-call posture as `_startRealCall` above: a fresh token
+  /// minted right before navigating, not one cached on this stateless
+  /// widget that might have outlived its own session.
+  Future<void> _openDeletion(BuildContext context) async {
+    final url = baseUrl, gid = guardianId;
+    if (url == null || gid == null) {
+      _open(context, const DeletionScreen());
+      return;
+    }
+    try {
+      final token = await devLoginFor(url, userId: gid, client: availabilityHttpClient);
+      if (context.mounted) {
+        _open(context, DeletionScreen(
+          childName: childName, baseUrl: url, sessionToken: token,
+          childId: childId, guardianUserId: gid));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not reach the server: $e'), duration: const Duration(seconds: 3)));
+      }
+    }
+  }
+
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
 
@@ -546,7 +575,7 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, SiblingsScreen())),
           HubTile(icon: Icons.delete_outline, title: 'Deletion',
             subtitle: 'What deletion means here, stated before it happens',
-            onTap: () => _open(context, const DeletionScreen())),
+            onTap: () => _openDeletion(context)),
           HubTile(icon: Icons.record_voice_over_outlined, title: 'Storyteller safety',
             subtitle: 'No synthetic parent voice, ever — what P1 forbids and why',
             onTap: () => _open(context, const StorytellerSafetyScreen())),

@@ -178,6 +178,31 @@ class _DeletionScreenState extends State<DeletionScreen> {
   // delivered") made concrete with the real number this account actually had.
   int? _cancelledDeliveryIntents;
 
+  /// The one confirmation step this screen was missing — every other
+  /// irreversible action in this client (letters_screen.dart's own
+  /// `_confirmDelete`) gets a real "are you sure" dialog between the tap and
+  /// the network call; this one went straight from a single checkbox to a
+  /// live `deleteAccount()` call. Mirrors that same house pattern rather
+  /// than inventing a new one, with copy that passes the same
+  /// `auditDeletionCopy` check `_confirm()` already runs on its own text.
+  Future<void> _confirmThenDelete(BuildContext context) async {
+    final bool? confirmed = await showDialog<bool>(context: context, builder: (BuildContext ctx) =>
+      AlertDialog(
+        title: const Text('Delete your account?'),
+        content: const Text(
+          'This deactivates your account and there is no way to reactivate it from '
+          'here — it is the hardest button in this app, and it cannot be undone. '
+          'Delivered messages, the parent-to-parent log, and her preserved archive '
+          'stay untouched either way.'),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep my account')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete it')),
+        ],
+      ));
+    if (confirmed != true || !context.mounted) return;
+    await _confirm(context);
+  }
+
   Future<void> _confirm(BuildContext context) async {
     setState(() => _deleting = true);
     final OliveApi api =
@@ -204,9 +229,14 @@ class _DeletionScreenState extends State<DeletionScreen> {
       setState(() => _deleting = false);
       // A real failure, reported honestly — never a fake success. §2.10's
       // own posture ("state before it happens") extends to "state
-      // truthfully when it doesn't happen either."
+      // truthfully when it doesn't happen either." One denial is not like
+      // the rest, though: a 409 already_deactivated means nothing is wrong
+      // and retrying can never succeed — showing it as a generic, implicitly
+      // retryable failure invites exactly the retry that won't help.
       final String message = e is ApiException
-        ? 'Could not delete your account (${e.error}). Nothing has changed.'
+        ? (e.statusCode == 409 && e.error == 'already_deactivated'
+            ? 'Your account was already deactivated — there is nothing more to do here.'
+            : 'Could not delete your account (${e.error}). Nothing has changed.')
         : 'Could not reach the server. Nothing has changed.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message), duration: const Duration(seconds: 4)));
@@ -353,7 +383,7 @@ class _DeletionScreenState extends State<DeletionScreen> {
         SizedBox(width: double.infinity, height: 48,
           child: FilledButton.tonal(
             onPressed: (_acknowledged && !_deleting && !_done)
-              ? () => _confirm(context) : null,
+              ? () => _confirmThenDelete(context) : null,
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.errorContainer),
             child: _deleting

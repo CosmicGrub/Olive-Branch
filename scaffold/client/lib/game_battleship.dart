@@ -224,6 +224,22 @@ class _BattleshipHost {
     return result;
   }
 
+  /// Everything a takeback needs to restore — the shared engine state PLUS
+  /// this host's own private targeting memory, which [BsState] itself
+  /// doesn't carry. Free, unlimited takebacks are already the house rule
+  /// for a move just made in every other game here (game_checkers.dart's
+  /// own `_history`/`_undo`); Battleship needed this extra snapshot only
+  /// because its AI keeps state `BsState` doesn't.
+  ({BsState state, List<int> huntQueue}) snapshot() =>
+      (state: _state, huntQueue: List<int>.from(_huntQueue));
+
+  void restore(({BsState state, List<int> huntQueue}) snap) {
+    _state = snap.state;
+    _huntQueue
+      ..clear()
+      ..addAll(snap.huntQueue);
+  }
+
   int _pickParentTarget() {
     while (_huntQueue.isNotEmpty) {
       final c = _huntQueue.removeLast();
@@ -296,6 +312,12 @@ class _GameBattleshipState extends State<GameBattleship> {
   bool _parentThinking = false;
   String? _placementHint;
   String? _shotNarration;
+  // Free, unlimited takebacks during the firing phase — this game's own
+  // version of the house rule every other title here already has
+  // (game_checkers.dart's `_history`/`_undo`). One snapshot per shot,
+  // either side's — Undo pops exactly one, matching checkers' own "walks
+  // back one ply at a time regardless of whose it was" behavior.
+  final List<({BsState state, List<int> huntQueue})> _shotHistory = [];
 
   List<String> get _unplacedNames {
     final placed = _host.state.ships[BsSide.child]!.map((s) => s.name).toSet();
@@ -322,8 +344,10 @@ class _GameBattleshipState extends State<GameBattleship> {
   }
 
   void _fireChild(int cell) {
+    final snap = _host.snapshot();
     final result = _host.fireAt(BsSide.child, cell);
     if (!result.ok) return;
+    _shotHistory.add(snap);
     setState(() {
       _shotNarration = result.sunk != null
           ? 'You sank the ${result.sunk}!'
@@ -338,7 +362,9 @@ class _GameBattleshipState extends State<GameBattleship> {
     setState(() => _parentThinking = true);
     Future.delayed(widget.botThinkDelay, () {
       if (!mounted) return;
+      final snap = _host.snapshot();
       final result = _host.parentTakeShot();
+      if (result.ok) _shotHistory.add(snap);
       setState(() {
         if (result.ok) {
           _shotNarration = result.sunk != null
@@ -365,6 +391,16 @@ class _GameBattleshipState extends State<GameBattleship> {
       _tab = _BoardTab.mine;
       _parentThinking = false;
       _placementHint = null;
+      _shotNarration = null;
+      _shotHistory.clear();
+    });
+  }
+
+  void _undoShot() {
+    if (_shotHistory.isEmpty) return;
+    setState(() {
+      _host.restore(_shotHistory.removeLast());
+      _parentThinking = false;
       _shotNarration = null;
     });
   }
@@ -433,8 +469,21 @@ class _GameBattleshipState extends State<GameBattleship> {
                     onTapCell: _fireChild)),
           )),
           const SizedBox(height: 16),
-          if (finished) Center(child: SizedBox(height: 48, child: FilledButton.icon(
-            onPressed: _resetGame, icon: const Icon(Icons.refresh), label: const Text('Play again')))),
+          // Wrap, not a Row — same Fold5-cover-width reasoning
+          // game_checkers.dart's own identical button row already documents:
+          // "Take that back" and "Play again" together don't fit one line
+          // at 344 CSS px, so this must wrap rather than overflow.
+          Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 12, children: [
+            if (!placing) SizedBox(height: 48, child: OutlinedButton.icon(
+              key: const Key('bsUndo'),
+              onPressed: _shotHistory.isEmpty ? null : _undoShot,
+              icon: const Icon(Icons.undo),
+              label: const Text('Take that back'),
+            )),
+            if (finished) SizedBox(height: 48, child: FilledButton.icon(
+              key: const Key('bsPlayAgain'),
+              onPressed: _resetGame, icon: const Icon(Icons.refresh), label: const Text('Play again'))),
+          ]),
         ]);
         return capWidth
             ? Center(child: ConstrainedBox(

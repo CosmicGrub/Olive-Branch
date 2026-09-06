@@ -1,7 +1,10 @@
 /**
  * packages/db/test/health_alert.test.mjs — tools/health-alert.mjs, exercised
- * against a REAL Postgres and the REAL `health_check` view
- * (db/migrations/0006_court_tier.sql). MASTERFILE §20.2b: "orphan_risk and
+ * against a REAL Postgres and the REAL `health_check` view (see its own
+ * `CREATE OR REPLACE VIEW health_check` migration history — most recently
+ * db/migrations/0028_care_note_letter.sql — rather than one hardcoded
+ * migration number, which has already drifted stale twice since this test
+ * was first written). MASTERFILE §20.2b: "orphan_risk and
  * retention_breach are also still views with no alerting." This is the
  * alerting half of closing that line.
  *

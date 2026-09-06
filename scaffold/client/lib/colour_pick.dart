@@ -12,6 +12,7 @@
 // allowed list, so the same guard the palette module enforces is visibly the
 // thing drawing this screen.
 import 'package:flutter/material.dart';
+import 'motion_rules.dart';
 import 'onboarding_shared.dart';
 import 'palette_logic.dart';
 
@@ -115,10 +116,26 @@ class _LivePreview extends StatelessWidget {
       ),
       child: Row(children: [
         if (placements.contains('avatar_ring'))
-          CircleAvatar(radius: 26, backgroundColor: swatch.color, child: CircleAvatar(
-            radius: 22, backgroundColor: scheme.surface,
-            child: Text(childName.isEmpty ? '?' : childName.substring(0, 1).toUpperCase(),
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: swatch.ink))))
+          // A bounded Color.lerp, not a snap-cut — this preview claims (per
+          // this file's own header) to use applyColour() "for real, not
+          // decoratively," which used to be true of the DATA but not the
+          // MOTION: _SwatchTile a few widgets away already animates its own
+          // selection ring (AnimatedContainer, 180ms); this tile snapped
+          // instantly on the same screen. TweenAnimationBuilder re-tweens
+          // automatically whenever `end` changes between rebuilds — no
+          // AnimationController lifecycle to manage for a value this simple.
+          // Capped at motion_rules.dart's own maxConsequenceMs, same as
+          // colouring_screen.dart's _ColouringPainter._colorFor.
+          TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: swatch.color),
+            duration: const Duration(milliseconds: maxConsequenceMs),
+            builder: (context, color, child) => CircleAvatar(
+              radius: 26, backgroundColor: color, child: child),
+            child: CircleAvatar(
+              radius: 22, backgroundColor: scheme.surface,
+              child: Text(childName.isEmpty ? '?' : childName.substring(0, 1).toUpperCase(),
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: swatch.ink))),
+          )
         else
           CircleAvatar(radius: 26, child: Text(childName.isEmpty ? '?' : childName.substring(0, 1))),
         const SizedBox(width: 16),
@@ -127,8 +144,12 @@ class _LivePreview extends StatelessWidget {
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           if (placements.contains('accent_stripe'))
-            Container(height: 4, width: 64, decoration: BoxDecoration(
-              color: swatch.color, borderRadius: BorderRadius.circular(2))),
+            TweenAnimationBuilder<Color?>(
+              tween: ColorTween(end: swatch.color),
+              duration: const Duration(milliseconds: maxConsequenceMs),
+              builder: (context, color, _) => Container(height: 4, width: 64,
+                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+            ),
           const SizedBox(height: 4),
           Text('${swatch.label[0].toUpperCase()}${swatch.label.substring(1)}',
             style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),

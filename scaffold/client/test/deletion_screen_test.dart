@@ -28,12 +28,15 @@ Future<void> pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(wrap(child));
 }
 
-/// Acknowledges the retention checkbox and taps confirm — the shared setup
-/// every real-backend test below needs before it can exercise `_confirm()`.
+/// Acknowledges the retention checkbox, taps confirm, then taps through the
+/// real "are you sure" dialog that now sits between the button and
+/// `_confirm()` — see deletion_screen.dart's own `_confirmThenDelete`.
 Future<void> ackAndConfirm(WidgetTester t) async {
   await t.tap(find.byType(CheckboxListTile));
   await t.pump();
   await t.tap(find.widgetWithText(FilledButton, 'Delete my account'));
+  await t.pumpAndSettle();
+  await t.tap(find.widgetWithText(FilledButton, 'Delete it'));
 }
 
 /// Pumps until [finder] matches or [maxPumps] is exhausted — used instead of

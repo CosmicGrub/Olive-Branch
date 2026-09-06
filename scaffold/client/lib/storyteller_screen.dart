@@ -56,6 +56,17 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
   story.Story? _current;
   int _index = 0;
   String? _recap;
+  // storyArtifact() (storyteller_logic.dart) already decides "worth
+  // keeping" — reread twice or more — but before this pass had zero real
+  // callers: recordRead() only ever ran for a story ALREADY starred, so a
+  // story she kept coming back to but never starred never got the chance
+  // to be noticed at all. This counter tracks every reread regardless of
+  // star status, in-memory only (same honest-stub posture as favourites
+  // themselves — resets on restart), purely local UI state, never a value
+  // shown to her as a number (P2) — only ever used to decide WHETHER to
+  // show a one-time, qualitative nudge, in _StorytellerScreenState below.
+  final Map<String, int> _rereadCounts = {};
+  final Set<String> _nudgedCodes = {};
 
   story.Personal get _personal =>
       story.Personal(childName: widget.childName, colour: widget.colourLabel);
@@ -68,6 +79,25 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         _recap = null;
       });
 
+  /// Real for every reopen now, not just an already-starred one — see this
+  /// state's own `_rereadCounts` doc comment. Fires at most once per story
+  /// (`_nudgedCodes`), and only when she hasn't already starred it herself
+  /// (a starred story already told her it's a keeper; this is for the one
+  /// she keeps returning to without ever having said so).
+  void _maybeNudgeReread(String code, story.Story s) {
+    final int count = (_rereadCounts[code] ?? 0) + 1;
+    _rereadCounts[code] = count;
+    if (isStarred(_favourites, code) || _nudgedCodes.contains(code)) return;
+    if (story.storyArtifact(s, count) == null) return;
+    _nudgedCodes.add(code);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('You keep coming back to "${s.title}" — star it to keep it close?'),
+        duration: const Duration(seconds: 4)));
+    });
+  }
+
   void _openByCode(String code) => setState(() {
         _current = story.reread(code, _personal);
         _index = 0;
@@ -75,6 +105,7 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         if (isStarred(_favourites, code)) {
           _favourites = recordRead(_favourites, code);
         }
+        _maybeNudgeReread(code, _current!);
       });
 
   void _resumeBookmark(Bookmark b) => setState(() {
@@ -82,6 +113,7 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         _current = r.story;
         _index = r.from;
         _recap = r.recap;
+        _maybeNudgeReread(b.code, _current!);
       });
 
   void _next(int lastIndex) {

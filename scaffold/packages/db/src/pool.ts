@@ -1037,11 +1037,14 @@ export async function callSessionFor(
  * POST /v1/me/delete handler rejects a null `principal.userId` before this
  * is ever called, and readSession's own invariant means a 'child' principal
  * never has a userId to pass here). It matters, not just documentation:
- * pin_credential's own RLS (0004_auth_and_reaper.sql) hides
- * 'guardian_escalation' rows from a session whose role reads as 'child', so
- * running this under the wrong role would make the credential cleanup below
- * silently delete nothing instead of failing loudly — hence the explicit
- * guard just below rather than trusting every caller to pass it right.
+ * pin_credential's own RLS (0008_auth_credentials.sql, the current shape —
+ * one row per guardian, keyed by user_id, no child_id/kind column at all
+ * since 0004's discriminated table was dropped) denies a session whose role
+ * reads as 'child' EVERY row outright — FORCE with zero child-satisfiable
+ * policies, not a filtered subset — so running this under the wrong role
+ * would make the credential cleanup below silently delete nothing instead
+ * of failing loudly — hence the explicit guard just below rather than
+ * trusting every caller to pass it right.
  */
 export interface DeactivationResult {
   userId: string;
@@ -1208,9 +1211,14 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
  * layer used to make, now made here instead, so the per-edge
  * `scope['export.raw'] === false` override stays honored rather than
  * silently stopping being checked. `delivery_intent` and `media_artifact`
- * carry NO row-level security policy at all on top of that (see
- * db/DEPLOYMENT.md's own inventory: only `child_journal_entry`,
- * `pin_credential`, `expense`, `message_log`, `custody_order` have one), and
+ * carried no row-level security policy at all on top of that when this
+ * comment was first written; migration 0023_message_media_delivery_rls.sql
+ * has since given both a real ENABLE+FORCE policy (media_artifact_adult_edge/
+ * _system_all), closing that half of the gap — see persistCapturedMessage()'s
+ * own header below for delivery_intent's identical fix and the honest
+ * residual scope it still flags. This comment is left describing the
+ * PRE-0023 state deliberately, as a historical note of what P6/P7 covered
+ * before that migration; do not re-stale-date it forward again.
  * `message_log`'s own policy (`log_no_child`, 0006) blocks the `child` ROLE
  * but does not scope by `child_id` -- a guardian session that queried it
  * directly for the WRONG child would get that child's real rows back.
@@ -1814,16 +1822,17 @@ export interface PersistedCapture {
  * only ever receives an `ok: true` result. Mirrors `activeCustodyOrderFor`'s
  * own reasoning for the same role choice.
  *
- * HONEST GAP, not introduced by this function and not fixed by it:
- * `media_artifact`, `intent_batch`, and `delivery_intent` carry NO row-level
- * security at all (see db/migrations/0001_phase0_init.sql — unlike
- * `child_journal_entry`, `pin_credential`, `expense`, `custody_order`, none
- * of the three tables written here ever got an ENABLE/FORCE pass). Closing
- * that safely means auditing every existing reader of these tables (the
+ * CLOSED, not open: this paragraph used to flag that `media_artifact`,
+ * `intent_batch`, and `delivery_intent` carried no row-level security at
+ * all. migration 0023_message_media_delivery_rls.sql gave all three a real
+ * ENABLE+FORCE pass (media_artifact_adult_edge/_system_all, intent_batch's
+ * own pair, delivery_intent_child_own/_adult_edge/_system_all), audited
+ * against every existing reader this paragraph used to worry about (the
  * delivery sweep's system-role `claim_due_intents()`, GET .../inbox's
- * caller-scoped SELECT, the reaper's `artifacts_due_for_reaping()`) against a
- * new policy — its own migration and its own review, not a side effect of
- * adding one new write path. Flagged here rather than silently left implicit.
+ * caller-scoped SELECT, the reaper's `artifacts_due_for_reaping()`) as its
+ * own migration and its own review, exactly as this paragraph called for.
+ * Left here as a historical note of the gap this function once had, not a
+ * live TODO.
  */
 export async function persistCapturedMessage(
   pool: pg.Pool,
