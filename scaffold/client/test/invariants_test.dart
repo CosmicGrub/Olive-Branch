@@ -158,9 +158,9 @@ void main() {
       expect(find.text('Maya is just home from school'), findsOneWidget);
     });
 
-    testWidgets('the actor line, state sentence, and zone abbreviation use '
-        'the themed secondary color, not a hardcoded value (design-token '
-        'audit finding #1)', (t) async {
+    testWidgets('the actor line and zone abbreviation use the themed '
+        'secondary color, not a hardcoded value (design-token audit '
+        'finding #1)', (t) async {
       await t.pumpWidget(wrap(const GuardianHome(
         childName: 'Maya', childLocalTime: '4:12 PM', childZoneAbbr: 'EDT',
         actorLocalTime: '3:12 PM CDT',
@@ -170,12 +170,29 @@ void main() {
       final Color onSurfaceVariant =
           Theme.of(context).colorScheme.onSurfaceVariant;
       final Text actorLine = t.widget(find.text('you · 3:12 PM CDT'));
-      final Text stateSentence =
-          t.widget(find.text('Maya is just home from school'));
       final Text zone = t.widget(find.text('EDT'));
       expect(actorLine.style!.color, onSurfaceVariant);
-      expect(stateSentence.style!.color, onSurfaceVariant);
       expect(zone.style!.color, onSurfaceVariant);
+    });
+
+    testWidgets('the state sentence reads as the dominant fact, per §8.2.1\'s '
+        'own worked example — bodyMedium/w600, not the actor line\'s '
+        'subordinate token, and positioned above it', (t) async {
+      await t.pumpWidget(wrap(const GuardianHome(
+        childName: 'Maya', childLocalTime: '4:12 PM', childZoneAbbr: 'EDT',
+        actorLocalTime: '3:12 PM CDT',
+        childStateSentence: 'Maya is just home from school',
+        childBands: bands, actorBands: bands)));
+      final BuildContext context = t.element(find.text('4:12 PM'));
+      final TextTheme textTheme = Theme.of(context).textTheme;
+      final Text stateSentence =
+          t.widget(find.text('Maya is just home from school'));
+      expect(stateSentence.style!.fontSize, textTheme.bodyMedium!.fontSize);
+      expect(stateSentence.style!.fontWeight, FontWeight.w600);
+      // Above, not below, the actor line — the whole point of the fix.
+      final double stateY = t.getTopLeft(find.text('Maya is just home from school')).dy;
+      final double actorY = t.getTopLeft(find.text('you · 3:12 PM CDT')).dy;
+      expect(stateY, lessThan(actorY));
     });
   });
 
@@ -292,6 +309,17 @@ void main() {
       expect(find.textContaining('failed'), findsNothing);
       expect(find.textContaining('Incorrect'), findsNothing);
       expect(find.text('Welcome back'), findsOneWidget);
+    });
+
+    testWidgets('tells her this needs a grown-up, from frame one, unconditionally',
+        (t) async {
+      await t.pumpWidget(wrap(PinGate(digits: 4, shuffle: false, onComplete: (_) {})));
+      expect(find.byKey(const Key('pinGateGrownUpNotice')), findsOneWidget);
+      expect(find.text("This needs a grown-up's code"), findsOneWidget);
+      // Present before any attempt at all — not gated on a failed guess.
+      await t.tap(find.text('1'));
+      await t.pump();
+      expect(find.byKey(const Key('pinGateGrownUpNotice')), findsOneWidget);
     });
   });
 

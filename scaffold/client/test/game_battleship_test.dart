@@ -148,6 +148,49 @@ void main() {
       expect(find.byKey(const Key('bsEnemy_0')), findsNothing);
     });
 
+    testWidgets('a shot can be freely, unlimitedly taken back — the same house rule '
+        'checkers/dots-and-boxes already have', (t) async {
+      useTallSurface(t);
+      // A short, real bot delay + pumpAndSettle after every interaction —
+      // same pattern game_checkers_test.dart's own bot-response tests use —
+      // so a miss's own scheduled parent shot always resolves before the
+      // next assertion, rather than leaving a pending Timer at teardown.
+      await t.pumpWidget(wrap(GameBattleship(
+        random: Random(7), botThinkDelay: const Duration(milliseconds: 10))));
+      for (var i = 0; i < bsFleet.length; i++) {
+        await t.tap(find.byKey(Key('bsOwn_${i * 8}')));
+        await t.pump();
+      }
+      // Now in the playing phase, enemy waters showing by default.
+      expect(find.byKey(const Key('bsUndo')), findsOneWidget);
+      final Widget undoBefore = t.widget(find.byKey(const Key('bsUndo')));
+      expect((undoBefore as OutlinedButton).onPressed, isNull, reason: 'nothing to undo yet');
+
+      await t.tap(find.byKey(const Key('bsEnemy_0')));
+      await t.pumpAndSettle(const Duration(milliseconds: 20));
+      // A real shot landed (and, on a miss, the bot's own real reply already
+      // resolved) — the button is enabled because there is now real history.
+      final OutlinedButton undoAfter = t.widget(find.byKey(const Key('bsUndo')));
+      expect(undoAfter.onPressed, isNotNull, reason: 'a real shot was just taken');
+
+      // Drain the whole history one tap at a time — every pop is a real,
+      // free takeback; the button disables itself only once truly empty.
+      var guard = 0;
+      while ((t.widget(find.byKey(const Key('bsUndo'))) as OutlinedButton).onPressed != null) {
+        guard++;
+        expect(guard, lessThan(20), reason: 'undo should terminate, not loop forever');
+        await t.tap(find.byKey(const Key('bsUndo')));
+        await t.pumpAndSettle(const Duration(milliseconds: 20));
+      }
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('no undo button during placement — nothing to take back yet', (t) async {
+      useTallSurface(t);
+      await t.pumpWidget(wrap(const GameBattleship(random: null)));
+      expect(find.byKey(const Key('bsUndo')), findsNothing);
+    });
+
     testWidgets('no settings affordance and no score/rank language anywhere', (t) async {
       useTallSurface(t);
       await t.pumpWidget(wrap(const GameBattleship(random: null)));

@@ -218,6 +218,56 @@ void main() {
       expect(find.text('YOUR LINE!'), findsNothing); // resumed AFTER the refrain, not on it
     });
 
+    testWidgets('rereading an unstarred story twice nudges her to star it — once, not '
+        'on every reread after', (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+      await tester.tap(find.text('Stop here for tonight'));
+      await tester.pump();
+
+      // Never starred — confirm before relying on that below.
+      expect(find.byIcon(Icons.star_rounded), findsNothing);
+
+      // First reread (count=1): storyArtifact()'s own timesRead>=2 threshold
+      // isn't met yet, so no nudge.
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsNothing);
+
+      // Bookmark isn't cleared by resuming — tap it again for a second
+      // reread (count=2), which crosses the threshold.
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsOneWidget);
+      // Let the 4-second SnackBar actually finish dismissing (pumpAndSettle
+      // alone doesn't wait out a real-time auto-dismiss Timer with no
+      // animation frame scheduled in between) before the next check.
+      await tester.pump(const Duration(seconds: 5));
+
+      // A third reread of the SAME story must not nudge again.
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsNothing);
+    });
+
+    testWidgets('an already-starred story is never nudged — she already said it\'s a keeper',
+        (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+      await tester.tap(find.text('Stop here for tonight'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.star_border_rounded)); // star it
+      await tester.pump();
+
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsNothing);
+    });
+
     testWidgets('§8.4 the ask button and the star control are at least 48dp', (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));

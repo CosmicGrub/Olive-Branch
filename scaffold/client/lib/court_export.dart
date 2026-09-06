@@ -43,8 +43,11 @@
 // than a label with nothing behind it. There is no edit control on it anywhere
 // — the "preview a tampered copy" switch swaps between two READ-ONLY
 // precomputed chains, it does not expose a way to alter either one from the UI.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 import 'api_client.dart';
 import 'form_factors.dart' as ff;
@@ -871,6 +874,7 @@ class LiveCourtExportScreen extends StatefulWidget {
     required this.guardianId,
     required this.childId,
     this.httpClient,
+    this.documentsDirectory,
   });
 
   final String baseUrl;
@@ -880,6 +884,9 @@ class LiveCourtExportScreen extends StatefulWidget {
   final String childId;
   /// Injectable for tests (e.g. package:http/testing.dart's MockClient).
   final http.Client? httpClient;
+  /// Same testing hook deletion_screen.dart's own raw-export save uses —
+  /// see that file's own doc comment for why the real save is synchronous.
+  final Future<Directory> Function()? documentsDirectory;
 
   @override
   State<LiveCourtExportScreen> createState() => _LiveCourtExportScreenState();
@@ -895,6 +902,40 @@ String _formatFault(Map<String, dynamic> f) {
   final String kind = (f['kind'] as String?) ?? 'unknown';
   final Object? seq = f['seq'];
   return seq == null ? kind : '$kind @$seq';
+}
+
+/// The live counterpart to the demo screen's own `_RawExportCard` — real,
+/// not a preview. Deliberately independent of certified-export state:
+/// raw export is free and unlimited whether or not certified is
+/// authorized, and this section renders identically in both the ready and
+/// denied branches of [_LiveCourtExportScreenState.build] for exactly
+/// that reason, rather than being nested inside either.
+class _RawExportSection extends StatelessWidget {
+  const _RawExportSection({required this.exporting, required this.onPrepare});
+  final bool exporting;
+  final VoidCallback onPrepare;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: <Widget>[
+        Icon(Icons.description_outlined, size: 20, color: scheme.onSecondaryContainer),
+        const SizedBox(width: 8),
+        Expanded(child: Text('Raw export — free, unlimited, every tier.',
+            style: textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer))),
+        const SizedBox(width: 8),
+        exporting
+            ? const SizedBox(height: 20, width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : TextButton(onPressed: onPrepare, child: const Text('Prepare')),
+      ]),
+    );
+  }
 }
 
 class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
@@ -919,6 +960,74 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
   // reader's reference number for this exact certified export, same idea as
   // deletion_screen.dart's raw-export filename carrying its own record id.
   String? _exportRecordId;
+
+  // -------------------------------------------------------- raw export --
+  // Independent of the certified-export authorization state above — the
+  // denied-state copy already says so ("Raw export is unaffected by this").
+  // Before this pass this screen only ever surfaced CERTIFIED export; raw
+  // export has been a real, working backend endpoint (fetchRawExport(),
+  // already used by deletion_screen.dart) since before this cycle, just
+  // never given a UI here. Mirrors deletion_screen.dart's own _export()
+  // exactly — same devLoginFor-per-call, same save-and-verify-on-disk
+  // ethos — rather than inventing a second raw-export flow.
+  bool _rawExporting = false;
+
+  Future<void> _prepareRawExport(BuildContext context) async {
+    if (_rawExporting) return;
+    setState(() => _rawExporting = true);
+    OliveApi? api;
+    try {
+      final String token = await devLoginFor(widget.baseUrl,
+          userId: widget.guardianId, client: widget.httpClient);
+      api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+      final Map<String, dynamic> result = await api.fetchRawExport(widget.childId);
+      // Same "hash the exact string the server hashed" ethos as
+      // deletion_screen.dart's own _export() — see that method's doc
+      // comment for why this is bundleJson, not a re-encoding of `bundle`.
+      final String bundleJson = result['bundleJson'] as String;
+      final String serverHash = result['bundleHash'] as String;
+      final String exportRecordId = result['exportRecordId'] as String;
+      final bool verified = sha256Hex(bundleJson) == serverHash;
+
+      final Directory dir = await (widget.documentsDirectory ?? getApplicationDocumentsDirectory)();
+      final File file = File(
+          '${dir.path}${Platform.pathSeparator}olive-raw-export-${widget.childId}-$exportRecordId.json');
+      file.writeAsStringSync(bundleJson); // sync — see deletion_screen.dart's _export() for why
+
+      if (!context.mounted) return;
+      setState(() => _rawExporting = false);
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: Text(verified ? 'Raw export saved' : 'Saved — hash did not verify'),
+          content: SingleChildScrollView(child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Saved to:'),
+              SelectableText(file.path, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              const SizedBox(height: 12),
+              Text(verified
+                  ? 'SHA-256 of the saved file, verified against the server on this '
+                    'device (not just trusted):'
+                  : "SHA-256 of the saved file did NOT match what the server "
+                    'reported — treat this copy as unverified:'),
+              SelectableText(serverHash, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+            ],
+          )),
+          actions: <Widget>[
+            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Done')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (widget.httpClient == null) api?.close();
+      if (!context.mounted) return;
+      setState(() => _rawExporting = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not prepare the raw export: $e'), duration: const Duration(seconds: 4)));
+    }
+  }
 
   @override
   void initState() {
@@ -1068,6 +1177,8 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
               'Raw export is unaffected by this — it stays free, unlimited, on every '
               'tier, whether or not this denial applies.',
               style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          _RawExportSection(exporting: _rawExporting, onPrepare: () => _prepareRawExport(context)),
           const SizedBox(height: 16),
           OutlinedButton.icon(
               onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Check again')),
@@ -1082,6 +1193,8 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
                   'Live: this attestation is real, generated just now from her actual '
                   'handover log.',
                   style: textTheme.bodySmall?.copyWith(color: scheme.onTertiaryContainer))),
+          const SizedBox(height: 16),
+          _RawExportSection(exporting: _rawExporting, onPrepare: () => _prepareRawExport(context)),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),

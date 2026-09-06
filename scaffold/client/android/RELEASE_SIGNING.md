@@ -88,8 +88,20 @@ neither should ever be committed.
 
 ```bash
 cd scaffold/client
-flutter build apk --release
+flutter build apk --release --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
 ```
+
+**The `--target` flag is not optional — get it wrong and this ships the demo's
+hardcoded PIN.** An untargeted `flutter build apk --release` (no `--target`)
+resolves to `lib/main.dart`, this repo's **offline demo build** — its own file
+header says so directly, and its kiosk gate checks a plain, unauthenticated
+`_demoGuardianPin = '1273'` constant, not the real scrypt+WebAuthn check.
+Only `lib/main_live.dart` wires the real guardian PIN verification (via
+`main_live.dart`'s own `_verifyGuardianPin`). `tools/check-release-target.mjs`
+(below) fails the build if this file's own documented command ever drifts
+back to an untargeted one — verify it stays correct with `node
+tools/check-release-target.mjs` before trusting any release cut from these
+instructions.
 
 `build.gradle.kts` detects `key.properties` automatically and signs with
 your real key instead of the debug one. No other flag or step is needed.

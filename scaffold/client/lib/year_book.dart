@@ -128,6 +128,18 @@ class _YearBookScreenState extends State<YearBookScreen> {
             children: <Widget>[
               Text('A year of her, preserved.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 4),
+              // Real, computed once from the already-correct per-year counts
+              // this screen already has (no new data, no backend call) —
+              // guardian-facing only (this screen has no child call site, so
+              // P2's "no count shown to the CHILD" doesn't apply here; this
+              // is the archive's own custodian seeing the archive's own
+              // size, the same posture court_export.dart already takes with
+              // its own guardian-facing counts).
+              Text(
+                "Her archive so far: ${_years.fold<int>(0, (int n, int y) => n + compileYearBook(_all, 'ivy', y).artifactCount)} pieces across ${_years.length} year${_years.length == 1 ? '' : 's'}.",
+                style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic)),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,

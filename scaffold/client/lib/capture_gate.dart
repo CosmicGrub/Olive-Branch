@@ -59,8 +59,17 @@ ImageStats _defaultSimulateCapture(int attempt) =>
 /// the caller, homework_screen.dart, falls back to its own demo content)
 /// and a real (possibly empty) list for the real path.
 class HomeworkCaptureOutcome {
-  const HomeworkCaptureOutcome({this.problems});
+  const HomeworkCaptureOutcome({this.problems, this.photo});
   final List<HomeworkProblemResult>? problems;
+  /// The real photo she just took — the exact bytes already sent to the
+  /// server for OCR, held here only for display, never re-transmitted.
+  /// Null on the simulated path (which correctly shows nothing extra —
+  /// there is no real photo to show). Before this pass these bytes fell
+  /// out of scope right after the POST; she never saw her own worksheet
+  /// again anywhere in the flow, which matters more than it sounds given
+  /// OCR here is admittedly approximate — nothing let her connect a hint
+  /// back to her actual page.
+  final Uint8List? photo;
 }
 
 class CaptureGateScreen extends StatefulWidget {
@@ -188,7 +197,7 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
         final List<HomeworkProblemResult> problems = ((result['problems'] as List?) ?? const [])
             .map((p) => HomeworkProblemResult.fromJson(p as Map<String, dynamic>))
             .toList();
-        widget.onCaptured?.call(HomeworkCaptureOutcome(problems: problems));
+        widget.onCaptured?.call(HomeworkCaptureOutcome(problems: problems, photo: bytes));
         Navigator.of(context).pop(true);
         return;
       }

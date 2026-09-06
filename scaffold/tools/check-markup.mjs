@@ -88,12 +88,21 @@ check('C4b', 'every declared screen version exists in the CHANGELOG',
   unknown.join(',') || 'none', 'none');
 
 // Every CHANGELOG version from 0.8.0 onward (when MARKUP became visual) must
-// appear somewhere in MARKUP — either as a screen version or in the ledger.
+// appear somewhere in MARKUP — either as a screen's data-since/data-amended,
+// or as its own version-history table row (<tr><td>VERSION</td>). A plain
+// `MK.includes(v)` substring search over the whole document used to stand in
+// for this and was a false-positive machine: a version number embedded in
+// another entry's own PROSE (e.g. "...9-tile grid since v0.44.0...") reads
+// as "represented" to a substring search without v0.44.0 ever appearing in
+// its own screen attribute or table row. Structural, not textual — the same
+// class of fix C4a/C4b already apply to data-since/data-amended.
+const versionRowVersions = [...MK.matchAll(/<tr><td>([\d.]+)<\/td>/g)].map(m => m[1]);
+const represented = new Set([...declaredVersions, ...versionRowVersions]);
 const visualEra = clVersions.filter(v => {
   const [a, b] = v.split('.').map(Number);
   return a > 0 || b >= 8;
 });
-const unrepresented = visualEra.filter(v => !MK.includes(v));
+const unrepresented = visualEra.filter(v => !represented.has(v));
 check('C4c', 'every visual-era CHANGELOG version appears in MARKUP',
   unrepresented.join(',') || 'none', 'none');
 

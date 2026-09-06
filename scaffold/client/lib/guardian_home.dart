@@ -127,14 +127,24 @@ class GuardianHome extends StatelessWidget {
                 Text(childZoneAbbr, style: Theme.of(context).textTheme.labelSmall
                   ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ]),
+            // The state sentence is HER frame, dominant — §8.2.1's own
+            // worked example bakes it into the headline ("Maya · 4:12 PM
+            // EDT — just got home from school"), not the subordinate
+            // footer. Used to sit after the actor line at the identical
+            // bodySmall/onSurfaceVariant weight (confirmed, at the time,
+            // by invariants_test.dart's own "design-token audit finding
+            // #1") — moved above it and given the same bodyMedium/w600
+            // dominant-frame treatment exchange_screen.dart's own handoff
+            // card uses, while the actor line and zone abbreviation stay
+            // exactly as subordinate as they were.
+            if (childStateSentence != null) ...[
+              Text(childStateSentence!, style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+            ],
             // Actor time is subordinate, always.
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            if (childStateSentence != null) ...[
-              const SizedBox(height: 4),
-              Text(childStateSentence!, style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            ],
             const SizedBox(height: 12),
             SizedBox(width: double.infinity, height: 48,
               child: FilledButton(

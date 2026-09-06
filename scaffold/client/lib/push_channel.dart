@@ -250,7 +250,21 @@ class PushChannel {
     _onMessageSub = messages.listen(_handleForeground);
 
     final refresh = _deps.onTokenRefresh ?? _defaultOnTokenRefresh;
-    _onRefreshSub = refresh.listen(registerToken);
+    // The initial registration a few lines below is covered by every real
+    // caller's own try/catch around initialize() (see child_home_live.dart's
+    // _initPush) -- but that catch has already returned by the time a LATER
+    // refresh event fires, so a registerToken() failure triggered by this
+    // stream was, until now, an unhandled async error with no caller able to
+    // catch it. Same swallow-and-log posture as _initPush's own catch, not a
+    // silent no-op: a transient network failure during token rotation should
+    // not crash the app, but it also should not vanish without a trace.
+    _onRefreshSub = refresh.listen((token) async {
+      try {
+        await registerToken(token);
+      } catch (e) {
+        debugPrint('[olive.push] token-refresh re-registration failed: $e');
+      }
+    });
 
     final getToken = _deps.getToken ?? _defaultGetToken;
     final token = await getToken();

@@ -443,6 +443,21 @@ else
 fi
 
 echo ""
+echo "── Release build target ───────────────────────────────────────"
+# Not counted into TOTAL_PASS, same reasoning as the markup-correspondence
+# check below it: this is a doc-consistency guard, not a test suite. Catches
+# RELEASE_SIGNING.md's own §3 build command drifting back to an untargeted
+# `flutter build apk --release`, which silently resolves to the offline demo
+# (lib/main.dart) and its hardcoded '1273' PIN instead of lib/main_live.dart's
+# real scrypt+WebAuthn check.
+if node tools/check-release-target.mjs >/tmp/rt.out 2>&1; then
+  echo "  release build target        $(grep -c 'PASS' /tmp/rt.out) passed      0 failed"
+else
+  cat /tmp/rt.out | sed 's/^/  /'
+  echo "  RELEASE TARGET DRIFT — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
 # is passed in so C7 compares MARKUP's quoted figure against what was actually

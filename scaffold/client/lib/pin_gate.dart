@@ -5,6 +5,21 @@
 // adult surface. The keypad order is SHUFFLED because the child is watching the
 // adult type (§8.3) — and the shuffle must come from the platform CSPRNG, not
 // from a seeded or time-based source.
+//
+// Real gap this closed: a child who defeats the kiosk BY ACCIDENT (Android
+// PINNED mode is documented as escapable via Back+Recents — "defeat is not
+// an exception, it is an expected event," lock_controller.dart's own
+// header) landed on identical copy to an adult who already knows a code,
+// with nothing telling her this screen isn't hers until AFTER she'd burned
+// 5 real guesses toward the cooldown and, past 3 real lock-task exits, a
+// cross-guardian alert (see kiosk_shell.dart's own lockout screen and
+// lock_controller.dart's maxPinAttempts). The one line below is present
+// from the very first frame, unconditionally — not gated on a failed
+// attempt, and identical regardless of outcome, preserving this screen's
+// own "never shows an error" invariant. Its real effect is to make the
+// lockout/cross-guardian-alert machinery LESS likely to fire on innocent
+// behavior, never more: a child who reads it and steps away burns no
+// attempts at all.
 import 'dart:math';
 import 'package:flutter/material.dart';
 
@@ -50,6 +65,13 @@ class _PinGateState extends State<PinGate> {
         const SizedBox(height: 4),
         const Text('Type your code to keep going',
           style: TextStyle(color: Colors.white70, fontSize: 12.5)),
+        const SizedBox(height: 10),
+        // Persistent from frame one, never gated on a failed attempt — see
+        // this file's own header for why. A grown-up who already knows the
+        // code reads past it in half a second; that's the whole point.
+        const Text("This needs a grown-up's code",
+          key: Key('pinGateGrownUpNotice'),
+          style: TextStyle(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic)),
         const SizedBox(height: 18),
         Row(mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(widget.digits, (i) => Container(

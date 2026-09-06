@@ -7,9 +7,12 @@
  * another, both worth being honest about:
  *
  *   - `tools/healthcheck.mjs` already exists and already turns the
- *     `health_check` view (db/migrations/0006_court_tier.sql — the latest
- *     `CREATE OR REPLACE VIEW health_check`; 0007_custody_order.sql does not
- *     touch it, and there is no 0008 migration in this repository) into a
+ *     `health_check` view — most recently redefined in
+ *     db/migrations/0028_care_note_letter.sql, one of several
+ *     `CREATE OR REPLACE VIEW health_check` amendments since this comment
+ *     was first written (0008, 0009, 0013, 0014, 0017, 0018, 0023, 0028);
+ *     see the view's own migration history rather than a hardcoded number
+ *     here, which has already drifted twice — into a
  *     non-zero exit code, wired into `tools/verify.sh`'s own "Health"
  *     section. That much of the gap was already closed before this file.
  *   - What did NOT exist: a way to run that same check from cron or an

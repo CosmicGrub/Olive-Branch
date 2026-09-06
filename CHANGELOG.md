@@ -14,6 +14,146 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.68] — 2026-09-06 — Roadmap batch 1: 21 real, verified fixes across the app
+
+A re-audit of every open item across two published upgrade atlases, a
+gap-fill backlog, and the Tier D backlog — a 14-agent Workflow re-verified
+all 77 candidate items against the CURRENT codebase (many weeks and PRs
+old since either atlas was written), separating what's already fixed by
+intervening work from what's genuinely still open. 47 items survived that
+triage as a real, deduplicated, prioritized backlog. This entry closes the
+smallest, most self-contained tier of it — 21 items, every one read,
+fixed, and tested individually, not batch-applied on faith. The rest (26
+items, several explicitly flagged as needing the owner's own product/
+architecture decision rather than being unilaterally buildable) remain
+queued for their own passes.
+
+### Fixed — security & correctness
+- **Real release builds were silently shipping the demo's hardcoded PIN.**
+  `RELEASE_SIGNING.md`'s own §3 build command had no `--target` flag —
+  Flutter resolves that to `lib/main.dart`, the offline demo whose kiosk
+  gate checks a plain `'1273'` constant, never `lib/main_live.dart`'s real
+  scrypt+WebAuthn check. Fixed the documented command and added a new,
+  permanent guard — `tools/check-release-target.mjs` (wired into
+  `verify.sh`) — that fails loudly if this doc's own command ever drifts
+  back to an untargeted one, in the same "silence fails the build" spirit
+  `check-markup.mjs` already established.
+- **A 409 "already deactivated" response read as a generic, retryable
+  failure** on account deletion's own error path — nothing was wrong and
+  retrying could never help. Now its own honest, non-alarming message.
+- **Account deletion had no confirmation step at all** — a single
+  checkbox, then a live, irreversible `deleteAccount()` call. Added a real
+  "are you sure" dialog, mirroring `letters_screen.dart`'s own
+  `_confirmDelete` house pattern, on the one screen whose action can't be
+  undone.
+- **A token-refresh re-registration failure was an unhandled async
+  error** — `push_channel.dart`'s initial registration is wrapped by every
+  real caller's own try/catch; the later refresh-triggered one wasn't.
+  Same swallow-and-log posture as the initial path now applies to both.
+- **A child who defeats the kiosk by accident had no way to know this
+  screen isn't hers** until she'd already burned real attempts toward the
+  cooldown and, past 3 exits, a cross-guardian alert. `pin_gate.dart` now
+  shows a persistent, unconditional "This needs a grown-up's code" line
+  from frame one — its real effect is to make the lockout machinery *less*
+  likely to fire on innocent behavior, never more.
+
+### Fixed — dead wires (real backend, no client surface until now)
+- **Raw export bundles carried bare storage-key references, not fetchable
+  URLs** — a guardian who downloaded one found nothing usable for her
+  photos/videos. `StoragePort.signedUrl()` and `SIGNED_URL_TTL_SECONDS`
+  (already real and tested for the single-artifact media route) now sign
+  every artifact in a raw export too — additive, computed fresh on the
+  response only, deliberately *not* folded into `bundleHash`/`bundleJson`
+  (a time-limited signature in the hashed bytes would make the same
+  export's hash verify differently depending on when it was downloaded).
+- **The Deletion tile was the one sibling in `guardian_more.dart` never
+  given the live session identity** Court export/Availability/the real-call
+  tiles already get — silently falling back to demo defaults even inside a
+  real session, on the single irreversible-action screen. Now mints a real
+  token via `devLoginFor()` before navigating, matching every other tile.
+- **`LiveCourtExportScreen` only ever surfaced certified export** — raw
+  export has been a real, working, free-and-unlimited backend endpoint
+  since before this cycle, with no UI on the live screen at all (only the
+  demo half had one). Added, wired to the same `fetchRawExport()`/
+  hash-verify/save-to-disk flow `deletion_screen.dart` already uses.
+- **A photographed homework page fell out of scope right after the OCR
+  POST** — she never saw her own worksheet again anywhere in the flow,
+  which matters given OCR here is admittedly approximate. `capture_gate
+  .dart` now keeps the bytes; `homework_screen.dart` shows a thumbnail
+  above the problems list, real path only.
+- **A story reread twice or more was only ever noticed if it was already
+  starred** — `storyArtifact()`'s own "worth keeping" logic had zero
+  production callers. Now tracked on every reopen (bookmark resume
+  included), with a one-time, unstarred-only nudge — no printed count (P2).
+- **A rung reached today was invisible to her unless she dug three taps
+  deep** into the ladder screen herself. Added the child-side counterpart
+  to the guardian's own one-time announcement: a real, proactive
+  full-screen reveal on the newly-crossed rung, shown once per app run.
+
+### Fixed — fidelity & polish
+- **The child's "state sentence" sat below the actor's own subordinate
+  clock line**, styled identically to it — MASTERFILE §8.2.1's own worked
+  example bakes it into the dominant headline instead. Moved above, given
+  the same bodyMedium/w600 treatment `exchange_screen.dart`'s own handoff
+  card uses.
+- **The live colour preview snapped instantly** while the swatch grid's
+  own selection ring already animates (180ms) on the same screen. Now a
+  bounded `Color.lerp`, capped at `motion_rules.dart`'s `maxConsequenceMs`.
+- **The dialing/joining call screen was a generic spinner** with no
+  reference to who's being called and no accent colour. `CallScreen` now
+  accepts an optional, pre-resolved `accentColor` and says "Calling
+  {name}…"/"Joining {name}…" — every existing caller (no colour supplied)
+  renders exactly as before.
+- **The Year Book showed one year at a time with no sense of the whole
+  archive.** Added a real "Her archive so far" line, computed once from
+  the already-correct per-year counts — guardian-facing only, so P2's
+  child-count prohibition doesn't apply.
+- **Battleship had no takebacks** — every other title here (checkers,
+  dots-and-boxes) already has the house rule of free, unlimited undo.
+  Ported it: a snapshot of both the engine state and the AI's own private
+  targeting memory (which `BsState` doesn't carry), popped one shot at a
+  time, either side's.
+
+### Fixed — documentation accuracy
+- **`check-markup.mjs`'s own C4c check did a naive substring search**
+  ("does this version number appear anywhere in the document") instead of
+  checking for a real per-version anchor — a version mentioned only inside
+  a *different* entry's prose read as "represented." Fixed to check
+  `data-since`/`data-amended` attributes or a real table row; backfilled
+  the one genuine gap it had been silently missing (a v0.44.0 history row).
+- **Two live files still cited migration 0006 as `health_check`'s
+  canonical definition** — it's been redefined seven times since (0008
+  through 0028). Repointed at the view's own migration history instead of
+  a number that will only go stale again.
+- **Two stale/inaccurate comments in `pool.ts`** — one described a
+  discriminated `pin_credential` shape dropped by migration 0008 three
+  migrations ago; one cited a nonexistent `DEPLOYMENT.md` inventory and
+  disagreed with a second, closer list a few hundred lines later that
+  migration 0023 had already made correct. Both rewritten to describe the
+  current schema.
+
+### Explicitly not attempted in this pass
+`unify-snapshot-gallery-with-real-gallery` (folding `AppPhoto`/`AppGallery`
+into the real `Work`/`Medium` model) surfaced during triage as genuinely
+medium-risk, not small — a real data-model merge across two screens,
+deserving its own focused pass rather than being rushed alongside 21
+smaller items. A1's own server-side signed-URL enrichment is
+code-reviewed against the identical, already-proven pattern the media
+route uses, and confirmed via `flutter analyze`/build/contract-test
+green, but does not yet have a dedicated automated HTTP-level test in
+this pass (the existing route-level fixture for this class of test needs
+a real Postgres instance this pass didn't stand one up for) — flagged
+honestly as a follow-up, not silently skipped.
+
+`flutter analyze` clean, full Dart suite 2324/2324 (2313 + 11 new),
+`check-release-target.mjs` 2/2 (uncounted, same convention as
+`check-markup.mjs`), `check-markup.mjs` 44/44. Assertion count computed as
+7117 (CI's confirmed v0.49.67 total) + 11 Dart = 7128; to be synced to
+CI's real number in a follow-up commit if it differs, per this repo's
+established convention.
+
+---
+
 ## [0.49.67] — 2026-09-06 — The jokebook: a quick one, and another, and another
 
 A fixed, hand-written library of kid-friendly jokes — dad jokes, puns, wordplay,

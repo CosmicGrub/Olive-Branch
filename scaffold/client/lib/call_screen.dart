@@ -145,11 +145,18 @@ class CallScreen extends StatefulWidget {
     this.knownWsURL,
     this.onCallEnd,
     this.initialMode = CallMode.video,
+    this.accentColor,
   });
 
   /// 'dad' or 'ivy' — matches local-call-room-server.mjs's fixed identities.
   final String who;
   final String displayName;
+  /// Her real curated colour (§8.6), for the dialing/joining moment only —
+  /// same "accept a pre-resolved value" shape storyteller_screen.dart's own
+  /// `colourSeed` already uses, rather than this file resolving a Swatch
+  /// itself. Null (every existing call site) renders exactly as before this
+  /// field existed — plain white, no behavior change.
+  final Color? accentColor;
 
   /// MASTERFILE §5.23.1 — audio-only as a CHOICE, not a punishment. Set by
   /// whichever real answer she tapped (call_knock_screen.dart's "Answer" vs
@@ -742,9 +749,12 @@ class _CallScreenState extends State<CallScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
     body: switch (_status) {
-      _CallStatus.fetchingToken => const Center(child: _Status(message: 'Finding the call…')),
-      _CallStatus.joining => const Center(child: _Status(message: 'Joining…')),
-      _CallStatus.reconnecting => const Center(child: _Status(message: 'Reconnecting…')),
+      _CallStatus.fetchingToken => Center(child: _Status(
+          message: 'Calling ${widget.displayName}…', color: widget.accentColor)),
+      _CallStatus.joining => Center(child: _Status(
+          message: 'Joining ${widget.displayName}…', color: widget.accentColor)),
+      _CallStatus.reconnecting => Center(child: _Status(
+          message: 'Reconnecting…', color: widget.accentColor)),
       _CallStatus.inCall => _InCallView(
           localTrack: _localVideoTrack,
           remoteTrack: _remoteVideoTrack,
@@ -801,13 +811,17 @@ class _CallScreenState extends State<CallScreen> {
 }
 
 class _Status extends StatelessWidget {
-  const _Status({required this.message});
+  const _Status({required this.message, this.color});
   final String message;
+  /// Her real curated colour, when the caller resolved one — see
+  /// [CallScreen.accentColor]'s own doc comment. Falls back to plain white,
+  /// exactly this widget's prior appearance, when null.
+  final Color? color;
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
-    const CircularProgressIndicator(color: Colors.white),
+    CircularProgressIndicator(color: color ?? Colors.white),
     const SizedBox(height: 16),
-    Text(message, style: const TextStyle(color: Colors.white)),
+    Text(message, style: TextStyle(color: color ?? Colors.white)),
   ]);
 }
 
