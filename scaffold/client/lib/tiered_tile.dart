@@ -15,6 +15,11 @@
 // is unchanged. child_home.dart's own migration onto `TieredTile` is
 // covered by its full existing test suite continuing to pass with zero
 // test-file changes, the proof this really is behavior-preserving.
+//
+// No longer UNVERIFIED — verified by CI (a Flutter toolchain runs for real
+// in tools/verify.sh's automated pipeline, per child_home.dart's own note,
+// CHANGELOG v0.49.61); this file's own tiered_tile_test.dart runs under
+// that same pipeline.
 import 'package:flutter/material.dart';
 
 /// Honest acknowledgment for a feature this preview build doesn't implement
