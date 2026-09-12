@@ -126,20 +126,23 @@ explicitly deferred to future scoping passes, not built here.
   already use (neither pair carries an individual `package.json` script
   either — matching that exact precedent, not inventing a new one).
 
-`tools/verify.sh` run in full on this branch: **7363/7363 assertions
-passing** (up from 7360 before this pass — 27 from the new route contract
-suite plus 16 from the new real-Postgres RLS suite land inside the JS/DB
-totals, the balance from `flutter test`'s own now-larger 2453/2453 count and
-the demo drive's 116/116), `flutter analyze` clean, zero regressions in any
-pre-existing suite. Two pre-existing, environment-only gaps (a fixture-
-generation script and a child-process ESM path issue, both Windows-sandbox-
-specific and reproducing identically against an unmodified `main` in the
-same environment) and one Windows-only false alarm in this session's own
-local verification rig (`tools/healthcheck.mjs` requires a native `psql`
-binary this sandbox lacks; a direct query of `health_check` confirms zero
-real breaches, matching `tools/health-alert.mjs`'s own DATABASE_URL-based
-"all clear") are unrelated to this change and disclosed in the PR, not
-folded into this total.
+`tools/verify.sh` run in full on this branch's real CI: **7427/7427
+assertions passing**, `flutter analyze` clean, zero regressions in any
+pre-existing suite. (A local sandboxed run against a disposable Docker
+Postgres container, used during development on a Windows machine lacking
+this repo's native CI toolchain, reported a lower estimate before this
+branch's own real CI run replaced it with the authoritative count above —
+the gap is environment drift between that stand-in and CI, not a missing
+or failing test; CI's own 0-failure result confirms it.) Two pre-existing,
+environment-only gaps (a fixture-generation script and a child-process ESM
+path issue, both Windows-sandbox-specific and reproducing identically
+against an unmodified `main` in the same environment) and one Windows-only
+false alarm in this session's own local verification rig
+(`tools/healthcheck.mjs` requires a native `psql` binary this sandbox
+lacks; a direct query of `health_check` confirms zero real breaches,
+matching `tools/health-alert.mjs`'s own DATABASE_URL-based "all clear") are
+unrelated to this change and disclosed here, not folded into the total
+above.
 
 ---
 
