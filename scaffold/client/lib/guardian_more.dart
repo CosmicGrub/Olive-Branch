@@ -34,6 +34,7 @@ import 'handover_notes.dart';
 import 'hub_widgets.dart';
 import 'invitation_screen.dart';
 import 'jokebook_screen.dart';
+import 'live_game_picker.dart';
 import 'lock_advisory_screen.dart';
 import 'maturation_ladder.dart';
 import 'meds_care.dart';
@@ -476,14 +477,34 @@ class GuardianMoreScreen extends StatelessWidget {
           // the live in-call games work (live_games.dart), not this one.
           HubTile(icon: Icons.extension_outlined, title: 'Play together',
             subtitle: 'Everything she can play, the same list she sees',
-            onTap: () => _open(context, GamePickerScreen(
-              childName: childName,
-              onPlay: buildGameNavigator(childName),
-              extraSections: [
+            // Intuitivism pass, sub-project 3a (docs/superpowers/specs/
+            // 2026-09-12-intuitivism-gamepicker-recommended-design.md) —
+            // this is this spec's ONLY guardian-driven favoriting surface:
+            // wired in via LiveGamePickerScreen when a real session exists
+            // (baseUrl/guardianId, the same trio _openAvailability/
+            // _openThemePicker above already gate on), so the star toggle
+            // actually persists rather than a UI that pretends to. Without
+            // one, this renders exactly as it always has — the identical
+            // "always open the real screen" posture _openThemePicker's own
+            // comment already documents for a screen with no fetch-on-open
+            // side effect of its own.
+            onTap: () => _open(context, () {
+              final gameSections = [
                 MoreGamesSections(childName: childName),
                 JokebookSection(childName: childName),
-              ],
-            ))),
+              ];
+              final onPlay = buildGameNavigator(childName);
+              if (baseUrl != null && guardianId != null) {
+                return LiveGamePickerScreen(
+                  baseUrl: baseUrl!, childId: childId, guardianId: guardianId!,
+                  childName: childName, httpClient: availabilityHttpClient,
+                  onPlay: onPlay, extraSections: gameSections,
+                );
+              }
+              return GamePickerScreen(
+                childName: childName, onPlay: onPlay, extraSections: gameSections,
+              );
+            }())),
         ]),
         HubSection(title: 'Calls', children: [
           HubTile(icon: Icons.call_outlined, title: 'Call $childName',

@@ -1476,6 +1476,49 @@ async function deleteLetterRow(pool, childId, letterId) {
     return rows.length > 0;
   });
 }
+async function gameFavoritesFor(pool, childId) {
+  const guardianIds = (await guardiansOfChild(pool, childId)).map((g) => g.userId);
+  return withSystemSession(pool, async (q) => {
+    const favRows = guardianIds.length ? await q(
+      `SELECT DISTINCT kind FROM guardian_game_favorite
+            WHERE guardian_id = ANY($1::uuid[]) ORDER BY kind`,
+      [guardianIds]
+    ) : [];
+    const stateRows = await q(
+      `SELECT age_at_last_open FROM child_game_picker_state WHERE child_id = $1`,
+      [childId]
+    );
+    return {
+      favoriteKinds: favRows.map((r) => r.kind),
+      ageAtLastOpen: stateRows.length ? stateRows[0].age_at_last_open : null
+    };
+  });
+}
+async function setGameFavoriteKinds(pool, guardianId, kinds) {
+  await withSession(pool, { roleName: "guardian", userId: guardianId, childId: null }, async (q) => {
+    await q(`DELETE FROM guardian_game_favorite WHERE guardian_id = $1`, [guardianId]);
+    if (!kinds.length) return;
+    const values = kinds.map((_, i) => `($1, $${i + 2})`).join(", ");
+    await q(
+      `INSERT INTO guardian_game_favorite (guardian_id, kind) VALUES ${values}`,
+      [guardianId, ...kinds]
+    );
+  });
+}
+async function recordGamePickerOpen(pool, childId, childLocalDate) {
+  return withSession(pool, { roleName: "child", userId: null, childId }, async (q) => {
+    const rows = await q(
+      `INSERT INTO child_game_picker_state (child_id, age_at_last_open, updated_at)
+       SELECT c.id, EXTRACT(YEAR FROM age($2::date, c.birth_date))::int, now()
+         FROM child c WHERE c.id = $1
+       ON CONFLICT (child_id) DO UPDATE
+         SET age_at_last_open = EXCLUDED.age_at_last_open, updated_at = now()
+       RETURNING age_at_last_open`,
+      [childId, childLocalDate]
+    );
+    return rows.length ? rows[0].age_at_last_open : null;
+  });
+}
 async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__PURE__ */ new Date()) {
   const edges = await edgesFor(pool, requestedBy);
   const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
@@ -1660,6 +1703,7 @@ export {
   dosesForDate,
   edgesFor,
   expensesFor,
+  gameFavoritesFor,
   getGuardianInvite,
   guardiansOfChild,
   handoverNotesFor,
@@ -1678,6 +1722,7 @@ export {
   recordCallStart,
   recordDose,
   recordExchangeArrival,
+  recordGamePickerOpen,
   recordPinAttempt,
   registerDeviceToken,
   removeDeviceTokenSystem,
@@ -1688,6 +1733,7 @@ export {
   setAvailabilityWindows,
   setBagItemStatus,
   setChildTheme,
+  setGameFavoriteKinds,
   setMedicalRecord,
   setPinCredential,
   storeWebauthnCredential,

@@ -3183,6 +3183,103 @@ export async function deleteLetterRow(
   });
 }
 
+/**
+ * db/migrations/0030_game_favorites.sql — GamePickerScreen's Recommended
+ * row (docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended
+ * -design.md). `favoriteKinds` is the guardian half (guardian_game_favorite,
+ * `..._no_child` RLS); `ageAtLastOpen` is the child half
+ * (child_game_picker_state, child-owned RLS). One combined read function,
+ * not two, because GET /v1/children/:childId/game-favorites resolves both
+ * at once for both the child's own Recommended row and a guardian's star
+ * state on the SAME screen.
+ */
+export interface GameFavoritesState {
+  favoriteKinds: string[];
+  ageAtLastOpen: number | null;
+}
+
+/**
+ * System role for both halves — mirrors themeFor()/availabilityFor()'s own
+ * reasoning verbatim: the route handler's real A3 childId-from-path +
+ * can('settings', ...) check already gated this call before it runs, so
+ * granting the trusted backend role read access here only lets that one
+ * already-authorized call finish. guardian_game_favorite has no child_id
+ * column at all (see the migration's own header) — "this child's
+ * favourites" is resolved the identical way availabilityFor() already
+ * resolves "this child's guardians' windows": guardiansOfChild() +
+ * `guardian_id = ANY($1)`, reused rather than re-derived a second way.
+ */
+export async function gameFavoritesFor(pool: pg.Pool, childId: string): Promise<GameFavoritesState> {
+  const guardianIds = (await guardiansOfChild(pool, childId)).map((g) => g.userId);
+  return withSystemSession(pool, async (q) => {
+    const favRows = guardianIds.length
+      ? await q(
+          `SELECT DISTINCT kind FROM guardian_game_favorite
+            WHERE guardian_id = ANY($1::uuid[]) ORDER BY kind`,
+          [guardianIds],
+        )
+      : [];
+    const stateRows = await q(
+      `SELECT age_at_last_open FROM child_game_picker_state WHERE child_id = $1`,
+      [childId],
+    );
+    return {
+      favoriteKinds: favRows.map((r: any) => r.kind as string),
+      ageAtLastOpen: stateRows.length ? (stateRows[0].age_at_last_open as number | null) : null,
+    };
+  });
+}
+
+/**
+ * PUT .../game-favorites' guardian branch — full-replace, one call, the
+ * same "upsert the whole preference" shape setChildTheme() uses, adapted
+ * for a multi-row favourite LIST rather than a single-row preference. The
+ * caller (client/lib/game_favorites_logic.dart's star()/unstar(), the exact
+ * favorites.ts contract, ported) already computed the complete new list
+ * client-side — this function's only job is to make guardian_game_favorite
+ * agree with it, never to diff or toggle server-side. DELETE-then-INSERT
+ * inside withSession()'s own single transaction (BEGIN...COMMIT), so a
+ * reader never observes a momentarily-empty favourites list mid-write.
+ */
+export async function setGameFavoriteKinds(
+  pool: pg.Pool, guardianId: string, kinds: string[],
+): Promise<void> {
+  await withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    await q(`DELETE FROM guardian_game_favorite WHERE guardian_id = $1`, [guardianId]);
+    if (!kinds.length) return;
+    const values = kinds.map((_, i) => `($1, $${i + 2})`).join(', ');
+    await q(`INSERT INTO guardian_game_favorite (guardian_id, kind) VALUES ${values}`,
+      [guardianId, ...kinds]);
+  });
+}
+
+/**
+ * PUT .../game-favorites' child branch — "record that I opened this screen,
+ * right now." `childLocalDate` is resolved by the caller (routes.mjs's own
+ * resolveChildLocalDate(), the same helper sealLetterRow()'s own caller
+ * already uses) and her current age is computed HERE, server-side, from her
+ * real `child.birth_date` — never trusted from the client, the identical
+ * discipline sealLetterRow()'s own writtenAtAge already follows. Upsert:
+ * one row per child, always overwritten, never a log of opens (the design
+ * spec's own "one integer... never a log or history" line).
+ */
+export async function recordGamePickerOpen(
+  pool: pg.Pool, childId: string, childLocalDate: string,
+): Promise<number | null> {
+  return withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
+    const rows = await q(
+      `INSERT INTO child_game_picker_state (child_id, age_at_last_open, updated_at)
+       SELECT c.id, EXTRACT(YEAR FROM age($2::date, c.birth_date))::int, now()
+         FROM child c WHERE c.id = $1
+       ON CONFLICT (child_id) DO UPDATE
+         SET age_at_last_open = EXCLUDED.age_at_last_open, updated_at = now()
+       RETURNING age_at_last_open`,
+      [childId, childLocalDate],
+    );
+    return rows.length ? (rows[0].age_at_last_open as number | null) : null;
+  });
+}
+
 export async function certifiedExportBundleFor(
   pool: pg.Pool, requestedBy: string, childId: string, now: Date = new Date(),
 ): Promise<CertifiedExportResult> {
