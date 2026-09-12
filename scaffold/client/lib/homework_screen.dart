@@ -55,6 +55,7 @@ import 'capture_gate.dart';
 import 'form_factors.dart' as ff;
 import 'homework_quality_gate.dart';
 import 'motion_rules.dart';
+import 'tabletop_split.dart';
 
 class _DemoProblem {
   const _DemoProblem(this.text, this.goodHint, this.leakyHint);
@@ -148,6 +149,67 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
 
   void _revealRealHint(int i) => setState(() => _realRevealed.add(i));
 
+  /// The captured-photo/recognized-problems block — a real, previously
+  /// inline chunk of `build()`, factored out so the foldTabletop branch
+  /// below (intuitivism pass, sub-project 3c, Part 2) can reuse it verbatim
+  /// inside its own `viewing` half instead of a second, hand-copied version
+  /// that could drift from this one.
+  Widget _capturedContent(int fadeMs) => AnimatedSwitcher(
+        duration: Duration(milliseconds: fadeMs),
+        child: _captured
+            ? Column(key: const ValueKey('problems'), children: [
+                const SizedBox(height: 8),
+                // Real path only — the simulated path correctly shows
+                // nothing extra here, preserving this file's own honest
+                // real-vs-simulated split. Same crossfade the problems list
+                // below already uses, not a second animation invented for
+                // this.
+                if (_realPhoto != null)
+                  AnimatedSwitcher(
+                    duration: Duration(milliseconds: fadeMs),
+                    child: ClipRRect(
+                      key: const ValueKey('realPhotoThumbnail'),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(_realPhoto!,
+                        height: 140, width: double.infinity, fit: BoxFit.cover)),
+                  ),
+                if (_realPhoto != null) const SizedBox(height: 12),
+                Align(alignment: Alignment.centerLeft,
+                  child: Text('Photo looks good — here\'s what we found:',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600))),
+                const SizedBox(height: 12),
+                for (int i = 0; i < _problemCount; i++)
+                  _ProblemCard(
+                    // Real path: the server's own OCR'd text. Demo fallback
+                    // (simulated capture only): canned text.
+                    text: _realProblems != null
+                        ? _realProblems![i].text
+                        : _demoProblems[i].text,
+                    verdict: _realProblems != null
+                        // Already guarded server-side (capture-route.ts's
+                        // own guardHint() call) — wrapping it as
+                        // HintVerdict.ok reuses _HintBubble's existing
+                        // rendering/labelling unchanged rather than
+                        // duplicating it for this path.
+                        ? (_realRevealed.contains(i)
+                            ? HintVerdict.ok(_realProblems![i].hint)
+                            : null)
+                        : _revealed[i],
+                    fadeMs: fadeMs,
+                    onHint: () => _realProblems != null
+                        ? _revealRealHint(i)
+                        // A visible dev toggle would leak the mechanism to
+                        // a child; alternating leaky/good by index instead
+                        // keeps this row exercising both guard paths
+                        // without any UI that says "try to break it".
+                        : _revealHint(i, leaky: i.isOdd),
+                  ),
+              ])
+            : const SizedBox.shrink(key: ValueKey('empty')),
+      );
+
   @override
   Widget build(BuildContext context) {
     final int fadeMs = durationFor(quietnessOf('homework'), crossfadeMs);
@@ -162,8 +224,47 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
         // comfortable reading width and centered, never split. Same real
         // columnsAt() gate every other width decision in the app uses.
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
-        final bool capWidth = ff.columnsAt(
-            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final ff.Viewport viewport =
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight);
+        final bool capWidth = ff.columnsAt(viewport, textScale) >= 2;
+        // Intuitivism pass, sub-project 3c, Part 2 — threaded in ahead of
+        // the pre-existing capWidth branching below (which stays completely
+        // untouched for every other posture), the same
+        // `postureFor(viewport) == Posture.foldTabletop` check
+        // game_connect4.dart's own `outerPad` conditional already uses.
+        if (ff.postureFor(viewport) == ff.Posture.foldTabletop) {
+          // A disclosed judgment call: this screen has no separate global
+          // "next problem" control (every recognized problem already shows
+          // at once, each with its own inline "Get a hint" button) — so
+          // `viewing` is the worksheet/hint content (intro text, the photo
+          // once captured, and every problem card, hint bubbles included)
+          // and `controls` is the one real global action this screen has,
+          // the capture trigger itself.
+          final Widget worksheetArea = Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text("Let's get your worksheet", style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(
+              'Take a clear photo of the page and we\'ll help you spot where '
+              'to start — never the answers themselves.',
+              style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            _capturedContent(fadeMs),
+          ]);
+          final Widget captureControls = !_captured
+              ? SizedBox(width: double.infinity, height: 56,
+                  child: FilledButton.icon(
+                    key: const Key('takePhotoButton'),
+                    onPressed: _startCapture,
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Take a photo', style: TextStyle(fontSize: 16))))
+              : const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: TabletopSplit(viewing: worksheetArea, controls: captureControls),
+          );
+        }
         final Widget content = ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -183,62 +284,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                   onPressed: _startCapture,
                   icon: const Icon(Icons.camera_alt_outlined),
                   label: const Text('Take a photo', style: TextStyle(fontSize: 16)))),
-            AnimatedSwitcher(
-              duration: Duration(milliseconds: fadeMs),
-              child: _captured
-                  ? Column(key: const ValueKey('problems'), children: [
-                      const SizedBox(height: 8),
-                      // Real path only — the simulated path correctly shows
-                      // nothing extra here, preserving this file's own
-                      // honest real-vs-simulated split. Same crossfade the
-                      // problems list below already uses, not a second
-                      // animation invented for this.
-                      if (_realPhoto != null)
-                        AnimatedSwitcher(
-                          duration: Duration(milliseconds: fadeMs),
-                          child: ClipRRect(
-                            key: const ValueKey('realPhotoThumbnail'),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.memory(_realPhoto!,
-                              height: 140, width: double.infinity, fit: BoxFit.cover)),
-                        ),
-                      if (_realPhoto != null) const SizedBox(height: 12),
-                      Align(alignment: Alignment.centerLeft,
-                        child: Text('Photo looks good — here\'s what we found:',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600))),
-                      const SizedBox(height: 12),
-                      for (int i = 0; i < _problemCount; i++)
-                        _ProblemCard(
-                          // Real path: the server's own OCR'd text. Demo
-                          // fallback (simulated capture only): canned text.
-                          text: _realProblems != null
-                              ? _realProblems![i].text
-                              : _demoProblems[i].text,
-                          verdict: _realProblems != null
-                              // Already guarded server-side (capture-
-                              // route.ts's own guardHint() call) — wrapping
-                              // it as HintVerdict.ok reuses _HintBubble's
-                              // existing rendering/labelling unchanged
-                              // rather than duplicating it for this path.
-                              ? (_realRevealed.contains(i)
-                                  ? HintVerdict.ok(_realProblems![i].hint)
-                                  : null)
-                              : _revealed[i],
-                          fadeMs: fadeMs,
-                          onHint: () => _realProblems != null
-                              ? _revealRealHint(i)
-                              // A visible dev toggle would leak the
-                              // mechanism to a child; alternating
-                              // leaky/good by index instead keeps this row
-                              // exercising both guard paths without any UI
-                              // that says "try to break it".
-                              : _revealHint(i, leaky: i.isOdd),
-                        ),
-                    ])
-                  : const SizedBox.shrink(key: ValueKey('empty')),
-            ),
+            _capturedContent(fadeMs),
           ],
         );
         return capWidth

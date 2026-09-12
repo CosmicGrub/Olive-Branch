@@ -22,7 +22,9 @@
 // or writes a line, rather than the app pretending to open a camera it does
 // not have.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'showcase_logic.dart';
+import 'tabletop_split.dart';
 
 class ShowcaseScreen extends StatefulWidget {
   const ShowcaseScreen({super.key, this.childName = 'Ivy'});
@@ -106,43 +108,74 @@ class _ShowcaseScreenState extends State<ShowcaseScreen> {
       ...promptsFor(ShowKind.creation, _interests, _now, limit: 2),
       ...promptsFor(ShowKind.object, _interests, _now, limit: 2),
     }.toList();
+    final Widget askArea = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Hi ${widget.childName}! What do you want to show today?',
+        style: Theme.of(context).textTheme.headlineSmall),
+      const SizedBox(height: 16),
+      // Always available — "she starts it". No prompt, no schedule.
+      _SpontaneousButton(onTap: () => _openCapture()),
+      const SizedBox(height: 20),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: _openAsks.isEmpty
+            ? const SizedBox.shrink()
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Just for you',
+                  style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                for (final a in _openAsks)
+                  _AskCard(
+                    key: ValueKey(a.askId),
+                    ask: a,
+                    onShow: () => _openCapture(
+                      forAsk: _asks.firstWhere((x) => x.id == a.askId),
+                      prompt: a.prompt),
+                  ),
+                const SizedBox(height: 12),
+              ]),
+      ),
+    ]);
+    final Widget promptArea = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Or show something else', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final p in prompts)
+          ActionChip(label: Text(p), onPressed: () => _openCapture(prompt: p)),
+      ]),
+    ]);
     return Scaffold(
       appBar: AppBar(title: const Text('Show me')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('Hi ${widget.childName}! What do you want to show today?',
-          style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 16),
-        // Always available — "she starts it". No prompt, no schedule.
-        _SpontaneousButton(onTap: () => _openCapture()),
-        const SizedBox(height: 20),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _openAsks.isEmpty
-              ? const SizedBox.shrink()
-              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Just for you',
-                    style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  for (final a in _openAsks)
-                    _AskCard(
-                      key: ValueKey(a.askId),
-                      ask: a,
-                      onShow: () => _openCapture(
-                        forAsk: _asks.firstWhere((x) => x.id == a.askId),
-                        prompt: a.prompt),
-                    ),
-                  const SizedBox(height: 12),
-                ]),
-        ),
-        Text('Or show something else', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final p in prompts)
-            ActionChip(label: Text(p), onPressed: () => _openCapture(prompt: p)),
-        ]),
-      ])),
+      // LayoutBuilder sits ABOVE the scrollable, the same structural
+      // position child_home.dart's own LayoutBuilder already establishes —
+      // needed here (new) so the foldTabletop check below reads a genuinely
+      // bounded height. `askArea`/`promptArea` above are only ever combined
+      // for the ORIGINAL, byte-for-byte-unchanged ListView below, or for
+      // TabletopSplit's own new foldTabletop-only branch — never a second
+      // layout for any other posture.
+      body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
+        final posture = ff.postureFor(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
+        if (posture == ff.Posture.foldTabletop) {
+          // Intuitivism pass, sub-project 3c, Part 2 — a disclosed judgment
+          // call: this screen has no real camera preview to split (see this
+          // file's own header — capture is an honest stand-in, not a live
+          // camera), so `viewing` is what she'd look at/consider (the ask
+          // feed) and `controls` is what she'd tap to start showing
+          // something (the spontaneous button lives with the feed above;
+          // the prompt chips, the closest thing to a "send" affordance this
+          // screen has, sit below).
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: TabletopSplit(viewing: askArea, controls: promptArea),
+          );
+        }
+        return ListView(padding: const EdgeInsets.all(16), children: [
+          askArea,
+          promptArea,
+        ]);
+      })),
     );
   }
 }

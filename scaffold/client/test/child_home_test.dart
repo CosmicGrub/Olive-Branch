@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/child_home.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 
 Widget wrap(Widget child) => MaterialApp(
       theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple), useMaterial3: true),
@@ -64,11 +65,13 @@ void main() {
       return (featured: featured, standard: standard);
     }
 
-    testWidgets('Fold5 cover (344px) — one column, both grids', (t) async {
-      final c = await crossAxisCountsAt(t, const Size(344, 882));
-      expect(c.featured, 1);
-      expect(c.standard, 1);
-    });
+    // Fold5 cover (344px) no longer belongs in this group — intuitivism
+    // pass, sub-project 3c (docs/superpowers/specs/2026-09-12-intuitivism-
+    // fold5-layout-design.md, Part 1) replaces the Featured/Standard grids
+    // at that exact posture with CoverCollapse's own collapsed layout, so
+    // neither grid exists in the tree there any more to have a column
+    // count at all. See fold5_layout_test.dart's own ChildHome group for
+    // the real coverage of what foldCover shows instead.
 
     testWidgets('Fold5 unfolded main (~673px) — two columns, both grids', (t) async {
       final c = await crossAxisCountsAt(t, const Size(673, 1400));
@@ -108,7 +111,13 @@ void main() {
       expect(t.takeException(), isNull);
 
       final heroHeight = t.getSize(find.byKey(const Key('childHomeHero'))).height;
-      final standardTile = t.getSize(find.widgetWithText(InkWell, 'Homework')).height;
+      // 344px is foldCover -- intuitivism pass, sub-project 3c collapses
+      // the Standard grid away entirely at this exact posture (CoverCollapse),
+      // so "Homework" no longer exists here to measure. The "More" tile is
+      // this posture's own Standard-tier stand-in, sized by the identical
+      // `84 * heightScale` mechanism -- genuinely equivalent coverage of the
+      // same regression class, not a weaker substitute.
+      final standardTile = t.getSize(find.widgetWithText(InkWell, 'More')).height;
       // Base heights (unscaled) are Hero 140, Standard 84 — at 2.0x scale
       // (clamped to 1.6x per the design spec's own more conservative clamp
       // than game_picker.dart's 2.0x) both must have genuinely grown, not
@@ -145,6 +154,18 @@ void main() {
     };
 
     for (final entry in sizes.entries) {
+      // form_factors.dart's own postureFor() — not a hardcoded list of which
+      // sizes are foldCover — decides whether this size collapses (a plain
+      // 390x844 "phone" width genuinely reads as foldCover too: w<=400 and
+      // h>=800 both hold, the same real postureFor() quirk form_factors_test
+      // .dart's own suite already documents; unrelated to and unchanged by
+      // this pass). At foldCover, the counter moved off the collapsed
+      // screen with the rest of the Standard grid (intuitivism pass,
+      // sub-project 3c) — still reachable, now via the "More" screen.
+      final bool collapses =
+          ff.postureFor(ff.Viewport(w: entry.value.width, h: entry.value.height)) ==
+            ff.Posture.foldCover;
+
       testWidgets('${entry.key} at 1.0x text — sleeps counter reachable without '
           'throwing', (t) async {
         t.view.physicalSize = entry.value;
@@ -154,6 +175,10 @@ void main() {
         await t.pumpWidget(wrap(_home));
         await t.pumpAndSettle();
         expect(t.takeException(), isNull);
+        if (collapses) {
+          await t.tap(find.text('More'));
+          await t.pumpAndSettle();
+        }
         await t.ensureVisible(find.textContaining('sleeps until'));
         await t.pumpAndSettle();
         expect(t.takeException(), isNull);
@@ -175,6 +200,10 @@ void main() {
         ));
         await t.pumpAndSettle();
         expect(t.takeException(), isNull);
+        if (collapses) {
+          await t.tap(find.text('More'));
+          await t.pumpAndSettle();
+        }
         await t.ensureVisible(find.textContaining('sleeps until'));
         await t.pumpAndSettle();
         expect(t.takeException(), isNull);

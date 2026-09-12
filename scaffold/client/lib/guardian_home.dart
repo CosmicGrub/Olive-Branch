@@ -23,6 +23,7 @@ import 'package:http/http.dart' as http;
 import 'availability_screen.dart';
 import 'call_screen.dart';
 import 'care_note.dart';
+import 'cover_collapse.dart';
 import 'emergency_card.dart';
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
@@ -105,12 +106,22 @@ class GuardianHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    // SingleChildScrollView + Column, NOT ListView: see child_home.dart's own
-    // comment on the same fix — a sliver-backed list drops children scrolled
-    // below the fold from the element tree, and this wiring pass's grid
-    // expansion (six new guardian tiles) pushed real content well past the
-    // default test viewport.
-    body: SafeArea(child: SingleChildScrollView(child: Column(children: [
+    // LayoutBuilder sits ABOVE the scrollable, the same structural position
+    // child_home.dart's own LayoutBuilder already establishes (that file's
+    // own comment: "inside it, `constraints` are the Scaffold body's real
+    // bounded size, not the scrollable's own unbounded scroll-axis extent")
+    // — added here, new, specifically so CoverCollapse's own internal
+    // posture detection below has a genuinely bounded height to read.
+    // `postureFor()` is height-sensitive (foldCover/foldTabletop both key
+    // off it); the grid's own pre-existing LayoutBuilder further down stays
+    // exactly where it was, nested inside the scrollable, because
+    // `columnsAt()` only ever reads width.
+    body: SafeArea(child: LayoutBuilder(builder: (context, outerConstraints) {
+      // Shared between `full` and the foldCover `collapsed` layout below —
+      // the ribbon is unchanged either way (per the design spec's own Part
+      // 1 principle for this screen), so it is built once and reused, not
+      // duplicated.
+      final Widget ribbonBlock = Column(children: [
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -159,6 +170,15 @@ class GuardianHome extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Text(overlapLabel!, style: Theme.of(context).textTheme.labelSmall
             ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+      ]);
+
+      // SingleChildScrollView + Column, NOT ListView: see child_home.dart's
+      // own comment on the same fix — a sliver-backed list drops children
+      // scrolled below the fold from the element tree, and this wiring
+      // pass's grid expansion (six new guardian tiles) pushed real content
+      // well past the default test viewport.
+      final Widget full = SingleChildScrollView(child: Column(children: [
+        ribbonBlock,
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
           // LayoutBuilder-driven breakpoint, not a single fixed extent: at the
@@ -239,7 +259,43 @@ class GuardianHome extends StatelessWidget {
             ]);
           })),
         const SizedBox(height: 16),
-      ]))),
+      ]));
+
+      // ==================================================== foldCover only
+      // Intuitivism pass, sub-project 3c, Part 1 — at the Fold5's 344px
+      // cover screen, this screen shows the ribbon (unchanged) and the Hero
+      // tile (Message banking) only. Featured/Standard collapse into a
+      // single "More" tile — the exact same icon/label/push-a-full-screen
+      // shape this screen's own pre-existing "More" _GTile above already
+      // uses, except this "More" opens `full` itself (this screen's own
+      // complete, otherwise-unchanged layout) rather than GuardianMoreScreen
+      // — the literal "full list" collapsed away from, not a second hub.
+      // 128.0, not 108.0: the same mainAxisExtent the grid above already
+      // computes for this exact narrow width (see that LayoutBuilder's own
+      // comment on the 4px overflow this value fixes).
+      final Widget collapsed = SingleChildScrollView(child: Column(children: [
+        ribbonBlock,
+        const SizedBox(height: 20),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(children: [
+            SizedBox(width: double.infinity, height: 128, child: _GTile(
+              icon: Icons.schedule_send, label: 'Message banking',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const MessageBankingScreen())))),
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, height: 128, child: _GTile(
+              icon: Icons.more_horiz, label: 'More',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('More')),
+                  body: SafeArea(child: full),
+                ))))),
+          ])),
+        const SizedBox(height: 16),
+      ]));
+
+      return CoverCollapse(full: full, collapsed: collapsed);
+    })),
   );
 }
 

@@ -52,6 +52,8 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'call_modes.dart';
 import 'degradation_banner.dart';
+import 'form_factors.dart' as ff;
+import 'tabletop_split.dart';
 
 /// LOCAL DEV/TEST ONLY — tools/local-call-room-server.mjs. Not a production
 /// endpoint.
@@ -748,14 +750,25 @@ class _CallScreenState extends State<CallScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
-    body: switch (_status) {
+    // Intuitivism pass, sub-project 3c, Part 2 — a new LayoutBuilder (this
+    // screen had none before) purely so InCallView below can be told
+    // whether the ambient posture is foldTabletop; every other status
+    // (fetchingToken/joining/reconnecting/error) renders exactly as before,
+    // since LayoutBuilder is a transparent measurement wrapper that changes
+    // nothing about its child's own rendering.
+    body: LayoutBuilder(builder: (context, constraints) {
+      final tabletop = ff.postureFor(
+          ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight)) ==
+        ff.Posture.foldTabletop;
+      return switch (_status) {
       _CallStatus.fetchingToken => Center(child: _Status(
           message: 'Calling ${widget.displayName}…', color: widget.accentColor)),
       _CallStatus.joining => Center(child: _Status(
           message: 'Joining ${widget.displayName}…', color: widget.accentColor)),
       _CallStatus.reconnecting => Center(child: _Status(
           message: 'Reconnecting…', color: widget.accentColor)),
-      _CallStatus.inCall => _InCallView(
+      _CallStatus.inCall => InCallView(
+          tabletop: tabletop,
           localTrack: _localVideoTrack,
           remoteTrack: _remoteVideoTrack,
           remoteName: _remoteName,
@@ -806,7 +819,8 @@ class _CallScreenState extends State<CallScreen> {
             onRetry: _startCall,
           ),
         ),
-    },
+      };
+    }),
   );
 }
 
@@ -855,8 +869,15 @@ class _ErrorState extends StatelessWidget {
 /// construction, not a flag remembered per role the way the Jitsi build
 /// needed (`callFeatureFlagsFor`'s own now-removed role-conditional chat
 /// flag).
-class _InCallView extends StatelessWidget {
-  const _InCallView({
+/// Public (not `_InCallView`, its name through v0.49.69) specifically so a
+/// widget test can construct it directly, the same reason `isGuardianWho`
+/// above is a top-level function rather than a private method on
+/// [_CallScreenState] — call_screen_test.dart can never reach `_CallStatus
+/// .inCall` for real (no live LiveKit connection exists in a test sandbox),
+/// so this is the only way to exercise the foldTabletop split below at all.
+class InCallView extends StatelessWidget {
+  const InCallView({
+    super.key,
     required this.localTrack,
     required this.remoteTrack,
     required this.remoteName,
@@ -870,6 +891,7 @@ class _InCallView extends StatelessWidget {
     required this.remoteMode,
     required this.awaitingResumeConsent,
     required this.onResumeVideo,
+    this.tabletop = false,
   });
 
   final lk.VideoTrack? localTrack;
@@ -889,9 +911,82 @@ class _InCallView extends StatelessWidget {
   final CallMode remoteMode;
   final bool awaitingResumeConsent;
   final VoidCallback onResumeVideo;
+  /// Intuitivism pass, sub-project 3c, Part 2 — true only when
+  /// `CallScreen`'s own new LayoutBuilder reads `Posture.foldTabletop`.
+  /// Defaults to false so every existing call site (none pass this yet)
+  /// keeps its exact prior Stack-overlay rendering, unconditionally.
+  final bool tabletop;
 
   @override
-  Widget build(BuildContext context) => Stack(children: [
+  Widget build(BuildContext context) {
+    if (tabletop) {
+      // Arguably the single most natural real-world tabletop use case on a
+      // Fold5 (the design spec's own words): propped up hands-free on a
+      // table during a call. Video above the hinge, call controls below it
+      // — a real Column split via TabletopSplit, not the Stack overlay
+      // below (which stays completely untouched for every other posture).
+      final Widget videoArea = Stack(children: [
+        Positioned.fill(
+          child: remoteTrack != null
+              ? lk.VideoTrackRenderer(remoteTrack!)
+              : _ListeningSurfaceView(remoteName: remoteName, remoteMode: remoteMode),
+        ),
+        DegradationBanner(notice: notice),
+        if (localTrack != null)
+          Positioned(
+            top: 16, right: 16, width: 110, height: 150,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: lk.VideoTrackRenderer(localTrack!, mirrorMode: lk.VideoViewMirrorMode.mirror),
+            ),
+          ),
+        if (awaitingResumeConsent)
+          Align(
+            alignment: Alignment.center,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text('Ready to carry on?',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  key: const Key('resumeVideoButton'),
+                  onPressed: onResumeVideo,
+                  icon: const Icon(Icons.videocam),
+                  label: const Text('Turn my camera back on'),
+                ),
+              ]),
+            ),
+          ),
+      ]);
+      final Widget controlsRow = Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        _CallControlButton(
+          icon: micEnabled ? Icons.mic : Icons.mic_off,
+          label: micEnabled ? 'Mute' : 'Unmute',
+          onPressed: onToggleMic,
+        ),
+        const SizedBox(width: 24),
+        _CallControlButton(
+          icon: Icons.call_end,
+          label: 'Hang up',
+          backgroundColor: Colors.redAccent,
+          onPressed: onHangUp,
+        ),
+        const SizedBox(width: 24),
+        _CallControlButton(
+          icon: cameraEnabled ? Icons.videocam : Icons.videocam_off,
+          label: cameraEnabled ? 'Turn camera off' : 'Turn camera on',
+          onPressed: onToggleCamera,
+        ),
+      ]);
+      return TabletopSplit(viewing: videoArea, controls: Center(child: controlsRow));
+    }
+    return Stack(children: [
     Positioned.fill(
       child: remoteTrack != null
           ? lk.VideoTrackRenderer(remoteTrack!)
@@ -962,7 +1057,8 @@ class _InCallView extends StatelessWidget {
         ),
       ]),
     ),
-  ]);
+    ]);
+  }
 }
 
 /// MASTERFILE §5.23.1 — the listening surface. "A black rectangle is what

@@ -47,6 +47,7 @@ import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
+import 'cover_collapse.dart';
 import 'form_factors.dart' as ff;
 import 'game_navigation.dart';
 import 'game_picker.dart';
@@ -114,7 +115,19 @@ class ChildHome extends StatelessWidget {
       // .dart's own fold-line regression coverage.
       final double heightScale = textScale.clamp(1.0, 1.6);
 
-      return SingleChildScrollView(padding: const EdgeInsets.all(16),
+      // Shared between `full` and the foldCover `collapsed` layout below —
+      // built once, mounted in whichever of the two CoverCollapse actually
+      // renders (never both at once, so reusing this one Key is safe; see
+      // cover_collapse_test.dart's own header for the general pattern).
+      final Widget heroTile = _Tile(key: const Key('childHomeHero'),
+        icon: Icons.wb_sunny_outlined, label: 'My day', featured: true,
+        hero: true, height: 140 * heightScale,
+        onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => MyDayScreen(
+            childName: childName, parts: demoDayParts, nowLocal: hhmmNow()))),
+      );
+
+      final Widget full = SingleChildScrollView(padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 12),
@@ -129,13 +142,7 @@ class ChildHome extends StatelessWidget {
         // ever used, uniform-cell by construction) — composing a separate
         // region sidesteps needing one, matching the spec's own §3
         // reasoning for staying inside a "refine, don't redesign" budget.
-        _Tile(key: const Key('childHomeHero'),
-          icon: Icons.wb_sunny_outlined, label: 'My day', featured: true,
-          hero: true, height: 140 * heightScale,
-          onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => MyDayScreen(
-              childName: childName, parts: demoDayParts, nowLocal: hhmmNow()))),
-        ),
+        heroTile,
         const SizedBox(height: 10),
 
         // ============================================= Featured — larger,
@@ -218,6 +225,46 @@ class ChildHome extends StatelessWidget {
           _Sleeps(sleepsUntilHandover!),
         ],
       ]));
+
+      // ==================================================== foldCover only
+      // Intuitivism pass, sub-project 3c, Part 1 — at the Fold5's 344px
+      // cover screen, this screen shows its single most load-bearing thing
+      // (the ribbon/presence area, and the Hero tile) rather than the full
+      // layout squeezed narrow. Featured and Standard collapse into a
+      // single "More" tile — the exact same icon/label/push-a-full-screen
+      // shape guardian_home.dart's own pre-existing "More" tile already
+      // uses to reach GuardianMoreScreen, reused here rather than invented,
+      // except this "More" opens `full` itself (this screen's own complete,
+      // otherwise-unchanged layout) rather than a different hub screen — the
+      // literal "full list" Featured/Standard collapsed away from, not a
+      // second catalogue.
+      final Widget collapsed = SingleChildScrollView(padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 12),
+        if (presence != null) _PresenceCard(presence!, childName: childName),
+        const SizedBox(height: 12),
+        heroTile,
+        const SizedBox(height: 10),
+        // Standard tier's own un-scaled height (84), not Hero's — this
+        // tile stands in for the whole collapsed Featured/Standard tier,
+        // not a second Hero. Explicit `height:` and an outer full-width
+        // SizedBox, the same two things the Hero tile above gets for the
+        // same reason (`_Tile.hero`'s own width-stretch is gated on
+        // `hero: true`, which would also change this tile's colour to
+        // Hero's tertiaryContainer — not wanted for "More"): outside a
+        // GridView's own mainAxisExtent, _Tile's inner Column (its Spacer
+        // needs a bounded height) has nothing else to size itself against.
+        SizedBox(width: double.infinity, child: _Tile(
+          icon: Icons.more_horiz, label: 'More', height: 84 * heightScale,
+          onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              appBar: AppBar(title: const Text('More')),
+              body: SafeArea(child: full),
+            ))))),
+      ]));
+
+      return CoverCollapse(full: full, collapsed: collapsed);
     })),
   );
 }
