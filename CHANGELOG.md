@@ -38,10 +38,15 @@ Featured's larger icon (28→36px) and text style (titleSmall→titleMedium), re
 ### Explicitly out of scope
 Column-count/width scaling (already correct, untouched); the ribbon itself (untouched, real live data); any new/removed/renamed tile (same 11 destinations, same labels/icons — only grouping and fill color change); a guardian-settable custom tile order (a genuinely different feature from a designed hierarchy, noted for future consideration, not designed here).
 
-- **Assertion total: 7189**, confirmed against this branch's own real CI
-  `COMPUTED TOTAL` (one less than the 7190 first estimated from HEAD's 7169
-  plus this entry's own 21 new Dart tests — the baseline this branch built
-  from was not exactly 7169) and synced here per this repo's established
+- **Assertion total: 7190**, confirmed against this branch's own real CI
+  `COMPUTED TOTAL` once a real, unrelated failure was fixed rather than
+  papered over: this branch's first CI run showed 7189 passed (one short
+  of the 7190 estimated from HEAD's 7169 plus this entry's own 21 new
+  Dart tests) because `tiered_tile.dart` was missing the repo-wide
+  `UNVERIFIED` marker convention `transport.test.mjs`'s own "I contract"
+  suite enforces on every `client/lib` Dart file — a real, deterministic
+  failure, not noise. With that fixed, the branch's own math checks out
+  exactly: 7169 + 21 = 7190, synced here per this repo's established
   convention.
 
 ---
