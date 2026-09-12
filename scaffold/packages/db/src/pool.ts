@@ -3280,6 +3280,33 @@ export async function recordGamePickerOpen(
   });
 }
 
+/**
+ * PUT .../profile — onboarding_gender.dart's real tap-and-persist path
+ * (Onboarding & Guardian Access sub-project 1, docs/superpowers/specs/
+ * 2026-09-12-onboarding-identity-pin-design.md). Child-write only, the
+ * IDENTICAL `withSession({ roleName: 'child', ... })` shape
+ * recordGamePickerOpen() above already uses — a real tap, upserted once;
+ * a Skip never calls this function at all (routes.mjs's own handler), so
+ * a NULL `gender` is never written here, only a real 'boy'/'girl' value.
+ * `set_at` is always `now()` on every real call, matching this table's own
+ * "overwritten, never a log" shape (0031_child_profile.sql's own header) —
+ * a child who taps a second, different answer later simply replaces the
+ * first, honestly, rather than accumulating history nothing reads.
+ */
+export async function setChildGender(
+  pool: pg.Pool, childId: string, gender: string,
+): Promise<void> {
+  await withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
+    await q(
+      `INSERT INTO child_profile (child_id, gender, set_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (child_id) DO UPDATE
+         SET gender = EXCLUDED.gender, set_at = now()`,
+      [childId, gender],
+    );
+  });
+}
+
 export async function certifiedExportBundleFor(
   pool: pg.Pool, requestedBy: string, childId: string, now: Date = new Date(),
 ): Promise<CertifiedExportResult> {

@@ -1519,6 +1519,17 @@ async function recordGamePickerOpen(pool, childId, childLocalDate) {
     return rows.length ? rows[0].age_at_last_open : null;
   });
 }
+async function setChildGender(pool, childId, gender) {
+  await withSession(pool, { roleName: "child", userId: null, childId }, async (q) => {
+    await q(
+      `INSERT INTO child_profile (child_id, gender, set_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (child_id) DO UPDATE
+         SET gender = EXCLUDED.gender, set_at = now()`,
+      [childId, gender]
+    );
+  });
+}
 async function certifiedExportBundleFor(pool, requestedBy, childId, now = /* @__PURE__ */ new Date()) {
   const edges = await edgesFor(pool, requestedBy);
   const rbac = can("export.certified", edges, childId, now, void 0, { court: true });
@@ -1732,6 +1743,7 @@ export {
   sealLetterRow,
   setAvailabilityWindows,
   setBagItemStatus,
+  setChildGender,
   setChildTheme,
   setGameFavoriteKinds,
   setMedicalRecord,

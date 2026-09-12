@@ -18,23 +18,53 @@
 // does not pop itself (confirmed by reading onboarding_name.dart's
 // _finish()). This file supplies that pop, once per step, so a step's
 // result becomes the value its `Navigator.push` future resolves with.
+//
+// Onboarding & Guardian Access sub-project 1 (docs/superpowers/specs/
+// 2026-09-12-onboarding-identity-pin-design.md) inserts a new gender step
+// (ObGenderScreen) immediately after age, ahead of who/colour/birthday —
+// the spec's own flow diagram ("onboarding_name -> onboarding_age ->
+// onboarding_gender -> done") reads as shorthand for "the identity-capture
+// portion is done," not a claim that this sub-project truncates the
+// existing seven-screen tour; who/colour/birthday are untouched and stay in
+// their existing prose-order sequence below. childId/baseUrl/sessionToken/
+// httpClient (optional and additive, unchanged default behaviour when
+// omitted) are threaded through to ObGenderScreen ALONE — the only step in
+// this whole flow that persists anything real (see that screen's own file
+// header) — reused verbatim from ChildMoreScreen's own already-
+// authenticated session, the same live-wiring convention letters_screen.dart
+// already established for a live screen reached through this exact chain.
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'birthday_day.dart';
 import 'birthday_marked.dart';
 import 'birthday_month.dart';
 import 'calendar_logic.dart';
 import 'colour_pick.dart';
 import 'onboarding_age.dart';
+import 'onboarding_gender.dart';
 import 'onboarding_logic.dart';
 import 'onboarding_name.dart';
 import 'onboarding_who.dart';
 
 class OnboardingFlowScreen extends StatefulWidget {
-  const OnboardingFlowScreen({super.key, this.fallbackName = 'Ivy'});
+  const OnboardingFlowScreen({
+    super.key,
+    this.fallbackName = 'Ivy',
+    this.childId,
+    this.baseUrl,
+    this.sessionToken,
+    this.httpClient,
+  });
 
   /// What the guardian entered at setup — used only if she skips the name
   /// step, matching ObNameScreen's own contract.
   final String fallbackName;
+  /// Live-session wiring (optional and additive) — see file header. Threaded
+  /// through to ObGenderScreen alone.
+  final String? childId;
+  final String? baseUrl;
+  final String? sessionToken;
+  final http.Client? httpClient;
 
   @override
   State<OnboardingFlowScreen> createState() => _OnboardingFlowScreenState();
@@ -66,6 +96,17 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (!mounted) return;
     if (ageStep == null) return setState(() => _running = false);
     final int? age = effectiveAge(ageStep);
+
+    final GenderStep? genderStep = await nav.push<GenderStep>(MaterialPageRoute<GenderStep>(
+      builder: (c) => ObGenderScreen(
+        childId: widget.childId ?? 'demo-child',
+        baseUrl: widget.baseUrl,
+        sessionToken: widget.sessionToken,
+        httpClient: widget.httpClient,
+        onContinue: (step) => Navigator.of(c).pop(step),
+      )));
+    if (!mounted) return;
+    if (genderStep == null) return setState(() => _running = false);
 
     final WhoStep? whoStepResult = await nav.push<WhoStep>(MaterialPageRoute<WhoStep>(
       builder: (c) => ObWhoScreen(

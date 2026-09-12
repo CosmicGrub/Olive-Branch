@@ -89,6 +89,30 @@ Future<void> Function(String pin)? _liveSetGuardianPin(
   };
 }
 
+/// GuardianSetupScreen.checkExistingPin — Onboarding & Guardian Access
+/// sub-project 1 (docs/superpowers/specs/2026-09-12-onboarding-identity-pin
+/// -design.md). Real `GET /v1/me`'s new `hasPin` field (server/routes.mjs)
+/// when this hub has an actual live session; returns a callback
+/// GuardianSetupScreen resolves itself on init, or null when there's no live
+/// session to check against — the identical shape [_liveSetGuardianPin]
+/// above already establishes, including its own fresh-devLoginFor()-per-call
+/// posture (nothing here trusts a token that might have outlived this
+/// (stateless) widget's own lifecycle).
+Future<bool> Function()? _liveCheckExistingPin(
+    {required String? baseUrl, required String? guardianId, http.Client? httpClient}) {
+  if (baseUrl == null || guardianId == null) return null;
+  return () async {
+    final token = await devLoginFor(baseUrl, userId: guardianId, client: httpClient);
+    final api = OliveApi(baseUrl, token, client: httpClient);
+    try {
+      final me = await api.fetchMe();
+      return me['hasPin'] == true;
+    } finally {
+      if (httpClient == null) api.close();
+    }
+  };
+}
+
 class GuardianMoreScreen extends StatelessWidget {
   const GuardianMoreScreen({
     super.key,
@@ -564,6 +588,11 @@ class GuardianMoreScreen extends StatelessWidget {
               setGuardianPin: _liveSetGuardianPin(
                 baseUrl: baseUrl, guardianId: guardianId,
                 httpClient: availabilityHttpClient),
+              // Real GET /v1/me's hasPin when this hub has a live session —
+              // see _liveCheckExistingPin's own doc comment.
+              checkExistingPin: _liveCheckExistingPin(
+                baseUrl: baseUrl, guardianId: guardianId,
+                httpClient: availabilityHttpClient),
             ))),
           HubTile(icon: Icons.fingerprint_outlined,
             title: 'Guardian setup — passkey (dev verification)',
@@ -571,6 +600,9 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, GuardianSetupScreen(
               registerPasskey: _devRegisterPasskey,
               setGuardianPin: _liveSetGuardianPin(
+                baseUrl: baseUrl, guardianId: guardianId,
+                httpClient: availabilityHttpClient),
+              checkExistingPin: _liveCheckExistingPin(
                 baseUrl: baseUrl, guardianId: guardianId,
                 httpClient: availabilityHttpClient),
             ))),
