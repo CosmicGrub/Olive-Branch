@@ -317,7 +317,7 @@ class GuardianHome extends StatelessWidget {
       // cover screen, this screen shows the ribbon (unchanged) and the Hero
       // tile (Message banking) only. Featured/Standard collapse into a
       // single "More" tile — the exact same icon/label/push-a-full-screen
-      // shape this screen's own pre-existing "More" _GTile above already
+      // shape this screen's own pre-existing "More" TieredTile above already
       // uses, except this "More" opens `full` itself (this screen's own
       // complete, otherwise-unchanged layout) rather than GuardianMoreScreen
       // — the literal "full list" collapsed away from, not a second hub.
@@ -329,14 +329,15 @@ class GuardianHome extends StatelessWidget {
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(children: [
-            SizedBox(width: double.infinity, height: 128, child: _GTile(
+            SizedBox(width: double.infinity, height: 128, child: TieredTile(
+              key: const Key('guardianHomeHero'),
               icon: Icons.schedule_send, label: 'Message banking',
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const MessageBankingScreen())))),
             const SizedBox(height: 10),
-            SizedBox(width: double.infinity, height: 128, child: _GTile(
+            SizedBox(width: double.infinity, height: 128, child: TieredTile(
               icon: Icons.more_horiz, label: 'More',
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => Scaffold(
                   appBar: AppBar(title: const Text('More')),
                   body: SafeArea(child: full),

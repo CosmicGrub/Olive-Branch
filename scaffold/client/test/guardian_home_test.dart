@@ -167,8 +167,18 @@ void main() {
   group('GuardianHome — Fold5 cover-screen (344px) Hero band, the same overflow '
       'class the per-tile grid comment already documents, now rechecked for the '
       'Hero tile itself and for the Featured grid\'s own bigger icon/type-scale', () {
-    testWidgets('344px width — Hero renders "Message banking" with no overflow anywhere '
-        'on screen, and reads taller than a Featured or Standard tile', (t) async {
+    // At 344px, intuitivism pass, sub-project 3c's own CoverCollapse (docs/
+    // superpowers/specs/2026-09-12-intuitivism-fold5-layout-design.md, Part 1)
+    // now replaces the Featured/Standard grids with its own collapsed
+    // ribbon+Hero+"More" layout — neither grid exists in the tree at this
+    // exact width any more to measure directly. See fold5_layout_test.dart's
+    // own "GuardianHome — CoverCollapse, real at foldCover" group for the
+    // collapse behavior itself; this group keeps its original job (the
+    // Hero-vs-Featured overflow/height-ordering regression this screen has
+    // real prior-bug history with) by reaching the SAME full layout the "More"
+    // tile opens — relocated, not weakened or dropped.
+    testWidgets('344px width — Hero renders "Message banking" with no overflow '
+        'in the collapsed view', (t) async {
       await t.binding.setSurfaceSize(const Size(344, 1700));
       addTearDown(() => t.binding.setSurfaceSize(null));
       await t.pumpWidget(wrap(_home));
@@ -179,6 +189,20 @@ void main() {
         find.descendant(of: find.byKey(_heroKey), matching: find.text('Message banking')),
         findsOneWidget,
       );
+      expect(t.getSize(find.byKey(_heroKey)).height, greaterThan(0));
+    });
+
+    testWidgets('344px width, via "More" — Hero still reads taller than a Featured '
+        'or Standard tile, and Featured/Standard heights still match, in the full '
+        'layout the collapsed view opens', (t) async {
+      await t.binding.setSurfaceSize(const Size(344, 1700));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(_home));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('More'));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
 
       final heroHeight = t.getSize(find.byKey(_heroKey)).height;
       final featuredTile = t.getSize(find.widgetWithText(InkWell, 'Send-time guard')).height;
