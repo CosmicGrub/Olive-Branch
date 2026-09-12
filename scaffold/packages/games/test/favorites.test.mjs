@@ -94,8 +94,9 @@ const CATALOGUE = [
       && randomGame(CATALOGUE, 8, null, ()=>0.999999) !== undefined, 'true');
   check('D randomGame','below the youngest floor there is honestly nothing, not a crash',
     randomGame(CATALOGUE, 3, null), 'null');
+  const defaultPickResult = randomGame(CATALOGUE, 8, null);
   check('D randomGame','no default `pick` argument still returns a real, real-catalogue game (Math.random path)',
-    CATALOGUE.some(g => g.kind === randomGame(CATALOGUE, 8, null).kind), 'true');
+    CATALOGUE.some(g => g.kind === defaultPickResult?.kind), 'true');
 }
 
 // E · P2 — nothing here carries a count, order, or streak
