@@ -1964,3 +1964,37 @@ export function jkUnstar(id: string): Any {
 export function jkStarred(id: string): boolean { return jokeIsStarred(S.jokeFavs ?? [], id); }
 /** Her shelf, newest first, titles only — P2. */
 export function jkShelfView(): Any { return jokeShelf(S.jokeFavs ?? []); }
+
+// ------------------------------------------------ game picker favourites ---
+// packages/games/src/favorites.ts — bridged for the identical reason the
+// jokebook block above is (check-markup E2): so the engine room sees the
+// exact same star()/unstar()/favouritesFor()/newlyUnlocked()/randomGame()
+// the Flutter client's game_favorites_logic.dart ports. No demo screen
+// renders GamePickerScreen's Recommended row yet; shell.html's manifest
+// says so under notDemoed, same posture as jokebook/themePicker. `GAMES_ALL`
+// above is typed more broadly (`kind: string`) than favorites.ts's own
+// imported `GameMeta['kind']: GameKind` (the narrower 4-kind union
+// games.ts's real engine still covers) — the cast below is demo glue, not a
+// claim the two catalogues are the same one; esbuild does not type-check,
+// so this is a documented, deliberate widening, not a silent gap.
+import { star as gfStarRaw, unstar as gfUnstarRaw, favouritesFor, newlyUnlocked,
+  randomGame,
+} from '../../packages/games/src/favorites.ts';
+const GAMES_AS_META = GAMES_ALL as unknown as Parameters<typeof favouritesFor>[0];
+
+export function gfStar(kind: string): Any {
+  S.gameFavKinds = gfStarRaw(S.gameFavKinds ?? [], kind);
+  return gfFavourites();
+}
+export function gfUnstar(kind: string): Any {
+  S.gameFavKinds = gfUnstarRaw(S.gameFavKinds ?? [], kind);
+  return gfFavourites();
+}
+/** Her guardian's resolved favourites — P2, kind + title only. */
+export function gfFavourites(): Any { return favouritesFor(GAMES_AS_META, S.gameFavKinds ?? []); }
+export function gfNewlyUnlocked(age: number, ageAtLastOpen: number | null): Any {
+  return newlyUnlocked(GAMES_AS_META, age, ageAtLastOpen);
+}
+export function gfSurpriseMe(age: number, excludeKind?: string): Any {
+  return randomGame(GAMES_AS_META, age, excludeKind ?? null);
+}

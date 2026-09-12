@@ -6,10 +6,14 @@
 // itself, its posture-awareness, and the two regression classes this exact
 // screen has real prior-bug history with (fixed-height text-scale overflow,
 // the "sleeps until" counter dropping below the fold).
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/child_home.dart';
 import 'package:olive_client/form_factors.dart' as ff;
+import 'package:olive_client/live_game_picker.dart';
 
 Widget wrap(Widget child) => MaterialApp(
       theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple), useMaterial3: true),
@@ -210,5 +214,41 @@ void main() {
         expect(find.textContaining('sleeps until'), findsOneWidget);
       });
     }
+  });
+
+  group('ChildHome — Play together call site, Intuitivism pass sub-project 3a '
+      '(docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended-design.md)', () {
+    testWidgets('with a live session (baseUrl/childId/sessionToken), Play together opens '
+        'the REAL LiveGamePickerScreen — her own Recommended row/Surprise-me are real, '
+        'never onToggleFavorite', (t) async {
+      final mock = MockClient((req) async {
+        if (req.method == 'GET' && req.url.path.endsWith('/game-favorites')) {
+          return http.Response(jsonEncode({'favoriteKinds': <String>[], 'ageAtLastOpen': null}), 200);
+        }
+        if (req.method == 'PUT' && req.url.path.endsWith('/game-favorites')) {
+          return http.Response(jsonEncode({'ok': true, 'ageAtLastOpen': 8}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await t.pumpWidget(wrap(ChildHome(
+        childName: 'Ivy', presence: null, sleepsUntilHandover: 3, unreadCount: 2,
+        baseUrl: 'http://api.test', childId: 'child-1', sessionToken: 'child-tok',
+        httpClient: mock,
+      )));
+      await t.tap(find.text('Play together'));
+      await t.pumpAndSettle();
+      expect(find.byType(LiveGamePickerScreen), findsOneWidget);
+      expect(find.byIcon(Icons.star_rounded), findsNothing);
+      expect(find.byIcon(Icons.star_border_rounded), findsNothing);
+    });
+
+    testWidgets('with no live session, Play together renders exactly as before this migration',
+        (t) async {
+      await t.pumpWidget(wrap(_home));
+      await t.tap(find.text('Play together'));
+      await t.pumpAndSettle();
+      expect(find.byType(LiveGamePickerScreen), findsNothing);
+      expect(find.text('Games'), findsOneWidget);
+    });
   });
 }

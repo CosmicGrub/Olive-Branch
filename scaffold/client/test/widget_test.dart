@@ -141,6 +141,11 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — intuitivism sub-project 3b's
+    // tiering moved "Exchange" further down than the default 800x600 test
+    // viewport shows without a scroll step, the same reason ChildHome's own
+    // "My list"/"Homework" tests above need it.
+    await tester.ensureVisible(find.text('Exchange'));
     await tester.tap(find.text('Exchange'));
     await tester.pumpAndSettle();
     expect(find.byType(ExchangeScreen), findsOneWidget);
@@ -151,6 +156,8 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — see the 'Exchange' test above.
+    await tester.ensureVisible(find.text('Expenses'));
     await tester.tap(find.text('Expenses'));
     await tester.pumpAndSettle();
     expect(find.byType(ExpensesScreen), findsOneWidget);

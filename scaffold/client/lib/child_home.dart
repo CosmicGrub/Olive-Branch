@@ -42,6 +42,15 @@
 // split PR #87 was written to close. The ad-hoc local-play games' own
 // placement (Featured tier, once built) is a real, separate, still-open
 // question — answered in the spec's §2 but deliberately NOT wired here.
+//
+// TieredTile — sub-project 3b (docs/superpowers/specs/2026-09-12-
+// intuitivism-guardianhome-tiering-design.md). This screen's own former
+// private `_Tile` now lives in tiered_tile.dart, unchanged, once
+// guardian_home.dart became a second real consumer of the exact same
+// shape rather than a second, drifting `_GTile` copy. This file's own
+// migration onto it is a pure rename plus move — no behavior change,
+// proven by this file's full existing test suite passing with zero
+// test-file edits.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'calendar_day_logic.dart';
@@ -55,18 +64,12 @@ import 'games_hub.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
 import 'jokebook_screen.dart';
+import 'live_game_picker.dart';
 import 'my_day.dart';
 import 'showcase_screen.dart';
 import 'storyteller_screen.dart';
+import 'tiered_tile.dart';
 import 'wants_needs.dart';
-
-/// Honest acknowledgment for a feature this preview build doesn't implement
-/// yet, rather than a silent no-op — the same "recorded, not glossed over"
-/// posture the rest of this project already takes for unbuilt surfaces.
-void _notBuiltYet(BuildContext context, String what) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$what — not built yet.'), duration: const Duration(seconds: 2)));
-}
 
 class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
@@ -119,7 +122,7 @@ class ChildHome extends StatelessWidget {
       // built once, mounted in whichever of the two CoverCollapse actually
       // renders (never both at once, so reusing this one Key is safe; see
       // cover_collapse_test.dart's own header for the general pattern).
-      final Widget heroTile = _Tile(key: const Key('childHomeHero'),
+      final Widget heroTile = TieredTile(key: const Key('childHomeHero'),
         icon: Icons.wb_sunny_outlined, label: 'My day', featured: true,
         hero: true, height: 140 * heightScale,
         onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -161,27 +164,45 @@ class ChildHome extends StatelessWidget {
             // header for why onPlay is one real shared function, not two
             // hand-copied switches (guardian_more.dart's own mirrored tile
             // uses the exact same one).
-            _Tile(icon: Icons.extension, label: 'Play together', featured: true,
+            TieredTile(icon: Icons.extension, label: 'Play together', featured: true,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => GamePickerScreen(
-                  childName: childName,
-                  onPlay: buildGameNavigator(childName),
-                  extraSections: [
+                builder: (_) {
+                  final gameSections = [
                     MoreGamesSections(childName: childName),
                     JokebookSection(childName: childName),
-                  ],
-                )))),
-            _Tile(icon: Icons.mail_outline, label: 'Messages', featured: true,
+                  ];
+                  final onPlay = buildGameNavigator(childName);
+                  // Intuitivism pass, sub-project 3a (docs/superpowers/specs/
+                  // 2026-09-12-intuitivism-gamepicker-recommended-design.md)
+                  // — her own Recommended row/Surprise-me button need a real
+                  // session (baseUrl/childId/sessionToken, exactly the same
+                  // trio InboxScreen's own call site above already threads
+                  // through); without one, this renders exactly as it always
+                  // has. NEVER onToggleFavorite here — she sees the result
+                  // of a favorite, never the mechanism (the design spec's
+                  // own "Where favoriting happens").
+                  if (baseUrl != null && childId != null && sessionToken != null) {
+                    return LiveGamePickerScreen(
+                      baseUrl: baseUrl!, childId: childId!, sessionToken: sessionToken!,
+                      childName: childName, httpClient: httpClient,
+                      onPlay: onPlay, extraSections: gameSections,
+                    );
+                  }
+                  return GamePickerScreen(
+                    childName: childName, onPlay: onPlay, extraSections: gameSections,
+                  );
+                }))),
+            TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,
               badgeCount: unreadCount,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => InboxScreen(
                   childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
                   baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
                   httpClient: httpClient)))),
-            _Tile(icon: Icons.auto_stories_outlined, label: 'Storyteller', featured: true,
+            TieredTile(icon: Icons.auto_stories_outlined, label: 'Storyteller', featured: true,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => StorytellerScreen(childName: childName)))),
-            _Tile(icon: Icons.photo_camera_outlined, label: 'Show & tell', featured: true,
+            TieredTile(icon: Icons.photo_camera_outlined, label: 'Show & tell', featured: true,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => ShowcaseScreen(childName: childName)))),
           ],
@@ -204,15 +225,15 @@ class ChildHome extends StatelessWidget {
             crossAxisCount: cross, mainAxisSpacing: 10, crossAxisSpacing: 10,
             mainAxisExtent: 84 * heightScale),
           children: [
-            _Tile(icon: Icons.edit, label: 'Homework',
+            TieredTile(icon: Icons.edit, label: 'Homework',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => HomeworkScreen(childName: childName,
                   baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
                   httpClient: httpClient)))),
-            _Tile(icon: Icons.star_border, label: 'My list',
+            TieredTile(icon: Icons.star_border, label: 'My list',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const WantsNeedsScreen()))),
-            _Tile(icon: Icons.more_horiz, label: 'More for you',
+            TieredTile(icon: Icons.more_horiz, label: 'More for you',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => ChildMoreScreen(childName: childName,
                   baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
@@ -250,12 +271,12 @@ class ChildHome extends StatelessWidget {
         // tile stands in for the whole collapsed Featured/Standard tier,
         // not a second Hero. Explicit `height:` and an outer full-width
         // SizedBox, the same two things the Hero tile above gets for the
-        // same reason (`_Tile.hero`'s own width-stretch is gated on
+        // same reason (`TieredTile.hero`'s own width-stretch is gated on
         // `hero: true`, which would also change this tile's colour to
         // Hero's tertiaryContainer — not wanted for "More"): outside a
-        // GridView's own mainAxisExtent, _Tile's inner Column (its Spacer
+        // GridView's own mainAxisExtent, TieredTile's inner Column (its Spacer
         // needs a bounded height) has nothing else to size itself against.
-        SizedBox(width: double.infinity, child: _Tile(
+        SizedBox(width: double.infinity, child: TieredTile(
           icon: Icons.more_horiz, label: 'More', height: 84 * heightScale,
           onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
             builder: (_) => Scaffold(
@@ -298,101 +319,6 @@ class _PresenceCard extends StatelessWidget {
           child: Text('Call ${p.name}'))),
     ]),
   ));
-}
-
-class _Tile extends StatelessWidget {
-  const _Tile({super.key, required this.icon, required this.label, this.onTap,
-    this.badgeCount, this.featured = false, this.hero = false, this.height});
-  final IconData icon;
-  final String label;
-  // Defaults to the honest not-built-yet acknowledgment; tiles with a real
-  // destination (e.g. "My list" -> WantsNeedsScreen) override it.
-  final void Function(BuildContext context)? onTap;
-  // Unread-style count shown on the icon corner when positive. Was accepted
-  // by ChildHome (`unreadCount`) and threaded all the way to main.dart's demo
-  // data but never rendered anywhere — a declaration with nothing behind it.
-  // Optional — null/0 renders no badge at all, not a badge showing "0".
-  final int? badgeCount;
-  // Intuitivism sub-project 2 (docs/superpowers/specs/2026-08-31-
-  // intuitivism-navigation-density-design.md, §3) — a shared flag rather
-  // than a second widget class, so Standard/Featured/Hero stay one real
-  // component with one set of invariants (§8.4's 64dp floor, the shared
-  // borderRadius.circular(14) convention with game_picker.dart's cards and
-  // guardian_home.dart's _GTile) instead of three drifting copies.
-  // `featured` bumps icon size and label text style; `hero` additionally
-  // switches the fill to tertiaryContainer and is only ever true for the
-  // single Hero tile. `height`, when supplied, replaces the InkWell child's
-  // own intrinsic sizing with an explicit height — used outside a GridView
-  // (the Hero tile has no gridDelegate-driven mainAxisExtent to size it).
-  final bool featured;
-  final bool hero;
-  final double? height;
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    // §4 constraint compliance: hierarchy is communicated by size/width/
-    // type-scale only. Every fill below is a standard Material ColorScheme
-    // tonal role derived from the active theme (sub-project 1's
-    // colorSchemeFor()) — never her own chosen accent colour, so §8.6.2's
-    // placement budget is satisfied by construction, not later care.
-    final Color fill = hero
-        ? scheme.tertiaryContainer
-        : featured
-            ? scheme.secondaryContainer
-            : scheme.primaryContainer;
-    final Color onFill = hero
-        ? scheme.onTertiaryContainer
-        : featured
-            ? scheme.onSecondaryContainer
-            : scheme.onPrimaryContainer;
-    final Widget tile = InkWell(
-      onTap: () => (onTap ?? (c) => _notBuiltYet(c, label))(context),
-      child: Container(
-        // §8.4 — 64dp minimum touch target for pre-readers. Every tier
-        // clears this floor by construction (Standard's own base height is
-        // already above it even before text-scale growth); this stays the
-        // hard backstop regardless of tier or the `height` override above.
-        constraints: BoxConstraints(minHeight: height ?? 64),
-        height: height,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: fill),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(icon, size: featured ? 36 : 28, color: onFill),
-            if (badgeCount != null && badgeCount! > 0) ...[
-              const Spacer(),
-              _UnreadBadge(count: badgeCount!),
-            ],
-          ]),
-          const Spacer(),
-          Text(label,
-            style: (featured
-                    ? Theme.of(context).textTheme.titleMedium
-                    : Theme.of(context).textTheme.titleSmall)
-                ?.copyWith(fontWeight: FontWeight.w600, color: onFill)),
-        ]),
-      ),
-    );
-    // The Hero tile alone renders outside any GridView (no cell to fill),
-    // so it needs its own explicit width — every other tier gets width from
-    // its GridView cell already.
-    return hero ? SizedBox(width: double.infinity, child: tile) : tile;
-  }
-}
-
-class _UnreadBadge extends StatelessWidget {
-  const _UnreadBadge({required this.count});
-  final int count;
-  @override
-  Widget build(BuildContext context) => Container(
-    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-    decoration: BoxDecoration(color: Theme.of(context).colorScheme.error,
-      borderRadius: BorderRadius.circular(9)),
-    alignment: Alignment.center,
-    child: Text(count > 9 ? '9+' : '$count',
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: Theme.of(context).colorScheme.onError, fontWeight: FontWeight.w700)));
 }
 
 class _Sleeps extends StatelessWidget {

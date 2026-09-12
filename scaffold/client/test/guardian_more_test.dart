@@ -16,9 +16,11 @@ import 'package:olive_client/emergency_card.dart';
 import 'package:olive_client/exchange_screen.dart';
 import 'package:olive_client/expenses_screen.dart';
 import 'package:olive_client/family_agreement_screen.dart';
+import 'package:olive_client/game_picker.dart';
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/guardian_setup.dart';
 import 'package:olive_client/handover_notes.dart';
+import 'package:olive_client/live_game_picker.dart';
 import 'package:olive_client/meds_care.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -99,6 +101,53 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byType(AvailabilityScreen), findsOneWidget);
       expect(find.text('When you can be reached'), findsOneWidget);
+    });
+
+    testWidgets('Play together opens the plain GamePickerScreen (no star '
+        'anywhere) when no live session is threaded in', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final tile = find.text('Play together');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(GamePickerScreen), findsOneWidget);
+      expect(find.byIcon(Icons.star_rounded), findsNothing);
+      expect(find.byIcon(Icons.star_border_rounded), findsNothing);
+    });
+
+    testWidgets('Play together opens the REAL LiveGamePickerScreen once a '
+        'live session is threaded in — the star toggle actually persists, '
+        'the only guardian-driven favoriting surface this spec has '
+        '(docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-'
+        'recommended-design.md)', (t) async {
+      final puts = <Map<String, dynamic>>[];
+      final mock = MockClient((req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'GET' && req.url.path.endsWith('/game-favorites')) {
+          return http.Response(jsonEncode({'favoriteKinds': <String>[], 'ageAtLastOpen': null}), 200);
+        }
+        if (req.method == 'PUT' && req.url.path.endsWith('/game-favorites')) {
+          puts.add(jsonDecode(req.body) as Map<String, dynamic>);
+          return http.Response(jsonEncode({'ok': true}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await pump(t, GuardianMoreScreen(childName: 'Ivy', childAge: 9,
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-1',
+        availabilityHttpClient: mock));
+      final tile = find.text('Play together');
+      await t.ensureVisible(tile);
+      await t.pumpAndSettle();
+      await t.tap(tile);
+      await t.pumpAndSettle();
+      expect(find.byType(LiveGamePickerScreen), findsOneWidget);
+      await t.tap(find.byKey(const Key('star_tictactoe')));
+      await t.pumpAndSettle();
+      expect(find.byIcon(Icons.star_rounded), findsWidgets);
+      expect(puts, [{'favoriteKinds': ['tictactoe']}]);
     });
 
     testWidgets("'Guardian setup' -> 'Review the family agreement' reaches a "

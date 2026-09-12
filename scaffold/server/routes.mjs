@@ -41,6 +41,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          careNotesFor, writeCareNoteRow,
          lettersFor, sealLetterRow, openLetterRow, deleteLetterRow,
          applyRetentionOnOpen,
+         gameFavoritesFor, setGameFavoriteKinds, recordGamePickerOpen,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -182,6 +183,22 @@ function invalidThemeBody(body) {
   if (!body || typeof body !== 'object') return 'body_must_be_object';
   if (!THEME_PALETTES.has(body.themePalette)) return 'bad_themePalette';
   if (!THEME_BRIGHTNESSES.has(body.themeBrightness)) return 'bad_themeBrightness';
+  return null;
+}
+
+/**
+ * PUT .../game-favorites' guardian branch — the full replacement list
+ * client/lib/game_favorites_logic.dart's star()/unstar() already computed
+ * client-side (favorites.ts's own contract, ported). A specific 400 here,
+ * same reasoning invalidThemeBody() gives, rather than a bare Postgres
+ * constraint violation surfacing as a 500.
+ */
+function invalidGameFavoritesBody(body) {
+  if (!body || typeof body !== 'object') return 'body_must_be_object';
+  if (!Array.isArray(body.favoriteKinds)) return 'favoriteKinds_must_be_array';
+  if (!body.favoriteKinds.every((k) => typeof k === 'string' && k.length > 0)) {
+    return 'bad_favoriteKind';
+  }
   return null;
 }
 
@@ -1551,6 +1568,56 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       await setChildTheme(pool, c.principal.userId, c.childId, {
         themePalette: c.body.themePalette, themeBrightness: c.body.themeBrightness,
       });
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // GET/PUT /v1/children/:childId/game-favorites — Intuitivism pass,
+  // sub-project 3a (docs/superpowers/specs/2026-09-12-intuitivism-
+  // gamepicker-recommended-design.md). GamePickerScreen's Recommended row:
+  // a guardian-curated favourites list plus the age-unlock signal's own
+  // small piece of state, resolved together (packages/db/src/pool.ts's
+  // gameFavoritesFor()) because both feed the SAME row on the SAME screen.
+  // `action: 'settings'` reused verbatim from the theme route immediately
+  // above — same shape, same reasoning: an observer-only guardian is
+  // denied both verbs (§17.3, 'settings' is in authorize.ts's WRITES list),
+  // and a child principal reaches this handler regardless of ROLE_CAPS
+  // (api.ts's own child branch never denies on 'role_lacks_capability' —
+  // only P6/P7 — the same reason the theme route's own GET is reachable by
+  // a child session today).
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/game-favorites', action: 'settings',
+    handler: async (c) => {
+      const state = await gameFavoritesFor(pool, c.childId);
+      return { body: state };
+    },
+  });
+
+  api.register({
+    // ONE route, TWO owners — the design spec's own split: a guardian sets
+    // `favoriteKinds` (the full replacement list, same upsert-the-whole-
+    // preference shape as PUT .../theme); the CHILD records her own visit
+    // by calling this with no body at all — her current age is computed
+    // server-side from her real birth_date (recordGamePickerOpen()'s own
+    // doc comment), never trusted from a client-supplied number. Each
+    // branch is refused the other's job: a child sending `favoriteKinds`
+    // is rejected the identical way PUT .../theme already rejects a
+    // child's write, and a guardian gets no age-recording path at all —
+    // "no guardian involvement needed to record it, unlike favorites" is
+    // the design spec's own line for why.
+    method: 'PUT', path: '/v1/children/:childId/game-favorites', action: 'settings',
+    handler: async (c, q) => {
+      if (c.principal.roleName === 'child') {
+        const localDate = await resolveChildLocalDate(q, c.childId);
+        const ageAtLastOpen = await recordGamePickerOpen(pool, c.childId, localDate);
+        return { status: 200, body: { ok: true, ageAtLastOpen } };
+      }
+      if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_only' } };
+      }
+      const reason = invalidGameFavoritesBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      await setGameFavoriteKinds(pool, c.principal.userId, c.body.favoriteKinds);
       return { status: 200, body: { ok: true } };
     },
   });
