@@ -14,6 +14,135 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.73] — 2026-09-12 — Onboarding & Guardian Access, sub-project 1: real identity capture, and a required guardian PIN
+
+Full design spec: `docs/superpowers/specs/2026-09-12-onboarding-identity-pin
+-design.md`. Two real, pre-existing gaps closed together: (1) none of
+today's onboarding screens (`onboarding_name.dart`/`onboarding_age.dart`/
+`onboarding_who.dart`) have ever persisted anything — `onboarding_logic
+.dart`'s (Dart) / `onboarding.ts`'s (TS engine) own `outcome()` has computed
+a real result object this whole time that no route in `server/routes.mjs`
+ever ingested; and (2) a guardian's kiosk PIN (`pin_credential`, real,
+scrypt-hashed, wired via `POST /v1/me/pin` since v0.49.30) has been
+optional, which would leave sub-project 2's entire premise — PIN-gated
+parental controls — unreachable for any family that skipped it. Sub-project
+2 itself (PIN-gated parental controls + progressive-unlock pacing),
+device-pairing/provisioning UI, and automatic first-run detection are all
+explicitly deferred to future scoping passes, not built here.
+
+### Added
+- **`child_profile`** (`db/migrations/0031_child_profile.sql`) — a new
+  table, not a new column on `child` (the identical precedent
+  `child_theme_preference`/`child_game_picker_state` already established:
+  `child` has never had row-level security enabled at any point in this
+  schema's history). `child_id` PK/FK, `gender` (`CHECK IN ('boy','girl')`,
+  nullable — a NULL/no-row is the honest "skipped" state, never a
+  fabricated default), `set_at`. RLS mirrors `child_game_picker_state_owner
+  _only` exactly: the child owns her own row outright, NO guardian policy
+  exists at all, and — unlike that table — NO system-role read policy
+  either, since nothing in this pass ever reads this column back.
+- **`PUT /v1/children/:childId/profile`** (`server/routes.mjs`) —
+  `onboarding_gender.dart`'s real tap-and-persist path, the FIRST route in
+  the entire onboarding pipeline any first-run screen's tapped answer has
+  ever actually reached. Child-session-only: mirrors `child_theme
+  _preference`'s own route shape (a single PUT, a specific 400 via a new
+  `invalidProfileBody()`) but with the INVERTED posture `recordGamePicker
+  Open()`'s own branch already demonstrates. A guardian's PUT genuinely
+  REACHES this handler (the same `action: 'settings'` capability that
+  admits her to the theme/game-favorites routes) and is rejected there with
+  403 `child_only` — the literal inverse of `guardian_only`; a guardian's
+  GET (or anyone's — there is no read route at all) is simply UNROUTED,
+  falling through to the API layer's own generic 404 `not_found`. Both
+  outcomes are confirmed directly, not assumed, in `server/test/
+  child_profile_route.test.mjs`'s own sections D and F.
+- **`setChildGender()`** (`packages/db/src/pool.ts`) — the write, mirroring
+  `setChildTheme()`/`recordGamePickerOpen()`'s own `withSession({ roleName:
+  'child', ... })` upsert shape exactly.
+- **`onboarding_gender.dart`** (new screen, MARKUP `obGender`) — mirrors
+  `onboarding_age.dart`'s structure exactly (the same `ChildOnboardingScaffold`
+  /`TapChoice` shared chrome): **Boy** / **Girl** tap options plus an
+  explicit **Skip**, never a forced choice. A real tap awaits `OliveApi
+  .putChildGender()` (best-effort — a failed write is swallowed, never shown,
+  never trapping her here) before advancing; Skip writes nothing at all, no
+  row, not even a null one. Wired into `onboarding_flow.dart`'s existing
+  sequence immediately after age, ahead of who/colour/birthday, and threaded
+  through from `ChildMoreScreen`'s "Redo the welcome tour" the same
+  optional-and-additive `baseUrl`/`childId`/`sessionToken`/`httpClient`
+  convention `letters_screen.dart` already established for a live screen
+  reached through this exact chain — this hub's SECOND live wiring.
+  `GenderStep`/`acceptGender()` (`onboarding_logic.dart`) round out the
+  pure-logic side, the identical per-step shape `AgeStep`/`acceptAge()`
+  already take.
+- **`GuardianSetupScreen`'s "Finish setup" stepper** (`client/lib/
+  guardian_setup.dart`) — the existing, already-real PIN section (wired to
+  `setGuardianPin` since v0.49.30) becomes a required step: a new "Finish
+  setup" action at the end of the screen, disabled until `setGuardianPin`
+  has succeeded at least once THIS session (`_pinSetThisSession`,
+  deliberately separate from the PIN section's own display-only `_pinPhase`
+  — a later FAILED resubmission must never un-satisfy a requirement already
+  met), or already enabled on a return visit where a PIN already exists (a
+  new `checkExistingPin` callback, resolved on `initState()`, following the
+  identical "caller resolves the live session, this screen only ever calls
+  what it's handed" convention `registerPasskey`/`setGuardianPin` already
+  establish). The still-stubbed passkey section is completely untouched — a
+  separate, honestly-labeled section, not blocking, not part of the
+  required path.
+- **`GET /v1/me`'s new `hasPin` field** (`server/routes.mjs`) — reuses the
+  existing `pinCredentialFor()` accessor verbatim (no new query shape);
+  `null` for a child principal, a real boolean for a guardian. The real
+  backing for `checkExistingPin` above — `guardian_more.dart`'s new
+  `_liveCheckExistingPin()`, mirroring `_liveSetGuardianPin()`'s own
+  fresh-`devLoginFor()`-per-call posture, wired at both of that hub's
+  existing `GuardianSetupScreen` call sites.
+
+### Testing
+- `onboarding_gender_test.dart` (new) — pure-logic `acceptGender()` cases,
+  Boy/Girl/Skip render and route correctly, a real tap PUTs the real route
+  exactly once (and only once), a Skip (explicit link or a bare Next with no
+  tap) never calls the network at all even when live-wired, a failed write
+  is swallowed rather than shown, plus the standard responsive/48dp/no
+  -settings-affordance audits every onboarding screen in this codebase
+  carries.
+- `packages/db/test/child_profile.test.mjs` (new, real Postgres) — the real
+  round trip (a never-visited child has NO row at all, a write upserts, a
+  second different write replaces rather than accumulates), the owner-only
+  RLS proof (a different child touches nothing, a guardian with a REAL live
+  edge still reads/writes zero rows), and — unlike `child_game_picker_state`
+  — a direct proof that the system role ALSO reads zero rows here.
+- `server/test/child_profile_route.test.mjs` (new, fake-pool route contract,
+  mirroring `theme_route.test.mjs`) — the 400 on a malformed body, the
+  child-only write, and the three-way authorization split (no edge / observer
+  -only / a full guardian genuinely reaching the handler and being refused
+  there) — plus the read-route question this spec itself posed, answered
+  directly: a GET here is simply unrouted, for anyone, even the child
+  herself.
+- `guardian_setup_test.dart` (extended) — "Finish setup" disabled with no PIN
+  set, enabled immediately after a real `setGuardianPin` success, staying
+  enabled through a later failed resubmission, and already enabled on a
+  simulated return visit via `checkExistingPin`.
+- Both new `.test.mjs` files registered in `tools/verify.sh`, following the
+  identical placement/pattern `theme_preference.test.mjs`/`theme_route
+  .test.mjs`/`game_favorites.test.mjs`/`game_favorites_route.test.mjs`
+  already use (neither pair carries an individual `package.json` script
+  either — matching that exact precedent, not inventing a new one).
+
+`tools/verify.sh` run in full on this branch: **7363/7363 assertions
+passing** (up from 7360 before this pass — 27 from the new route contract
+suite plus 16 from the new real-Postgres RLS suite land inside the JS/DB
+totals, the balance from `flutter test`'s own now-larger 2453/2453 count and
+the demo drive's 116/116), `flutter analyze` clean, zero regressions in any
+pre-existing suite. Two pre-existing, environment-only gaps (a fixture-
+generation script and a child-process ESM path issue, both Windows-sandbox-
+specific and reproducing identically against an unmodified `main` in the
+same environment) and one Windows-only false alarm in this session's own
+local verification rig (`tools/healthcheck.mjs` requires a native `psql`
+binary this sandbox lacks; a direct query of `health_check` confirms zero
+real breaches, matching `tools/health-alert.mjs`'s own DATABASE_URL-based
+"all clear") are unrelated to this change and disclosed in the PR, not
+folded into this total.
+
+---
+
 ## [0.49.72] — 2026-09-12 — Intuitivism pass, sub-project 3c: the Fold5's cover screen and half-open hinge finally do something
 
 Continues the intuitivism pass (sub-project 1: theme system; sub-project 2:

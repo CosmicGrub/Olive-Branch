@@ -164,6 +164,35 @@ WhoStep toggleWho(WhoStep step, String userId) {
     : WhoStep._(kind: step.kind, options: step.options, selected: next, line: step.line);
 }
 
+// =============================================================== the gender =
+// Onboarding & Guardian Access sub-project 1 (docs/superpowers/specs/
+// 2026-09-12-onboarding-identity-pin-design.md). Unlike NameStep/AgeStep,
+// there is no guardian-entered fact to reconcile a tap against here — gender
+// is captured but drives nothing else in this codebase (nothing here is a
+// score, a rank, or a streak, so §8.13's own "nothing shimmers/pulses"/P2
+// posture is not at stake either). A real tap is kept; anything else (no
+// tap, or the screen's own explicit Skip) is an honest, supported skip —
+// never a forced choice, mirroring acceptAge()'s own "tapped == null ->
+// skipped" contract one section up.
+class GenderStep {
+  const GenderStep({required this.selected, required this.skipped});
+
+  /// 'boy' | 'girl' — the exact wire values db/migrations/
+  /// 0031_child_profile.sql's own CHECK constraint admits. Null only when
+  /// [skipped] is true; a skip never invents a placeholder value here.
+  final String? selected;
+  final bool skipped;
+}
+
+const List<String> validGenders = ['boy', 'girl'];
+
+GenderStep acceptGender(String? tapped) {
+  if (!validGenders.contains(tapped)) {
+    return const GenderStep(selected: null, skipped: true);
+  }
+  return GenderStep(selected: tapped, skipped: false);
+}
+
 /// Copy in this flow must not be tested against, praised, or corrected.
 const List<String> onboardingForbidden = [
   'correct', 'incorrect', 'wrong', 'try again', 'oops', 'invalid',

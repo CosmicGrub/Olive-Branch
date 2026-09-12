@@ -119,7 +119,18 @@ class ChildMoreScreen extends StatelessWidget {
         HubSection(title: 'Demo', children: [
           HubTile(icon: Icons.replay_circle_filled_outlined, title: 'Redo the welcome tour',
             subtitle: 'The first-run screens, walked through again',
-            onTap: () => _open(context, OnboardingFlowScreen(fallbackName: childName))),
+            // baseUrl/childId/sessionToken/httpClient threaded through as of
+            // Onboarding & Guardian Access sub-project 1 (docs/superpowers/
+            // specs/2026-09-12-onboarding-identity-pin-design.md) — the
+            // second live-wiring this hub has ever carried (see this file's
+            // own header for the first, LettersScreen). Reused unchanged
+            // from this hub's own already-authenticated session; the demo
+            // re-run stays exactly as it was when none of these are
+            // supplied.
+            onTap: () => _open(context, OnboardingFlowScreen(
+              fallbackName: childName,
+              childId: childId, baseUrl: baseUrl,
+              sessionToken: sessionToken, httpClient: httpClient))),
         ]),
         // §9.8.4, §21.2 rung 17, §21.7 — always reachable, same posture every
         // other tile here takes: the SCREEN states the real, honest outcome

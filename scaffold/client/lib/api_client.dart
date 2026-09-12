@@ -246,6 +246,15 @@ class OliveApi {
   // [recordGamePickerOpen] below for the two distinct PUT bodies this same
   // path accepts.
   static const childGameFavorites = '/v1/children/:childId/game-favorites';
+  // --- child profile / gender (Onboarding & Guardian Access sub-project 1,
+  // docs/superpowers/specs/2026-09-12-onboarding-identity-pin-design.md) ---
+  // Real as of this pass — server/routes.mjs, packages/db/src/pool.mjs's
+  // setChildGender(), db/migrations/0031_child_profile.sql. Child-write
+  // only; there is deliberately no GET counterpart declared here at all —
+  // no guardian-facing read route exists for this data in this pass (see
+  // that migration's own header), so unlike [childTheme]/[childGameFavorites]
+  // there is nothing here for a fetch method to call.
+  static const childProfile = '/v1/children/:childId/profile';
   // --- homework OCR capture (§9.1, §20.2b) --------------------------------
   static const homeworkCapture = '/v1/children/:childId/homework/capture';
   // --- account lifecycle (§2.10, §2.11, §9.8, P8) -------------------------
@@ -985,6 +994,15 @@ class OliveApi {
   /// separate round trip.
   Future<Map<String, dynamic>> recordGamePickerOpen(String childId) =>
       _put(childGameFavorites, childId: childId, body: const <String, dynamic>{});
+
+  /// PUT .../profile — onboarding_gender.dart's real tap-and-persist path.
+  /// Child-session-only (server/routes.mjs rejects any other caller with
+  /// `child_only`); [gender] must be `'boy'` or `'girl'` — the exact wire
+  /// values routes.mjs's own `invalidProfileBody()` admits, everything else
+  /// is a 400. Called only on a REAL tap, never on Skip — see
+  /// onboarding_gender.dart's own header for why a skip writes nothing here.
+  Future<Map<String, dynamic>> putChildGender(String childId, String gender) =>
+      _put(childProfile, childId: childId, body: {'gender': gender});
 
   /// Posts a raw homework photo (PNG or JPEG bytes — server/routes.mjs's
   /// handler sniffs real magic bytes, not a filename or content-type) as
