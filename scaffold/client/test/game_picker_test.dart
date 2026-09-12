@@ -262,4 +262,161 @@ void main() {
       expect(delegate.crossAxisCount, 1);
     });
   });
+
+  group('Recommended row — Intuitivism pass, sub-project 3a '
+      '(docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended-design.md)', () {
+    testWidgets('favoriteKinds null (no live session) — the row is entirely absent', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8)));
+      await t.pumpAndSettle();
+      expect(find.text('Recommended'), findsNothing);
+      expect(find.byKey(const Key('recommendedRow')), findsNothing);
+    });
+
+    testWidgets('favoriteKinds empty and no age-unlock — a real, live session with nothing to '
+        'recommend yet still omits the row (honest absence, not empty-state noise)', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8, favoriteKinds: {})));
+      await t.pumpAndSettle();
+      expect(find.text('Recommended'), findsNothing);
+    });
+
+    testWidgets('favorites alone render the row, favourited card first', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8, favoriteKinds: {'story'})));
+      await t.pumpAndSettle();
+      expect(find.text('Recommended'), findsOneWidget);
+      final row = t.widget<ListView>(find.byKey(const Key('recommendedRow')));
+      expect(row.semanticChildCount, 1);
+      // 'Make up a story' (GameKind.story's title) appears TWICE — once in
+      // the Recommended row, once in the untouched catalogue grid below —
+      // exactly the design spec's own "existing catalogue grid... completely
+      // unchanged" rule.
+      expect(find.text('Make up a story'), findsNWidgets(2));
+    });
+
+    testWidgets('age-unlock alone (no favorites) also renders the row', (t) async {
+      // twoTruths' minAge is 6 — crossing 5 -> 8 newly unlocks it.
+      await t.pumpWidget(wrap(const GamePickerScreen(
+        childAge: 8, favoriteKinds: {}, ageAtLastOpen: 5)));
+      await t.pumpAndSettle();
+      expect(find.text('Recommended'), findsOneWidget);
+      expect(find.text('Two truths and a tall tale'), findsNWidgets(2));
+    });
+
+    testWidgets('favorites and age-unlock combined render with no duplicate card', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(
+        childAge: 8, favoriteKinds: {'story'}, ageAtLastOpen: 5)));
+      await t.pumpAndSettle();
+      final row = t.widget<ListView>(find.byKey(const Key('recommendedRow')));
+      expect(row.semanticChildCount, 2, reason: 'story (favourite) + twoTruths (age-unlock)');
+    });
+
+    testWidgets('a game qualifying BOTH ways (favourited AND newly unlocked) appears only once', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(
+        childAge: 8, favoriteKinds: {'twoTruths'}, ageAtLastOpen: 5)));
+      await t.pumpAndSettle();
+      final row = t.widget<ListView>(find.byKey(const Key('recommendedRow')));
+      expect(row.semanticChildCount, 1);
+    });
+
+    testWidgets('a favourited kind below her current age never appears in the row — age-safety '
+        'holds even for an intentional guardian favourite', (t) async {
+      // dotsboxes has minAge 5; a 4-year-old cannot play it regardless of
+      // who favourited it.
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 4, favoriteKinds: {'dotsboxes'})));
+      await t.pumpAndSettle();
+      expect(find.text('Recommended'), findsNothing);
+    });
+
+    testWidgets('the star only renders with onToggleFavorite set — a child-opened screen shows '
+        'the row and the Surprise-me button but NEVER a star', (t) async {
+      GameMeta? surprised;
+      await t.pumpWidget(wrap(GamePickerScreen(
+        childAge: 8,
+        favoriteKinds: const {'story'},
+        onSurpriseMe: () => surprised = catalogueFor(GameKind.memory),
+      )));
+      await t.pumpAndSettle();
+      expect(find.text('Recommended'), findsOneWidget);
+      expect(find.text('Surprise me'), findsOneWidget);
+      expect(find.byIcon(Icons.star_rounded), findsNothing);
+      expect(find.byIcon(Icons.star_border_rounded), findsNothing);
+      expect(surprised, isNull, reason: 'not tapped yet');
+    });
+
+    testWidgets('the star renders filled for a favourited kind and outline otherwise, when '
+        'onToggleFavorite IS set (a guardian-opened screen)', (t) async {
+      await t.pumpWidget(wrap(GamePickerScreen(
+        childAge: 8,
+        favoriteKinds: const {'story'},
+        onToggleFavorite: (kind, nowFavorited) {},
+      )));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('star_story')), findsWidgets);
+      expect(find.byIcon(Icons.star_rounded), findsWidgets);
+      expect(find.byIcon(Icons.star_border_rounded), findsWidgets);
+    });
+
+    testWidgets('tapping the star calls onToggleFavorite with the kind name and the new state', (t) async {
+      String? toggledKind;
+      bool? toggledTo;
+      await t.pumpWidget(wrap(GamePickerScreen(
+        childAge: 8,
+        favoriteKinds: const {},
+        onToggleFavorite: (kind, nowFavorited) {
+          toggledKind = kind;
+          toggledTo = nowFavorited;
+        },
+      )));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('star_tictactoe')));
+      await t.pump();
+      expect(toggledKind, 'tictactoe');
+      expect(toggledTo, isTrue, reason: 'was not favourited, tapping stars it');
+    });
+
+    testWidgets('the Surprise-me button only renders with onSurpriseMe set', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8)));
+      await t.pumpAndSettle();
+      expect(find.text('Surprise me'), findsNothing);
+    });
+
+    testWidgets('the Surprise-me button renders and navigates via onPlay even with no '
+        'Recommended row at all', (t) async {
+      GameKind? tapped;
+      await t.pumpWidget(wrap(GamePickerScreen(
+        childAge: 8,
+        onSurpriseMe: () => catalogueFor(GameKind.memory),
+        onPlay: (context, kind) => tapped = kind,
+      )));
+      await t.pumpAndSettle();
+      expect(find.text('Recommended'), findsNothing, reason: 'no favoriteKinds at all -> no row');
+      expect(find.text('Surprise me'), findsOneWidget);
+      await t.tap(find.text('Surprise me'));
+      await t.pump();
+      expect(tapped, GameKind.memory);
+    });
+
+    testWidgets('a null result from onSurpriseMe never navigates', (t) async {
+      GameKind? tapped;
+      await t.pumpWidget(wrap(GamePickerScreen(
+        childAge: 8,
+        onSurpriseMe: () => null,
+        onPlay: (context, kind) => tapped = kind,
+      )));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Surprise me'));
+      await t.pump();
+      expect(tapped, isNull);
+    });
+
+    testWidgets('no favorite-count, unlock-count, or streak is ever rendered on the Recommended '
+        'row (§2.1 P2)', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(
+        childAge: 8, favoriteKinds: {'story', 'tictactoe'}, ageAtLastOpen: 5)));
+      await t.pumpAndSettle();
+      for (final forbidden in ['streak', 'rank', 'score', 'favorited 2', '2 favorites']) {
+        expect(find.textContaining(RegExp(forbidden, caseSensitive: false)), findsNothing,
+            reason: '"$forbidden" must never appear near the Recommended row');
+      }
+    });
+  });
 }

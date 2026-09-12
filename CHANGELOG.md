@@ -14,6 +14,161 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.70] — 2026-09-12 — GamePickerScreen's Recommended row
+
+Intuitivism pass, sub-project 3a
+(`docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended-design.md`).
+`GamePickerScreen` is the one high-traffic screen sub-project 2 explicitly
+deferred — a flat catalogue with no natural "hero," missing a way to feel
+personal rather than exhaustive, and a way to feel unstuck when she doesn't
+know what she wants. Two signals feed a new Recommended row: a
+guardian-curated favourites mechanism (real personalization, nothing about
+HER OWN behavior measured or stored) and a complementary age-unlock signal
+(a game she has genuinely grown into since her last visit, derived purely
+from her age and birth date — no usage tracking). Recency/frequency-based
+recommendation was considered and explicitly deferred to a v2 that needs its
+own scoping pass — noted, not designed here.
+
+### Added
+- **`packages/games/src/favorites.ts`** (new) — mirrors `jokes.ts`'s own
+  shape exactly: `star`/`unstar` (idempotent, no duplicates),
+  `favouritesFor(all, starred)` (resolves stored kinds against the live
+  catalogue; a removed game silently drops, never a dangling ref),
+  `newlyUnlocked(all, age, ageAtLastOpen)` (a game whose `minAge` she has
+  crossed since her last visit; a null `ageAtLastOpen` — first-ever open, or
+  no live session — returns nothing rather than fabricating "her whole
+  catalogue is new"), `randomGame(all, age, excludeKind, pick)` (identical
+  contract to `randomJoke()`, `pick` injectable for deterministic tests).
+- **`game_favorites_logic.dart`** (new) — the 1:1 Dart port, same names,
+  same shapes, importing `GameMeta`/`GameKind`/`forAge` from
+  `game_logic.dart` rather than redeclaring them.
+- **`db/migrations/0030_game_favorites.sql`** (new) — two tables, two
+  different owners. `guardian_game_favorite` (`guardian_id`, `kind`,
+  `created_at`, `PRIMARY KEY (guardian_id, kind)`) — the SAME `..._no_child`
+  RLS shape every other guardian-only preference table in this schema
+  already uses (`medication`/`care_note`), deliberately keyed on the
+  GUARDIAN, not the child — mirrors `guardian_availability_window`'s own
+  guardian-id-only shape, resolved per child via `guardiansOfChild()` +
+  `= ANY(...)`, the identical join `availabilityFor()` already uses.
+  `child_game_picker_state` (`child_id` PK, nullable `age_at_last_open`,
+  `updated_at`) — child-owned RLS, the inverse of the table above (mirrors
+  `letter_owner_only`'s own "guardian-excluded" shape), plus a system-role
+  read for the combined GET. Both added to `health_check`'s own
+  `rls_unforced` tracking list; `packages/db/test/rls_coverage.test.mjs`
+  (the automated backstop v0.49.69 added for exactly this recurring gap)
+  confirmed neither was silently missing.
+- **`packages/db/src/pool.ts`** — `gameFavoritesFor()` (system-role combined
+  read: her resolved favourite kinds unioned across every live guardian, plus
+  her `ageAtLastOpen`), `setGameFavoriteKinds()` (guardian branch,
+  full-replace — the same upsert-the-whole-preference shape
+  `setChildTheme()` already uses, DELETE-then-INSERT inside one
+  transaction), `recordGamePickerOpen()` (child branch — her current age
+  computed server-side from her real `birth_date` via the caller-resolved
+  `childLocalDate`, `sealLetterRow()`'s own discipline, never trusted from
+  the client).
+- **`GET`/`PUT /v1/children/:childId/game-favorites`** (`server/routes.mjs`)
+  — reuses `action: 'settings'` verbatim from `PUT .../theme` (same
+  observer-only-denied, child-reachable-regardless shape). ONE PUT verb,
+  two owners: a guardian's body carries the full new `favoriteKinds` list; a
+  child's body is empty — "I just opened this screen" — and the route
+  dispatches by `c.principal.roleName`, refusing each the other's job the
+  same way `PUT .../theme` already refuses a child write outright.
+  `invalidGameFavoritesBody()` gives a specific 400 (`favoriteKinds_must_be_
+  array`/`bad_favoriteKind`), the same posture `invalidThemeBody()` already
+  established.
+- **`GamePickerScreen`** gains four new optional constructor params —
+  `favoriteKinds`/`ageAtLastOpen`/`onToggleFavorite`/`onSurpriseMe` — still a
+  plain, non-fetching `StatelessWidget`; nothing here changed its shape into
+  a self-fetching live screen. A Recommended row renders above the untouched
+  catalogue grid whenever `favoriteKinds` is non-null and the combined
+  favourites + `newlyUnlocked()` result is non-empty (favourites first,
+  age-unlock filling remaining slots, each game at most once) — absent
+  entirely otherwise, this app's established "honest absence over
+  empty-state noise" convention. A "Surprise me" button (visible whenever
+  `onSurpriseMe` is non-null, both child and guardian sessions) sits beside
+  the row's own header, or stands alone when there is no row to render.
+  `_GameCard` gains a star `IconButton`, rendering ONLY when
+  `onToggleFavorite` is non-null — i.e. only when a guardian, not the child,
+  opened the screen — filled/outline mirroring `favoriteKinds` membership,
+  an instant fill-swap on tap with no animation beyond it (§8.13). The row
+  itself performs one clean `AnimatedSwitcher` fade the first time it gains
+  content, keyed so a later favourite added while it is already visible
+  never re-triggers it.
+- **`live_game_picker.dart`** (new) — `LiveGamePickerScreen`, the live
+  wrapper both real call sites share (one widget, not two hand-copied
+  near-duplicates), the same `court_export.dart`/`theme_picker_screen.dart`
+  split of "the plain widget stays plain, the live session lives one layer
+  up." A `sessionToken` identity (child_home.dart's own already-minted
+  token, InboxScreen's own posture) fetches her real favourites, records her
+  visit in the background (fire-and-forget, never blocking, never
+  retroactively changing the currently-rendered row), and wires
+  `onSurpriseMe` — never `onToggleFavorite`. A `guardianId` identity
+  (guardian_more.dart, mints its own dev login on demand, matching
+  `theme_picker_screen.dart`'s own Apply-time pattern) fetches the real
+  favourites and wires `onToggleFavorite` — optimistic local toggle via
+  `star()`/`unstar()`, persisted in the background, reverted with an honest
+  snackbar on a failed write — but never `ageAtLastOpen`/`onSurpriseMe`: a
+  guardian browsing on her behalf is not her own visit.
+- **Call sites** — `child_home.dart`'s "Play together" tile now opens
+  `LiveGamePickerScreen` whenever `baseUrl`/`childId`/`sessionToken` are all
+  threaded in (identical to `InboxScreen`'s own call site immediately
+  above), the plain `GamePickerScreen` otherwise — unchanged from before this
+  pass. `guardian_more.dart`'s "Play together" tile does the same, gated on
+  `baseUrl`/`guardianId` (the same trio `_openAvailability`/
+  `_openThemePicker` already gate on) — this spec's ONLY guardian-driven
+  favoriting surface; `favoriteKinds` is also threaded through here (beyond
+  the spec's own explicitly-named `onToggleFavorite`) so the star's
+  filled/outline state is real rather than permanently unfavourited — a
+  disclosed, narrowly-scoped judgment call, not a spec requirement.
+- **Tests** — `packages/games/test/favorites.test.mjs` (29 assertions,
+  including the two-hundred-draw `randomGame()` non-repeat proof mirroring
+  `jokes.test.mjs`'s own), `server/test/game_favorites_route.test.mjs` (37,
+  fake-DB route contract, mirroring `theme_route.test.mjs`'s own depth —
+  auth, validation, the child/guardian PUT split, observer-only denial),
+  `packages/db/test/game_favorites.test.mjs` (23, real Postgres RLS,
+  mirroring `theme_preference.test.mjs`'s own depth — real round-trip, real
+  server-side age computation, both tables' RLS proven from both sides).
+  89 new JS/DB assertions total, all three registered in `package.json`
+  and `tools/verify.sh`. `game_favorites_logic_test.dart` (18, new),
+  `live_game_picker_test.dart` (9, new), plus extended coverage in
+  `game_picker_test.dart` (+14), `guardian_more_test.dart` (+2),
+  `child_home_test.dart` (+2) — every rendering rule the design spec's own
+  Testing section names: favorites alone/age-unlock alone/combined with no
+  duplicates/neither (row absent), the star only with `onToggleFavorite`,
+  the Surprise-me button only with `onSurpriseMe`, a child-opened screen
+  showing the row and the button but never a star, and the real end-to-end
+  live wiring at both call sites (fetch, optimistic toggle, revert-on-
+  failure, background visit recording). 45 new Dart tests. `flutter
+  analyze` clean, full Dart suite 2372/2372 (2327 baseline + 45 new).
+
+### Judgment calls (spec left open, resolved here, disclosed)
+- `randomGame(all, age, excludeKind, pick)`'s `pick` parameter is
+  implemented as `pick: () => number = Math.random` (a function, mirroring
+  `randomJoke()`'s own signature the spec's prose explicitly calls
+  "identical contract to") rather than the literal `pick: number` the
+  spec's own code block showed — the prose and the code block disagreed;
+  the prose (and `jokes.ts`'s own precedent) governed.
+- `ageAtLastOpen` persistence: a new small `child_game_picker_state` table,
+  not two new columns on `child` — the identical precedent/reasoning
+  `child_theme_preference` (v0.49.?? theme sub-project 1) already
+  established for its own columns (`child` has never had row-level security
+  enabled at any point in this schema's history; adding a child-writable
+  column there would be an undeclared widening of an existing table's
+  contract).
+- `guardian_game_favorite`'s RLS is the coarse `..._no_child` shape (any
+  live guardian session), not `guardian_availability_window`'s own
+  finer-grained own-row/co-guardian-read split — the design spec named
+  `..._no_child` explicitly; nothing about favouriting needs per-guardian
+  row ownership the way per-guardian availability windows genuinely do.
+- The single PUT route's two-owner split (guardian sets `favoriteKinds`;
+  child's empty body records her visit) rather than a third dedicated route
+  — the spec named exactly "New GET/PUT" routes, no third; folding the
+  child's visit-recording into the same PUT, gated by caller role, kept
+  that literal route count while still giving each owner her own real write
+  path.
+
+See MASTERFILE §9.2 for the fuller account.
+
 ## [0.49.69] — 2026-09-06 — Roadmap batch 2: the gate now runs on the actual send path
 
 Continues the 47-item backlog batch 1 triaged (see the 0.49.68 entry below).
