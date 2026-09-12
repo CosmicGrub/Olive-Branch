@@ -96,7 +96,9 @@ fold-line regression's own foldCover-classified widths (344 AND, per
 via the "More" screen instead of directly. Full client suite: 2362/2362
 passing (up from 2327 before this pass), `flutter analyze` clean.
 
+---
 
+## [0.49.69] — 2026-09-06 — Roadmap batch 2: the gate now runs on the actual send path
 
 Continues the 47-item backlog batch 1 triaged (see the 0.49.68 entry below).
 This batch closes four items, three of them real "built but never actually
