@@ -14,6 +14,90 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.72] — 2026-09-12 — Intuitivism pass, sub-project 3c: the Fold5's cover screen and half-open hinge finally do something
+
+Continues the intuitivism pass (sub-project 1: theme system; sub-project 2:
+`ChildHome`'s tile hierarchy, v0.49.65) with the two Fold5-specific postures
+`form_factors.dart` has declared since v0.49.13 but neither used for real
+until now: `Posture.foldCover` (344 CSS px, closed) got `columnsAt()`'s
+ordinary 1-column fallback — the full layout squeezed narrow, not
+redesigned narrow — and `Posture.foldTabletop` (short, wide, hinge
+horizontal) got a handful of scattered per-screen tweaks
+(`game_connect4.dart`'s own padding adjustment) rather than a considered use
+of the two halves the physical hinge actually creates. §8.11.2's own
+one-line MASTERFILE aside — "Video above the crease, controls below.
+Nothing used it." — is no longer true. Full design spec:
+`docs/superpowers/specs/2026-09-12-intuitivism-fold5-layout-design.md`.
+
+### Added
+- **`CoverCollapse(full, collapsed)`** (`client/lib/cover_collapse.dart`) —
+  a shared widget that renders `collapsed` at `Posture.foldCover` and
+  `full` (the caller's own, otherwise completely unchanged, existing
+  layout) at every other posture, via its own internal `LayoutBuilder` —
+  the identical detection shape `TabletopSplit` below already establishes.
+  `ChildHome` now shows only the presence card and the Hero tile ("My day")
+  at foldCover, with Featured/Standard collapsing into a single "More"
+  tile — the same icon/label/push-a-full-screen shape `guardian_home.dart`'s
+  own pre-existing "More" tile already used to reach `GuardianMoreScreen`,
+  reused here to instead open `full` itself on its own screen.
+  `GuardianHome` gets the identical treatment: the ribbon (unchanged) and
+  the Hero tile ("Message banking") only, everything else behind the same
+  kind of "More" tile.
+- **`TabletopSplit(viewing, controls)`** (`client/lib/tabletop_split.dart`)
+  — a shared widget that renders `viewing`/`controls` as a plain, real 50/50
+  `Column` split (each half independently scrollable, so real content
+  taller than half of foldTabletop's own short ~420dp floor never
+  overflows) at `Posture.foldTabletop`, or `viewing`-then-`controls` in one
+  unsplit column otherwise. Wired into four screens as a new branch ahead
+  of each screen's own existing layout decision (the existing branch stays
+  completely untouched for every other posture) — the same
+  `postureFor(viewport) == Posture.foldTabletop` check
+  `game_connect4.dart`'s own `outerPad` conditional already uses:
+  `storyteller_screen.dart` (the reading card above the hinge, the
+  favourites/bookmarks shelf below), `showcase_screen.dart` (the ask feed
+  above, the prompt-chip actions below), `homework_screen.dart` (the
+  worksheet/problem content above, the capture trigger below), and
+  `call_screen.dart` (video above, mute/hang-up/camera controls below —
+  arguably the single most natural real-world tabletop use case on this
+  hardware: propped up hands-free on a table during a call).
+  `call_screen.dart`'s own `_InCallView` is now the public `InCallView`
+  (same reasoning as `isGuardianWho`'s own doc comment: `call_screen_test
+  .dart` can never reach a real in-call state without a live LiveKit
+  connection, so this is the only way to test the split at all).
+- Honest limitation, disclosed rather than assumed away: Flutter has no
+  `FoldingFeature` (Android's Jetpack WindowManager) in this pass — the
+  50/50 split is an even division of the reported window, not a
+  measurement of where the real hinge sits. `isTableTopPosture` (a lighter
+  real signal the design spec's own "considered and left for the plan to
+  decide" section named) was evaluated and deliberately not added this
+  pass — see that spec's own section for why the width/height heuristic
+  alone was judged sufficient for this pass's budget.
+
+### Changed
+- `game_connect4.dart`'s own existing tabletop padding tweak is untouched —
+  not migrated onto `TabletopSplit`, per the design spec's own explicit
+  scope boundary.
+
+Tests: two new independent unit-test suites prove the shared widgets'
+own contracts directly (`tabletop_split_test.dart`, `cover_collapse_test
+.dart`) — the target-posture split/collapse, and a byte-for-byte no-op at
+every other posture — proven once, not re-proven per screen. A new
+`fold5_layout_test.dart` proves each of the six real screens wires the
+shared widget in correctly at its target posture, plus a regression group
+confirming every OTHER posture on all six screens is unchanged from before
+this pass. `child_home_test.dart`'s own pre-existing 344px assertions
+(written for sub-project 2, before this collapse existed) are updated in
+place, not silently left stale: the Featured/Standard grid-column-count
+case no longer applies at foldCover (the grids don't exist there at all
+now) and is documented as relocated rather than deleted; the "sleeps until"
+fold-line regression's own foldCover-classified widths (344 AND, per
+`postureFor()`'s own pre-existing width/height heuristic, a plain 390×844
+"phone" — unrelated to and unchanged by this pass) now reach the counter
+via the "More" screen instead of directly. Full client suite: 2362/2362
+passing (up from 2327 before this pass), `flutter analyze` clean.
+
+---
+
 ## [0.49.71] — 2026-09-12 — GuardianHome gets the same real tile hierarchy: intuitivism pass, sub-project 3b
 
 `guardian_home.dart` never got the "less adult-minimalist" treatment ChildHome did (v0.49.65, sub-project 2) — its 11 tiles (Message banking, Emergency card, Handover notes, Exchange, Expenses, Availability, Send-time guard, Meds & care, Morning briefing, Care note, More) rendered as one flat, equal-weight grid (`_GTile`), the exact symptom sub-project 2's own spec named for ChildHome's pre-hierarchy state. Column-count/width scaling was already correct here (a real floor of 2 AND ceiling of 3, `.clamp(2, 3)`, PR #43) — this closes purely the visual-hierarchy gap, per `docs/superpowers/specs/2026-09-12-intuitivism-guardianhome-tiering-design.md`.

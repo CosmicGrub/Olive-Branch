@@ -25,6 +25,7 @@ import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
 import 'library_logic.dart';
 import 'storyteller_logic.dart' as story;
+import 'tabletop_split.dart';
 
 // ============================================================== the screen ==
 class StorytellerScreen extends StatefulWidget {
@@ -189,6 +190,28 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
             onResumeBookmark: _resumeBookmark,
             onClearBookmark: _clearBookmark,
           );
+          // Intuitivism pass, sub-project 3c, Part 2 — the same
+          // `postureFor(viewport) == Posture.foldTabletop` check
+          // game_connect4.dart's own `outerPad` conditional already uses,
+          // threaded in here ahead of the pre-existing wide/narrow branching
+          // below (which stays completely untouched for every other
+          // posture — foldTabletop's own min width, 673px, already falls
+          // inside `wide` today, so this check must come first to actually
+          // change anything at this one posture). `reading` is the story
+          // text/illustration area above the hinge; `shelf` (favourites/
+          // bookmarks) is the reachable second half below it — a judgment
+          // call disclosed in this pass's own PR description, since the
+          // reveal/next/star controls stay bundled inside `_ReadingCard`
+          // itself (unchanged) rather than being pulled out to sit alone
+          // below the hinge.
+          final posture = ff.postureFor(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
+          if (posture == ff.Posture.foldTabletop) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: TabletopSplit(viewing: reading, controls: shelf),
+            );
+          }
           if (!wide) {
             return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
