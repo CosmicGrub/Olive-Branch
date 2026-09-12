@@ -54,6 +54,7 @@ import 'games_hub.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
 import 'jokebook_screen.dart';
+import 'live_game_picker.dart';
 import 'my_day.dart';
 import 'showcase_screen.dart';
 import 'storyteller_screen.dart';
@@ -156,14 +157,32 @@ class ChildHome extends StatelessWidget {
             // uses the exact same one).
             _Tile(icon: Icons.extension, label: 'Play together', featured: true,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => GamePickerScreen(
-                  childName: childName,
-                  onPlay: buildGameNavigator(childName),
-                  extraSections: [
+                builder: (_) {
+                  final gameSections = [
                     MoreGamesSections(childName: childName),
                     JokebookSection(childName: childName),
-                  ],
-                )))),
+                  ];
+                  final onPlay = buildGameNavigator(childName);
+                  // Intuitivism pass, sub-project 3a (docs/superpowers/specs/
+                  // 2026-09-12-intuitivism-gamepicker-recommended-design.md)
+                  // — her own Recommended row/Surprise-me button need a real
+                  // session (baseUrl/childId/sessionToken, exactly the same
+                  // trio InboxScreen's own call site above already threads
+                  // through); without one, this renders exactly as it always
+                  // has. NEVER onToggleFavorite here — she sees the result
+                  // of a favorite, never the mechanism (the design spec's
+                  // own "Where favoriting happens").
+                  if (baseUrl != null && childId != null && sessionToken != null) {
+                    return LiveGamePickerScreen(
+                      baseUrl: baseUrl!, childId: childId!, sessionToken: sessionToken!,
+                      childName: childName, httpClient: httpClient,
+                      onPlay: onPlay, extraSections: gameSections,
+                    );
+                  }
+                  return GamePickerScreen(
+                    childName: childName, onPlay: onPlay, extraSections: gameSections,
+                  );
+                }))),
             _Tile(icon: Icons.mail_outline, label: 'Messages', featured: true,
               badgeCount: unreadCount,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(

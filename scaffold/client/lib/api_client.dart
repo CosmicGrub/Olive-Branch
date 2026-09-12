@@ -237,6 +237,15 @@ class OliveApi {
   // child's own device; this one is guardian-side navigation (guardian_more
   // .dart), a normal authenticated guardian session, no escalation required.
   static const childTheme = '/v1/children/:childId/theme';
+  // --- game favorites + age-unlock (§9.2, Intuitivism pass sub-project 3a)
+  // Real as of this pass — server/routes.mjs, packages/db/src/pool.mjs's
+  // gameFavoritesFor()/setGameFavoriteKinds()/recordGamePickerOpen(),
+  // db/migrations/0030_game_favorites.sql. ONE path serves both GamePicker
+  // Screen.favoriteKinds (guardian-write/child-read) AND ageAtLastOpen
+  // (child-write, her own visit) — see [putGameFavoriteKinds]/
+  // [recordGamePickerOpen] below for the two distinct PUT bodies this same
+  // path accepts.
+  static const childGameFavorites = '/v1/children/:childId/game-favorites';
   // --- homework OCR capture (§9.1, §20.2b) --------------------------------
   static const homeworkCapture = '/v1/children/:childId/homework/capture';
   // --- account lifecycle (§2.10, §2.11, §9.8, P8) -------------------------
@@ -949,6 +958,33 @@ class OliveApi {
       _put(childTheme,
           childId: childId,
           body: {'themePalette': themePalette, 'themeBrightness': themeBrightness});
+
+  /// `{favoriteKinds: List<String>, ageAtLastOpen: int?}` — server/routes
+  /// .mjs's GET .../game-favorites. An empty `favoriteKinds` and a null
+  /// `ageAtLastOpen` are the honest, common "never touched" states, not a
+  /// fabricated default — mirrors [fetchTheme]'s own null-means-never-set
+  /// posture. Readable by both a guardian and the child's own session (the
+  /// theme route's own shape); decoding into game_favorites_logic.dart's
+  /// domain types is left to the caller.
+  Future<Map<String, dynamic>> fetchGameFavorites(String childId) =>
+      _get(childGameFavorites, childId: childId);
+
+  /// The GUARDIAN branch of PUT .../game-favorites — full-replace, the
+  /// complete new favourite-kind list (already computed client-side by
+  /// game_favorites_logic.dart's `star()`/`unstar()`), never a delta. A
+  /// child session sending this is rejected server-side (`guardian_only`),
+  /// the identical posture [putTheme] already has.
+  Future<Map<String, dynamic>> putGameFavoriteKinds(String childId, List<String> favoriteKinds) =>
+      _put(childGameFavorites, childId: childId, body: {'favoriteKinds': favoriteKinds});
+
+  /// The CHILD branch of the SAME PUT .../game-favorites path — "I just
+  /// opened this screen." No body at all: her current age is computed
+  /// server-side from her real birth_date (recordGamePickerOpen(), pool.ts),
+  /// never sent from here. Returns the freshly-recorded `ageAtLastOpen` so a
+  /// caller can update its own local Recommended-row state without a
+  /// separate round trip.
+  Future<Map<String, dynamic>> recordGamePickerOpen(String childId) =>
+      _put(childGameFavorites, childId: childId, body: const <String, dynamic>{});
 
   /// Posts a raw homework photo (PNG or JPEG bytes — server/routes.mjs's
   /// handler sniffs real magic bytes, not a filename or content-type) as

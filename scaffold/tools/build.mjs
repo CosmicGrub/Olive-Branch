@@ -48,6 +48,7 @@ const ENTRIES = [
   ["packages/games/src/games2.ts","--format=esm","--platform=node","--outfile=packages/games/src/games2.mjs"],
   ["packages/games/src/games2.ts","--bundle","--external:./games.ts","--format=esm","--platform=node","--outfile=packages/games/src/games2.mjs"],
   ["packages/games/src/games3.ts","--format=esm","--platform=node","--outfile=packages/games/src/games3.mjs"],
+  ["packages/games/src/favorites.ts","--format=esm","--platform=node","--outfile=packages/games/src/favorites.mjs"],
   ["packages/live/src/live.ts","--format=esm","--platform=node","--outfile=packages/live/src/live.mjs"],
   ["packages/showcase/src/showcase.ts","--format=esm","--platform=node","--outfile=packages/showcase/src/showcase.mjs"],
   ["packages/onboarding/src/onboarding.ts","--format=esm","--platform=node","--outfile=packages/onboarding/src/onboarding.mjs"],

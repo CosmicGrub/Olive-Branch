@@ -53,6 +53,7 @@ for spec in \
   "route contract: custody-order|server/test/routes.test.mjs" \
   "route contract: kiosk-pin/verify|server/test/kiosk_pin_route.test.mjs" \
   "route contract: theme|server/test/theme_route.test.mjs" \
+  "route contract: game favorites|server/test/game_favorites_route.test.mjs" \
   "device-tokens route contract|server/test/device_tokens_route.test.mjs" \
   "route contract: me/delete|server/test/me_delete_route.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
@@ -85,6 +86,7 @@ for spec in \
   "maturation ladder|packages/maturation/test/maturation.test.mjs" \
   "games|packages/games/test/games.test.mjs" \
   "jokebook|packages/jokes/test/jokes.test.mjs" \
+  "game favorites engine (Recommended row)|packages/games/test/favorites.test.mjs" \
   "games (checkers, battleship, hangman, chess)|packages/games/test/games2.test.mjs" \
   "games (kim's game, scavenger hunt, the chain)|packages/games/test/games3.test.mjs" \
   "live (latency floor, pictionary)|packages/live/test/live.test.mjs" \
@@ -360,6 +362,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db device token (real RLS)|packages/db/test/device_token.test.mjs" \
             "db guardian invite (real RLS)|packages/db/test/guardian_invite.test.mjs" \
             "db theme preference (real RLS)|packages/db/test/theme_preference.test.mjs" \
+            "db game favorites (real RLS)|packages/db/test/game_favorites.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \
