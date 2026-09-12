@@ -14,6 +14,38 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.70] — 2026-09-12 — GuardianHome gets the same real tile hierarchy: intuitivism pass, sub-project 3b
+
+`guardian_home.dart` never got the "less adult-minimalist" treatment ChildHome did (v0.49.65, sub-project 2) — its 11 tiles (Message banking, Emergency card, Handover notes, Exchange, Expenses, Availability, Send-time guard, Meds & care, Morning briefing, Care note, More) rendered as one flat, equal-weight grid (`_GTile`), the exact symptom sub-project 2's own spec named for ChildHome's pre-hierarchy state. Column-count/width scaling was already correct here (a real floor of 2 AND ceiling of 3, `.clamp(2, 3)`, PR #43) — this closes purely the visual-hierarchy gap, per `docs/superpowers/specs/2026-09-12-intuitivism-guardianhome-tiering-design.md`.
+
+### Added — a shared `TieredTile`, extracted rather than duplicated
+`child_home.dart`'s own private `_Tile` moves, unchanged, into a new `client/lib/tiered_tile.dart` (`TieredTile`) — `_Tile`'s own doc comment already named the reason this should be one real component once a second real consumer existed. `ChildHome`'s migration onto it is a pure rename plus file move: its full existing test suite (`child_home_test.dart` and every other file that exercises it) passes with **zero test-file changes**, the proof this is genuinely behavior-preserving. `GuardianHome` adopts `TieredTile` in place of `_GTile`.
+
+### Added — the 3-tier hierarchy
+Tier assignment traces directly to the user's own answer about which tiles feel most urgent/frequent as a real guardian — a fixed, designed hierarchy, never computed from usage (P2 not triggered):
+- **Hero** (1 tile, full-width band outside the grid, same structural position as ChildHome's own Hero): **Message banking** — `tertiaryContainer`.
+- **Featured** (larger icon/type-scale via `TieredTile`'s own `featured` flag): **Availability, Send-time guard, Meds & care, Emergency card** — `secondaryContainer`.
+- **Standard** (unchanged from before this pass): **Handover notes, Exchange, Expenses, Morning briefing, Care note, More** — `primaryContainer`.
+
+A declarative `_kGuardianTiles` list (tier-tagged, partitioned once per `build()`) replaces the old hand-tiered `GridView.children` literal, so a tile silently appearing in two tiers or dropped entirely is structurally unlikely rather than merely avoided by care. The ribbon above (Ivy's day bars, the Call Ivy button — real, live data, not a tile) is untouched; the existing `crossAxisCount`/`effectiveColumnWidth` computation is untouched — only which tiles land in which grid, and each grid's fill color, changes.
+
+### A real bug found and fixed along the way
+Featured's larger icon (28→36px) and text style (titleSmall→titleMedium), rendered inside this screen's own SHARED (not per-tier) `mainAxisExtent` — deliberately unchanged from before this pass — reintroduced the exact overflow class §8.11.1 already documents for this file: 'Send-time guard' (the longest Featured label) overflowed by 4px at the Fold5 cover-screen width, and by as much as 24px in a real, common phone-width band (~372-380px screens) the old `165` breakpoint routed into the too-short `108` extent instead of the taller one. Found by real widget tests pinned to exact widths, the same discipline the original bug comment names — not by inspection. Fixed by growing both breakpoint values (`136`/`170`, was `128`/`165`); the untouched `108` value remains valid and unchanged above the new threshold, confirmed by tests at the exact former danger-zone widths.
+
+### Tests
+`test/tiered_tile_test.dart` (new, 12 assertions): `TieredTile`'s own independent unit suite — `featured`/`hero` (alone and combined) drive the right icon size/fill/text style, `badgeCount` null/0/positive/`>9`, the honest not-built-yet fallback, the hero-only full-width wrapper, the §8.4 64dp floor. `test/guardian_home_test.dart` (new, 9 assertions): each of the 11 tiles renders in its assigned tier's grid — and *only* that tier's, proving real tier assignment rather than "11 tiles render somewhere"; each tier's fill color matches its `ColorScheme` role; Hero sits above Featured sits above Standard, and reads taller; the ribbon renders completely unchanged (a regression guard); the 344px Fold5-cover Hero-label wrap case. `test/widget_test.dart`'s `Exchange`/`Expenses` tap tests gained a defensive `ensureVisible()` — Standard tier's own tiles moved further down than the default test viewport shows without a scroll step, the same fix sub-project 2 needed for ChildHome's own Standard tiles. Full Dart client suite: 2348/2348 passing (2327 baseline + 21 new), `flutter analyze` clean.
+
+### Explicitly out of scope
+Column-count/width scaling (already correct, untouched); the ribbon itself (untouched, real live data); any new/removed/renamed tile (same 11 destinations, same labels/icons — only grouping and fill color change); a guardian-settable custom tile order (a genuinely different feature from a designed hierarchy, noted for future consideration, not designed here).
+
+- **Assertion total: 7190 (placeholder)** — HEAD's own real CI `COMPUTED TOTAL`
+  (7169, v0.49.69) plus this entry's own 21 new Dart tests (2348 vs. the 2327
+  pre-this-branch baseline; no new server-side test file, no other Dart test
+  file's assertion count changed); to be synced to CI's real number in a
+  follow-up commit if it differs, per this repo's established convention.
+
+---
+
 ## [0.49.69] — 2026-09-06 — Roadmap batch 2: the gate now runs on the actual send path
 
 Continues the 47-item backlog batch 1 triaged (see the 0.49.68 entry below).
