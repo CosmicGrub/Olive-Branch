@@ -142,6 +142,121 @@ void main() {
     });
   });
 
+  group('required PIN stepper — Onboarding & Guardian Access sub-project 1 '
+      '(docs/superpowers/specs/2026-09-12-onboarding-identity-pin-design.md)', () {
+    testWidgets("'Finish setup' is disabled with no PIN set and no "
+        'checkExistingPin wired at all', (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: GuardianSetupScreen()));
+      await tester.pump();
+      final button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('Finish setup'), matching: find.byType(FilledButton)));
+      expect(button.onPressed, isNull);
+      expect(find.text('Set your kiosk PIN above to finish setup.'), findsOneWidget);
+    });
+
+    testWidgets("'Finish setup' becomes enabled immediately after a real "
+        'setGuardianPin success this session', (tester) async {
+      var completed = false;
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async {},
+        onComplete: () => completed = true,
+      )));
+      await tester.pump();
+      var button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('Finish setup'), matching: find.byType(FilledButton)));
+      expect(button.onPressed, isNull, reason: 'not yet — no PIN set this session');
+
+      await tester.enterText(find.byType(TextField).at(0), '5193');
+      await tester.enterText(find.byType(TextField).at(1), '5193');
+      await tester.ensureVisible(find.text('Save PIN'));
+      await tester.tap(find.text('Save PIN'));
+      await tester.pumpAndSettle();
+
+      button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('Finish setup'), matching: find.byType(FilledButton)));
+      expect(button.onPressed, isNotNull);
+      expect(find.text('Set your kiosk PIN above to finish setup.'), findsNothing);
+
+      await tester.ensureVisible(find.text('Finish setup'));
+      await tester.tap(find.text('Finish setup'));
+      await tester.pump();
+      expect(completed, isTrue);
+    });
+
+    testWidgets('a later FAILED resubmission does not un-satisfy a PIN '
+        'already set this session', (tester) async {
+      var callCount = 0;
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async {
+          callCount++;
+          if (callCount > 1) throw Exception('boom');
+        },
+      )));
+      await tester.enterText(find.byType(TextField).at(0), '5193');
+      await tester.enterText(find.byType(TextField).at(1), '5193');
+      await tester.ensureVisible(find.text('Save PIN'));
+      await tester.tap(find.text('Save PIN'));
+      await tester.pumpAndSettle();
+
+      var button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('Finish setup'), matching: find.byType(FilledButton)));
+      expect(button.onPressed, isNotNull);
+
+      // A second, genuinely-resubmitted (matching, valid) PIN that the
+      // SERVER rejects this time — a real second call to setGuardianPin,
+      // not merely a local validation failure.
+      await tester.enterText(find.byType(TextField).at(0), '4444');
+      await tester.enterText(find.byType(TextField).at(1), '4444');
+      await tester.ensureVisible(find.text('Save PIN'));
+      await tester.tap(find.text('Save PIN'));
+      await tester.pumpAndSettle();
+      expect(callCount, 2, reason: 'the second submission must really reach setGuardianPin again');
+      expect(find.text('Could not set your PIN.'), findsOneWidget);
+
+      button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('Finish setup'), matching: find.byType(FilledButton)));
+      expect(button.onPressed, isNotNull,
+        reason: 'still enabled — a later failed resubmission must never '
+                'un-set a PIN that already succeeded this session');
+    });
+
+    testWidgets("'Finish setup' is already enabled on a subsequent visit "
+        'where a PIN already exists — no re-entry required to leave',
+        (tester) async {
+      var completed = false;
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async {},
+        checkExistingPin: () async => true,
+        onComplete: () => completed = true,
+      )));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('Finish setup'), matching: find.byType(FilledButton)));
+      expect(button.onPressed, isNotNull,
+        reason: 'a PIN already exists — no re-entry of it is required to leave');
+      // No PIN was ever (re-)entered on this visit.
+      expect(tester.widget<TextField>(find.byType(TextField).at(0)).controller!.text, isEmpty);
+
+      await tester.ensureVisible(find.text('Finish setup'));
+      await tester.tap(find.text('Finish setup'));
+      await tester.pump();
+      expect(completed, isTrue);
+    });
+
+    testWidgets('checkExistingPin reporting false leaves Finish setup disabled',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(home: GuardianSetupScreen(
+        setGuardianPin: (pin) async {},
+        checkExistingPin: () async => false,
+      )));
+      await tester.pumpAndSettle();
+      final button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('Finish setup'), matching: find.byType(FilledButton)));
+      expect(button.onPressed, isNull);
+    });
+  });
+
   group('responsive — required audit viewports', () {
     // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and a
     // desktop/tablet-scale width. Unwired state (the info banner is on

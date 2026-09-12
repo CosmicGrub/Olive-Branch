@@ -42,6 +42,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          lettersFor, sealLetterRow, openLetterRow, deleteLetterRow,
          applyRetentionOnOpen,
          gameFavoritesFor, setGameFavoriteKinds, recordGamePickerOpen,
+         setChildGender, pinCredentialFor,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -202,6 +203,18 @@ function invalidGameFavoritesBody(body) {
   return null;
 }
 
+// PUT .../profile's body — the exact wire values db/migrations/
+// 0031_child_profile.sql's own CHECK constraint admits. A specific 400 here,
+// same reasoning invalidThemeBody()/invalidGameFavoritesBody() above give,
+// rather than a bare Postgres constraint-violation 500.
+const CHILD_GENDERS = new Set(['boy', 'girl']);
+
+function invalidProfileBody(body) {
+  if (!body || typeof body !== 'object') return 'body_must_be_object';
+  if (!CHILD_GENDERS.has(body.gender)) return 'bad_gender';
+  return null;
+}
+
 /**
  * The real "her frame" relative label GET .../inbox's real caller needs —
  * client/lib/inbox_screen.dart's own InboxMessage.deliveredAtLabel doc
@@ -293,12 +306,25 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const displayName = c.principal.roleName === 'child'
         ? (await q(`SELECT display_name FROM child WHERE id = $1`, [c.principal.childId]))[0]?.display_name
         : (await q(`SELECT display_name FROM app_user WHERE id = $1`, [c.principal.userId]))[0]?.display_name;
+      // hasPin — Onboarding & Guardian Access sub-project 1 (docs/superpowers/
+      // specs/2026-09-12-onboarding-identity-pin-design.md). guardian_setup
+      // .dart's new "Finish setup" stepper needs to know, on a RETURN visit,
+      // whether a PIN already exists so it can start enabled ("no re-entry of
+      // an existing PIN required to leave") — reuses pinCredentialFor()
+      // verbatim (the same accessor attemptPinFor()'s own kiosk-unlock check
+      // is built on) rather than a second query, and only ever reports
+      // existence, never the hash itself. `null` for a child principal (a
+      // PIN is a guardian-only concept; pinCredentialFor() would be asked
+      // about the wrong id entirely for a child session).
+      const hasPin = c.principal.roleName === 'child'
+        ? null : (await pinCredentialFor(pool, c.principal.userId)) !== null;
       return { body: {
         userId: c.principal.userId,
         childId: c.principal.childId,
         roleName: c.principal.roleName,
         escalated: c.principal.escalated,
         displayName: displayName ?? null,
+        hasPin,
       } };
     },
   });
@@ -1618,6 +1644,41 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const reason = invalidGameFavoritesBody(c.body);
       if (reason) return { status: 400, body: { error: reason } };
       await setGameFavoriteKinds(pool, c.principal.userId, c.body.favoriteKinds);
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // PUT /v1/children/:childId/profile — Onboarding & Guardian Access
+  // sub-project 1 (docs/superpowers/specs/2026-09-12-onboarding-identity-pin
+  // -design.md). onboarding_gender.dart's real tap-and-persist path — the
+  // FIRST route in the entire onboarding pipeline any first-run screen's
+  // tapped answer has ever actually reached (see db/migrations/
+  // 0031_child_profile.sql's own header for the full account of that gap).
+  // `action: 'settings'` reused verbatim from the theme/game-favorites
+  // routes immediately above — same shape (a single PUT, a specific 400 on
+  // a malformed body via this file's own invalidXBody() convention), but the
+  // INVERTED posture: child-write only, the identical guardian_only-inverted
+  // check recordGamePickerOpen()'s own branch above already demonstrates,
+  // given its own dedicated route here (rather than a second branch on a
+  // shared path) because there is nothing for a guardian to legitimately do
+  // at this path at all — no guardian-facing read route exists in this pass
+  // either (the design spec's own explicit scope boundary: "nothing consumes
+  // this field yet"). A guardian's PUT here still reaches this handler (the
+  // same 'settings' capability admits her) and is rejected in-handler with
+  // 403 `child_only`, the literal inverse of `guardian_only` above; a
+  // guardian's GET is simply unrouted (no GET handler exists at this path
+  // at all) and falls through to api.ts's own generic 404 `not_found` —
+  // confirmed, not guessed (see server/test/child_profile_route.test.mjs's
+  // own "no GET route" case).
+  api.register({
+    method: 'PUT', path: '/v1/children/:childId/profile', action: 'settings',
+    handler: async (c) => {
+      if (c.principal.roleName !== 'child' || !c.principal.childId) {
+        return { status: 403, body: { error: 'child_only' } };
+      }
+      const reason = invalidProfileBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      await setChildGender(pool, c.childId, c.body.gender);
       return { status: 200, body: { ok: true } };
     },
   });

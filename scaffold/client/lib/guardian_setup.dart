@@ -26,6 +26,25 @@
 // as [registerPasskey]: with no [setGuardianPin] wired, this section says so
 // instead of rendering a form with nothing real behind it; supplying it is
 // the whole integration point.
+//
+// REQUIRED PIN — Onboarding & Guardian Access sub-project 1 (docs/
+// superpowers/specs/2026-09-12-onboarding-identity-pin-design.md). The PIN
+// section above is real, but was optional: nothing on this screen ever
+// required setting one before leaving, which leaves sub-project 2's whole
+// premise (PIN-gated parental controls) unreachable for any family that
+// skipped it. A "Finish setup" action now sits at the end of this screen,
+// disabled until [setGuardianPin] has succeeded at least once THIS SESSION
+// (tracked by [_pinSetThisSession], deliberately separate from [_pinPhase]
+// — a later failed resubmission must not un-set a PIN that already
+// succeeded), or immediately enabled when [checkExistingPin] reports one
+// already exists — "no re-entry of an existing PIN required to leave," the
+// design spec's own line. [checkExistingPin] follows the IDENTICAL
+// "caller resolves the live session, this screen only ever calls what it's
+// handed" convention [registerPasskey]/[setGuardianPin] already establish,
+// rather than a plain precomputed bool the caller would otherwise have to
+// resolve before ever constructing this screen. The still-stubbed passkey
+// section above is completely untouched by this change — a separate,
+// honestly-labeled section, not blocking, not part of the required path.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'api_client.dart' show ApiException;
@@ -40,11 +59,15 @@ class GuardianSetupScreen extends StatefulWidget {
     this.onComplete,
     this.onOpenAgreement,
     this.setGuardianPin,
+    this.checkExistingPin,
   });
 
   /// Null in every build today — see file header. Supplying this is the
   /// entire integration point for a real §11 identity service later.
   final Future<PasskeyOutcome> Function()? registerPasskey;
+  /// Fires once "Finish setup" is tapped while enabled — see file header's
+  /// REQUIRED PIN section — as well as (unchanged) on a successful
+  /// [registerPasskey] ceremony.
   final VoidCallback? onComplete;
   /// Honest stub for reviewing the family agreement / responsibilities —
   /// no such document view exists yet either.
@@ -54,6 +77,12 @@ class GuardianSetupScreen extends StatefulWidget {
   /// this screen only ever calls whatever is handed to it, never constructs
   /// its own OliveApi, so it stays session/baseUrl-agnostic.
   final Future<void> Function(String pin)? setGuardianPin;
+  /// Resolves whether a PIN already exists for this guardian, on a RETURN
+  /// visit — see file header's REQUIRED PIN section. Null (the default) in
+  /// every build with no live session to check against, matching
+  /// [registerPasskey]/[setGuardianPin]'s own null-means-unwired convention;
+  /// "Finish setup" then depends solely on a fresh success this session.
+  final Future<bool> Function()? checkExistingPin;
 
   @override
   State<GuardianSetupScreen> createState() => _GuardianSetupScreenState();
@@ -68,6 +97,27 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
   String _pinError = '';
   final _pinController = TextEditingController();
   final _pinConfirmController = TextEditingController();
+  /// "Succeeded at least once THIS SESSION" — deliberately separate from
+  /// [_pinPhase], which only reflects the MOST RECENT submission: a later
+  /// failed resubmission (e.g. a mistyped confirmation while changing an
+  /// already-set PIN) must never un-satisfy a requirement already met.
+  bool _pinSetThisSession = false;
+  /// Null while [GuardianSetupScreen.checkExistingPin] is unset or still
+  /// resolving — treated as "not yet known", the same fail-closed default
+  /// every other honest-absence state in this screen already takes, never
+  /// optimistically true.
+  bool? _hasExistingPin;
+
+  bool get _canFinish => _pinSetThisSession || (_hasExistingPin ?? false);
+
+  @override
+  void initState() {
+    super.initState();
+    final checker = widget.checkExistingPin;
+    if (checker != null) {
+      checker().then((v) { if (mounted) setState(() => _hasExistingPin = v); });
+    }
+  }
 
   @override
   void dispose() {
@@ -126,7 +176,7 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
       if (!mounted) return;
       _pinController.clear();
       _pinConfirmController.clear();
-      setState(() => _pinPhase = _PinPhase.success);
+      setState(() { _pinPhase = _PinPhase.success; _pinSetThisSession = true; });
     } catch (e) {
       if (!mounted) return;
       // Same "real reason, not a guess" convention child_home_live.dart's own
@@ -261,6 +311,19 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
                     : const Text('Save PIN',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
               ],
+              const SizedBox(height: 32),
+              const Divider(),
+              const SizedBox(height: 16),
+              SizedBox(height: 56, child: FilledButton(
+                onPressed: _canFinish ? () => widget.onComplete?.call() : null,
+                child: const Text('Finish setup',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
+              if (!_canFinish) Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Set your kiosk PIN above to finish setup.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              ),
             ]))))),
     );
   }
