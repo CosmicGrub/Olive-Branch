@@ -18,6 +18,25 @@
 // functional screens (§9.5 message banking, §9.6.3 emergency card, P8
 // handover notes); the rest are honest not-built-yet stubs, same posture
 // child_home.dart already takes for its own unbuilt tiles.
+//
+// TILE HIERARCHY — intuitivism pass, sub-project 3b (docs/superpowers/
+// specs/2026-09-12-intuitivism-guardianhome-tiering-design.md). The 11
+// tiles above used to render as one flat, equal-weight grid (`_GTile`) —
+// the same symptom sub-project 2 named for ChildHome's own pre-hierarchy
+// grid. Now a real Hero/Featured/Standard hierarchy, sharing ChildHome's
+// own TieredTile (tiered_tile.dart) instead of a second, drifting tile
+// class: Hero (Message banking, full-width, outside the grid — same
+// structural position as ChildHome's own Hero tile), Featured (Availability,
+// Send-time guard, Meds & care, Emergency card — secondaryContainer fill,
+// larger icon/type-scale), Standard (Handover notes, Exchange, Expenses,
+// Morning briefing, Care note, More — primaryContainer, unchanged from
+// before this pass). Every placement traces to the user's own stated
+// answer about which tiles feel most urgent/frequent as a real guardian —
+// see the spec for the full account. The ribbon above (Ivy's day bars, the
+// Call Ivy button) is real, live data, not a tile, and is untouched by this
+// pass. The existing crossAxisCount/effectiveColumnWidth/mainAxisExtent
+// computation below is ALSO unchanged — only which tiles land in which
+// grid, and each grid's fill color, changes.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'availability_screen.dart';
@@ -33,6 +52,7 @@ import 'meds_care.dart';
 import 'message_banking.dart';
 import 'morning_briefing.dart';
 import 'send_time_guard.dart';
+import 'tiered_tile.dart';
 
 /// Opens the real AvailabilityScreen when this home screen has actually been
 /// given a live session (baseUrl/guardianId/childId — see GuardianHome's own
@@ -168,6 +188,23 @@ class GuardianHome extends StatelessWidget {
           // overflowed the tile by 4px -- caught by widget tests pinned to
           // that exact width, not by inspection. Wider layouts keep the
           // original, more compact extent.
+          //
+          // Both breakpoint values grew again in sub-project 3b (136/170,
+          // was 128/165) for the SAME reason, one tier later: this grid's
+          // own mainAxisExtent is shared unchanged across the Featured and
+          // Standard grids below (only fill/icon/type-scale differ per
+          // tier), and TieredTile's `featured` bump (36px icon, titleMedium)
+          // needs a taller cell than the 28px/titleSmall styling 128/165
+          // were tuned for. Confirmed by the same discipline as the
+          // original fix -- real widget tests pinned to exact widths, not
+          // inspection: 'Send-time guard' (the longest Featured label)
+          // overflowed by as much as 24px at effectiveColumnWidth 165-169
+          // -- a real, common phone-width band (e.g. 372-380px screens) the
+          // OLD 165 threshold routed into the too-short 108 extent. 136
+          // clears every Featured label with margin at every width below
+          // the new 170 threshold; 108 above it was already proven safe
+          // (Featured labels wrap to fewer lines once genuinely more width
+          // exists) and is untouched.
           child: LayoutBuilder(builder: (context, constraints) {
             final textScale = MediaQuery.textScalerOf(context).scale(1);
             // Floor of 2, not columnsAt()'s raw output: columnsAt() returns 1
@@ -183,59 +220,73 @@ class GuardianHome extends StatelessWidget {
             final gapTotal = 10.0 * (crossAxisCount - 1);
             final effectiveColumnWidth =
                 (constraints.maxWidth / textScale - gapTotal) / crossAxisCount;
-            final mainAxisExtent = effectiveColumnWidth < 165.0 ? 128.0 : 108.0;
-            return GridView(shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount, mainAxisSpacing: 10, crossAxisSpacing: 10,
-              mainAxisExtent: mainAxisExtent),
-            children: [
-              _GTile(icon: Icons.schedule_send, label: 'Message banking',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const MessageBankingScreen()))),
-              _GTile(icon: Icons.medical_information, label: 'Emergency card',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const EmergencyCardScreen()))),
-              _GTile(icon: Icons.receipt_long, label: 'Handover notes',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const HandoverNotesScreen()))),
-              _GTile(icon: Icons.swap_horiz, label: 'Exchange',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => ExchangeScreen(childName: childName)))),
-              _GTile(icon: Icons.account_balance_wallet, label: 'Expenses',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => ExpensesScreen(childName: childName)))),
-              _GTile(icon: Icons.event_available, label: 'Availability',
-                onTap: () => _openAvailability(context,
-                  baseUrl: baseUrl, guardianId: guardianId, childId: childId,
-                  httpClient: availabilityHttpClient)),
-              _GTile(icon: Icons.schedule, label: 'Send-time guard',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => SendTimeGuardScreen(childName: childName,
-                    childLocalTime: childLocalTime, zoneAbbr: childZoneAbbr,
-                    dayPart: dayPart, reachable: reachable)))),
-              _GTile(icon: Icons.medical_services_outlined, label: 'Meds & care',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => MedsCareScreen(childName: childName)))),
-              _GTile(icon: Icons.wb_twilight, label: 'Morning briefing',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const MorningBriefingScreen()))),
-              _GTile(icon: Icons.favorite_border, label: 'Care note',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => CareNoteScreen(childName: childName,
-                    baseUrl: baseUrl, guardianId: guardianId, childId: childId,
-                    httpClient: availabilityHttpClient)))),
-              _GTile(icon: Icons.more_horiz, label: 'More',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => GuardianMoreScreen(childName: childName,
-                    baseUrl: baseUrl, guardianId: guardianId,
-                    // GuardianMoreScreen.childId is non-nullable (it also
-                    // keys the family-agreement fetch, which needs SOME
-                    // concrete child even pre-live-session) — same
-                    // seed-dev.mjs 'Ivy' fallback main_live.dart's own
-                    // defaultValue uses, not a fabricated placeholder.
-                    childId: childId ?? 'aaaaaaaa-0000-4000-8000-000000000001',
-                    availabilityHttpClient: availabilityHttpClient)))),
+            final mainAxisExtent = effectiveColumnWidth < 170.0 ? 136.0 : 108.0;
+
+            // The same 11 destinations as before, now tagged by tier
+            // (_kGuardianTiles, in this spec's own §Tier assignment order)
+            // instead of one hand-written GridView.children literal — a
+            // partition-from-one-list approach makes a tile silently
+            // appearing in two tiers, or dropped entirely, structurally
+            // unlikely, where three independent literals would not.
+            final tiles = _kGuardianTiles(
+              childName: childName, childLocalTime: childLocalTime,
+              childZoneAbbr: childZoneAbbr, dayPart: dayPart, reachable: reachable,
+              baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+              availabilityHttpClient: availabilityHttpClient,
+            );
+            final heroTile = tiles.firstWhere((t) => t.tier == _Tier.hero);
+            final featuredTiles = tiles.where((t) => t.tier == _Tier.featured).toList();
+            final standardTiles = tiles.where((t) => t.tier == _Tier.standard).toList();
+
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // ============================================ Hero — Message
+              // banking. A plain full-width band OUTSIDE the GridView below,
+              // same structural position as child_home.dart's own Hero tile
+              // relative to its Featured grid — no hero-cell/variable-span
+              // grid mechanism exists in this codebase
+              // (SliverGridDelegateWithFixedCrossAxisCount is the only
+              // delegate ever used, uniform-cell by construction). A fixed
+              // height derived from this screen's own existing mainAxisExtent
+              // breakpoint (+20, so Hero reads taller than Featured/Standard
+              // at every width) rather than child_home.dart's own continuous
+              // text-scale heightScale — that mechanism is a narrower,
+              // disclosed choice of that screen; this file has never scaled
+              // tile height with text at all, and this pass doesn't start
+              // now. See guardian_home_test.dart's own 344px-width coverage
+              // for proof this clears the Fold5 cover-screen floor even at
+              // the longest Hero label ("Message banking").
+              TieredTile(key: const Key('guardianHomeHero'),
+                icon: heroTile.icon, label: heroTile.label,
+                featured: true, hero: true,
+                height: mainAxisExtent + 20, onTap: heroTile.onTap),
+              const SizedBox(height: 10),
+
+              // ================================================== Featured
+              // — larger icon/type-scale via TieredTile's own `featured`
+              // flag, secondaryContainer fill. SAME cell height as Standard
+              // below (this screen's mainAxisExtent is one shared
+              // breakpoint, not per-tier like child_home.dart's own two
+              // differently-sized grids) — hierarchy here reads through
+              // color and icon/type-scale alone, not cell size.
+              GridView(key: const Key('guardianHomeFeaturedGrid'), shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount, mainAxisSpacing: 10, crossAxisSpacing: 10,
+                  mainAxisExtent: mainAxisExtent),
+                children: [for (final t in featuredTiles)
+                  TieredTile(icon: t.icon, label: t.label, featured: true, onTap: t.onTap)]),
+              const SizedBox(height: 10),
+
+              // ================================================== Standard
+              // — unchanged size and fill (primaryContainer) from before
+              // this pass.
+              GridView(key: const Key('guardianHomeStandardGrid'), shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount, mainAxisSpacing: 10, crossAxisSpacing: 10,
+                  mainAxisExtent: mainAxisExtent),
+                children: [for (final t in standardTiles)
+                  TieredTile(icon: t.icon, label: t.label, onTap: t.onTap)]),
             ]);
           })),
         const SizedBox(height: 16),
@@ -243,24 +294,102 @@ class GuardianHome extends StatelessWidget {
   );
 }
 
-class _GTile extends StatelessWidget {
-  const _GTile({required this.icon, required this.label, required this.onTap});
+/// Sub-project 3b's own tier tag (docs/superpowers/specs/2026-09-12-
+/// intuitivism-guardianhome-tiering-design.md) — the same three tiers
+/// tiered_tile.dart's own TieredTile already renders, now driving which
+/// grid (or, for Hero, which full-width band) a _TileSpec below lands in.
+/// A fixed, designed hierarchy from the spec's own tier table — never
+/// computed from usage (P2 is not triggered by construction).
+enum _Tier { hero, featured, standard }
+
+/// One row of the declarative tile list below: icon, label, destination,
+/// and its designed tier. Kept separate from TieredTile itself — TieredTile
+/// renders one tile; a _TileSpec describes one, everything build() needs to
+/// place it in the right band/grid with the right fill.
+class _TileSpec {
+  const _TileSpec(
+      {required this.icon, required this.label, required this.tier, required this.onTap});
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Container(constraints: const BoxConstraints(minHeight: 64),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
-        color: Theme.of(context).colorScheme.primaryContainer),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(icon, size: 28), const Spacer(),
-        Text(label, style: Theme.of(context).textTheme.titleSmall
-          ?.copyWith(fontWeight: FontWeight.w600)),
-      ])));
+  final _Tier tier;
+  final void Function(BuildContext context) onTap;
 }
+
+/// The same 11 real destinations guardian_home.dart has always had, now one
+/// list instead of a hand-tiered GridView.children literal — re-tiering
+/// later (if real guardian usage turns out to differ from this spec's own
+/// answer) is a one-line `tier:` change here instead of moving a _TileSpec
+/// between three independent lists. In this spec's own §Tier assignment
+/// order (Hero, then Featured, then Standard).
+///
+/// Not a top-level `const` despite the `_k` name: every onTap here closes
+/// over this screen's own live-session fields (baseUrl/guardianId/childId/
+/// availabilityHttpClient) and the child's own already-fetched clock state
+/// (childLocalTime/childZoneAbbr/dayPart/reachable) — none of which exist
+/// at compile time — plus the real BuildContext each tap eventually runs
+/// against, which no top-level constant can close over either. A function
+/// taking exactly those as parameters, called once per build(), is the
+/// closest a single real declarative list can get here; the same reason
+/// none of this screen's (or child_home.dart's) per-tile onTap closures
+/// were ever const either.
+List<_TileSpec> _kGuardianTiles({
+  required String childName,
+  required String childLocalTime,
+  required String childZoneAbbr,
+  required String? dayPart,
+  required bool? reachable,
+  required String? baseUrl,
+  required String? guardianId,
+  required String? childId,
+  required http.Client? availabilityHttpClient,
+}) => <_TileSpec>[
+  _TileSpec(icon: Icons.schedule_send, label: 'Message banking', tier: _Tier.hero,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const MessageBankingScreen()))),
+  _TileSpec(icon: Icons.event_available, label: 'Availability', tier: _Tier.featured,
+    onTap: (context) => _openAvailability(context,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient)),
+  _TileSpec(icon: Icons.schedule, label: 'Send-time guard', tier: _Tier.featured,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SendTimeGuardScreen(childName: childName,
+        childLocalTime: childLocalTime, zoneAbbr: childZoneAbbr,
+        dayPart: dayPart, reachable: reachable)))),
+  _TileSpec(icon: Icons.medical_services_outlined, label: 'Meds & care', tier: _Tier.featured,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => MedsCareScreen(childName: childName)))),
+  _TileSpec(icon: Icons.medical_information, label: 'Emergency card', tier: _Tier.featured,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const EmergencyCardScreen()))),
+  _TileSpec(icon: Icons.receipt_long, label: 'Handover notes', tier: _Tier.standard,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const HandoverNotesScreen()))),
+  _TileSpec(icon: Icons.swap_horiz, label: 'Exchange', tier: _Tier.standard,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ExchangeScreen(childName: childName)))),
+  _TileSpec(icon: Icons.account_balance_wallet, label: 'Expenses', tier: _Tier.standard,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ExpensesScreen(childName: childName)))),
+  _TileSpec(icon: Icons.wb_twilight, label: 'Morning briefing', tier: _Tier.standard,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const MorningBriefingScreen()))),
+  _TileSpec(icon: Icons.favorite_border, label: 'Care note', tier: _Tier.standard,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => CareNoteScreen(childName: childName,
+        baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+        httpClient: availabilityHttpClient)))),
+  _TileSpec(icon: Icons.more_horiz, label: 'More', tier: _Tier.standard,
+    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => GuardianMoreScreen(childName: childName,
+        baseUrl: baseUrl, guardianId: guardianId,
+        // GuardianMoreScreen.childId is non-nullable (it also keys the
+        // family-agreement fetch, which needs SOME concrete child even
+        // pre-live-session) — same seed-dev.mjs 'Ivy' fallback
+        // main_live.dart's own defaultValue uses, not a fabricated
+        // placeholder.
+        childId: childId ?? 'aaaaaaaa-0000-4000-8000-000000000001',
+        availabilityHttpClient: availabilityHttpClient)))),
+];
 
 class _Ribbon extends StatelessWidget {
   const _Ribbon({required this.label, required this.bands, required this.height});

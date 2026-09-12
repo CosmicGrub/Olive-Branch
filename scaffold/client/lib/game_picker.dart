@@ -430,8 +430,9 @@ class _GameCardState extends State<_GameCard> {
             decoration: BoxDecoration(
               color: _cardColor(cs, meta.kind),
               // 14, not a one-off radius: the canonical action-grid tile
-              // radius shared with child_home.dart's _Tile and
-              // guardian_home.dart's _GTile, so a new tile component here
+              // radius shared with tiered_tile.dart's TieredTile (rendered
+              // by both child_home.dart and guardian_home.dart as of
+              // intuitivism sub-project 3b), so a new tile component here
               // matches the house pairing instead of reinventing its own.
               borderRadius: BorderRadius.circular(14),
             ),
