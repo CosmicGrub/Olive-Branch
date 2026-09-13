@@ -304,6 +304,13 @@ class OliveApi {
   // the real caller (permission request, token fetch, refresh listener).
   static const deviceTokens = '/v1/me/device-tokens';
 
+  // --- network play (§5.14, §5.17, §5.19) ---------------------------------
+  // Relayed through this app's own authenticated backend — never
+  // peer-to-peer, never LAN-discovered. See scaffold/server/game_tables.mjs
+  // and scaffold/packages/game-sync/src/table.ts for the server side.
+  static const gameTables = '/v1/game-tables';
+  static const gameTableJoin = '/v1/game-tables/:tableId/join';
+
   // --- guardian invitation (§11, §8.5) -------------------------------------
   // Create requires a real guardian session (this class's own [_post]);
   // the invited party has none yet, so read/accept below are free functions
@@ -1283,7 +1290,69 @@ class OliveApi {
     return body['deleted'] as bool;
   }
 
+  /// Requests a short-lived, single-use join token for a live network-play
+  /// table. Exactly one of [partnerChildId] (a guardian inviting a specific
+  /// child, or one sibling inviting another) or [partnerUserId] (a child
+  /// inviting a specific adult) must be supplied. This call carries no
+  /// authorization decision of its own — the server independently verifies
+  /// the pairing against the real family graph (guardianship or
+  /// sibling_link) before ever minting a token; a denial surfaces as a real
+  /// [ApiException] (403) naming the reason.
+  Future<GameTableTicket> requestGameTable({
+    required String game,
+    String? partnerChildId,
+    String? partnerUserId,
+  }) async {
+    assert((partnerChildId == null) != (partnerUserId == null),
+        'exactly one of partnerChildId/partnerUserId must be supplied');
+    final body = await _post(gameTables, {
+      'game': game,
+      'partnerChildId': ?partnerChildId,
+      'partnerUserId': ?partnerUserId,
+    });
+    return GameTableTicket.fromJson(body);
+  }
+
+  /// Joins an existing table by id (shared out of band by the inviting
+  /// device — e.g. shown on screen as a short code). The server
+  /// independently re-verifies this caller is actually one of that table's
+  /// two authorized seats, re-checking the family graph fresh rather than
+  /// trusting anything decided when the table was opened, before minting a
+  /// token for them.
+  Future<GameTableTicket> joinGameTable(String tableId) async {
+    final body = await _post(gameTableJoin.replaceFirst(':tableId', tableId), const {});
+    return GameTableTicket.fromJson(body);
+  }
+
   void close() => _client.close();
+}
+
+/// A minted, short-lived, single-use credential for exactly one seat at
+/// exactly one live-play table. Scoped and time-boxed server-side — see
+/// packages/game-sync/src/table.ts's own header for the invariants this
+/// carries (T2/T3/T5).
+class GameTableTicket {
+  const GameTableTicket({
+    required this.tableId,
+    required this.seat,
+    required this.token,
+    required this.ttlSeconds,
+    required this.wsPath,
+  });
+
+  factory GameTableTicket.fromJson(Map<String, dynamic> json) => GameTableTicket(
+        tableId: json['tableId'] as String,
+        seat: json['seat'] as int,
+        token: json['token'] as String,
+        ttlSeconds: json['ttlSeconds'] as int,
+        wsPath: json['wsPath'] as String,
+      );
+
+  final String tableId;
+  final int seat;
+  final String token;
+  final int ttlSeconds;
+  final String wsPath;
 }
 
 /// Real WebAuthn LOGIN — the passkey ceremony's counterpart to [devLoginFor],

@@ -31,6 +31,7 @@ import 'game_story.dart';
 import 'game_wordsearch.dart';
 import 'handicap_screen.dart';
 import 'hub_widgets.dart';
+import 'networked_checkers_lobby_screen.dart';
 
 void _open(BuildContext context, Widget screen) =>
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -57,6 +58,9 @@ class MoreGamesSections extends StatelessWidget {
       HubTile(icon: Icons.sailing_outlined, title: 'Battleship',
         subtitle: 'Hers and his boards, never both on one screen',
         onTap: () => _open(context, GameBattleship(childName: childName, parentName: parentName))),
+      HubTile(icon: Icons.wifi_tethering, title: 'Checkers — play live',
+        subtitle: 'Two real devices, one game, through the family’s own server',
+        onTap: () => _open(context, const NetworkedCheckersLobbyScreen())),
     ]),
     HubSection(title: 'Together', children: [
       HubTile(icon: Icons.search, title: 'Word search',
