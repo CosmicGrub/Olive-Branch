@@ -197,6 +197,29 @@ export interface VerifiedPrincipal {
   readonly childId: string | null;
   readonly escalated: boolean;
   readonly expiresAt: number;
+  /**
+   * device-pairing-provisioning design spec — the `paired_device.id` for a
+   * session minted via POST /v1/device-pairing/redeem, so a revoked device
+   * can be cut off without touching the identity it's bound to (packages/
+   * api/src/api.ts's handle() checks this on every request). Optional and
+   * `null`/absent for every OTHER session-issuing path in this codebase
+   * (DEV_LOGIN, WebAuthn login, guardian-invite bootstrap, kiosk-pin/verify's
+   * own escalateSession()) — none of those has a paired device to name, and
+   * none of them is affected by this claim existing: `readSession` below
+   * defaults it to `null` when absent from the signed payload, exactly the
+   * same "absent GUC defaults safely" discipline pool.ts's withSession()
+   * already applies to app.child_id/app.user_id.
+   *
+   * Optional, not required: every EXISTING caller that builds a
+   * `VerifiedPrincipal`-shaped object (routes.mjs's many `api.issueSessionToken
+   * ({...})` calls, this file's own `escalateSession()`, stack.test.mjs's
+   * fakes) predates this field and supplies none of it — making it required
+   * would be a purely mechanical, non-functional edit to every one of them
+   * for a claim that only ever means something on the one new redeem path
+   * that sets it. `readSession` below defaults a missing/absent value to
+   * `null`, the same effective value an omitted optional field already has.
+   */
+  readonly deviceId?: string | null;
 }
 
 export const SESSION_TTL_MS = 60 * 60 * 1000;        // 1h ordinary session
@@ -249,6 +272,9 @@ export function readSession(
       verified: true, userId: body.userId ?? null, roleName: body.roleName,
       childId: body.childId ?? null, escalated: Boolean(body.escalated),
       expiresAt: body.exp,
+      // Absent for every session-issuing path except POST
+      // /v1/device-pairing/redeem — see this interface's own doc comment.
+      deviceId: body.deviceId ?? null,
     },
   };
 }

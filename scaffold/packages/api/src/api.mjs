@@ -83,6 +83,10 @@ class Api {
     const s = readSession(this.secret, token, this.now());
     if (!s.ok) return { status: 401, body: { error: s.reason } };
     const principal = s.principal;
+    if (principal.deviceId) {
+      const revoked = await this.db.isDeviceRevoked(principal.deviceId);
+      if (revoked) return { status: 401, body: { error: "device_revoked" } };
+    }
     if (m.route.escalated && !principal.escalated) {
       return { status: 403, body: { error: "escalation_required" } };
     }

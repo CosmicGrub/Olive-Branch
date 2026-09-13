@@ -70,6 +70,32 @@ dependencies:
   # multicast_dns does not; confirmed actively maintained, cross-platform
   # (Android/iOS/macOS) against pub.dev's own listing before adding.
   bonsoir: ^5.1.11
+  # Device pairing & provisioning (docs/superpowers/specs/2026-09-12-device
+  # -pairing-provisioning-design.md) -- the first on-device persistence this
+  # app has ever needed, holding a real bearer credential (`{sessionToken,
+  # deviceId, role, targetId}`), so plaintext SharedPreferences is the wrong
+  # tool (see main_live.dart's own new boot-branch comment). Confirmed
+  # actively maintained against pub.dev's own listing before adding (v11.1.1
+  # published within the last day as of this pass) -- same discipline this
+  # file's own header already applies to every other dependency here.
+  flutter_secure_storage: ^11.1.1
+  # QR *display* for add_device_screen.dart's generated pairing code.
+  # qr_flutter (the long-time default) has zero listed maintainers and no
+  # release in ~3 years per pub.dev's own listing -- confirmed before
+  # picking an alternative, not assumed stale. pretty_qr_code is a real,
+  # currently-maintained replacement built on the same underlying `qr`
+  # encoder (578 likes, 182k weekly downloads, last published within the
+  # months before this pass) -- disclosed in this feature's own PR
+  # description as a judgment call the design spec left open ("pick and add
+  # a reasonable, actively-maintained package").
+  pretty_qr_code: ^3.6.0
+  # QR *scanning* for pairing_redeem_screen.dart's camera path.
+  # juliansteenbakker/mobile_scanner -- CameraX/ML Kit on Android,
+  # AVFoundation/Apple Vision on iOS/macOS, ZXing on web -- confirmed
+  # actively maintained (7.x line, regular releases) against pub.dev's own
+  # listing, same posture image_picker/flutter_tts above already document
+  # for their own federated-implementation packages.
+  mobile_scanner: ^7.2.0
 
 dev_dependencies:
   flutter_test:

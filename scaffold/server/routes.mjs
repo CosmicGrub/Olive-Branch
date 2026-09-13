@@ -43,6 +43,8 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          applyRetentionOnOpen,
          gameFavoritesFor, setGameFavoriteKinds, recordGamePickerOpen,
          setChildGender, pinCredentialFor,
+         createDevicePairingCode, cancelDevicePairingCode, redeemDevicePairingCode,
+         pairedDevicesForChild, revokePairedDevice,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -519,6 +521,214 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const token = api.issueSessionToken(
         { userId: result.userId, roleName: 'guardian', childId: null, escalated: false });
       return { status: 201, body: { ok: true, token, userId: result.userId, childId: result.childId } };
+    },
+  });
+
+  // ===========================================================================
+  // DEVICE PAIRING & PROVISIONING — docs/superpowers/specs/2026-09-12-device-
+  // pairing-provisioning-design.md. Replaces the build-time --dart-define
+  // provisioning step with a real in-app pairing flow for a family that
+  // already exists. Never creates a family/child/guardian identity — see
+  // that spec's own "Explicitly out of scope" section.
+  // ===========================================================================
+
+  // Shared PIN re-auth gate: "a light re-auth gate before minting a real
+  // device credential" against the CALLER'S OWN pin_credential, via the
+  // exact same attemptPinFor() atomicity kiosk-pin/verify already relies on
+  // (FOR UPDATE, check-then-record as one step) — not the kiosk-pin route's
+  // "check every guardian" shape, since here the caller is already a known,
+  // authenticated guardian confirming it's still them.
+  async function requireOwnPin(userId, pin) {
+    if (typeof pin !== 'string') return { ok: false, status: 400, error: 'pin_required' };
+    const r = await attemptPinFor(pool, userId, pin);
+    if (r.locked) return { ok: false, status: 403, error: 'pin_locked' };
+    if (!r.hasCredential) return { ok: false, status: 403, error: 'pin_not_set' };
+    if (!r.matched) return { ok: false, status: 403, error: 'pin_incorrect' };
+    return { ok: true };
+  }
+
+  // POST .../device-pairing-codes — guardian-only, live edge to childId
+  // (the same "route does the first lock" split createGuardianInvite() above
+  // already uses). No dedicated Action for this in authorize.ts's Action
+  // union (same real gap that route's own comment names) — checked directly,
+  // identityScopedByHandler, same shape.
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/device-pairing-codes',
+    action: null, identityScopedByHandler: true,
+    // createDevicePairingCode()/requireOwnPin() each open their own
+    // correctly-scoped session — see api.ts's skipOuterSession doc comment.
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_pair_devices' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+
+      const now = new Date();
+      const edges = await edgesFor(pool, c.principal.userId);
+      const isLiveGuardian = edges.some((e) =>
+        e.childId === c.childId && e.role === 'guardian' && !e.restricted &&
+        !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
+      if (!isLiveGuardian) return { status: 403, body: { error: 'not_a_guardian_of_child' } };
+
+      const pin = c.body?.pin;
+      const pinCheck = await requireOwnPin(c.principal.userId, pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+
+      const code = await createDevicePairingCode(pool, 'child', c.childId, c.principal.userId);
+      return { status: 201, body: { id: code.id, numericCode: code.numericCode,
+                                     expiresAt: code.expiresAt } };
+    },
+  });
+
+  // POST /v1/me/device-pairing-codes — any authenticated guardian, generates
+  // a guardian-role code bound to THEIR OWN app_user.id ("get the app on my
+  // other device"). No :childId in the path, so this is an ordinary
+  // action:null identity route, same shape as POST /v1/me/pin above.
+  api.register({
+    method: 'POST', path: '/v1/me/device-pairing-codes', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const pin = c.body?.pin;
+      const pinCheck = await requireOwnPin(c.principal.userId, pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+
+      const code = await createDevicePairingCode(
+        pool, 'guardian', c.principal.userId, c.principal.userId);
+      return { status: 201, body: { id: code.id, numericCode: code.numericCode,
+                                     expiresAt: code.expiresAt } };
+    },
+  });
+
+  // POST .../device-pairing-codes/:codeId/cancel — the design spec's own
+  // Flow section requires a working Cancel button ("revokes it early") and
+  // the migration's own revoked_at column exists for exactly this, but the
+  // spec's Routes list doesn't name a path for it. Judgment call, disclosed
+  // in this PR: scoped purely by RLS ownership, the IDENTICAL shape
+  // POST /v1/guardian-invites/:inviteId/revoke already uses above for the
+  // same reason (no childId segment; "not_found" covers "not yours" too —
+  // see cancelDevicePairingCode()'s own doc comment).
+  api.register({
+    method: 'POST', path: '/v1/device-pairing-codes/:codeId/cancel', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const result = await cancelDevicePairingCode(
+        pool, c.params.codeId, c.principal.userId, new Date());
+      if (!result.ok) {
+        const status = result.reason === 'not_found' ? 404 : 409;
+        return { status, body: { error: result.reason } };
+      }
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // POST /v1/device-pairing/redeem — NO SESSION REQUIRED. The calling device
+  // has no identity yet; the code itself (its own id, or the typed 6-digit
+  // numericCode) is what authorizes this call, mirroring guardian_invite's
+  // own accept-flow precedent exactly (see 0032's migration RLS comment).
+  api.register({
+    method: 'POST', path: '/v1/device-pairing/redeem', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const code = c.body?.code;
+      const role = c.body?.role;
+      if (typeof code !== 'string' || !code.trim()) {
+        return { status: 400, body: { error: 'code_required' } };
+      }
+      if (role !== 'child' && role !== 'guardian') {
+        return { status: 400, body: { error: 'invalid_role' } };
+      }
+      const result = await redeemDevicePairingCode(pool, code, role, new Date());
+      if (!result.ok) {
+        const status = result.reason === 'not_found' ? 404
+          : result.reason === 'expired' ? 410
+          : result.reason === 'role_mismatch' ? 403
+          : result.reason === 'locked' ? 423
+          : 409; // revoked, already_redeemed
+        return { status, body: { error: result.reason } };
+      }
+      // Mints a real session carrying the new paired_device's id as its
+      // deviceId claim (auth.ts's VerifiedPrincipal) — packages/api/src/
+      // api.ts's handle() checks this on every future request from this
+      // device, so a later revoke actually cuts it off.
+      const sessionToken = api.issueSessionToken({
+        userId: result.role === 'guardian' ? result.targetId : null,
+        roleName: result.role,
+        childId: result.role === 'child' ? result.targetId : null,
+        escalated: false,
+        deviceId: result.deviceId,
+      });
+      // role/targetId included alongside the Routes section's own minimal
+      // {sessionToken, deviceId} pair — a necessary, disclosed judgment
+      // call: the design spec's own Flow section says the client "stores
+      // {sessionToken, deviceId, role, targetId}", and while `role` is
+      // already known to the client (it sent it in the request body), the
+      // freshly-bound `targetId` (WHICH child/guardian this device now is)
+      // is not derivable from anything the client already has — without it
+      // a redeeming device would have no way to know which childId to boot
+      // into. See this PR's own description.
+      return { status: 201, body: { sessionToken, deviceId: result.deviceId,
+                                     role: result.role, targetId: result.targetId } };
+    },
+  });
+
+  // GET .../paired-devices — guardian-only, live edge to childId. Returns
+  // child-role devices for that child AND guardian-role devices for every
+  // guardian holding a live edge to that child — pairedDevicesForChild()
+  // reuses kiosk-pin/verify's own "every live guardian of this child"
+  // scoping directly (see that function's own doc comment).
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/paired-devices',
+    action: null, identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_view_paired_devices' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+
+      const now = new Date();
+      const edges = await edgesFor(pool, c.principal.userId);
+      const isLiveGuardian = edges.some((e) =>
+        e.childId === c.childId && e.role === 'guardian' && !e.restricted &&
+        !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
+      if (!isLiveGuardian) return { status: 403, body: { error: 'not_a_guardian_of_child' } };
+
+      const devices = await pairedDevicesForChild(pool, c.childId, c.principal.userId);
+      return { status: 200, body: { devices } };
+    },
+  });
+
+  // POST .../paired-devices/:deviceId/revoke — guardian-only, live edge to
+  // childId. A revoked device's next request gets a distinct device_revoked
+  // error (packages/api/src/api.ts's handle()), never the generic
+  // network-failure path the client would otherwise see.
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/paired-devices/:deviceId/revoke',
+    action: null, identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_revoke_devices' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+
+      const now = new Date();
+      const edges = await edgesFor(pool, c.principal.userId);
+      const isLiveGuardian = edges.some((e) =>
+        e.childId === c.childId && e.role === 'guardian' && !e.restricted &&
+        !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
+      if (!isLiveGuardian) return { status: 403, body: { error: 'not_a_guardian_of_child' } };
+
+      const result = await revokePairedDevice(
+        pool, c.childId, c.params.deviceId, c.principal.userId, now);
+      if (!result.ok) return { status: 404, body: { error: result.reason } };
+      return { status: 200, body: { ok: true } };
     },
   });
 

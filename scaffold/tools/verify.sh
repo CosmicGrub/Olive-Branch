@@ -55,6 +55,7 @@ for spec in \
   "route contract: theme|server/test/theme_route.test.mjs" \
   "route contract: game favorites|server/test/game_favorites_route.test.mjs" \
   "route contract: child profile|server/test/child_profile_route.test.mjs" \
+  "route contract: device pairing & provisioning|server/test/device_pairing_route_test.mjs" \
   "device-tokens route contract|server/test/device_tokens_route.test.mjs" \
   "route contract: me/delete|server/test/me_delete_route.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
@@ -365,6 +366,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db theme preference (real RLS)|packages/db/test/theme_preference.test.mjs" \
             "db game favorites (real RLS)|packages/db/test/game_favorites.test.mjs" \
             "db child profile (real RLS)|packages/db/test/child_profile.test.mjs" \
+            "db device pairing & provisioning (real RLS)|packages/db/test/device_pairing.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \

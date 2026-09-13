@@ -1,4 +1,5 @@
 import pg from "pg";
+import { randomInt } from "node:crypto";
 import { DateTime } from "luxon";
 import { newChallenge, verifyPin } from "../../auth/src/auth.ts";
 import { can } from "../../family-graph/src/authorize.ts";
@@ -1678,14 +1679,153 @@ async function bootstrapGuardianInvite(pool, inviteId, displayName, now) {
     return { ok: true, userId, childId: row.child_id };
   });
 }
+function rowToPairedDevice(r) {
+  return {
+    id: r.id,
+    role: r.role,
+    targetId: r.target_id,
+    label: r.label,
+    pairedAt: r.paired_at,
+    revokedAt: r.revoked_at,
+    lastSeenAt: r.last_seen_at
+  };
+}
+function generateNumericCode() {
+  return randomInt(0, 1e6).toString().padStart(6, "0");
+}
+async function createDevicePairingCode(pool, role, targetId, createdBy) {
+  return withSession(pool, { roleName: "guardian", userId: createdBy, childId: null }, async (q) => {
+    let numericCode = null;
+    for (let attempt = 0; attempt < 10 && !numericCode; attempt++) {
+      const candidate = generateNumericCode();
+      const clash = await q(
+        `SELECT 1 FROM device_pairing_code
+          WHERE numeric_code = $1 AND redeemed_at IS NULL AND revoked_at IS NULL
+            AND expires_at > now()`,
+        [candidate]
+      );
+      if (!clash.length) numericCode = candidate;
+    }
+    if (!numericCode) {
+      throw new Error("createDevicePairingCode: exhausted numeric-code collision retries");
+    }
+    const rows = await q(
+      `INSERT INTO device_pairing_code (role, numeric_code, target_id, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, numeric_code, role, target_id, expires_at`,
+      [role, numericCode, targetId, createdBy]
+    );
+    const r = rows[0];
+    return {
+      id: r.id,
+      numericCode: r.numeric_code,
+      role: r.role,
+      targetId: r.target_id,
+      expiresAt: r.expires_at
+    };
+  });
+}
+async function cancelDevicePairingCode(pool, codeId, byUserId, now) {
+  return withSession(pool, { roleName: "guardian", userId: byUserId, childId: null }, async (q) => {
+    const rows = await q(`SELECT * FROM device_pairing_code WHERE id = $1 FOR UPDATE`, [codeId]);
+    if (!rows.length) return { ok: false, reason: "not_found" };
+    if (rows[0].redeemed_at) return { ok: false, reason: "already_redeemed" };
+    if (!rows[0].revoked_at) {
+      await q(
+        `UPDATE device_pairing_code SET revoked_at = $2 WHERE id = $1`,
+        [codeId, now.toISOString()]
+      );
+    }
+    return { ok: true };
+  });
+}
+const DEVICE_CODE_MAX_ATTEMPTS = 5;
+async function redeemDevicePairingCode(pool, code, role, now) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT * FROM device_pairing_code WHERE id::text = $1 OR numeric_code = $1 FOR UPDATE`,
+      [code]
+    );
+    if (!rows.length) return { ok: false, reason: "not_found" };
+    const row = rows[0];
+    if (row.revoked_at) return { ok: false, reason: "revoked" };
+    if (row.redeemed_at) return { ok: false, reason: "already_redeemed" };
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: "expired" };
+    if (row.failed_attempts >= DEVICE_CODE_MAX_ATTEMPTS) return { ok: false, reason: "locked" };
+    if (row.role !== role) {
+      await q(
+        `UPDATE device_pairing_code SET failed_attempts = failed_attempts + 1 WHERE id = $1`,
+        [row.id]
+      );
+      return { ok: false, reason: "role_mismatch" };
+    }
+    const label = `Paired ${now.toLocaleDateString(
+      "en-US",
+      { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }
+    )}`;
+    const inserted = await q(
+      `INSERT INTO paired_device (role, target_id, label, paired_via, paired_at)
+       VALUES ($1, $2, $3, $4, now())
+       RETURNING id`,
+      [row.role, row.target_id, label, row.id]
+    );
+    await q(`UPDATE device_pairing_code SET redeemed_at = now() WHERE id = $1`, [row.id]);
+    return { ok: true, deviceId: inserted[0].id, targetId: row.target_id, role: row.role };
+  });
+}
+async function pairedDevicesForChild(pool, childId, callerId) {
+  return withSession(pool, { roleName: "guardian", userId: callerId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT * FROM paired_device
+        WHERE (role = 'child' AND target_id = $1)
+           OR (role = 'guardian' AND target_id IN (
+                 SELECT DISTINCT user_id FROM effective_guardianship WHERE child_id = $1
+               ))
+        ORDER BY paired_at DESC`,
+      [childId]
+    );
+    return rows.map(rowToPairedDevice);
+  });
+}
+async function revokePairedDevice(pool, childId, deviceId, callerId, now) {
+  return withSession(pool, { roleName: "guardian", userId: callerId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT id, revoked_at FROM paired_device
+        WHERE id = $1
+          AND ((role = 'child' AND target_id = $2)
+            OR (role = 'guardian' AND target_id IN (
+                  SELECT DISTINCT user_id FROM effective_guardianship WHERE child_id = $2
+                )))
+        FOR UPDATE`,
+      [deviceId, childId]
+    );
+    if (!rows.length) return { ok: false, reason: "not_found" };
+    if (!rows[0].revoked_at) {
+      await q(
+        `UPDATE paired_device SET revoked_at = $2 WHERE id = $1`,
+        [deviceId, now.toISOString()]
+      );
+    }
+    return { ok: true };
+  });
+}
+async function isPairedDeviceRevoked(pool, deviceId) {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT revoked_at FROM paired_device WHERE id = $1`, [deviceId]);
+    if (!rows.length) return true;
+    return rows[0].revoked_at !== null;
+  });
+}
 function dbPort(pool) {
   return {
     edgesFor: (userId) => edgesFor(pool, userId),
-    withSession: (principal, fn) => withSession(pool, principal, fn)
+    withSession: (principal, fn) => withSession(pool, principal, fn),
+    isDeviceRevoked: (deviceId) => isPairedDeviceRevoked(pool, deviceId)
   };
 }
 export {
   CHALLENGE_TTL_MS,
+  DEVICE_CODE_MAX_ATTEMPTS,
   EXPENSE_RESOLUTIONS,
   INVITABLE_ROLES,
   PIN_LOCKOUT_MS,
@@ -1700,11 +1840,13 @@ export {
   bagItemsFor,
   bootstrapGuardianInvite,
   callSessionFor,
+  cancelDevicePairingCode,
   careNotesFor,
   certifiedExportBundleFor,
   childCtxFor,
   consumeChallenge,
   createChallenge,
+  createDevicePairingCode,
   createGuardianInvite,
   createPool,
   dbPort,
@@ -1718,12 +1860,14 @@ export {
   getGuardianInvite,
   guardiansOfChild,
   handoverNotesFor,
+  isPairedDeviceRevoked,
   lettersFor,
   logRunningLate,
   mediaArtifactFor,
   medicalRecordFor,
   medicationsFor,
   openLetterRow,
+  pairedDevicesForChild,
   parentGuardiansOfChild,
   persistCapturedMessage,
   pinCredentialFor,
@@ -1735,10 +1879,12 @@ export {
   recordExchangeArrival,
   recordGamePickerOpen,
   recordPinAttempt,
+  redeemDevicePairingCode,
   registerDeviceToken,
   removeDeviceTokenSystem,
   resolveExpense,
   revokeGuardianInvite,
+  revokePairedDevice,
   runningLateLogFor,
   sealLetterRow,
   setAvailabilityWindows,
