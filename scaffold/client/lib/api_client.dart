@@ -332,6 +332,18 @@ class OliveApi {
   static const childPairedDevices = '/v1/children/:childId/paired-devices';
   static const pairedDeviceRevoke = '/v1/children/:childId/paired-devices/:deviceId/revoke';
 
+  // --- parental controls: visibility & pacing (docs/superpowers/specs/
+  // 2026-09-13-parental-controls-pacing-design.md) ---------------------------
+  // The screen-entry PIN gate is a distinct, identity-only route (no
+  // :childId — it gates the SCREEN, not any one child's data), matching the
+  // spec's own offered example verbatim; see routes.mjs's own comment on
+  // this route for why it isn't a second branch on kioskPinVerify (that one
+  // checks EVERY guardian of a child, a different question).
+  static const verifyControlsPinPath = '/v1/me/verify-controls-pin';
+  static const childActivityOverrides = '/v1/children/:childId/activity-overrides';
+  static const childActivityOverride =
+      '/v1/children/:childId/activity-overrides/:activityKey';
+
   // --- call — real room-coordination + ringing (§5.19, §5.21, §5.25.2) ----
   // server/routes.mjs's own real replacement for local-call-room-server.mjs's
   // dev-only /room endpoint — see that route's own header comment for the
@@ -983,6 +995,71 @@ class OliveApi {
   /// that, not the revoked device's own detection of it.
   Future<void> revokePairedDevice(String childId, String deviceId) => _post(
       pairedDeviceRevoke.replaceFirst(':childId', childId).replaceFirst(':deviceId', deviceId),
+      const {});
+
+  /// The Parental Controls screen's one-shot entry gate -- POST
+  /// [verifyControlsPinPath], server/routes.mjs's real handler. Throws
+  /// [ApiException] (`pin_incorrect`/`pin_locked`/`pin_not_set`) on a bad
+  /// PIN, same as [createChildDevicePairingCode]'s own re-auth gate --
+  /// parental_controls_screen.dart's own PIN step catches it exactly the
+  /// way add_device_screen.dart's `_pinStep` already does. Nothing server-
+  /// side is escalated by a success; the CALLER remembers "verified this
+  /// app session" locally and reveals the Visibility/Pacing tabs itself.
+  Future<void> verifyControlsPin(String pin) => _post(verifyControlsPinPath, {'pin': pin});
+
+  /// Fetches this child's guardian-set visibility/pacing overrides -- GET
+  /// [childActivityOverrides], server/routes.mjs's real handler. Dual-
+  /// purpose by design (the route's own doc comment): a GUARDIAN session
+  /// calls this to render the settings screen, and a CHILD session calls
+  /// the exact same method to fold the results into her own catalogue
+  /// filtering (see activity_overrides.dart's `effectiveVisibility()`) --
+  /// this class makes no role distinction either, matching the server.
+  /// Returns `{overrides: [{activityKey, visible, minAgeOverride,
+  /// revealedAt, setBy, setAt}, ...]}`.
+  Future<Map<String, dynamic>> fetchActivityOverrides(String childId) =>
+      _get(childActivityOverrides, childId: childId);
+
+  /// Guardian-only partial upsert of one activity's override -- PUT
+  /// [childActivityOverride], server/routes.mjs's real handler. Every
+  /// parameter is optional, matching the wire body exactly, but at least
+  /// one must be supplied or the server 400s (`empty_body`) -- this method
+  /// does not pre-validate that itself, leaving the server's own
+  /// `invalidActivityOverrideBody()` as the one place that rule lives.
+  /// [resetMinAge] is the one way to send an explicit `minAgeOverride:
+  /// null` (reset just the age override back to the catalogue default,
+  /// independent of [visible]/[reveal]/[unreveal]) -- see routes.mjs's own
+  /// comment on why the server accepts that, and this PR's own description
+  /// for why it's a disclosed judgment call beyond the spec's literal body
+  /// shape. [reveal] and [unreveal] are mutually exclusive in the same
+  /// call, same as the server -- never set both true.
+  Future<void> setActivityOverride(
+    String childId,
+    String activityKey, {
+    bool? visible,
+    int? minAgeOverride,
+    bool resetMinAge = false,
+    bool? reveal,
+    bool? unreveal,
+  }) =>
+      _put(
+        childActivityOverride
+            .replaceFirst(':childId', childId)
+            .replaceFirst(':activityKey', activityKey),
+        body: {
+          'visible': ?visible,
+          if (resetMinAge) 'minAgeOverride': null else 'minAgeOverride': ?minAgeOverride,
+          'reveal': ?reveal,
+          'unreveal': ?unreveal,
+        },
+      );
+
+  /// Guardian-only -- clears an activity's override entirely (back to the
+  /// catalogue default in every column) -- DELETE [childActivityOverride],
+  /// server/routes.mjs's real handler. Idempotent on an already-cleared key.
+  Future<void> deleteActivityOverride(String childId, String activityKey) => _delete(
+      childActivityOverride
+          .replaceFirst(':childId', childId)
+          .replaceFirst(':activityKey', activityKey),
       const {});
 
   /// Requests a real WebAuthn REGISTRATION challenge -- POST the

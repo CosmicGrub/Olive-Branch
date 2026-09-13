@@ -53,6 +53,7 @@
 // test-file edits.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'activity_overrides.dart';
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
@@ -74,7 +75,8 @@ import 'wants_needs.dart';
 class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
     required this.sleepsUntilHandover, required this.unreadCount,
-    this.baseUrl, this.childId, this.sessionToken, this.httpClient});
+    this.baseUrl, this.childId, this.sessionToken, this.httpClient,
+    this.childAge = 7, this.overrides});
 
   final String childName;
   final ParentPresence? presence;
@@ -96,6 +98,20 @@ class ChildHome extends StatelessWidget {
   final String? childId;
   final String? sessionToken;
   final http.Client? httpClient;
+
+  // Parental controls, visibility & pacing (docs/superpowers/specs/2026-09-
+  // 13-parental-controls-pacing-design.md). [childAge] defaults to 7 —
+  // matching game_picker.dart's/games_hub.dart's own pre-existing default —
+  // for the same reason those already do: no real, live child-age source is
+  // threaded into this screen yet (a separate, pre-existing gap this
+  // feature does not newly create). [overrides] is this child's guardian-
+  // set overrides, fetched ONCE by child_home_live.dart and handed down as
+  // plain data, matching every field above; null (every existing caller,
+  // including every pre-existing test) renders exactly as before this
+  // feature existed — activity_overrides.dart's [isTileVisible] with a null
+  // map never hides anything.
+  final int childAge;
+  final Map<String, ActivityOverride>? overrides;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -168,8 +184,8 @@ class ChildHome extends StatelessWidget {
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) {
                   final gameSections = [
-                    MoreGamesSections(childName: childName),
-                    JokebookSection(childName: childName),
+                    MoreGamesSections(childName: childName, childAge: childAge, overrides: overrides),
+                    JokebookSection(childName: childName, childAge: childAge, overrides: overrides),
                   ];
                   final onPlay = buildGameNavigator(childName);
                   // Intuitivism pass, sub-project 3a (docs/superpowers/specs/
@@ -184,27 +200,31 @@ class ChildHome extends StatelessWidget {
                   if (baseUrl != null && childId != null && sessionToken != null) {
                     return LiveGamePickerScreen(
                       baseUrl: baseUrl!, childId: childId!, sessionToken: sessionToken!,
-                      childName: childName, httpClient: httpClient,
-                      onPlay: onPlay, extraSections: gameSections,
+                      childName: childName, childAge: childAge, httpClient: httpClient,
+                      onPlay: onPlay, extraSections: gameSections, overrides: overrides,
                     );
                   }
                   return GamePickerScreen(
-                    childName: childName, onPlay: onPlay, extraSections: gameSections,
+                    childName: childName, childAge: childAge, onPlay: onPlay,
+                    extraSections: gameSections, overrides: overrides,
                   );
                 }))),
-            TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,
-              badgeCount: unreadCount,
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => InboxScreen(
-                  childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
-                  baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                  httpClient: httpClient)))),
-            TieredTile(icon: Icons.auto_stories_outlined, label: 'Storyteller', featured: true,
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => StorytellerScreen(childName: childName)))),
-            TieredTile(icon: Icons.photo_camera_outlined, label: 'Show & tell', featured: true,
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => ShowcaseScreen(childName: childName)))),
+            if (isTileVisible(overrides, 'tile:messages'))
+              TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,
+                badgeCount: unreadCount,
+                onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => InboxScreen(
+                    childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
+                    baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                    httpClient: httpClient)))),
+            if (isTileVisible(overrides, 'tile:storyteller'))
+              TieredTile(icon: Icons.auto_stories_outlined, label: 'Storyteller', featured: true,
+                onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => StorytellerScreen(childName: childName)))),
+            if (isTileVisible(overrides, 'tile:showAndTell'))
+              TieredTile(icon: Icons.photo_camera_outlined, label: 'Show & tell', featured: true,
+                onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => ShowcaseScreen(childName: childName)))),
           ],
         ),
         const SizedBox(height: 10),
@@ -225,19 +245,22 @@ class ChildHome extends StatelessWidget {
             crossAxisCount: cross, mainAxisSpacing: 10, crossAxisSpacing: 10,
             mainAxisExtent: 84 * heightScale),
           children: [
-            TieredTile(icon: Icons.edit, label: 'Homework',
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => HomeworkScreen(childName: childName,
-                  baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                  httpClient: httpClient)))),
-            TieredTile(icon: Icons.star_border, label: 'My list',
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const WantsNeedsScreen()))),
-            TieredTile(icon: Icons.more_horiz, label: 'More for you',
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => ChildMoreScreen(childName: childName,
-                  baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                  httpClient: httpClient)))),
+            if (isTileVisible(overrides, 'tile:homework'))
+              TieredTile(icon: Icons.edit, label: 'Homework',
+                onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => HomeworkScreen(childName: childName,
+                    baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                    httpClient: httpClient)))),
+            if (isTileVisible(overrides, 'tile:myList'))
+              TieredTile(icon: Icons.star_border, label: 'My list',
+                onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const WantsNeedsScreen()))),
+            if (isTileVisible(overrides, 'tile:more'))
+              TieredTile(icon: Icons.more_horiz, label: 'More for you',
+                onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => ChildMoreScreen(childName: childName,
+                    baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                    httpClient: httpClient, childAge: childAge, overrides: overrides)))),
           ],
         ),
 

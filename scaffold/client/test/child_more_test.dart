@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:olive_client/activity_overrides.dart';
 import 'package:olive_client/child_more.dart';
 import 'package:olive_client/letters_screen.dart';
 
@@ -44,6 +45,24 @@ void main() {
       await t.tap(find.text('My journal'));
       await t.pumpAndSettle();
       expect(find.textContaining('Ivy'), findsWidgets);
+    });
+  });
+
+  group('parental controls, visibility & pacing — activity_overrides.dart consumption', () {
+    testWidgets('a guardian-hidden activity (visible:false) never renders', (t) async {
+      await t.pumpWidget(wrap(const ChildMoreScreen(
+        childName: 'Ivy', childAge: 9,
+        overrides: {'activity:doodle': ActivityOverride(activityKey: 'activity:doodle', visible: false)},
+      )));
+      expect(find.text('Doodle desk'), findsNothing);
+      // An unrelated activity is untouched.
+      expect(find.text('Colouring'), findsOneWidget);
+    });
+
+    testWidgets('a null overrides map behaves exactly as before this feature existed', (t) async {
+      await t.pumpWidget(wrap(const ChildMoreScreen(childName: 'Ivy', childAge: 9, overrides: null)));
+      expect(find.text('Doodle desk'), findsOneWidget);
+      expect(find.text('Colouring'), findsOneWidget);
     });
   });
 

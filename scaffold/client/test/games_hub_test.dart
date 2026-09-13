@@ -4,6 +4,7 @@
 // word search, Kim's game, word chain, scavenger hunt, find the thing).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/activity_overrides.dart';
 import 'package:olive_client/game_checkers.dart';
 import 'package:olive_client/game_findthing.dart';
 import 'package:olive_client/game_wordsearch.dart';
@@ -83,6 +84,58 @@ void main() {
       await t.pumpWidget(wrap(const GamesHubScreen()));
       final size = t.getSize(find.widgetWithText(InkWell, 'Checkers').first);
       expect(size.height, greaterThanOrEqualTo(48.0));
+    });
+
+    group('parental controls, visibility & pacing — the 8 newly-minAge\'d games', () {
+      // GamesHubScreen (not the bare MoreGamesSections) — its own
+      // SingleChildScrollView is what keeps this file's other tests from
+      // overflowing the default test viewport; matches every other test in
+      // this file.
+      testWidgets('at childAge 3 (below every one of the 8 real minAge values), none of them render',
+          (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen(childAge: 3)));
+        for (final title in <String>[
+          'Checkers', 'Chess', 'Battleship', 'Word search', "Kim's game",
+          'Word chain', 'Guess the word', 'Scavenger hunt',
+        ]) {
+          expect(find.text(title), findsNothing, reason: '"$title" should be paced out at age 3');
+        }
+        // "Story game" has no age concept at all — untouched by this pass.
+        expect(find.text('Story game'), findsOneWidget);
+      });
+
+      testWidgets('a guardian-hidden game (visible:false) never renders, even at an eligible age',
+          (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen(
+          childAge: 10,
+          overrides: {'game:checkers': ActivityOverride(activityKey: 'game:checkers', visible: false)},
+        )));
+        expect(find.text('Checkers'), findsNothing);
+        // An unrelated, still-eligible game is untouched.
+        expect(find.text('Chess'), findsOneWidget);
+      });
+
+      testWidgets('a guardian reveal resurrects a game its own real minAge would have excluded',
+          (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen(childAge: 0)));
+        // Sanity: at childAge 0 with no override at all, checkers (real
+        // minAge 6) is excluded.
+        expect(find.text('Checkers'), findsNothing);
+
+        await t.pumpWidget(wrap(GamesHubScreen(
+          childAge: 0,
+          overrides: {'game:checkers': ActivityOverride(activityKey: 'game:checkers', revealedAt: DateTime.now())},
+        )));
+        expect(find.text('Checkers'), findsOneWidget);
+      });
+
+      testWidgets('"Find the thing" (no age concept) is visibility-only', (t) async {
+        await t.pumpWidget(wrap(const GamesHubScreen(
+          childAge: 0,
+          overrides: {'game:findthing': ActivityOverride(activityKey: 'game:findthing', visible: false)},
+        )));
+        expect(find.text('Find the thing'), findsNothing);
+      });
     });
 
     group('responsive audit — Fold5, phone, and tablet/desktop widths', () {

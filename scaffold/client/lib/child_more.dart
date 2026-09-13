@@ -17,6 +17,7 @@
 // session directly rather than minting its own via devLoginFor().
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'activity_overrides.dart';
 import 'collection_screen.dart';
 import 'colour_daily.dart';
 import 'colouring_screen.dart';
@@ -44,6 +45,7 @@ class ChildMoreScreen extends StatelessWidget {
     this.childId,
     this.sessionToken,
     this.httpClient,
+    this.overrides,
   });
   final String childName;
   final int childAge;
@@ -51,6 +53,15 @@ class ChildMoreScreen extends StatelessWidget {
   final String? childId;
   final String? sessionToken;
   final http.Client? httpClient;
+
+  /// Parental controls, visibility & pacing (docs/superpowers/specs/2026-
+  /// 09-13-parental-controls-pacing-design.md) — visibility-only for the
+  /// two "Make things" activities below (neither has ever had a minAge
+  /// concept anywhere in this client or server, confirmed by grep — the
+  /// design spec's own "this pass does not invent a minAge for surfaces
+  /// that have never had one" line). Null means no live session; both tiles
+  /// render exactly as before this feature existed.
+  final Map<String, ActivityOverride>? overrides;
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -91,12 +102,14 @@ class ChildMoreScreen extends StatelessWidget {
             onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: 'Dad'))),
         ]),
         HubSection(title: 'Make things', children: [
-          HubTile(icon: Icons.brush_outlined, title: 'Doodle desk',
-            subtitle: 'Free strokes and stamps',
-            onTap: () => _open(context, DoodleDesk(childName: childName))),
-          HubTile(icon: Icons.palette_outlined, title: 'Colouring',
-            subtitle: 'A scene, coloured your way',
-            onTap: () => _open(context, const ColouringScreen())),
+          if (isTileVisible(overrides, 'activity:doodle'))
+            HubTile(icon: Icons.brush_outlined, title: 'Doodle desk',
+              subtitle: 'Free strokes and stamps',
+              onTap: () => _open(context, DoodleDesk(childName: childName))),
+          if (isTileVisible(overrides, 'activity:colouring'))
+            HubTile(icon: Icons.palette_outlined, title: 'Colouring',
+              subtitle: 'A scene, coloured your way',
+              onTap: () => _open(context, const ColouringScreen())),
           HubTile(icon: Icons.photo_library_outlined, title: 'My saved pictures',
             subtitle: 'Everything you have saved here',
             onTap: () => _open(context, AppGalleryScreen(gallery: demoAppGallery))),

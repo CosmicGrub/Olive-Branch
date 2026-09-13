@@ -520,8 +520,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
 </script>
 <script type="application/json" id="tl-manifest">
 {
-  "version": "0.49.74",
-  "spec": "0.49.74",
+  "version": "0.49.75",
+  "spec": "0.49.75",
   "nodeOnly": [
     { "module": "api/api", "dep": "node:http" },
     { "module": "auth/auth", "dep": "node:crypto" },
@@ -536,7 +536,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 7575,
+  "assertions": 7650,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -577,7 +577,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     "invitation": "Onboarding flow — the demo starts from an established family, so there is no invitation to accept.",
     "lockAdvisory": "Setup flow on a physical device; the browser has no kiosk to advise about.",
     "jokebook": "Child-side Flutter screen (client/lib/jokebook_screen.dart) reached from the game picker’s extraSections — the jokes engine itself is bridged (demo/src/play.ts, jk*) so the engine room can see it, but the demo renders no jokebook screen; same posture as themePicker.",
-    "themePicker": "Guardian-only Flutter theme customization suite (client/lib/theme_picker_screen.dart) — no JS-demo engine counterpart; the demo has no guardian-configurable ColorScheme concept to render."
+    "themePicker": "Guardian-only Flutter theme customization suite (client/lib/theme_picker_screen.dart) — no JS-demo engine counterpart; the demo has no guardian-configurable ColorScheme concept to render.",
+    "parentalControls": "Guardian-only, PIN-gated Flutter screen (client/lib/parental_controls_screen.dart), parental controls: visibility & pacing (docs/superpowers/specs/2026-09-13-parental-controls-pacing-design.md) — reads/writes a real guardian_activity_override row via a real POST/GET/PUT route; this demo has no server behind it at all (it's a static bridge over packages/*/src TS engines, not a running HTTP API), so there is nothing honest for a demo version of this screen to actually generate — same posture as addDevice's/themePicker's own entries, a real dependency this demo cannot fake without misrepresenting it as working."
   }
 }
 </script>

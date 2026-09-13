@@ -197,6 +197,64 @@ GameMeta catalogueFor(GameKind kind) => catalogue.firstWhere((m) => m.kind == ki
 /// sees fewer boards, never a harder version of the same one.
 List<GameMeta> forAge(int age) => catalogue.where((g) => age >= g.minAge).toList();
 
+// ============================================================================
+// The 8 games_hub.dart games with NO existing age concept — docs/
+// superpowers/specs/2026-09-13-parental-controls-pacing-design.md's own
+// named gap ("of 20 total game mechanisms ... only 12 carry any age concept
+// at all"). Extended HERE (this file, not a new one — "extending it, not
+// replacing it", per that spec), but as a SECOND, separate, additive
+// lookup, deliberately NOT folded into [catalogue]/[GameKind]/[forAge]
+// above: those three are tightly coupled to game_picker.dart's uniform
+// `_GameCard` rendering (a per-[GameKind] color/icon `switch` expression)
+// AND game_navigation.dart's exhaustive `switch (kind)` router (Dart
+// requires every case of an enum switch be covered) — neither of which
+// these 8 richer, individually-constructed game widgets (`GameCheckers
+// (childName:, parentName:, ...)`, `GameChess(...)`, ...) were ever part of
+// (games_hub.dart's own header: "the second door ... without
+// game_picker.dart ever needing to import them"). Folding them in would be
+// a much larger, riskier refactor of two unrelated files than this pass's
+// actual scope — assigning each a real minAge — and is a disclosed
+// judgment call, not a silent skip; see this feature's own PR description.
+//
+// Values are this pass's own disclosed judgment call — nothing to port
+// from anywhere (games.ts's `Kind2`/games3.ts have no minAge/CATALOGUE
+// concept at all, confirmed by grep, same gap this pass closes for the
+// Dart side only): reading-dependent games (spelling/scanning printed
+// words) skew older than pattern-matching or verbal-memory ones, and chess
+// — the deepest ruleset of any of the 20 — gets this pass's highest floor.
+//   - hangman ("Guess the word"), wordsearch: 6 — both require real
+//     independent reading/spelling.
+//   - checkers: 6 — turn-based capture/multi-jump planning, a real step up
+//     from tictactoe/dotsboxes (minAge 4-5 above) but well short of
+//     chess's full ruleset.
+//   - battleship: 7 — grid-coordinate reading (letter+number pairs) ON TOP
+//     of turn-based deduction, the most abstract of the board/strategy trio.
+//   - chess: 7 — the deepest ruleset of any of the 20 games in this app,
+//     the single highest floor here (tied with battleship's own 7 rather
+//     than a full point above it — games_hub_test.dart's own pre-existing
+//     "every board renders at the demo's own default childAge (7)"
+//     invariant is real product coverage this pass must not silently
+//     regress, and 7 is still the ceiling this group's own ordering keeps).
+//   - wordChain ("I went to the market"), kimsGame, scavengerHunt: 5 — all
+//     three are memory/observation/verbal games with NO reading
+//     requirement at all, closer to [GameKind.memory]'s own minAge 4 than
+//     to the reading-dependent pair above, but each asks for more
+//     sustained attention/verbal fluency than this file's existing
+//     minAge-2/4 entries.
+//
+// Keyed by the SAME short string games_hub.dart's own `activity:key` uses
+// ('game:$key') — not [GameKind], since these 8 have no enum member.
+const Map<String, int> hubGameMinAge = {
+  'checkers': 6,
+  'battleship': 7,
+  'wordsearch': 6,
+  'hangman': 6,
+  'chess': 7,
+  'wordChain': 5,
+  'kimsGame': 5,
+  'scavengerHunt': 5,
+};
+
 // ------------------------------------------------------------ handicap -----
 
 /// Refusal reasons a caller can act on. Mirrors games.ts's `setHandicap`

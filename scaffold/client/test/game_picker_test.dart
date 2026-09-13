@@ -3,6 +3,7 @@
 // re-deriving the pure logic, which game_logic_test.dart already covers.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/activity_overrides.dart';
 import 'package:olive_client/game_logic.dart';
 import 'package:olive_client/game_picker.dart';
 
@@ -43,6 +44,56 @@ void main() {
       expect(find.text('Dots and boxes'), findsNothing);
       expect(find.text('Make up a story'), findsNothing);
       expect(find.text('Guess the doodle'), findsNothing);
+    });
+
+    testWidgets('a guardian-hidden game (visible:false) never renders, even at an eligible age',
+        (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(
+        childAge: 8,
+        overrides: {'game:tictactoe': ActivityOverride(activityKey: 'game:tictactoe', visible: false)},
+      )));
+      await t.pumpAndSettle();
+      expect(find.text('Three in a row'), findsNothing);
+      // An unrelated game is untouched.
+      expect(find.text('Dots and boxes'), findsOneWidget);
+    });
+
+    testWidgets('a guardian reveal resurrects a game forAge() alone would have excluded', (t) async {
+      // Regression test for a real bug this feature's own PR found and
+      // fixed: filtering `forAge(childAge).where(effectiveVisibility(...))`
+      // applies the age gate TWICE, the second time unconditionally, so a
+      // guardian's revealedAt (meant to override the age gate) could never
+      // resurrect a game forAge() had already excluded. childAge: 0 makes
+      // forAge(0) return an EMPTY list, so this fails outright if that bug
+      // ever regresses, rather than just rendering a different, still-valid
+      // card.
+      await t.pumpWidget(wrap(GamePickerScreen(
+        childAge: 0,
+        overrides: {'game:tictactoe': ActivityOverride(activityKey: 'game:tictactoe', revealedAt: DateTime.now())},
+      )));
+      await t.pumpAndSettle();
+      expect(find.text('Three in a row'), findsOneWidget);
+      // Everything else stays correctly excluded — a reveal is per-item,
+      // never a blanket age-gate bypass.
+      expect(find.text('Dots and boxes'), findsNothing);
+    });
+
+    testWidgets('a raised minAgeOverride paces a game later than its catalogue default', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(
+        childAge: 4,
+        overrides: {'game:tictactoe': ActivityOverride(activityKey: 'game:tictactoe', minAgeOverride: 10)},
+      )));
+      await t.pumpAndSettle();
+      // Three in a row's real catalogue default is minAge 4 — she'd
+      // normally see it at this age; the override raises the real gate.
+      expect(find.text('Three in a row'), findsNothing);
+    });
+
+    testWidgets('a null overrides map behaves exactly as before this feature existed', (t) async {
+      await t.pumpWidget(wrap(const GamePickerScreen(childAge: 8, overrides: null)));
+      await t.pumpAndSettle();
+      expect(find.text('Three in a row'), findsOneWidget);
+      expect(find.text('Dots and boxes'), findsOneWidget);
     });
 
     testWidgets('at age 2, only the two younger-age visual activities show — the youngest gate '

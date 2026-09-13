@@ -22,6 +22,7 @@
 // press-in, driven 1:1 by her finger and settling well under the 400ms
 // "consequence" budget. Nothing here loops or moves on its own.
 import 'package:flutter/material.dart';
+import 'activity_overrides.dart';
 import 'form_factors.dart' as ff;
 import 'game_favorites_logic.dart' as fav;
 import 'game_logic.dart';
@@ -37,6 +38,7 @@ class GamePickerScreen extends StatelessWidget {
     this.ageAtLastOpen,
     this.onToggleFavorite,
     this.onSurpriseMe,
+    this.overrides,
   });
 
   /// Her own name, not an id — used only for a warm greeting. Optional so
@@ -105,6 +107,16 @@ class GamePickerScreen extends StatelessWidget {
   /// importing the favorites engine's own randomization concerns.
   final GameMeta? Function()? onSurpriseMe;
 
+  // Parental controls, visibility & pacing (docs/superpowers/specs/2026-09-
+  // 13-parental-controls-pacing-design.md) — this child's guardian-set
+  // overrides, fetched ONCE by the caller's own live wrapper (child_home
+  // _live.dart) and handed down as plain data, matching every field above
+  // (favoriteKinds, ageAtLastOpen, ...). Null means no live session at all
+  // — every game then renders exactly as it did before this feature
+  // existed (activity_overrides.dart's [effectiveVisibility] with a null
+  // map is a pure no-op filter).
+  final Map<String, ActivityOverride>? overrides;
+
   void _surpriseMe(BuildContext context) {
     final picked = onSurpriseMe?.call();
     if (picked != null) (onPlay ?? _notBuiltYet)(context, picked.kind);
@@ -112,7 +124,24 @@ class GamePickerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final games = forAge(childAge);
+    // House style, reconfirmed by the design spec: a hidden/not-yet-paced
+    // game simply never enters this list — no lock icon, no countdown,
+    // same discipline [forAge] itself already held every render on this
+    // screen to before this feature existed. Deliberately NOT `forAge
+    // (childAge).where(effectiveVisibility(...))` — that would apply the
+    // age gate TWICE, the second time unconditionally, so a guardian's
+    // `revealedAt` (meant to override the age gate) could never resurrect
+    // a game `forAge` had already excluded before `effectiveVisibility`
+    // ever got a chance to reconsider it. [effectiveVisibility] already
+    // reimplements `forAge`'s own `childAge >= defaultMinAge` comparison
+    // as its own no-override fallback path, so filtering the FULL
+    // [catalogue] through it once is both correct and non-redundant.
+    final games = catalogue.where((g) => effectiveVisibility(
+          overrides: overrides,
+          activityKey: 'game:${g.kind.name}',
+          childAge: childAge,
+          defaultMinAge: g.minAge,
+        )).toList();
     final recommended = favoriteKinds == null
         ? const <GameMeta>[]
         : _recommendedFor(games, favoriteKinds!, childAge, ageAtLastOpen);

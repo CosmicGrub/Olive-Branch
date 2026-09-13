@@ -38,6 +38,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'activity_overrides.dart';
 import 'api_client.dart';
 import 'game_favorites_logic.dart' as fav;
 import 'game_logic.dart';
@@ -55,12 +56,24 @@ class LiveGamePickerScreen extends StatefulWidget {
     this.onPlay,
     this.extraSections,
     this.httpClient,
+    this.overrides,
   });
 
   final String baseUrl;
   final String childId;
   final String? childName;
   final int childAge;
+
+  /// Parental controls, visibility & pacing (docs/superpowers/specs/2026-
+  /// 09-13-parental-controls-pacing-design.md) — this child's guardian-set
+  /// overrides. Fetched ONCE, by the caller's own earlier live wrapper
+  /// (child_home_live.dart's `_load()`) — the same session/load boundary
+  /// [extraSections] itself is already built against — and simply forwarded
+  /// to [GamePickerScreen] below, matching [childAge]'s own plain-pass-
+  /// through shape rather than this widget fetching a second, redundant
+  /// copy. Null means no live session; every game renders exactly as
+  /// before this feature existed.
+  final Map<String, ActivityOverride>? overrides;
 
   /// Her own, already-authenticated session token — set only from
   /// child_home.dart's own call site.
@@ -192,6 +205,7 @@ class _LiveGamePickerScreenState extends State<LiveGamePickerScreen> {
         childAge: widget.childAge,
         onPlay: widget.onPlay,
         extraSections: widget.extraSections,
+        overrides: widget.overrides,
         favoriteKinds: _favoriteKinds,
         ageAtLastOpen: _ageAtLastOpen,
         onToggleFavorite: _isChild ? null : _toggleFavorite,
