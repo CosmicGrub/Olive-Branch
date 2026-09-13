@@ -20,6 +20,11 @@ dependencies:
   # that file's own header for why that's the right tradeoff here).
   livekit_client: ^2.8.1
   http: ^1.2.2
+  # Network play (checkers, live) — packages/game-sync + server/game_tables.mjs's
+  # WSS relay. No dependency_override needed (unlike jitsi/bonsoir_android
+  # below): this package's published android/build.gradle already compiles
+  # clean against this project's toolchain.
+  web_socket_channel: ^3.0.3
   # Real homework-photo capture (§9.1, §20.2b) -- capture_gate.dart's real
   # path. Federated across android/ios/linux/macos/web/windows
   # (image_picker_* endorsed implementations) -- confirmed against pub.dev's
@@ -101,6 +106,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Used directly by networked_checkers_channel_test.dart to build a fake
+  # WebSocketChannel — declared explicitly rather than relying on it being a
+  # transitive dependency of web_socket_channel.
+  stream_channel: ^2.1.4
 
 # See third_party/PATCH.md for the full account of each entry below — never
 # a change to a plugin's own Kotlin/Java source, only a stale build-metadata

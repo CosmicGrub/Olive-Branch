@@ -89,6 +89,7 @@ const ENTRIES = [
   ["--format=esm","--platform=node","--packages=external","packages/db/src/pool.ts","--outfile=packages/db/src/pool.mjs"],
   ["--format=esm","--platform=node","packages/auth/src/attestation.ts","--outfile=packages/auth/src/attestation.mjs"],
   ["--format=esm","--platform=node","packages/jokes/src/jokes.ts","--outfile=packages/jokes/src/jokes.mjs"],
+  ["--format=esm","--platform=node","packages/game-sync/src/table.ts","--outfile=packages/game-sync/src/table.mjs"],
 ];
 
 function toOptions(args) {

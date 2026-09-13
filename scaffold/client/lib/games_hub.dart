@@ -32,6 +32,7 @@ import 'game_story.dart';
 import 'game_wordsearch.dart';
 import 'handicap_screen.dart';
 import 'hub_widgets.dart';
+import 'networked_checkers_lobby_screen.dart';
 
 void _open(BuildContext context, Widget screen) =>
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -68,10 +69,14 @@ class MoreGamesSections extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     HubSection(title: 'Board & strategy', children: [
-      if (_hubGameVisible('checkers'))
+      if (_hubGameVisible('checkers')) ...[
         HubTile(icon: Icons.grid_on, title: 'Checkers',
           subtitle: 'Async by nature — survives a dropped call',
           onTap: () => _open(context, GameCheckers(childName: childName, parentName: parentName))),
+        HubTile(icon: Icons.wifi_tethering, title: 'Checkers — play live',
+          subtitle: 'Two real devices, one game, through the family’s own server',
+          onTap: () => _open(context, const NetworkedCheckersLobbyScreen())),
+      ],
       if (_hubGameVisible('chess'))
         HubTile(icon: Icons.castle_outlined, title: 'Chess',
           subtitle: 'Real rules, real engine, patient by design',
