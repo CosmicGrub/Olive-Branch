@@ -4,6 +4,13 @@
 # Regenerated build artifact (npm run demo -> demo/build.mjs)
 DEMO.html
 
+# Compiled TS->JS build output, one per row of scaffold/tools/build.mjs's
+# ENTRIES list (esbuild, .ts -> sibling .mjs). `npm run build` regenerates
+# these on every `npm test`/`npm run verify` invocation and in the Docker
+# image (tools/verify.sh line ~45, Dockerfile) — never trust a committed
+# .mjs here, only ever a freshly built one.
+scaffold/packages/*/src/*.mjs
+
 # Dependencies
 node_modules/
 scaffold/node_modules/
