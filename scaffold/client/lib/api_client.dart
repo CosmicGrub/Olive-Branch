@@ -32,6 +32,23 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode, $error)';
 }
 
+/// device-pairing-provisioning design spec's own explicit requirement:
+/// "Handle the device_revoked error distinctly in api_client.dart (not the
+/// generic network-failure path)." A plain `ApiException` with `error ==
+/// 'device_revoked'` would technically already be distinguishable by field
+/// inspection, but every real caller of this (pairing_redeem_screen.dart's
+/// boot-time check, and any live screen's ordinary API call once a device
+/// has been revoked mid-session) needs to react the SAME way regardless of
+/// which call surfaced it: clear secure storage and route back to the
+/// pairing screen. A dedicated subtype makes that a single `on
+/// DeviceRevokedException catch (_) { ... }` at each call site, the same
+/// "catch the specific thing, not a string compare buried in a generic
+/// catch" discipline [ApiException] itself already models for every other
+/// distinguishable server reason in this file.
+class DeviceRevokedException extends ApiException {
+  DeviceRevokedException() : super(401, 'device_revoked');
+}
+
 /// One recognized homework problem, as returned by POST
 /// [OliveApi.homeworkCapture] on success. `hint` has already been through
 /// the server's real guardHint() (packages/homework/src/capture.ts) — it is
@@ -307,6 +324,21 @@ class OliveApi {
   // backs.
   static const guardianInviteBootstrap = '/v1/guardian-invites/:inviteId/bootstrap';
 
+  // --- device pairing & provisioning (docs/superpowers/specs/2026-09-12-
+  // device-pairing-provisioning-design.md) --------------------------------
+  // Replaces the build-time --dart-define=OLIVE_CHILD_ID/OLIVE_GUARDIAN_ID
+  // step with a real in-app pairing flow. Create requires a real guardian
+  // session (this class's own [_post]); redeem has none yet (the calling
+  // device has no identity to attach a Bearer token to), so it's a free
+  // function below, matching [fetchGuardianInvite]/[acceptGuardianInvite]'s
+  // own shape.
+  static const deviceChildPairingCodes = '/v1/children/:childId/device-pairing-codes';
+  static const deviceMyPairingCodes = '/v1/me/device-pairing-codes';
+  static const devicePairingCodeCancel = '/v1/device-pairing-codes/:codeId/cancel';
+  static const devicePairingRedeem = '/v1/device-pairing/redeem';
+  static const childPairedDevices = '/v1/children/:childId/paired-devices';
+  static const pairedDeviceRevoke = '/v1/children/:childId/paired-devices/:deviceId/revoke';
+
   // --- call — real room-coordination + ringing (§5.19, §5.21, §5.25.2) ----
   // server/routes.mjs's own real replacement for local-call-room-server.mjs's
   // dev-only /room endpoint — see that route's own header comment for the
@@ -394,6 +426,14 @@ class OliveApi {
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode >= 400) {
+      // device_revoked -- see [DeviceRevokedException]'s own doc comment.
+      // Checked by error STRING, not merely status code: 401 is also the
+      // ordinary expired/bad_signature/no_session shape every ApiException
+      // caller already handles generically, and only this one specific
+      // reason means "this exact device was cut off," not "sign in again."
+      if (res.statusCode == 401 && body['error'] == 'device_revoked') {
+        throw DeviceRevokedException();
+      }
       throw ApiException(res.statusCode, body['error'] as String? ?? 'error',
           message: body['message'] as String?, faults: body['faults'] as List<dynamic>?);
     }
@@ -905,6 +945,52 @@ class OliveApi {
     required String invitedEmail,
   }) => _post(guardianships, {'role': role, 'label': label, 'invitedEmail': invitedEmail},
       childId: childId);
+
+  /// Generates a CHILD-role pairing code for [childId] -- POST
+  /// [deviceChildPairingCodes], server/routes.mjs's real handler. Requires a
+  /// live guardian edge to [childId] (checked server-side; a 403
+  /// not_a_guardian_of_child comes back as [ApiException] like any other
+  /// non-2xx response here) and re-verifies the CALLER'S OWN pin (the design
+  /// spec's own "a light re-auth gate before minting a real device
+  /// credential"). Returns `{id, numericCode, expiresAt}` -- add_device_screen
+  /// .dart's real QR/code display.
+  Future<Map<String, dynamic>> createChildDevicePairingCode(String childId, String pin) =>
+      _post(deviceChildPairingCodes, {'pin': pin}, childId: childId);
+
+  /// Generates a GUARDIAN-role pairing code bound to the CALLER'S OWN
+  /// identity ("get the app on my other device") -- POST
+  /// [deviceMyPairingCodes]. Same PIN re-auth gate as
+  /// [createChildDevicePairingCode] above.
+  Future<Map<String, dynamic>> createMyDevicePairingCode(String pin) =>
+      _post(deviceMyPairingCodes, {'pin': pin});
+
+  /// Cancels a still-outstanding pairing code before it's redeemed -- POST
+  /// [devicePairingCodeCancel], server/routes.mjs's real handler. Scoped
+  /// purely by RLS ownership (only the creating guardian's own session can
+  /// reach it) -- same "not_found covers not-yours too" shape
+  /// [revokeGuardianInvite] above already documents. add_device_screen.dart's
+  /// real Cancel button.
+  Future<void> cancelDevicePairingCode(String codeId) => _post(
+      devicePairingCodeCancel.replaceFirst(':codeId', codeId), const {});
+
+  /// Lists every device paired to [childId]'s family -- GET
+  /// [childPairedDevices], server/routes.mjs's real handler. Requires a live
+  /// guardian edge to [childId]. Returns `{devices: [...]}` -- child-role
+  /// devices for [childId] AND guardian-role devices for every guardian
+  /// holding a live edge to [childId] (the server's own family-scoping,
+  /// reused from kiosk-pin/verify). paired_devices_list.dart's real list.
+  Future<Map<String, dynamic>> fetchPairedDevices(String childId) =>
+      _get(childPairedDevices, childId: childId);
+
+  /// Revokes one paired device -- POST [pairedDeviceRevoke], server/routes
+  /// .mjs's real handler. Requires a live guardian edge to [childId]. The
+  /// revoked device's OWN next request gets a distinct `device_revoked`
+  /// error (see [ApiException]/the `device_revoked` handling in
+  /// [OliveApi]'s callers) -- this call is the guardian-side trigger for
+  /// that, not the revoked device's own detection of it.
+  Future<void> revokePairedDevice(String childId, String deviceId) => _post(
+      pairedDeviceRevoke.replaceFirst(':childId', childId).replaceFirst(':deviceId', deviceId),
+      const {});
 
   /// Requests a real WebAuthn REGISTRATION challenge -- POST the
   /// [webauthnRegisterChallenge] path, server/routes.mjs's real handler.
@@ -1436,6 +1522,42 @@ Future<Map<String, dynamic>> bootstrapGuardianInvite(
     Uri.parse('$baseUrl${OliveApi.guardianInviteBootstrap.replaceFirst(':inviteId', inviteId)}'),
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'displayName': displayName}),
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body;
+}
+
+/// Redeems a device-pairing code -- POST [OliveApi.devicePairingRedeem],
+/// server/routes.mjs's real handler. No session: the calling device has no
+/// identity yet, the code itself (its own QR `id`, or the typed 6-digit
+/// number) is what authorizes this call, same reasoning
+/// [fetchGuardianInvite]/[acceptGuardianInvite] above already give for their
+/// own no-session shape. [role] is compiled into the calling build (which
+/// binary is asking), never user-editable -- pairing_redeem_screen.dart's
+/// own caller passes a build-time constant, not a value read from a widget.
+/// Returns `{sessionToken, deviceId, role, targetId}` on success (`role`/
+/// `targetId` included alongside the server's own minimal pair so the
+/// caller can persist all four fields the design spec's own Flow section
+/// describes without decoding the session token itself). Throws
+/// [ApiException] with
+/// the real server reason (expired/revoked/already_redeemed/role_mismatch/
+/// locked/not_found) on any non-2xx response -- pairing_redeem_screen.dart
+/// surfaces role_mismatch distinctly from a generic network failure, per
+/// the design spec's own Testing section.
+Future<Map<String, dynamic>> redeemDevicePairingCode(
+  String baseUrl,
+  String code,
+  String role, {
+  http.Client? client,
+}) async {
+  final c = client ?? http.Client();
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.devicePairingRedeem}'),
+    headers: {'content-type': 'application/json'},
+    body: jsonEncode({'code': code, 'role': role}),
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {

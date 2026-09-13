@@ -32,7 +32,9 @@ import 'games_hub.dart';
 import 'guardian_setup.dart';
 import 'handover_notes.dart';
 import 'hub_widgets.dart';
+import 'add_device_screen.dart';
 import 'invitation_screen.dart';
+import 'paired_devices_list.dart';
 import 'jokebook_screen.dart';
 import 'live_game_picker.dart';
 import 'lock_advisory_screen.dart';
@@ -567,6 +569,42 @@ class GuardianMoreScreen extends StatelessWidget {
               onAccept: () => Navigator.of(context).pop(),
               onDecline: () => Navigator.of(context).pop(),
             ))),
+          // Device pairing & provisioning (docs/superpowers/specs/2026-09-12
+          // -device-pairing-provisioning-design.md) — PARALLEL entry point to
+          // "Invite a co-parent" above: that one attaches a brand-new
+          // identity; this one attaches an ALREADY-EXISTING identity to a
+          // NEW DEVICE. Same live-session gate _openAvailability/
+          // _openThemePicker already use — generating a real code needs a
+          // real guardian session to re-verify the PIN against.
+          HubTile(icon: Icons.qr_code_outlined, title: 'Add a device',
+            subtitle: baseUrl != null
+              ? 'A QR code and a 6-digit fallback, good for 10 minutes'
+              : 'Needs a live session — no backend in this preview build',
+            onTap: () => (baseUrl != null && guardianId != null)
+              ? _open(context, AddDeviceScreen(
+                  baseUrl: baseUrl!, guardianId: guardianId!,
+                  // This hub only ever knows about ONE child at a time (the
+                  // same single-child scope every other tile here already
+                  // has — "Call $childName", the Court export tile, ...) —
+                  // not a new limitation this screen invents.
+                  children: [ChildOption(id: childId, name: childName)],
+                  httpClient: availabilityHttpClient,
+                ))
+              : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Adding a device needs a live session — no backend in this preview build.'),
+                  duration: Duration(seconds: 3)))),
+          HubTile(icon: Icons.devices_other_outlined, title: 'Paired devices',
+            subtitle: baseUrl != null
+              ? 'See and revoke every device paired to this family'
+              : 'Needs a live session — no backend in this preview build',
+            onTap: () => (baseUrl != null && guardianId != null)
+              ? _open(context, PairedDevicesListScreen(
+                  baseUrl: baseUrl!, guardianId: guardianId!, childId: childId,
+                  httpClient: availabilityHttpClient,
+                ))
+              : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Paired devices needs a live session — no backend in this preview build.'),
+                  duration: Duration(seconds: 3)))),
           HubTile(icon: Icons.key_outlined, title: 'Guardian setup',
             subtitle: baseUrl != null
               ? 'Set your kiosk PIN — passkey sign-in is still an honest stub'

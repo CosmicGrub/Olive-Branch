@@ -147,6 +147,25 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
   check('C A1', 'take-and-go/handover declares action:null', handoverRoute?.action, 'null');
   check('C A1', 'take-and-go/handover explicitly opts into identityScopedByHandler',
     handoverRoute?.identityScopedByHandler, 'true');
+  // Fifth/sixth/seventh, deliberate exceptions (device-pairing-provisioning
+  // design spec): the same "no Action exists for this in authorize.ts's
+  // enum" reasoning the guardianships route above already gives — a code/
+  // device-pairing decision has nothing to do with an EXISTING guardianship
+  // edge's own capabilities, and each handler checks edgesFor() directly
+  // instead (routes.mjs's own comment on each of these three routes).
+  const pairingCreateRoute = api.routes.find((r) => r.path === '/v1/children/:childId/device-pairing-codes');
+  check('C A1', 'device-pairing-codes create declares action:null', pairingCreateRoute?.action, 'null');
+  check('C A1', 'device-pairing-codes create explicitly opts into identityScopedByHandler',
+    pairingCreateRoute?.identityScopedByHandler, 'true');
+  const pairedDevicesListRoute = api.routes.find((r) => r.path === '/v1/children/:childId/paired-devices');
+  check('C A1', 'paired-devices list declares action:null', pairedDevicesListRoute?.action, 'null');
+  check('C A1', 'paired-devices list explicitly opts into identityScopedByHandler',
+    pairedDevicesListRoute?.identityScopedByHandler, 'true');
+  const pairedDeviceRevokeRoute = api.routes.find((r) =>
+    r.path === '/v1/children/:childId/paired-devices/:deviceId/revoke');
+  check('C A1', 'paired-devices revoke declares action:null', pairedDeviceRevokeRoute?.action, 'null');
+  check('C A1', 'paired-devices revoke explicitly opts into identityScopedByHandler',
+    pairedDeviceRevokeRoute?.identityScopedByHandler, 'true');
   // The exception is narrow: no OTHER :childId route in this repo may use it
   // silently. now/inbox both declare a real Action, not null.
   const otherChildRoutes = api.routes.filter((r) =>
@@ -154,7 +173,10 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
     && r.path !== '/v1/children/:childId/kiosk-pin/verify'
     && r.path !== '/v1/children/:childId/export'
     && r.path !== '/v1/children/:childId/guardianships'
-    && r.path !== '/v1/children/:childId/handover');
+    && r.path !== '/v1/children/:childId/handover'
+    && r.path !== '/v1/children/:childId/device-pairing-codes'
+    && r.path !== '/v1/children/:childId/paired-devices'
+    && r.path !== '/v1/children/:childId/paired-devices/:deviceId/revoke');
   check('C A1', 'every OTHER :childId route still declares a real (non-null) action',
     otherChildRoutes.every((r) => r.action !== null), 'true');
   // And the underlying registration guard still refuses an undeclared

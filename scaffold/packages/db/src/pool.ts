@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { randomInt } from 'node:crypto';
 import { DateTime } from 'luxon';
 import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
 import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
@@ -3692,11 +3693,314 @@ export async function bootstrapGuardianInvite(
   });
 }
 
+/**
+ * MASTERFILE §11 — device pairing & provisioning, docs/superpowers/specs/
+ * 2026-09-12-device-pairing-provisioning-design.md. Replaces the build-time
+ * `--dart-define=OLIVE_CHILD_ID=...`/`OLIVE_GUARDIAN_ID=...` step with a real
+ * in-app pairing flow for a family that already exists — see that spec's own
+ * "Explicitly out of scope" section for what this deliberately does not do
+ * (no family/child/guardian creation happens anywhere in this file).
+ */
+export type PairableRole = 'child' | 'guardian';
+
+export interface DevicePairingCode {
+  id: string;
+  numericCode: string;
+  role: PairableRole;
+  targetId: string;
+  expiresAt: string;
+}
+
+export interface PairedDevice {
+  id: string;
+  role: PairableRole;
+  targetId: string;
+  label: string;
+  pairedAt: string;
+  revokedAt: string | null;
+  lastSeenAt: string | null;
+}
+
+function rowToPairedDevice(r: any): PairedDevice {
+  return {
+    id: r.id, role: r.role, targetId: r.target_id, label: r.label,
+    pairedAt: r.paired_at, revokedAt: r.revoked_at, lastSeenAt: r.last_seen_at,
+  };
+}
+
+/**
+ * Six digits, generated via `node:crypto`'s CSPRNG (`randomInt`) — this
+ * file's own no-`Math.random()`-for-a-security-token discipline, matching
+ * auth.ts's `newChallenge()`/`randomBytes()` posture. Zero-padded: `randomInt
+ * (0, 1_000_000)` returns a plain integer, and a code like "42" typed/shown
+ * as four digits short would be a real, confusing product bug, not just a
+ * cosmetic one.
+ */
+function generateNumericCode(): string {
+  return randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+/**
+ * Guardian-facing generation — POST .../device-pairing-codes (child-role,
+ * live edge to childId, checked by the ROUTE before this is ever called,
+ * mirroring createGuardianInvite()'s own "route does the first lock" split)
+ * and POST /v1/me/device-pairing-codes (guardian-role, bound to the caller's
+ * own id). `createdBy` is both the RLS owner (device_pairing_code_owner_rw,
+ * 0032's migration) and the session this runs under.
+ *
+ * Numeric-code collision retry — the design spec's own note: `numeric_code`
+ * is NOT a primary key, so generation must actively avoid colliding with any
+ * CURRENTLY OUTSTANDING code (not expired/redeemed/revoked), not assume a
+ * random 6-digit value is unique. Bounded at 10 attempts, not an infinite
+ * loop — with 6 digits of space and a 10-minute expiry this is, per the
+ * spec's own words, "a rare, cheap check, not a real capacity concern"; a
+ * bound here is a defensive ceiling against a genuinely pathological state
+ * (thousands of simultaneously outstanding codes), never a path this
+ * function expects to actually hit.
+ */
+export async function createDevicePairingCode(
+  pool: pg.Pool, role: PairableRole, targetId: string, createdBy: string,
+): Promise<DevicePairingCode> {
+  return withSession(pool, { roleName: 'guardian', userId: createdBy, childId: null }, async (q) => {
+    let numericCode: string | null = null;
+    for (let attempt = 0; attempt < 10 && !numericCode; attempt++) {
+      const candidate = generateNumericCode();
+      const clash = await q(
+        `SELECT 1 FROM device_pairing_code
+          WHERE numeric_code = $1 AND redeemed_at IS NULL AND revoked_at IS NULL
+            AND expires_at > now()`,
+        [candidate],
+      );
+      if (!clash.length) numericCode = candidate;
+    }
+    if (!numericCode) {
+      throw new Error('createDevicePairingCode: exhausted numeric-code collision retries');
+    }
+    const rows = await q(
+      `INSERT INTO device_pairing_code (role, numeric_code, target_id, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, numeric_code, role, target_id, expires_at`,
+      [role, numericCode, targetId, createdBy],
+    );
+    const r = rows[0];
+    return { id: r.id, numericCode: r.numeric_code, role: r.role, targetId: r.target_id,
+             expiresAt: r.expires_at };
+  });
+}
+
+/**
+ * The design spec's own Flow section requires a working Cancel button
+ * ("plus a Cancel button (revokes it early)") and the migration's own
+ * `revoked_at` column exists specifically for it ("guardian can cancel
+ * before use") — but the spec's Routes list is silent on the exact path.
+ * Judgment call, disclosed in this PR: one route,
+ * `POST /v1/device-pairing-codes/:codeId/cancel`, scoped purely by RLS
+ * ownership (device_pairing_code_owner_rw) rather than by a childId path
+ * segment — the IDENTICAL shape `POST /v1/guardian-invites/:inviteId/revoke`
+ * already uses for the same reason (0014's own revokeGuardianInvite():
+ * "only 'not_found' and 'already_accepted' -- NOT 'not_your_invitation'...
+ * RLS scopes the SELECT... before this function ever sees a row"). Idempotent
+ * on a second cancel of an already-revoked code, same reasoning
+ * revokeGuardianInvite() gives for not rewriting a real revocation instant.
+ */
+export type CancelPairingCodeError = 'not_found' | 'already_redeemed';
+
+export async function cancelDevicePairingCode(
+  pool: pg.Pool, codeId: string, byUserId: string, now: Date,
+): Promise<{ ok: true } | { ok: false; reason: CancelPairingCodeError }> {
+  return withSession(pool, { roleName: 'guardian', userId: byUserId, childId: null }, async (q) => {
+    const rows = await q(`SELECT * FROM device_pairing_code WHERE id = $1 FOR UPDATE`, [codeId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    if (rows[0].redeemed_at) return { ok: false, reason: 'already_redeemed' };
+    if (!rows[0].revoked_at) {
+      await q(`UPDATE device_pairing_code SET revoked_at = $2 WHERE id = $1`,
+        [codeId, now.toISOString()]);
+    }
+    return { ok: true };
+  });
+}
+
+/**
+ * PIN_MAX_ATTEMPTS-equivalent for a device pairing code — kept as its own
+ * constant (not a re-export of PIN_MAX_ATTEMPTS) because the two are
+ * conceptually independent numbers that only happen to share a value today;
+ * a future change to one must not silently change the other.
+ *
+ * Deliberately NO matching "lockout MS" constant: PIN_LOCKOUT_MS (15 min) is
+ * LONGER than a device_pairing_code's own 10-minute `expires_at` window —
+ * once a code has accumulated DEVICE_CODE_MAX_ATTEMPTS failures, it has at
+ * most 10 minutes left to live regardless, so a real timed lockout would
+ * always be moot before it could ever clear. `failed_attempts >=
+ * DEVICE_CODE_MAX_ATTEMPTS` alone is therefore equivalent to "locked for the
+ * rest of this code's life," with no `locked_until` column needed — see the
+ * migration's own header and this PR's description for the fuller account
+ * of this judgment call.
+ *
+ * What actually increments this counter: NOT a blind numeric-code guess that
+ * matches no row at all (there is nothing to attribute that to — an
+ * inherent, disclosed limitation of a self-identifying exact-match code,
+ * unlike a PIN checked by hash against an already-identified guardian; see
+ * this PR's description). It increments on a ROLE MISMATCH against a
+ * correctly-identified, otherwise-still-live code — the design spec's own
+ * "Honest limitation on the role check" paragraph names exactly this threat
+ * ("a modified kiosk build could claim role: 'guardian' and redeem a
+ * guardian-scoped code if it obtained one out-of-band"): repeated wrong-role
+ * attempts against a code an attacker has genuinely obtained get locked out,
+ * mirroring the kiosk-PIN pattern's "repeated wrong guesses against
+ * something real eventually stop working," applied to the one guessable
+ * dimension a redeem attempt actually has once the code itself is known.
+ */
+export const DEVICE_CODE_MAX_ATTEMPTS = 5;
+
+export type RedeemPairingCodeError =
+  | 'not_found' | 'expired' | 'revoked' | 'already_redeemed' | 'role_mismatch' | 'locked';
+
+/**
+ * POST /v1/device-pairing/redeem's real handler — no session required (the
+ * calling device has none yet). Runs as `system`, mirroring 0014's own
+ * accept-flow precedent exactly (see this migration's own RLS comment).
+ *
+ * Atomic: FOR UPDATE taken on the code row FIRST, before any check runs —
+ * the identical "check-then-act as one row-locked step" shape
+ * attemptPinFor() already uses and already documents the concurrency bug it
+ * closes for. Success mints the paired_device row AND marks the code
+ * redeemed in the SAME transaction as that lock, so two concurrent redeem
+ * calls against the same code can never both succeed.
+ *
+ * `code` is either the QR's own `id` or the typed `numericCode` — compared
+ * as text against both columns in one query (`id::text = $1 OR numeric_code
+ * = $1`), never casting the input itself to uuid (a non-uuid numeric guess
+ * must never raise a Postgres cast error).
+ */
+export async function redeemDevicePairingCode(
+  pool: pg.Pool, code: string, role: PairableRole, now: Date,
+): Promise<
+  | { ok: true; deviceId: string; targetId: string; role: PairableRole }
+  | { ok: false; reason: RedeemPairingCodeError }
+> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT * FROM device_pairing_code WHERE id::text = $1 OR numeric_code = $1 FOR UPDATE`,
+      [code],
+    );
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const row = rows[0];
+    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (row.redeemed_at) return { ok: false, reason: 'already_redeemed' };
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: 'expired' };
+    if (row.failed_attempts >= DEVICE_CODE_MAX_ATTEMPTS) return { ok: false, reason: 'locked' };
+    if (row.role !== role) {
+      // See DEVICE_CODE_MAX_ATTEMPTS's own doc comment for why THIS is the
+      // "miss" this counter tracks, not a blind numeric guess.
+      await q(`UPDATE device_pairing_code SET failed_attempts = failed_attempts + 1 WHERE id = $1`,
+        [row.id]);
+      return { ok: false, reason: 'role_mismatch' };
+    }
+
+    const label = `Paired ${now.toLocaleDateString('en-US',
+      { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
+    const inserted = await q(
+      `INSERT INTO paired_device (role, target_id, label, paired_via, paired_at)
+       VALUES ($1, $2, $3, $4, now())
+       RETURNING id`,
+      [row.role, row.target_id, label, row.id],
+    );
+    await q(`UPDATE device_pairing_code SET redeemed_at = now() WHERE id = $1`, [row.id]);
+    return { ok: true, deviceId: inserted[0].id, targetId: row.target_id, role: row.role };
+  });
+}
+
+/**
+ * GET /v1/children/:childId/paired-devices — reuses kiosk-pin/verify's own
+ * "every live guardian of this child" scoping DIRECTLY (the identical
+ * `effective_guardianship WHERE child_id = $1` shape guardiansOfChild()
+ * already uses above), per the design spec's own Prior Art section. Runs
+ * under the CALLING guardian's own session (not system) — RLS's own
+ * paired_device_family_select policy (0032's migration) independently
+ * re-derives the same family scope as a second, real lock, the same
+ * belt-and-suspenders posture every RLS-backed function in this file
+ * already has; the route's own A3 childId-from-path + live-edge check is
+ * the first lock.
+ */
+export async function pairedDevicesForChild(
+  pool: pg.Pool, childId: string, callerId: string,
+): Promise<PairedDevice[]> {
+  return withSession(pool, { roleName: 'guardian', userId: callerId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT * FROM paired_device
+        WHERE (role = 'child' AND target_id = $1)
+           OR (role = 'guardian' AND target_id IN (
+                 SELECT DISTINCT user_id FROM effective_guardianship WHERE child_id = $1
+               ))
+        ORDER BY paired_at DESC`,
+      [childId],
+    );
+    return rows.map(rowToPairedDevice);
+  });
+}
+
+export type RevokePairedDeviceError = 'not_found';
+
+/**
+ * POST .../paired-devices/:deviceId/revoke — scoped to THIS exact childId
+ * (A3-equivalent at the pool layer: a guardian can only revoke a device that
+ * is actually within childId's family, not an arbitrary deviceId elsewhere
+ * in the system), backstopped by RLS's own paired_device_family_revoke
+ * policy. Idempotent on an already-revoked device, same reasoning
+ * revokeGuardianInvite()/cancelDevicePairingCode() above both give for not
+ * rewriting a real revocation instant on a double-tap.
+ */
+export async function revokePairedDevice(
+  pool: pg.Pool, childId: string, deviceId: string, callerId: string, now: Date,
+): Promise<{ ok: true } | { ok: false; reason: RevokePairedDeviceError }> {
+  return withSession(pool, { roleName: 'guardian', userId: callerId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT id, revoked_at FROM paired_device
+        WHERE id = $1
+          AND ((role = 'child' AND target_id = $2)
+            OR (role = 'guardian' AND target_id IN (
+                  SELECT DISTINCT user_id FROM effective_guardianship WHERE child_id = $2
+                )))
+        FOR UPDATE`,
+      [deviceId, childId],
+    );
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    if (!rows[0].revoked_at) {
+      await q(`UPDATE paired_device SET revoked_at = $2 WHERE id = $1`,
+        [deviceId, now.toISOString()]);
+    }
+    return { ok: true };
+  });
+}
+
+/**
+ * The one check packages/api/src/api.ts's `handle()` needs on EVERY request
+ * carrying a `deviceId` claim — assembled into `dbPort()` below. System-
+ * scoped: this is an identity/revocation check the API layer needs before
+ * any authorization decision runs, the same "runs before the first lock,
+ * not instead of it" posture edgesFor() already has for the identical
+ * reason (see that function's own doc comment).
+ *
+ * Fails CLOSED on a deviceId that resolves to no row at all — treated
+ * identically to "revoked," never to "not revoked." Nothing in this schema
+ * ever deletes a paired_device row, so this branch is not a real expected
+ * path, but a security check that fails OPEN on an unresolvable identity is
+ * a worse bug than one that never fires at all.
+ */
+export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT revoked_at FROM paired_device WHERE id = $1`, [deviceId]);
+    if (!rows.length) return true;
+    return rows[0].revoked_at !== null;
+  });
+}
+
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */
 export function dbPort(pool: pg.Pool): DbPort {
   return {
     edgesFor: (userId: string) => edgesFor(pool, userId),
     withSession: (principal, fn) => withSession(pool, principal, fn),
     siblingLinkFor: (childA: string, childB: string) => siblingLinkFor(pool, childA, childB),
+    isDeviceRevoked: (deviceId: string) => isPairedDeviceRevoked(pool, deviceId),
   };
 }

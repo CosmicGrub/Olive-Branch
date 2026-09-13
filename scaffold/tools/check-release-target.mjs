@@ -48,9 +48,20 @@ check(
 const liveSrc = R('client/lib/main_live.dart');
 check(
   'lib/main_live.dart still wires the real guardian PIN check',
-  /verifyPin:\s*_verifyGuardianPin/.test(liveSrc) && /_verifyGuardianPin/.test(liveSrc),
-  `Expected main_live.dart to still call verifyPin: _verifyGuardianPin — if the real check moved ` +
-    `elsewhere, update BOTH this guard and RELEASE_SIGNING.md to point at wherever it lives now.`
+  // Device pairing & provisioning (2026-09-12) gave `_verifyGuardianPin` a
+  // real `childId`/`sessionToken` it needs to resolve at boot (the
+  // dart-define value, or a redeemed/stored identity's own targetId/token)
+  // — `verifyPin:` can no longer hand it a bare, bound function reference,
+  // only a closure that calls it. This regex was widened to accept BOTH
+  // shapes rather than narrowed to just the new one, so a future revert to
+  // the simpler direct-reference form still passes too. The property this
+  // guard actually cares about — `_verifyGuardianPin` is genuinely what
+  // `verifyPin:` invokes, not merely present somewhere else in the file —
+  // holds either way.
+  /verifyPin:\s*(?:\(\w+\)\s*=>\s*)?_verifyGuardianPin\b/.test(liveSrc) && /_verifyGuardianPin/.test(liveSrc),
+  `Expected main_live.dart to still call verifyPin: _verifyGuardianPin (directly, or via a single` +
+    `-param closure that calls it) — if the real check moved elsewhere, update BOTH this guard ` +
+    `and RELEASE_SIGNING.md to point at wherever it lives now.`
 );
 
 console.log(`\n${'-'.repeat(56)}\n${pass} passed, ${fail} failed\n`);
