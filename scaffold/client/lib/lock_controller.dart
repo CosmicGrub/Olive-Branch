@@ -1,11 +1,12 @@
-// OLIVE BRANCH — child lock state machine. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline). MASTERFILE §5.20, §8.3.
+// OLIVE BRANCH — child lock state machine. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). MASTERFILE §5.20, §8.3.
 //
 // A 1:1 semantic port of packages/child-lock/src/lock.ts, kept deliberately
 // close to the TS original (same function names, same shapes, same ordering)
 // so the two stay auditable side by side — the same discipline this codebase
 // already applies to the cross-language kiosk-channel contract (see
-// kiosk_channel.dart / KioskBridge.kt / AssignedAccessBridge.cs).
+// kiosk_channel.dart / KioskBridge.kt / kiosk_bridge.cpp).
 //
 // One intentional adaptation: `escalatedUntil`/`cooldownUntil` are DateTime?
 // here rather than ISO-string-or-null. The TS version stores strings because

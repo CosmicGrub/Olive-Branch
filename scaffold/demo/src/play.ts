@@ -588,6 +588,8 @@ import * as Pipeline from '../../packages/messaging/src/pipeline.ts';
 import * as Push from '../../packages/transport/src/push.ts';
 import * as Capture from '../../packages/homework/src/capture.ts';
 import * as Snapshot from '../../packages/homework/src/snapshot.ts';
+import * as Hints from '../../packages/homework/src/hints.ts';
+import * as Split from '../../packages/homework/src/split.ts';
 import * as Schedule from '../../packages/custody/src/schedule.ts';
 import * as Canvas from '../../packages/annotation/src/canvas.ts';
 import * as Care from '../../packages/care/src/care.ts';
@@ -992,7 +994,45 @@ export function deviceView(): Any {
 export { Devices };
 
 
-S.a11ySet = { captions: false, reducedMotion: false, textScale: 1 };
+S.a11ySet = { captions: false, reducedMotion: false, dyslexiaFriendly: false,
+  highContrast: false, textScale: 1 };
+
+/**
+ * RENDER-02 fix (round-2 rendering pass, "Every Door, Opened") — the
+ * "Accessibility" screens (interactive and engine-room writeup) have always
+ * called T.a11yView(), which never existed. The click handlers that toggle
+ * a setting or change text scale already called T.a11ySet(key, value)
+ * expecting a SETTER, matching every other piece of toggleable state in this
+ * file (motionReduce, budgetTier, paneDock, ...) — but only the state object
+ * itself (S.a11ySet, above) was ever declared. No setter function existed
+ * either, so a toggle tap would have thrown the identical class of error the
+ * moment the screen rendered at all.
+ */
+export function a11yView(): Any {
+  const settings = S.a11ySet;
+  // The Fold's own 673px main screen, at the exact 1.5x example a11y.ts's own
+  // §8.8.3 comment already works through by hand ("effective width is
+  // 449px") — picking these numbers makes this view's live output match that
+  // comment's own worked example whenever textScale is left at its default.
+  const deviceW = 673, scale = settings.textScale || 1;
+  const layout = A11y.layoutFor(scale, deviceW);
+  return {
+    settings,
+    device: { w: deviceW },
+    effectiveWidth: Math.round(deviceW / scale),
+    columns: layout.columns, target: layout.minTapPx, minTarget: A11y.BASE_TAP_PX,
+    policy: A11y.captionPolicy(settings.captions ? 'live' : 'off'),
+    // "auditCaptions() on a persisted stream" (the screen's own copy) — the
+    // real property this demonstrates is captionsSurviveCall's retention-
+    // follows-call rule, shown against a captured, recorded stream.
+    badPolicy: A11y.captionsSurviveCall(A11y.captionPolicy('live_and_saved'), true),
+    audit: A11y.auditLabel('tap the blue button below'),
+  };
+}
+export function a11ySet(key: string, value: Any): Any {
+  S.a11ySet[key] = value;
+  return a11yView();
+}
 
 const call = (fn: Any, ...args: Any[]) => {
   try { return typeof fn === 'function' ? fn(...args) : fn; }
@@ -1013,7 +1053,7 @@ export function nineView(): Any {
       ['text scales offered', (A11y as Any).TEXT_SCALES],
       ['collapse to one column at', (A11y as Any).COLLAPSE_TO_ONE_COLUMN_AT ?? '—'],
     ]},
-    { id: 'emergency', title: 'Emergency card', spec: '§11.4', mod: keysOf(Emergency), probes: [
+    { id: 'emergency', title: 'Emergency card', spec: '§9.6.3', mod: keysOf(Emergency), probes: [
       ['US emergency', (Emergency as Any).US_EMERGENCY],
       ['poison control', (Emergency as Any).US_POISON_CONTROL],
       ['review after', (Emergency as Any).REVIEW_AFTER_DAYS + ' days'],
@@ -1027,7 +1067,7 @@ export function nineView(): Any {
       ['a payload with a score', call((GlobalAudit as Any).sweep, { score: 9 })],
       ['banned phrases', ((GlobalAudit as Any).GLOBAL_CHILD_PHRASES || []).slice(0, 6)],
     ]},
-    { id: 'i18n', title: 'Language', spec: '§8.9', mod: keysOf(I18n), probes: [
+    { id: 'i18n', title: 'Language', spec: '§8.4', mod: keysOf(I18n), probes: [
       ['languages', (I18n as Any).LANGS],
       ['right-to-left?', call((I18n as Any).isRtl, 'ar')],
       ['NEVER translated', (I18n as Any).NEVER_TRANSLATED],
@@ -1338,11 +1378,19 @@ export function engPush(): Any {
 
 // ---- homework / OCR -------------------------------------------------------
 export function engHomework(): Any {
-  return { exports: exportsOf(Capture), probes: [
+  return { exports: { ...exportsOf(Capture), ...exportsOf(Hints), ...exportsOf(Split) }, probes: [
     probe('skew threshold (measured, not guessed)', () =>
       pick(Capture as Any, ['MAX_SKEW_DEG','MIN_EDGE_PX','MIN_CONTRAST'])),
     probe('a retake is asked for, never demanded', () =>
       Object.keys(Capture).filter(k => /retake|advice|quality|assess/i.test(k))),
+    // §20.2b's OCR gap closed this version — the split/hint half of that
+    // pipeline (real server-side OCR itself needs tesseract.js, a real
+    // node-only dependency, and stays off this browser-only demo) is pure
+    // and genuinely demoable, so it runs for real here, not just imported.
+    probe('a numbered worksheet splits into separate problems', () =>
+      Split.splitProblems('1. 6 x 7 = ____\n2. 12 - 5 = ____')),
+    probe('a rule-based hint, never an answer', () =>
+      Hints.generateHint('6 x 7 = ____')),
   ]};
 }
 
@@ -1891,3 +1939,62 @@ export const GAMES_ALL = [
 
 export const gamesForAge = (age: number) => GAMES_ALL.filter(g => age >= g.minAge);
 export { CHESS_HANDICAPS, HANGMAN_LIVES, BS_SIZE, FLEET };
+
+// ---------------------------------------------------------------- jokebook --
+// packages/jokes — bridged so the engine room sees it (check-markup E2) and
+// so the same forAge()/randomJoke()/favourites the Flutter client ports are
+// the ones a browser visitor could drive. No demo screen renders these yet;
+// shell.html's manifest says so under notDemoed rather than pretending.
+import { forAge as jokesForAge, randomJoke, star as jokeStar, unstar as jokeUnstar,
+  isStarred as jokeIsStarred, favouritesChildView as jokeShelf,
+} from '../../packages/jokes/src/jokes.ts';
+
+export function jkOne(age: number, excludeId?: string): Any {
+  return randomJoke(age, excludeId ?? null);
+}
+export function jkForAge(age: number): Any { return jokesForAge(age); }
+export function jkStar(id: string): Any {
+  S.jokeFavs = jokeStar(S.jokeFavs ?? [], id, new Date().toISOString());
+  return jkShelfView();
+}
+export function jkUnstar(id: string): Any {
+  S.jokeFavs = jokeUnstar(S.jokeFavs ?? [], id);
+  return jkShelfView();
+}
+export function jkStarred(id: string): boolean { return jokeIsStarred(S.jokeFavs ?? [], id); }
+/** Her shelf, newest first, titles only — P2. */
+export function jkShelfView(): Any { return jokeShelf(S.jokeFavs ?? []); }
+
+// ------------------------------------------------ game picker favourites ---
+// packages/games/src/favorites.ts — bridged for the identical reason the
+// jokebook block above is (check-markup E2): so the engine room sees the
+// exact same star()/unstar()/favouritesFor()/newlyUnlocked()/randomGame()
+// the Flutter client's game_favorites_logic.dart ports. No demo screen
+// renders GamePickerScreen's Recommended row yet; shell.html's manifest
+// says so under notDemoed, same posture as jokebook/themePicker. `GAMES_ALL`
+// above is typed more broadly (`kind: string`) than favorites.ts's own
+// imported `GameMeta['kind']: GameKind` (the narrower 4-kind union
+// games.ts's real engine still covers) — the cast below is demo glue, not a
+// claim the two catalogues are the same one; esbuild does not type-check,
+// so this is a documented, deliberate widening, not a silent gap.
+import { star as gfStarRaw, unstar as gfUnstarRaw, favouritesFor, newlyUnlocked,
+  randomGame,
+} from '../../packages/games/src/favorites.ts';
+const GAMES_AS_META = GAMES_ALL as unknown as Parameters<typeof favouritesFor>[0];
+
+export function gfStar(kind: string): Any {
+  S.gameFavKinds = gfStarRaw(S.gameFavKinds ?? [], kind);
+  return gfFavourites();
+}
+export function gfUnstar(kind: string): Any {
+  S.gameFavKinds = gfUnstarRaw(S.gameFavKinds ?? [], kind);
+  return gfFavourites();
+}
+/** Her guardian's resolved favourites — P2, kind + title only. */
+export function gfFavourites(): Any { return favouritesFor(GAMES_AS_META, S.gameFavKinds ?? []); }
+export function gfNewlyUnlocked(age: number, ageAtLastOpen: number | null): Any {
+  return newlyUnlocked(GAMES_AS_META, age, ageAtLastOpen);
+}
+export function gfSurpriseMe(age: number, excludeKind?: string): Any {
+  return randomGame(GAMES_AS_META, age, excludeKind ?? null);
+}

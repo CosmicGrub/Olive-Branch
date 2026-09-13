@@ -1,5 +1,5 @@
 /**
- * MASTERFILE §11.4 — the emergency card.
+ * MASTERFILE §9.6.3 — the emergency card.
  *
  * A screen existed in MARKUP from v0.6.0. There was no engine behind it, which
  * meant the one surface in this product that might matter at 3 a.m. was a
@@ -63,10 +63,22 @@ export function buildCard(
   childName: string, dateOfBirth: string,
   contacts: Contact[], medical: MedicalFact[], lastReviewedAt: string | null,
 ): EmergencyCard {
+  // Real, live bug this closes: this used to unconditionally PREPEND the
+  // hardcoded US defaults and FILTER OUT any caller-supplied contact of
+  // these two kinds — so a guardian's corrected local number, a non-US
+  // emergency line, or a building-specific line was silently dropped, with
+  // no error, warning, or trace, on the one surface this file's own header
+  // says "must work when everything else does not." A guardian-supplied
+  // contact of a given kind now wins; the hardcoded default is only used
+  // when the guardian hasn't supplied one for that kind.
+  const supplied = (kind: 'emergency_services' | 'poison_control') =>
+    contacts.find(c => c.kind === kind);
   const withDefaults: Contact[] = [
-    { kind: 'emergency_services', label: 'Emergency', number: US_EMERGENCY, note: null },
-    { kind: 'poison_control', label: 'Poison control', number: US_POISON_CONTROL,
-      note: 'Free, 24 hours, and they would rather you called for nothing.' },
+    supplied('emergency_services')
+      ?? { kind: 'emergency_services', label: 'Emergency', number: US_EMERGENCY, note: null },
+    supplied('poison_control')
+      ?? { kind: 'poison_control', label: 'Poison control', number: US_POISON_CONTROL,
+        note: 'Free, 24 hours, and they would rather you called for nothing.' },
     ...contacts.filter(c => c.kind !== 'emergency_services' && c.kind !== 'poison_control'),
   ];
   return { childName, dateOfBirth, contacts: orderContacts(withDefaults),

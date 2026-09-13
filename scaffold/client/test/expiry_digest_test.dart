@@ -90,5 +90,69 @@ void main() {
       await pump(t, const ExpiryDigestScreen());
       expect(find.byIcon(Icons.settings), findsNothing);
     });
+
+    testWidgets('keeping everything shows the calm "all clear" empty state, '
+        'a real icon and message', (t) async {
+      await pump(t, const ExpiryDigestScreen());
+      // Keep every pending item forever, one tap at a time — the button list
+      // shrinks by one each time (proven by the earlier test), so always
+      // tapping the first is safe until none remain.
+      while (find.text('Keep forever').evaluate().isNotEmpty) {
+        await t.tap(find.text('Keep forever').first);
+        await t.pumpAndSettle();
+      }
+      expect(find.text('All clear.'), findsOneWidget);
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+
+      // 40, matching the house "nothing pending" empty-state idiom used
+      // throughout (journal_screen.dart, letters_screen.dart, teach_me.dart,
+      // weeks_screen.dart, inbox_screen.dart, etc.), not a one-off size.
+      final Icon icon = t.widget(find.byIcon(Icons.check_circle_outline));
+      expect(icon.size, 40.0);
+    });
+
+    testWidgets('the "keep forever" button meets the 48dp minimum tap target',
+        (t) async {
+      await pump(t, const ExpiryDigestScreen());
+      final Size size = t.getSize(find.ancestor(
+        of: find.text('Keep forever').first,
+        matching: find.byWidgetPredicate((Widget w) => w is OutlinedButton)));
+      expect(size.height, greaterThanOrEqualTo(48));
+    });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop widths', () {
+    Future<void> atSize(WidgetTester t, Size size, Widget child) async {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(wrap(child));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('renders on the Fold5 cover-screen width (344 CSS px) without overflow',
+        (t) async {
+      await atSize(t, const Size(344, 882), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders on the Fold5 unfolded main screen (~673x841) without overflow',
+        (t) async {
+      await atSize(t, const Size(673, 841), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a standard phone width (390 logical px) without overflow',
+        (t) async {
+      await atSize(t, const Size(390, 900), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a tablet/desktop width (1100, short-and-wide) without overflow',
+        (t) async {
+      await atSize(t, const Size(1100, 700), const ExpiryDigestScreen());
+      expect(t.takeException(), isNull);
+    });
   });
 }

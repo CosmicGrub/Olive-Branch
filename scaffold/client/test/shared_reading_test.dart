@@ -6,12 +6,30 @@
 //   - No page count or percentage ever reaches her screen.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/shared_reading.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
 Future<void> useNarrowSurface(WidgetTester tester) async {
   tester.view.physicalSize = const Size(390, 900);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -64,11 +82,17 @@ void main() {
         (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+      // Not shown before the last page — it is a genuine completion moment,
+      // not an always-there button.
+      expect(find.text('Read another one together'), findsNothing);
+
       // The grammar always emits exactly 12 lines regardless of seed.
       for (int i = 0; i < 11; i++) {
         await tester.tap(find.text('Turn the page'));
         await tester.pumpAndSettle();
       }
+      // pumpAndSettle above already proves the AnimatedSize grow-in settles
+      // rather than hanging mid-animation.
       expect(find.text('Read another one together'), findsOneWidget);
       expect(find.textContaining('%'), findsNothing);
     });
@@ -129,6 +153,75 @@ void main() {
       await tester.tap(find.text('His screen'));
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.settings), findsNothing);
+    });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      final String label = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('her screen renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('his screen renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+        await tester.tap(find.text('His screen'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // CRITICAL, child-reachable (see file header). On a wide tablet/desktop
+    // viewport the single column is only ever capped to a comfortable
+    // reading width and centered — NEVER split into two panes, which would
+    // have put both Her and His screens on screen at once. The Fold5 cover
+    // and phone widths are completely untouched by this cap.
+    testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (tester) async {
+      Future<void> pumpAt(Size size) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+        await tester.pump();
+      }
+
+      await pumpAt(const Size(1100, 900));
+      expect(tester.getSize(find.byKey(const Key('sharedReadingBody'))).width,
+          ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 820)); // Fold5 cover
+      expect(tester.getSize(find.byKey(const Key('sharedReadingBody'))).width, 344);
+
+      await pumpAt(const Size(390, 844)); // standard phone
+      expect(tester.getSize(find.byKey(const Key('sharedReadingBody'))).width, 390);
+    });
+
+    testWidgets('P2/structural — at the wide capped width, only ONE of '
+        'her/his screen is ever in the tree, never both at once', (tester) async {
+      await useSurface(tester, const Size(1100, 900));
+      await tester.pumpWidget(wrap(const SharedReadingScreen(childName: 'Ivy', readerName: 'Dad')));
+      await tester.pump();
+
+      // Defaults to her screen.
+      expect(find.byKey(const Key('herScreen')), findsOneWidget);
+      expect(find.byKey(const Key('hisScreen')), findsNothing);
+      expect(find.text('Turn the page'), findsOneWidget);
+
+      await tester.tap(find.text('His screen'));
+      await tester.pumpAndSettle();
+
+      // After the toggle, exactly the opposite — still exactly one, never
+      // both — proving the width cap did not turn the toggle into a split.
+      expect(find.byKey(const Key('hisScreen')), findsOneWidget);
+      expect(find.byKey(const Key('herScreen')), findsNothing);
+      expect(find.text('Turn the page'), findsNothing);
+      expect(find.textContaining('line 1 of 12'), findsOneWidget);
     });
   });
 }

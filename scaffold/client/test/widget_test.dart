@@ -4,10 +4,14 @@
 // reachable through the single real entry gate a family would see, not just
 // that each widget renders in isolation (see test/invariants_test.dart for
 // the per-widget behavioral checks, §8.1/§8.2/§8.3).
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:olive_client/exchange_screen.dart';
 import 'package:olive_client/expenses_screen.dart';
+import 'package:olive_client/game_checkers.dart';
+import 'package:olive_client/game_dotsboxes.dart';
+import 'package:olive_client/game_tictactoe.dart';
 import 'package:olive_client/main.dart';
 
 void main() {
@@ -45,6 +49,10 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("My child's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — intuitivism sub-project 2's
+    // 3-tier hierarchy moved "My list" further down than the default
+    // 800x600 test viewport shows without a scroll step.
+    await tester.ensureVisible(find.text('My list'));
     await tester.tap(find.text('My list'));
     await tester.pumpAndSettle();
     expect(find.text('Things I want'), findsOneWidget);
@@ -56,6 +64,7 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(tile));
     await tester.tap(find.text(tile));
     await tester.pumpAndSettle();
     expect(find.textContaining(expectedText), findsOneWidget,
@@ -73,6 +82,10 @@ void main() {
   testWidgets('GuardianHome Handover notes tile reaches the real screen',
       (WidgetTester tester) => expectGuardianTileReaches(
         tester, 'Handover notes', "can't be edited or removed"));
+
+  testWidgets('GuardianHome Care note tile reaches the real screen',
+      (WidgetTester tester) =>
+        expectGuardianTileReaches(tester, 'Care note', 'Not evidence'));
 
   // CallScreen's initState kicks off a real (async) fetch to the room-
   // coordination server via dart:io HttpClient. flutter_test stubs every
@@ -102,19 +115,25 @@ void main() {
   });
 
   // Exchange and Expenses used to be this suite's stub-feedback example, but
-  // this wiring pass gave both real destinations — see the parity tests
-  // below. Availability is the one guardian tile with no implementing
-  // screen anywhere in this batch (verified by grepping every new file's own
-  // "Renders MARKUP screen" comment for the 'availability' slug), so it is
-  // the honest remaining stub this test now exercises.
-  testWidgets('GuardianHome stub tiles show honest not-built-yet feedback',
+  // an earlier wiring pass gave both real destinations. Availability now has
+  // a real implementing screen too (client/lib/availability_screen.dart,
+  // backed by server/routes.mjs's real GET/PUT availability endpoints) — but
+  // OliveDemo's own static demo data (main.dart) still doesn't thread a real
+  // baseUrl/guardianId/childId into GuardianMoreScreen, so tapping it here
+  // still shows honest feedback: not "not built yet" (false, now that a real
+  // screen exists), but "not connected" — this specific demo entry point
+  // has no live session to hand the real screen. See
+  // guardian_more_test.dart's own "opens the REAL AvailabilityScreen once a
+  // live session is threaded in" test for proof the real screen itself
+  // opens once that wiring exists.
+  testWidgets('GuardianHome Availability tile shows honest not-connected feedback',
       (WidgetTester tester) async {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Availability'));
     await tester.pump();
-    expect(find.textContaining('not built yet'), findsOneWidget);
+    expect(find.textContaining('not connected'), findsOneWidget);
   });
 
   testWidgets('GuardianHome Exchange tile reaches the real screen',
@@ -122,6 +141,11 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — intuitivism sub-project 3b's
+    // tiering moved "Exchange" further down than the default 800x600 test
+    // viewport shows without a scroll step, the same reason ChildHome's own
+    // "My list"/"Homework" tests above need it.
+    await tester.ensureVisible(find.text('Exchange'));
     await tester.tap(find.text('Exchange'));
     await tester.pumpAndSettle();
     expect(find.byType(ExchangeScreen), findsOneWidget);
@@ -132,6 +156,8 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("The grown-up's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — see the 'Exchange' test above.
+    await tester.ensureVisible(find.text('Expenses'));
     await tester.tap(find.text('Expenses'));
     await tester.pumpAndSettle();
     expect(find.byType(ExpensesScreen), findsOneWidget);
@@ -142,6 +168,8 @@ void main() {
     await tester.pumpWidget(const OliveDemo());
     await tester.tap(find.text("My child's device"));
     await tester.pumpAndSettle();
+    // Standard tier, below Hero/Featured — see the 'My list' test above.
+    await tester.ensureVisible(find.text('Homework'));
     await tester.tap(find.text('Homework'));
     await tester.pumpAndSettle();
     expect(find.text('Take a photo'), findsOneWidget);
@@ -155,6 +183,56 @@ void main() {
     await tester.tap(find.text('Play together'));
     await tester.pumpAndSettle();
     expect(find.text('Games'), findsOneWidget);
+  });
+
+  testWidgets(
+      "the game picker's consolidated extraSections reach a real "
+      "games_hub.dart screen from the SAME 'Play together' tile — no "
+      "separate 'More games' door",
+      (WidgetTester tester) async {
+    // A tall surface so games_hub.dart's MoreGamesSections have somewhere
+    // real to scroll to below the age-gated grid, matching
+    // game_copy_pattern_test.dart's own established pattern for the same
+    // "reach it via scrolling on the real consolidated screen" case.
+    await tester.binding.setSurfaceSize(const Size(900, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play together'));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Checkers'), 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('Checkers'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameCheckers), findsOneWidget);
+  });
+
+  testWidgets("the game picker's Three in a row card reaches the real GameTicTacToe screen",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play together'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Three in a row'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameTicTacToe), findsOneWidget);
+    expect(find.textContaining('not built yet'), findsNothing);
+  });
+
+  testWidgets("the game picker's Dots and boxes card reaches the real GameDotsBoxes screen",
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const OliveDemo());
+    await tester.tap(find.text("My child's device"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Play together'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dots and boxes'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GameDotsBoxes), findsOneWidget);
+    expect(find.textContaining('not built yet'), findsNothing);
   });
 
   testWidgets("ChildHome's Messages tile reaches the real inbox",

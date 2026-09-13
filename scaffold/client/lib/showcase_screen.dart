@@ -1,6 +1,6 @@
-// OLIVE BRANCH — child shell, "show me". UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.10. Renders MARKUP
-// screen 'showcase'.
+// OLIVE BRANCH — child shell, "show me". No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// CHANGELOG v0.49.61). MASTERFILE §9.10. Renders MARKUP screen 'showcase'.
 //
 // She shows; he sees. Two doors in, both real:
 //   - An ask waiting for her, from a parent, by name — never a count, never
@@ -16,13 +16,15 @@
 //     shown and are never resurfaced to her as "you used to like this".
 //
 // No settings affordance, no score, no streak. This preview build has no
-// camera plugin wired up (see pubspec.yaml — jitsi_meet_flutter_sdk is the
+// camera plugin wired up (see pubspec.yaml — livekit_client is the
 // only media dependency, for calls), so "capture" below is an honest
 // stand-in: she picks from a small deck of things she could be holding up,
 // or writes a line, rather than the app pretending to open a camera it does
 // not have.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'showcase_logic.dart';
+import 'tabletop_split.dart';
 
 class ShowcaseScreen extends StatefulWidget {
   const ShowcaseScreen({super.key, this.childName = 'Ivy'});
@@ -106,43 +108,74 @@ class _ShowcaseScreenState extends State<ShowcaseScreen> {
       ...promptsFor(ShowKind.creation, _interests, _now, limit: 2),
       ...promptsFor(ShowKind.object, _interests, _now, limit: 2),
     }.toList();
+    final Widget askArea = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Hi ${widget.childName}! What do you want to show today?',
+        style: Theme.of(context).textTheme.headlineSmall),
+      const SizedBox(height: 16),
+      // Always available — "she starts it". No prompt, no schedule.
+      _SpontaneousButton(onTap: () => _openCapture()),
+      const SizedBox(height: 20),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: _openAsks.isEmpty
+            ? const SizedBox.shrink()
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Just for you',
+                  style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                for (final a in _openAsks)
+                  _AskCard(
+                    key: ValueKey(a.askId),
+                    ask: a,
+                    onShow: () => _openCapture(
+                      forAsk: _asks.firstWhere((x) => x.id == a.askId),
+                      prompt: a.prompt),
+                  ),
+                const SizedBox(height: 12),
+              ]),
+      ),
+    ]);
+    final Widget promptArea = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Or show something else', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final p in prompts)
+          ActionChip(label: Text(p), onPressed: () => _openCapture(prompt: p)),
+      ]),
+    ]);
     return Scaffold(
       appBar: AppBar(title: const Text('Show me')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('Hi ${widget.childName}! What do you want to show today?',
-          style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 16),
-        // Always available — "she starts it". No prompt, no schedule.
-        _SpontaneousButton(onTap: () => _openCapture()),
-        const SizedBox(height: 20),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _openAsks.isEmpty
-              ? const SizedBox.shrink()
-              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Just for you',
-                    style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  for (final a in _openAsks)
-                    _AskCard(
-                      key: ValueKey(a.askId),
-                      ask: a,
-                      onShow: () => _openCapture(
-                        forAsk: _asks.firstWhere((x) => x.id == a.askId),
-                        prompt: a.prompt),
-                    ),
-                  const SizedBox(height: 12),
-                ]),
-        ),
-        Text('Or show something else', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final p in prompts)
-            ActionChip(label: Text(p), onPressed: () => _openCapture(prompt: p)),
-        ]),
-      ])),
+      // LayoutBuilder sits ABOVE the scrollable, the same structural
+      // position child_home.dart's own LayoutBuilder already establishes —
+      // needed here (new) so the foldTabletop check below reads a genuinely
+      // bounded height. `askArea`/`promptArea` above are only ever combined
+      // for the ORIGINAL, byte-for-byte-unchanged ListView below, or for
+      // TabletopSplit's own new foldTabletop-only branch — never a second
+      // layout for any other posture.
+      body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
+        final posture = ff.postureFor(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
+        if (posture == ff.Posture.foldTabletop) {
+          // Intuitivism pass, sub-project 3c, Part 2 — a disclosed judgment
+          // call: this screen has no real camera preview to split (see this
+          // file's own header — capture is an honest stand-in, not a live
+          // camera), so `viewing` is what she'd look at/consider (the ask
+          // feed) and `controls` is what she'd tap to start showing
+          // something (the spontaneous button lives with the feed above;
+          // the prompt chips, the closest thing to a "send" affordance this
+          // screen has, sit below).
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: TabletopSplit(viewing: askArea, controls: promptArea),
+          );
+        }
+        return ListView(padding: const EdgeInsets.all(16), children: [
+          askArea,
+          promptArea,
+        ]);
+      })),
     );
   }
 }
@@ -154,15 +187,15 @@ class _AskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
+    margin: const EdgeInsets.only(bottom: 12),
     color: Theme.of(context).colorScheme.tertiaryContainer,
-    child: Padding(padding: const EdgeInsets.all(14), child: Column(
+    child: Padding(padding: const EdgeInsets.all(16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(ask.line, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5,
-          color: Theme.of(context).colorScheme.onTertiaryContainer)),
-        const SizedBox(height: 6),
-        Text(ask.prompt, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.onTertiaryContainer)),
+        Text(ask.line, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onTertiaryContainer)),
+        const SizedBox(height: 8),
+        Text(ask.prompt, style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onTertiaryContainer)),
         const SizedBox(height: 12),
         SizedBox(height: 48, width: double.infinity, child: FilledButton.icon(
           onPressed: onShow, icon: const Icon(Icons.videocam), label: const Text('Show them'))),
@@ -190,13 +223,14 @@ class _SpontaneousButton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(children: [
           const Text('⚡', style: TextStyle(fontSize: 32)),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Look what happened!', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800,
-              color: Theme.of(context).colorScheme.onPrimary)),
-            const SizedBox(height: 2),
-            Text('Show something right now — nobody has to ask', style: TextStyle(
-              fontSize: 12, color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9))),
+            Text('Look what happened!', style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onPrimary)),
+            const SizedBox(height: 4),
+            Text('Show something right now — nobody has to ask',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9))),
           ])),
         ]),
       ),
@@ -231,14 +265,14 @@ class _CaptureSheetState extends State<_CaptureSheet> {
     child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.outlineVariant, borderRadius: BorderRadius.circular(2)))),
-      const SizedBox(height: 14),
+      const SizedBox(height: 16),
       if (widget.prompt != null) ...[
-        Text(widget.prompt!, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        Text(widget.prompt!, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 12),
       ],
-      const Text('Pick what you are showing', style: TextStyle(fontWeight: FontWeight.w600)),
-      const SizedBox(height: 10),
-      Wrap(spacing: 10, runSpacing: 10, children: [
+      Text('Pick what you are showing', style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 12),
+      Wrap(spacing: 8, runSpacing: 8, children: [
         for (final choice in _artifactChoices)
           _ArtifactTile(
             emoji: choice.emoji, label: choice.label,
@@ -246,7 +280,7 @@ class _CaptureSheetState extends State<_CaptureSheet> {
             onTap: () => setState(() => _chosenLabel = choice.label),
           ),
       ]),
-      const SizedBox(height: 14),
+      const SizedBox(height: 16),
       TextField(controller: _noteController, minLines: 1, maxLines: 3,
         decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Or tell them about it…'),
         onChanged: (_) => setState(() {})),
@@ -266,13 +300,13 @@ class _ArtifactTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(14),
+    borderRadius: BorderRadius.circular(12),
     onTap: onTap,
     child: Container(
       constraints: const BoxConstraints(minWidth: 88, minHeight: 64),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         color: selected
           ? Theme.of(context).colorScheme.primaryContainer
           : Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -281,7 +315,7 @@ class _ArtifactTile extends StatelessWidget {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text(emoji, style: const TextStyle(fontSize: 26)),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 11), textAlign: TextAlign.center),
+        Text(label, style: Theme.of(context).textTheme.labelSmall, textAlign: TextAlign.center),
       ]),
     ),
   );

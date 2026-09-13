@@ -156,4 +156,43 @@ void main() {
       await t.pumpWidget(const SizedBox.shrink());
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('LiveDegradeScreen renders without overflow at ${entry.key}', (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        await t.pumpWidget(wrap(const LiveDegradeScreen(childName: 'Ivy', callerName: 'Dad')));
+        expect(t.takeException(), isNull);
+
+        // Drive the degradation all the way to the notice and back — the
+        // banner itself only mounts once a notice exists, so the narrow
+        // widths must be proven with it actually on screen too. At the wide
+        // short desktop aspect the phone frame's 4:3 AspectRatio pushes this
+        // control below the fold, so it must be scrolled into view first —
+        // same as the pre-existing end-to-end test above.
+        final wobble = find.text('Wobble the line');
+        await t.ensureVisible(wobble);
+        await t.pump();
+        await t.tap(wobble);
+        await t.pump(const Duration(seconds: 7));
+        expect(t.takeException(), isNull);
+
+        await t.pumpWidget(const SizedBox.shrink());
+      });
+    }
+  });
 }

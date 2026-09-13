@@ -100,7 +100,14 @@ class _CollectionScreenState extends State<CollectionScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         for (final c in _byRecency)
+          // Keyed by interestId, on the actual list item this time — not a
+          // descendant several levels in. `_byRecency` reorders on every add
+          // (the just-updated collection jumps to the front), and ListView's
+          // reconciliation matches unkeyed children by POSITION: without this
+          // key, a reorder would silently rebind an existing Element to a
+          // different collection's data instead of recognising it moved.
           _CollectionCard(
+            key: ValueKey(c.interestId),
             label: _interestLabels[c.interestId] ?? 'Things',
             collection: c,
             onAddAnother: () =>
@@ -111,7 +118,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 }
 
 class _CollectionCard extends StatelessWidget {
-  const _CollectionCard({required this.label, required this.collection, required this.onAddAnother});
+  const _CollectionCard({super.key, required this.label, required this.collection, required this.onAddAnother});
   final String label;
   final Collection collection;
   final VoidCallback onAddAnother;
@@ -121,13 +128,13 @@ class _CollectionCard extends StatelessWidget {
     final view = collectionChildView(collection);
     final sorted = [...collection.entries]..sort((a, b) => a.shownAt.compareTo(b.shownAt));
     return Card(
-      key: ValueKey(collection.interestId),
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(padding: const EdgeInsets.all(16), child: Column(
         crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+          Text(label, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          Text(view.line, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text(view.line, style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (int i = 0; i < sorted.length; i++)
@@ -180,15 +187,16 @@ class _AddEntrySheetState extends State<_AddEntrySheet> {
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 20),
     child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Show me another ${widget.label}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+      Text('Show me another ${widget.label}',
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
       const SizedBox(height: 12),
       TextField(controller: _nameController, autofocus: true,
         decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'What is it called?')),
-      const SizedBox(height: 10),
+      const SizedBox(height: 12),
       TextField(controller: _noteController, minLines: 1, maxLines: 2,
         decoration: const InputDecoration(
           border: OutlineInputBorder(), hintText: 'Anything else? (not required)')),
-      const SizedBox(height: 14),
+      const SizedBox(height: 16),
       SizedBox(width: double.infinity, height: 48, child: FilledButton(
         onPressed: _submit, child: const Text('Add it'))),
     ]),
@@ -203,19 +211,26 @@ class _SpecimenChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 48),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(24),
       color: isNewest
         ? Theme.of(context).colorScheme.primaryContainer
         : Theme.of(context).colorScheme.surfaceContainerHighest,
     ),
+    // Flexible, not a bare Text: a Wrap only bounds a chip's width by
+    // whatever room is left on its line, and a long specimen name plus the
+    // "new!" tag can exceed that on a narrow screen (e.g. the Fold5 cover's
+    // 344px) — bare Text has nothing to shrink into and overflows the Row
+    // instead of wrapping. Flexible lets it wrap onto a second line within
+    // the chip, which grows to fit rather than clipping or cutting the name.
     child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text(entry.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+      Flexible(child: Text(entry.name,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
       if (isNewest) ...[
-        const SizedBox(width: 6),
-        Text('new!', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.primary)),
+        const SizedBox(width: 8),
+        Text('new!', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
       ],
     ]),
   );

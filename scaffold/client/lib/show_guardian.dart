@@ -25,6 +25,7 @@
 //     she has been into. shelfChildView() in the TS original strips counts
 //     for her side; this screen is deliberately the one place they survive.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'showcase_logic.dart';
 
 class ShowGuardianScreen extends StatefulWidget {
@@ -33,10 +34,17 @@ class ShowGuardianScreen extends StatefulWidget {
     this.childName = 'Ivy',
     this.guardianLabel = 'Daddy', // his own word, §8.5.3 — not editable here
     this.childAge = 6,
+    // Preview/test-only override of the seeded pending-asks list — null
+    // means "use the two realistic seed asks" (the normal, shipped path).
+    // Exists so the empty "nothing waiting" state below is actually
+    // reachable and provable in a widget test, not just a branch nobody
+    // exercises.
+    this.initialAsks,
   });
   final String childName;
   final String guardianLabel;
   final int childAge;
+  final List<Ask>? initialAsks;
 
   @override
   State<ShowGuardianScreen> createState() => _ShowGuardianScreenState();
@@ -83,7 +91,7 @@ class _ShowGuardianScreenState extends State<ShowGuardianScreen> {
     // Deliberately worded differently from anything promptsFor() would
     // generate below, so a seeded ask and an auto-suggested chip never
     // collide on the exact same text.
-    _asks = [
+    _asks = widget.initialAsks ?? [
       Ask(id: 'ask1', fromUserId: 'dad', fromLabel: widget.guardianLabel,
         prompt: "Show me the biggest dinosaur you've got",
         askedAt: _now.subtract(const Duration(hours: 20))),
@@ -207,39 +215,100 @@ class _ShowGuardianScreenState extends State<ShowGuardianScreen> {
   Widget build(BuildContext context) {
     final shelfEntries = shelf(_collections, _interestLabels);
     final openAsks = _asks.where((a) => !a.answered).toList();
+
+    // Pane A — the ask composer, verbatim. Only ever pulled into a named
+    // list so the wide/narrow branches below can share it rather than
+    // diverging — same discipline message_banking.dart/letters_screen.dart
+    // use for their own two panes.
+    final List<Widget> composeChildren = <Widget>[
+      _AskComposer(
+        kind: _kind, onKindChanged: (k) => setState(() => _kind = k),
+        suggested: _suggested, controller: _promptController,
+        openCount: _openAskCount, onSend: _sendAsk,
+      ),
+    ];
+
+    // Pane B — the activity/reply feed: pending asks, the shelf, and the
+    // received-show reply tiles, stacked together as a unit in the same
+    // order this screen always rendered them.
+    final List<Widget> listChildren = <Widget>[
+      Text('Waiting to hear back', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      if (openAsks.isEmpty)
+        const _NothingWaitingNotice()
+      else
+        for (final a in openAsks) _PendingAskTile(ask: a, agePhrase: _agePhrase(a)),
+      const SizedBox(height: 20),
+      Text('What she has been collecting', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      SizedBox(height: 104, child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: shelfEntries.length,
+        separatorBuilder: (context, i) => const SizedBox(width: 12),
+        itemBuilder: (context, i) => _ShelfCard(entry: shelfEntries[i]),
+      )),
+      const SizedBox(height: 20),
+      Text('What she has shown you', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      for (final s in _shows)
+        _ReceivedShowTile(show: s, controller: _controllerFor(s.id), onSend: () => _sendReply(s)),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: Text("${widget.childName}'s show & tell")),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        _AskComposer(
-          kind: _kind, onKindChanged: (k) => setState(() => _kind = k),
-          suggested: _suggested, controller: _promptController,
-          openCount: _openAskCount, onSend: _sendAsk,
-        ),
-        const SizedBox(height: 20),
-        Text('Waiting to hear back', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        if (openAsks.isEmpty)
-          const Padding(padding: EdgeInsets.symmetric(vertical: 4),
-            child: Text('Nothing waiting right now.', style: TextStyle(color: Colors.black54)))
-        else
-          for (final a in openAsks) _PendingAskTile(ask: a, agePhrase: _agePhrase(a)),
-        const SizedBox(height: 20),
-        Text('What she has been collecting', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        SizedBox(height: 104, child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: shelfEntries.length,
-          separatorBuilder: (context, i) => const SizedBox(width: 10),
-          itemBuilder: (context, i) => _ShelfCard(entry: shelfEntries[i]),
-        )),
-        const SizedBox(height: 20),
-        Text('What she has shown you', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        for (final s in _shows)
-          _ReceivedShowTile(show: s, controller: _controllerFor(s.id), onSend: () => _sendReply(s)),
-      ])),
+      // SingleChildScrollView + Column, NOT ListView — a sliver list only
+      // realizes children near the viewport, which would silently drop
+      // pending asks/shelf/received-show tiles scrolled below the fold from
+      // the widget tree. Same fix message_banking.dart/letters_screen.dart
+      // already document for the same bug class.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — same threshold message_banking.dart/letters_screen.dart
+        // use for their own two-pane splits.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: wide
+            ? Row(key: const Key('showGuardianTwoPaneRow'),
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: composeChildren)),
+                  const SizedBox(width: 24),
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start, children: listChildren)),
+                ])
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ...composeChildren,
+                const SizedBox(height: 20),
+                ...listChildren,
+              ]),
+        );
+      })),
     );
   }
+}
+
+/// The honest empty state for "waiting to hear back": genuinely nothing
+/// pending is a calm, good state (not an error, nothing to fix), so this
+/// stays a small icon + the same plain sentence rather than a bare Text
+/// node or anything implying she owes a reply.
+class _NothingWaitingNotice extends StatelessWidget {
+  const _NothingWaitingNotice();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(children: [
+      Icon(Icons.check_circle_outline, size: 20,
+        color: Theme.of(context).colorScheme.onSurfaceVariant),
+      const SizedBox(width: 8),
+      Expanded(child: Text('Nothing waiting right now.',
+        style: Theme.of(context).textTheme.bodyMedium
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+    ]),
+  );
 }
 
 class _AskComposer extends StatelessWidget {
@@ -263,36 +332,36 @@ class _AskComposer extends StatelessWidget {
     // composer compact regardless of how many kinds or prompts exist.
     final kinds = ShowKind.values.where((k) => k != ShowKind.spontaneous).toList();
     return Card(
-      child: Padding(padding: const EdgeInsets.all(14), child: Column(
+      child: Padding(padding: const EdgeInsets.all(16), child: Column(
         crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Expanded(child: Text('Ask her to show you something',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+            Expanded(child: Text('Ask her to show you something',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
             _CapBadge(openCount: openCount),
           ]),
-          const SizedBox(height: 10),
-          SizedBox(height: 34, child: ListView.separated(
+          const SizedBox(height: 12),
+          SizedBox(height: 32, child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: kinds.length,
-            separatorBuilder: (context, i) => const SizedBox(width: 6),
+            separatorBuilder: (context, i) => const SizedBox(width: 8),
             itemBuilder: (context, i) => ChoiceChip(
               label: Text(kinds[i].title), selected: kinds[i] == kind,
               onSelected: (_) => onKindChanged(kinds[i])),
           )),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           if (suggested.isNotEmpty)
-            SizedBox(height: 34, child: ListView.separated(
+            SizedBox(height: 32, child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: suggested.length,
-              separatorBuilder: (context, i) => const SizedBox(width: 6),
+              separatorBuilder: (context, i) => const SizedBox(width: 8),
               itemBuilder: (context, i) => ActionChip(
-                label: Text(suggested[i], style: const TextStyle(fontSize: 12)),
+                label: Text(suggested[i], style: Theme.of(context).textTheme.bodySmall),
                 onPressed: () => controller.text = suggested[i]),
             )),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           TextField(controller: controller, decoration: const InputDecoration(
             border: OutlineInputBorder(), hintText: 'Or write your own ask…')),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           SizedBox(width: double.infinity, height: 48, child: FilledButton(
             onPressed: onSend, child: const Text('Send the ask'))),
         ])),
@@ -309,12 +378,12 @@ class _CapBadge extends StatelessWidget {
     final atCap = openCount >= maxPendingAsks;
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         color: atCap ? scheme.errorContainer : scheme.secondaryContainer),
       child: Text('$openCount of $maxPendingAsks waiting',
-        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700,
           color: atCap ? scheme.onErrorContainer : scheme.onSecondaryContainer)),
     );
   }
@@ -344,15 +413,16 @@ class _ShelfCard extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     width: 150,
     padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
+    decoration: BoxDecoration(borderRadius: BorderRadius.circular(12),
       color: Theme.of(context).colorScheme.surfaceContainerHighest),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(entry.label, style: const TextStyle(fontWeight: FontWeight.w700)),
-        Text('${entry.count} shown', style: const TextStyle(fontSize: 12)),
+        Text('${entry.count} shown', style: Theme.of(context).textTheme.bodySmall),
         if (entry.newest != null)
           Text('newest: ${entry.newest}', overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            style: Theme.of(context).textTheme.labelSmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ]),
   );
 }
@@ -365,7 +435,7 @@ class _ReceivedShowTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
+    margin: const EdgeInsets.only(bottom: 12),
     child: Padding(padding: const EdgeInsets.all(12), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -373,13 +443,14 @@ class _ReceivedShowTile extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(show.summary, style: const TextStyle(fontWeight: FontWeight.w600))),
         ]),
-        const SizedBox(height: 2),
-        Text(show.shownAgo, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
-        const SizedBox(height: 10),
+        const SizedBox(height: 4),
+        Text(show.shownAgo, style: Theme.of(context).textTheme.labelSmall
+          ?.copyWith(color: Theme.of(context).colorScheme.outline)),
+        const SizedBox(height: 12),
         if (show.replied)
           Row(children: [
             Icon(Icons.check_circle, size: 18, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             const Text('Replied', style: TextStyle(fontWeight: FontWeight.w600)),
           ])
         else
@@ -387,7 +458,10 @@ class _ReceivedShowTile extends StatelessWidget {
             Expanded(child: TextField(controller: controller,
               decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), hintText: 'Reply…'))),
             const SizedBox(width: 8),
-            SizedBox(height: 44, child: FilledButton(onPressed: onSend, child: const Text('Send'))),
+            // Was 44dp — under this app's 48dp tap-target floor. This is a
+            // genuine interactive control (send this reply), not a dense
+            // board-game cell, so it gets the real minimum.
+            SizedBox(height: 48, child: FilledButton(onPressed: onSend, child: const Text('Send'))),
           ]),
       ])),
   );

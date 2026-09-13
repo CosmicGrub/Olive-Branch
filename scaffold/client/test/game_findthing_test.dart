@@ -110,13 +110,23 @@ void main() {
     });
 
     testWidgets('the difficulty chips and hint control are laid out responsively', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(344, 800)); // Fold5 cover screen width
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+      // unfolded main screens), plus a standard phone width and a
+      // short-and-wide desktop/tablet width now that Windows is a real
+      // target.
+      await tester.binding.setSurfaceSize(const Size(344, 882)); // Fold5 cover screen width
       await tester.pumpWidget(wrap(const GameFindThingScreen()));
       expect(tester.takeException(), isNull);
       await tester.binding.setSurfaceSize(const Size(673, 841)); // Fold5 unfolded main screen
       await tester.pumpWidget(wrap(const GameFindThingScreen()));
       expect(tester.takeException(), isNull);
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(390, 844)); // a standard phone width
+      await tester.pumpWidget(wrap(const GameFindThingScreen()));
+      expect(tester.takeException(), isNull);
+      await tester.binding.setSurfaceSize(const Size(1100, 800)); // a tablet/desktop width
+      await tester.pumpWidget(wrap(const GameFindThingScreen()));
+      expect(tester.takeException(), isNull);
     });
   });
 }

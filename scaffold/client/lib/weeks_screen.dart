@@ -1,7 +1,7 @@
-// OLIVE BRANCH — child shell, weeks. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §8.2, §8.2.5, P3.
-// Renders MARKUP screen 'weeks': "Custody rhythm as she experiences it;
-// countdowns in sleeps."
+// OLIVE BRANCH — child shell, weeks. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §8.2, §8.2.5, P3. Renders MARKUP screen 'weeks':
+// "Custody rhythm as she experiences it; countdowns in sleeps."
 //
 // Two invariants this widget tree enforces:
 //   - Every date this screen touches (`CustodyNight.dateIso`, the ISO strings
@@ -15,6 +15,7 @@
 //     was written to close.
 import 'package:flutter/material.dart';
 import 'calendar_day_logic.dart';
+import 'form_factors.dart' as ff;
 
 class CustodyNight {
   const CustodyNight({required this.dateIso, required this.withWhom});
@@ -74,11 +75,28 @@ class WeeksScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (nights.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
       return Scaffold(
         appBar: AppBar(title: const Text('My weeks')),
-        body: const SafeArea(child: Center(
-          child: Padding(padding: EdgeInsets.all(24),
-            child: Text("Nothing to show yet.", style: TextStyle(fontSize: 15))))),
+        body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool capWidth = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+          final Widget content = Center(
+            child: Padding(padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.nights_stay_outlined, size: 40, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 12),
+                Text('Nothing to show yet.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+              ])));
+          return capWidth
+              ? Center(
+                  child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                      child: content))
+              : content;
+        })),
       );
     }
     final String currentWith = nights.first.withWhom;
@@ -89,39 +107,57 @@ class WeeksScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('My weeks')),
-      body: SafeArea(child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          Text("$childName's weeks", style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 10),
-          _RhythmHeader(
-            currentWith: currentWith,
-            currentColor: _colorFor(currentWith),
-            nextWith: changeIdx == -1 ? null : nights[changeIdx].withWhom,
-            nextColor: changeIdx == -1 ? null : _colorFor(nights[changeIdx].withWhom),
-            sleeps: sleepsUntilChange,
-          ),
-          const SizedBox(height: 22),
-          const Text('Every circle is one sleep. Today is the bright one.',
-            style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-          const SizedBox(height: 12),
-          Wrap(spacing: 10, runSpacing: 14, children: <Widget>[
-            for (int i = 0; i < nights.length; i++)
-              _NightBead(
-                night: nights[i],
-                color: _colorFor(nights[i].withWhom),
-                isToday: i == 0,
-                relativeLabel: _relativeNightLabel(
-                  sleepsBetween(nights.first.dateIso, nights[i].dateIso)),
-              ),
-          ]),
-          const SizedBox(height: 24),
-          Wrap(spacing: 16, runSpacing: 8, children: <Widget>[
-            for (final MapEntry<String, Color> e in guardianColors.entries)
-              _LegendChip(name: e.key, color: e.value),
-          ]),
-        ],
-      )),
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // This is a rhythm visualization, not a list+detail screen (see file
+        // header) — no second pane, ever. On a wide tablet/desktop viewport
+        // the single column is only ever capped to a comfortable reading
+        // width and centered; the Wrap above already reflows more beads per
+        // row on its own as the available width grows. Same real
+        // columnsAt() gate every other width decision in the app uses.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            Text("$childName's weeks", style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 12),
+            _RhythmHeader(
+              currentWith: currentWith,
+              currentColor: _colorFor(currentWith),
+              nextWith: changeIdx == -1 ? null : nights[changeIdx].withWhom,
+              nextColor: changeIdx == -1 ? null : _colorFor(nights[changeIdx].withWhom),
+              sleeps: sleepsUntilChange,
+            ),
+            const SizedBox(height: 24),
+            Text('Every circle is one sleep. Today is the bright one.',
+              style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 10, runSpacing: 14, children: <Widget>[
+              for (int i = 0; i < nights.length; i++)
+                _NightBead(
+                  night: nights[i],
+                  color: _colorFor(nights[i].withWhom),
+                  isToday: i == 0,
+                  relativeLabel: _relativeNightLabel(
+                    sleepsBetween(nights.first.dateIso, nights[i].dateIso)),
+                ),
+            ]),
+            const SizedBox(height: 24),
+            Wrap(spacing: 16, runSpacing: 8, children: <Widget>[
+              for (final MapEntry<String, Color> e in guardianColors.entries)
+                _LegendChip(name: e.key, color: e.value),
+            ]),
+          ],
+        );
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }
@@ -141,38 +177,44 @@ class _RhythmHeader extends StatelessWidget {
   final int? sleeps;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Color.lerp(currentColor, Colors.white, 0.85),
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: currentColor, width: 2),
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-      Row(children: <Widget>[
-        CircleAvatar(radius: 8, backgroundColor: currentColor),
-        const SizedBox(width: 8),
-        Expanded(child: Text("You're with $currentWith right now",
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-      ]),
-      if (sleeps != null && nextWith != null) ...<Widget>[
-        const SizedBox(height: 10),
-        Row(crossAxisAlignment: CrossAxisAlignment.center, children: <Widget>[
-          Text('$sleeps', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: nextColor)),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Color.lerp(currentColor, Colors.white, 0.85),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: currentColor, width: 2),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Row(children: <Widget>[
+          CircleAvatar(radius: 8, backgroundColor: currentColor),
           const SizedBox(width: 8),
-          Expanded(child: Text(
-            sleeps == 1
-              ? 'sleep until you\'re with $nextWith'
-              : 'sleeps until you\'re with $nextWith',
-            style: const TextStyle(fontSize: 13.5))),
+          Expanded(child: Text("You're with $currentWith right now",
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
         ]),
-      ] else
-        const Padding(padding: EdgeInsets.only(top: 10),
-          child: Text("No change coming up in the nights shown here.",
-            style: TextStyle(fontSize: 12.5, color: Colors.black54))),
-    ]),
-  );
+        if (sleeps != null && nextWith != null) ...<Widget>[
+          const SizedBox(height: 12),
+          // The sleeps numeral is a documented hero-number exception (§8.2.5)
+          // — hand-set large/bold, not a themed text role. See child_home.dart's
+          // _Sleeps for the same discipline applied to the same kind of number.
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: <Widget>[
+            Text('$sleeps', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: nextColor)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              sleeps == 1
+                ? 'sleep until you\'re with $nextWith'
+                : 'sleeps until you\'re with $nextWith',
+              style: Theme.of(context).textTheme.bodyMedium)),
+          ]),
+        ] else
+          Padding(padding: const EdgeInsets.only(top: 12),
+            child: Text('No change coming up in the nights shown here.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant))),
+      ]),
+    );
+  }
 }
 
 class _NightBead extends StatelessWidget {
@@ -199,8 +241,11 @@ class _NightBead extends StatelessWidget {
         shape: BoxShape.circle,
         color: color,
         border: isToday ? Border.all(color: Colors.white, width: 3) : null,
+        // Soft, tinted toward the bead's own guardian colour rather than a
+        // flat black shadow — the highlight should read as a glow, not a drop
+        // shadow. See journal etc.'s Finding #5 sibling fix in my_day.dart.
         boxShadow: isToday
-          ? const <BoxShadow>[BoxShadow(color: Colors.black38, blurRadius: 6, spreadRadius: 1)]
+          ? <BoxShadow>[BoxShadow(color: color.withAlpha(90), blurRadius: 8, spreadRadius: 1)]
           : null,
       ),
       child: const Text('🌙', style: TextStyle(fontSize: 18)),
@@ -215,7 +260,13 @@ class _LegendChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
     CircleAvatar(radius: 6, backgroundColor: color),
-    const SizedBox(width: 6),
-    Text(name, style: const TextStyle(fontSize: 13)),
+    const SizedBox(width: 8),
+    // Flexible, not a bare Text: `guardianColors` is caller-supplied (see
+    // WeeksScreen's constructor) and a real family's guardian label ("Step-mum
+    // Jennifer", say) is not bounded the way the demo's "Mom"/"Dad" are. On
+    // the Fold5 cover width (344px) an unprotected Text here overflows this
+    // Row — found by actually rendering at that width, not by inspection.
+    Flexible(child: Text(name, overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodySmall)),
   ]);
 }

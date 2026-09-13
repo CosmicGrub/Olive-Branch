@@ -37,6 +37,9 @@ import { chooseEntry, suggestEntryRole, routeFromEntry, ENTRY_CHOICE_GRANTS_NO_A
 export { chooseEntry, suggestEntryRole, routeFromEntry, ENTRY_CHOICE_GRANTS_NO_AUTHORITY };
 import { captureCameraPhoto, captureScreenshot, SCREENSHOT_SCOPED_OFF_SURFACES,
   neverToDeviceGallery, autoUploadsToAppStorage } from '../../packages/homework/src/snapshot.ts';
+import { OBSERVER_MAY, OBSERVER_MAY_NOT, OBSERVER_GRANT_TTL_DAYS, invite,
+  activeObservers, auditObserverView, type Observer }
+  from '../../packages/observer/src/observer.ts';
 
 const NYC = 'America/New_York', CHI = 'America/Chicago';
 const ALL = [0, 1, 2, 3, 4, 5, 6];
@@ -351,6 +354,10 @@ export function lists() {
            claimWant: claimNeed(items[3], 'dad') };
 }
 
+// PRECISION CHECKED (phase3.ts's own scheduleStrip() header has the full
+// trace): DAYPARTS below is hand-written 'HH:mm' literals, and `nowLocal`
+// here is luxon's `toFormat('HH:mm')` — same 5-char width both sides, no
+// gate.ts-class boundary-minute risk.
 export function strip() {
   const n = now();
   const zone = resolveZone(CTX.tzIntervals, n, CTX.homeTz);
@@ -441,6 +448,51 @@ export function handoverDemo(age: number) {
 // ------------------------------------------------------------------ p6/p7
 export function authProbe(action: string, role: string) {
   return can(action as any, role === 'child' ? [] : [EDGE], 'maya', new Date(), role);
+}
+
+// ------------------------------------------------------------------ observer tier
+/**
+ * RENDER-01 fix (round-2 rendering pass, "Every Door, Opened") — the demo's
+ * "Observers" screens (both the interactive one and its engine-room writeup)
+ * have always called T.observerView(), a function that never existed anywhere
+ * in this codebase. Every value here comes from the real, already-tested
+ * observer.ts primitives — nothing here was invented to make the screen stop
+ * throwing.
+ */
+export function observerView() {
+  const probes = [
+    ...OBSERVER_MAY.map(scope => ({ scope, can: true })),
+    ...OBSERVER_MAY_NOT.map(scope => ({ scope, can: false })),
+  ];
+  // The three scopes the screen's own copy names as never grantable to
+  // anyone: the journal (P7), a sealed letter, a private note. Only the
+  // journal has a real OBSERVER_MAY_NOT scope string to point at — sealed
+  // letters and private notes aren't observer-reachable surfaces at all (no
+  // route exists to expose them), so they have no scope string to probe.
+  const never = ['read_child_journal'];
+  const sample: Observer[] = [
+    { userId: 'grandma', role: 'grandparent', invitedBy: 'dad', label: 'Grandma',
+      invitedAt: '2026-06-01T00:00:00Z', acceptedAt: '2026-06-02T00:00:00Z',
+      revokedAt: null },
+  ];
+  const childView = activeObservers(sample).map(o => ({ who: o.label,
+    sees: OBSERVER_MAY.map(s => s.replace(/_/g, ' ')).join(', ') }));
+  const therapistInvite = invite([], 'guardian', { userId: 't1', role: 'carer',
+    invitedBy: 'dad', label: 'Therapist', invitedAt: now().toISO()! });
+  // Honestly labelled, not fabricated: invite() as written takes one
+  // guardian's say-so and does not itself require the other guardian's
+  // consent (that requirement is this screen's own prose, and MASTERFILE
+  // §16.2 #11 marks the therapist-role scope question still open) — so this
+  // shows the REAL result of a single guardian inviting alone, whatever it
+  // is, rather than asserting a refusal the code does not actually perform.
+  const soloInvite = invite([], 'guardian', { userId: 'a1', role: 'relative',
+    invitedBy: 'dad', label: 'Aunt', invitedAt: now().toISO()! });
+  return {
+    probes, never, childView, ttl: OBSERVER_GRANT_TTL_DAYS,
+    defaults: { therapist: therapistInvite },
+    soloRefused: soloInvite,
+    forbiddenRefused: auditObserverView({ journal: 'a private thought' }),
+  };
 }
 
 // ------------------------------------------------------------------ misc
@@ -536,9 +588,15 @@ export const UNDER_CONSTRUCTION: Record<string, string> = {
   video: 'Live video needs a LiveKit server and a real device camera. Token '
        + 'minting and room lifecycle ARE verified against a running server '
        + '(21 assertions) — the media stream is not wired into this demo.',
-  kiosk: 'The Android and Windows kiosk modules need a device build environment. '
-       + 'The defeat state machine and the cross-language channel contract are '
-       + 'tested; the native side has never been compiled.',
+  kiosk: 'The Android kiosk bridge is real and CLOSED (v0.43.0) — '
+       + 'flutter analyze/test clean, live-device-verified on a real Fold5 '
+       + '(startLockTask, MANUAL_VERIFY_call_lock_task.md). The Windows kiosk '
+       + 'bridge (client/windows/runner/kiosk_bridge.{h,cpp}) compiles clean via '
+       + 'cl.exe /W4 directly but has not run through flutter build windows in '
+       + 'this environment — no local Visual Studio Build Tools "Desktop '
+       + 'development with C++" workload. Neither native side is wired into this '
+       + 'browser demo, which is a stub renderer only — that half of the gap this '
+       + 'entry originally described.',
   captions: 'Live captions and translation are specified in §8.4 and not built.',
   ocr_live: 'OCR runs against real tesseract in the test suite. Wiring a camera '
           + 'into the browser demo would add nothing the quality gate does not '
@@ -549,8 +607,13 @@ export const UNDER_CONSTRUCTION: Record<string, string> = {
           + 'renders their transcripts and child views rather than an '
           + 'interactive board — the board is a Flutter widget, not a browser one.',
   more_games: 'Checkers, Battleship, word search with parent-hidden words, '
-            + 'hangman and chess are designed but not built. Chess should use '
-            + 'chess.js rather than hand-rolled rules — castling, en passant, '
-            + 'promotion, stalemate and threefold repetition are a classic '
-            + 'underestimate.',
+            + 'hangman, and chess are all real, built, and wired into '
+            + 'games_hub.dart (game_checkers.dart, game_battleship.dart, '
+            + 'game_wordsearch.dart, game_hangman.dart, game_chess.dart — the '
+            + 'last a full hand-rolled rules engine: castling, en passant, '
+            + 'promotion, stalemate, threefold repetition, and fifty-move all '
+            + 'covered, since no pure-Dart chess.js equivalent exists in this '
+            + 'repo). Same demo-scoping as games_ui above, not an unbuilt '
+            + 'feature: each is a Flutter widget, not a browser one, so this '
+            + 'demo cannot render an interactive board for any of them.',
 };

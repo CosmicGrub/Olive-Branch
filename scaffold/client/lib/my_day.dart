@@ -1,6 +1,6 @@
-// OLIVE BRANCH — child shell, my day. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §8.2, §8.2.2, §8.4.
-// Renders MARKUP screen 'myday'.
+// OLIVE BRANCH — child shell, my day. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §8.2, §8.2.2, §8.4. Renders MARKUP screen 'myday'.
 //
 // The Day Ribbon, in HER frame — the child-facing sibling of the ribbon
 // guardian_home.dart renders for the guardian. Two invariants:
@@ -21,22 +21,16 @@
 import 'package:flutter/material.dart';
 import 'calendar_day_logic.dart';
 
-const Map<String, Color> _dayPartColor = <String, Color>{
-  'wake': Color(0xFFFFB74D),
-  'before_school': Color(0xFFFFD54F),
-  'school': Color(0xFF64B5F6),
-  'after_school': Color(0xFF81C784),
-  'activity': Color(0xFFFF8A65),
-  'dinner': Color(0xFFE57373),
-  'wind_down': Color(0xFF9575CD),
-  'bedtime': Color(0xFF7986CB),
-  'asleep': Color(0xFF3949AB),
-  'free': Color(0xFF4DD0E1),
-};
-
-const Color _fallbackColor = Color(0xFFBDBDBD);
-
-Color _colorFor(String kind) => _dayPartColor[kind] ?? _fallbackColor;
+// _colorFor(kind) used to be a private copy of these ten values, kept
+// deliberately separate per this file's own header (no shared RibbonBand/
+// _Ribbon widget code with guardian_home.dart). v0.49.57: the VALUES
+// themselves (not any widget code) moved to calendar_day_logic.dart's own
+// dayPartColor() — the same shared-lookup treatment dayPartLabel()/
+// dayPartGlyph() already got — so guardian_home_live.dart's new ribbon
+// (§20.2b) renders the same kind in the same color this screen already
+// does, without a second, driftable copy of the same ten hex values. Zero
+// pixel change here: same values, one fewer place they're written down.
+Color _colorFor(String kind) => dayPartColor(kind);
 
 // One friendly, concrete line per day-part — shown only when she taps a card
 // open. Kept short on purpose: this is a glance tool, not a reading test.
@@ -70,10 +64,11 @@ class MyDayScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<StripSegment> segments = scheduleStrip(parts, nowLocal);
-    final StripSegment current = segments.firstWhere(
-      (StripSegment s) => s.current,
-      orElse: () => segments.first,
-    );
+    // `current` is honestly nullable: a `parts` list with a genuine gap (a
+    // stretch of the day no day-part covers) can leave `nowLocal` outside
+    // every segment's window. See calendar_day_logic.dart's `currentSegment`
+    // doc for why that must render as "nothing scheduled", not a guess.
+    final StripSegment? current = currentSegment(segments);
     return Scaffold(
       appBar: AppBar(title: const Text('My day')),
       body: SafeArea(child: ListView(
@@ -81,15 +76,19 @@ class MyDayScreen extends StatelessWidget {
         children: <Widget>[
           Text("$childName's day", style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 4),
-          Row(children: <Widget>[
-            Text(current.icon, style: const TextStyle(fontSize: 20)),
-            const SizedBox(width: 6),
-            Expanded(child: Text('Right now: ${current.label}',
-              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600))),
-          ]),
-          const SizedBox(height: 14),
+          if (current != null)
+            Row(children: <Widget>[
+              Text(current.icon, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Right now: ${current.label}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+            ])
+          else
+            Text('Nothing scheduled right now.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 16),
           _DayRibbon(parts: parts, nowLocal: nowLocal),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           for (final StripSegment s in segments) _DayPartCard(segment: s),
         ],
       )),
@@ -160,7 +159,9 @@ class _DayRibbon extends StatelessWidget {
               child: DecoratedBox(decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(2),
-                boxShadow: const <BoxShadow>[BoxShadow(color: Colors.black38, blurRadius: 2)],
+                boxShadow: <BoxShadow>[
+                  BoxShadow(color: Theme.of(context).colorScheme.shadow.withAlpha(70), blurRadius: 3),
+                ],
               )),
             ),
           ]);
@@ -175,9 +176,10 @@ class _Pill extends StatelessWidget {
   final Color color;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(999)),
-    child: Text(text, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white)),
+    child: Text(text, style: Theme.of(context).textTheme.labelSmall
+      ?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
   );
 }
 
@@ -199,14 +201,14 @@ class _DayPartCardState extends State<_DayPartCard> {
         ? Color.lerp(bandColor, Colors.white, 0.78)!
         : Theme.of(context).colorScheme.primaryContainer.withAlpha(80);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => setState(() => _expanded = !_expanded),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           constraints: const BoxConstraints(minHeight: 64),
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             color: background,
@@ -215,20 +217,21 @@ class _DayPartCardState extends State<_DayPartCard> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
             Row(children: <Widget>[
               Text(s.icon, style: const TextStyle(fontSize: 26)),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(child: Text(s.label,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
               if (s.current) _Pill('right now', color: bandColor)
               else if (s.next) _Pill('up next', color: bandColor.withAlpha(200)),
             ]),
             const SizedBox(height: 4),
             Text('${formatTimeOfDay(s.startsLocal)} – ${formatTimeOfDay(s.endsLocal)}',
-              style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             AnimatedSize(
               duration: const Duration(milliseconds: 200),
               child: _expanded
                 ? Padding(padding: const EdgeInsets.only(top: 8),
-                    child: Text(_dayPartBlurb[s.kind] ?? '', style: const TextStyle(fontSize: 13.5)))
+                    child: Text(_dayPartBlurb[s.kind] ?? '', style: Theme.of(context).textTheme.bodyMedium))
                 : const SizedBox(width: double.infinity, height: 0),
             ),
           ]),

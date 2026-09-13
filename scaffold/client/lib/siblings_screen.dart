@@ -1,19 +1,21 @@
-// OLIVE BRANCH — guardian shell, siblings. UNVERIFIED (no Flutter toolchain
-// in tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §21.7, §5.17.
-// Renders MARKUP screen 'siblings'.
+// OLIVE BRANCH — guardian shell, siblings. No longer UNVERIFIED — verified by CI (a Flutter
+// toolchain now runs for real in tools/verify.sh's automated pipeline —
+// also manually built and run via `flutter analyze` / `flutter test` this
+// session; CHANGELOG v0.49.61). MASTERFILE §21.7, §5.17. Renders MARKUP
+// screen 'siblings'.
 //
 // Ported from packages/maturation/src/family.ts's siblings section: Child,
 // SiblingSet, ageOf(), openChildren(), closedChildren(), closeFor(),
 // staggerNotice(), STAGGER_FORBIDDEN, auditStagger(), siblingsOf(),
 // shellTabs(). (The `guardian/pending.ts` module named in this group's brief
-// is numbered §12.8-12.11 and covers group calls / the therapist view / the
-// preservation prompt / the ping limit — no sibling logic lives there. The
-// real source of truth for a family's sibling model is family.ts, so that is
-// what this screen ports; MASTERFILE's own authorization notes confirm this
-// is the intended split: "`actor_has_edge()` deliberately does not traverse
-// `sibling_link` — being guardian of one sibling must never confer access to
-// another".)
+// covers group calls / the therapist view / the preservation prompt / the
+// ping limit — cited there by §5.14, §16.2 #11, §10.1b, and §9.9.1
+// respectively, not a §12.8-12.11 range, which does not exist in MASTERFILE
+// — and no sibling logic lives there. The real source of truth for a
+// family's sibling model is family.ts, so that is what this screen ports;
+// MASTERFILE's own authorization notes confirm this is the intended split:
+// "`actor_has_edge()` deliberately does not traverse `sibling_link` — being
+// guardian of one sibling must never confer access to another".)
 //
 // THE INVARIANT THIS SCREEN EXISTS TO ENFORCE, stated in the group brief:
 // sibling links must never WIDEN guardian authority across children. This
@@ -27,6 +29,7 @@
 // — see siblings_screen_test.dart, which proves exactly that with a sibling
 // the demo viewer is NOT authorized for.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // =========================================================== family.ts ====
 class Child {
@@ -195,31 +198,49 @@ class _SiblingsScreenState extends State<SiblingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Siblings')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        const Text('Horizontal swipe between the children you actually have access to. '
-          'A sibling link never grants access to a child you are not a guardian of.',
-          style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-        const SizedBox(height: 12),
-        SizedBox(height: 44, child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: tabs.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (BuildContext context, int i) {
-            final ShellTab t = tabs[i];
-            return ChoiceChip(
-              label: Text('${t.name} · ${t.age}'),
-              avatar: CircleAvatar(radius: 8, backgroundColor: t.colourId ?? Colors.grey),
-              selected: t.id == _selected,
-              onSelected: (_) => setState(() => _selected = t.id));
-          })),
-        const SizedBox(height: 20),
-        if (current != null) _ChildCard(tab: current) else
-          const Text('No children on this account.'),
-        const SizedBox(height: 16),
-        for (final Child c in closedChildren(widget.siblingSet))
-          if (widget.authorizedChildIds.contains(c.id))
-            _StaggerBanner(notice: staggerNotice(widget.siblingSet, c.id)!),
-      ])),
+      // Not child-facing (see file header). On a wide tablet/desktop
+      // viewport the single column is only ever capped to a comfortable
+      // reading width and centered, never split. Same real columnsAt() gate
+      // every other width decision in the app uses.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          Text('Horizontal swipe between the children you actually have access to. '
+            'A sibling link never grants access to a child you are not a guardian of.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          // 48dp minimum tap target — this row was capped at 44dp (finding #3).
+          SizedBox(height: 48, child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: tabs.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (BuildContext context, int i) {
+              final ShellTab t = tabs[i];
+              return ChoiceChip(
+                label: Text('${t.name} · ${t.age}'),
+                avatar: CircleAvatar(radius: 8,
+                  backgroundColor: t.colourId ?? Theme.of(context).colorScheme.surfaceContainerHighest),
+                selected: t.id == _selected,
+                onSelected: (_) => setState(() => _selected = t.id));
+            })),
+          const SizedBox(height: 20),
+          if (current != null) _ChildCard(tab: current) else
+            const Text('No children on this account.'),
+          const SizedBox(height: 16),
+          for (final Child c in closedChildren(widget.siblingSet))
+            if (widget.authorizedChildIds.contains(c.id))
+              _StaggerBanner(notice: staggerNotice(widget.siblingSet, c.id)!),
+        ]);
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }
@@ -231,13 +252,18 @@ class _ChildCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(child: Padding(
     padding: const EdgeInsets.all(16),
     child: Row(children: [
-      CircleAvatar(radius: 22, backgroundColor: tab.colourId ?? Colors.grey,
+      CircleAvatar(radius: 22,
+        backgroundColor: tab.colourId ?? Theme.of(context).colorScheme.surfaceContainerHighest,
+        foregroundColor: tab.colourId == null
+          ? Theme.of(context).colorScheme.onSurfaceVariant : null,
         child: Text(tab.name.substring(0, 1))),
-      const SizedBox(width: 14),
+      const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(tab.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        Text(tab.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700)),
         Text('${tab.age} years old · ${tab.open ? 'guardianship open' : 'guardianship closed'}',
-          style: const TextStyle(fontSize: 13, color: Colors.black54)),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
       ])),
     ])));
 }
@@ -251,8 +277,9 @@ class _StaggerBanner extends StatelessWidget {
     assert(audit.ok, 'stagger copy uses forbidden language: ${audit.found}');
     return Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(10)),
-      child: Text(notice.line, style: const TextStyle(fontSize: 13)));
+        borderRadius: BorderRadius.circular(12)),
+      child: Text(notice.line, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        color: Theme.of(context).colorScheme.onSecondaryContainer)));
   }
 }
 

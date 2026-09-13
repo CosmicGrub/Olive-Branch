@@ -8,6 +8,7 @@
 // the family-tree relationship itself.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/siblings_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -111,6 +112,14 @@ void main() {
       expect(find.textContaining('expense'), findsNothing);
     });
 
+    testWidgets('the sibling tab switcher meets the 48dp minimum tap target',
+        (t) async {
+      await t.pumpWidget(wrap(SiblingsScreen(
+        siblingSet: _threeKids, authorizedChildIds: const <String>{'a', 'b'})));
+      final Size size = t.getSize(find.byType(ChoiceChip).first);
+      expect(size.height, greaterThanOrEqualTo(48));
+    });
+
     testWidgets('an authorized closed sibling shows a kind stagger notice, '
         'audited clean', (t) async {
       final CloseForOk closed = closeFor(_threeKids, 'c', DateTime.utc(2030, 1, 1)) as CloseForOk;
@@ -120,6 +129,76 @@ void main() {
       expect(find.textContaining("archive has transferred"), findsOneWidget);
       expect(find.textContaining('lost access'), findsNothing);
       expect(find.textContaining('no longer'), findsNothing);
+    });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop widths', () {
+    // The stagger-banner + tab-switcher case is the heaviest layout this
+    // screen ever renders, so it is the one exercised at every width below.
+    Widget heaviestCase() {
+      final CloseForOk closed = closeFor(_threeKids, 'c', DateTime.utc(2030, 1, 1)) as CloseForOk;
+      return SiblingsScreen(siblingSet: closed.set,
+        authorizedChildIds: const <String>{'a', 'b', 'c'}, now: DateTime.utc(2030, 2, 1));
+    }
+
+    Future<void> atSize(WidgetTester t, Size size, Widget child) async {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(wrap(child));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('renders on the Fold5 cover-screen width (344 CSS px) without overflow',
+        (t) async {
+      await atSize(t, const Size(344, 882), heaviestCase());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders on the Fold5 unfolded main screen (~673x841) without overflow',
+        (t) async {
+      await atSize(t, const Size(673, 841), heaviestCase());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a standard phone width (390 logical px) without overflow',
+        (t) async {
+      await atSize(t, const Size(390, 900), heaviestCase());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a tablet/desktop width (1100, short-and-wide) without overflow',
+        (t) async {
+      await atSize(t, const Size(1100, 700), heaviestCase());
+      expect(t.takeException(), isNull);
+    });
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // Not child-facing (see file header). On a wide tablet/desktop viewport
+    // the single column is only ever capped to a comfortable reading width
+    // and centered, never split; the Fold5 cover and phone widths are
+    // completely untouched by this cap.
+    testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (t) async {
+      Future<void> pumpAt(Size size) async {
+        await t.binding.setSurfaceSize(size);
+        await t.pumpWidget(wrap(SiblingsScreen(
+          siblingSet: _threeKids, authorizedChildIds: const <String>{'a', 'b'})));
+        await t.pump();
+      }
+
+      addTearDown(() => t.binding.setSurfaceSize(null));
+
+      await pumpAt(const Size(1100, 800));
+      expect(t.getSize(find.byType(ListView).first).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 882)); // Fold5 cover
+      expect(t.getSize(find.byType(ListView).first).width, 344);
+
+      await pumpAt(const Size(390, 900)); // standard phone
+      expect(t.getSize(find.byType(ListView).first).width, 390);
     });
   });
 }

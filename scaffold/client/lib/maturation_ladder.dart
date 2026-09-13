@@ -1,7 +1,7 @@
-// OLIVE BRANCH — the maturation ladder. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §21. Renders
-// MARKUP screen 'ladder'.
+// OLIVE BRANCH — the maturation ladder. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §21. Renders MARKUP screen 'ladder'.
 //
 // A close port of the ladder/grant-record half of
 // packages/maturation/src/maturation.ts: LADDER, MaturationGrant,
@@ -31,6 +31,7 @@
 //      "Move this later" is therefore the only mutation this screen offers,
 //      and it is offered only for a rung that has not happened yet.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============ ported from packages/maturation/src/maturation.ts (§21) ======
 enum Grant {
@@ -207,6 +208,17 @@ IconData grantIcon(Grant g) => switch (g) {
   Grant.everything => Icons.celebration_outlined,
 };
 
+/// App-wide, in-memory (same disclosed-not-durable posture as
+/// `_announcement` below, and the same "real app-wide singleton, not a
+/// per-screen-instance one" fix shared_gallery.dart's `demoAppGallery`
+/// already established): which grants she has already been proactively
+/// shown the reveal for, this app run. Without this at module level (not a
+/// State field), navigating away and back to this screen would re-show the
+/// exact same "just reached" reveal every time, since `recordGrants()` has
+/// no real backend to remember against — see this file's own header on
+/// [_MaturationLadderScreenState.initState].
+final Set<Grant> childSeenRungReveals = <Grant>{};
+
 enum LadderViewer { child, guardian }
 
 /// MARKUP screen 'ladder'. One widget, two tones: [LadderViewer.child] is
@@ -261,6 +273,32 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
     // C) needs server-side state to survive a relaunch. In-memory here, it
     // only survives this one dismiss — disclosed rather than faked durable.
     _announcement = note == null ? null : withName(note, widget.childName);
+
+    // The child-facing counterpart to the guardian banner above — before
+    // this pass, a rung she'd just reached was invisible to her unless she
+    // navigated here herself and tapped the right tile open (three real
+    // taps deep: More → Growing-up ladder → the tile). Proactive now,
+    // mirroring the guardian's own one-time-announcement contract, not a
+    // second, drifting mechanism — same `result.newly` this initState
+    // already computed, filtered against the app-run-scoped `seen` set so
+    // it never resurfaces on a later visit to this same screen.
+    if (widget.viewer == LadderViewer.child) {
+      final List<Rung> toReveal = [
+        for (final MaturationGrant g in result.newly)
+          if (!childSeenRungReveals.contains(g.grant))
+            _ladder.firstWhere((Rung r) => r.grant == g.grant),
+      ];
+      if (toReveal.isNotEmpty) {
+        for (final Rung r in toReveal) {
+          childSeenRungReveals.add(r.grant);
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => _RungRevealScreen(rung: toReveal.first, childName: widget.childName)));
+        });
+      }
+    }
   }
 
   Future<void> _openMoveLater(Rung rung) async {
@@ -306,12 +344,14 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
         ? 'Growing up, ${widget.childName}'
         : "${widget.childName}'s ladder")),
       body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
-        final bool narrow = constraints.maxWidth < 420;
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool narrow = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) < 2;
         return ListView(
-          padding: EdgeInsets.all(narrow ? 14 : 20),
+          padding: EdgeInsets.all(narrow ? 12 : 20),
           children: <Widget>[
             if (!isChild && _announcement != null)
-              Padding(padding: const EdgeInsets.only(bottom: 14),
+              Padding(padding: const EdgeInsets.only(bottom: 16),
                 child: _AnnouncementBanner(
                   text: _announcement!,
                   onDismiss: () => setState(() => _announcement = null))),
@@ -322,7 +362,7 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
               totalCount: _ladder.length,
               onWhyNoUndo: isChild ? null : _showNoUndoInfo,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             for (int i = 0; i < _ladder.length; i++)
               _RungTile(
                 rung: _ladder[i],
@@ -344,6 +384,45 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
   }
 }
 
+/// The proactive, full-screen counterpart to the per-rung tile's own
+/// ceremony text (below, in _RungTile) — same words, shown once, without
+/// requiring her to have already found and expanded the right tile
+/// herself. §8.13 motion budget: one entrance fade, nothing loops, no
+/// celebrate()-style repeat. No settings affordance (§8.1) — a single
+/// dismiss action and nothing else.
+class _RungRevealScreen extends StatelessWidget {
+  const _RungRevealScreen({required this.rung, required this.childName});
+  final Rung rung;
+  final String childName;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: SafeArea(child: Center(child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: AnimatedOpacity(
+          opacity: 1, duration: const Duration(milliseconds: 260),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(grantIcon(rung.grant), size: 56, color: scheme.primary),
+            const SizedBox(height: 20),
+            Text(grantTitle(rung.grant), textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            Text(rung.ceremony, textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4)),
+            const SizedBox(height: 28),
+            SizedBox(height: 52, width: 200, child: FilledButton(
+              key: const Key('rungRevealDismiss'),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it!'))),
+          ]),
+        ),
+      ))),
+    );
+  }
+}
+
 class _AnnouncementBanner extends StatelessWidget {
   const _AnnouncementBanner({required this.text, required this.onDismiss});
   final String text;
@@ -353,14 +432,14 @@ class _AnnouncementBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       decoration: BoxDecoration(
         color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(16)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: <Widget>[
         Icon(Icons.favorite_outline, color: scheme.onTertiaryContainer, size: 20),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text, style: TextStyle(
-          fontSize: 13, height: 1.35, color: scheme.onTertiaryContainer))),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          height: 1.35, color: scheme.onTertiaryContainer))),
         IconButton(
           onPressed: onDismiss,
           tooltip: 'Dismiss',
@@ -391,6 +470,7 @@ class _PrincipleBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -400,19 +480,19 @@ class _PrincipleBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(20)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text(isChild ? 'This app grows up with you' : "$childName's ladder",
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
         Text(
           isChild
             ? "Every so often, something new becomes yours, $childName — and "
               "once it's yours, it stays yours."
             : 'Each rung below hands something to $childName, permanently. '
               'There is no setting anywhere that moves one backward.',
-          style: const TextStyle(fontSize: 13, height: 1.35)),
+          style: textTheme.bodyMedium?.copyWith(height: 1.35)),
         if (!isChild) ...<Widget>[
           const SizedBox(height: 4),
           Text('$reachedCount of $totalCount reached so far.',
-            style: TextStyle(fontSize: 12, color: scheme.onSecondaryContainer)),
+            style: textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer)),
         ],
         if (onWhyNoUndo != null) ...<Widget>[
           const SizedBox(height: 8),
@@ -447,10 +527,11 @@ class _Pill extends StatelessWidget {
       _PillTone.neutral => scheme.onSurfaceVariant,
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999),
         border: Border.all(color: scheme.outlineVariant, width: 1)),
-      child: Text(text, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: fg)),
+      child: Text(text,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600, color: fg)),
     );
   }
 }
@@ -483,6 +564,7 @@ class _RungTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     final Color dotBorder = reached ? scheme.primary : scheme.outlineVariant;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
@@ -495,15 +577,15 @@ class _RungTile extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: reached ? scheme.primary : Colors.transparent,
                 border: Border.all(color: dotBorder, width: 2)),
-              child: reached ? const Icon(Icons.check, size: 16, color: Colors.white) : null),
+              child: reached ? Icon(Icons.check, size: 16, color: scheme.onPrimary) : null),
             if (!isLast) Expanded(child: Container(
               width: 3,
-              margin: const EdgeInsets.symmetric(vertical: 2),
+              margin: const EdgeInsets.symmetric(vertical: 4),
               color: reached
                 ? scheme.primary.withValues(alpha: 0.35)
                 : scheme.outlineVariant.withValues(alpha: 0.6))),
           ])),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(child: Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: Material(
@@ -515,13 +597,13 @@ class _RungTile extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 48),
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(16),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                       Row(children: <Widget>[
                         Icon(grantIcon(rung.grant), size: 22),
                         const SizedBox(width: 8),
                         Expanded(child: Text(grantTitle(rung.grant),
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5))),
+                          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
                         Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 20),
                       ]),
                       const SizedBox(height: 8),
@@ -550,7 +632,7 @@ class _RungTile extends StatelessWidget {
                       // while collapsed. The whole point of a collapsed future
                       // rung is that there is nothing to find there yet.
                       if (expanded) Padding(
-                          padding: const EdgeInsets.only(top: 10),
+                          padding: const EdgeInsets.only(top: 12),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                             Text(
                               isChild
@@ -558,32 +640,32 @@ class _RungTile extends StatelessWidget {
                                 : (rung.guardianNote.isEmpty
                                     ? 'Hers, quietly. You will not be notified about this one.'
                                     : withName(rung.guardianNote, childName)),
-                              style: const TextStyle(fontSize: 13, height: 1.4)),
+                              style: textTheme.bodyMedium?.copyWith(height: 1.4)),
                             if (rung.grant == Grant.publishAvailability)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: Container(
-                                  padding: const EdgeInsets.all(10),
+                                  padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: scheme.secondaryContainer.withValues(alpha: 0.7),
-                                    borderRadius: BorderRadius.circular(10)),
+                                    borderRadius: BorderRadius.circular(12)),
                                   child: Text(
                                     isChild
                                       ? "The big one: you decide when you're free, and the "
                                         'ribbon shows what you say.'
                                       : 'The inversion: the schedule stops being a read on '
                                         'her and becomes hers.',
-                                    style: const TextStyle(fontSize: 12.5)))),
+                                    style: textTheme.bodySmall))),
                             if (!isChild && reached)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: Text(
                                   "Already happened. It can't be moved or undone from here.",
-                                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant,
+                                  style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant,
                                     fontStyle: FontStyle.italic))),
                             if (!isChild && !reached && onMoveLater != null)
                               Padding(
-                                padding: const EdgeInsets.only(top: 10),
+                                padding: const EdgeInsets.only(top: 12),
                                 child: Align(alignment: Alignment.centerLeft,
                                   child: OutlinedButton.icon(
                                     onPressed: onMoveLater,
@@ -660,6 +742,7 @@ class _MoveLaterDialogState extends State<_MoveLaterDialog> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return AlertDialog(
       title: Text('Move "${grantTitle(widget.rung.grant)}" later?'),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
@@ -667,8 +750,8 @@ class _MoveLaterDialogState extends State<_MoveLaterDialog> {
           Text(
             'Currently set for age ${widget.rung.age}. Ages can only move later, '
             'never earlier, and never by one guardian alone.',
-            style: const TextStyle(fontSize: 13)),
-          const SizedBox(height: 14),
+            style: textTheme.bodyMedium),
+          const SizedBox(height: 16),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <Widget>[
             const Text('New age', style: TextStyle(fontWeight: FontWeight.w600)),
             Row(children: <Widget>[
@@ -676,7 +759,7 @@ class _MoveLaterDialogState extends State<_MoveLaterDialog> {
                 onPressed: _newAge > widget.rung.age ? () => _changeAge(-1) : null,
                 icon: const Icon(Icons.remove_circle_outline)),
               SizedBox(width: 32, child: Text('$_newAge', textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+                style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700))),
               IconButton(
                 onPressed: _newAge < widget.rung.age + _maxYearsLater
                   ? () => _changeAge(1) : null,
@@ -692,12 +775,12 @@ class _MoveLaterDialogState extends State<_MoveLaterDialog> {
               _otherGuardianAgreed = v ?? false;
               _error = null;
             }),
-            title: const Text('The other guardian has also agreed (demo)',
-              style: TextStyle(fontSize: 13))),
+            title: Text('The other guardian has also agreed (demo)',
+              style: textTheme.bodyMedium)),
           if (_error != null) Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(_errorMessage(_error!),
-              style: TextStyle(color: scheme.error, fontSize: 12.5))),
+              style: textTheme.bodySmall?.copyWith(color: scheme.error))),
         ]),
       actions: <Widget>[
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),

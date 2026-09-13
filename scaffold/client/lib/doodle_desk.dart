@@ -1,6 +1,6 @@
-// OLIVE BRANCH — doodle desk. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.12.4, §8.13, §8.1.
-// Renders MARKUP screen 'doodle'.
+// OLIVE BRANCH — doodle desk. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.12.4, §8.13, §8.1. Renders MARKUP screen 'doodle'.
 //
 // "Free strokes plus six stamps, alongside colouring rather than replacing
 // it — a blank canvas has no finish line, so there is no score or
@@ -27,6 +27,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'annotation_canvas.dart';
+import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
 
 enum _Tool { draw, stamp }
@@ -97,11 +98,14 @@ class _DoodleDeskState extends State<DoodleDesk> {
     setState(() => _liveStroke = <StrokePoint>[StrokePoint(d.localPosition.dx, d.localPosition.dy)]);
   }
 
+  // In-place `.add()`, not a rebuilt list — see game_draw_together.dart's
+  // identical note (`_onPanStart` already reassigns `_liveStroke` to a
+  // fresh list at the start of every stroke, and `_onPanEnd` below still
+  // reassigns it to a NEW empty list rather than `.clear()`ing this one).
   void _onPanUpdate(DragUpdateDetails d) {
-    setState(() => _liveStroke = <StrokePoint>[
-          ..._liveStroke,
-          StrokePoint(d.localPosition.dx, d.localPosition.dy),
-        ]);
+    setState(() {
+      _liveStroke.add(StrokePoint(d.localPosition.dx, d.localPosition.dy));
+    });
   }
 
   void _onPanEnd(DragEndDetails d) {
@@ -153,9 +157,11 @@ class _DoodleDeskState extends State<DoodleDesk> {
           // Fold5 cover (~344 CSS px) vs. its unfolded ~673x841 main screen:
           // no fixed widths anywhere below, everything derives from
           // constraints or wraps.
-          final bool narrow = constraints.maxWidth < 420;
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool narrow = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) < 2;
           return Padding(
-            padding: EdgeInsets.all(narrow ? 10 : 16),
+            padding: EdgeInsets.all(narrow ? 8 : 16),
             child: Column(children: [
               _ToolSwitch(tool: _tool, onChanged: (t) => setState(() => _tool = t)),
               SizedBox(height: narrow ? 8 : 12),
@@ -185,7 +191,7 @@ class _DoodleDeskState extends State<DoodleDesk> {
                         selected: _stampId,
                         onSelect: (id) => setState(() => _stampId = id)),
               ),
-              SizedBox(height: narrow ? 6 : 10),
+              SizedBox(height: narrow ? 4 : 8),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 _RoundIconButton(icon: Icons.undo, label: 'Undo', onTap: _undo),
                 const SizedBox(width: 16),
@@ -385,11 +391,11 @@ class _DrawControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
-        Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 10, children: [
+        Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
           for (final Color c in kBrushColors)
             _Swatch(color: c, selected: c.toARGB32() == color.toARGB32(), onTap: () => onColor(c)),
         ]),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           for (final double w in kBrushWidths) _BrushDot(diameter: w, selected: w == width, onTap: () => onWidth(w)),
         ]),
@@ -417,7 +423,9 @@ class _Swatch extends StatelessWidget {
               shape: BoxShape.circle,
               color: color,
               border: Border.all(
-                color: selected ? Theme.of(context).colorScheme.primary : Colors.black12,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outlineVariant,
                 width: selected ? 3 : 1),
             ),
           ),
@@ -456,7 +464,7 @@ class _StampTray extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Wrap(
-        alignment: WrapAlignment.center, spacing: 10, runSpacing: 10,
+        alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
         children: [for (final StampSpec s in kStamps) _StampChip(spec: s, selected: s.id == selected, onTap: () => onSelect(s.id))],
       );
 }

@@ -8,7 +8,15 @@
 // "every new screen must be reachable" holds without crowding her home
 // screen. No settings affordance lives here either — every entry below
 // pushes a real, named destination, matching child_home.dart's own rule.
+//
+// baseUrl/childId/sessionToken/httpClient (optional and additive): reused
+// unchanged from child_home.dart's own already-authenticated session
+// (child_home_live.dart's own `_load()`), threaded through to
+// LettersScreen — the first live-wiring this hub has ever carried. See
+// letters_screen.dart's own file header for why that screen reuses this
+// session directly rather than minting its own via devLoginFor().
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'collection_screen.dart';
 import 'colour_daily.dart';
 import 'colouring_screen.dart';
@@ -23,13 +31,26 @@ import 'shared_gallery.dart';
 import 'shared_reading.dart';
 import 'snapshot_button.dart' show AppGalleryScreen;
 import 'story_library.dart';
+import 'take_and_go_screen.dart';
 import 'teach_me.dart';
 import 'weeks_screen.dart';
 
 class ChildMoreScreen extends StatelessWidget {
-  const ChildMoreScreen({super.key, this.childName = 'Ivy', this.childAge = 9});
+  const ChildMoreScreen({
+    super.key,
+    this.childName = 'Ivy',
+    this.childAge = 9,
+    this.baseUrl,
+    this.childId,
+    this.sessionToken,
+    this.httpClient,
+  });
   final String childName;
   final int childAge;
+  final String? baseUrl;
+  final String? childId;
+  final String? sessionToken;
+  final http.Client? httpClient;
 
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
@@ -46,7 +67,9 @@ class ChildMoreScreen extends StatelessWidget {
             onTap: () => _open(context, JournalScreen(childName: childName))),
           HubTile(icon: Icons.markunread_mailbox_outlined, title: 'Letters to me',
             subtitle: 'Write one now, open it when you are older',
-            onTap: () => _open(context, LettersScreen(childName: childName, currentAge: childAge))),
+            onTap: () => _open(context, LettersScreen(childName: childName, currentAge: childAge,
+              childId: childId ?? 'demo-child',
+              baseUrl: baseUrl, sessionToken: sessionToken, httpClient: httpClient))),
           HubTile(icon: Icons.timeline_outlined, title: 'Growing up',
             subtitle: 'What you get to do next, and when',
             onTap: () => _open(context, MaturationLadderScreen(
@@ -96,7 +119,29 @@ class ChildMoreScreen extends StatelessWidget {
         HubSection(title: 'Demo', children: [
           HubTile(icon: Icons.replay_circle_filled_outlined, title: 'Redo the welcome tour',
             subtitle: 'The first-run screens, walked through again',
-            onTap: () => _open(context, OnboardingFlowScreen(fallbackName: childName))),
+            // baseUrl/childId/sessionToken/httpClient threaded through as of
+            // Onboarding & Guardian Access sub-project 1 (docs/superpowers/
+            // specs/2026-09-12-onboarding-identity-pin-design.md) — the
+            // second live-wiring this hub has ever carried (see this file's
+            // own header for the first, LettersScreen). Reused unchanged
+            // from this hub's own already-authenticated session; the demo
+            // re-run stays exactly as it was when none of these are
+            // supplied.
+            onTap: () => _open(context, OnboardingFlowScreen(
+              fallbackName: childName,
+              childId: childId, baseUrl: baseUrl,
+              sessionToken: sessionToken, httpClient: httpClient))),
+        ]),
+        // §9.8.4, §21.2 rung 17, §21.7 — always reachable, same posture every
+        // other tile here takes: the SCREEN states the real, honest outcome
+        // (including "not yet" for an under-age tap), never this hub deciding
+        // in advance whether she is "allowed to see the button". See
+        // take_and_go_screen.dart's own header for why hiding this behind a
+        // client-side age check would be the wrong kind of gate.
+        HubSection(title: 'When you are ready', children: [
+          HubTile(icon: Icons.outbox_outlined, title: 'Take your data and go',
+            subtitle: 'At eighteen: a full copy of everything, and guardian access closes',
+            onTap: () => _open(context, TakeAndGoScreen(childName: childName))),
         ]),
       ]),
     )),

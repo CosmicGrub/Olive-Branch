@@ -1,7 +1,7 @@
-// OLIVE BRANCH — the gallery. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.10.11.
-// Renders MARKUP screen 'gallery': "Year-grouped works; past two thousand,
-// paginate by era."
+// OLIVE BRANCH — the gallery. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.10.11. Renders MARKUP screen 'gallery': "Year-grouped
+// works; past two thousand, paginate by era."
 //
 // "A five-year-old's best work is usually made of cardboard and glue." The
 // gallery is medium-agnostic on purpose: a photographed cardboard dragon and
@@ -141,7 +141,10 @@ String yearRangeLabel(List<GalleryPiece> pieces) {
 
 // ================================================================== frame =
 
-const double _frameRadius = 14;
+// 16, not the home-tile-specific 14 — the codebase's corner-radius audit
+// reserves 14 exclusively for the child_home/guardian_home action-tile
+// pairing, and assigns 16 to photo/image frames specifically.
+const double _frameRadius = 16;
 
 /// MASTERFILE §9.10.11 names this exact function and treats its existence as
 /// the difference between an aspiration and a testable claim: "frameFor()
@@ -174,7 +177,14 @@ String shortDate(DateTime d) => '${_monthAbbr[d.month - 1]} ${d.day}';
 // ===================================================================== UI =
 
 class GalleryScreen extends StatefulWidget {
-  const GalleryScreen({super.key});
+  const GalleryScreen({super.key, this.debugPieces});
+
+  /// Testing hook only — production call sites should omit this and let the
+  /// screen generate its own seeded demo collection (same convention as
+  /// MaturationLadderScreen's [now]). Exists because the seeded RNG datasets
+  /// below can never deterministically land on zero visible pieces, and the
+  /// honest empty state deserves real coverage like any other state.
+  final List<GalleryPiece>? debugPieces;
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
@@ -187,7 +197,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   bool _fullDemo = true;
   String? _selectedEra;
 
-  List<GalleryPiece> get _dataset => _fullDemo ? _full : _small;
+  List<GalleryPiece> get _dataset => widget.debugPieces ?? (_fullDemo ? _full : _small);
 
   @override
   void initState() {
@@ -223,13 +233,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
       body: SafeArea(
         child: Column(children: <Widget>[
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              const Text('Everything she has ever made, in one room.',
-                  style: TextStyle(fontSize: 13, color: Colors.black54)),
-              const SizedBox(height: 2),
+              Text('Everything she has ever made, in one room.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 4),
               Text('${visible.length} pieces, oldest first',
-                  style: const TextStyle(fontSize: 11.5, color: Colors.black38)),
+                  style: Theme.of(context).textTheme.labelSmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ]),
           ),
           Padding(
@@ -238,7 +250,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ),
           if (paginated)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: _EraSelector(
                 counts: <String, int>{
                   for (final MapEntry<String, List<GalleryPiece>> e in byEra.entries)
@@ -271,16 +283,25 @@ class _DemoSizeToggle extends StatelessWidget {
   final ValueChanged<bool> onChanged;
 
   @override
-  Widget build(BuildContext context) => Row(children: <Widget>[
-        Text('PREVIEW COLLECTION (demo data)',
-            style: TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.4,
-                color: Theme.of(context).colorScheme.outline)),
-        const Spacer(),
-        ChoiceChip(label: const Text('Small'), selected: !fullDemo, onSelected: (_) => onChanged(false)),
-        const SizedBox(width: 6),
-        ChoiceChip(label: const Text('Full (2,200+)'), selected: fullDemo, onSelected: (_) => onChanged(true)),
-      ]);
+  Widget build(BuildContext context) => Wrap(
+        // Wrap, not Row+Spacer: at the Fold5 cover width (344px) the label's
+        // natural width plus both chips overflowed a Row by 348px — even
+        // after the label alone was made flexible, the two chips ALONE still
+        // didn't fit the available ~312px (still 42px over), so this needs a
+        // real second line on narrow screens, not just a shrinking label.
+        // Wrap never overflows: it drops to a second line instead.
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text('PREVIEW COLLECTION (demo data)',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700, letterSpacing: 0.4,
+                  color: Theme.of(context).colorScheme.outline)),
+          ChoiceChip(label: const Text('Small'), selected: !fullDemo, onSelected: (_) => onChanged(false)),
+          ChoiceChip(label: const Text('Full (2,200+)'), selected: fullDemo, onSelected: (_) => onChanged(true)),
+        ],
+      );
 }
 
 class _EraSelector extends StatelessWidget {
@@ -315,7 +336,18 @@ class _GalleryGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (pieces.isEmpty) {
-      return const Center(child: Text('Nothing here yet.'));
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(Icons.photo_outlined, size: 40, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text('Nothing here yet.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+          ]),
+        ),
+      );
     }
     final Map<int, List<GalleryPiece>> byYear = groupByYear(pieces);
     final List<int> years = byYear.keys.toList()..sort();
@@ -323,15 +355,16 @@ class _GalleryGrid extends StatelessWidget {
       for (final int year in years) ...<Widget>[
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: Text('$year', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('$year',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
           ),
         ),
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 120, mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1),
+                maxCrossAxisExtent: 120, mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1),
             delegate: SliverChildBuilderDelegate(
               (BuildContext context, int i) => _Tile(byYear[year]![i]),
               childCount: byYear[year]!.length,
@@ -359,8 +392,9 @@ class _Tile extends StatelessWidget {
         alignment: Alignment.center,
         child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
           Icon(iconForGalleryKind(a.kind), size: 26, color: scheme.onSurfaceVariant),
-          const SizedBox(height: 6),
-          Text(shortDate(a.capturedAt), style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 4),
+          Text(shortDate(a.capturedAt),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
         ]),
       ),
     );
@@ -371,10 +405,10 @@ class _FootNote extends StatelessWidget {
   const _FootNote();
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text('Cardboard counts. It always did.',
-            style: TextStyle(
-                fontSize: 12, fontStyle: FontStyle.italic,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontStyle: FontStyle.italic,
                 color: Theme.of(context).colorScheme.outline)),
       );
 }

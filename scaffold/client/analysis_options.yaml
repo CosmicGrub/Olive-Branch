@@ -3,6 +3,20 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
+  # MASTERFILE §16.2 #6 REVERSED AGAIN — third_party/jitsi_meet_flutter_sdk_patched/
+  # is disclosed, not deleted (§21.7: real, tested engineering this reversal
+  # makes moot, not wrong, kept pending real kiosk-lock verification under
+  # LiveKit — see that directory's own README and MANUAL_VERIFY_call_lock_task
+  # .md). It used to resolve its own self-referential `package:
+  # jitsi_meet_flutter_sdk/...` imports via pubspec.yaml's now-removed
+  # dependency_overrides; with that gone, `flutter analyze` (run from this
+  # directory with no path scoping, see tools/verify.sh) still walks into this
+  # now-orphaned vendored tree and fails on an import it has no way to
+  # resolve anymore — a real CI regression this migration caused, not a
+  # pre-existing issue. Excluded rather than deleted or re-wired, matching
+  # how this codebase already treats disclosed-but-inert history elsewhere.
+  exclude:
+    - third_party/jitsi_meet_flutter_sdk_patched/**
   language:
     strict-casts: true
     strict-inference: true

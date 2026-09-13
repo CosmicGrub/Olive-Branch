@@ -1,5 +1,10 @@
 /**
- * MASTERFILE §10.5 — delivery on a device that cannot be pushed to.
+ * MASTERFILE §8.11.4 — delivery on a device that cannot be pushed to.
+ * (Corrected v0.49.11: this header cited §10.5 — "Recording consent," an
+ * unrelated all-party-consent section — since the file's first commit. The
+ * real match is §8.11.4 "The silent device," which `devices.ts` already
+ * self-cites correctly. Same wrong number was copy-pasted into
+ * postures.test.mjs's own header; fixed there too.)
  *
  * v0.32.0 declared that a FireOS tablet falls back to a foreground socket and an
  * SMS to the adult in the house. **It declared it and did not build it.** The
@@ -7,12 +12,31 @@
  * than the original defect: the original was an oversight, this was a documented
  * assurance with nothing behind it.
  *
- * This is that mechanism.
+ * This is the DECISION logic for that mechanism — not the mechanism itself.
+ * `route()` below decides push vs. socket vs. SMS vs. unreachable given
+ * real-time state (is the app foregrounded, is a socket held, how long has the
+ * item waited); `socketPolicy()` specifies the foreground-only hold/backoff
+ * contract a real socket implementation must follow. Neither exists yet: grep
+ * this whole repo for a WebSocket/socket-server implementation and you will
+ * find none — `socketConnected` below is a plain boolean input with no real
+ * connection behind it anywhere. That gap is recorded, not silently implied
+ * away, in CHANGELOG's own "found, not fixed" notes.
+ *
+ * §8.11.4's OTHER half — "given only this channel, statically, is push even
+ * possible, and what does the guardian get told" — lives in
+ * `packages/devices/src/devices.ts`'s own `CHANNELS`/`admitDevice()`/
+ * `channelAdvice()`. That file is this module's single source of truth for
+ * channel facts (`Channel`, push/fallback capability) — this file used to
+ * redeclare all of it independently, which had silently drifted: this
+ * module's `route()` let a `web` device escalate to `sms_to_adult` even
+ * though `devices.ts` explicitly declares web's fallback stops at
+ * `foreground_socket`, never SMS. Fixed by importing the facts rather than
+ * re-deriving them — a channel's push/fallback capability now has exactly
+ * one place it is declared.
  */
+import { type Channel, CHANNELS, capability } from '../../devices/src/devices.ts';
 
-export type Channel =
-  | 'android_play' | 'android_amazon' | 'android_bare' | 'ios' | 'windows' | 'web';
-
+export type { Channel };
 export type Route = 'push' | 'socket' | 'sms_to_adult' | 'none';
 
 // ================================================== the routing decision ====
@@ -30,13 +54,26 @@ export interface RoutingInput {
 
 export interface RoutingDecision {
   route: Route;
-  /** Every route that was tried and why it was not taken. Auditable. */
-  rejected: { route: Route; because: string }[];
+  /**
+   * Every route that was tried and why it was not taken. Auditable.
+   * `code`, on the `sms_to_adult` entry only, is a structured reason
+   * `senderStatus()` reads instead of pattern-matching `because`'s prose —
+   * see that function's own v0.49.14 fix for why prose-matching would have
+   * been the wrong fix for the bug that motivated adding this field.
+   */
+  rejected: { route: Route; because: string; code?: string }[];
   /** Set when nothing can reach her, which must never be silent. */
   unreachable: boolean;
 }
 
-export const PUSH_CHANNELS: Channel[] = ['android_play', 'ios', 'windows'];
+/**
+ * Derived from `devices.ts`'s own `CHANNELS`, never redeclared by hand — the
+ * v0.49.11 fix. A channel is push-capable exactly when `capability(c).push`
+ * says so; keeping a second, independently-typed list here is exactly the
+ * kind of duplication that let this file's SMS-eligibility drift from
+ * `devices.ts`'s in the first place.
+ */
+export const PUSH_CHANNELS: Channel[] = CHANNELS.filter(c => c.push).map(c => c.channel);
 
 /**
  * Escalate to a text only after this long. A message that arrives on a parent's
@@ -59,11 +96,22 @@ export function route(i: RoutingInput): RoutingDecision {
   rejected.push({ route: 'socket',
     because: i.socketConnected ? 'app is not in the foreground' : 'no socket held' });
 
-  if (i.adultNumberOnFile && i.minutesWaiting >= SMS_ESCALATE_AFTER_MINUTES) {
+  // v0.49.11 fix: SMS is only a real fallback for a channel devices.ts
+  // actually declares 'foreground_socket_and_sms' for. Before this check
+  // existed, a 'web' device (fallback: 'foreground_socket', no SMS) could
+  // fall all the way through to sms_to_adult purely because this function
+  // never consulted devices.ts's own facts — exactly the drift §0's "one
+  // source of truth" rule exists to prevent.
+  const smsEligible = capability(i.channel).fallback === 'foreground_socket_and_sms';
+  if (smsEligible && i.adultNumberOnFile && i.minutesWaiting >= SMS_ESCALATE_AFTER_MINUTES) {
     return { route: 'sms_to_adult', rejected, unreachable: false };
   }
   rejected.push({ route: 'sms_to_adult',
-    because: !i.adultNumberOnFile ? 'no adult number on file at that house'
+    code: !smsEligible ? 'not_sms_eligible'
+      : !i.adultNumberOnFile ? 'no_number'
+      : 'not_yet_time',
+    because: !smsEligible ? `${i.channel} has no SMS fallback declared`
+      : !i.adultNumberOnFile ? 'no adult number on file at that house'
       : `only ${i.minutesWaiting} minutes waited, escalates at ${SMS_ESCALATE_AFTER_MINUTES}` });
 
   return { route: 'none', rejected, unreachable: true };
@@ -96,6 +144,35 @@ export function senderStatus(d: RoutingDecision, childName: string): SenderStatu
       line: `${childName}'s tablet can't show alerts, so we've texted the grown-up `
           + 'there to let her know something is waiting.' };
   }
+
+  // route === 'none'. v0.49.14 fix: this used to return the SAME "no number
+  // on file" line for every 'none' case, regardless of why nothing could be
+  // sent — false whenever that was not the real reason (an adult number
+  // genuinely on file, SMS just hasn't escalated yet; or the channel has no
+  // SMS fallback at all, so a number would not help either way). Directly
+  // violated this module's own stated purpose ("the sender is told what
+  // actually happened") and evaded auditStatus()/STATUS_BANNED, which only
+  // checks for false DELIVERY claims, not a false CAUSE for non-delivery.
+  // Reads route()'s own structured `code` (added for this fix) rather than
+  // pattern-matching `because`'s prose, which would only be as reliable as
+  // the wording happens to stay.
+  const smsCode = d.rejected.find(r => r.route === 'sms_to_adult')?.code;
+  if (smsCode === 'not_yet_time') {
+    return { delivered: false, actionable: false,
+      line: `It's saved, and ${childName} will see it the moment she opens Olive. `
+          + "Her tablet can't alert her right now, but we'll text the grown-up there "
+          + "automatically once it's been waiting a little longer." };
+  }
+  if (smsCode === 'not_sms_eligible') {
+    return { delivered: false, actionable: false,
+      line: `It's saved, and ${childName} will see it the moment she opens Olive. `
+          + "This device can't show pop-up alerts, and we can't text the grown-up "
+          + "there either — she'll see it next time she opens Olive." };
+  }
+  // smsCode === 'no_number' (or absent — a channel that never reached the
+  // sms_to_adult check at all still lands here safely, same as before this
+  // fix). The one case this line was actually written for, and the only one
+  // where adding a number is a real, useful action for the sender to take.
   return { delivered: false, actionable: true,
     line: `It's saved, and ${childName} will see it the moment she opens Olive. `
         + 'Her tablet can\'t alert her and we don\'t have a number for the house — '
@@ -118,8 +195,11 @@ export function auditStatus(s: SenderStatus): { ok: true } | { ok: false; found:
 // ================================================= the SMS to the adult =====
 /**
  * The text goes to an adult, so it may be plainer than a push — but it still
- * reaches a household where the other parent may be standing in the room. §10.4's
- * reasoning applies unchanged: no name, no content, no sender.
+ * reaches a household where the other parent may be standing in the room.
+ * §10.8's own constraint on this exact carrier applies unchanged ("text
+ * summaries and notifications only — never media, never the journal, never
+ * the emergency card"): no name, no content, no sender. (Corrected v0.49.11
+ * — this cited §10.4, which is unrelated state-design-code law.)
  */
 export const ADULT_SMS = 'Olive: something is waiting on the tablet.';
 
@@ -161,14 +241,32 @@ export function socketPolicy(): SocketPolicy {
   };
 }
 
-/** Reachability, stated plainly, for the guardian settings screen. */
+/**
+ * Reachability, stated plainly, for the guardian settings screen. Kept as
+ * its own short-form copy rather than delegating to `channelAdvice()`
+ * (devices.ts) — that function's copy is written for a dispatch-result
+ * context ("here's what happened to what you just sent"), this one for a
+ * settings-screen glance ("here's how this device generally behaves").
+ * Different audience moment, deliberately different sentence, same
+ * underlying facts.
+ *
+ * v0.49.11 fix: `canAlert`/the SMS mention now come from `capability()`
+ * (devices.ts), not a second hand-maintained guess. Before this, every
+ * non-push channel got told "we can text the grown-up there" regardless of
+ * whether devices.ts actually declares that channel SMS-eligible — 'web'
+ * (fallback: 'foreground_socket', no SMS) was being promised a fallback it
+ * does not have, the same drift `route()`'s own header above documents.
+ */
 export function reachability(c: Channel): {
   channel: Channel; canAlert: boolean; line: string;
 } {
-  const canAlert = PUSH_CHANNELS.includes(c);
-  return { channel: c, canAlert,
-    line: canAlert
+  const cap = capability(c);
+  const smsEligible = cap.fallback === 'foreground_socket_and_sms';
+  return { channel: c, canAlert: cap.push,
+    line: cap.push
       ? 'Alerts arrive even when Olive is closed.'
-      : 'Alerts only arrive while Olive is open. We can text the grown-up there '
-      + 'if something has been waiting a while.' };
+      : smsEligible
+      ? 'Alerts only arrive while Olive is open. We can text the grown-up there '
+        + 'if something has been waiting a while.'
+      : 'Alerts only arrive while Olive is open.' };
 }

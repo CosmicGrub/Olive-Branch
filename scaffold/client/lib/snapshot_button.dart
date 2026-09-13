@@ -157,11 +157,18 @@ class AppGalleryScreen extends StatelessWidget {
           builder: (context, _) {
             final List<AppPhoto> photos = gallery.photos;
             if (photos.isEmpty) {
-              return const Center(
+              return Center(
                 child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('Nothing saved yet — take a photo to see it here.',
-                      textAlign: TextAlign.center),
+                  padding: const EdgeInsets.all(24),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.photo_camera_outlined, size: 48,
+                      color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 16),
+                    Text('Nothing saved yet — take a photo to see it here.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ]),
                 ),
               );
             }

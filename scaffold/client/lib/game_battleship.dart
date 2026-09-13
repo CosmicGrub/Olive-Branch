@@ -1,5 +1,6 @@
-// OLIVE BRANCH — battleship. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2.
+// OLIVE BRANCH — battleship. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.2.
 //
 // The rules engine below (BsShip/BsState/placeShip/fire) is a 1:1 semantic
 // port of the `BATTLESHIP` section of packages/games/src/games2.ts — same
@@ -41,6 +42,7 @@
 // disappear at "Good game."
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
 enum BsSide { child, parent }
@@ -222,6 +224,22 @@ class _BattleshipHost {
     return result;
   }
 
+  /// Everything a takeback needs to restore — the shared engine state PLUS
+  /// this host's own private targeting memory, which [BsState] itself
+  /// doesn't carry. Free, unlimited takebacks are already the house rule
+  /// for a move just made in every other game here (game_checkers.dart's
+  /// own `_history`/`_undo`); Battleship needed this extra snapshot only
+  /// because its AI keeps state `BsState` doesn't.
+  ({BsState state, List<int> huntQueue}) snapshot() =>
+      (state: _state, huntQueue: List<int>.from(_huntQueue));
+
+  void restore(({BsState state, List<int> huntQueue}) snap) {
+    _state = snap.state;
+    _huntQueue
+      ..clear()
+      ..addAll(snap.huntQueue);
+  }
+
   int _pickParentTarget() {
     while (_huntQueue.isNotEmpty) {
       final c = _huntQueue.removeLast();
@@ -294,6 +312,12 @@ class _GameBattleshipState extends State<GameBattleship> {
   bool _parentThinking = false;
   String? _placementHint;
   String? _shotNarration;
+  // Free, unlimited takebacks during the firing phase — this game's own
+  // version of the house rule every other title here already has
+  // (game_checkers.dart's `_history`/`_undo`). One snapshot per shot,
+  // either side's — Undo pops exactly one, matching checkers' own "walks
+  // back one ply at a time regardless of whose it was" behavior.
+  final List<({BsState state, List<int> huntQueue})> _shotHistory = [];
 
   List<String> get _unplacedNames {
     final placed = _host.state.ships[BsSide.child]!.map((s) => s.name).toSet();
@@ -320,8 +344,10 @@ class _GameBattleshipState extends State<GameBattleship> {
   }
 
   void _fireChild(int cell) {
+    final snap = _host.snapshot();
     final result = _host.fireAt(BsSide.child, cell);
     if (!result.ok) return;
+    _shotHistory.add(snap);
     setState(() {
       _shotNarration = result.sunk != null
           ? 'You sank the ${result.sunk}!'
@@ -336,7 +362,9 @@ class _GameBattleshipState extends State<GameBattleship> {
     setState(() => _parentThinking = true);
     Future.delayed(widget.botThinkDelay, () {
       if (!mounted) return;
+      final snap = _host.snapshot();
       final result = _host.parentTakeShot();
+      if (result.ok) _shotHistory.add(snap);
       setState(() {
         if (result.ok) {
           _shotNarration = result.sunk != null
@@ -364,6 +392,16 @@ class _GameBattleshipState extends State<GameBattleship> {
       _parentThinking = false;
       _placementHint = null;
       _shotNarration = null;
+      _shotHistory.clear();
+    });
+  }
+
+  void _undoShot() {
+    if (_shotHistory.isEmpty) return;
+    setState(() {
+      _host.restore(_shotHistory.removeLast());
+      _parentThinking = false;
+      _shotNarration = null;
     });
   }
 
@@ -382,46 +420,77 @@ class _GameBattleshipState extends State<GameBattleship> {
           onPressed: () => _notBuiltYetBs(context, 'Voice notes on shots'),
         ),
       ]),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        _StatusBanner(placing: placing, finished: finished, parentThinking: _parentThinking,
-          isChildTurn: host.state.turn == BsSide.child,
-          childName: widget.childName, parentName: widget.parentName,
-          narration: _shotNarration),
-        const SizedBox(height: 12),
-        if (!placing && !finished) _TallyRowBs(
-          childName: widget.childName, parentName: widget.parentName,
-          childShips: host.shipsRemaining(BsSide.child),
-          parentShips: host.shipsRemaining(BsSide.parent),
-        ),
-        if (placing) _PlacementPanel(
-          unplacedNames: _unplacedNames,
-          pending: _pendingShip ?? (_unplacedNames.isEmpty ? null : _unplacedNames.first),
-          horizontal: _horizontal,
-          onPickShip: (n) => setState(() => _pendingShip = n),
-          onToggleOrientation: () => setState(() => _horizontal = !_horizontal),
-          hint: _placementHint,
-        ) else if (!finished) SegmentedButton<_BoardTab>(
-          segments: const [
-            ButtonSegment(value: _BoardTab.mine, label: Text('Your fleet'), icon: Icon(Icons.shield_outlined)),
-            ButtonSegment(value: _BoardTab.enemy, label: Text('Enemy waters'), icon: Icon(Icons.waves)),
-          ],
-          selected: {_tab},
-          onSelectionChanged: (s) => setState(() => _tab = s.first),
-        ),
-        const SizedBox(height: 12),
-        Center(child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: AspectRatio(aspectRatio: 1, child: placing || _tab == _BoardTab.mine
-              ? _OwnGrid(view: host.ownBoardView(BsSide.child), scheme: scheme,
-                  onTapCell: placing && !finished ? _tapOwnCellForPlacement : null)
-              : _EnemyGrid(view: host.enemyBoardView(BsSide.child), scheme: scheme,
-                  enabled: !finished && host.state.turn == BsSide.child && !_parentThinking,
-                  onTapCell: _fireChild)),
-        )),
-        const SizedBox(height: 16),
-        if (finished) Center(child: SizedBox(height: 48, child: FilledButton.icon(
-          onPressed: _resetGame, icon: const Icon(Icons.refresh), label: const Text('Play again')))),
-      ])),
+      // On a wide tablet/desktop viewport the whole outer column — status
+      // banner through the tab-toggle through the board through the
+      // play-again button — is only ever capped to a comfortable reading
+      // width and centered, never split (same real columnsAt() gate every
+      // other reading-cap screen uses, form_factors.dart). This is strictly
+      // ADDITIVE on top of the board's own existing 460px cap below, not a
+      // replacement for it — that inner cap, the tab-toggle single-board
+      // interaction model, and everything else below are all unchanged.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          _StatusBanner(placing: placing, finished: finished, parentThinking: _parentThinking,
+            isChildTurn: host.state.turn == BsSide.child,
+            childName: widget.childName, parentName: widget.parentName,
+            narration: _shotNarration),
+          const SizedBox(height: 12),
+          if (!placing && !finished) _TallyRowBs(
+            childName: widget.childName, parentName: widget.parentName,
+            childShips: host.shipsRemaining(BsSide.child),
+            parentShips: host.shipsRemaining(BsSide.parent),
+          ),
+          if (placing) _PlacementPanel(
+            unplacedNames: _unplacedNames,
+            pending: _pendingShip ?? (_unplacedNames.isEmpty ? null : _unplacedNames.first),
+            horizontal: _horizontal,
+            onPickShip: (n) => setState(() => _pendingShip = n),
+            onToggleOrientation: () => setState(() => _horizontal = !_horizontal),
+            hint: _placementHint,
+          ) else if (!finished) SegmentedButton<_BoardTab>(
+            segments: const [
+              ButtonSegment(value: _BoardTab.mine, label: Text('Your fleet'), icon: Icon(Icons.shield_outlined)),
+              ButtonSegment(value: _BoardTab.enemy, label: Text('Enemy waters'), icon: Icon(Icons.waves)),
+            ],
+            selected: {_tab},
+            onSelectionChanged: (s) => setState(() => _tab = s.first),
+          ),
+          const SizedBox(height: 12),
+          Center(child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: AspectRatio(aspectRatio: 1, child: placing || _tab == _BoardTab.mine
+                ? _OwnGrid(view: host.ownBoardView(BsSide.child), scheme: scheme,
+                    onTapCell: placing && !finished ? _tapOwnCellForPlacement : null)
+                : _EnemyGrid(view: host.enemyBoardView(BsSide.child), scheme: scheme,
+                    enabled: !finished && host.state.turn == BsSide.child && !_parentThinking,
+                    onTapCell: _fireChild)),
+          )),
+          const SizedBox(height: 16),
+          // Wrap, not a Row — same Fold5-cover-width reasoning
+          // game_checkers.dart's own identical button row already documents:
+          // "Take that back" and "Play again" together don't fit one line
+          // at 344 CSS px, so this must wrap rather than overflow.
+          Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 12, children: [
+            if (!placing) SizedBox(height: 48, child: OutlinedButton.icon(
+              key: const Key('bsUndo'),
+              onPressed: _shotHistory.isEmpty ? null : _undoShot,
+              icon: const Icon(Icons.undo),
+              label: const Text('Take that back'),
+            )),
+            if (finished) SizedBox(height: 48, child: FilledButton.icon(
+              key: const Key('bsPlayAgain'),
+              onPressed: _resetGame, icon: const Icon(Icons.refresh), label: const Text('Play again'))),
+          ]),
+        ]);
+        return capWidth
+            ? Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                child: content))
+            : content;
+      })),
     );
   }
 }
@@ -446,7 +515,11 @@ class _StatusBanner extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: Theme.of(context).textTheme.titleLarge),
       if (narration != null && !finished) Padding(padding: const EdgeInsets.only(top: 4),
-        child: Text(narration!, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant))),
+        child: Text(narration!,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
     ]);
   }
 }
@@ -462,7 +535,7 @@ class _TallyRowBs extends StatelessWidget {
     child: Row(children: [
       Expanded(child: _TallyChipBs(label: '$childName\'s ships', count: childShips,
         color: Theme.of(context).colorScheme.primaryContainer)),
-      const SizedBox(width: 10),
+      const SizedBox(width: 12),
       Expanded(child: _TallyChipBs(label: '$parentName\'s ships', count: parentShips,
         color: Theme.of(context).colorScheme.secondaryContainer)),
     ]),
@@ -477,11 +550,11 @@ class _TallyChipBs extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 48),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-      Text('$count', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+      Text('$count', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
     ]),
   );
 }
@@ -502,13 +575,17 @@ class _PlacementPanel extends StatelessWidget {
       for (final name in unplacedNames)
         ChoiceChip(label: Text(name), selected: name == pending, onSelected: (_) => onPickShip(name)),
     ]),
-    const SizedBox(height: 10),
+    const SizedBox(height: 12),
     SizedBox(height: 48, child: OutlinedButton.icon(
       onPressed: onToggleOrientation,
       icon: Icon(horizontal ? Icons.swap_horiz : Icons.swap_vert),
       label: Text(horizontal ? 'Lying flat' : 'Standing up'))),
     if (hint != null) Padding(padding: const EdgeInsets.only(top: 8),
-      child: Text(hint!, style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.error))),
+      child: Text(hint!,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.error))),
   ]);
 }
 
@@ -527,7 +604,7 @@ class _OwnGrid extends StatelessWidget {
       itemCount: bsSize * bsSize,
       itemBuilder: (context, i) {
         final info = view.cells[i];
-        final color = info.hit && info.hasShip ? Colors.red.shade400
+        final color = info.hit && info.hasShip ? scheme.errorContainer
             : info.hit ? scheme.surfaceContainerHighest
             : info.hasShip ? scheme.primary.withValues(alpha: 0.55)
             : scheme.surfaceContainerLow;
@@ -565,13 +642,13 @@ class _EnemyGrid extends StatelessWidget {
         final color = switch (status) {
           BsCellStatus.unknown => scheme.tertiaryContainer.withValues(alpha: 0.5),
           BsCellStatus.miss => scheme.surfaceContainerHighest,
-          BsCellStatus.hit => Colors.orange.shade400,
-          BsCellStatus.sunk => Colors.red.shade700,
+          BsCellStatus.hit => scheme.tertiary,
+          BsCellStatus.sunk => scheme.error,
         };
         final icon = switch (status) {
           BsCellStatus.miss => const Icon(Icons.remove, size: 14),
-          BsCellStatus.hit => const Icon(Icons.local_fire_department, size: 14, color: Colors.white),
-          BsCellStatus.sunk => const Icon(Icons.close, size: 16, color: Colors.white),
+          BsCellStatus.hit => Icon(Icons.local_fire_department, size: 14, color: scheme.onTertiary),
+          BsCellStatus.sunk => Icon(Icons.close, size: 16, color: scheme.onError),
           BsCellStatus.unknown => null,
         };
         return GestureDetector(

@@ -1,5 +1,10 @@
 package com.olivebranch.olive_client
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -30,6 +35,29 @@ class MainActivity : FlutterActivity() {
     private var eventSink: EventChannel.EventSink? = null
     private var lastKnownMode: String = "none"
 
+    // §16.2 #6 — WrapperJitsiMeetActivity (a different Gradle module; see
+    // KioskBridge.ACTION_CALL_LOCK_TASK_EXITED's own doc comment for why this
+    // can't just be a direct method call) broadcasts this when ITS pin gets
+    // defeated mid-call. Relayed through the exact same emitExit() the
+    // ordinary (non-call) defeat path already uses, so lock_controller.dart's
+    // onLockTaskExited handles both uniformly with no Dart-side change.
+    private val callDefeatReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            KioskBridge.emitExit(eventSink, wasPinned = true)
+        }
+    }
+
+    // 2026-08-24 — the real, non-PiP-confusable "the call is truly over"
+    // signal. See KioskBridge.ACTION_CALL_ACTIVITY_DESTROYED's own doc
+    // comment for the real bug this closes: onResume() alone fires for a
+    // PiP entry too, so a read-and-clear handoff flag could already be
+    // gone by the time the call genuinely ends, leaving nothing to re-pin.
+    private val callActivityDestroyedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            KioskBridge.clearCallHandoff(this@MainActivity)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -41,6 +69,38 @@ class MainActivity : FlutterActivity() {
             onSink = { eventSink = it },
         )
         lastKnownMode = KioskBridge.currentMode(this)
+        // 2026-08-24 — a fresh process cannot genuinely be mid-call-handoff
+        // for an Activity it hasn't launched yet. Real, live gap this
+        // closes: expecting_call_handoff previously only ever cleared via
+        // a real call Activity's own onDestroy() broadcast — never on
+        // abnormal process death (an OOM/LMK kill, which takes
+        // WrapperJitsiMeetActivity down WITH this process, since neither
+        // manifest sets android:process — they share one). An orphaned
+        // true flag would silently re-pin the device on every future
+        // resume, forever, with nothing left alive to ever clear it.
+        // Gated on currentMode()=="none": a genuinely-pinned fresh start
+        // (Android CAN recreate an Activity within an already-pinned task)
+        // must not have this cleared out from under it.
+        if (KioskBridge.currentMode(this) == "none" && KioskBridge.stillExpectingCallHandoff(this)) {
+            android.util.Log.w("MainActivity",
+                "clearing an orphaned call-handoff flag at fresh process start")
+            KioskBridge.clearCallHandoff(this)
+        }
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            callDefeatReceiver, IntentFilter(KioskBridge.ACTION_CALL_LOCK_TASK_EXITED),
+        )
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            callActivityDestroyedReceiver, IntentFilter(KioskBridge.ACTION_CALL_ACTIVITY_DESTROYED),
+        )
+
+        // Phone -> watch sync (§21.5). See WearSyncBridge.kt's own header for
+        // scope.
+        WearSyncBridge.register(this, MethodChannel(messenger, WearSyncBridge.METHOD_CHANNEL))
+
+        // Real WebAuthn/passkey ceremony (§7.1, §8.1, §11). See
+        // WebAuthnBridge.kt's own header for the API-level tension and the
+        // discoverable-credential requirement this bridge is built around.
+        WebAuthnBridge.register(this, MethodChannel(messenger, WebAuthnBridge.METHOD_CHANNEL))
     }
 
     override fun onStop() {
@@ -57,7 +117,33 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        lastKnownMode = KioskBridge.currentMode(this)
-        KioskBridge.emitResumed(eventSink)
+        // §16.2 #6, revised 2026-08-24 for real child PiP — see KioskBridge
+        // .stillExpectingCallHandoff()'s own doc comment for exactly why
+        // this peeks rather than consumes now. stillExpectingCallHandoff()
+        // only ever returns true if M_BEGIN_CALL_HANDOFF actually ran,
+        // which the Dart side only does when this device was pinned/locked
+        // to begin with (kiosk_channel.dart's beginCallHandoff callers all
+        // guard on mode() != 'none' first) — so this never fires on an
+        // unlocked/guardian device. Re-pins on EVERY resume while a call is
+        // outstanding: a clean end, a mid-call defeat, AND a PiP entry all
+        // resume this Activity, and only the LAST of those (whichever one
+        // actually happens) should leave the child free to leave the app —
+        // callActivityDestroyedReceiver above is what actually clears the
+        // flag, not this method. Verified, not fire-and-forget, as of the
+        // same 2026-08-24 pass — see KioskBridge.startLockTaskVerified()'s
+        // own doc comment for the real, live-confirmed bug this closes
+        // (startLockTask() can return without throwing yet not actually
+        // pin). emitResumed()/lastKnownMode are deferred into the retry's
+        // own callback so they reflect the FINAL settled mode, not a
+        // mid-retry snapshot.
+        if (KioskBridge.stillExpectingCallHandoff(this)) {
+            KioskBridge.startLockTaskVerified(this) {
+                lastKnownMode = KioskBridge.currentMode(this)
+                KioskBridge.emitResumed(eventSink)
+            }
+        } else {
+            lastKnownMode = KioskBridge.currentMode(this)
+            KioskBridge.emitResumed(eventSink)
+        }
     }
 }

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — her colour, first pick. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.6.
+// OLIVE BRANCH — her colour, first pick. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.6.
 //
 // Renders MARKUP screen 'colourPick'. Twelve curated swatches, not a colour
 // picker — a free picker hands a five-year-old #FEFEFE and no explanation.
@@ -11,6 +12,7 @@
 // allowed list, so the same guard the palette module enforces is visibly the
 // thing drawing this screen.
 import 'package:flutter/material.dart';
+import 'motion_rules.dart';
 import 'onboarding_shared.dart';
 import 'palette_logic.dart';
 
@@ -38,13 +40,13 @@ class _ColourPickScreenState extends State<ColourPickScreen> {
       onSkip: () => widget.onContinue(null),
       body: Column(children: [
         if (chosen != null) _LivePreview(childName: widget.childName, swatch: chosen),
-        if (chosen != null) const SizedBox(height: 22),
+        if (chosen != null) const SizedBox(height: 24),
         GridView.count(
           crossAxisCount: 4,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
           childAspectRatio: 1,
           children: [for (final s in palette) _SwatchTile(
             swatch: s,
@@ -70,7 +72,10 @@ class _SwatchTile extends StatelessWidget {
     label: swatch.label,
     child: InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      // A CircleBorder, not a borderRadius — the child below renders as a
+      // true circle (shape: BoxShape.circle), so the ink splash should clip
+      // to that same circular boundary rather than a rounded-rect approximation.
+      customBorder: const CircleBorder(),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
@@ -100,32 +105,54 @@ class _LivePreview extends StatelessWidget {
     // palette_logic.dart's port of the same guard.
     final outcome = applyColour(swatch.id, const ['avatar_ring', 'accent_stripe']);
     final placements = outcome.ok ? outcome.placements : const <String>[];
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Row(children: [
         if (placements.contains('avatar_ring'))
-          CircleAvatar(radius: 26, backgroundColor: swatch.color, child: CircleAvatar(
-            radius: 22, backgroundColor: Theme.of(context).colorScheme.surface,
-            child: Text(childName.isEmpty ? '?' : childName.substring(0, 1).toUpperCase(),
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: swatch.ink))))
+          // A bounded Color.lerp, not a snap-cut — this preview claims (per
+          // this file's own header) to use applyColour() "for real, not
+          // decoratively," which used to be true of the DATA but not the
+          // MOTION: _SwatchTile a few widgets away already animates its own
+          // selection ring (AnimatedContainer, 180ms); this tile snapped
+          // instantly on the same screen. TweenAnimationBuilder re-tweens
+          // automatically whenever `end` changes between rebuilds — no
+          // AnimationController lifecycle to manage for a value this simple.
+          // Capped at motion_rules.dart's own maxConsequenceMs, same as
+          // colouring_screen.dart's _ColouringPainter._colorFor.
+          TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: swatch.color),
+            duration: const Duration(milliseconds: maxConsequenceMs),
+            builder: (context, color, child) => CircleAvatar(
+              radius: 26, backgroundColor: color, child: child),
+            child: CircleAvatar(
+              radius: 22, backgroundColor: scheme.surface,
+              child: Text(childName.isEmpty ? '?' : childName.substring(0, 1).toUpperCase(),
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: swatch.ink))),
+          )
         else
           CircleAvatar(radius: 26, child: Text(childName.isEmpty ? '?' : childName.substring(0, 1))),
-        const SizedBox(width: 14),
+        const SizedBox(width: 16),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(childName.isEmpty ? 'You' : childName,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           if (placements.contains('accent_stripe'))
-            Container(height: 4, width: 64, decoration: BoxDecoration(
-              color: swatch.color, borderRadius: BorderRadius.circular(2))),
+            TweenAnimationBuilder<Color?>(
+              tween: ColorTween(end: swatch.color),
+              duration: const Duration(milliseconds: maxConsequenceMs),
+              builder: (context, color, _) => Container(height: 4, width: 64,
+                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+            ),
           const SizedBox(height: 4),
           Text('${swatch.label[0].toUpperCase()}${swatch.label.substring(1)}',
-            style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
         ])),
       ]),
     );

@@ -1,0 +1,15 @@
+# Gradle's wrapper *must* stay LF -- it's a shell script CI runs on Linux.
+# A Windows checkout with core.autocrlf on would otherwise silently convert
+# it to CRLF, breaking the shebang ("bad interpreter") the next time anyone
+# committed from Windows. This is exactly how gradlew ended up excluded from
+# version control in the first place instead of just fixed properly.
+scaffold/client/android/gradlew text eol=lf
+scaffold/client/**/gradlew text eol=lf
+*.sh text eol=lf
+
+# The Windows counterpart is meant to have CRLF.
+scaffold/client/android/gradlew.bat text eol=crlf
+scaffold/client/**/gradlew.bat text eol=crlf
+
+# Binary, never touch line endings.
+scaffold/client/**/gradle-wrapper.jar binary

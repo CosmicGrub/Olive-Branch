@@ -86,6 +86,37 @@ void main() {
       final Size button = t.getSize(find.byType(FilledButton).first);
       expect(button.height, greaterThanOrEqualTo(48.0));
     });
+
+    testWidgets('unread count reaches the Messages tile as a badge, not '
+        'silently dropped', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 2)));
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('a zero unread count shows no badge', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya', presence: null,
+        sleepsUntilHandover: 3, unreadCount: 0)));
+      expect(find.text('0'), findsNothing);
+    });
+
+    testWidgets('presence secondary text and the sleeps caption use the '
+        'themed secondary color, not a hardcoded value (design-token audit '
+        'finding #1)', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Maya',
+        presence: ParentPresence('Dad', '8:41 PM', '9:30'),
+        sleepsUntilHandover: 3, unreadCount: 0)));
+      final BuildContext context = t.element(find.text('Hi Maya'));
+      final Color onSurfaceVariant =
+          Theme.of(context).colorScheme.onSurfaceVariant;
+      final Text presenceLine = t.widget(find.textContaining('where Dad is'));
+      final Text sleepsCaption = t.widget(find.textContaining('sleeps until'));
+      expect(presenceLine.style!.color, onSurfaceVariant);
+      expect(sleepsCaption.style!.color, onSurfaceVariant);
+    });
   });
 
   group('guardian shell — §8.2', () {
@@ -126,6 +157,102 @@ void main() {
         childBands: bands, actorBands: bands)));
       expect(find.text('Maya is just home from school'), findsOneWidget);
     });
+
+    testWidgets('the actor line and zone abbreviation use the themed '
+        'secondary color, not a hardcoded value (design-token audit '
+        'finding #1)', (t) async {
+      await t.pumpWidget(wrap(const GuardianHome(
+        childName: 'Maya', childLocalTime: '4:12 PM', childZoneAbbr: 'EDT',
+        actorLocalTime: '3:12 PM CDT',
+        childStateSentence: 'Maya is just home from school',
+        childBands: bands, actorBands: bands)));
+      final BuildContext context = t.element(find.text('4:12 PM'));
+      final Color onSurfaceVariant =
+          Theme.of(context).colorScheme.onSurfaceVariant;
+      final Text actorLine = t.widget(find.text('you · 3:12 PM CDT'));
+      final Text zone = t.widget(find.text('EDT'));
+      expect(actorLine.style!.color, onSurfaceVariant);
+      expect(zone.style!.color, onSurfaceVariant);
+    });
+
+    testWidgets('the state sentence reads as the dominant fact, per §8.2.1\'s '
+        'own worked example — bodyMedium/w600, not the actor line\'s '
+        'subordinate token, and positioned above it', (t) async {
+      await t.pumpWidget(wrap(const GuardianHome(
+        childName: 'Maya', childLocalTime: '4:12 PM', childZoneAbbr: 'EDT',
+        actorLocalTime: '3:12 PM CDT',
+        childStateSentence: 'Maya is just home from school',
+        childBands: bands, actorBands: bands)));
+      final BuildContext context = t.element(find.text('4:12 PM'));
+      final TextTheme textTheme = Theme.of(context).textTheme;
+      final Text stateSentence =
+          t.widget(find.text('Maya is just home from school'));
+      expect(stateSentence.style!.fontSize, textTheme.bodyMedium!.fontSize);
+      expect(stateSentence.style!.fontWeight, FontWeight.w600);
+      // Above, not below, the actor line — the whole point of the fix.
+      final double stateY = t.getTopLeft(find.text('Maya is just home from school')).dy;
+      final double actorY = t.getTopLeft(find.text('you · 3:12 PM CDT')).dy;
+      expect(stateY, lessThan(actorY));
+    });
+  });
+
+  group('responsive layout — phone, Fold5 (cover + main), and desktop-scale '
+      'PC widths', () {
+    // MASTERFILE's own mandated minimum widths for this app: the Fold5's
+    // cover screen (344 CSS px, the narrowest supported width) and its
+    // unfolded main screen (~673x841, nearly square) -- plus a standard
+    // phone width and a desktop-scale width now that Windows is a real
+    // target (short-and-wide, unlike a tall phone). Same
+    // `tester.view.physicalSize` idiom story_library_test.dart and
+    // shared_reading_test.dart already use.
+    const Map<String, Size> widths = <String, Size>{
+      'Fold5 cover (344)': Size(344, 882),
+      'Fold5 main (~673x841)': Size(673, 841),
+      'phone (390)': Size(390, 844),
+      'desktop-scale PC (1100)': Size(1100, 750),
+    };
+
+    Future<void> useWidth(WidgetTester t, Size size) async {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+    }
+
+    for (final MapEntry<String, Size> entry in widths.entries) {
+      testWidgets('ChildHome renders without overflow at ${entry.key}',
+          (t) async {
+        await useWidth(t, entry.value);
+        await t.pumpWidget(wrap(const ChildHome(
+          childName: 'Maya',
+          presence: ParentPresence('Dad', '8:41 PM', '9:30'),
+          sleepsUntilHandover: 3, unreadCount: 2)));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('GuardianHome renders without overflow at ${entry.key}',
+          (t) async {
+        await useWidth(t, entry.value);
+        const List<RibbonBand> bands = <RibbonBand>[
+          RibbonBand(0, 0.5, Colors.blue, 'school'),
+          RibbonBand(0.5, 0.5, Colors.green, 'home time'),
+        ];
+        // Longest guardian tile labels ('Message banking', 'Send-time
+        // guard', 'Morning briefing') plus a non-null overlapLabel — this
+        // is the exact combination that overflowed by 4px at the Fold5
+        // cover width before guardian_home.dart's grid grew a
+        // LayoutBuilder breakpoint.
+        await t.pumpWidget(wrap(const GuardianHome(
+          childName: 'Maya', childLocalTime: '4:12 PM', childZoneAbbr: 'EDT',
+          actorLocalTime: '3:12 PM CDT',
+          childStateSentence: 'Maya is just home from school',
+          childBands: bands, actorBands: bands,
+          overlapLabel: 'both free 4:00-5:00 PM')));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
   });
 
   group('PIN gate — §8.3', () {
@@ -183,6 +310,17 @@ void main() {
       expect(find.textContaining('Incorrect'), findsNothing);
       expect(find.text('Welcome back'), findsOneWidget);
     });
+
+    testWidgets('tells her this needs a grown-up, from frame one, unconditionally',
+        (t) async {
+      await t.pumpWidget(wrap(PinGate(digits: 4, shuffle: false, onComplete: (_) {})));
+      expect(find.byKey(const Key('pinGateGrownUpNotice')), findsOneWidget);
+      expect(find.text("This needs a grown-up's code"), findsOneWidget);
+      // Present before any attempt at all — not gated on a failed guess.
+      await t.tap(find.text('1'));
+      await t.pump();
+      expect(find.byKey(const Key('pinGateGrownUpNotice')), findsOneWidget);
+    });
   });
 
   group('kiosk shell — §5.20', () {
@@ -191,6 +329,7 @@ void main() {
     Widget shellWith(_FakeKioskChannel ch, {String pin = '1234'}) => wrap(KioskShell(
           channel: ch,
           verifyPin: (String p) async => p == pin,
+          verifyBiometric: () async => true,
           child: child,
         ));
 

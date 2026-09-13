@@ -107,6 +107,30 @@ void main() {
       await t.pumpAndSettle();
       expect(t.takeException(), isNull);
     });
+
+    testWidgets('renders on the Fold5 unfolded main screen (~673 CSS px) without overflow', (t) async {
+      await t.binding.setSurfaceSize(const Size(673, 841));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const HandicapScreen(kind: GameKind.dotsboxes)));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a standard phone width (~390 CSS px) without overflow', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const HandicapScreen(kind: GameKind.dotsboxes)));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a tablet/desktop width (~1100 CSS px) without overflow', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 800));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const HandicapScreen(kind: GameKind.dotsboxes)));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    });
   });
 
   group('setHandicap — enforced independent of any UI (§9.2 refusal)', () {

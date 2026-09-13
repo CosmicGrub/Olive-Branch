@@ -120,4 +120,69 @@ void main() {
     expect(find.textContaining('gift', findRichText: true), findsNothing);
     expect(find.textContaining('http'), findsNothing);
   });
+
+  group('wants & needs — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    // Real columnsAt()-driven threshold (form_factors.dart), matching
+    // message_banking.dart's own two-pane pattern — not an invented number.
+    testWidgets(
+        'a genuinely wide viewport (tablet/desktop, >=660px effective) renders '
+        'wants and needs as two side-by-side panes', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('wantsNeedsTwoPaneRow')), findsOneWidget);
+      // Both panes' content is still genuinely present, just rearranged.
+      expect(find.text('Things I want'), findsOneWidget);
+      expect(find.text('Things I need'), findsOneWidget);
+      expect(find.text('LEGO set'), findsOneWidget);
+      expect(find.text('New shoes'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single '
+        "column unchanged — no two-pane Row at all", (tester) async {
+      await tester.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('wantsNeedsTwoPaneRow')), findsNothing);
+      expect(find.text('Things I want'), findsOneWidget);
+      expect(find.text('Things I need'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single '
+        'column, not the two-pane Row', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('wantsNeedsTwoPaneRow')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('adding a want still works correctly inside the wide two-pane layout',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, 'Wide-pane wish');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add').first);
+      await tester.pump();
+
+      expect(find.text('Wide-pane wish'), findsOneWidget);
+      expect(
+          find.descendant(
+              of: find.byKey(const Key('needsSection')),
+              matching: find.text('Wide-pane wish')),
+          findsNothing);
+    });
+  });
 }

@@ -1,6 +1,7 @@
 // OLIVE BRANCH — weeks_screen.dart tests. §8.2, §8.2.5, P3.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/weeks_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -92,7 +93,91 @@ void main() {
       await tester.pumpWidget(wrap(const WeeksScreen(
         childName: 'Ivy', nights: <CustodyNight>[], guardianColors: demoGuardianColors)));
       expect(find.textContaining('Nothing to show yet'), findsOneWidget);
+      expect(find.byIcon(Icons.nights_stay_outlined), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a long guardian label in the legend does not overflow its chip',
+        (tester) async {
+      // guardianColors is caller-supplied (unlike the demo's short "Mom"/"Dad")
+      // — a real family's label ("Step-mum Jennifer") is not bounded the same
+      // way. Found by actually rendering at the Fold5 cover width: an
+      // unprotected Text in _LegendChip's Row overflowed by 51px there.
+      await tester.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(WeeksScreen(childName: 'Ivy',
+        nights: demoCustodyNights(today: DateTime(2026, 8, 4)),
+        guardianColors: const <String, Color>{
+          'Mom': Color(0xFFAD1457),
+          'Step-mum Jennifer-Rosalind': Color(0xFF00838F),
+        })));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
+    group('responsive — no overflow at any required viewport width', () {
+      // Fold5 cover, Fold5 main, phone, and tablet/desktop widths. The
+      // surface height at each is taller than the named device — this
+      // screen renders with a ListView (see class doc), whose sliver only
+      // lays out children near the viewport, so a device-accurate short
+      // height would leave the legend/beads unbuilt and any overflow in
+      // them undetectable. Width is what a RenderFlex overflow actually
+      // depends on, so the extra height doesn't change what's being tested.
+      Future<void> pumpAt(WidgetTester tester, Size size) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(WeeksScreen(
+          childName: 'Ivy', nights: _fourteenNights, guardianColors: demoGuardianColors)));
+        await tester.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (tester) async {
+        await pumpAt(tester, const Size(344, 1400));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (tester) async {
+        await pumpAt(tester, const Size(673, 1400));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (tester) async {
+        await pumpAt(tester, const Size(390, 1400));
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (tester) async {
+        await pumpAt(tester, const Size(1100, 1000));
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    group('responsive — comfortable reading width cap (form_factors.dart)', () {
+      // This is a rhythm visualization, not a list+detail screen (see file
+      // header) — never a two-pane split. On a wide tablet/desktop viewport
+      // the single column is only ever capped to a comfortable reading
+      // width and centered; the Fold5 cover and phone widths are completely
+      // untouched by this cap.
+      testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+          'never at the Fold5 cover or phone width', (tester) async {
+        Future<void> pumpAt(Size size) async {
+          await tester.binding.setSurfaceSize(size);
+          await tester.pumpWidget(wrap(WeeksScreen(
+            childName: 'Ivy', nights: _fourteenNights, guardianColors: demoGuardianColors)));
+          await tester.pump();
+        }
+
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await pumpAt(const Size(1100, 1000));
+        expect(tester.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+        await pumpAt(const Size(344, 1400)); // Fold5 cover
+        expect(tester.getSize(find.byType(ListView)).width, 344);
+
+        await pumpAt(const Size(390, 1400)); // standard phone
+        expect(tester.getSize(find.byType(ListView)).width, 390);
+      });
     });
   });
 }

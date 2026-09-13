@@ -2,8 +2,9 @@
 // Flutter toolchain in tools/verify.sh's automated pipeline). MASTERFILE
 // §8.2, §8.2.4, §8.4, §9.4, §9.5.
 //
-// Pure-Dart logic shared by the four screens in this group (my_day.dart,
-// weeks_screen.dart, receipt_screen.dart, inbox_screen.dart) — a 1:1 port of
+// Pure-Dart logic shared by the five screens in this group (my_day.dart,
+// weeks_screen.dart, receipt_screen.dart, inbox_screen.dart,
+// guardian_home_live.dart) — a 1:1 port of
 // the RELEVANT slices of three TS modules, not the whole of any of them:
 //   - packages/phase3/src/phase3.ts       -> DAY_PART_META + scheduleStrip()
 //   - packages/messaging/src/pipeline.ts  -> the openReceipt() phrase builder
@@ -19,6 +20,20 @@
 // client does no zone maths" — so every function below takes an
 // already-local time string/label and classifies or formats it; none of them
 // ever compute a zone offset.
+//
+// `dayPartColor()` below is this file's one deliberate exception to staying
+// Flutter-free: `dart:ui`'s `Color` (not `package:flutter/material.dart` —
+// the lightest real dependency that has it) is the shared kind->color
+// lookup my_day.dart's own `_DayRibbon` already used privately. Extracted
+// here, not left duplicated, so guardian_home_live.dart's own new ribbon
+// (§20.2b) can render the SAME kind in the SAME color a child's own My Day
+// screen already does, without a second, driftable copy of ten hex values.
+// This does NOT reach into my_day.dart's own `_DayRibbon`/`_DayPartCard`
+// widgets at all — those stay exactly as self-contained as that file's own
+// header already documents; only the literal color VALUES move to one
+// source of truth, sourced by my_day.dart the same way dayPartLabel()/
+// dayPartGlyph() already are.
+import 'dart:ui' show Color;
 
 // ===================================================== day-part schedule ===
 // Mirrors phase3.ts's DayPartLite / StripSegment / DAY_PART_META /
@@ -84,11 +99,42 @@ String dayPartLabel(String kind) =>
 
 String dayPartGlyph(String kind) => _dayPartMeta[kind]?.glyph ?? fallbackGlyph;
 
+// Same ten values my_day.dart's own private `_dayPartColor` already used —
+// copied here verbatim, not recomputed, so this extraction changes zero
+// pixels on the screen that's had them since before this map existed here.
+const Map<String, Color> _dayPartColor = <String, Color>{
+  'wake': Color(0xFFFFB74D),
+  'before_school': Color(0xFFFFD54F),
+  'school': Color(0xFF64B5F6),
+  'after_school': Color(0xFF81C784),
+  'activity': Color(0xFFFF8A65),
+  'dinner': Color(0xFFE57373),
+  'wind_down': Color(0xFF9575CD),
+  'bedtime': Color(0xFF7986CB),
+  'asleep': Color(0xFF3949AB),
+  'free': Color(0xFF4DD0E1),
+};
+
+const Color fallbackDayPartColor = Color(0xFFBDBDBD);
+
+Color dayPartColor(String kind) => _dayPartColor[kind] ?? fallbackDayPartColor;
+
 /// A 1:1 port of phase3.ts's `scheduleStrip()`: sort by start time, find the
 /// segment containing `nowLocal` (wrap-aware, so an overnight span like
 /// asleep 20:00→06:30 is handled the same way the TS handles it), and flag
 /// the segment right after it as "next". The glyph is static — no pulse, no
 /// spin — same "§8.13 gets no icon exception" rule the TS docstring states.
+///
+/// PRECISION CHECKED (phase3.ts's own `scheduleStrip()` header has the full
+/// trace, done the same pass gate.ts/pool.ts's boundary-minute string-width
+/// bug was found and fixed): `String.compareTo` below is Dart's lexicographic
+/// compare, the same shorter-is-less-than-its-own-prefix trap JS `<`/`>=`
+/// has. Both real callers (my_day.dart, inbox_screen.dart) pass `hhmmNow()`
+/// (manually zero-padded, always 5 chars) against literal `demoDayParts`
+/// (also 5 chars) — never a live-fetched value here. The one real `/ribbon`
+/// consumer, guardian_home_live.dart, does not call this function at all —
+/// it uses `minutesSinceMidnight()` (numeric, immune by construction) via
+/// `bandsFromDayParts()` instead. No change needed.
 List<StripSegment> scheduleStrip(List<DayPartLite> parts, String nowLocal) {
   final List<DayPartLite> sorted = List<DayPartLite>.of(parts)
     ..sort((DayPartLite a, DayPartLite b) => a.startsLocal.compareTo(b.startsLocal));
@@ -108,6 +154,23 @@ List<StripSegment> scheduleStrip(List<DayPartLite> parts, String nowLocal) {
         next: curIdx != -1 && i == (curIdx + 1) % sorted.length,
       ),
   ];
+}
+
+/// The one currently-active segment out of `scheduleStrip`'s result, honestly.
+///
+/// A `parts` list that does not cover the full 24h leaves a genuine gap: a
+/// stretch of the day no `DayPartLite` claims. When `nowLocal` falls inside
+/// that gap, EVERY segment's `current` is false (see `scheduleStrip` above) —
+/// there is no right answer to "what's happening now" to give. Returning
+/// `null` here, instead of guessing (e.g. `segments.first`, the
+/// chronologically-earliest part regardless of whether it's anywhere near
+/// "now"), is what lets callers render an honest "nothing scheduled" state
+/// rather than silently mislabelling the gap as whatever part sorts first.
+StripSegment? currentSegment(List<StripSegment> segments) {
+  for (final StripSegment s in segments) {
+    if (s.current) return s;
+  }
+  return null;
 }
 
 /// Minutes since local midnight — the shape scheduleStrip's "HH:mm" strings

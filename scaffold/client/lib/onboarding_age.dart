@@ -1,5 +1,6 @@
-// OLIVE BRANCH — first run, her age. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). §8.5.2.
+// OLIVE BRANCH — first run, her age. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). §8.5.2.
 //
 // Renders MARKUP screen 'obAge'. Age sets the §21 capability rungs and the
 // ping band (§9.9) — it is not a reading test, so she taps a number rather
@@ -43,7 +44,7 @@ class _ObAgeScreenState extends State<ObAgeScreen> {
       onSkip: () => widget.onContinue(
         acceptAge(null, widget.birthDate, widget.now ?? DateTime.now())),
       body: Wrap(
-        spacing: 10, runSpacing: 10, alignment: WrapAlignment.center,
+        spacing: 12, runSpacing: 12, alignment: WrapAlignment.center,
         children: [for (var a = minAge; a <= maxAge; a++) TapChoice(
           key: ValueKey('age_$a'),
           label: '$a',

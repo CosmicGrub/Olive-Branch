@@ -5,6 +5,7 @@
 // cooperatively, with no score, streak, badge, or blame ever surfaced (P2).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/game_chain.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -153,6 +154,57 @@ void main() {
       await tester.pumpWidget(wrap(const GameChainScreen()));
       final Size size = tester.getSize(find.widgetWithText(FilledButton, "That's it!"));
       expect(size.height, greaterThanOrEqualTo(48.0));
+    });
+
+    group('responsive audit — Fold5, phone, and tablet/desktop widths', () {
+      // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+      // unfolded main screens), plus a standard phone width and a
+      // short-and-wide desktop/tablet width now that Windows is a real
+      // target. The default seeded chain's turn banner ("Dad's turn to
+      // remember") is exactly what overflowed the Fold5 cover width before
+      // the pill was made to shrink instead — see game_chain.dart's
+      // _TurnBanner.
+      for (final MapEntry<String, Size> entry in const <String, Size>{
+        'Fold5 cover (344 CSS px)': Size(344, 882),
+        'Fold5 unfolded main (~673 CSS px)': Size(673, 841),
+        'a standard phone (~390 CSS px)': Size(390, 844),
+        'a tablet/desktop (~1100 CSS px)': Size(1100, 800),
+      }.entries) {
+        testWidgets('renders without overflow at ${entry.key}', (tester) async {
+          await tester.binding.setSurfaceSize(entry.value);
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          await tester.pumpWidget(wrap(const GameChainScreen()));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+        });
+      }
+    });
+
+    group('responsive — comfortable reading width cap (form_factors.dart)', () {
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered; the Fold5 cover
+      // and phone widths are completely untouched by this cap. The
+      // AnimatedContainer's own 280ms duration is unrelated to this cap and
+      // is not exercised here.
+      testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+          'never at the Fold5 cover or phone width', (tester) async {
+        Future<void> pumpAt(Size size) async {
+          await tester.binding.setSurfaceSize(size);
+          await tester.pumpWidget(wrap(const GameChainScreen()));
+          await tester.pump();
+        }
+
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await pumpAt(const Size(1100, 900));
+        expect(tester.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+        await pumpAt(const Size(344, 882)); // Fold5 cover
+        expect(tester.getSize(find.byType(ListView)).width, 344);
+
+        await pumpAt(const Size(390, 844)); // standard phone
+        expect(tester.getSize(find.byType(ListView)).width, 390);
+      });
     });
   });
 }

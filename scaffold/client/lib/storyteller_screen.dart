@@ -22,8 +22,10 @@
 // server yet (see api_client.dart) — favourites/bookmarks reset on restart,
 // same honest-stub posture as message_banking.dart's seeded demo state.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 import 'library_logic.dart';
 import 'storyteller_logic.dart' as story;
+import 'tabletop_split.dart';
 
 // ============================================================== the screen ==
 class StorytellerScreen extends StatefulWidget {
@@ -55,6 +57,17 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
   story.Story? _current;
   int _index = 0;
   String? _recap;
+  // storyArtifact() (storyteller_logic.dart) already decides "worth
+  // keeping" — reread twice or more — but before this pass had zero real
+  // callers: recordRead() only ever ran for a story ALREADY starred, so a
+  // story she kept coming back to but never starred never got the chance
+  // to be noticed at all. This counter tracks every reread regardless of
+  // star status, in-memory only (same honest-stub posture as favourites
+  // themselves — resets on restart), purely local UI state, never a value
+  // shown to her as a number (P2) — only ever used to decide WHETHER to
+  // show a one-time, qualitative nudge, in _StorytellerScreenState below.
+  final Map<String, int> _rereadCounts = {};
+  final Set<String> _nudgedCodes = {};
 
   story.Personal get _personal =>
       story.Personal(childName: widget.childName, colour: widget.colourLabel);
@@ -67,6 +80,25 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         _recap = null;
       });
 
+  /// Real for every reopen now, not just an already-starred one — see this
+  /// state's own `_rereadCounts` doc comment. Fires at most once per story
+  /// (`_nudgedCodes`), and only when she hasn't already starred it herself
+  /// (a starred story already told her it's a keeper; this is for the one
+  /// she keeps returning to without ever having said so).
+  void _maybeNudgeReread(String code, story.Story s) {
+    final int count = (_rereadCounts[code] ?? 0) + 1;
+    _rereadCounts[code] = count;
+    if (isStarred(_favourites, code) || _nudgedCodes.contains(code)) return;
+    if (story.storyArtifact(s, count) == null) return;
+    _nudgedCodes.add(code);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('You keep coming back to "${s.title}" — star it to keep it close?'),
+        duration: const Duration(seconds: 4)));
+    });
+  }
+
   void _openByCode(String code) => setState(() {
         _current = story.reread(code, _personal);
         _index = 0;
@@ -74,6 +106,7 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         if (isStarred(_favourites, code)) {
           _favourites = recordRead(_favourites, code);
         }
+        _maybeNudgeReread(code, _current!);
       });
 
   void _resumeBookmark(Bookmark b) => setState(() {
@@ -81,6 +114,7 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         _current = r.story;
         _index = r.from;
         _recap = r.recap;
+        _maybeNudgeReread(b.code, _current!);
       });
 
   void _next(int lastIndex) {
@@ -124,7 +158,10 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
       // No settings affordance anywhere on this child-facing screen (§8.1).
       body: SafeArea(
         child: LayoutBuilder(builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 560;
+          final textScale = MediaQuery.textScalerOf(context).scale(1);
+          final wide = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight),
+              textScale) >= 2;
           final reading = _current == null
               ? _AskCard(
                   key: const ValueKey('ask'),
@@ -153,6 +190,28 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
             onResumeBookmark: _resumeBookmark,
             onClearBookmark: _clearBookmark,
           );
+          // Intuitivism pass, sub-project 3c, Part 2 — the same
+          // `postureFor(viewport) == Posture.foldTabletop` check
+          // game_connect4.dart's own `outerPad` conditional already uses,
+          // threaded in here ahead of the pre-existing wide/narrow branching
+          // below (which stays completely untouched for every other
+          // posture — foldTabletop's own min width, 673px, already falls
+          // inside `wide` today, so this check must come first to actually
+          // change anything at this one posture). `reading` is the story
+          // text/illustration area above the hinge; `shelf` (favourites/
+          // bookmarks) is the reachable second half below it — a judgment
+          // call disclosed in this pass's own PR description, since the
+          // reveal/next/star controls stay bundled inside `_ReadingCard`
+          // itself (unchanged) rather than being pulled out to sit alone
+          // below the hinge.
+          final posture = ff.postureFor(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
+          if (posture == ff.Posture.foldTabletop) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: TabletopSplit(viewing: reading, controls: shelf),
+            );
+          }
           if (!wide) {
             return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -205,14 +264,16 @@ class _AskCard extends StatelessWidget {
         ),
         child: Column(children: [
           Icon(Icons.auto_stories_rounded, size: 56, color: accent),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Text('Want a story, $childName?',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Every story is brand new — nobody has ever heard this one before.',
-            textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: Colors.black54)),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 20),
           SizedBox(
             height: 56,
@@ -276,7 +337,8 @@ class _ReadingCard extends StatelessWidget {
           fontWeight: FontWeight.w800)),
         const SizedBox(height: 4),
         Text('Story code · ${storyValue.code}',
-          style: const TextStyle(fontSize: 11, color: Colors.black45, letterSpacing: 0.6)),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant, letterSpacing: 0.6)),
         const SizedBox(height: 16),
         if (recap != null) Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -287,7 +349,7 @@ class _ReadingCard extends StatelessWidget {
             const Icon(Icons.replay_rounded, size: 18),
             const SizedBox(width: 8),
             Expanded(child: Text('Last time, her line was: "$recap" — say it again together!',
-              style: const TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic))),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic))),
           ]),
         ),
         AnimatedSwitcher(
@@ -297,40 +359,48 @@ class _ReadingCard extends StatelessWidget {
               ? _HerLineBlock(key: ValueKey('block-$index'), text: block.text, hint: read.hint)
               : _NarrationBlock(key: ValueKey('block-$index'), text: block.text),
         ),
-        SizedBox(height: block.pauseAfter ? 22 : 12),
+        SizedBox(height: block.pauseAfter ? 24 : 12),
         _Dots(total: lastIndex + 1, current: index),
-        const SizedBox(height: 14),
-        if (!finished)
-          Row(children: [
-            Expanded(
-              child: SizedBox(height: 52,
-                child: OutlinedButton.icon(
-                  onPressed: index > 0 ? onPrev : null,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  label: const Text('Back'))),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: SizedBox(height: 52,
-                child: FilledButton.icon(
-                  onPressed: onNext,
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                  label: const Text('Next'))),
-            ),
-          ])
-        else
-          Column(children: [
-            const Icon(Icons.emoji_nature_rounded, size: 30),
-            const SizedBox(height: 6),
-            const Text('The end', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 14),
-            SizedBox(width: double.infinity, height: 52,
-              child: FilledButton.icon(onPressed: onAnotherStory,
-                icon: const Icon(Icons.autorenew_rounded),
-                label: const Text('Another story!'))),
-          ]),
+        const SizedBox(height: 16),
+        // The switch from "Next/Back" to "The end" is a genuine completion
+        // moment (she reached the last line) — a brief fade rather than an
+        // instant swap, same restraint as the per-line AnimatedSwitcher
+        // above. No score/streak language involved, just the transition.
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+          child: !finished
+            ? Row(key: const ValueKey('turnRow'), children: [
+                Expanded(
+                  child: SizedBox(height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: index > 0 ? onPrev : null,
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      label: const Text('Back'))),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(height: 52,
+                    child: FilledButton.icon(
+                      onPressed: onNext,
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                      label: const Text('Next'))),
+                ),
+              ])
+            : Column(key: const ValueKey('theEnd'), children: [
+                const Icon(Icons.emoji_nature_rounded, size: 30),
+                const SizedBox(height: 4),
+                Text('The end', style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 16),
+                SizedBox(width: double.infinity, height: 52,
+                  child: FilledButton.icon(onPressed: onAnotherStory,
+                    icon: const Icon(Icons.autorenew_rounded),
+                    label: const Text('Another story!'))),
+              ]),
+        ),
         if (canBookmarkHere) Padding(
-          padding: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.only(top: 12),
           child: Center(child: TextButton.icon(
             style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
             onPressed: onBookmark,
@@ -347,7 +417,7 @@ class _NarrationBlock extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 18),
+    padding: const EdgeInsets.symmetric(vertical: 16),
     child: Text(text, style: const TextStyle(fontSize: 19, height: 1.4)),
   );
 }
@@ -369,14 +439,15 @@ class _HerLineBlock extends StatelessWidget {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Icon(Icons.campaign_rounded, size: 16, color: Colors.amber.shade800),
-        const SizedBox(width: 6),
-        Text('YOUR LINE!', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
-          letterSpacing: 0.6, color: Colors.amber.shade900)),
+        const SizedBox(width: 4),
+        Text('YOUR LINE!', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.amber.shade900)),
       ]),
-      const SizedBox(height: 6),
+      const SizedBox(height: 8),
       Text(text, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800, height: 1.3)),
-      const SizedBox(height: 6),
-      Text(hint, style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+      const SizedBox(height: 8),
+      Text(hint, style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
     ]),
   );
 }
@@ -388,7 +459,7 @@ class _Dots extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Wrap(
     alignment: WrapAlignment.center,
-    spacing: 5,
+    spacing: 4,
     children: [for (int i = 0; i < total; i++) AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       width: i == current ? 9 : 6, height: i == current ? 9 : 6,
@@ -418,7 +489,7 @@ class _StorytellerAttribution extends StatelessWidget {
         child: Align(
           alignment: Alignment.centerLeft,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.secondaryContainer,
               borderRadius: BorderRadius.circular(20)),
@@ -427,12 +498,12 @@ class _StorytellerAttribution extends StatelessWidget {
             // the label shrinks to an ellipsis rather than overflowing.
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Icons.auto_stories, size: 14),
-              const SizedBox(width: 5),
+              const SizedBox(width: 4),
               Flexible(child: Text('told by the storyteller', maxLines: 1,
-                overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer))),
-              const SizedBox(width: 3),
+                overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onSecondaryContainer))),
+              const SizedBox(width: 4),
               const Icon(Icons.help_outline_rounded, size: 13),
             ]),
           ),
@@ -472,7 +543,8 @@ class _Shelf extends StatelessWidget {
     final ordered = libraryChildView(favourites); // newest-first, title+code only — P2
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       if (bookmarks.isNotEmpty) ...[
-        const Text('Left off partway', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        Text('Left off partway', style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         for (final b in bookmarks) Card(
           margin: const EdgeInsets.only(bottom: 8),
@@ -490,7 +562,8 @@ class _Shelf extends StatelessWidget {
         const SizedBox(height: 12),
       ],
       if (ordered.isNotEmpty) ...[
-        const Text('Your starred stories', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        Text('Your starred stories', style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
           for (final f in ordered) _StarredChip(title: f.title, onTap: () => onOpenFavourite(f.code)),
@@ -516,12 +589,19 @@ class _StarredChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         constraints: const BoxConstraints(minHeight: 48),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         alignment: Alignment.centerLeft,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.star_rounded, size: 16, color: Colors.amber.shade700),
-          const SizedBox(width: 6),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(width: 4),
+          // Flexible + ellipsis, not a bare Text: shapeTitles has entries up
+          // to 24 characters ("The Thing That Was Lost"), which can overflow
+          // this Row by a few px on the Fold5 cover width once the Wrap this
+          // chip sits in bounds its available width — caught by
+          // storyteller_screen_test.dart's random-title flake.
+          Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelLarge
+              ?.copyWith(fontWeight: FontWeight.w600))),
         ]),
       ),
     ),
@@ -589,15 +669,16 @@ class _SafetyCard extends StatelessWidget {
   final String body;
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 14),
+    margin: const EdgeInsets.only(bottom: 16),
     child: Padding(padding: const EdgeInsets.all(16),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(icon, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(width: 14),
+        const SizedBox(width: 16),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-          const SizedBox(height: 6),
-          Text(body, style: const TextStyle(fontSize: 13, height: 1.4, color: Colors.black87)),
+          Text(title, style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Text(body, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4)),
         ])),
       ])),
   );

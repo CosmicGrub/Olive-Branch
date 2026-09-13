@@ -189,6 +189,45 @@ SELECT must_pass('when_reachable needs no target', $q$
           'nudge', gen_random_uuid(),'when_reachable', now() + interval '2 days')
 $q$);
 
+-- The three branches above leave half the ENUM unattacked: at_instant,
+-- on_event, and immediate had no dedicated probe here at all (scaffold/README.md's
+-- own "Before Phase 0 ships" checklist named this real gap explicitly). The
+-- CHECK constraint covers all six branches in the migration; this file did not.
+
+SELECT must_fail('at_instant policy with NO target_instant', $q$
+  INSERT INTO delivery_intent (child_id, sender_id, payload_kind, payload_ref, policy, expires_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',
+          'video_msg', gen_random_uuid(),'at_instant', now() + interval '30 days')
+$q$);
+
+SELECT must_pass('valid at_instant intent', $q$
+  INSERT INTO delivery_intent (child_id, sender_id, payload_kind, payload_ref, policy,
+                               target_instant, expires_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',
+          'video_msg', gen_random_uuid(),'at_instant', now() + interval '5 days',
+          now() + interval '30 days')
+$q$);
+
+SELECT must_fail('on_event policy with NO target_event_id', $q$
+  INSERT INTO delivery_intent (child_id, sender_id, payload_kind, payload_ref, policy, expires_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',
+          'video_msg', gen_random_uuid(),'on_event', now() + interval '30 days')
+$q$);
+
+SELECT must_pass('valid on_event intent', $q$
+  INSERT INTO delivery_intent (child_id, sender_id, payload_kind, payload_ref, policy,
+                               target_event_id, expires_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',
+          'video_msg', gen_random_uuid(),'on_event', gen_random_uuid(),
+          now() + interval '30 days')
+$q$);
+
+SELECT must_pass('immediate needs no target', $q$
+  INSERT INTO delivery_intent (child_id, sender_id, payload_kind, payload_ref, policy, expires_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',
+          'nudge', gen_random_uuid(),'immediate', now() + interval '2 days')
+$q$);
+
 SELECT must_fail('batch window ends before it starts', $q$
   INSERT INTO intent_batch (child_id, sender_id, label, cadence, starts_local, ends_local)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111',

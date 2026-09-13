@@ -1,7 +1,28 @@
-// OLIVE BRANCH — court export. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §2.11, §16.1 #3, P8.
+// OLIVE BRANCH — court export. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §2.11, §16.1 #3, P8.
 // Renders MARKUP screen 'export': "The archive assembled for the one reader
 // who must trust it; chunked under the transfer ceiling."
+//
+// Two widgets live in this file now. `CourtExportScreen` (below) is the
+// original, still-real preview build described in the rest of this header —
+// its synthetic demo chain is untouched, and every existing test of it still
+// passes unmodified. `LiveCourtExportScreen` (bottom of this file) is the
+// real backend wiring this header used to say didn't exist:
+// packages/db/src/pool.ts's certifiedExportBundleFor(), reached over
+// GET /v1/children/:childId/export?kind=certified (server/routes.mjs),
+// which reads the REAL message_log chain for a REAL child, runs it through
+// the REAL verifyChain()/certify()/authorizeExport() (packages/ledger/src/
+// ledger.ts), and returns either a real, verified Attestation or a real,
+// specific denial reason (tier_required / annual_allowance_used /
+// chain_broken / not-a-guardian-of-this-child) — never a silent failure,
+// never a fabricated success. `main.dart`'s offline preview build has no
+// reason to construct `LiveCourtExportScreen` (there is nothing live behind
+// it there); `guardian_more.dart` opens it instead of the demo screen only
+// when live config (baseUrl/guardianId/childId) is actually supplied,
+// mirroring child_home_live.dart's own "live only when configured, demo
+// otherwise" posture — see that file's header for the same pattern applied
+// to the child side.
 //
 // §2.11 is the one rule this whole screen exists to make visible in the UI,
 // not just in a pricing table: "the archive is never held hostage." RAW
@@ -22,9 +43,64 @@
 // than a label with nothing behind it. There is no edit control on it anywhere
 // — the "preview a tampered copy" switch swaps between two READ-ONLY
 // precomputed chains, it does not expose a way to alter either one from the UI.
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+
+import 'api_client.dart';
+import 'form_factors.dart' as ff;
 import 'sha256.dart';
+
+// ===================================================== posture width rule =
+// Ported from packages/devices/src/postures.ts's §8.11.7 "the degraded
+// court export" section. Real spec this screen never actually implemented:
+// before this pass, `CourtExportScreen` rendered the full certified-export
+// review UI (tamper preview, "Generate certified export," the attestation
+// panel) at ANY width, including a 344px Fold-cover phone screen —
+// directly contradicting `requestConfirmation()`'s own copy below, which
+// tells the guardian reviewing needs "a computer or a tablet." The old
+// `constraints.maxWidth >= 760` toggle only ever chose Row-vs-Column
+// arrangement for the two cards; it never actually gated the review
+// capability the spec describes. This is that gate, for real.
+const int requestMinWidth = 320;
+const int reviewMinWidth = 600;
+
+// v0.49.14 fix: both now take the SAME optional textScale form_factors.dart's
+// own columnsAt() already does, and divide by it before comparing — a
+// guardian at 2.0x accessibility text on a ~650px-wide screen has the
+// EFFECTIVE width of a ~325px phone (narrower than the 344px Fold-cover
+// case this same file already guards against overflow for), and rendering
+// the full review UI into that space at raw width was exactly the mistake
+// MASTERFILE §8.11.1 names by name: "computing from device width is the
+// mistake that makes accessible layouts break on small screens." Before
+// this fix, columnsAt() (the sibling layout decision two lines away in the
+// same build() method) correctly divided by text scale and reviewableAt()
+// did not — two adjacent decisions in the same method, one accessibility-
+// aware and one not.
+bool reviewableAt(double width, [double textScale = 1]) => (width / textScale) >= reviewMinWidth;
+
+/// Ported faithfully from postures.ts, and deliberately NOT consulted by any
+/// branch in this file — disclosed explicitly (found by an adversarial
+/// audit as an undisclosed gap; form_factors.dart's own "not ported, no
+/// client caller identified" note for §8.11.2 is the precedent this follows
+/// rather than staying silent about it). Why it's inert here, concretely:
+/// `requestMinWidth` is 320px, and MASTERFILE §8.11.1's own floor for this
+/// entire app — "344 px is the floor for everything" — is ABOVE that. Every
+/// real width this screen can ever be given on a supported device already
+/// satisfies `requestableAt()`, so no UI branch that consulted it could ever
+/// produce a different outcome than "yes, always." Kept, tested, and real —
+/// the day this app's own supported floor ever drops below 320px, this is
+/// what would need wiring in, not new code to write from scratch.
+bool requestableAt(double width, [double textScale = 1]) => (width / textScale) >= requestMinWidth;
+
+/// What he is told on a phone. It does not pretend he can review it there —
+/// the honest version is better than a cramped one.
+const String requestConfirmation =
+    'We are putting it together. It needs a bigger screen to check through, '
+    'so open Olive on a computer or a tablet when you are ready — it will be '
+    'waiting.';
 
 // ============================================================ ledger subset =
 // Ported from packages/ledger/src/ledger.ts.
@@ -352,13 +428,26 @@ class _CourtExportScreenState extends State<CourtExportScreen> {
       appBar: AppBar(title: const Text('Court export')),
       body: SafeArea(
         child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
-          final bool wide = constraints.maxWidth >= 760;
+          // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+          // number: the two cards sit side by side once the viewport can
+          // genuinely afford two real columns at the current text scale.
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool wide = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+          // The real §8.11.7 rule (postures.ts, ported above): reviewing a
+          // certified export needs real width. Requesting one never did.
+          // textScale-aware as of v0.49.14 — see reviewableAt()'s own
+          // comment for the accessibility bug this closes.
+          final bool reviewable = reviewableAt(constraints.maxWidth, textScale);
+          final TextTheme textTheme = Theme.of(context).textTheme;
+          final ColorScheme scheme = Theme.of(context).colorScheme;
           final Widget rawCard = _RawExportCard(
             plan: plan,
             prepared: _rawPrepared,
             onPrepare: () => setState(() => _rawPrepared = true),
           );
           final Widget certifiedCard = _CertifiedExportCard(
+            reviewable: reviewable,
             courtTier: _courtTier,
             certifiedUsed: _certifiedUsed,
             previewTampered: _previewTampered,
@@ -376,11 +465,11 @@ class _CourtExportScreenState extends State<CourtExportScreen> {
             padding: const EdgeInsets.all(16),
             children: <Widget>[
               Text("$_demoChildName's archive, for the one reader who must trust it",
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 6),
-              const Text(
+                  style: textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(
                   'Two different files, for two different jobs. One of them is never behind a paywall.',
-                  style: TextStyle(fontSize: 13, color: Colors.black54)),
+                  style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
               const SizedBox(height: 16),
               if (wide)
                 Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
@@ -409,6 +498,7 @@ class _RawExportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Card(
       color: scheme.primaryContainer.withValues(alpha: 0.35),
       child: Padding(
@@ -417,49 +507,54 @@ class _RawExportCard extends StatelessWidget {
           Row(children: <Widget>[
             Icon(Icons.lock_open_outlined, color: scheme.primary),
             const SizedBox(width: 8),
-            Text('Raw export', style: Theme.of(context).textTheme.titleMedium),
+            // Expanded + ellipsis, not a bare Text: at the Fold5 cover width
+            // (344px) the sibling "Certified export" header overflowed its
+            // Row by 18px with this exact shape — fixed there and mirrored
+            // here so this card doesn't regress the same way later.
+            Expanded(child: Text('Raw export', style: textTheme.titleMedium,
+                overflow: TextOverflow.ellipsis)),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           const Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
             _Badge('FREE'),
             _Badge('EVERY TIER'),
             _Badge('EVEN AFTER CANCELLATION'),
           ]),
           const SizedBox(height: 12),
-          const Text(
+          Text(
               'Every message, calendar entry, medication log, and photo in her archive, '
               'as plain files you keep. This never requires a paid plan, and letting your '
               'subscription lapse never locks it away — that is a standing rule here, not a promotion.',
-              style: TextStyle(fontSize: 13.5)),
-          const SizedBox(height: 14),
-          Text('WHAT’S INCLUDED', style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: scheme.primary)),
-          const SizedBox(height: 6),
+              style: textTheme.bodyMedium),
+          const SizedBox(height: 16),
+          Text('WHAT’S INCLUDED', style: textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700, letterSpacing: 0.6, color: scheme.primary)),
+          const SizedBox(height: 8),
           for (final String item in _rawManifest)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                 const Text('•  '),
-                Expanded(child: Text(item, style: const TextStyle(fontSize: 13))),
+                Expanded(child: Text(item, style: textTheme.bodyMedium)),
               ]),
             ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: scheme.surface, borderRadius: BorderRadius.circular(10),
+                color: scheme.surface, borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: scheme.outlineVariant)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
               Text('${formatBytes(plan.totalBytes)} total — chunked under the transfer ceiling',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(
                   'Split into ${plan.chunkCount} files of ${formatBytes(plan.ceilingBytes)} or less, '
                   'so it can actually be attached to an email or uploaded to a portal with a size limit.',
-                  style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
+                  style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             ]),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -470,20 +565,20 @@ class _RawExportCard extends StatelessWidget {
             ),
           ),
           if (prepared) ...<Widget>[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Text('Part 1 of ${plan.chunkCount} — ${formatBytes(plan.chunkSizes.first)}',
-                style: const TextStyle(fontSize: 12.5, fontFamily: 'monospace')),
-            const SizedBox(height: 2),
+                style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+            const SizedBox(height: 4),
             Text(
                 plan.chunkCount > 1
                     ? '…and ${plan.chunkCount - 1} more, generated the same way.'
                     : 'That’s the whole export — it fits under the ceiling in one file.',
-                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
             const SizedBox(height: 8),
             Text(
                 'No backend exists yet to actually generate these files in this preview build — '
                 'this is exactly what you’d receive.',
-                style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: scheme.outline)),
+                style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, color: scheme.outline)),
           ],
         ]),
       ),
@@ -493,6 +588,7 @@ class _RawExportCard extends StatelessWidget {
 
 class _CertifiedExportCard extends StatelessWidget {
   const _CertifiedExportCard({
+    required this.reviewable,
     required this.courtTier,
     required this.certifiedUsed,
     required this.previewTampered,
@@ -503,6 +599,13 @@ class _CertifiedExportCard extends StatelessWidget {
     required this.onTamperedChanged,
     required this.onGenerate,
   });
+
+  /// §8.11.7's real width rule (`reviewableAt()`, ported above). Below it,
+  /// this card shows ONLY the description and the honest
+  /// `requestConfirmation` copy — no preview controls, no generate button,
+  /// no attestation panel. Rendering the full review UI on a 344px Fold-
+  /// cover screen would directly contradict that copy's own promise.
+  final bool reviewable;
 
   final bool courtTier;
   final int certifiedUsed;
@@ -517,6 +620,7 @@ class _CertifiedExportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -524,35 +628,55 @@ class _CertifiedExportCard extends StatelessWidget {
           Row(children: <Widget>[
             Icon(Icons.verified_outlined, color: scheme.tertiary),
             const SizedBox(width: 8),
-            Text('Certified export', style: Theme.of(context).textTheme.titleMedium),
+            // Expanded + ellipsis: at the Fold5 cover width (344px) this Row
+            // overflowed by 18px with a bare Text here — "Certified export"
+            // plus the icon didn't fit the card's ~272px inner width.
+            Expanded(child: Text('Certified export', style: textTheme.titleMedium,
+                overflow: TextOverflow.ellipsis)),
           ]),
-          const SizedBox(height: 10),
-          const Text(
+          const SizedBox(height: 12),
+          Text(
               'Tamper-evident, hash-chained, court-formatted, with an attestation page a reader '
               'can verify without taking our word for it. One free copy per guardian every rolling '
               'year; Court tier covers any more than that.',
-              style: TextStyle(fontSize: 13.5)),
-          const SizedBox(height: 14),
-          _PreviewControls(
-            courtTier: courtTier, certifiedUsed: certifiedUsed, previewTampered: previewTampered,
-            onTierChanged: onTierChanged, onUsedChanged: onUsedChanged,
-            onTamperedChanged: onTamperedChanged,
-          ),
-          const SizedBox(height: 14),
-          _AuthorizationBanner(authorization),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: FilledButton.icon(
-              onPressed: authorization.ok ? onGenerate : null,
-              icon: const Icon(Icons.fact_check_outlined),
-              label: const Text('Generate certified export'),
+              style: textTheme.bodyMedium),
+          if (reviewable) ...<Widget>[
+            const SizedBox(height: 16),
+            _PreviewControls(
+              courtTier: courtTier, certifiedUsed: certifiedUsed, previewTampered: previewTampered,
+              onTierChanged: onTierChanged, onUsedChanged: onUsedChanged,
+              onTamperedChanged: onTamperedChanged,
             ),
-          ),
-          if (attestation != null) ...<Widget>[
-            const SizedBox(height: 14),
-            _AttestationPanel(attestation!),
+            const SizedBox(height: 16),
+            _AuthorizationBanner(authorization),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: authorization.ok ? onGenerate : null,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('Generate certified export'),
+              ),
+            ),
+            if (attestation != null) ...<Widget>[
+              const SizedBox(height: 16),
+              _AttestationPanel(attestation!),
+            ],
+          ] else ...<Widget>[
+            const SizedBox(height: 16),
+            Container(
+              key: const Key('needsBiggerScreenNotice'),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                Icon(Icons.desktop_windows_outlined, size: 20, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(child: Text(requestConfirmation, style: textTheme.bodySmall)),
+              ]),
+            ),
           ],
         ]),
       ),
@@ -577,19 +701,21 @@ class _PreviewControls extends StatelessWidget {
   final ValueChanged<bool> onTamperedChanged;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10)),
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Text('PREVIEW CONTROLS (this build only — not a real setting)',
-              style: TextStyle(
-                  fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.4,
-                  color: Theme.of(context).colorScheme.outline)),
-          const SizedBox(height: 10),
+              style: textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700, letterSpacing: 0.4, color: scheme.outline)),
+          const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: <Widget>[
-            const Text('Plan:', style: TextStyle(fontSize: 12.5)),
+            Text('Plan:', style: textTheme.bodySmall),
             ChoiceChip(label: const Text('Not Court'), selected: !courtTier,
                 onSelected: (_) => onTierChanged(false)),
             ChoiceChip(label: const Text('Court'), selected: courtTier,
@@ -597,12 +723,12 @@ class _PreviewControls extends StatelessWidget {
           ]),
           const SizedBox(height: 8),
           Row(children: <Widget>[
-            const Expanded(child: Text('Certified exports used this year',
-                style: TextStyle(fontSize: 12.5))),
+            Expanded(child: Text('Certified exports used this year',
+                style: textTheme.bodySmall)),
             IconButton(
                 onPressed: () => onUsedChanged(certifiedUsed - 1),
                 icon: const Icon(Icons.remove_circle_outline)),
-            SizedBox(width: 22, child: Text('$certifiedUsed', textAlign: TextAlign.center,
+            SizedBox(width: 24, child: Text('$certifiedUsed', textAlign: TextAlign.center,
                 style: const TextStyle(fontWeight: FontWeight.w600))),
             IconButton(
                 onPressed: () => onUsedChanged(certifiedUsed + 1),
@@ -617,14 +743,15 @@ class _PreviewControls extends StatelessWidget {
             child: SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
-              title: const Text('Preview: a file altered after export',
-                  style: TextStyle(fontSize: 12.5)),
+              title: Text('Preview: a file altered after export',
+                  style: textTheme.bodySmall),
               value: previewTampered,
               onChanged: onTamperedChanged,
             ),
           ),
         ]),
       );
+  }
 }
 
 class _AuthorizationBanner extends StatelessWidget {
@@ -654,11 +781,11 @@ class _AuthorizationBanner extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Icon(icon, size: 20),
         const SizedBox(width: 8),
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 12.5))),
+        Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
       ]),
     );
   }
@@ -671,10 +798,11 @@ class _AttestationPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: scheme.surface, borderRadius: BorderRadius.circular(10),
+          color: scheme.surface, borderRadius: BorderRadius.circular(12),
           border: Border.all(color: att.chainVerified ? scheme.outlineVariant : scheme.error, width: att.chainVerified ? 1 : 2)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Row(children: <Widget>[
@@ -682,20 +810,20 @@ class _AttestationPanel extends StatelessWidget {
               color: att.chainVerified ? scheme.primary : scheme.error, size: 20),
           const SizedBox(width: 8),
           Text(att.chainVerified ? 'Chain verified' : 'VERIFICATION FAILED',
-              style: TextStyle(fontWeight: FontWeight.w700,
+              style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700,
                   color: att.chainVerified ? null : scheme.error)),
         ]),
         const SizedBox(height: 8),
         Text('${att.entryCount} entries · seq ${att.firstSeq ?? '—'}–${att.lastSeq ?? '—'}',
-            style: const TextStyle(fontSize: 12.5)),
-        const SizedBox(height: 6),
-        const Text('HEAD HASH', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-        SelectableText(att.headHash, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
-        const SizedBox(height: 6),
-        const Text('BUNDLE HASH', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-        SelectableText(att.bundleHash, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+            style: textTheme.bodySmall),
         const SizedBox(height: 8),
-        Text(att.statement, style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+        Text('HEAD HASH', style: textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+        SelectableText(att.headHash, style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+        const SizedBox(height: 8),
+        Text('BUNDLE HASH', style: textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+        SelectableText(att.bundleHash, style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+        const SizedBox(height: 8),
+        Text(att.statement, style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
       ]),
     );
   }
@@ -705,16 +833,16 @@ class _Badge extends StatelessWidget {
   const _Badge(this.text);
   final String text;
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary,
-            borderRadius: BorderRadius.circular(999)),
-        child: Text(text,
-            style: TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.4,
-                color: Theme.of(context).colorScheme.onPrimary)),
-      );
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(999)),
+      child: Text(text,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w800, letterSpacing: 0.4, color: scheme.onPrimary)),
+    );
+  }
 }
 
 class _FootNote extends StatelessWidget {
@@ -724,5 +852,420 @@ class _FootNote extends StatelessWidget {
       'Pricing the evidence of your own life behind a paywall was ruled out on principle here — '
       'raw export stays free and unlimited, on every tier, whether or not a subscription is active. '
       'Only the certified copy, and only past the first free one each year, ever asks for a plan.',
-      style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.outline));
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.outline));
+}
+
+// ================================================================ live =====
+// The real network call. Mirrors child_home_live.dart's own shape exactly
+// (required baseUrl/childId, injectable httpClient, devLoginFor -> OliveApi,
+// loading/error/ready states with a retry affordance) with one addition this
+// screen actually needs and child_home_live.dart's endpoints don't: a
+// DENIED state, distinct from a network/server error, because
+// authorizeExport() saying no is an expected, correctly-functioning outcome
+// of this screen's own business rule — not a failure to render honestly
+// around.
+enum _LiveExportState { loading, error, denied, ready }
+
+class LiveCourtExportScreen extends StatefulWidget {
+  const LiveCourtExportScreen({
+    super.key,
+    required this.baseUrl,
+    required this.guardianId,
+    required this.childId,
+    this.httpClient,
+    this.documentsDirectory,
+  });
+
+  final String baseUrl;
+  /// The app_user id logging in AS the requesting guardian — devLoginFor's
+  /// `userId`, distinct from [childId] (whose export is being requested).
+  final String guardianId;
+  final String childId;
+  /// Injectable for tests (e.g. package:http/testing.dart's MockClient).
+  final http.Client? httpClient;
+  /// Same testing hook deletion_screen.dart's own raw-export save uses —
+  /// see that file's own doc comment for why the real save is synchronous.
+  final Future<Directory> Function()? documentsDirectory;
+
+  @override
+  State<LiveCourtExportScreen> createState() => _LiveCourtExportScreenState();
+}
+
+/// One `chain_broken` fault, as the wire sends it: `{'kind': ..., 'seq': ...}`
+/// (packages/ledger/src/ledger.ts's `ChainFault` — `seq` is absent for
+/// `bad_genesis`, present for the other four kinds). Rendered plainly rather
+/// than re-parsed into `ChainFaultKind` — this is a raw server diagnostic
+/// shown verbatim, not re-verified client-side (the client has no chain to
+/// re-check against; the server already did that work).
+String _formatFault(Map<String, dynamic> f) {
+  final String kind = (f['kind'] as String?) ?? 'unknown';
+  final Object? seq = f['seq'];
+  return seq == null ? kind : '$kind @$seq';
+}
+
+/// The live counterpart to the demo screen's own `_RawExportCard` — real,
+/// not a preview. Deliberately independent of certified-export state:
+/// raw export is free and unlimited whether or not certified is
+/// authorized, and this section renders identically in both the ready and
+/// denied branches of [_LiveCourtExportScreenState.build] for exactly
+/// that reason, rather than being nested inside either.
+class _RawExportSection extends StatelessWidget {
+  const _RawExportSection({required this.exporting, required this.onPrepare});
+  final bool exporting;
+  final VoidCallback onPrepare;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: <Widget>[
+        Icon(Icons.description_outlined, size: 20, color: scheme.onSecondaryContainer),
+        const SizedBox(width: 8),
+        Expanded(child: Text('Raw export — free, unlimited, every tier.',
+            style: textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer))),
+        const SizedBox(width: 8),
+        exporting
+            ? const SizedBox(height: 20, width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : TextButton(onPressed: onPrepare, child: const Text('Prepare')),
+      ]),
+    );
+  }
+}
+
+class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
+  _LiveExportState _state = _LiveExportState.loading;
+  String _errorMessage = '';
+  String _denialReason = '';
+  String _denialMessage = '';
+  // The real, per-entry chain-verification diagnostics a `chain_broken`
+  // denial carries (see ApiException.faults's own doc comment) — empty for
+  // every other denial reason, which never sends this key.
+  List<Map<String, dynamic>> _denialFaults = <Map<String, dynamic>>[];
+  bool _free = false;
+  Attestation? _attestation;
+  // Real, backend-computed, and DIFFERENT from `_attestation.bundleHash`:
+  // the attestation's own bundleHash is a hash over the chain alone
+  // (ledger.ts's `certify()`); this is a hash over `{chain, attestation}`
+  // together (packages/db/src/pool.ts's `certifiedExportBundleFor()`) — the
+  // actual signature of the whole exported bundle a reader would verify the
+  // delivered file against, not a duplicate of the attestation's own field.
+  String? _bundleHash;
+  // The real export_record row id this export was persisted under — a
+  // reader's reference number for this exact certified export, same idea as
+  // deletion_screen.dart's raw-export filename carrying its own record id.
+  String? _exportRecordId;
+
+  // -------------------------------------------------------- raw export --
+  // Independent of the certified-export authorization state above — the
+  // denied-state copy already says so ("Raw export is unaffected by this").
+  // Before this pass this screen only ever surfaced CERTIFIED export; raw
+  // export has been a real, working backend endpoint (fetchRawExport(),
+  // already used by deletion_screen.dart) since before this cycle, just
+  // never given a UI here. Mirrors deletion_screen.dart's own _export()
+  // exactly — same devLoginFor-per-call, same save-and-verify-on-disk
+  // ethos — rather than inventing a second raw-export flow.
+  bool _rawExporting = false;
+
+  Future<void> _prepareRawExport(BuildContext context) async {
+    if (_rawExporting) return;
+    setState(() => _rawExporting = true);
+    OliveApi? api;
+    try {
+      final String token = await devLoginFor(widget.baseUrl,
+          userId: widget.guardianId, client: widget.httpClient);
+      api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+      final Map<String, dynamic> result = await api.fetchRawExport(widget.childId);
+      // Same "hash the exact string the server hashed" ethos as
+      // deletion_screen.dart's own _export() — see that method's doc
+      // comment for why this is bundleJson, not a re-encoding of `bundle`.
+      final String bundleJson = result['bundleJson'] as String;
+      final String serverHash = result['bundleHash'] as String;
+      final String exportRecordId = result['exportRecordId'] as String;
+      final bool verified = sha256Hex(bundleJson) == serverHash;
+
+      final Directory dir = await (widget.documentsDirectory ?? getApplicationDocumentsDirectory)();
+      final File file = File(
+          '${dir.path}${Platform.pathSeparator}olive-raw-export-${widget.childId}-$exportRecordId.json');
+      file.writeAsStringSync(bundleJson); // sync — see deletion_screen.dart's _export() for why
+
+      if (!context.mounted) return;
+      setState(() => _rawExporting = false);
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: Text(verified ? 'Raw export saved' : 'Saved — hash did not verify'),
+          content: SingleChildScrollView(child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Saved to:'),
+              SelectableText(file.path, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              const SizedBox(height: 12),
+              Text(verified
+                  ? 'SHA-256 of the saved file, verified against the server on this '
+                    'device (not just trusted):'
+                  : "SHA-256 of the saved file did NOT match what the server "
+                    'reported — treat this copy as unverified:'),
+              SelectableText(serverHash, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+            ],
+          )),
+          actions: <Widget>[
+            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Done')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (widget.httpClient == null) api?.close();
+      if (!context.mounted) return;
+      setState(() => _rawExporting = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not prepare the raw export: $e'), duration: const Duration(seconds: 4)));
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _state = _LiveExportState.loading);
+    try {
+      final token = await devLoginFor(widget.baseUrl,
+          userId: widget.guardianId, client: widget.httpClient);
+      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+      final result = await api.fetchCertifiedExport(widget.childId);
+      if (widget.httpClient == null) api.close();
+      if (!mounted) return;
+      final Map<String, dynamic> att = result['attestation'] as Map<String, dynamic>;
+      setState(() {
+        _free = result['free'] as bool? ?? false;
+        _attestation = Attestation(
+          childId: att['childId'] as String,
+          generatedAt: att['generatedAt'] as String,
+          entryCount: att['entryCount'] as int,
+          firstSeq: att['firstSeq'] as int?,
+          lastSeq: att['lastSeq'] as int?,
+          headHash: att['headHash'] as String,
+          bundleHash: att['bundleHash'] as String,
+          chainVerified: att['chainVerified'] as bool,
+          statement: att['statement'] as String,
+        );
+        // Real, fetched alongside the attestation, and previously discarded
+        // here — see these fields' own doc comments above.
+        _bundleHash = result['bundleHash'] as String?;
+        _exportRecordId = result['exportRecordId'] as String?;
+        _state = _LiveExportState.ready;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.statusCode == 403) {
+        // A real, specific denial from authorizeExport() (or the
+        // guardianship check ahead of it) — honest, not a crash, not
+        // treated the same as an unreachable server.
+        setState(() {
+          _denialReason = e.error;
+          _denialMessage = e.message ?? 'Certified export was not authorized.';
+          // Real per-entry diagnostics on a chain_broken denial — see
+          // ApiException.faults's own doc comment. Empty for every other
+          // denial, which never sends this key.
+          _denialFaults = (e.faults ?? const <dynamic>[]).cast<Map<String, dynamic>>();
+          _state = _LiveExportState.denied;
+        });
+      } else {
+        setState(() {
+          _errorMessage = '${e.statusCode}: ${e.error}';
+          _state = _LiveExportState.error;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '$e';
+        _state = _LiveExportState.error;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Court export')),
+      // LayoutBuilder, not MediaQuery.sizeOf — the ACTUAL available width
+      // for this widget subtree is what §8.11.7's review gate cares about,
+      // matching CourtExportScreen's own already-correct approach above.
+      // (MediaQuery.sizeOf reflects the whole app window, which happens to
+      // equal this most of the time but is a different, less precise
+      // question — and, found the hard way while testing this exact gate,
+      // does not reliably track a test's own `setSurfaceSize` the way a
+      // real device rotation/resize would; LayoutBuilder's constraints do.)
+      body: SafeArea(child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) => _buildBody(
+            context, scheme, textTheme, constraints.maxWidth,
+            MediaQuery.textScalerOf(context).scale(1))),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, ColorScheme scheme, TextTheme textTheme,
+      double width, double textScale) {
+    switch (_state) {
+      case _LiveExportState.loading:
+        return const Center(child: CircularProgressIndicator());
+      case _LiveExportState.error:
+        return Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(Icons.cloud_off, size: 40, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text("Couldn't reach the server",
+                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(_errorMessage, textAlign: TextAlign.center,
+                style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: _load, child: const Text('Try again')),
+          ]),
+        ));
+      case _LiveExportState.denied:
+        return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+                color: scheme.errorContainer, borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+              Row(children: <Widget>[
+                Icon(Icons.info_outline, color: scheme.onErrorContainer),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Certified export not authorized',
+                    style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600, color: scheme.onErrorContainer))),
+              ]),
+              const SizedBox(height: 12),
+              Text(_denialMessage,
+                  style: textTheme.bodyMedium?.copyWith(color: scheme.onErrorContainer)),
+              const SizedBox(height: 8),
+              Text('REASON: $_denialReason',
+                  style: textTheme.labelSmall?.copyWith(
+                      fontFamily: 'monospace', color: scheme.onErrorContainer)),
+              // Real, per-entry verifyChain() diagnostics — server/routes.mjs
+              // sends these on a chain_broken denial specifically (see
+              // ApiException.faults's own doc comment); previously fetched
+              // and silently dropped by _decode()'s error path.
+              if (_denialFaults.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                Text('WHAT VERIFICATION FOUND', style: textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700, letterSpacing: 0.5,
+                    color: scheme.onErrorContainer)),
+                for (final Map<String, dynamic> f in _denialFaults)
+                  Text('• ${_formatFault(f)}', style: textTheme.labelSmall?.copyWith(
+                      fontFamily: 'monospace', color: scheme.onErrorContainer)),
+              ],
+            ]),
+          ),
+          const SizedBox(height: 16),
+          Text(
+              'Raw export is unaffected by this — it stays free, unlimited, on every '
+              'tier, whether or not this denial applies.',
+              style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 12),
+          _RawExportSection(exporting: _rawExporting, onPrepare: () => _prepareRawExport(context)),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+              onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Check again')),
+        ]);
+      case _LiveExportState.ready:
+        final Attestation att = _attestation!;
+        return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+          Container(width: double.infinity,
+              color: scheme.tertiaryContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                  'Live: this attestation is real, generated just now from her actual '
+                  'handover log.',
+                  style: textTheme.bodySmall?.copyWith(color: scheme.onTertiaryContainer))),
+          const SizedBox(height: 16),
+          _RawExportSection(exporting: _rawExporting, onPrepare: () => _prepareRawExport(context)),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: _free ? scheme.secondaryContainer : scheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(12)),
+            child: Row(children: <Widget>[
+              Icon(_free ? Icons.check_circle_outline : Icons.workspace_premium_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(
+                  _free ? 'Included — this one is free.' : 'Included with Court tier.',
+                  style: textTheme.bodySmall)),
+            ]),
+          ),
+          const SizedBox(height: 16),
+          // Same real §8.11.7 width rule as the demo build's
+          // _CertifiedExportCard above — this is the production-wired
+          // screen, so it is the one that actually matters. A real
+          // attestation was already fetched by the time this state is
+          // reached (see _load()); it is just not RENDERED narrow, per
+          // requestConfirmation's own honest copy. textScale-aware as of
+          // v0.49.14 — see reviewableAt()'s own comment.
+          if (reviewableAt(width, textScale))
+            _AttestationPanel(att)
+          else
+            Container(
+              key: const Key('needsBiggerScreenNotice'),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                Icon(Icons.desktop_windows_outlined, size: 20, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(child: Text(requestConfirmation, style: textTheme.bodySmall)),
+              ]),
+            ),
+          // The real record id and whole-bundle hash — fetched alongside the
+          // attestation above but, before this pass, never read out of the
+          // response at all. `_bundleHash` is NOT the same value as
+          // `att.bundleHash` above (that one hashes the chain alone; this one
+          // hashes `{chain, attestation}` together — see these fields' own
+          // doc comments) — gated behind the same §8.11.7 review-width rule
+          // as the attestation itself, since both are review detail, not the
+          // honest-notice copy.
+          if (reviewableAt(width, textScale) &&
+              (_bundleHash != null || _exportRecordId != null)) ...<Widget>[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: scheme.surface, borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.outlineVariant)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                if (_exportRecordId != null) ...<Widget>[
+                  Text('EXPORT RECORD ID', style: textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                  SelectableText(_exportRecordId!,
+                      style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+                ],
+                if (_bundleHash != null) ...<Widget>[
+                  if (_exportRecordId != null) const SizedBox(height: 8),
+                  Text('EXPORT BUNDLE HASH', style: textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                  SelectableText(_bundleHash!,
+                      style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+                ],
+              ]),
+            ),
+          ],
+        ]);
+    }
+  }
 }

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — word search. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2.
+// OLIVE BRANCH — word search. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.2.
 //
 // The puzzle engine below (WordSearchPuzzle/buildWordSearch/findWord/
 // wordSearchComplete) is a 1:1 semantic port of the `WORD SEARCH` section of
@@ -168,7 +169,12 @@ class WordSearchSetupScreen extends StatefulWidget {
 class _WordSearchSetupScreenState extends State<WordSearchSetupScreen> {
   late final List<String> _words = [...widget.initialWords];
   final _controller = TextEditingController();
-  int _size = 10;
+  // 12, not 10: the default demo word "Maple Street" cleans to 11 letters
+  // (buildWordSearch strips the space), which doesn't fit an initial 10x10
+  // grid — a brand-new guardian who never touches the size control would
+  // hit "too long for a 10x10 grid" on the very first tap of "Hide these
+  // words". Every default starter word fits a 12x12 grid.
+  int _size = 12;
   String? _problem;
 
   void _addWord() {
@@ -208,7 +214,10 @@ class _WordSearchSetupScreenState extends State<WordSearchSetupScreen> {
     body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
       Text('Her name, the dog, her street, something she\'s excited about this '
            'week — a word search is a message disguised as a puzzle.',
-        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 16),
       Row(children: [
         Expanded(child: TextField(controller: _controller,
@@ -224,8 +233,8 @@ class _WordSearchSetupScreenState extends State<WordSearchSetupScreen> {
           InputChip(label: Text(_words[i]), onDeleted: () => _removeWord(i)),
       ]),
       const SizedBox(height: 20),
-      Text('Grid size', style: TextStyle(fontWeight: FontWeight.w600,
-        color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12.5)),
+      Text('Grid size', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 8),
       SegmentedButton<int>(
         segments: const [
@@ -311,17 +320,17 @@ class _WordSearchScreenState extends State<WordSearchScreen> {
           const SizedBox(height: 16),
           if (complete) Container(
             key: const Key('wsComplete'),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(color: scheme.tertiaryContainer,
               borderRadius: BorderRadius.circular(16)),
             child: const Row(children: [
               Icon(Icons.celebration_outlined),
-              SizedBox(width: 10),
+              SizedBox(width: 8),
               Expanded(child: Text('You found them all!',
                 style: TextStyle(fontWeight: FontWeight.w600))),
             ]),
           ) else Text('Tap a letter, then tap the last letter of the word.',
-            style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 16),
           Center(child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: min(constraints.maxWidth, 480)),

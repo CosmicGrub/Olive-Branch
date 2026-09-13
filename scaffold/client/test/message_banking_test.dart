@@ -112,4 +112,63 @@ void main() {
       expect(find.textContaining('2 messages queued for a 1-night window'), findsOneWidget);
     });
   });
+
+  group('message banking — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    // Real columnsAt()-driven threshold (form_factors.dart), matching
+    // court_export.dart's own two-pane pattern — not an invented number.
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) '
+        'renders compose and the banked list as two side-by-side panes',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const MessageBankingScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bankingTwoPaneRow')), findsOneWidget);
+      // Both panes' content is still genuinely present, just rearranged.
+      expect(find.text('Record tonight, deliver on her night'), findsOneWidget);
+      expect(find.text(_seedQueued), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single '
+        "column unchanged — no two-pane Row at all", (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const MessageBankingScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bankingTwoPaneRow')), findsNothing);
+      expect(find.text('Record tonight, deliver on her night'), findsOneWidget);
+      expect(find.text(_seedQueued), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single '
+        'column, not the two-pane Row', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const MessageBankingScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bankingTwoPaneRow')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('composing and banking a message still works correctly inside '
+        'the wide two-pane layout', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(const MessageBankingScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Wide-pane goodnight');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Bank this message'));
+      await tester.pump();
+
+      expect(find.text('Wide-pane goodnight'), findsOneWidget);
+      expect(find.textContaining('2 queued'), findsOneWidget);
+    });
+  });
 }

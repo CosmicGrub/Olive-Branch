@@ -8,7 +8,10 @@ set -u
 PGBIN=${PGBIN:-/usr/lib/postgresql/16/bin}
 PORT=${PORT:-5433}
 DB=${DB:-olive}
-Q="$PGBIN/psql -h /tmp -p $PORT -U postgres -d $DB -q -t -A -c"
+# -h localhost, not /tmp: see tools/verify.sh's own comment on this -- no
+# environment that actually calls this script has a Postgres Unix socket on
+# the local filesystem, only TCP (Docker locally, a service container in CI).
+Q="$PGBIN/psql -h localhost -p $PORT -U postgres -d $DB -q -t -A -c"
 WORKERS=${WORKERS:-8}
 
 say() { printf '%s\n' "$*"; }
@@ -89,7 +92,7 @@ expect "no stale scheduled_at survives a zone change"      "$after_rdy" "0"
 
 say ""
 say "=== BATCH PROGRESS VIEW (parent-facing only, §8.2.8) ================"
-$PGBIN/psql -h /tmp -p "$PORT" -U postgres -d "$DB" -c \
+$PGBIN/psql -h localhost -p "$PORT" -U postgres -d "$DB" -c \
   "SELECT label, total, delivered, remaining, missed FROM batch_progress;"
 
 say ""

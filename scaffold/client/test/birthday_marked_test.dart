@@ -85,8 +85,37 @@ void main() {
     expect(find.textContaining("don't have"), findsOneWidget);
   });
 
+  testWidgets('the honest fallback carries a real icon, not a bare line of text', (tester) async {
+    final incomplete = beginPicker(null, 7);
+    await tester.pumpWidget(MaterialApp(home: BirthdayMarkedScreen(
+      childId: 'child1', childName: 'Ivy', picker: incomplete, colourId: null,
+      onDone: () {}, now: fixedNow)));
+    expect(find.byIcon(Icons.cake_outlined), findsOneWidget);
+  });
+
   testWidgets('no settings affordance exists on this screen', (tester) async {
     await pump(tester);
     expect(find.byIcon(Icons.settings), findsNothing);
+  });
+
+  group('responsive — required audit viewports', () {
+    // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and a
+    // desktop/tablet-scale width.
+    const viewports = {
+      'Fold5 cover (344x882)': Size(344, 882),
+      'Fold5 main (673x841)': Size(673, 841),
+      'phone (390x844)': Size(390, 844),
+      'tablet/desktop (1200x800)': Size(1200, 800),
+    };
+
+    for (final entry in viewports.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await pump(tester, colourId: 'grape');
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }

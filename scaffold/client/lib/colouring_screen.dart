@@ -1,6 +1,6 @@
-// OLIVE BRANCH — colouring page. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §8.13. Renders MARKUP
-// screen 'colouring'.
+// OLIVE BRANCH — colouring page. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §8.13. Renders MARKUP screen 'colouring'.
 //
 // "Vector, cheap for what it is; her finger's motion is never shed." The
 // scene below is entirely vector Paths built from the canvas size, not a
@@ -22,6 +22,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
 
 const List<Color> _kPalette = <Color>[
@@ -125,9 +126,11 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
         ]),
         body: SafeArea(
           child: LayoutBuilder(builder: (context, constraints) {
-            final bool narrow = constraints.maxWidth < 420;
+            final double textScale = MediaQuery.textScalerOf(context).scale(1);
+            final bool narrow = ff.columnsAt(
+                ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) < 2;
             return Padding(
-              padding: EdgeInsets.all(narrow ? 10 : 16),
+              padding: EdgeInsets.all(narrow ? 8 : 16),
               child: Column(children: [
                 Expanded(
                   child: LayoutBuilder(builder: (context, inner) {
@@ -151,8 +154,8 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
                     );
                   }),
                 ),
-                SizedBox(height: narrow ? 10 : 14),
-                Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 10, children: [
+                SizedBox(height: narrow ? 8 : 12),
+                Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
                   for (final Color c in _kPalette)
                     _PaletteSwatch(
                       color: c,
@@ -187,7 +190,9 @@ class _PaletteSwatch extends StatelessWidget {
               shape: BoxShape.circle,
               color: color,
               border: Border.all(
-                color: selected ? Theme.of(context).colorScheme.primary : Colors.black12,
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outlineVariant,
                 width: selected ? 3.5 : 1),
             ),
           ),

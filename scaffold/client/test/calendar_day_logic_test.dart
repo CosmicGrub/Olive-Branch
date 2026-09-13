@@ -51,6 +51,28 @@ void main() {
       expect(dayPartLabel('made_up_kind'), 'made up kind');
       expect(dayPartGlyph('made_up_kind'), fallbackGlyph);
     });
+
+    // §8.4 gap-fallback — this `parts` list does NOT cover the full 24h
+    // (asleep ends 06:30, before_school starts 07:00: a real gap sits
+    // between them, same again 15:00→20:00). `nowLocal` landing in one of
+    // those gaps is not a hypothetical: an edited or partial real family
+    // schedule can leave a stretch of the day with no day-part at all.
+    test('a "now" that falls in a genuine gap between parts is nobody\'s current segment', () {
+      final List<StripSegment> segs = scheduleStrip(parts, '06:45');
+      expect(segs.where((StripSegment s) => s.current), isEmpty,
+        reason: '06:45 sits after asleep ends (06:30) and before before_school '
+                'starts (07:00) — a real gap, not covered by any part');
+      expect(segs.where((StripSegment s) => s.next), isEmpty,
+        reason: 'nothing is "next" either when nothing is "current"');
+    });
+
+    test('currentSegment() is honestly null in a gap, never a fabricated pick', () {
+      final List<StripSegment> gapSegs = scheduleStrip(parts, '16:00');
+      expect(currentSegment(gapSegs), isNull);
+
+      final List<StripSegment> coveredSegs = scheduleStrip(parts, '07:15');
+      expect(currentSegment(coveredSegs)?.kind, 'before_school');
+    });
   });
 
   group('formatTimeOfDay / minutesSinceMidnight', () {

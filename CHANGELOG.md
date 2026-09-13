@@ -14,6 +14,6192 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.73] — 2026-09-12 — Onboarding & Guardian Access, sub-project 1: real identity capture, and a required guardian PIN
+
+Full design spec: `docs/superpowers/specs/2026-09-12-onboarding-identity-pin
+-design.md`. Two real, pre-existing gaps closed together: (1) none of
+today's onboarding screens (`onboarding_name.dart`/`onboarding_age.dart`/
+`onboarding_who.dart`) have ever persisted anything — `onboarding_logic
+.dart`'s (Dart) / `onboarding.ts`'s (TS engine) own `outcome()` has computed
+a real result object this whole time that no route in `server/routes.mjs`
+ever ingested; and (2) a guardian's kiosk PIN (`pin_credential`, real,
+scrypt-hashed, wired via `POST /v1/me/pin` since v0.49.30) has been
+optional, which would leave sub-project 2's entire premise — PIN-gated
+parental controls — unreachable for any family that skipped it. Sub-project
+2 itself (PIN-gated parental controls + progressive-unlock pacing),
+device-pairing/provisioning UI, and automatic first-run detection are all
+explicitly deferred to future scoping passes, not built here.
+
+### Added
+- **`child_profile`** (`db/migrations/0031_child_profile.sql`) — a new
+  table, not a new column on `child` (the identical precedent
+  `child_theme_preference`/`child_game_picker_state` already established:
+  `child` has never had row-level security enabled at any point in this
+  schema's history). `child_id` PK/FK, `gender` (`CHECK IN ('boy','girl')`,
+  nullable — a NULL/no-row is the honest "skipped" state, never a
+  fabricated default), `set_at`. RLS mirrors `child_game_picker_state_owner
+  _only` exactly: the child owns her own row outright, NO guardian policy
+  exists at all, and — unlike that table — NO system-role read policy
+  either, since nothing in this pass ever reads this column back.
+- **`PUT /v1/children/:childId/profile`** (`server/routes.mjs`) —
+  `onboarding_gender.dart`'s real tap-and-persist path, the FIRST route in
+  the entire onboarding pipeline any first-run screen's tapped answer has
+  ever actually reached. Child-session-only: mirrors `child_theme
+  _preference`'s own route shape (a single PUT, a specific 400 via a new
+  `invalidProfileBody()`) but with the INVERTED posture `recordGamePicker
+  Open()`'s own branch already demonstrates. A guardian's PUT genuinely
+  REACHES this handler (the same `action: 'settings'` capability that
+  admits her to the theme/game-favorites routes) and is rejected there with
+  403 `child_only` — the literal inverse of `guardian_only`; a guardian's
+  GET (or anyone's — there is no read route at all) is simply UNROUTED,
+  falling through to the API layer's own generic 404 `not_found`. Both
+  outcomes are confirmed directly, not assumed, in `server/test/
+  child_profile_route.test.mjs`'s own sections D and F.
+- **`setChildGender()`** (`packages/db/src/pool.ts`) — the write, mirroring
+  `setChildTheme()`/`recordGamePickerOpen()`'s own `withSession({ roleName:
+  'child', ... })` upsert shape exactly.
+- **`onboarding_gender.dart`** (new screen, MARKUP `obGender`) — mirrors
+  `onboarding_age.dart`'s structure exactly (the same `ChildOnboardingScaffold`
+  /`TapChoice` shared chrome): **Boy** / **Girl** tap options plus an
+  explicit **Skip**, never a forced choice. A real tap awaits `OliveApi
+  .putChildGender()` (best-effort — a failed write is swallowed, never shown,
+  never trapping her here) before advancing; Skip writes nothing at all, no
+  row, not even a null one. Wired into `onboarding_flow.dart`'s existing
+  sequence immediately after age, ahead of who/colour/birthday, and threaded
+  through from `ChildMoreScreen`'s "Redo the welcome tour" the same
+  optional-and-additive `baseUrl`/`childId`/`sessionToken`/`httpClient`
+  convention `letters_screen.dart` already established for a live screen
+  reached through this exact chain — this hub's SECOND live wiring.
+  `GenderStep`/`acceptGender()` (`onboarding_logic.dart`) round out the
+  pure-logic side, the identical per-step shape `AgeStep`/`acceptAge()`
+  already take.
+- **`GuardianSetupScreen`'s "Finish setup" stepper** (`client/lib/
+  guardian_setup.dart`) — the existing, already-real PIN section (wired to
+  `setGuardianPin` since v0.49.30) becomes a required step: a new "Finish
+  setup" action at the end of the screen, disabled until `setGuardianPin`
+  has succeeded at least once THIS session (`_pinSetThisSession`,
+  deliberately separate from the PIN section's own display-only `_pinPhase`
+  — a later FAILED resubmission must never un-satisfy a requirement already
+  met), or already enabled on a return visit where a PIN already exists (a
+  new `checkExistingPin` callback, resolved on `initState()`, following the
+  identical "caller resolves the live session, this screen only ever calls
+  what it's handed" convention `registerPasskey`/`setGuardianPin` already
+  establish). The still-stubbed passkey section is completely untouched — a
+  separate, honestly-labeled section, not blocking, not part of the
+  required path.
+- **`GET /v1/me`'s new `hasPin` field** (`server/routes.mjs`) — reuses the
+  existing `pinCredentialFor()` accessor verbatim (no new query shape);
+  `null` for a child principal, a real boolean for a guardian. The real
+  backing for `checkExistingPin` above — `guardian_more.dart`'s new
+  `_liveCheckExistingPin()`, mirroring `_liveSetGuardianPin()`'s own
+  fresh-`devLoginFor()`-per-call posture, wired at both of that hub's
+  existing `GuardianSetupScreen` call sites.
+
+### Testing
+- `onboarding_gender_test.dart` (new) — pure-logic `acceptGender()` cases,
+  Boy/Girl/Skip render and route correctly, a real tap PUTs the real route
+  exactly once (and only once), a Skip (explicit link or a bare Next with no
+  tap) never calls the network at all even when live-wired, a failed write
+  is swallowed rather than shown, plus the standard responsive/48dp/no
+  -settings-affordance audits every onboarding screen in this codebase
+  carries.
+- `packages/db/test/child_profile.test.mjs` (new, real Postgres) — the real
+  round trip (a never-visited child has NO row at all, a write upserts, a
+  second different write replaces rather than accumulates), the owner-only
+  RLS proof (a different child touches nothing, a guardian with a REAL live
+  edge still reads/writes zero rows), and — unlike `child_game_picker_state`
+  — a direct proof that the system role ALSO reads zero rows here.
+- `server/test/child_profile_route.test.mjs` (new, fake-pool route contract,
+  mirroring `theme_route.test.mjs`) — the 400 on a malformed body, the
+  child-only write, and the three-way authorization split (no edge / observer
+  -only / a full guardian genuinely reaching the handler and being refused
+  there) — plus the read-route question this spec itself posed, answered
+  directly: a GET here is simply unrouted, for anyone, even the child
+  herself.
+- `guardian_setup_test.dart` (extended) — "Finish setup" disabled with no PIN
+  set, enabled immediately after a real `setGuardianPin` success, staying
+  enabled through a later failed resubmission, and already enabled on a
+  simulated return visit via `checkExistingPin`.
+- Both new `.test.mjs` files registered in `tools/verify.sh`, following the
+  identical placement/pattern `theme_preference.test.mjs`/`theme_route
+  .test.mjs`/`game_favorites.test.mjs`/`game_favorites_route.test.mjs`
+  already use (neither pair carries an individual `package.json` script
+  either — matching that exact precedent, not inventing a new one).
+
+`tools/verify.sh` run in full on this branch's real CI: **7427/7427
+assertions passing**, `flutter analyze` clean, zero regressions in any
+pre-existing suite. (A local sandboxed run against a disposable Docker
+Postgres container, used during development on a Windows machine lacking
+this repo's native CI toolchain, reported a lower estimate before this
+branch's own real CI run replaced it with the authoritative count above —
+the gap is environment drift between that stand-in and CI, not a missing
+or failing test; CI's own 0-failure result confirms it.) Two pre-existing,
+environment-only gaps (a fixture-generation script and a child-process ESM
+path issue, both Windows-sandbox-specific and reproducing identically
+against an unmodified `main` in the same environment) and one Windows-only
+false alarm in this session's own local verification rig
+(`tools/healthcheck.mjs` requires a native `psql` binary this sandbox
+lacks; a direct query of `health_check` confirms zero real breaches,
+matching `tools/health-alert.mjs`'s own DATABASE_URL-based "all clear") are
+unrelated to this change and disclosed here, not folded into the total
+above.
+
+---
+
+## [0.49.72] — 2026-09-12 — Intuitivism pass, sub-project 3c: the Fold5's cover screen and half-open hinge finally do something
+
+Continues the intuitivism pass (sub-project 1: theme system; sub-project 2:
+`ChildHome`'s tile hierarchy, v0.49.65) with the two Fold5-specific postures
+`form_factors.dart` has declared since v0.49.13 but neither used for real
+until now: `Posture.foldCover` (344 CSS px, closed) got `columnsAt()`'s
+ordinary 1-column fallback — the full layout squeezed narrow, not
+redesigned narrow — and `Posture.foldTabletop` (short, wide, hinge
+horizontal) got a handful of scattered per-screen tweaks
+(`game_connect4.dart`'s own padding adjustment) rather than a considered use
+of the two halves the physical hinge actually creates. §8.11.2's own
+one-line MASTERFILE aside — "Video above the crease, controls below.
+Nothing used it." — is no longer true. Full design spec:
+`docs/superpowers/specs/2026-09-12-intuitivism-fold5-layout-design.md`.
+
+### Added
+- **`CoverCollapse(full, collapsed)`** (`client/lib/cover_collapse.dart`) —
+  a shared widget that renders `collapsed` at `Posture.foldCover` and
+  `full` (the caller's own, otherwise completely unchanged, existing
+  layout) at every other posture, via its own internal `LayoutBuilder` —
+  the identical detection shape `TabletopSplit` below already establishes.
+  `ChildHome` now shows only the presence card and the Hero tile ("My day")
+  at foldCover, with Featured/Standard collapsing into a single "More"
+  tile — the same icon/label/push-a-full-screen shape `guardian_home.dart`'s
+  own pre-existing "More" tile already used to reach `GuardianMoreScreen`,
+  reused here to instead open `full` itself on its own screen.
+  `GuardianHome` gets the identical treatment: the ribbon (unchanged) and
+  the Hero tile ("Message banking") only, everything else behind the same
+  kind of "More" tile.
+- **`TabletopSplit(viewing, controls)`** (`client/lib/tabletop_split.dart`)
+  — a shared widget that renders `viewing`/`controls` as a plain, real 50/50
+  `Column` split (each half independently scrollable, so real content
+  taller than half of foldTabletop's own short ~420dp floor never
+  overflows) at `Posture.foldTabletop`, or `viewing`-then-`controls` in one
+  unsplit column otherwise. Wired into four screens as a new branch ahead
+  of each screen's own existing layout decision (the existing branch stays
+  completely untouched for every other posture) — the same
+  `postureFor(viewport) == Posture.foldTabletop` check
+  `game_connect4.dart`'s own `outerPad` conditional already uses:
+  `storyteller_screen.dart` (the reading card above the hinge, the
+  favourites/bookmarks shelf below), `showcase_screen.dart` (the ask feed
+  above, the prompt-chip actions below), `homework_screen.dart` (the
+  worksheet/problem content above, the capture trigger below), and
+  `call_screen.dart` (video above, mute/hang-up/camera controls below —
+  arguably the single most natural real-world tabletop use case on this
+  hardware: propped up hands-free on a table during a call).
+  `call_screen.dart`'s own `_InCallView` is now the public `InCallView`
+  (same reasoning as `isGuardianWho`'s own doc comment: `call_screen_test
+  .dart` can never reach a real in-call state without a live LiveKit
+  connection, so this is the only way to test the split at all).
+- Honest limitation, disclosed rather than assumed away: Flutter has no
+  `FoldingFeature` (Android's Jetpack WindowManager) in this pass — the
+  50/50 split is an even division of the reported window, not a
+  measurement of where the real hinge sits. `isTableTopPosture` (a lighter
+  real signal the design spec's own "considered and left for the plan to
+  decide" section named) was evaluated and deliberately not added this
+  pass — see that spec's own section for why the width/height heuristic
+  alone was judged sufficient for this pass's budget.
+
+### Changed
+- `game_connect4.dart`'s own existing tabletop padding tweak is untouched —
+  not migrated onto `TabletopSplit`, per the design spec's own explicit
+  scope boundary.
+
+Tests: two new independent unit-test suites prove the shared widgets'
+own contracts directly (`tabletop_split_test.dart`, `cover_collapse_test
+.dart`) — the target-posture split/collapse, and a byte-for-byte no-op at
+every other posture — proven once, not re-proven per screen. A new
+`fold5_layout_test.dart` proves each of the six real screens wires the
+shared widget in correctly at its target posture, plus a regression group
+confirming every OTHER posture on all six screens is unchanged from before
+this pass. `child_home_test.dart`'s own pre-existing 344px assertions
+(written for sub-project 2, before this collapse existed) are updated in
+place, not silently left stale: the Featured/Standard grid-column-count
+case no longer applies at foldCover (the grids don't exist there at all
+now) and is documented as relocated rather than deleted; the "sleeps until"
+fold-line regression's own foldCover-classified widths (344 AND, per
+`postureFor()`'s own pre-existing width/height heuristic, a plain 390×844
+"phone" — unrelated to and unchanged by this pass) now reach the counter
+via the "More" screen instead of directly. Full client suite: 2362/2362
+passing (up from 2327 before this pass), `flutter analyze` clean.
+
+---
+
+## [0.49.71] — 2026-09-12 — GuardianHome gets the same real tile hierarchy: intuitivism pass, sub-project 3b
+
+`guardian_home.dart` never got the "less adult-minimalist" treatment ChildHome did (v0.49.65, sub-project 2) — its 11 tiles (Message banking, Emergency card, Handover notes, Exchange, Expenses, Availability, Send-time guard, Meds & care, Morning briefing, Care note, More) rendered as one flat, equal-weight grid (`_GTile`), the exact symptom sub-project 2's own spec named for ChildHome's pre-hierarchy state. Column-count/width scaling was already correct here (a real floor of 2 AND ceiling of 3, `.clamp(2, 3)`, PR #43) — this closes purely the visual-hierarchy gap, per `docs/superpowers/specs/2026-09-12-intuitivism-guardianhome-tiering-design.md`.
+
+### Added — a shared `TieredTile`, extracted rather than duplicated
+`child_home.dart`'s own private `_Tile` moves, unchanged, into a new `client/lib/tiered_tile.dart` (`TieredTile`) — `_Tile`'s own doc comment already named the reason this should be one real component once a second real consumer existed. `ChildHome`'s migration onto it is a pure rename plus file move: its full existing test suite (`child_home_test.dart` and every other file that exercises it) passes with **zero test-file changes**, the proof this is genuinely behavior-preserving. `GuardianHome` adopts `TieredTile` in place of `_GTile`.
+
+### Added — the 3-tier hierarchy
+Tier assignment traces directly to the user's own answer about which tiles feel most urgent/frequent as a real guardian — a fixed, designed hierarchy, never computed from usage (P2 not triggered):
+- **Hero** (1 tile, full-width band outside the grid, same structural position as ChildHome's own Hero): **Message banking** — `tertiaryContainer`.
+- **Featured** (larger icon/type-scale via `TieredTile`'s own `featured` flag): **Availability, Send-time guard, Meds & care, Emergency card** — `secondaryContainer`.
+- **Standard** (unchanged from before this pass): **Handover notes, Exchange, Expenses, Morning briefing, Care note, More** — `primaryContainer`.
+
+A declarative `_kGuardianTiles` list (tier-tagged, partitioned once per `build()`) replaces the old hand-tiered `GridView.children` literal, so a tile silently appearing in two tiers or dropped entirely is structurally unlikely rather than merely avoided by care. The ribbon above (Ivy's day bars, the Call Ivy button — real, live data, not a tile) is untouched; the existing `crossAxisCount`/`effectiveColumnWidth` computation is untouched — only which tiles land in which grid, and each grid's fill color, changes.
+
+### A real bug found and fixed along the way
+Featured's larger icon (28→36px) and text style (titleSmall→titleMedium), rendered inside this screen's own SHARED (not per-tier) `mainAxisExtent` — deliberately unchanged from before this pass — reintroduced the exact overflow class §8.11.1 already documents for this file: 'Send-time guard' (the longest Featured label) overflowed by 4px at the Fold5 cover-screen width, and by as much as 24px in a real, common phone-width band (~372-380px screens) the old `165` breakpoint routed into the too-short `108` extent instead of the taller one. Found by real widget tests pinned to exact widths, the same discipline the original bug comment names — not by inspection. Fixed by growing both breakpoint values (`136`/`170`, was `128`/`165`); the untouched `108` value remains valid and unchanged above the new threshold, confirmed by tests at the exact former danger-zone widths.
+
+### Tests
+`test/tiered_tile_test.dart` (new, 12 assertions): `TieredTile`'s own independent unit suite — `featured`/`hero` (alone and combined) drive the right icon size/fill/text style, `badgeCount` null/0/positive/`>9`, the honest not-built-yet fallback, the hero-only full-width wrapper, the §8.4 64dp floor. `test/guardian_home_test.dart` (new, 9 assertions): each of the 11 tiles renders in its assigned tier's grid — and *only* that tier's, proving real tier assignment rather than "11 tiles render somewhere"; each tier's fill color matches its `ColorScheme` role; Hero sits above Featured sits above Standard, and reads taller; the ribbon renders completely unchanged (a regression guard); the 344px Fold5-cover Hero-label wrap case. `test/widget_test.dart`'s `Exchange`/`Expenses` tap tests gained a defensive `ensureVisible()` — Standard tier's own tiles moved further down than the default test viewport shows without a scroll step, the same fix sub-project 2 needed for ChildHome's own Standard tiles. Full Dart client suite: 2348/2348 passing (2327 baseline + 21 new), `flutter analyze` clean.
+
+### Explicitly out of scope
+Column-count/width scaling (already correct, untouched); the ribbon itself (untouched, real live data); any new/removed/renamed tile (same 11 destinations, same labels/icons — only grouping and fill color change); a guardian-settable custom tile order (a genuinely different feature from a designed hierarchy, noted for future consideration, not designed here).
+
+- **Assertion total: 7190**, confirmed against this branch's own real CI
+  `COMPUTED TOTAL` once a real, unrelated failure was fixed rather than
+  papered over: this branch's first CI run showed 7189 passed (one short
+  of the 7190 estimated from HEAD's 7169 plus this entry's own 21 new
+  Dart tests) because `tiered_tile.dart` was missing the repo-wide
+  `UNVERIFIED` marker convention `transport.test.mjs`'s own "I contract"
+  suite enforces on every `client/lib` Dart file — a real, deterministic
+  failure, not noise. With that fixed, the branch's own math checks out
+  exactly: 7169 + 21 = 7190, synced here per this repo's established
+  convention.
+
+---
+
+## [0.49.70] — 2026-09-12 — GamePickerScreen's Recommended row
+
+Intuitivism pass, sub-project 3a
+(`docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended-design.md`).
+`GamePickerScreen` is the one high-traffic screen sub-project 2 explicitly
+deferred — a flat catalogue with no natural "hero," missing a way to feel
+personal rather than exhaustive, and a way to feel unstuck when she doesn't
+know what she wants. Two signals feed a new Recommended row: a
+guardian-curated favourites mechanism (real personalization, nothing about
+HER OWN behavior measured or stored) and a complementary age-unlock signal
+(a game she has genuinely grown into since her last visit, derived purely
+from her age and birth date — no usage tracking). Recency/frequency-based
+recommendation was considered and explicitly deferred to a v2 that needs its
+own scoping pass — noted, not designed here.
+
+### Added
+- **`packages/games/src/favorites.ts`** (new) — mirrors `jokes.ts`'s own
+  shape exactly: `star`/`unstar` (idempotent, no duplicates),
+  `favouritesFor(all, starred)` (resolves stored kinds against the live
+  catalogue; a removed game silently drops, never a dangling ref),
+  `newlyUnlocked(all, age, ageAtLastOpen)` (a game whose `minAge` she has
+  crossed since her last visit; a null `ageAtLastOpen` — first-ever open, or
+  no live session — returns nothing rather than fabricating "her whole
+  catalogue is new"), `randomGame(all, age, excludeKind, pick)` (identical
+  contract to `randomJoke()`, `pick` injectable for deterministic tests).
+- **`game_favorites_logic.dart`** (new) — the 1:1 Dart port, same names,
+  same shapes, importing `GameMeta`/`GameKind`/`forAge` from
+  `game_logic.dart` rather than redeclaring them.
+- **`db/migrations/0030_game_favorites.sql`** (new) — two tables, two
+  different owners. `guardian_game_favorite` (`guardian_id`, `kind`,
+  `created_at`, `PRIMARY KEY (guardian_id, kind)`) — the SAME `..._no_child`
+  RLS shape every other guardian-only preference table in this schema
+  already uses (`medication`/`care_note`), deliberately keyed on the
+  GUARDIAN, not the child — mirrors `guardian_availability_window`'s own
+  guardian-id-only shape, resolved per child via `guardiansOfChild()` +
+  `= ANY(...)`, the identical join `availabilityFor()` already uses.
+  `child_game_picker_state` (`child_id` PK, nullable `age_at_last_open`,
+  `updated_at`) — child-owned RLS, the inverse of the table above (mirrors
+  `letter_owner_only`'s own "guardian-excluded" shape), plus a system-role
+  read for the combined GET. Both added to `health_check`'s own
+  `rls_unforced` tracking list; `packages/db/test/rls_coverage.test.mjs`
+  (the automated backstop v0.49.69 added for exactly this recurring gap)
+  confirmed neither was silently missing.
+- **`packages/db/src/pool.ts`** — `gameFavoritesFor()` (system-role combined
+  read: her resolved favourite kinds unioned across every live guardian, plus
+  her `ageAtLastOpen`), `setGameFavoriteKinds()` (guardian branch,
+  full-replace — the same upsert-the-whole-preference shape
+  `setChildTheme()` already uses, DELETE-then-INSERT inside one
+  transaction), `recordGamePickerOpen()` (child branch — her current age
+  computed server-side from her real `birth_date` via the caller-resolved
+  `childLocalDate`, `sealLetterRow()`'s own discipline, never trusted from
+  the client).
+- **`GET`/`PUT /v1/children/:childId/game-favorites`** (`server/routes.mjs`)
+  — reuses `action: 'settings'` verbatim from `PUT .../theme` (same
+  observer-only-denied, child-reachable-regardless shape). ONE PUT verb,
+  two owners: a guardian's body carries the full new `favoriteKinds` list; a
+  child's body is empty — "I just opened this screen" — and the route
+  dispatches by `c.principal.roleName`, refusing each the other's job the
+  same way `PUT .../theme` already refuses a child write outright.
+  `invalidGameFavoritesBody()` gives a specific 400 (`favoriteKinds_must_be_
+  array`/`bad_favoriteKind`), the same posture `invalidThemeBody()` already
+  established.
+- **`GamePickerScreen`** gains four new optional constructor params —
+  `favoriteKinds`/`ageAtLastOpen`/`onToggleFavorite`/`onSurpriseMe` — still a
+  plain, non-fetching `StatelessWidget`; nothing here changed its shape into
+  a self-fetching live screen. A Recommended row renders above the untouched
+  catalogue grid whenever `favoriteKinds` is non-null and the combined
+  favourites + `newlyUnlocked()` result is non-empty (favourites first,
+  age-unlock filling remaining slots, each game at most once) — absent
+  entirely otherwise, this app's established "honest absence over
+  empty-state noise" convention. A "Surprise me" button (visible whenever
+  `onSurpriseMe` is non-null, both child and guardian sessions) sits beside
+  the row's own header, or stands alone when there is no row to render.
+  `_GameCard` gains a star `IconButton`, rendering ONLY when
+  `onToggleFavorite` is non-null — i.e. only when a guardian, not the child,
+  opened the screen — filled/outline mirroring `favoriteKinds` membership,
+  an instant fill-swap on tap with no animation beyond it (§8.13). The row
+  itself performs one clean `AnimatedSwitcher` fade the first time it gains
+  content, keyed so a later favourite added while it is already visible
+  never re-triggers it.
+- **`live_game_picker.dart`** (new) — `LiveGamePickerScreen`, the live
+  wrapper both real call sites share (one widget, not two hand-copied
+  near-duplicates), the same `court_export.dart`/`theme_picker_screen.dart`
+  split of "the plain widget stays plain, the live session lives one layer
+  up." A `sessionToken` identity (child_home.dart's own already-minted
+  token, InboxScreen's own posture) fetches her real favourites, records her
+  visit in the background (fire-and-forget, never blocking, never
+  retroactively changing the currently-rendered row), and wires
+  `onSurpriseMe` — never `onToggleFavorite`. A `guardianId` identity
+  (guardian_more.dart, mints its own dev login on demand, matching
+  `theme_picker_screen.dart`'s own Apply-time pattern) fetches the real
+  favourites and wires `onToggleFavorite` — optimistic local toggle via
+  `star()`/`unstar()`, persisted in the background, reverted with an honest
+  snackbar on a failed write — but never `ageAtLastOpen`/`onSurpriseMe`: a
+  guardian browsing on her behalf is not her own visit.
+- **Call sites** — `child_home.dart`'s "Play together" tile now opens
+  `LiveGamePickerScreen` whenever `baseUrl`/`childId`/`sessionToken` are all
+  threaded in (identical to `InboxScreen`'s own call site immediately
+  above), the plain `GamePickerScreen` otherwise — unchanged from before this
+  pass. `guardian_more.dart`'s "Play together" tile does the same, gated on
+  `baseUrl`/`guardianId` (the same trio `_openAvailability`/
+  `_openThemePicker` already gate on) — this spec's ONLY guardian-driven
+  favoriting surface; `favoriteKinds` is also threaded through here (beyond
+  the spec's own explicitly-named `onToggleFavorite`) so the star's
+  filled/outline state is real rather than permanently unfavourited — a
+  disclosed, narrowly-scoped judgment call, not a spec requirement.
+- **Tests** — `packages/games/test/favorites.test.mjs` (29 assertions,
+  including the two-hundred-draw `randomGame()` non-repeat proof mirroring
+  `jokes.test.mjs`'s own), `server/test/game_favorites_route.test.mjs` (37,
+  fake-DB route contract, mirroring `theme_route.test.mjs`'s own depth —
+  auth, validation, the child/guardian PUT split, observer-only denial),
+  `packages/db/test/game_favorites.test.mjs` (23, real Postgres RLS,
+  mirroring `theme_preference.test.mjs`'s own depth — real round-trip, real
+  server-side age computation, both tables' RLS proven from both sides).
+  89 new JS/DB assertions total, all three registered in `package.json`
+  and `tools/verify.sh`. `game_favorites_logic_test.dart` (18, new),
+  `live_game_picker_test.dart` (9, new), plus extended coverage in
+  `game_picker_test.dart` (+14), `guardian_more_test.dart` (+2),
+  `child_home_test.dart` (+2) — every rendering rule the design spec's own
+  Testing section names: favorites alone/age-unlock alone/combined with no
+  duplicates/neither (row absent), the star only with `onToggleFavorite`,
+  the Surprise-me button only with `onSurpriseMe`, a child-opened screen
+  showing the row and the button but never a star, and the real end-to-end
+  live wiring at both call sites (fetch, optimistic toggle, revert-on-
+  failure, background visit recording). 45 new Dart tests. `flutter
+  analyze` clean, full Dart suite 2372/2372 (2327 baseline + 45 new).
+
+### Judgment calls (spec left open, resolved here, disclosed)
+- `randomGame(all, age, excludeKind, pick)`'s `pick` parameter is
+  implemented as `pick: () => number = Math.random` (a function, mirroring
+  `randomJoke()`'s own signature the spec's prose explicitly calls
+  "identical contract to") rather than the literal `pick: number` the
+  spec's own code block showed — the prose and the code block disagreed;
+  the prose (and `jokes.ts`'s own precedent) governed.
+- `ageAtLastOpen` persistence: a new small `child_game_picker_state` table,
+  not two new columns on `child` — the identical precedent/reasoning
+  `child_theme_preference` (v0.49.?? theme sub-project 1) already
+  established for its own columns (`child` has never had row-level security
+  enabled at any point in this schema's history; adding a child-writable
+  column there would be an undeclared widening of an existing table's
+  contract).
+- `guardian_game_favorite`'s RLS is the coarse `..._no_child` shape (any
+  live guardian session), not `guardian_availability_window`'s own
+  finer-grained own-row/co-guardian-read split — the design spec named
+  `..._no_child` explicitly; nothing about favouriting needs per-guardian
+  row ownership the way per-guardian availability windows genuinely do.
+- The single PUT route's two-owner split (guardian sets `favoriteKinds`;
+  child's empty body records her visit) rather than a third dedicated route
+  — the spec named exactly "New GET/PUT" routes, no third; folding the
+  child's visit-recording into the same PUT, gated by caller role, kept
+  that literal route count while still giving each owner her own real write
+  path.
+
+See MASTERFILE §9.2 for the fuller account.
+
+---
+
+## [0.49.69] — 2026-09-06 — Roadmap batch 2: the gate now runs on the actual send path
+
+Continues the 47-item backlog batch 1 triaged (see the 0.49.68 entry below).
+This batch closes four items, three of them real "built but never actually
+wired to anything" gaps rather than missing features — the same class of
+bug batch 1's own retrospective flagged as the dominant pattern in this
+codebase.
+
+### Fixed — security & correctness
+- **`notifyDevices()` never consulted the §6.4 asleep/school gate — the one
+  real production caller (`call_incoming`, the calls route) rang a
+  sleeping or in-school child's device with no check at all.** `gate()`
+  (`packages/delivery-engine/src/gate.ts`) had exactly one real caller
+  before this pass: the read-only `GET /now` route, a display, never a
+  send-time block. Fixed by resolving `childCtxFor()` + `gate()` once
+  inside `notifyDevices()` (`packages/transport/src/notify.ts`), before any
+  device is touched, for every CHILD-targeted send — a blocked batch is
+  skipped entirely (`code: 'gated_quiet_hours'`), not fired and left for
+  the OS to maybe silence. Deliberately a hard skip, not the deferred-retry
+  `deferTo` otherwise supports — no queue/scheduler in this codebase can
+  re-attempt a push later yet, and a live call has nothing meaningful to
+  defer to regardless. `NotifyInput.priority` defaults to `'normal'`, so
+  `call_incoming` is now itself subject to the gate like any other arrival;
+  nothing in this codebase has ever set `'emergency'` priority anywhere, so
+  no automatic calls-always-bypass rule was invented here. Landed alongside
+  a real performance fix in the same file: per-device sends now run
+  concurrently (`Promise.all`) instead of serially, and every iOS send in a
+  batch shares one real HTTP/2 session (`openApnsSession()`,
+  `packages/transport/src/apns.ts`) instead of paying a fresh connect/close
+  per device — best-effort only, silently falling back to the old
+  one-session-per-send behavior if opening the shared session fails.
+- **`health_check`'s tracked-table list fell behind a real RLS migration a
+  fourth time.** `db/migrations/0026_medications_emergency_card.sql` gave
+  `medication_dose` real, forced RLS, but only its siblings
+  `medication`/`medical_record` were ever added to `health_check`'s own
+  view. Closed with a new automated backstop, not another manual patch —
+  `packages/db/test/rls_coverage.test.mjs` derives the real RLS-enabled
+  table list from `pg_class` itself and asserts none is missing from
+  `health_check`'s own view SQL and that every RLS-enabled table also
+  carries `FORCE ROW LEVEL SECURITY`. Failed exactly where the gap was on
+  its first real run; fixed via `db/migrations/0029_rls_coverage_fix.sql`.
+  `tools/health-alert.mjs`'s header no longer pins a specific migration
+  number (it had already gone stale on that exact line twice) — it now
+  points at this test as the standing defense instead.
+- **A message's retention clock never actually shortened when she opened
+  it.** `packages/messaging/src/pipeline.ts`'s `retentionOnOpen()`
+  (shortens-never-lengthens, real and tested well before this pass) had no
+  production caller — `POST /v1/children/:childId/inbox/:messageId/opened`
+  marked a message opened and stopped there. A real bug was found wiring
+  this in, not just a missing call: the naive first attempt ran the
+  `media_artifact` UPDATE under the route's own child-role session, and
+  that table's RLS (0023) admits no policy for `child` at all — under
+  `FORCE ROW LEVEL SECURITY` the UPDATE silently touched zero rows, no
+  error. Fixed with a new `applyRetentionOnOpen()` (`packages/db/src/
+  pool.ts`), scoped through `withSystemSession()` the same way
+  `mediaArtifactFor()` already is.
+- **Guardian availability notes had no tone guard, and no way to author one
+  at all.** `invalidAvailabilityBody()` checked only that a note was a
+  string; `availability_screen.dart` had no field to type one into — a note
+  only ever arrived pre-existing in fetched data. An availability note is
+  served straight to the CHILD's own session (more exposed than a care
+  note, which always renders `visibleToChild: false`), so it gets the exact
+  same refusal care notes already get: a new `AVAILABILITY_NOTE_BANNED`
+  export (`packages/guardian/src/guardian.ts`, reusing `CARE_NOTE_BANNED`
+  directly — one word list, not two to keep in sync by hand), enforced
+  server-side before persistence, plus a real, bounded `TextField` in
+  `_dayRow()`.
+
+### Investigated, no change needed
+- **Traced every real caller of `scheduleStrip()`** (`packages/phase3/src/
+  phase3.ts`) — the same boundary-minute string-width comparison shape
+  `gate()` had, fixed earlier this batch via `pool.ts`'s `childCtxFor()`
+  truncation — for the identical risk (a raw DB time cast on one side, a
+  formatted `'HH:mm'` string on the other). `demo/src/bridge.ts`,
+  `client/lib/my_day.dart`, `client/lib/inbox_screen.dart`, and
+  `packages/custody/src/schedule.ts`'s own parallel `isWindowActiveNow()`
+  all already compare consistent 5-character `'HH:mm'` widths on both
+  sides — confirmed, not assumed. No live path today calls `scheduleStrip()`
+  against server-fetched day-parts at all; the one real `/ribbon` consumer
+  (`guardian_home_live.dart`) uses numeric `minutesSinceMidnight()`
+  parsing instead, immune to this bug class by construction. Documented
+  in place at each traced call site rather than left as tribal knowledge.
+
+## [0.49.68] — 2026-09-06 — Roadmap batch 1: 21 real, verified fixes across the app
+
+A re-audit of every open item across two published upgrade atlases, a
+gap-fill backlog, and the Tier D backlog — a 14-agent Workflow re-verified
+all 77 candidate items against the CURRENT codebase (many weeks and PRs
+old since either atlas was written), separating what's already fixed by
+intervening work from what's genuinely still open. 47 items survived that
+triage as a real, deduplicated, prioritized backlog. This entry closes the
+smallest, most self-contained tier of it — 21 items, every one read,
+fixed, and tested individually, not batch-applied on faith. The rest (26
+items, several explicitly flagged as needing the owner's own product/
+architecture decision rather than being unilaterally buildable) remain
+queued for their own passes.
+
+### Fixed — security & correctness
+- **Real release builds were silently shipping the demo's hardcoded PIN.**
+  `RELEASE_SIGNING.md`'s own §3 build command had no `--target` flag —
+  Flutter resolves that to `lib/main.dart`, the offline demo whose kiosk
+  gate checks a plain `'1273'` constant, never `lib/main_live.dart`'s real
+  scrypt+WebAuthn check. Fixed the documented command and added a new,
+  permanent guard — `tools/check-release-target.mjs` (wired into
+  `verify.sh`) — that fails loudly if this doc's own command ever drifts
+  back to an untargeted one, in the same "silence fails the build" spirit
+  `check-markup.mjs` already established.
+- **A 409 "already deactivated" response read as a generic, retryable
+  failure** on account deletion's own error path — nothing was wrong and
+  retrying could never help. Now its own honest, non-alarming message.
+- **Account deletion had no confirmation step at all** — a single
+  checkbox, then a live, irreversible `deleteAccount()` call. Added a real
+  "are you sure" dialog, mirroring `letters_screen.dart`'s own
+  `_confirmDelete` house pattern, on the one screen whose action can't be
+  undone.
+- **A token-refresh re-registration failure was an unhandled async
+  error** — `push_channel.dart`'s initial registration is wrapped by every
+  real caller's own try/catch; the later refresh-triggered one wasn't.
+  Same swallow-and-log posture as the initial path now applies to both.
+- **A child who defeats the kiosk by accident had no way to know this
+  screen isn't hers** until she'd already burned real attempts toward the
+  cooldown and, past 3 exits, a cross-guardian alert. `pin_gate.dart` now
+  shows a persistent, unconditional "This needs a grown-up's code" line
+  from frame one — its real effect is to make the lockout machinery *less*
+  likely to fire on innocent behavior, never more.
+
+### Fixed — dead wires (real backend, no client surface until now)
+- **Raw export bundles carried bare storage-key references, not fetchable
+  URLs** — a guardian who downloaded one found nothing usable for her
+  photos/videos. `StoragePort.signedUrl()` and `SIGNED_URL_TTL_SECONDS`
+  (already real and tested for the single-artifact media route) now sign
+  every artifact in a raw export too — additive, computed fresh on the
+  response only, deliberately *not* folded into `bundleHash`/`bundleJson`
+  (a time-limited signature in the hashed bytes would make the same
+  export's hash verify differently depending on when it was downloaded).
+- **The Deletion tile was the one sibling in `guardian_more.dart` never
+  given the live session identity** Court export/Availability/the real-call
+  tiles already get — silently falling back to demo defaults even inside a
+  real session, on the single irreversible-action screen. Now mints a real
+  token via `devLoginFor()` before navigating, matching every other tile.
+- **`LiveCourtExportScreen` only ever surfaced certified export** — raw
+  export has been a real, working, free-and-unlimited backend endpoint
+  since before this cycle, with no UI on the live screen at all (only the
+  demo half had one). Added, wired to the same `fetchRawExport()`/
+  hash-verify/save-to-disk flow `deletion_screen.dart` already uses.
+- **A photographed homework page fell out of scope right after the OCR
+  POST** — she never saw her own worksheet again anywhere in the flow,
+  which matters given OCR here is admittedly approximate. `capture_gate
+  .dart` now keeps the bytes; `homework_screen.dart` shows a thumbnail
+  above the problems list, real path only.
+- **A story reread twice or more was only ever noticed if it was already
+  starred** — `storyArtifact()`'s own "worth keeping" logic had zero
+  production callers. Now tracked on every reopen (bookmark resume
+  included), with a one-time, unstarred-only nudge — no printed count (P2).
+- **A rung reached today was invisible to her unless she dug three taps
+  deep** into the ladder screen herself. Added the child-side counterpart
+  to the guardian's own one-time announcement: a real, proactive
+  full-screen reveal on the newly-crossed rung, shown once per app run.
+
+### Fixed — fidelity & polish
+- **The child's "state sentence" sat below the actor's own subordinate
+  clock line**, styled identically to it — MASTERFILE §8.2.1's own worked
+  example bakes it into the dominant headline instead. Moved above, given
+  the same bodyMedium/w600 treatment `exchange_screen.dart`'s own handoff
+  card uses.
+- **The live colour preview snapped instantly** while the swatch grid's
+  own selection ring already animates (180ms) on the same screen. Now a
+  bounded `Color.lerp`, capped at `motion_rules.dart`'s `maxConsequenceMs`.
+- **The dialing/joining call screen was a generic spinner** with no
+  reference to who's being called and no accent colour. `CallScreen` now
+  accepts an optional, pre-resolved `accentColor` and says "Calling
+  {name}…"/"Joining {name}…" — every existing caller (no colour supplied)
+  renders exactly as before.
+- **The Year Book showed one year at a time with no sense of the whole
+  archive.** Added a real "Her archive so far" line, computed once from
+  the already-correct per-year counts — guardian-facing only, so P2's
+  child-count prohibition doesn't apply.
+- **Battleship had no takebacks** — every other title here (checkers,
+  dots-and-boxes) already has the house rule of free, unlimited undo.
+  Ported it: a snapshot of both the engine state and the AI's own private
+  targeting memory (which `BsState` doesn't carry), popped one shot at a
+  time, either side's.
+
+### Fixed — documentation accuracy
+- **`check-markup.mjs`'s own C4c check did a naive substring search**
+  ("does this version number appear anywhere in the document") instead of
+  checking for a real per-version anchor — a version mentioned only inside
+  a *different* entry's prose read as "represented." Fixed to check
+  `data-since`/`data-amended` attributes or a real table row; backfilled
+  the one genuine gap it had been silently missing (a v0.44.0 history row).
+- **Two live files still cited migration 0006 as `health_check`'s
+  canonical definition** — it's been redefined seven times since (0008
+  through 0028). Repointed at the view's own migration history instead of
+  a number that will only go stale again.
+- **Two stale/inaccurate comments in `pool.ts`** — one described a
+  discriminated `pin_credential` shape dropped by migration 0008 three
+  migrations ago; one cited a nonexistent `DEPLOYMENT.md` inventory and
+  disagreed with a second, closer list a few hundred lines later that
+  migration 0023 had already made correct. Both rewritten to describe the
+  current schema.
+
+### Explicitly not attempted in this pass
+`unify-snapshot-gallery-with-real-gallery` (folding `AppPhoto`/`AppGallery`
+into the real `Work`/`Medium` model) surfaced during triage as genuinely
+medium-risk, not small — a real data-model merge across two screens,
+deserving its own focused pass rather than being rushed alongside 21
+smaller items. A1's own server-side signed-URL enrichment is
+code-reviewed against the identical, already-proven pattern the media
+route uses, and confirmed via `flutter analyze`/build/contract-test
+green, but does not yet have a dedicated automated HTTP-level test in
+this pass (the existing route-level fixture for this class of test needs
+a real Postgres instance this pass didn't stand one up for) — flagged
+honestly as a follow-up, not silently skipped.
+
+`flutter analyze` clean, full Dart suite 2324/2324 (2313 + 11 new),
+`check-release-target.mjs` 2/2 (uncounted, same convention as
+`check-markup.mjs`), `check-markup.mjs` 44/44. Assertion count computed as
+7117 (CI's confirmed v0.49.67 total) + 11 Dart = 7128; to be synced to
+CI's real number in a follow-up commit if it differs, per this repo's
+established convention.
+
+---
+
+## [0.49.67] — 2026-09-06 — The jokebook: a quick one, and another, and another
+
+A fixed, hand-written library of kid-friendly jokes — dad jokes, puns, wordplay,
+plain silliness, knock-knocks — she reaches for when she wants a quick one. Reads
+the setup, taps for the punchline, asks for another; stars the ones she likes;
+holds one up to tell a parent. Designed through a real brainstorm
+(`docs/superpowers/specs/2026-09-01-jokebook-design.md`), each decision recorded
+with its reason rather than defaulted.
+
+### Added
+- **`packages/jokes/src/jokes.ts`** (new) — `CATALOGUE` (58 jokes), `forAge()`
+  (the same floor mechanic as `games.ts`: `age >= minAge`), `byId()`,
+  `randomJoke(age, excludeId, pick)` (never the one she just heard; `pick` is
+  injectable so tests are deterministic), favourites (`star`/`unstar`/
+  `isStarred`/`favouritesChildView`) and the same runtime `auditChildView()`
+  P2 check `library.ts` keeps. Each joke's `minAge` is a **comprehension
+  floor, not a content rating** — every joke is appropriate for every age; the
+  floor only stops a joke she can't get yet from landing flat. Nothing is gated
+  above 12; a teenager keeps the whole book. An internal `category` tag keeps
+  the mix honest (a test refuses any category exceeding half the book) and is
+  deliberately not surfaced as a picker — she asked for a joke, not a genre.
+- **`joke_logic.dart`** (new) — 1:1 port, no Flutter import, same posture as
+  `storyteller_logic.dart`.
+- **`jokebook_screen.dart`** (new) — `JokebookScreen`: ask card → joke card
+  with the punchline genuinely absent from the tree until tapped (that tap IS
+  the comic timing) → revealed card with star / "Tell me another!" / "Tell Dad
+  this one"; a starred shelf beneath, or beside on wide postures via
+  `columnsAt()`. Modelled on `storyteller_screen.dart`'s card rhythm, not
+  invented fresh. And `JokebookSection` — a `HubSection` + one `HubTile`, the
+  same chrome `games_hub.dart` uses, so it reads as part of the same list.
+- **Where it lives** — a new **"Just for laughs"** block in "Play together"'s
+  `extraSections`, at both real call sites (`child_home.dart`,
+  `guardian_more.dart`), after `MoreGamesSections`. No new ChildHome tile:
+  `extraSections` is the mechanism v0.49.66 built and hardware-verified for
+  exactly "one more catalogue behind the one door," and a 4th Standard-tier
+  tile would reopen the count v0.49.65/.66 just closed at 3.
+- **"Tell Dad this one"** — honest about what this preview build can do. There
+  is no child→guardian message send anywhere in this client yet
+  (`showcase_screen.dart`'s "she shows; he sees" is a disclosed UI-only
+  stand-in for the same reason), so this sends nothing and never says it does:
+  it shows the whole joke large with "Read it out on your next call, or hold
+  your screen up to the camera" — a real thing she can do tonight. A real send
+  is a separate follow-up once that channel exists; faking one would teach her
+  a message arrived when it didn't.
+- **Tests** — `packages/jokes/test/jokes.test.mjs` (33 assertions, registered
+  in `package.json` and `tools/verify.sh`), `joke_logic_test.dart` (17),
+  `jokebook_screen_test.dart` (17): the beat, the age floor across 25 draws at
+  age 4, the favourites round-trip, a P2 vocabulary sweep at every stage, the
+  tell-a-parent sheet never using "sent/sending/delivered/message", §8.1 no
+  settings affordance, §8.4 48dp star, the four-width responsive sweep, and
+  the real path from `GamePickerScreen`'s own `extraSections` into the screen.
+
+### Fixed — a real, pre-existing build fragility, found by adding one package
+`package.json`'s `build` script was a single 75-step `&&` chain of esbuild
+calls, sitting one entry short of Windows cmd.exe's 8191-character
+command-line limit (npm runs scripts through cmd.exe there). Adding the jokes
+package tipped it over: "The command line is too long." Linux/CI never hit the
+limit, so CI was unaffected; local verification on Windows was broken
+outright. Moved into **`tools/build.mjs`** (new): the same esbuild invocations
+as data, one row each, generated mechanically from the existing chain rather
+than retyped, run through esbuild's own API with a flag mapper that refuses
+any flag it doesn't recognise so nothing can be silently dropped. Verified:
+all 76 outputs present, and both special-flag cases (games2's `--bundle
+--external`, pool's `--packages=external`) preserved verbatim — games2's own
+suite still 72/72.
+
+### Found and fixed by this pass's own tests before any device saw it
+"Tap for the punchline"'s label sat in a `Row` with no `Flexible` — an 85px
+overflow at every canonical width under the test font, and a real risk at
+large text scales on the 344px cover floor. Exactly the bug class §8.11.1
+documents; fixed with `Flexible` + wrap, not a hand-tuned width.
+
+`flutter analyze` clean, full Dart suite 2313/2313 (2279 + 34 new). Assertion
+count computed as 7050 (CI's confirmed v0.49.66 total) + 34 Dart + 33
+jokes-suite = 7117; to be synced to CI's real number in a follow-up commit if
+it differs, per this repo's established convention.
+
+---
+
+## [0.49.66] — 2026-09-01 — One screen for every choice she has
+
+Before this pass, `child_home.dart`'s "Play together" tile opened the age-gated
+`GameKind` catalogue grid, and `games_hub.dart`'s separate "More games" tile
+opened a second screen for the checkers/chess/battleship/word-game cluster — a
+real, avoidable split with no product reason behind it.
+
+### Added
+- **`GamePickerScreen.extraSections`** — a new `List<Widget>?` slot, null by
+  default (every existing call site and test renders exactly as before this
+  field existed), rendered below the age-gated grid inside the same scroll
+  view.
+- **`MoreGamesSections`** (new, in `games_hub.dart`) — the real section list
+  extracted out of `GamesHubScreen`, pure extraction (same widget tree), now
+  reachable by a second caller. `GamesHubScreen` itself is untouched and still
+  exists in its own right for any caller that wants just that half on its own.
+- **`game_navigation.dart`** (new) — extracts the `GameKind` → screen switch
+  itself into `buildGameNavigator()`, shared by both real call sites
+  (`child_home.dart`, `guardian_more.dart`) so they can never independently
+  drift the way two hand-maintained copies of the same switch eventually
+  would.
+- **New test**: `widget_test.dart`'s "the game picker's consolidated
+  extraSections reach a real games_hub.dart screen from the SAME 'Play
+  together' tile" drives the real path end to end — tap "Play together,"
+  scroll the SAME resulting screen, reach a real `GameCheckers` by tapping
+  "Checkers." Proves the consolidation actually works, not only that the grid
+  still renders.
+
+### Reconciled with the tile hierarchy this branch rebased onto (v0.49.65)
+This branch was forked before v0.49.65's 3-tier hierarchy existed, back when
+`child_home.dart` still rendered its old flat 9-tile grid with its own
+Standard-tier "More games" tile opening `GamesHubScreen` directly. Rebasing
+onto v0.49.65 surfaced the exact split this entry exists to close, one tier
+over: with `extraSections` now folding the "More games" catalogue into "Play
+together" itself, a separate Standard-tier "More games" tile would just
+relocate the redundancy rather than remove it. Resolved by deleting that
+tile — `child_home.dart` now has one door onto the games catalogue, not two —
+matching `guardian_more.dart`'s own already-consolidated "Play together" tile,
+which never grew a second one in the first place.
+
+`flutter analyze` clean, 2279/2279 tests passing in isolation — this entry's own original 2031/2031 claim was against a much older base, before the rebase described above; corrected here.
+
+---
+
+## [0.49.65] — 2026-09-01 — ChildHome gets a real tile hierarchy: intuitivism pass, sub-project 2
+
+`child_home.dart` had rendered a single flat, equal-weight 9-tile grid since v0.44.0 (Homework, Play together, More games, My list, Messages, My day, Storyteller, Show & tell, More for you) — every destination the same visual weight, and the grid itself hardcoded `crossAxisCount: 2` with `form_factors.dart` (this project's real posture system, `columnsAt()`/`postureFor()`) imported nowhere in the file, a real inconsistency with `game_picker.dart`'s own migration onto that system back in v0.49.17. This closes both: a real, evidence-grounded 3-tier visual hierarchy, and posture-awareness.
+
+### Added — the 3-tier hierarchy
+Produced by a 5-agent research Workflow (`wf_a47bcfa5-fd1`) rather than invented preference — an audit of every real caller/test of `ChildHome`/`_Tile`, MASTERFILE/CHANGELOG's own stated importance signals for each of the 9 destinations, binding §8.4/§8.11.1/§8.13/§2.1 constraints, and the ad-hoc local-play games' navigation placement question, synthesized into a full design spec (`docs/superpowers/specs/2026-08-31-intuitivism-navigation-density-design.md`). Every tier placement traces to a citation or is disclosed as a judgment call, never presented as settled fact where it isn't:
+- **Hero** (1 tile, full-width, not inside any GridView): **My day** — the only tile MASTERFILE calls a "signature element" (§8.2.2).
+- **Featured** (larger cells, posture-aware): **Play together, Messages, Storyteller, Show & tell**. Storyteller/Show & tell both carry real MASTERFILE centrality citations; Play together/Messages are disclosed structural judgment calls (the most-tapped surface / the one tile with live unread state), not MASTERFILE rankings.
+- **Standard** (previous tile size, posture-aware): **Homework, More games, My list, More for you**. "More games" is textually, explicitly framed as subordinate ("the second door... not a replacement" — its own v0.44.0 origin text); the other three have no citation either way and default here.
+
+### Added — posture-awareness, closing the real gap
+`child_home.dart` now imports `form_factors.dart` and calls the same `columnsAt(Viewport, textScale)` `game_picker.dart` already established (v0.49.17) — no new breakpoints invented. `LayoutBuilder` sits above the scrollable, the correct structural position for bounded constraints (the same pattern `game_picker.dart` uses). The fixed `mainAxisExtent: 108` literal — exactly the bug class §8.11.1 already documents (`_GameCard`'s 182px fix, `reviewableAt()`'s fix) — is replaced everywhere with text-scale-derived heights, clamped `1.0–1.6` (more conservative than `game_picker.dart`'s own `1.0–2.0`, given this screen's own two-prior-bug history with its "sleeps until" counter dropping below the fold).
+
+### A real, pre-existing bug found and fixed along the way
+`_Sleeps`'s own two-line caption (`"sleeps until\nthe handover"`) sat in a `Row` with no `Expanded`/`Flexible` wrapper — unrelated to this pass's own changes, but surfaced by this pass's first-ever 2.0×-text-scale-at-narrow-width test coverage of this screen: `RenderFlex overflowed by 53 pixels` at the 344px Fold-cover floor. Fixed with `Expanded`, not a hand-tuned width, so it holds at every posture rather than just the two sizes this bug happened to be caught at — exactly the class of bug §8.11.1 exists to prevent, found and fixed rather than left standing because it predates this pass.
+
+### Tests
+`test/child_home_test.dart` (new, 16 assertions): the hierarchy is genuinely real (Hero > Featured > Standard height, `Key('childHomeHero')` contains "My day"), the two grids are genuinely distinguishable (`Key('childHomeFeaturedGrid')`/`Key('childHomeStandardGrid')`), `columnsAt()` at all 4 canonical widths for both grids, the 2.0×-at-344px text-scale regression (the one that caught the `_Sleeps` bug above), a P2-compliance smoke test (no "most played"/"favorite"/rank vocabulary anywhere on the redesigned screen), and the "sleeps until" fold-line regression at all 4 canonical sizes × both 1.0×/2.0× text scale (8 cases) — the direct regression guard for a counter this screen has pushed below the fold twice before. `test/widget_test.dart`'s two Standard-tier tap tests (`Homework`, `My list`) gained a defensive `ensureVisible()` — Featured tier's own tiles (`Play together`, `Messages`, tapped by 8 further `game_*_test.dart` files) stayed visible at the default test viewport without needing one. Full Dart suite passing (2278/2278 — this entry's own original
+2046/2046 claim was against a much older base, before this branch's own rebase onto
+v0.49.64; corrected here to the real post-rebase total, not left stale), `flutter
+analyze` clean.
+
+### Explicitly deferred, not silently dropped
+The ad-hoc local-play games' (PR #85) own navigation entry point is answered by this pass's design spec (Featured tier, once built) but not wired here — PR #85 and PR #87 independently modified the same navigation files (`game_navigation.dart`/`GamePickerScreen`/`games_hub.dart`) with no merge relationship between them; this redesign is deliberately not coupled to resolving that conflict. `GuardianHome`'s own parallel grid, `GamePickerScreen`'s card style, and `games_hub.dart`'s `HubSection` list pattern are untouched.
+
+- **Assertion total: 7049 (placeholder)** — HEAD's own real CI `COMPUTED TOTAL`
+  (7033, v0.49.64) plus this entry's own 16 new Dart tests (2278 vs. the 2262
+  post-v0.49.64 baseline; no new server-side test file); to be synced to CI's
+  real number in a follow-up commit if it differs, per this repo's established
+  convention.
+
+---
+
+## [0.49.64] — 2026-09-01 — Network resilience: audio-only as a real choice, reconnect-with-consent, relay ICE
+
+Continues the LiveKit-era call screen with real defense-in-depth and graceful-
+degradation behavior MASTERFILE §5.21/§5.23 already specify but this client
+never enforced under LiveKit.
+
+### Added
+- **`call_modes.dart`** (new) — a deliberately partial 1:1 port of
+  `packages/live/src/modes.ts`: §5.23.1's `CallMode`/`ModeCause`/
+  `answerOptions()`, §5.23.2's `CallTrouble`/degradation-ladder types. NOT
+  ported: push-to-talk and bedtime mode — real, designed features, but
+  nothing in this client calls them yet.
+- **`call_knock_screen.dart`'s "Answer"/"Just talking" buttons now really
+  differ.** Both led to the same video join before this pass — honestly
+  identical, since no ported logic existed to make them differ and inventing
+  one would have been exactly the fabrication §0 forbids. Now: "Answer"
+  joins with video, "Just talking" joins audio-only, carried through a new
+  `CallScreen.initialMode` parameter.
+- **Reconnect-with-resume-consent (§5.23.2, "resuming asks first").** An
+  unexpected disconnect that interrupted a call with the camera on holds it
+  off after a successful reconnect and waits for an explicit tap, rather
+  than silently resuming transmission the moment the network recovers. Mode
+  is broadcast to the other participant over a real-time LiveKit data
+  message (`LocalParticipant.publishData`), deliberately NOT participant
+  metadata — every real token this client mints sets
+  `canUpdateOwnMetadata: false`, confirmed against a real minted token, not
+  assumed from SDK docs.
+- **Relay-only ICE** (`RTCIceTransportPolicy.relay`) as real defense-in-depth
+  — LiveKit's SFU architecture has no peer-to-peer path to disable in the
+  first place, but this forces the client's own IP to never negotiate a
+  host/srflx candidate toward anything else. Spiked against the actual
+  installed SDK (livekit_client 2.11.0) before writing, not guessed.
+- **`adaptiveStream`/`dynacast`** — a real `RoomOptions` this client never
+  constructed at all; both default off in this SDK version.
+- **`camera_controls.dart`** (new) — a 1:1 semantic port of
+  `packages/live/src/camera.ts` (§5.24), real tests behind it, deliberately
+  NOT yet wired into `call_screen.dart` — shipping the logic ahead of its UI
+  integration is this pass's disclosed scope, not an oversight.
+- **`security.ts`** gets a real status comment (no logic change): every
+  export in that file is imported only by the demo/its own test, never the
+  real call path — §5.21.1's relay policy IS enforced today, just by
+  different LiveKit-native code now; §5.21.2/§5.21.3 have no live caller
+  yet.
+- **`.env.example`** documents the `LIVEKIT_URL`/`LIVEKIT_API_KEY`/
+  `LIVEKIT_API_SECRET` vars the LiveKit migration (v0.49.57) added but never
+  documented in this file.
+
+No dedicated MARKUP screen entry — `call_screen.dart`/`call_knock_screen.dart`,
+the tracked screens, are unchanged in their rendered shape (the same three
+answer buttons); only what happens after the tap differs. `flutter analyze`
+clean, full Dart suite passing (2262/2262 — this entry's own 2074/2074 claim
+was against a much older base, before this branch's own rebase onto v0.49.63;
+corrected here to the real post-rebase total, not left stale).
+- **Assertion total: 7033 (placeholder)** — HEAD's own real CI `COMPUTED
+  TOTAL` (6989, v0.49.63) plus this entry's own 44 new Dart tests (2262 vs.
+  the 2218 post-v0.49.63 baseline; no new server-side test file); to be
+  synced to CI's real number in a follow-up commit if it differs, per this
+  repo's established convention.
+
+---
+
+## [0.49.63] — 2026-09-01 — The notification gate goes live: real day-part wiring on /now and the send-time guard
+
+`gate()` (`packages/delivery-engine/src/gate.ts`, MASTERFILE §6.4) has existed,
+faithfully ported and tested, for several releases without a single real
+caller in production code — confirmed by a 5-agent re-scoping workflow that
+found the same pattern behind three other stale "Tier D" gap-inventory items
+(see the two doc-fix commits on this branch's sibling PR). This pass gives it
+one.
+
+### Added
+- **`GET /v1/children/:childId/now`** now returns real `dayPart`/`reachable`
+  fields, matching MASTERFILE §7.2's own already-documented contract shape
+  (`{ localTime, zone, dayPart, reachable }`) for the first time. One
+  additional `childCtxFor()` call — the same real, tested primitive the
+  `/ribbon` route already reuses — feeds `gate(ctx, nowUtc)` directly. Honest
+  absence (`null`/`null`), never a crash, if `childCtxFor()` somehow returns
+  nothing (defensive only — this route's own tz-resolution block already
+  confirms the child exists first).
+- **`guardian_home_live.dart`** extracts `dayPart`/`reachable` from its
+  already-existing `/now` fetch (zero new network calls) and threads them
+  into two new, nullable `GuardianHome` fields.
+- **`send_time_guard.dart`**'s live path — real, replacing its own
+  hand-rolled, disconnected 3-part demo schedule (`DayPart`/`demoDayParts`/
+  `currentDayPart()`) whenever `guardian_home.dart` supplies real data:
+  the real fetched local time/day-part render, `dayPartLabel()` (the same
+  shared vocabulary `my_day.dart`'s own Day Ribbon uses) labels the current
+  day-part, and the demo's manually-toggled hour `ChoiceChip`s are hidden
+  (there's nothing to toggle against real "right now" data). The demo path
+  is completely unchanged for every existing call site with no live params
+  supplied.
+
+### Disclosed, not silently invented
+- **`recipientContext()`** (gate.ts's own richer, sender-timezone-aware
+  variant, which computes a real `skewHours` and a specific `deferTo` time)
+  remains real and tested but has no route of its own. `/now` has no
+  "actor" concept to carry a sending guardian's own timezone, so it wasn't
+  extended to call `recipientContext()` instead of the plainer `gate()`.
+  `send_time_guard.dart`'s live "not reachable" state offers only "Send now
+  anyway" — never a fabricated "Deliver at X" time, since `/now` genuinely
+  doesn't provide one. A real, scoped-down follow-up, not a silently
+  dropped feature.
+- **The anchor-distinction guard** ("next bedtime" vs. "the night of June
+  1st") stays demo-only — no real per-child bedtime-schedule source exists
+  anywhere in this codebase for it to read from. That's a separate, larger
+  gap (a day-part *authoring* API — MASTERFILE §7.2's still-unbuilt
+  `GET/PUT .../day-parts`), not something this pass invents an answer for.
+
+### Verified
+- Real Postgres route test (`server/test/now_route.test.mjs`, 16/16) and the
+  full `tools/verify.sh` suite (via a native WSL Postgres cluster,
+  independent of Docker) — zero real test failures; the only non-green
+  suites were the four pre-existing, already-documented WSL-environment
+  gaps (missing Flutter/Android/Wear toolchains, missing LiveKit binary) and
+  the routine assertion-count placeholder drift.
+- 3 new widget tests in `send_time_guard_test.dart` proving the live render
+  (reachable, not-reachable, and reachable-with-no-known-day-part all render
+  correctly, never a null/blank label) and 2 in `guardian_home_live_test.dart`
+  proving the real end-to-end wire: `/now`'s fetched `dayPart`/`reachable`
+  reach the real `GuardianHome` instance, and tapping through to the real
+  `SendTimeGuardScreen` renders the real fetched values, not the demo chips.
+- `flutter analyze` clean, full Dart suite passing (2213 baseline + 5 new tests
+  this pass adds = 2218).
+- **Assertion total: 6989 (placeholder)** — HEAD's own real CI `COMPUTED
+  TOTAL` (6984, v0.49.62) plus this entry's own 5 new Dart tests (no new
+  server-side test file — `now_route.test.mjs` is unchanged, its existing
+  16/16 re-confirmed, not expanded); to be synced to CI's real number in a
+  follow-up commit if it differs, per this repo's established convention.
+
+---
+
+## [0.49.62] — 2026-09-01 — `StoragePort.signedUrl()` gets its first real production caller
+
+MASTERFILE §20.2b's own "Correction, found by this project's own post-tier audit" left a specific, narrow gap disclosed rather than closed: `StoragePort.signedUrl()` and `server/signed_media.mjs`'s real `GET /media/:key?exp=...&sig=...` route had both been real and real-tested since v0.49.49, but nothing anywhere in this codebase ever *called* `signedUrl()` in production code — the URL-serving half of the object-storage gap was complete infrastructure with nothing feeding it, "functionally dead code from an end-to-end perspective." This closes it.
+
+### Added
+- **`GET /v1/children/:childId/messages/:artifactId/media` now also returns a real `signedUrl`** (`server/routes.mjs`) — minted via `storage.signedUrl(artifact.storageKey, SIGNED_URL_TTL_SECONDS, Date.now())`, the exact same `FilesystemStorage` instance `server/signed_media.mjs`'s route verifies and serves against (`defaultMediaStorage`, shared via `registerRoutes()`'s own injectable `storage` parameter). This route had already run the real authorization check (`mediaArtifactFor()`'s double child-scoping) and already held `artifact.storageKey` in hand for the existing base64 read, so minting the second URL costs nothing extra.
+
+### Additive, not a replacement
+The existing base64 `bytes`/`kind` fields are unchanged and returned exactly as before — `signedUrl` is a new, third field alongside them, never in place of them. Every existing caller (`OliveApi.fetchMessageMedia()` in `client/lib/api_client.dart`, which only ever reads `body['bytes']`) is completely unaffected. No client screen requests or renders the signed URL yet — every message still plays back through the base64 path. Wiring an actual lighter-weight consumer onto it (a native `<video>`/`<img>` src, avoiding a base64 JSON round-trip for a large recording) is real, separate, undecided follow-up work, not invented here.
+
+### Tests
+- **`packages/api/test/media_route.test.mjs`** — new "F signed URL" group, real Postgres + real filesystem. Proves the full mint → verify → serve chain end to end, not just that the response body contains a plausible-looking string: feeds the minted `signedUrl` straight into the actual `serveSignedMedia()` handler (the same one `server/index.mjs` wires `GET /media/:key` to) against the identical `storage` instance, confirms the exact same real bytes come back byte-for-byte, and confirms a tampered signature is refused (403) — proving this is a real cryptographic signature, not an unverified opaque token. Also re-confirms the pre-existing base64 `bytes` field is untouched. 5 new assertions; the suite's existing A–E groups (25 assertions) re-run unchanged.
+- **Assertion total: 6984 (placeholder)** — HEAD's own real CI `COMPUTED TOTAL` (6979, v0.49.61) plus this entry's own 5 new server-side assertions; to be synced to CI's real number in a follow-up commit if it differs, per this repo's established convention.
+
+---
+
+## [0.49.61] — 2026-09-01 — Stale "no Flutter toolchain" marker corrected across the rest of the client
+
+Pure doc/comment correction, no behavioral change. v0.49.60's own "Tests" section
+found and disclosed that `game_uno.dart`/`uno_session.dart`/`uno_bot.dart`'s
+`UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline)` header
+claim was stale — a real CI run on this branch had already shown the Dart suite
+genuinely executing (2213 passed, 0 failed) alongside a clean Android Kotlin
+compile, a clean Wear OS compile, and 31 real passes against a live LiveKit
+server — and flagged the identical claim still sitting in "the ~78 other client
+files" as a real, disclosed, separate follow-up. This is that follow-up.
+
+### Fixed
+- **77 remaining files under `scaffold/client/lib/`** carried the same stale
+  claim (three had already been corrected in v0.49.60). A fresh grep is the
+  real, counted total as of this pass — not the "~78 other" figure v0.49.60's
+  own entry estimated, which this pass does not attempt to reconcile further;
+  77 is what a literal `grep -rl` over the current tree returns, no more, no
+  less. A second, independent CI run — GitHub Actions run `33471475222` on PR
+  #85 — reconfirmed the same result this pass's own header correction relies
+  on: `flutter test` genuinely executing (2213 passed, 0 failed), Android
+  Kotlin and Wear OS both compiling clean, and 31 assertions against a live
+  LiveKit server, none of it a skip. Every one of the 77 headers now reads
+  "Verified by CI" instead, citing this entry, in the same voice v0.49.60's
+  own three corrected files already established rather than a copy-pasted
+  boilerplate line. `flutter analyze`: 0 issues (unchanged — no source logic
+  touched, headers only).
+
+---
+
+## [0.49.60] — 2026-08-31 — Uno, remodeled after the real Xbox Live Arcade reference; a card-size customization suite
+
+The owner asked for the Uno table to match a specific real reference as closely
+as possible — the 2006 Xbox Live Arcade UNO (Carbonated Games) — watched
+frame-by-frame for this pass, not worked from memory or a generic "digital Uno"
+guess, and for the engine underneath it to be modeled on the same reference.
+
+### Changed — the table (`game_uno.dart`)
+- The real 4-seat 360°-around-the-table arrangement (top-left/top-right/left/
+  bottom, not the old top-vs-bottom-only 2-seat layout) — the 2-seat case
+  (always true for vsPeer, a real 2-device transport limit) keeps its own
+  original layout unchanged.
+- A curved turn-direction indicator (two opposing arcs with real arrowheads)
+  around the shared pile, flipping the instant Reverse flips it.
+- A discard "trail" — the last two thrown cards fanned at a slight overlap
+  behind the current top card, not one flat card floating alone.
+- A visibly larger single card the instant a hand drops to one.
+- **Deliberately diverged from the reference, disclosed rather than silently
+  copied:** no avatar icon next to a seat's name (this app has never shown one
+  anywhere) and no Xbox controller button prompts — a touch app offers the same
+  information as real on-screen buttons instead. The reference's own round/game
+  screens show a numeric points table racing to a target score, exactly the
+  pattern MASTERFILE P2 permanently bans; put to the owner directly rather than
+  copied or silently dropped — this screen still only ever reports who won the
+  one round, never a point tally.
+- **vsCpu now offers a real 2/3/4 seat-count choice** (matching the reference's
+  own 4-seat table) on top of the engine's own pre-existing, already-tested 2-4
+  seat turn-order support — vsPeer stays exactly 2 seats, a real transport
+  limit (this app's local pairing is a literal 2-device handshake), not a
+  scope choice.
+
+### Added — the real Wild Draw Four challenge (`uno_session.dart`)
+Official Uno rules include this as a base rule, not a house-rule toggle —
+v0.49.59 shipped Wild Draw Four as auto-resolving with no challenge option, a
+real gap now closed (see the correction below). A victim may now challenge
+whether the player genuinely had no legal same-color alternative at the moment
+of play; the play is held as a real `PendingWildDrawFour` (a snapshot of the
+hand/color at play time, since the session is otherwise forward-only) until
+the victim accepts or challenges. `acceptWildDrawFour()`/
+`challengeWildDrawFour()`, both re-validated authoritatively, never trusting
+the initiating device's own local legality check.
+
+### Added — calling "Uno!" (`uno_session.dart`/`uno_bot.dart`)
+Also a real gap in v0.49.59 (there was no such mechanic at all, despite that
+entry's own claim otherwise — see the correction below). A seat becomes
+vulnerable the instant its hand drops to one card; any OTHER seat may catch it
+for a real 2-card penalty. Disclosed simplification for a 3-4 seat table: the
+catch window closes the instant ANY other seat completes a real action, not
+only once "the specific next player" acts (the stricter reading needs
+meaningfully more state tracking for a real-world-imperceptible difference in
+a family card game). `declareUno()`/`catchMissedUno()`. CPU seats make real,
+disclosed, difficulty-scaled guesses (`botRemembersToCallUno`/
+`botCatchesMissedUno`/`botChallengesWildDrawFour`) — never omniscient about a
+human's real hand or intentions, the same discipline `connect4_bot.dart`
+already holds itself to.
+
+### Added — a card-size customization suite (`game_uno.dart`)
+A real slider on the picker screen, with a live preview card that grows as it
+slides right and shrinks as it slides left — the exact same effective size the
+real game will render, never an approximation of one. Two layers, deliberately
+kept separate: the existing device-derived scale (`_cardScaleFor`, keyed off
+`form_factors.dart`'s own postures) stays the real "does this fit THIS screen"
+layer; this pass adds a bounded personal-preference multiplier on top of it, so
+the same slider position reads as a different absolute size on different real
+devices — the point, not a bug. The shrink direction is capped per-posture so
+it can never take a card below the existing §8.4 64dp touch-target floor: on a
+baseline posture (a Fold closed, a phone) the slider can only grow, since
+there's no real headroom above the floor to give back; a tablet or desktop
+window that already scaled up has real room to shrink back toward that same
+floor. The shared pile (draw pile/discard/turn-direction ring) grows by a
+deliberately dampened share of the same slider, not the full amount — letting
+it grow by the same amount the hand does produced a real `RenderFlex` overflow
+on a narrow device at the slider's own top end, found by this pass's own
+widget test, not assumed. Playability at any point on the slider, on any
+device, is guaranteed by a real horizontal-scroll fallback in the hand fan
+(`_HandFan`) for the case a large card size and a long hand genuinely can't
+both fit — every card stays reachable (scroll, then tap; tap has always worked
+alongside drag) rather than silently rendering past the screen edge, which
+neither `Center` nor `SingleChildScrollView` would otherwise catch or flag.
+Verified live on both the Fold5 (grown to ~159%, a real 4-seat table, no
+overflow) and the tablet (shrunk to its own real floor, 82% — a different
+number than the Fold5's, correctly, since the two devices have different real
+headroom).
+
+### Fixed
+- A latent, pre-existing leaked-`Timer` bug in `_maybeRunCpuTurn()` — three
+  call sites used a bare, uncancellable `Future.delayed`, safe against acting
+  on a disposed widget (`if (!mounted) return`) but not against the underlying
+  platform Timer itself, which flutter_test's own harness correctly flagged at
+  teardown once this pass added the screen's first-ever widget test. A single
+  trackable `Timer? _cpuActionTimer`, cancelled before every new schedule and
+  in `dispose()`, closes it for real.
+- **Correction to the v0.49.59 entry below and its matching MARKUP.html/
+  MASTERFILE.md rows:** those originally claimed Uno already had "the four
+  house-rule toggles Mattel's own current rules document as legitimate
+  variants (Wild Draw Four Challenge, 7-0, capped same-card-only stacking,
+  arbitrated jump-in)" and "an auto-clearing 'UNO!' badge." Neither was true —
+  a real doc/code mismatch from that entry's own original writing, not a later
+  regression, found and fixed in this pass rather than built on top of
+  silently. Wild Draw Four Challenge and Uno-calling are real as of this
+  version (above); 7-0, capped same-card-only stacking, and arbitrated jump-in
+  remain genuinely unimplemented, each its own separate, disclosed follow-up.
+
+### Tests
+- `uno_session_test.dart` — new coverage for the WD4-refused-while-pending
+  invariant, `acceptWildDrawFour`, `challengeWildDrawFour` (4 cases), and the
+  full "calling Uno!" mechanic (7 cases). 39 tests, all passing.
+- `uno_bot_test.dart` — 3 new statistical tests (2000-trial samples) proving
+  the difficulty axis moves in the right direction for all three new CPU
+  decisions, with honest bounds (Easy must still forget/catch/challenge
+  sometimes, except where the design makes it deterministic). 9 tests, all
+  passing.
+- `game_uno_test.dart` — this screen's first-ever widget test file: the mode
+  picker, vsCpu at every real seat count (2-4), the draw pile, responsive
+  rendering at all four canonical widths, and the card-size suite (the slider
+  actually resizes the real in-game hand, and an extreme size + a long hand
+  never overflows). 11 tests, all passing.
+- Full client suite: `flutter analyze` clean, 2213 tests passing, zero
+  regressions.
+- **Correction to this entry's own first draft:** it predicted the assertion
+  total would stay flat at v0.49.59's 6951, reasoning that CI's pipeline has
+  no Flutter toolchain — a stale claim this codebase's own file headers carry
+  in dozens of places (`game_uno.dart` included: "UNVERIFIED — no Flutter
+  toolchain in tools/verify.sh's automated pipeline"), evidently no longer
+  true. CI's real run on this branch showed the Dart suite genuinely
+  executing (2213 passed, 0 failed) alongside a clean Android Kotlin compile,
+  a clean Wear OS compile, and 31 real passes against a live LiveKit server —
+  none of that a skip. Real COMPUTED TOTAL **6979**, synced from CI's own log
+  (`check-markup.mjs --total 6979` passes 44/44), not estimated. The stale
+  "no Flutter toolchain" marker itself is now a real, disclosed, separate
+  follow-up across the ~78 client files still carrying it — this pass only
+  corrects it in the three files it already touches
+  (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`).
+
+---
+
+## [0.49.59] — 2026-09-01 — "Right now, together": five local ad-hoc play games, no internet required
+
+MASTERFILE §9.2's whole catalogue assumed a network path back to a server — async
+turn-based, or live during a call. Nothing worked for two devices in the same room
+on the same WiFi with no internet at all. This ships a wholly separate local
+transport and five real games on top of it, built and hardware-verified across an
+extended pass on this repo's two real test devices (a Galaxy Z Fold 5, a Galaxy Tab
+S9 FE).
+
+### Added — the transport
+- **`local_pairing.dart`'s `LocalPairingController`** — real mDNS discovery via
+  `bonsoir` (broadcast + browse; a query-only library like `multicast_dns` cannot
+  broadcast this device's own presence), turn exchange over one plain HTTP POST per
+  move to a small embedded local server (`local_session.dart`). No LiveKit, no push
+  notification, no account, nothing leaving the WiFi network. Capped at exactly 2
+  physical devices, no mesh; a device can locally host more than one seat.
+- **`local_discovery.dart`**, **`local_play_screen.dart`** — the discovery/pairing
+  UI shell shared by every game below.
+- **`third_party/bonsoir_android_patched/`** — a one-line vendored patch
+  (`compileSdkVersion 33` → `36`) for a real, reproducible Android build failure in
+  `bonsoir_android` 5.1.6 against this app's own `androidx.fragment` transitive
+  dependency; see `third_party/PATCH.md` for the full account and the removal
+  condition once upstream ships a fix.
+- **`AndroidManifest.xml`**: `ACCESS_WIFI_STATE` / `CHANGE_WIFI_MULTICAST_STATE` —
+  without the multicast permission, Android silently drops the packets mDNS depends
+  on; found by inspection before real-device verification, not as a live bug.
+
+### Added — the five games
+- **Uno** (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`/`uno_deck.dart`) — a
+  real seat-based 2–4 seat engine (Skip/Reverse/Draw Two/Wild Draw Four all
+  expressed as real seat-order arithmetic, proven to reduce to 2-seat behavior
+  exactly); 3-tier CPU opponents that see only public information (an opponent's
+  hand count, never its contents); a first casino-table visual layer (fanned
+  hands, a one-shot action-card glow). **Correction, found and fixed in the
+  v0.49.60 entry below:** this bullet originally also claimed "the four
+  house-rule toggles Mattel's own current rules document as legitimate variants
+  (Wild Draw Four Challenge, 7-0, capped same-card-only stacking, arbitrated
+  jump-in)" and "an auto-clearing 'UNO!' badge" — neither was real at this
+  version. Wild Draw Four auto-resolved with no challenge option, there was no
+  "Uno!"-calling/catch mechanic at all, and none of the four house-rule variants
+  were wired in — a real doc/code mismatch from this entry's own original
+  writing, not a later regression; see v0.49.60 for what's actually real now.
+- **War** (`game_war.dart`/`war_deck.dart`) — real suit-colored card faces, a
+  genuine 3D flip-reveal animation, correct war/double-war escalation.
+  **Connect 4** (`game_connect4.dart`/`connect4_engine.dart`/`connect4_bot.dart`) —
+  a real minimax + alpha-beta CPU, 3 difficulty tiers, Easy deliberately skipping
+  its own block-check rather than silently reconstructing it via search. **Piece It
+  Together** (`game_puzzle.dart`/`together_puzzle.dart`) — a cooperative
+  shape-placement puzzle, chosen deliberately over a sliding puzzle to avoid that
+  genre's own real solvability-parity bug class. **Pictionary**
+  (`game_pictionary.dart`) — reuses `live_games.ts`'s existing
+  `Pictionary`/`guessDrawing()` engine and `annotation_canvas.dart`'s canvas
+  verbatim rather than building a second one.
+- **`game_seat.dart`** — the shared `Seat`/`SeatRoster` turn-order/roster type Uno's
+  engine walks for its 2–4 seat support.
+- Posture-aware throughout (`form_factors.dart`'s real `Posture`/`postureFor()`):
+  card/piece scale tiers, fan/grid sizing computed from real available width,
+  Pictionary's canvas deliberately exempted (a fixed logical size is what lets a raw
+  stroke coordinate match across two differently-sized devices with zero
+  normalization math — only its chrome is posture-aware).
+- P2 compliant throughout: no score, streak, or rank persists anywhere, including
+  hidden state. Uno's round-end celebration names only who won *this* round.
+
+### Fixed — a real bug, found only by forcing real device postures on real hardware
+All five games' `Scaffold.body` was `SafeArea(child: Padding(child: Center(child:
+body)))`, with no scroll fallback. Forcing the Fold5 to its actual documented
+`foldTabletop` landscape dimensions (~673×420dp, via `adb shell wm size`, not a
+simulator) overflowed the Uno board by close to 300px — confirmed on-screen, not
+guessed. The identical pattern existed verbatim in all 4 other games. Fixed in all
+five by swapping the bare `Center` for `SingleChildScrollView`, the same fix
+pattern `child_home.dart`/`care_note.dart` already use for a short viewport.
+Re-verified live on the Fold5 post-fix: the full board reaches by scrolling, zero
+overflow. `flutter analyze` clean, full `flutter test` suite passing throughout.
+
+### Disclosed, not silently invented
+**Not yet wired into real navigation.** All five are reachable today only through
+dedicated `main_local_*_test.dart` DEV-VERIFICATION-ONLY entry points (the same
+posture as `main_live_child_call_test.dart` and its siblings) — none of
+`child_home.dart`, `guardian_more.dart`, or `game_picker.dart` has a real tile or
+route to any of them yet. Where a same-WiFi, right-now local-play mode belongs
+relative to the existing "Play together" (async, any-network) catalogue is a real
+product/navigation decision, not settled here.
+
+
+---
+
+## [0.49.58] — 2026-08-30 — GuardianHome's live-data screen: closing MASTERFILE §20.2b's oldest open gap
+
+`GuardianHome` had no live-data screen at all — first confirmed a real, proven gap at v0.49.15, re-confirmed unchanged through every re-check since (v0.49.30, v0.49.39, v0.49.56), 24+ patch versions with the same finding: `guardian_home.dart` took every field as a plain constructor argument, no fetch of any kind, no `guardian_home_live.dart`, unlike `child_home_live.dart`'s own equivalent for the child side. `main_live_guardian.dart`'s own header explained why in detail: `GuardianHome` needs dual-clock/ribbon data from a `/ribbon` endpoint `api_client.dart` only ever declared a dead path constant for (`OliveApi.childRibbon`), with no server route or client fetch method behind it. This closes it.
+
+### Added — the real route, the real client method, the real screen
+- **`GET /v1/children/:childId/ribbon`** (`server/routes.mjs`) — guardian-only (real parent guardian of `childId`, same narrow gate `/presence` already established, no child-self branch since GuardianHome has no child-facing caller anywhere in this client). Composed entirely from existing, already-tested primitives — zero new `pool.ts` functions: `childCtxFor()` for the real day-part schedule (already-tested §5.19 query, reused verbatim, additionally filtered to today's real weekday — a filter `childCtxFor()`'s other two callers, `tools/scheduler.mjs` and `POST .../messages`, have no use for), `availabilityFor()` for the calling guardian's own windows (filtered to her alone and to today, not every co-guardian's), `parentGuardiansOfChild()` for the auth gate, plus one new one-line `child.display_name` lookup (no `GET /v1/me` analog exists for a guardian caller — that route returns the *caller's* own name).
+- **`OliveApi.fetchRibbon()`** (`client/lib/api_client.dart`) — one line, same shape as `fetchNow`/`fetchPresence`, finally giving the long-dead `childRibbon` path constant a real caller.
+- **`guardian_home_live.dart`** (new) — wraps the real, unmodified `GuardianHome`, mirroring `child_home_live.dart`'s own proven shape with three disclosed, reasoned divergences: no wear-sync/push/navigator-key seams (GuardianHome has no paired-watch or incoming-push touchpoint at all — its "Call $childName" button is a plain hardcoded `FilledButton`); no secondary/non-fatal fetch split (every value this wrapper fetches maps onto a *required*, non-nullable `GuardianHome` field, unlike `ChildHome`'s own honest-absence fields — a direct consequence of `GuardianHome`'s current shape, not an oversight); no session-token threading (`GuardianHome` has no such field at all, confirmed by direct read, not assumed).
+- **`calendar_day_logic.dart`'s new `dayPartColor()`** — the ten kind→color values `my_day.dart`'s own private `_dayPartColor` already used, extracted to one shared source (the same treatment `dayPartLabel()`/`dayPartGlyph()` already got) so the guardian's new ribbon renders the same kind in the same color the child's own Day Ribbon already does. `my_day.dart` migrated to source from it too — zero pixel change, one fewer place the same ten hex values are written down. Does **not** touch `my_day.dart`'s own `_DayRibbon`/`_DayPartCard` widgets, which stay exactly as self-contained as that file's own header already documents — only the literal color *values* moved.
+- **`guardian_home.dart`'s `childStateSentence` loosened to nullable** — no real one-sentence guardian-facing status source exists anywhere in this codebase yet (confirmed by a dedicated research pass before writing any code, not assumed). Renders as nothing when absent, the same honest-absence posture `ChildHome`'s own `sleepsUntilHandover`/`presence` fields already established for exactly this class of gap. Every existing demo/test call site still passes a real literal string — purely additive, zero behavior change for any pre-existing caller.
+
+### Disclosed, not silently invented
+- **`overlapLabel` is deliberately omitted from `/ribbon`'s own response.** An honest "Both free 7–8 PM her time" sentence needs a real definition of "child free" this route has no confirmed answer for yet — is an uncovered gap in her day-part schedule "free," or merely "unstructured, not necessarily reachable"? A wrong invented definition would be worse than the honest absence `GuardianHome`'s own nullable field already renders as nothing. Needs sign-off before implementing, not a guess shipped quietly.
+- **A real, pre-existing property of `childCtxFor()`, not introduced here:** its own day-part query filters on Postgres `CURRENT_DATE` (server date), not the child-local date `/now` and `/ribbon` both otherwise resolve — near a midnight boundary `/ribbon`'s `dayParts` could reflect a different calendar day than its own sibling's `childLocalTime`. Fixing it would affect `childCtxFor()`'s other two callers too; out of scope for this pass, flagged rather than papered over.
+
+### Tests
+- **`server/test/ribbon_route.test.mjs`** (new, registered in `tools/verify.sh`) — real-Postgres assertions covering today-vs-different-weekday filtering for both day-parts and availability windows, co-guardian window isolation (MOM's windows never leak into DAD's "you" ribbon), the real child display-name lookup, `overlapLabel`'s confirmed absence from the wire, and the full authorization matrix (real parent → 200; a real sitter with a genuine live edge to this exact child, not a parent → 403 `not_a_parent_of_child`; a guardian with edges to *other* children → 403 `no_edge`; the child's own session for her own `childId` → 403 `not_a_parent_of_child`, since this route — unlike `/now`/`/presence` — has no child-self branch at all; no session → 401). **Could not be run locally this pass** — no reachable Postgres/Docker in this environment (a real, documented attempt to bring Docker Desktop up was made and did not succeed) — awaiting a real CI run for the one piece of verification this pass genuinely couldn't do itself.
+- **`client/test/guardian_home_live_test.dart`** (new, 10 cases) — loading state, real fetched name/clock/day-parts rendering through the real `GuardianHome`, the caller's own real availability window rendering with its real note (and an honest generic fallback label when no note exists), an overnight day-part correctly splitting into two contiguous bands (same technique `my_day.dart`'s own `_bandRects` already established), `childStateSentence`/`overlapLabel` both confirmed genuinely `null` (not just absent from the screen — asserted directly on the real constructed `GuardianHome` instance), honest error states for both a 404 and a 403, themed (not hardcoded) error-icon color, and a real retry-recovers-into-ready-state round-trip. `flutter analyze` clean, full 2030/2030 Dart suite green (2020 pre-existing + 10 new), zero regressions.
+- **`packages/api/test/contract.test.mjs`** — `ribbon` closed this pass; its header comment's "declared but not implemented" path list was also stale for `messages`/`medications`/`emergency-card` (all had already closed in earlier passes with this comment never updated to match) — corrected to the real current list (`overlap`, `batches`, `ping`, `journal`, `settings`). Re-run for real (no DB needed): 31/31 passing, confirming the new route/client-method pair are correctly matched with zero drift. `packages/transport/test/transport.test.mjs`'s own client-contract section also re-run for the same reason: 70/70, unaffected.
+
+### Wiring
+`main_live_guardian.dart` now boots directly into `LiveGuardianHomeScreen` instead of `GuardianMoreScreen` — `GuardianHome`'s own pre-existing "More" tile still reaches `GuardianMoreScreen` exactly as it always has (`guardian_home.dart`, unmodified). `main_live_guardian_call_test.dart` (the separate call-verification entry point, unrelated to this pass) is deliberately untouched — it needs `GuardianMoreScreen`'s own real `onCallStarted`-wired "Call" tile specifically, which `GuardianHome`'s own hardcoded call button does not go through.
+
+---
+
+## [0.49.57] — 2026-08-30 — Calls move back onto LiveKit Cloud (§16.2 #6, reversed again); server + client verified live, device verification still blocked
+
+MASTERFILE §16.2 #6's second reversal: LiveKit → Jitsi Meet (self-hosted) → **LiveKit Cloud**, at the owner's own direction after this session's own hands-on cost standing up `tools/jitsi-selfhost/` (Docker Desktop containerd-snapshotter crash-loops, manual TLS cert SAN generation around a self-signed cert with zero X.509v3 extensions, a Windows Firewall rule needing admin elevation) — real, paid-for friction for a single self-hosted JVB instance that still could not clear its own `meet.jit.si` moderator-lobby finding on the public fallback Step 1 depended on. Neither the v0.40.0 nor the Jitsi §16.2 #6 entry is deleted — both reversals stay visible per §21.7's own standing practice. Full account: `docs/superpowers/specs/2026-08-29-livekit-call-migration-design.md` and `docs/superpowers/specs/2026-08-29-supervised-call-recording-design.md` (the latter scoped and specced, not yet implemented — depends on this migration).
+
+### Added — real token minting, a real join route, real live call quality
+- **`packages/session-runtime/src/rooms.ts`'s `Grant`/`deriveGrant`/`mintToken` turn out to already be byte-for-byte LiveKit's own `VideoGrant` shape** — confirmed by reading `livekit-server-sdk`'s own `grants.d.ts` directly, not assumed. I1 (unguessable room names) and I4 (the real `can('call', …)` authorization gate) needed zero logic changes; only a new serialization step, `packages/session-runtime/src/livekit-token.ts`'s `mintLiveKitToken()`, turns `mintToken()`'s existing output into a real, signed LiveKit access token — pure JWT signing, not a new authorization decision. 15 new assertions (`session.test.mjs`): real JWT shape, I2 forbidden grants absent on the wire, a real I5 TTL check against the SDK's actual `nbf`/`exp` claims (it does not emit `iat` — found by decoding a real minted token, not assumed), observer-only `canPublish:false` surviving minting.
+- **The one genuine gap Jitsi never had:** it let a callee join with a bare room name; LiveKit requires a real, signed, per-identity token to join at all, and a callee answering a knock never had one for a call someone else started. Closed with a new, real route, `POST /v1/children/:childId/calls/:sessionId/join` (`server/routes.mjs`), gated by the same real `mintToken()` I4 check every other mint in this codebase uses. `call_knock_screen.dart`'s real Answer button now makes a real second round-trip through it before joining — a genuine behavior change from the Jitsi build, named plainly rather than silently absorbed. `POST /v1/children/:childId/calls` now returns `{token, wsURL, identity, displayName, rang, sessionId}` (was `{room, serverURL}`) and widens `recordCallStart`'s `participantIds` to `session.authorizedUserIds`. 12 new server assertions covering the join route (`calls_route.test.mjs`), including its own real authorization boundary: an uninvited guardian with a real edge on the same child is refused a real `not_a_participant`, not merely untested. 50/50 server route assertions passing live.
+- **Real live call-quality signal, replacing nothing fake.** `call_screen.dart`'s pre-existing, fully-tested `degradation_banner.dart` hysteresis state machine (`StreamState`/`StreamTick`/`Condition`/`evaluate()`/`noticeFor()`) is completely unchanged — new glue (`videoQualityFor()`, `conditionFor()`) feeds it LiveKit's own `ParticipantConnectionQualityUpdatedEvent`, polled on a 250ms `Timer.periodic` ticker since that event only fires on change, not periodically (confirmed by reading `participant.dart`'s `updateConnectionQuality()`). No new UI, no new thresholds — a real signal in place of what would previously have been nothing.
+- **`call_screen.dart` — complete rewrite** onto `livekit_client` (`^2.8.1`, resolved 2.11.0), replacing `jitsi_meet_flutter_sdk` (removed from `pubspec.yaml`, along with its `dependency_overrides` patch block). `CallScreen`'s `Room` is now constructed **lazily** — a nullable field, instantiated only right before `room.connect()`, after the token-fetch step succeeds — the production-code fix for a real, confirmed upstream SDK gap: `Room()`'s internal `TTLMap` cleanup timer (inside `Engine`'s `PendingTrackQueue`) has no `dispose()`/`cancel()` anywhere in the SDK (confirmed by reading `ttl_map.dart` source directly), which otherwise fails `flutter_test`'s "no pending timers" invariant on every test that reaches real `Room()` construction — most call-screen tests fail before that point (at token-fetch) and now never trigger it at all. `kiosk`/`beginCallHandoff` wiring is removed from this screen's own call sites: LiveKit renders a call as a normal Flutter route in the same Activity Jitsi needed a second `singleTask` Activity for, so the handoff this screen used to trigger no longer applies here — the handoff code itself is disclosed, not deleted (see Removed, below). 7/7 `call_screen_test.dart` assertions passing.
+- **`local-call-room-server.mjs`** (dev/test only) now mints real LiveKit tokens via `GET /room?who=dad|ivy`, requiring real `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` (exits loudly if unset — no silent fallback). Its `/pending-call`/`/pending-call-for-dad` bridge slots are deliberately shape-agnostic (accept any non-empty JSON object): two legitimately different real shapes land there depending on which of two real call-start paths triggered them — `{sessionId}` from the real production call-start route, or an already-resolved `{token, wsURL}` from a dev-only room-server fetch with no real `call_log` row to resolve a sessionId against.
+
+### Fixed — a self-caught identity-impersonation bug in this session's own dev-test scaffolding
+- **Both directions of the two-device dev-test bridge (`main_live_child_call_test.dart`'s and `main_live_dad_answer_test.dart`'s own room-fetch-and-bridge helpers) were bridging the CALLER's own identity-bound LiveKit token to the RECEIVER's poll slot.** Since a LiveKit token carries a `sub` (identity) claim — unlike Jitsi's bare room name, which carried no identity binding at all — the receiver joining with that bridged token would have impersonated the caller in the room, not joined as themselves: the exact class of bug I3 exists to prevent everywhere else in this codebase. Root cause: conflating Jitsi's safe-to-bridge bare-room-name join with LiveKit's not-safe-to-bridge-across-identities signed token. Found and fixed before being carried forward into any device test, not after. Fix: each side now fetches **two** tokens — its own (to join itself) and, separately, the other party's own correctly-bound token (a second `GET /room?who=X` call) — bridging only the latter. Both bridge functions renamed (`_fetchRoomAndBridgeTo{Dad,Ivy}` → `_fetchTokenAndBridgeTo{Dad,Ivy}`) to reflect the corrected shape.
+- **`main_live_child_call_test.dart`'s own `_pollForIncomingCall` was reading a `'room'` field that was never actually bridged, and supplied no real auth context to `buildCallIncomingHandler` at all** — meaning Answer always fell through to `CallScreen`'s own token-fetch fallback, silently defeating the real join-route integration this same pass adds. Fixed to detect both real payload shapes `/pending-call` can receive and handle each correctly, and to thread real `baseUrl`/`childId`/`sessionToken` (captured at boot via a new `_bootstrap()`) into `buildCallIncomingHandler` for the sessionId case.
+- **A real production bug, found by a broad grep sweep after finishing the `call_screen.dart` rewrite, not by any test failure:** `guardian_more.dart`'s `_startRealCall` — the one real "Call Ivy" tile in this client — was still reading the old Jitsi-shaped response fields (`started['room']`/`started['serverURL']`), which no longer exist in the server's new `{token, wsURL}` shape. Undetected because the test's own mock response was shaped the same stale way, masking the bug on both sides at once. Fixed in both the code and the test (26/26 `guardian_more_test.dart` assertions passing).
+- **`CallKnockScreen`/`buildCallIncomingHandler` gained a `knownToken`/`knownWsURL` path**, checked before `sessionId`, for the one real case where resolving through the production join route genuinely does not apply: the dev-only, process-lifetime-fixed room-server session has no real `call_log` row for a `sessionId` to resolve against. 15/15 `call_knock_screen_test.dart` assertions passing.
+- `CallKnockScreen`'s Answer flow now resolves `sessionId` from `PushPointer.ref` (an opaque handle meant to be resolved through the authenticated API) rather than `PushPointer.callHandle` (the bare room name, no longer sufficient alone under LiveKit).
+
+### Fixed — a recurring upstream test-infrastructure issue, root-caused each time it recurred
+`flutter_test`'s "Timer is still pending" invariant failed three separate times against the real `TTLMap` timer gap above, in three different test files. Root fix (lazy `Room` construction) closed most of it; the remaining cases — tests that legitimately supply a real `knownToken` and so do construct a real `Room` — are fixed by keeping the triggering `tap()` OUTSIDE `tester.runAsync()` and wrapping only the subsequent settling `pump()` calls inside it (an entire tap-and-pump sequence inside `runAsync()` was tried first and broke differently — "Found 0 widgets" — before the narrower fix was found).
+
+### Removed, disclosed rather than deleted
+Nothing is deleted by this pass. `tools/jitsi-selfhost/`, `client/docs/MANUAL_VERIFY_call_lock_task.md` (now carrying a SUPERSEDED notice above its original, unmodified content), `KioskBridge.kt`'s `beginCallHandoff`/`mBeginCallHandoff`, and `third_party/jitsi_meet_flutter_sdk_patched/` all stay in place — real, tested engineering against a real problem this reversal makes moot, not wrong, kept visible per §21.7 rather than smoothed over. The kiosk-lock-during-a-real-LiveKit-call question this leaves open is flagged as genuinely separate and still unverified, not assumed safe.
+
+### Disclosed — what blocks calling this done
+Every check this pass ran — 82 session-runtime assertions, 50 server route assertions, 2020 Dart widget/unit tests, a live smoke test of `local-call-room-server.mjs` with fake credentials confirming two distinct token `sub` claims for the same room — ran against compiled code and a real Postgres. **None of it has touched a real LiveKit Cloud project or a real device**, because no `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` has been supplied to any session yet. Physical two-device re-verification (the same rigorous protocol already used earlier in this project's history for the Jitsi self-host attempt) is what closes this, matching this document's own standing rule against declaring something verified when it was only reasoned about.
+
+---
+
+## [0.49.56] — 2026-08-26 — Care notes + letters: the fifth and sixth coordination-layer features, closing the audit in full
+
+Continuing the coordination-layer closure plan: handover log, expenses, medications + the emergency card, the exchange, now care notes and letters together — the last two. Every feature this project's own coordination-layer audit (MASTERFILE §20.2b) found is now real end to end.
+
+### Fixed — the real gap
+- **`care_note.dart`'s own `writeCareNote()`/`CARE_NOTE_TTL_DAYS`/`CARE_NOTE_BANNED` (a real, already-tested 1:1 port of `packages/guardian/src/guardian.ts`'s §12.5 section) had no table, route, or `pool.ts` function behind them — this screen had never made a network call.** New `db/migrations/0028_care_note_letter.sql`: `care_note` (guardian-only, the same `..._no_child` RLS shape every other table in this migration series uses). New `writeCareNoteRow()` (`packages/db/src/pool.ts`) reuses `writeCareNote()` directly rather than re-implementing it — the real tone guard and the real 7-day TTL computation both run server-side, before a row is ever written, so a rejected note leaves no trace. New `care_note.view`/`care_note.write` Actions (`family-graph/src/authorize.ts`): guardian and sitter get both (she is the one on shift to notice "she skipped her nap"), step_parent and caseworker get view-only (matching `medication.view`'s own established split for those roles), and — deliberately — a coordinator gets **neither**, since a care note is explicitly outside the §13 tamper-evident log and must never become a court exhibit. New `GET`/`POST /v1/children/:childId/care-notes` routes. 21 new server assertions (`server/test/care_notes_route.test.mjs`), including a real TTL proof: a note seeded with an already-past `expires_at` is excluded from every read, not filtered client-side.
+- **`letters_screen.dart`'s own `sealLetter()`/`openLetter()`/`deleteLetter()`/`lettersDue()` (a real, already-tested 1:1 port of `packages/maturation/src/maturation.ts`'s §21.4/§21.8 section) had the same gap — zero network calls, ever.** `letter` (0028) is the ONE genuinely new shape in this whole schema: **child-owned, guardian-EXCLUDED** — the inverse of every other coordination table this project has. RLS (`letter_owner_only`) mirrors `journal_owner_only` exactly (`current_role_name() = 'child' AND child_id = current_child()`), and the new `letter` Action is listed in **no role's** `ROLE_CAPS` at all — a guardian session is refused structurally, with no scope override or court tier that could ever admit one. `written_at_age` is always computed server-side from her real `birth_date` (never trusted from the client); `open_at_age` is a genuine client choice, but validated against that real, server-computed age. The real "nobody can open it early, not even her" invariant is enforced at the SQL projection layer itself — `lettersFor()`'s own query returns `body` only `CASE WHEN opened_at IS NOT NULL`, so age alone, however old she really is, never reveals the text; only a real, server-validated open (`openLetterRow()`, checked against her real current age) does. New `GET`/`POST /v1/children/:childId/letters`, `POST .../letters/:letterId/open`, `DELETE .../letters/:letterId` routes. 36 new server assertions (`server/test/letters_route.test.mjs`), including a security battery that goes past the route layer: a maximally-privileged guardian session (a real edge, full scope override, court tier) is refused 403 on all four routes, and — the deepest check — a raw, WHERE-less query scoped to a *different* child's own session reads zero rows of a real, existing letter, proving `letter_owner_only`'s RLS directly, not just the route-level guard sitting in front of it.
+- **One deliberate, disclosed departure from `maturation.ts`'s own `Letter.artifactId` shape** (which `letters_screen.dart`'s file header had speculated the "real" backend would use): `body` is stored directly on the `letter` table rather than routed through `media_artifact`. That table's `retention_or_preserved`/`preservation_is_attributed` CHECK constraints assume a guardian explicitly preserves something that would otherwise expire on a retention clock — a letter has no guardian preserver and is never on a retention clock at all ("It gets kept forever," the screen's own copy). Forcing it through that model would need `preserved_by` attributed to nobody real; a plain `body text` column is simpler and equally real.
+- **A real, accumulated gap in this project's own `rls_unforced` health-check closed in the same pass**: `medication`/`medical_record` (0026) and `exchange_bag_item`/`exchange_running_late_log`/`exchange_arrival_event` (0027) were never added to `health_check`'s own RLS-monitoring list across the two prior releases — a real blind spot for every one of those tables since they shipped. Closed here, in the same migration that touches this view again for `care_note`/`letter`, rather than left for a future pass to rediscover.
+- **`care_notes_route.test.mjs`/`letters_route.test.mjs` were registered in `tools/verify.sh`'s suite array in the SAME commit that adds them** — the exact gap missed on the first pass of v0.49.53/v0.49.54, checked and applied correctly this time.
+- Both `care_note.dart` and `letters_screen.dart` are now genuinely live-wired with their existing demo modes fully preserved. `letters_screen.dart` — the one child-facing screen in this whole client reached through `child_home.dart` → `child_more.dart`'s own already-authenticated session — reuses that session directly (`sessionToken`, threaded through both hubs for the first time) rather than minting a fresh one, the same established pattern `homework_screen.dart`/`capture_gate.dart` already use for a live screen reached through that exact chain, deliberately NOT the per-screen `devLoginFor()` pattern every guardian screen in this codebase uses (there is no equivalent single guardian login to reuse today). 13 new/extended Dart widget tests. `flutter analyze` clean, zero regressions across the full 2016-case Dart suite.
+
+### Disclosed, not silently expanded into this pass's scope
+This closes MASTERFILE §20.2b's own coordination-layer audit in full — handover log, expenses, medications/emergency-card, the exchange, care notes, and letters are all real end to end. No further "real screen, no real backend" gap remains from that audit's own original finding.
+
+---
+
+## [0.49.55] — 2026-08-25 — The exchange: the fourth coordination-layer feature, real end to end
+
+Continuing the coordination-layer closure plan: handover log, expenses, medications + the emergency card, now the exchange (bag manifest, running-late log, arrival event). Care notes and letters remain next.
+
+### Fixed — the real gap
+- **`packages/care/src/care.ts`'s `manifestOrder()`/`recordArrival()`/`auditArrival()` were real and already tested, but no table, route, or `pool.ts` function existed for any of the bag manifest, running-late log, or arrival event — `exchange_screen.dart`'s own client UI had never made a network call.** New `db/migrations/0027_exchange.sql`: `exchange_bag_item`, `exchange_running_late_log` (append-only — no update/delete function exists anywhere in this file, matching `exchange_screen.dart`'s own file header: "there is no `_editLateEntry` and no `_deleteLateEntry`"), and `exchange_arrival_event`, which has **no latitude/longitude/coords/address column at all** — P3 (§9.7.2) enforced structurally at the schema layer, not just by convention, the third independent guard alongside `packages/care/src/care.ts`'s `LOCATION_KEYS`/`auditArrival` and `exchange_screen.dart`'s own `auditArrivalPayload`. New `bagItemsFor()`/`setBagItemStatus()`/`runningLateLogFor()`/`logRunningLate()`/`arrivalEventFor()`/`recordExchangeArrival()` (`packages/db/src/pool.ts`) and new `GET`/`POST` routes under `/v1/children/:childId/exchange/...` in `server/routes.mjs`, reusing the existing `calendar.view`/`calendar.edit` actions — no dedicated Action exists for the exchange in `family-graph/src/authorize.ts`'s `Action` union, the same closest-existing-action gap the pre-existing `GET .../now` and `GET .../custody-order` routes already disclose in their own comments, not a new one invented here.
+- **`scheduled_at` is never client-supplied.** `recordExchangeArrival()` computes it from the child's real active custody order (`activeCustodyOrderFor()`'s own `exchange_time`/`order_tz`) combined with the child's resolved local date — a dedicated test proves it uses the order's OWN timezone, not the child's `home_tz`, by seeding the two deliberately different. A child with no active custody order gets a real, honest 409 `no_active_custody_order`, never a guessed or fabricated schedule (the same "honest absence" posture the pre-existing `/now` route already takes for `sleepsUntilHandover`).
+- **50 new server assertions** (`server/test/exchange_route.test.mjs`), including a real lateral-privilege test: a guardian with a real edge (and `calendar.edit`) on a DIFFERENT child cannot reach THIS child's bag item by supplying the wrong child's id in the URL — `setBagItemStatus()`'s own `WHERE id=$1 AND child_id=$2` is the actual boundary, the same shape `resolveExpense()` established, since `exchange_bag_item_no_child`'s RLS excludes only the `child` role and is not itself a per-child scoping mechanism (mirroring `expense_no_child`/`medication_no_child`'s identical division of labor).
+- **`exchange_screen.dart` is now genuinely live-wired** for the bag manifest, running-late log, and arrival sections, matching the established `baseUrl`/`guardianId`/`childId`/`httpClient` convention, with its existing demo mode (a seeded manifest, `_demoOrder`) fully preserved. 30 new/extended Dart widget tests (`client/test/exchange_screen_test.dart`, `client/test/guardian_more_test.dart`). `flutter analyze` clean, zero regressions across the full 2003-case Dart suite. New "Exchange" tile in `guardian_more.dart`'s Coordination section.
+- **This project's own `tools/verify.sh` suite-list registration requirement (the exact gap missed in v0.49.53/v0.49.54's first pass) was checked and applied this time**: `exchange_route.test.mjs` is registered in `tools/verify.sh`'s suite array in the same commit that adds it, not after.
+
+### Disclosed, not silently expanded into this pass's scope
+`exchange_screen.dart`'s Handoff/Coming-up sections deliberately stay on `_demoOrder`'s demo data even now that the rest of the screen is live-wired — making those live would mean porting `packages/custody/src/schedule.ts`'s full timezone-aware `exchanges()` (cross-zone instant math), a separate, larger task from the bag/late/arrival domain closed here. The read-only custody-order facts those sections would need already exist, real, at the pre-existing `GET .../custody-order` route — nothing new was added to support them. Care notes (`care_note.dart`) and letters (`letters_screen.dart`) remain in the same shape the exchange was in before this entry: real screens, no real backend. Tracked in §20.2b.
+
+---
+
+## [0.49.54] — 2026-08-25 — Medications + the emergency card: the third coordination-layer feature, real end to end
+
+Continuing the coordination-layer closure plan: handover log, expenses, now medications + the emergency card together (they share one real underlying table). Exchange, care notes, and letters remain next.
+
+### Fixed — the real gap
+- **`medication.view`/`medication.log`/`emergency_card.view` already existed in `family-graph/src/authorize.ts`'s `Action` union with real, already-differentiated `ROLE_CAPS`** (a sitter can log a dose but never edit the card; a step_parent can view medications but never log one — real, pre-existing distinctions, not invented by this pass) — **but no table existed for either feature, and `meds_care.dart`/`emergency_card.dart` were pure hardcoded client state with zero network calls** (`emergency_card.dart` was a `StatelessWidget` built around a single const string). New `db/migrations/0026_medications_emergency_card.sql`: `medication` (the child's active medication list), `medication_dose` (a real dosing-event log with a genuine Postgres partial unique index, `medication_dose_no_double_given`, enforcing the exact "no second `given` dose for the same medication/day/slot" rule `recordDose()`'s own pure port -- packages/care/src/care.ts -- already checked client-side, now backstopped by the database itself against a real concurrent-write race two guardians logging at the exchange at the same moment would otherwise hit), and `medical_record` (allergies, conditions, blood type, pediatrician, insurance). `medical_record` deliberately does **not** store "Guardians" -- that section is derived LIVE from the real `guardianship`/`app_user.phone_e164` columns (which already existed and are already the real source of truth), never a second, driftable copy. New `emergency_card.edit` `Action` (guardian-only). New `proposeExpense()`-style `pool.ts` functions (`medicationsFor`/`dosesForDate`/`recordDose`/`medicalRecordFor`/`setMedicalRecord`) and new `GET .../medications`, `POST .../medications/:medicationId/doses`, `GET`/`PUT .../emergency-card` routes. 36 new server assertions (`server/test/medications_route.test.mjs`), including a real double-dose collision test against a genuine Postgres unique-index conflict (not a pre-check), a real cross-role test (sitter can log, step_parent cannot -- proving the pre-existing ROLE_CAPS distinction actually holds end to end), and a real "Guardians" derivation test (the sitter/step_parent seeded in the same fixture are correctly excluded from the guardians list, which is role-filtered, not every effective edge).
+- **A real bug this pass's own test suite caught before it ever shipped**: the first draft of all four new routes relied on the outer authorization gate alone, which (per `api.ts`'s own real design) only auto-refuses a child session for `P6_child_financial`/`P7_journal_never` -- every other action, `medication.view` included, passes that gate for a child principal by construction (a legitimate child-facing route needs to reach its own handler that way), so a child session could originally reach both new medical routes freely. Fixed with the same explicit `roleName === 'child'` route-level guard every other coordination route in this file already carries (the handover log's and expenses' own routes), caught by section H of the new server test file before merge, not after -- exactly the kind of gap this project's own established discipline exists to catch early.
+- **Both `meds_care.dart` and `emergency_card.dart` are now genuinely live-wired**, matching the established `baseUrl`/`guardianId`/`childId`/`httpClient` convention, with their existing demo modes fully preserved -- `emergency_card.dart`'s conversion from a `StatelessWidget` to a live-capable one kept every one of its 16 pre-existing tests passing unchanged, and its own real 409 `already_administered` response is decoded into the identical "$by gave this dose at $atLocal" banner text the demo path's own `AlreadyAdministered.message` already produces, so a guardian sees the same wording either way even though the collision is now genuinely enforced by the database. New "Meds & care"/"Emergency card" tiles in `guardian_more.dart`'s Coordination section. 40 new/extended Dart widget tests. `flutter analyze` clean, zero regressions in either screen's pre-existing test suite.
+
+### Disclosed, not silently expanded into this pass's scope
+Exchange (`exchange_screen.dart`), care notes (`care_note.dart`), and letters (`letters_screen.dart`) remain in the same shape medications was in before this entry: real screens, no real backend. Tracked in §20.2b.
+
+---
+
+## [0.49.53] — 2026-08-25 — Expenses: the second coordination-layer feature, real end to end
+
+Continuing the coordination-layer closure plan v0.49.52 opened: expenses next, then medications, exchange, care notes, and letters.
+
+### Fixed — the real gap
+- **`expense` (`db/migrations/0006_court_tier.sql`) has had real FORCE RLS (`expense_no_child`) since it was first migrated, and `family-graph/src/authorize.ts` already had `expense.view`/`expense.create` in its `Action` union with a real, unconditional P6 block ("a child role never sees a financial surface") — but nothing anywhere ever wrote or read a row.** `expenses_screen.dart`'s own client UI was pure in-memory local state with zero network calls. New `proposeExpense()`/`expensesFor()`/`resolveExpense()` (`packages/db/src/pool.ts`), new `GET`/`POST /v1/children/:childId/expenses` and `POST .../expenses/:expenseId/accept|dispute|reimburse` (`server/routes.mjs`, child-scoped throughout rather than MASTERFILE §7.7's own bare `/v1/expenses/:id/accept` sketch — same reasoning the handover log's own routes already established), and a new `expense.resolve` `Action` (guardian-only; a coordinator keeps read-only `expense.view`, matching this document's own "Read-only across... the expense ledger"). 45 new server assertions (`server/test/expenses_route.test.mjs`), including a real cross-child lateral-privilege test: `resolveExpense()`'s own `WHERE id=$1 AND child_id=$2` is the actual authorization boundary here, since `expense_no_child`'s RLS does not scope by child at all — a guardian who genuinely passes the outer `action:'expense.resolve'` gate for a DIFFERENT child cannot resolve this child's expense by guessing its id, proven against a real Postgres, not assumed.
+- **`expense` had no free-text field at all** — id, child_id, paid_by, amount_cents, category, incurred_on, receipt_key, split_rule, status, created_at, and nothing a guardian reading the ledger could use to tell what a charge was actually for, even though `expenses_screen.dart`'s own demo fixtures always carried a description/summary. `db/migrations/0025_expense_description.sql` adds it — `NOT NULL`, no backfill needed since the table had never had a real row.
+- **`expenses_screen.dart` is now genuinely live-wired**, matching `handover_notes.dart`'s own established convention (`baseUrl`/`guardianId`/`childId`, a fresh `devLoginFor()` session per call) behind a new `guardian_more.dart` tile. P6's own "second lock" (`_NotAGuardianSurface`, zero financial widgets ever constructed for a non-guardian viewer) was proven to hold even under live wiring by a dedicated test — a mocked HTTP client that fails the test outright if any network call is attempted for a child `viewerRole`, confirming `_load()` genuinely never fires, not just that its result never renders. `Decline` maps to the real `disputed` status (there is no `declined` value in `expense.status`'s CHECK constraint, and adding one for a synonym would be schema churn for no new state); `Query it` stays honestly unbuilt (no server-side concept for "a question was asked" exists yet) rather than being silently mapped to accept or dispute. The demo's own real bug — `_resolve()` hardcoded `amountCents: 0` on Agree — does not carry over to the live path, which always renders the real amount the server returns. 20 new/extended Dart widget tests (`client/test/expenses_screen_test.dart`, `client/test/guardian_more_test.dart`). `flutter analyze` clean, zero regressions in the 16 pre-existing P6 safety tests.
+
+### Disclosed, not silently expanded into this pass's scope
+Medications (`meds_care.dart`, `emergency_card.dart`), exchange (`exchange_screen.dart`), care notes (`care_note.dart`), and letters (`letters_screen.dart`) remain in the same shape expenses was in before this entry: real screens, no real backend. Tracked in §20.2b; `packages/school`'s own non-integration is a deliberate design decision, not part of this gap.
+
+---
+
+## [0.49.52] — 2026-08-25 — The parent-to-parent handover log: real writers, for the first time
+
+Answering a direct question — "is everything the specification and this whole session's own work actually built" — with a real, evidence-based audit (not from memory, per this project's own standing lesson about trusting recall over verification) rather than an assumed yes. The audit's headline finding: the coordination layer (medications, expenses, exchange, care notes, letters, and the parent-to-parent handover log) has real client screens and real unit-tested logic, but no real database/server backend behind most of it. This entry closes the highest-priority, most self-contained piece — the handover log — and discloses the rest honestly rather than silently expanding this pass's scope to cover it.
+
+A separate finding from the same audit, investigated directly rather than taken on the audit's own framing: what the audit first reported as an "observer authorization gap" (`authorize.ts`) turned out, on direct reading of `observer.ts` and MASTERFILE §17.3's own text, to be a genuine unresolved product ambiguity — §17.3's "reluctant parent" guardian (opted into reduced participation) and `observer.ts`'s stricter third-party `Observer` (a non-guardian like a grandmother, barred from `see_court_export`/`see_expenses`) are two textually similar but semantically different concepts this codebase has never reconciled. Not resolved here — a product decision, not a mechanical bug — tracked for a real decision.
+
+### Fixed — the real gap
+- **`message_log` (`db/migrations/0006_court_tier.sql`) has had real FORCE RLS (`log_no_child`), a real append-only trigger, and a real hash-chain-linkage trigger since it was first migrated, and `certifiedExportBundleFor()` has been able to READ and verify it since v0.14.0 — but nothing anywhere ever WROTE a row.** `handover_notes.dart`'s own client UI was pure in-memory local state with zero network calls (confirmed by grepping the file for any `http`/`OliveApi`/`api.` reference — none existed). Court export's own "the message log backs a certified export" claim had no real production data behind it. New `appendHandoverNote()`/`handoverNotesFor()` (`packages/db/src/pool.ts`) and new `GET`/`POST /v1/children/:childId/handover-notes` (`server/routes.mjs`) close it: a real hash-chain append (independently recomputed via `entryHash()` in this pass's own tests, not just trusted), real concurrency safety (`pg_advisory_xact_lock`, proven via a real `Promise.all` race + a post-hoc `verifyChain()` pass over the real result), and a real child-session guard on GET — the route's own first draft had a real bug here, caught by its own first test: `handoverNotesFor()` reads via a SYSTEM-scoped session, which `log_no_child`'s RLS policy does not block (only the `'child'` role is excluded, and `'system'` passes freely), so without an explicit route-level 403 a child session would have reached her parents' own channel through the exact same `action:'message'` gate she legitimately uses for her own inbox. 27 new server assertions (`server/test/handover_notes_route.test.mjs`), zero regressions in `court_export.test.mjs` (55/55), which reads the same table via a different path.
+- **Both routes compute a real, display-ready `whenLabel`** (`'MMM d, h:mm a'`, e.g. "Jul 28, 4:12 PM") in the child's own resolved zone (`child_tz_interval`, falling back to `child.home_tz` — the same resolution `/now` already established), matching this codebase's own "timezone conversion happens once, server-side" discipline (no timezone/intl package exists in `client/pubspec.yaml`) — POST returns its own label too, not just GET, so a guardian who just sent a note gets a real display label for the entry she immediately sees without a second round trip.
+- **`handover_notes.dart` is now genuinely live-wired**, matching `AvailabilityScreen`/`LiveCourtExportScreen`'s own established convention for a guardian-facing screen reached from `guardian_more.dart` (`baseUrl`/`guardianId`/`childId`, a fresh `devLoginFor()` session minted per call, no cached token) rather than `InboxScreen`'s externally-supplied-session shape, which fits a screen with no equivalent persisted guardian session to hand it. `guardianId` does double duty — `devLoginFor`'s own `userId`, and the comparison that decides whether a fetched entry renders "You" or the real `authorName` the server sends. The screen's own genuine offline demo mode (four seeded fixture entries, the real append-only invariant already enforced client-side) is preserved exactly when no live params are supplied — all 15 pre-existing demo-path tests pass unchanged. A new "Handover notes" `HubTile` in `guardian_more.dart`'s Coordination section gives the live build an actual navigation path to reach it, which did not exist before this pass (`guardian_home.dart`'s own call site has no live variant at all, and `guardian_more.dart` had zero reference to this screen). 7 new/extended Dart widget tests (`client/test/handover_notes_test.dart`, `client/test/guardian_more_test.dart`) prove: a real fetch replaces the demo fixtures, a real POST fires with the correct body and renders the server's own returned entry (not a client-guessed timestamp), a POST failure is a visible, honest error that leaves the typed text in place, a fetch failure gives a working retry, and the no-live-params path is untouched. `flutter analyze` clean, full `flutter test` 1973/1973.
+
+### Disclosed, not silently expanded into this pass's scope
+The rest of the coordination layer this audit surfaced — medications, expenses, exchange, care notes, letters — has real screens and real unit-tested logic but no real database/server backend for any of it, the identical shape `handover_notes.dart` was in before this entry. Tracked in §20.2b as a real, disclosed gap; not built here, and not silently left unexamined either.
+
+### Corrected, not just found
+What this project's own audit agent first reported as a clear-cut "observer authorization gap" was walked back after direct investigation of `authorize.ts`'s `can()`, `observer.ts`'s own header, and MASTERFILE §17.3's actual text — see this entry's own opening paragraph. A real lesson repeated from earlier in this session: an audit finding is a lead, not a verdict, until read against the actual code and the actual spec text it claims to contradict.
+
+---
+
+## [0.49.51] — 2026-08-25 — Post-tier adversarial audit: 13 real findings fixed, 1 confirmed false positive
+
+Nothing shipped since the round-5 audit (v0.49.45 through v0.49.50 — Tier B/C/A+E/D) had its own dedicated adversarial review pass, only the narrower per-feature verify agents inside each build. A 5-lens, independently-verified audit (correctness, security/RLS, child-safety, doc-parity, production-readiness — each finding put through 3 independent adversarial "try to refute" votes before being trusted) found 14 findings; 13 confirmed real and fixed here, 1 re-verified against a real Postgres and found to be a genuine false positive despite unanimous 3/3 "confirmed" votes.
+
+### Fixed — critical (production/COPPA)
+- **`reap-media`'s scheduler container never shared `server`'s own media volume.** `docker-compose.prod.yml`/`docker-compose.dev.yml` gave `server` a persistent volume + `MEDIA_STORAGE_ROOT`, but `scheduler` — this same range's own new caller of the real COPPA retention reaper — got neither. `storage.delete()` silently resolved `false` (not a throw) against the scheduler container's own disconnected filesystem; `reap()` never inspected the boolean, so the `media_artifact` row was deleted anyway while the real blob (a child's face or voice) stayed forever on `server`'s volume, orphaned and undiscoverable — exactly the "reaper that deletes rows and leaves media is not a retention policy" failure mode `storage.ts`'s own header names as the reason this feature exists. Both compose files fixed; `ReapResult` gains `blobsAlreadyGone`, tracked separately from `blobsDeleted` so a real spike is visible as its own operational signal, not silently merged into "retention is working."
+- **`reap()`'s row-delete call was unguarded — one failing row could permanently stall the entire nightly sweep.** A thrown error here propagated out of the whole loop; because the row survived un-tombstoned, `dueForReaping()`'s own `ORDER BY expires_at` guaranteed the SAME row would be returned first again every future sweep, indefinitely blocking every other family's overdue media behind it. Fixed with a best-effort tombstone write (itself never allowed to throw) on this path too — 12 new pure-function assertions (`packages/api/test/stack.test.mjs`), including a two-candidate proof that the row BEHIND a poisoned one still gets examined and reaped normally.
+- **The production media volume was never backed up at all**, despite `docs/backup-and-restore.md`/`db/DEPLOYMENT.md`'s own "Backups exclude nothing — preserved artifacts are irreplaceable" claim. `media_artifact.storage_key` is a pointer, not the bytes; a database-only restore left every `preserved=true` row pointing at nothing. New `tools/backup-media.sh`/`tools/restore-media.sh` (real tar/diff round-trip proven, including the honest empty-media-root case), wired into the `backup` Compose service (media volume mounted read-only) so the existing operator-facing invocation now produces both artifacts with no new step to remember. Both docs corrected to describe the real, two-target procedure.
+
+### Fixed — high severity
+- **`GET .../presence`'s capability gate was far wider than the feature's own design intent.** `calendar.view` alone (held by sitter/coordinator/caseworker/trusted_adult, not just parents) let any of those roles query a live, named-parent reachability signal — materially more sensitive than the static schedule data `calendar.view` otherwise gates. Narrowed to the child herself or a real parent-role guardian (the same role `parentGuardiansOfChild()` already restricts the response's candidate list to) — 3 new assertions proving a real sitter, with a genuine live edge to the child, is still refused.
+- **`POST /v1/children/:childId/inbox/:id/opened` — declared in MASTERFILE §7.3 since that section was first written, never built.** `inbox_screen.dart`'s own `_open()` only ever flipped `watched` in local widget state; harmless while the inbox was demo-only, a real user-visible gap the moment Tier C/D made it genuinely live (every previously-read message re-materialized as "New" on the next load, the unread badge never actually cleared). Built for real: state machine is `delivered → opened` only, idempotent, child-session-gated (a guardian's own read of the same inbox must never mark a receipt watched on the child's behalf) — 14 new server assertions, 3 new Dart widget tests (including proving a real failure never blocks or delays reaching the receipt screen, matching `OliveApi.endCall`'s own best-effort posture).
+- **The signed-media-URL secret was random and per-process** — every server restart (a routine `restart: always` recovery, an OOM kill under the 512m limit, a rolling redeploy) silently invalidated every outstanding signed URL, and structurally forbade ever scaling `server` past one replica. `MEDIA_SIGNING_SECRET` (same `openssl rand -hex 32` convention `SESSION_SECRET` already uses) makes it persist; a genuine two-subprocess test proves a signature minted in one process now verifies in a completely separate one.
+- **Correction, not a bug**: the signed-URL route (`server/signed_media.mjs`) is real, tested, and correctly authorized — but has zero real callers anywhere in this codebase. `StoragePort.signedUrl()` is never called in production code; the one live media-read path still returns raw base64 bytes. MASTERFILE corrected to stop implying end-to-end closure.
+
+### Confirmed false positive — not fixed, because nothing was broken
+The security-lens finding that migration 0023's RLS blinds `health-alert.mjs`'s own monitoring for exactly the tables it should watch (three independent adversarial votes confirmed it real) was re-verified directly against a real Postgres before any fix was attempted, and found to be wrong: `health_check`/`orphan_risk` are VIEWS owned by a superuser (from running migrations); PostgreSQL evaluates row security for a non-`security_invoker` view using the VIEW OWNER's privileges, not the querying role's — which is exactly why `health-alert.mjs` has kept working correctly all along without `app.role` ever being set. A clean, minimal empirical reproduction (a real seeded `orphan_risk` condition, a raw `app_owner` session with `current_role_name()` confirmed genuinely `NULL`, querying the view directly) settled it. Left as-is; nothing changed here. A real, humbling reminder that even unanimous adversarial verification can share a blind spot when every verifier reasons from the same angle rather than actually running the thing.
+
+### Disclosed, not silently rewritten — a real product/wording question
+`ChildHome.presence`'s existing card ("`<Name>` is free right now... until `<time>` her time" + a Call button) pairs a live reachability fact with an expiring window — the same shape MASTERFILE §5.25.4 states its own reasoning against for the guardian-only Day Ribbon overlap prompt ("makes his availability her responsibility"). This card and its Call button predate this pass; this pass's own privacy-lens design review evaluated the mechanism, not this specific wording's relationship to §5.25.4. Not rewritten unilaterally — a copy/framing call like this is a product decision, matching this project's own posture on the separately-declined call-quality UX item.
+
+### Doc-parity
+MASTERFILE's own closing line was stale at v0.49.48 while its header claimed v0.49.50; its status paragraph never narrated Tier D at all despite the header's own version claiming otherwise. Both fixed, and a new scoping note added at the top of §7 disclosing that section's own aspirational path shapes (`:id` vs. the real `:childId`, several bare non-child-scoped paths) predate almost every route actually built — not a retroactive rewrite of that whole section, just an honest flag so an unfixed line isn't read as a current claim by default. `scaffold/docs/scheduler.md`/`README.md` both still described `tools/scheduler.mjs` as running "two named jobs," missing `reap-media` (added v0.49.46) entirely — both corrected, plus a new `MEDIA_STORAGE_ROOT` row in `scheduler.md`'s own env-var table.
+
+### Fixed — found by real CI, not locally
+Three real bugs, none caught by repeated local runs, all surfaced by real single-machine CI or by rebuilding fresh:
+- **`packages/db/src/pool.mjs` — one of the three build artifacts this project tracks in git — was stale relative to its own `pool.ts` source since PR #76 (v0.49.50, the presence feature).** `pool.ts` on `main` already had `parentGuardiansOfChild()` and `activeCustodyOrderFor()`'s new `sideAGuardianId`/`sideBGuardianId` fields; the committed `pool.mjs` had neither — PR #76 shipped the real source change without a corresponding rebuild-and-recommit of the tracked compiled artifact. Anything relying on the tracked `.mjs` directly (rather than running `npm run build` fresh first, which `tools/verify.sh` always does) would have been running code silently missing the entire presence feature's server-side data layer. Rebuilt and recommitted here, found only because this pass's own repeated `npm run build` runs kept surfacing a real diff against a file nothing in this pass touched on purpose.
+- **`POST .../inbox/:id/opened` used `:id` server-side but `:messageId` client-side** — a genuine client/server route-contract drift `packages/api/test/contract.test.mjs`'s own drift check exists to catch, and did, before this ever reached review. Fixed by aligning both to `:messageId`.
+- **`presence_route.test.mjs`'s own "nobody free" fixture used a same-weekday `+6h`/`+7h` clock-time offset from the real, live `local` on the false assumption that 6-7 real hours is "deliberately far outside" any midnight-crossing edge case.** It is not — clock-time addition wraps past midnight for roughly a quarter of all possible real run times, and `guardian_availability_window`'s own real `CHECK (end_local > start_local)` constraint then rejects the INSERT outright. Reproduced exactly this way in CI (`local` was 17:07, the offset windows landed on 23:07/00:07, the insert failed with a real constraint violation) — not a flake, a genuine gap in reasoning about wall-clock arithmetic this project has hit before in other files. Fixed two ways: the "nobody free" fixture now uses a different weekday entirely (three days away, which `freeGuardianNow()` can never match regardless of the real clock, with no time arithmetic left to wrap), and every other window fixture in the same file that legitimately needs to bracket "now" is clamped to stay within the same calendar day as `local` — the clamped instant is still validly before/after now, so nothing about what each test proves changes, only the crossing-midnight failure mode is removed rather than merely made rarer.
+
+### Verified
+`custody.test.mjs` 55/55 (13 new — the wrap-around fix, including a dedicated test proving the exact false-positive a naive fix would reintroduce). `stack.test.mjs` 126/126 (12 new). `presence_route.test.mjs` 20/20 (3 new, plus the real-CI-clock fix above). `inbox_route.test.mjs` 40/40 (14 new). `media_signing_secret.test.mjs` 3/3 (new file, real two-subprocess proof). All against a real, freshly-migrated WSL Postgres, 0 failures. Client: `inbox_screen_test.dart` +3, full `flutter test` and `flutter analyze` clean. `tools/backup-media.sh`/`restore-media.sh` proven via a real tar/diff round trip (not yet integrated into `tools/backup-restore-verify.sh`'s own full Docker simulation — a real, disclosed follow-up).
+
+---
+
+## [0.49.50] — 2026-08-25 — Tier D item 5 of 5: ChildHome.presence's live data source
+
+The last item from Tier D's own list, deferred at v0.49.49 pending one narrow judgment call. Built via a real design → parallel implement → adversarial-verify pass; the adversarial pass caught one real, confirmed bug before this ever reached review, fixed here.
+
+### Added
+- **`GET /v1/children/:childId/presence`** (`server/routes.mjs`) — resolves whether a co-guardian is currently free to be surfaced on `ChildHome`, and to whom. Built on two new pieces: `parentGuardiansOfChild()` (`packages/db/src/pool.ts`, role-filtered to `'guardian'` — a step-parent/sitter/coordinator is never offered as callable, the same principle the come-back signal already applies) and `freeGuardianNow()` (`packages/custody/src/schedule.ts`, pure, unit-tested, no DB dependency — mirrors `packages/signal/src/signal.ts`'s `prioritise()` shape deliberately).
+- **The tie-break judgment call, resolved**: after the on-duty guardian is excluded (MASTERFILE §5.27.4 rule 2, "presence loses to absence" — she can just talk to the parent she's with), if more than one remaining guardian has a currently-active availability window, the one whose window started earliest wins. Ported directly from `prioritise()`'s own real, product-endorsed convention rather than inventing a new one; the code carries the same verbatim §5.27.4 quote — "No seniority, no primary/secondary, no custody weighting" — as a comment at the computation site.
+- **A real, pre-existing schema gap found, not invented**: nothing in this codebase had ever mapped `custody_order`'s abstract Side ('A'/'B') to a real guardian — `sideOn()`/`patternSideOn()` could say which side was on duty, but not which person that was. `db/migrations/0024_custody_order_side_guardians.sql` adds nullable `side_a_guardian_id`/`side_b_guardian_id`; every pre-migration row (and any row a not-yet-built order-creation flow never populates) reads as an honest "unmapped," skipping the exclusion rather than guessing.
+- **No per-guardian timezone exists anywhere in this schema** (confirmed by direct inspection: no `tz` column on `app_user`; `custody_order.order_tz` is a single order-wide zone its own migration comment describes as "the child's primary-residence zone at entry," not any specific adult's location). Rather than borrow a field documented to mean something else, `theirLocalTime` reuses the same already-resolved child-frame zone `/now` computes — honestly disclosed as an approximation in the code comment at the computation site, not silently presented as a real per-guardian clock.
+- Sole-guardian and nobody-currently-free both return the byte-identical `{ free: null }` — this card can never leak "you only have one parent" through a distinguishable response shape.
+
+### Fixed
+- **A real bug caught by this build's own adversarial-verify pass before it ever reached review**: the first draft's weekday pre-filter defeated `isWindowActiveNow()`'s own wrap-aware overnight comparison the moment local time crossed midnight into a window's second calendar day — confirmed by direct execution of the shipped function. Fixed in `freeGuardianNow()` by explicitly checking yesterday's weekday for a genuine overnight window (`startLocal > endLocal`), while guarding against the reintroduced false-positive this naive fix could cause (a normal, non-wrapping window from yesterday bleeding into today at the same clock time) — proven by a dedicated test for exactly that case. 13 new assertions in `packages/custody/test/custody.test.mjs`.
+- **Not fixed, disclosed instead**: `guardian_availability_window`'s own `CHECK (end_local > start_local)` constraint (migration 0010, predates this feature) makes storing an overnight window impossible today, so the fix above — while correct — cannot yet be exercised by any real data. Relaxing that constraint is a separate, undecided product change (does the guardian-facing `availability_screen.dart` even have UI for an overnight range?), out of scope here.
+
+### Verified
+`presence_route.test.mjs` 17/17 (new file, real Postgres) — on-duty exclusion, the tie-break, her-frame formatting, and the sole-guardian/nobody-free indistinguishability all proven live. `custody.test.mjs` 55/55 (13 new). `pool.test.mjs`/`custody_order.test.mjs`/`availability.test.mjs` all unchanged and green — no regression from the new `custody_order` columns or the `freeGuardianNow()` fix. Client: `child_home_live_test.dart` +3 (a free guardian renders, nobody-free renders nothing, a presence-fetch failure never traps the rest of the screen), full `flutter test` 1963/1963, `flutter analyze` clean. Independent adversarial review ran two lenses (correctness, privacy/§2.1) against the real diff — the correctness lens's one real finding is the fix described above; the privacy lens found nothing (empty findings, safe to ship). This session's own split Windows/WSL environment still can't run `tools/verify.sh` as one process — see this entry's own follow-up sync commit, same standing pattern as v0.49.49's.
+
+---
+
+## [0.49.49] — 2026-08-25 — Tier D: sign-out flow, receipt_screen's live caller, and a signed-URL media route
+
+The judgment-call tier of the same tier/priority/risk plan: five items investigated on their own merits, three built, one explicitly declined (a real product/architecture decision, not this pass's to make), one deferred pending a narrower judgment call not yet scoped.
+
+### Added
+- **Sign-out flow (`guardian_more.dart`)** — `PushChannel.unregister()` (real since v0.48.0, unit-tested, zero call sites — disclosed as a real gap at the time) finally has one: a new `_signOut()` method and a "Sign out" `HubTile` in the Preferences section. Deliberately best-effort — the unregister call is wrapped in its own try/catch, matching `_endRealCall()`'s established "never trap the guardian on a bookkeeping failure" posture, since this app persists no session token to actually clear beyond that one call. Navigates via `Navigator.of(context).popUntil((route) => route.isFirst)` rather than a hardcoded destination — correct for both `main.dart`'s offline-demo root (`EntryGate`, a real "return to start") and `main_live_guardian.dart`'s live root (`GuardianMoreScreen` itself, where it's a harmless no-op). Three new widget tests (`guardian_more_test.dart`) prove the resilience contract — tapping "Sign out" returns cleanly to the real prior screen whether or not a live session is threaded in, even when the real unregister call genuinely throws in the widget-test sandbox (no Firebase app initialized). A fully faithful test of the exact wire-level `DELETE /v1/me/device-tokens` call would need a new dependency-injection seam on `GuardianMoreScreen`; judged out of scope for this pass.
+- **`inbox_screen.dart` now supplies `receipt_screen.dart`'s live params** — the screen self-fetches its own real inbox via `OliveApi.fetchInbox()` (the same self-fetching pattern `HomeworkScreen` already established) rather than requiring a caller to pre-fetch and pass a list down, with a real loading state and an honest error+retry UI mirroring `child_home_live.dart`'s own shape. A real bug in this pass's own first draft — `_open()` computed the live params correctly but never actually threaded them into the `ReceiptScreen(...)` constructor call — was caught by this pass's own new widget test, not shipped silently. Demo/offline rendering is unchanged: `dayPartKind`'s demo-schedule classification stays fixture-driven only when no live session is threaded in; a live message gets an honest `null` instead.
+- **`GET /media/:key?exp=...&sig=...`** (`server/signed_media.mjs`) — the real signed-URL-serving route `StoragePort.signedUrl()`/`verifySignedKey()` (the latter new this pass, added to the `StoragePort` interface and both `MemoryStorage`/`FilesystemStorage` implementations) have always been able to mint and verify, with nothing in this codebase ever serving the actual bytes. A side-effect-free module, deliberately not folded into `server/index.mjs` directly (that file has no `isMain` guard), wired into the raw HTTP dispatcher ahead of `api.handle()`'s session-based fallback — this route authenticates via the signature+expiry alone, by design. Writing its first test found and fixed a real validation gap of its own: `Number(null)` coerces to `0`, not `NaN`, so a bare `!Number.isFinite(exp)` check silently admitted a request missing `exp` entirely.
+- **`GET /v1/children/:childId/inbox` gains a real, zone-aware `deliveredAtLabel`** per entry — the same server-side "her frame first" pattern `/now` already established, fixing a second instance of the bare-`::text`-cast DateStyle bug along the way (this time on `materialized_at`).
+
+### Fixed
+- The two real bugs named above (`ReceiptScreen(...)`'s missing live-param wiring; `signed_media.mjs`'s `Number(null)` coercion) — both caught by this pass's own new tests, not by review.
+
+### Declined
+- **Call-quality UX wiring.** A real, tested quality-signal computation (`packages/live/src/stream.ts`) and a real degradation-banner widget (`degradation_banner.dart`) both exist, unconnected to the real call screen. Investigated and found to require a genuine, currently-undeclared architecture decision — native Jitsi Activity hand-off (the shipped, device-verified call model) vs. in-app "pane" rendering (the aspirational §5.26 spec) — that is a product owner's call to make, not something to infer unilaterally. Not built.
+
+### Deferred
+- **Day-part/presence wiring** (`ChildHome.presence`). Mostly mechanical (a TZ join + a "resolve windows to now" function, both precedented), except for one real, narrow judgment call: which guardian to surface when multiple are simultaneously free, and how to break the tie. Custody-duty exclusion is well-precedented (§5.25.4); the multi-guardian tie-break itself is not. Not yet built.
+
+### Verified
+`storage.test.mjs` 25/25 (7 new `verifySignedKey` assertions), `signed_media_route.test.mjs` 17/17 (new file), `inbox_route.test.mjs` extended (12/12, +2 assertions) — first proven locally against a real, freshly-migrated WSL Postgres, 0 failed. This session's own split Windows/WSL environment can't run `tools/verify.sh` as one process (Postgres lives in WSL, Flutter runs natively), so the version this PR first shipped carried a manually reconstructed total (4393 WSL JS+SQL+demo + 1960 native `flutter test`) rather than one script's own printed number — flagged honestly rather than presented as equivalent. Real CI (a single Ubuntu runner with both Postgres and Flutter) then ran the actual unified `tools/verify.sh`: **6374 passed, 0 failed**, every suite green including `android kotlin compile`/`wear os compile`/`livekit (live server)` (all unreachable locally) — the 21-assertion gap from the local reconstruction was normal cross-environment drift (`flutter pub get`'s own dependency resolution, most likely), not a real discrepancy. MARKUP.html/DEMO.html corrected to the real 6374 in a follow-up commit on this same PR, per this project's own standing placeholder-drift-then-sync convention.
+
+---
+
+## [0.49.48] — 2026-08-25 — Tier A + Tier E: doc-parity corrections and four zero-coverage test files
+
+A polish pass, executed against the same tier/priority/risk plan — every item verified real against the actual current code before being acted on, not trusted from the original gap-inventory list's own wording. Two items from that list ("§0's '§21 not built' contradiction," "§16.2 duplicate rows") could not be reproduced against the current document and were skipped rather than chased as phantoms; one ("CHANGELOG's non-unique '0.47.0' version numbers") is explicitly out of scope for a quick pass per its own prior disclosure (a bulk renumber is "a large, high-risk change" needing a human decision); "VISUAL.html staleness" is a real, separate documentation-refresh task larger than this pass's own scope, left for its own dedicated pass.
+
+### Fixed — Tier A doc-parity
+- **Three stale product-name passages** (§16.1b/§16.2/§16.3) still said the name "requires USPTO and app-store collision searches before launch" and framed clearance as "a trademark attorney's call, not ours" — both true when written, both stale since v0.49.44's real search. Updated to state the real outcome (cleared, one disclosed risk, formal attorney opinion still recommended before an actual filing) in each of the three places, and §16.2's row struck through and marked CLOSED.
+- **`packages/transport/src/notify.ts`'s own header still claimed `notifyDevices()` "has zero HTTP call sites... as of this writing," in two separate places.** True when written; false since v0.49.33 gave it a real caller (`POST /v1/children/:childId/calls`). Verified directly against `server/routes.mjs` before touching the comment — confirmed the real caller correctly follows the file's own "never leak `results`/`.message` verbatim" rule (derives only a boolean, `rang`, and serializes that).
+- **MASTERFILE §5.25.2's own "Reachability, disclosed honestly" note still said this screen had no live call site and neither the server trigger nor the client wiring existed.** Both were built in v0.49.33/v0.49.34 — updated to describe the real closure, including what genuinely remains unreachable (no real FCM/APNs credential exists in this environment).
+- **MASTERFILE §20.2b's "A child cannot yet send an async video message" row was still marked REAL, PROVEN GAP.** `db/migrations/0021_child_message_sender.sql` (v0.49.39) closed it — a child session sending about herself really succeeds (201), proven in `messages_route.test.mjs`'s own "D auth" group, the same suite this row's stale text had cited for the opposite result. Struck through and closed. Along the way: that same test file's own comment still cited the migration by its pre-renumbering name (`0019_child_message_sender.sql`, not the real `0021`) — a residual miss from v0.49.39's own "every cross-referencing comment updated" claim, fixed here.
+- **A phantom `§8.12` citation family** in `packages/devices/src/postures.ts` and its own test file — `§8.12` does not exist anywhere in MASTERFILE (confirmed: §8.11 runs through §8.11.7, then jumps straight to §8.13). v0.49.13 already found and fixed ONE sub-citation (`§8.12.3` → `§8.11.7`) but left the file's own top-level header and its `§8.12.1`/`§8.12.2`/`§8.12.4` section markers uncorrected — MASTERFILE's own §8.11.7 note had explicitly flagged this as "found, not fixed... a distinct, smaller issue" since that pass. Retargeted `§8.12.1` ("the tabletop layout") to §8.11.2 "The half-open Fold" — confirmed by matching content ("Video above the crease, controls below... Nothing used it," the exact gap `TabletopLayout` closes) — and `§8.12.2` ("landscape on tablets") to §8.11.1 "Nine postures," where per-posture landscape support was originally declared with nothing behind it. The fourth (`§8.12.4`, "the web path" — `WebCapability`/`WEB_ALLOWED`) has no confirmed matching MASTERFILE section at all; honestly disclosed as real, tested code without one, rather than a citation forced to fit.
+
+### Added — Tier E zero-coverage test files
+- **`packages/globalaudit/test/globalaudit.test.mjs`** (39 assertions) — the global child-payload sweep's own documented entry point (`auditChildSurface()`) and every function underneath it (`sweep()`, `sweepOk()`, `missingFromGlobal()`, `sweepPhrases()`), previously exercised only indirectly through `stack.test.mjs`'s real HTTP responses. **Found and fixed a real, harmless-but-genuine duplicate**: `'balance'` appeared in both `GLOBAL_CHILD_FORBIDDEN`'s "adult machinery" and "P6 financial" groups — functionally inert (a `Set` dedupes it at runtime) but real list-hygiene drift, caught by this file's own duplicate-check assertion.
+- **`packages/observer/test/observer.test.mjs`** (40 assertions) — MASTERFILE §17.3's observer tier, zero coverage anywhere despite a longstanding CHANGELOG claim that its primitives were "already-tested." Every function directly exercised, including the module's own stated "single most important line" (`observerSeesGuardian()`/`guardianSeesOthersObservers()`, both unconditionally `false`) and the re-invite-after-revoke path its own doc comment describes.
+- **`packages/offline/test/offline.test.mjs`** (43 assertions) — MASTERFILE §5.22 offline queueing and the safety-critical §5.22.2 conflict-resolution rule, distinct from (and not covered by) the Dart client's own separately-disclosed partial port. The core assertion this file exists to prove: a child's edit beats a guardian's even when his is chronologically LATER — a naive last-write-wins would get this backwards, and the test constructs exactly that adversarial ordering rather than a same-order-wins case that would pass either way.
+- **`packages/toddler/test/toddler.test.mjs`** (41 assertions) — MASTERFILE §8.10, the two-to-four shell, not mentioned in CHANGELOG or README before now. Every exported function exercised, including the exact hour-boundary edges of `toddlerScreen()`'s night/day logic (19 vs. 18, 6 vs. 5) and `absencePrompt()`'s real 45-second threshold, inclusive.
+- All four wired into `tools/verify.sh`'s JS-suite chain.
+
+### Verified
+Every pure-function test file run standalone, clean: `globalaudit` 39/39, `observer` 40/40, `offline` 43/43, `toddler` 41/41, `postures` (re-run after the citation fix) 111/111. The two DB-touching files (`messages_route.test.mjs`, comment-only change) re-verified against a real, freshly-migrated WSL Postgres: 30/30.
+
+---
+
+## [0.49.47] — 2026-08-25 — Tier C: real RLS on media_artifact/intent_batch/delivery_intent, and a real production bug it surfaced
+
+Closes Tier C's one genuine item from a fresh tier/priority/risk gap-inventory pass. That pass had originally flagged four items; direct inspection of each named file before writing any code found three were deliberate, already-reasoned design decisions, not gaps — see "Investigated and declined" below. Building any of them would have meant overriding real, considered engineering judgment on this pass's own say-so, so none were touched.
+
+### Fixed — real row-level security
+- **`media_artifact`, `intent_batch`, `delivery_intent` had zero row-level security**, the exact gap `packages/db/src/pool.ts`'s `persistCapturedMessage()` doc comment named as needing "its own migration and its own review, not a side effect of adding one new write path." `db/migrations/0023_message_media_delivery_rls.sql` closes it, preceded by a real audit (three independent sweeps, one per table) of every SQL statement anywhere in the codebase touching these tables, and two independent adversarial reviews of the proposed policy before any migration was written.
+- **The design is deliberately NOT this schema's older `expense_no_child`/`custody_order_not_child_scope` pattern** ("any non-child role, any child"). A security review found that shape would leave zero RLS restriction on which child's rows a guardian session can see — the only real backstop would be whatever `WHERE child_id = $1` the application SQL happens to bind, exactly the class of risk `mediaArtifactFor()`'s own comment already names for a narrower case. The shipped policy instead generalizes `0017_child_theme_preference.sql`/`0018_call_log.sql`'s own `actor_has_edge(child_id)` backstop — but NOT their hardcoded `current_role_name() = 'guardian'` condition, which a second, independent functionality review found would silently break every step_parent/trusted_adult/foster_parent's real, working `GET .../inbox` read (those two tables really are guardian-only by product design; media_artifact/delivery_intent are not). The shipped role list matches `packages/family-graph/src/authorize.ts`'s own `ROLE_CAPS['message']` exactly: guardian, step_parent, trusted_adult, foster_parent.
+- `delivery_intent` additionally gets a real child-own policy (`delivery_intent_child_own`) — the one table of the three a real `child`-role session reads directly, through her own `GET .../inbox`. `media_artifact`/`intent_batch` get none: the audit found no call site anywhere opens a child-role session against either table directly (both are read on the child's behalf under `withSystemSession`), so a child-own carve-out would be real, unreachable dead weight.
+- `health_check`'s own `rls_unforced` monitor extended to the three new tables in the same migration, so the schema's self-check doesn't silently keep reporting the old 14-table list as complete.
+- 22 new live-Postgres assertions (`db/test/0007_message_media_rls.test.sql`), including the two cases that actually mattered: a `step_parent` with a live edge sees the row (the functionality review's own concern), and a `coordinator` with a real, live, unrestricted edge — but the wrong role — sees nothing (proving the role allowlist is real, independent enforcement, not a redundant echo of `actor_has_edge()` alone, which does not filter by role at all).
+
+### Fixed — a real, unrelated production bug the audit surfaced
+- **`GET /v1/children/:childId/inbox` has apparently 500'd on every real child's own inbox read since v0.49.37 shipped**, silently, until this pass wrote this route's first-ever HTTP-level test (`server/test/inbox_route.test.mjs` — the audit's own finding: "No dedicated test exercises this route at all"). The route's response wraps its rows under the key `messages`; `messages` is on `packages/globalaudit/src/globalaudit.ts`'s own `GLOBAL_CHILD_FORBIDDEN` list ("adult plumbing that should never be rendered to her" — banned there for a reason unrelated to this route), and `Api.handle()`'s global child-payload sweep (wired into every response served to a `child` principal since v0.49.37) rejects any response containing a banned key name with a 500 `child_payload_leak`, no per-route exemption by default. A guardian's own read was never affected — the sweep only inspects responses to a `child` principal — which is exactly why nothing caught this: every prior manual or device check of this route was a guardian request, and `client/lib/child_home_live.dart`'s own header already disclosed this exact screen "has never been run against a real deployed backend."
+- Fixed by renaming the response field to `entries`, not by exempting the route via `skipChildPayloadSweep` (the fourth-of-its-kind flag `take_and_go`'s own real exception uses) — the field itself was never adult plumbing, only its old name collided, and renaming keeps the sweep's real protection live for every other field this route ever returns instead of turning it off for the whole route. `client/lib/child_home_live.dart` (the real, load-bearing caller — the child's own home-screen unread badge) and `client/test/child_home_live_test.dart`'s six mocked fixtures updated to match; `flutter analyze` clean, `flutter test test/child_home_live_test.dart` 13/13.
+
+### Investigated and declined (Tier C's other three original items)
+- **WebAuthn attestation-signature verification** — `packages/auth/src/attestation.ts`'s own header explicitly declines it: this app's trust model for guardian registration is "the guardian present at registration time is authoritative," not a hardware vendor's attestation chain, and verifying `attStmt` "would be real, non-trivial code... with no consumer anywhere in §7's routes for its result."
+- **General server-side session revocation** — `pool.ts`'s `deactivateAccount()` header explicitly declines it ("sessions in this codebase are signed, not stored... building a real server-side session/deny-list to close it generally is still out of scope for this pass"), and `deletion.test.mjs` section D already asserts the gap as KNOWN, not silently assumed.
+- **The SEC-01 device-token TOCTOU race** (`registerDeviceToken()`) — explicitly accepted with direct reasoning comparing it to a similar race elsewhere in the same file that WAS worth closing: this one's blast radius is "one lingering [push] token until the next dead-token bounce," not a session or standing-access grant.
+
+### Verified
+Ran the full real `db/test/*.sql` suite sequence, in `tools/verify.sh`'s exact order, on one genuinely fresh WSL Postgres (all 22 migrations applied): 94/94, zero failures, one clean pass. Every affected `.mjs` suite re-run against the same RLS-active database: `message_capture` 44/44, `raw_export` 47/47, `take_and_go` 47/47, `deletion` 32/32, `health_alert` 10/10, `messages_route` 30/30, `media_route` 25/25, `scheduler` 45/45, `inbox_route` (new) 10/10 — 290 assertions total, zero regressions.
+
+---
+
+## [0.49.46] — 2026-08-25 — Production-readiness Tier B continued: the real COPPA retention reaper finally has a caller
+
+A gap in the same infrastructure family as v0.49.45, found only by this pass's own gap-inventory sweep — not disclosed by v0.49.43, the pass that built the code this closes.
+
+### Fixed
+- **`packages/storage/src/storage.ts`'s `reap()` — the real, tested retention reaper this codebase built specifically because "a reaper that deletes rows and leaves media is not a retention policy" under the amended COPPA Rule — had zero production callers.** So did its SQL half: `artifacts_due_for_reaping()` and `reap_tombstone` (`db/migrations/0004_auth_and_reaper.sql`), a partial index on `media_artifact (expires_at) WHERE preserved = false` sized exactly for this query, sitting unused since it was written. The §20.5 "Closed in v0.10.0" table has named this reaper as built since that version — true of the code, never disclosed that nothing ever called it. The monitoring half was already real and already live: `reap_tombstone`/`retention_breach` feed `health_check` (`db/migrations/0009_health_check_canonical.sql`), and `tools/health-alert.mjs` was already capable of alerting on a stuck tombstone — only the thing it would ever have anything to alert ON was missing.
+- Fixed by giving `tools/scheduler.mjs` a third job, `reap-media`, alongside `rematerialize`/`health-alert` — same advisory-lock discipline, same structured logging. Its `ReaperDb` implementation is direct SQL against `artifacts_due_for_reaping()`/`reap_tombstone`, mirroring `runRematerializeSweep()`'s own established style in the same file rather than adding a fourth `pool.ts` export for three one-line queries this scheduler is the only caller of. Uses the same `to_char(... AT TIME ZONE 'UTC', ...)` timestamp idiom `runRematerializeSweep()` already established, rather than the bare `::text` cast that caused the original rematerialize timestamp bug (v0.49.43) — caught and fixed before it shipped a second time, not after.
+- `docker-compose.prod.yml`'s `scheduler` service (v0.49.45) needed no changes — `run all`/`loop` already run every job in `JOB_NAMES`, so the new job is live in production the moment this ships, with no separate wiring.
+
+### Added
+- `packages/db/test/scheduler.test.mjs` section C — 16 new live-Postgres assertions, run against a real, freshly-migrated database (all 21 migrations, including `0022_backup_reader_role.sql`): a due row's blob and row both go; a preserved row is excluded by the SQL `WHERE` clause itself, never even reaching `reap()`'s own belt-and-braces `skippedPreserved` check (both preservation and the no-expiry guard are effectively unreachable dead code through this real caller, by design — the SQL query is what enforces them here); a not-yet-due row is untouched; an already-tombstoned row is excluded by the SQL `NOT EXISTS`, not re-attempted, and its `attempts` count is left unchanged; and a blob-delete failure leaves the row in place and writes a real `reap_tombstone` row with the real error message, per `reap()`'s own "blob first, then row" design. A second sweep proves the just-written tombstone is honored too, not only a pre-seeded one. `tools/verify.sh`'s scheduler suite label updated to name all three jobs it now covers.
+
+### Verified
+Ran directly against a real WSL Postgres 16, all 21 migrations applied fresh: 45/45 assertions pass (29 pre-existing + 16 new). CLI smoke-tested too — `node tools/scheduler.mjs run reap-media` runs clean against an empty fixture set (`examined=0`), and an unknown job name is still correctly rejected.
+
+---
+
+## [0.49.45] — 2026-08-25 — Production-readiness Tier B: a persistent media volume and a default-on scheduler for docker-compose.prod.yml
+
+Opens a fresh tier/priority/risk-organized execution pass over a 49-finding gap inventory (5-lens discovery sweep, no build phase). Tier B — highest priority, lowest risk — closes two real gaps in this session's own recently-shipped infrastructure (v0.49.43) before either could bite in a real deployment.
+
+### Fixed
+- **`docker-compose.prod.yml`'s `server` service had no volume for uploaded child media.** `POST /v1/children/:childId/media` (v0.49.43) writes real files to `MEDIA_STORAGE_ROOT`, which defaulted to a path inside the container's own writable layer — gone on any routine `docker compose up` that recreates the container (an image update, a resource-limit change, a host reboot), not just a deliberate `down -v`. A family's actual uploaded photos of their kid disappearing on a routine redeploy is a real data-loss bug, not a hardening nice-to-have. Fixed with a named `olive-prod-media` volume mounted at `/app/data/media`, matching the durability pattern `olive-prod-pgdata` already established for `db`; `MEDIA_STORAGE_ROOT` is now also pinned explicitly as an env var rather than left to `server/routes.mjs`'s own `DEFAULT_MEDIA_STORAGE_ROOT` fallback (derived from `import.meta.url` — an internal implementation detail, not a contract two independent files should silently depend on staying in sync).
+- **The same gap existed in `docker-compose.dev.yml`, one commit shy of the same fix.** Its `db` service already gets a named volume (`olive-dev-pgdata`); its `server` service did not get the equivalent for media, an inconsistency worth closing for its own sake — testers (including this app's real target audience: a kid, other parents, their kids) losing every photo attached during a demo on the next container rebuild is a materially worse experience than losing a fixture DB row. Same fix, `olive-dev-media` volume, same explicit `MEDIA_STORAGE_ROOT` pin.
+- **`docker-compose.prod.yml` had no `scheduler` service at all.** v0.49.43 built `tools/scheduler.mjs` (the real Postgres advisory-lock-guarded job runner closing the "nothing ever calls `materialize()`'s sweep" gap) and wired it into `docker-compose.dev.yml` as an opt-in Compose service — but never added the production equivalent, meaning the documented production deployment (`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`, this file's own header) could never actually deliver a message that needed the nightly sweep to reach `ready`, full stop. Fixed by adding a `scheduler` service to `docker-compose.prod.yml`.
+
+### Decided
+- **Production's `scheduler` service is part of the default `up -d` set, deliberately NOT gated behind the `scheduler` Compose profile dev's own equivalent service uses.** Dev's opt-in exists to protect a human actively debugging the same database from a background job silently rewriting `delivery_intent` rows mid-inspection — a real footgun specific to a live debug session, which production has no equivalent of. Gating it in production would instead trade that (nonexistent) risk for a worse one already familiar from this document's own standing discipline against silent gaps: an operator running the documented default invocation and reasonably believing that means "the app is fully running," when in fact the one job that makes intents actually get delivered is silently not — discoverable only by reading this compose file closely enough to notice a second, undocumented flag. `docker-compose.prod.yml`'s own top-of-file note #9 and `scaffold/docs/scheduler.md`'s new "Production: on by default, not opt-in" section both carry the full reasoning, so it stays legible from either file rather than assumed.
+
+### Updated
+- `scaffold/docs/scheduler.md` gained the production section above; `scaffold/README.md`'s "Before Phase 0 ships" checklist's scheduler line updated to describe both paths accurately instead of implying a single opt-in story that no longer matches either file.
+
+---
+
+## [0.49.44] — 2026-08-25 — Product name search closed: kept "Olive"/"Olive Branch," real USPTO/app-store due diligence, one risk disclosed rather than buried
+
+MASTERFILE's own header has carried "Working decision, not a cleared one: USPTO and app-store searches still needed" since v0.23.0. Closed here with a real search, not a placeholder — explicitly authorized by the product's owner ("go ahead and make the product-name call yourself").
+
+### Searched
+- **App-store/market landscape**: the established co-parenting/custody-app competitive set (OurFamilyWizard, AppClose, TalkingParents, WeParent, Custody X Change, MyFam, Pairently) — none use "Olive" or "Olive Branch." A live app called bare "Olive" exists (Giga Studios' `oliveapp.com`, a food/cosmetic allergen scanner marketed to parents) but in an unrelated category. Several small/regional apps use "Olive Branch" (church apps, a preschool parent-teacher communication tool, a nanny-booking service, a retail loyalty app) — none are custody/co-parenting products, none show federal registration.
+- **USPTO's own trademark database** (`tmsearch.uspto.gov`, queried live, not from memory): every "OLIVE BRANCH" filing found is either dead (abandoned/cancelled — hosiery, restaurant, nutrition counseling, kids' entertainment, book publishing, internet chat rooms) or in a plainly unrelated goods category (a live, registered "THE OLIVE BRANCH" mark for packaged foods featuring olives). One real, disclosed risk: Serial 98817745, a live-but-**suspended** "OLIVE BRANCH" service-mark application filed Oct. 24, 2024 by Silvius Enterprise, Inc., in Class 042 — the same class a software-services filing for this app would likely use. Its actual goods/services (confirmed by reading the full USPTO record, not the truncated search-result snippet): "financial data management, accounting, tax preparation... managing financial portfolios... business intelligence" — a wholly different market and function from family custody coordination. A companion application, Serial 98817742 (Class 035, same owner), covers accounts-receivable/billing administration — same story.
+
+### Decided
+Kept **Olive** (child-facing) / **Olive Branch** (adult-facing). No blocking conflict found for this specific product category. The Silvius Enterprise Class 042 application is a real, disclosed, same-class/different-goods risk — a genuine consideration for the *prosecution* of any future federal trademark application this app might file (an examining attorney could cite it), but not a consumer-confusion risk given how different the actual services are, and it is currently suspended, not registered, so it blocks nothing today.
+
+### Explicitly not claimed
+This is a real, good-faith due-diligence search — sufficient to close this document's own tracking item and to keep building under this name with eyes open. It is **not** a substitute for a licensed trademark attorney's formal clearance opinion, which remains the right step before any actual USPTO trademark application filing or wide commercial launch. Stated plainly here rather than implied as settled, matching this document's own standing discipline against overclaiming certainty it cannot back up.
+
+---
+
+## [0.49.43] — 2026-08-25 — Three real infrastructure systems: a scheduled-jobs runner, Postgres backup/restore + production hardening, and real object-storage wiring
+
+MASTERFILE §20.2b has named three gaps as real and unbuilt since at least Phase 0: no cron/scheduler ever calls `materialize()`'s own sweep or `health-alert.mjs`; "Broader Docker-as-production-pillar work (healthcheck directives, a real production compose profile, a Postgres backup strategy, CI image publishing)" was explicitly out of scope when the dev-stack hardening pass closed (v0.49.32); and `StoragePort` had no production implementation, so a child's recorded video message was never actually uploaded anywhere. All three close here — scoped, built, and adversarially reviewed against real Postgres/Docker before merge, not asserted.
+
+### Added — a real scheduled-jobs runner (`tools/scheduler.mjs`)
+Two named jobs: `rematerialize` sweeps every `pending` `delivery_intent` row and calls the real, already-tested `materialize()` against it; `health-alert` runs the existing `tools/health-alert.mjs` as a real subprocess. Locking is a real Postgres session-level `pg_try_advisory_lock`, not a table — chosen specifically because Postgres releases it automatically on connection close, clean exit or crash alike, with no separate stale-row recovery needed. Wired into `docker-compose.dev.yml` as a new `scheduler` service gated behind an opt-in Compose **profile**, deliberately excluded from the default `up -d --build` — a background sweep silently rewriting `delivery_intent` rows on the exact database someone is mid-debug session against is a real footgun, not a hypothetical one. See `scaffold/docs/scheduler.md` for the operator's-eye view.
+
+**Real severity, not cosmetic:** `persistCapturedMessage()` inserts every `delivery_intent` row as `state='pending'`; nothing in this codebase — before this pass — ever called anything that could move it to `'ready'`. Without a scheduler, no message this product's own core promise depends on ("record it now, it arrives when it's supposed to") could ever actually go out in a real deployment; the guarantee was true only in the test suite.
+
+**A real, live-reproduced data-integrity bug found during adversarial review, fixed before merge:** the sweep's own SQL cast `target_instant`/`expires_at` (both `timestamptz`) to `::text`, which renders Postgres's default space-separated DateStyle, not ISO-8601 — `materialize.ts`'s own `Intent` type documents both fields as "ISO instant" and parses them with Luxon's `DateTime.fromISO()`, which silently returns an Invalid DateTime (never throws) for that format. Every comparison against it was then always `false`: a retention-expired intent got materialized to `'ready'` instead of `'expired'` (silently defeating the COPPA retention guarantee), and a real `at_instant` intent got written `state='ready'` with `scheduled_at=NULL` — permanently stuck, unreachable by both `claim_due_intents()` and the sweep's own retry logic. Fixed with `to_char(... AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`, this codebase's own established fix for the identical class of bug (`pool.ts`'s `loadMessageChain()`). Two new fixture rows directly exercise both previously-unexercised paths; reproduced live and confirmed fixed against a real Postgres 16.
+
+**A second issue found integrating this system, not by the review:** the suite's own section D (proving the job-lock at the real subprocess level, not just the primitive) asserted the actually-run invocation's own `ok:true` — but `health-alert.mjs`'s real subprocess reads the `health_check` view across the WHOLE shared `verify_run` database `tools/verify.sh` uses for every DB suite, not scoped to this suite's own fixture. A real breach left behind by some other, unrelated suite earlier in the same `verify.sh` invocation made this assertion fail once, live, in CI-equivalent conditions — correctly reporting a real database condition, not a locking defect. Fixed by asserting only what the locking contract actually guarantees (a skipped invocation is unconditionally `ok:true`), and logging the winner's real result as informational rather than a hard failure.
+
+### Added — Postgres backup/restore + production-grade Docker hardening
+`tools/backup-db.sh`/`restore-db.sh` (`pg_dump -Fc`/`pg_restore`, dual-mode: direct binary or `docker exec`, mirroring `migrate.mjs`'s own `PSQL_CMD`-vs-`DATABASE_URL` convention) plus `tools/backup-restore-verify.sh`, a standing, rerunnable proof: seeds real data across the categories that matter most (the message hash-chain, the RLS-locked child journal, custody orders, export records, expenses, homework media), backs up, **drops the database outright**, restores, and diffs per-table content checksums. Run for real, repeatedly, against isolated throwaway containers, never the shared dev stack — identical every time, 27/27 tables.
+
+**A real, structural gap found building this:** `app_owner` (the server's own `NOSUPERUSER NOBYPASSRLS` role) cannot `pg_dump` this schema at all — 11 tables carry `FORCE ROW LEVEL SECURITY`, and `pg_dump`'s COPY refuses to silently emit a filtered subset (a real Postgres error, not a theory). Fixed with a new, narrowly-scoped `backup_reader` role (`BYPASSRLS`, SELECT-only, zero write grants anywhere) — created in `tools/docker-dev/init-db.sql` (mirroring why `app_owner` lives there and not in a migration: `CREATE ROLE` needs a privilege `app_owner` deliberately doesn't have), granted in new migration `0022_backup_reader_role.sql`.
+
+**A second gap found integrating this system, not by the review:** `tools/verify.sh` — the exact script `.github/workflows/verify.yml` runs for CI — provisions its own scratch Postgres directly (never through `init-db.sql`'s Docker-only bootstrap), so migration `0022` failed outright the first time this branch's own migrations ran there (`role "backup_reader" does not exist"`) and would have failed identically in real CI. Fixed by provisioning `backup_reader` in `verify.sh` itself, before migrations run, mirroring the ordering `init-db.sql` already establishes for the real Docker flow.
+
+Real healthchecks: `GET /healthz` (a real `SELECT 1` against the DB pool, not just "the process exists") on `server`/`callroom`, wired into `docker-compose.dev.yml` with `depends_on: condition: service_healthy`. Testing this for real — stopping the DB under a live container — found a third real bug: `pool.ts`'s `createPool()` had no listener on the pool's own `'error'` event, a documented node-postgres gotcha; an idle client's network error crashed the whole Node process outright rather than letting `/healthz` report a real 503 and recover. Fixed with a one-line listener; re-verified live that the server now survives the same outage.
+
+`docker-compose.prod.yml` — a genuinely separate file, not the dev file with flags flipped: real restart policies, real resource limits (verified they apply under plain `docker compose up`, not swarm-only), `DEV_LOGIN` hardcoded to `"0"` with no override path anywhere, secrets required via `.env.prod`. `scaffold/docs/backup-and-restore.md` is the operator runbook. CI image publishing is scoped honestly: `.github/workflows/publish-image.yml` is real and structurally correct but not run against the real repo this session (no live Actions access, and two real repo-settings prerequisites it can't self-satisfy) — disclosed in its own header rather than faked.
+
+### Added — real object-storage wiring for async video messages
+`FilesystemStorage` (`packages/storage/src/storage.ts`) has been real and tested since v0.49.6; nothing wired it to an HTTP path. Before this pass, a family could record a real video message and it would visibly "send" — but the footage never left the device; what reached the database was a client-fabricated placeholder string. Now: `POST /v1/children/:childId/media` (base64 body, matching this API's own all-JSON convention) writes real bytes to a real, persistent `MEDIA_STORAGE_ROOT` and returns the real storage key; `GET /v1/children/:childId/messages/:artifactId/media` reads them back, authorized by the SAME `action: 'message'` gate `POST .../messages` already runs — no second, weaker check. `mediaArtifactFor()` (`pool.ts`) is the real authorization *boundary* underneath that gate: `media_artifact` carries no row-level security of its own, so its `WHERE id = $1 AND child_id = $2` is what actually stops a guardian authorized for one child from reading a different child's artifact by guessing its id — proven directly in a new 25-assertion end-to-end suite (real Postgres + real filesystem, byte-for-byte roundtrip, the cross-child boundary, the row-outlived-blob 404 case). `client/lib/receipt_screen.dart`'s "Send one back" now uploads the real recorded bytes before sending, replacing the placeholder reference that pointed at nothing server-side.
+
+Honestly scoped, not silently left out: no signed-URL-serving endpoint was built for `StoragePort.signedUrl()` (a differently-authorized, weaker mechanism nothing in this codebase currently serves) — real, separate follow-up work. `receipt_screen.dart` still has no live call site (`inbox_screen.dart` never supplies the params) — a pre-existing, separately-documented gap this pass did not touch.
+
+### Verified
+Real total **6130** (4177 JS/server/SQL + 1953 Dart), confirmed via a fresh `tools/verify.sh` (WSL2, real Postgres 16, real `livekit-server` v1.8.0, 0 failed) and native Windows `flutter test`/`flutter analyze` — not carried forward. Every Dart change here (`api_client.dart`, `receipt_screen.dart`, both test files) was genuinely UNVERIFIED by the environment that wrote it (no Flutter toolchain there) and is verified for the first time by this total — 52/52 in the two directly affected test files, 1953/1953 for the full suite, zero regressions.
+
+---
+
+## [0.49.42] — 2026-08-24 — Round-5 audit: an observer-only call bypass, an exposed Postgres port, a dead-wire invite accept, two named test-coverage gaps closed, three phantom MASTERFILE citations
+
+A fresh 5-lens audit pass (security, dead-wire fetch, test-coverage, P1-P9 child-safety re-check, doc-citation accuracy — same discipline as Tiers 1a-4: every finding adversarially verified before being trusted, every fix adversarially re-reviewed before merge) raised 8 candidates, all 8 survived verification, all 8 fixed.
+
+### Fixed — an observer-only guardian's call session could still publish audio/video
+`server/routes.mjs`'s `POST /v1/children/:childId/calls` handler minted the caller's session token with a hardcoded `observerOnly: false`, so `rooms.ts`'s `deriveGrant()` (`canPublish: !principal.observerOnly`) computed `canPublish: true` for every caller regardless of their real edge — the exact class of bug `ladderStep` six lines above had already been fixed for, in v0.49.35, and missed here. A guardian scoped to observe-only contact could start a call session carrying full publish rights. Now reads the real value the same way `ladderStep` does (`edges.find(...).observerOnly`), failing closed (`?? true`) rather than mirroring `ladderStep`'s own `?? 'open'` default, since there is no "no edge means full publish" rule anywhere else in this codebase. `server/test/calls_route.test.mjs` gains a new section H (+6 assertions): a black-box proof an observer-only guardian's call-start still succeeds (this was never a wrongful-denial risk — `authorize.ts`'s WRITES list excludes `'call'`), plus a source-level regression guard, since neither the HTTP response nor `call_log` currently persists `canPublish`/`observerOnly` anywhere for a black-box test to observe.
+
+### Fixed — the dev-stack's Postgres port was reachable from any device on the LAN
+`docker-compose.dev.yml`'s `db` service published `"5434:5432"` (every host interface) while `server`/`callroom` were already loopback-only from the earlier Docker-hardening pass (v0.49.32) — an inconsistency this pass closed rather than left standing. Now `"127.0.0.1:5434:5432"`, matching the established pattern; `POSTGRES_PASSWORD` is now overridable via `.env` (`${POSTGRES_PASSWORD:-postgres}`) rather than a bare literal, closing the one credential this stack's earlier hardening pass had missed. New `tools/docker-dev/test/compose.test.mjs` (+10 assertions, static analysis against the committed compose file and `.env.example` — no live Docker required) is a general regression guard: every published port in the file must be loopback-bound, not just these three by name.
+
+### Fixed — a guardian invitation could be accepted with an unverified name
+`invitation_screen.dart`'s real accept path (a real `baseUrl`+`inviteId`) only ever called `POST .../accept`; `api_client.dart`'s `fetchGuardianInvite()` — real, working, since PR #59 — had zero callers anywhere in this client. `childName`/`inviterLabel`/`yourLabel` displayed whatever the caller supplied, never cross-checked against the server's own `guardian_invite` row, before a real accept fired. Now loads the real invite first; a not-found, expired, already-accepted, or revoked invite blocks Accept outright with the real reason shown, discovered before the tap rather than only from the POST's own race-condition backstop (which is unchanged and still fires for the narrower window between load and tap). The server's real `label` field now overrides a stale caller-supplied `yourLabel`. `childName`/`inviterLabel` deliberately stay caller-supplied — `guardian_invite` has no display-name columns for either, and inventing a name-resolution route for an unauthenticated invitee is a bigger, separate product decision this pass declines to make unilaterally, the same posture §19 already applies elsewhere. `invitation_screen_test.dart` grows from 11 to 22 assertions.
+
+### Fixed — two test-coverage gaps `README.md`'s own "Before Phase 0 ships" checklist has named as open since Phase 0
+`db/test/0005_court.test.sql` only ever exercised `expense` INSERT validation, never that a child role is actually **denied a read** via `expense_no_child`'s real RLS policy (`db/migrations/0006_court_tier.sql`) — the behavioral proof was missing even though the policy and its `FORCE ROW LEVEL SECURITY` were both real. Two new assertions prove it directly: a `child`-role session sees zero rows on a real expense row; a `guardian`-role session still sees that same row (proving the denial is the policy, not an empty table). Separately, `db/test/0001_constraints.test.sql`'s `policy_has_target` CHECK constraint covers all six `delivery_policy` branches but only had adversarial probes for three (`at_daypart`, `on_local_date`, `when_reachable`) — five new probes close `at_instant`, `on_event`, and `immediate`. Both fixes were live-verified against a fresh, disposable Postgres 16 container, including a negative control (superuser bypasses RLS regardless of `FORCE`, confirming `SET ROLE app_owner` is load-bearing, not vacuous).
+
+### Fixed — three phantom MASTERFILE section citations, and one package with zero test coverage
+`packages/guardian/src/pending.ts`'s module header and four section banners cited a `§12.8`–`§12.11` range and a `§17.6` — neither exists (`§12` stops at `12.7`, `§17` stops at `17.5`). Corrected to the real sections each surface actually implements: sibling group calls → `§5.14`; the therapist's view → `§16.2 #11`; the preservation prompt → `§10.1b`; the at-limit ping → `§9.9.1`. The same fabricated range had propagated into `packages/devices/test/postures.test.mjs`, `client/lib/siblings_screen.dart`, and `packages/live/src/camera.ts` — all four fixed together. `packages/i18n/src/i18n.ts` cited `§8.9`/`§8.9.1`/`§8.9.2`, none of which exist — the real section is `§8.4` ("Accessibility and inclusion," the "Bilingual families" row). The same wrong citation had also reached `scaffold/demo/src/play.ts`'s `i18n` probe-screen spec tag and, separately, static prose baked directly into `scaffold/demo/shell.html` ("§8.9 says a journal entry is never translated") — the source-and-test fix's own adversarial re-review caught that the shell.html instance was found but left unfixed, with a false "confirmed via a fresh `node demo/build.mjs`: zero remaining '8.9' hits" claim in its commit message; corrected here for real, `DEMO.html` rebuilt, independently reconfirmed zero `8.9` hits in the actual output. `packages/i18n/` had **zero test coverage anywhere** before this pass — new `packages/i18n/test/i18n.test.mjs` (+32 assertions) covers every exported symbol plus a dedicated citation-accuracy regression check (reads `i18n.ts` and `MASTERFILE.md` directly, same technique `packages/transport/test/transport.test.mjs` already uses for a different drift class), now wired into `tools/verify.sh`. `packages/emergency/src/emergency.ts` cited `§11.4` — `§11` ("Technology stack") has no subsections at all; the real section is `§9.6.3` ("Emergency card"), which `client/lib/emergency_card.dart` had already been citing correctly — the package and its own consumer screen disagreed. The same wrong citation reached `packages/emergency/test/emergency.test.mjs` and `scaffold/demo/src/play.ts`'s `emergency` probe-screen spec tag; both fixed alongside it.
+
+### Verified
+Real total **6072** assertions (4123 JS/server/SQL + 1949 Dart), confirmed by a fresh `tools/verify.sh` (WSL2, real Postgres 16, real `livekit-server` v1.8.0) and a fresh native Windows `flutter test`/`flutter analyze` — not carried forward.
+
+---
+
+## [0.49.41] — 2026-08-24 — Tier-4 doc-parity and CI-tooling pass: a stale PiP claim reconciled, a real Windows dev-notes doc, a real CI-reproducibility gap closed properly (not papered over), a corrected README figure, and GuardianHome's known gap given a real MASTERFILE tracking note
+
+The fourth and final tier of the post-audit "audit, fix, adjust, harden" mandate — doc-parity and CI-tooling polish. Investigated via five parallel, isolated-worktree agents, then independently adversarially re-verified. Three came back CONFIRMED; two came back SUSPECT, both correctly — one found a real, checkable factual error in the fix itself, the other found the investigation's own premise was wrong and the actual finding had gone unaddressed. Both are closed properly in this same pass, not shipped with the flaw.
+
+### Fixed — MASTERFILE §5.26 reconciled with shipped PiP reality
+§5.26 (the PiP pane) had not been touched by the correction pass that already fixed the adjacent §5.24.4, and still claimed lock-task mode "blocks the PiP API by design" and that kiosk and OS PiP are "mutually exclusive on exactly the hardware that matters most" — both superseded by v0.49.36's real, live-verified, both-roles PiP and v0.49.38's kiosk re-pin hardening. `§5.26.9`'s own `OS_PIP_IS_NEVER_LOAD_BEARING` line ("progressive enhancement for a guardian and nothing more") was equally stale. Corrected with a dated REVISED note, matching §5.24.4's own established house style — original text left intact, correction appended, §5.26.1–§5.26.8's own pane-mechanics claims (Android Go, FireOS's version lie, the low-tier still-frame fallback, homework/Fold-tabletop refusals) confirmed unaffected and left untouched.
+
+### Added — a real Windows dev-notes doc
+`scaffold/docs/windows-dev-notes.md` (new — no existing dev-setup doc covered this). Documents four real, hard-won gotchas this exact multi-day session hit and fixed repeatedly: the `Z:`-drive network-mount Kotlin incremental-compile cache bug (`kotlin.incremental=false`, one clean build, revert); the WSL/native-Windows split `tools/verify.sh` requires (JS/DB/LiveKit suites need WSL; Dart/Flutter runs natively); the real `livekit-server` binary + `/tmp/lk.yaml` setup for the LiveKit suite outside CI; and `esbuild`'s per-platform native binary needing a targeted reinstall after a cross-platform `npm i` from WSL silently populates `node_modules` with the wrong platform's binary.
+
+### Fixed — a real CI-reproducibility gap, closed properly after the first attempt at it was wrong
+The original finding — "missing Android SDK CI pin" — was initially investigated and dismissed on a false premise: that CI's Android/Gradle gate never actually runs because no SDK is installed. **This was wrong, caught by this pass's own adversarial re-verification** by pulling real CI logs (`gh run view --log`) showing `android kotlin compile` / `wear os compile` both genuinely passing on every run — GitHub's `ubuntu-latest` runners ship a pre-installed Android SDK and set `ANDROID_HOME` before any workflow step executes. A real Kotlin/Gradle build has been running, unpinned, on every CI run, subject to silent drift whenever GitHub rotates its runner image — structurally the identical reproducibility gap the deliberate Flutter version pin sitting right next to it already exists to prevent, just for the other toolchain. Closed for real this time: `.github/workflows/verify.yml` gains an explicit `android-actions/setup-android@v3` step plus a pinned `sdkmanager --install "platforms;android-36" "build-tools;36.0.0"`, matching the real `compileSdk`/`targetSdk` value `app/build.gradle.kts`'s own `maxOf()` floor-guards resolve to under the pinned Flutter 3.44.8. The original investigation's own harmless consolation fix — hardening `targetSdk` in `app/build.gradle.kts` with the same `maxOf()` floor-guard pattern `compileSdk`/`minSdk` already use, closing a real (if currently no-op) asymmetry where `targetSdk` alone had no protection against silently drifting below the Wear module's hardcoded value — is kept alongside the real fix, not discarded.
+
+### Fixed — a real factual error in a documentation-staleness fix, corrected in the same pass
+`scaffold/README.md` was genuinely stale (unrevised since the `v0.4.0` era) and got a real correction pass — a stale version pin, a self-contradictory "not yet written" list for modules built long ago, broken hand-listed migration instructions superseded by the real `tools/migrate.mjs` runner, and an honest re-check of the "Before Phase 0 ships" checklist against real test coverage (two items were previously over-marked "Done" from loose evidence; corrected to the actual mixed, partial reality). **One of the numbers in that correction was itself wrong, caught by adversarial re-verification**: the fix claimed `npm run test` "chains 48 sub-suites," which counts every `test:*`-prefixed script key defined anywhere in `package.json`, not the real chain — the actual `npm run test` script invokes 43 sub-suite calls (42 unique; `test:games2` runs twice, a pre-existing duplicate). Corrected to the real, directly-computed number, with the six Postgres-dependent suites `tools/verify.sh` separately runs (and this chain does not) named explicitly so the two counts are never conflated again.
+
+### Added — a real MASTERFILE tracking note for a known, deliberately-undone gap
+CHANGELOG v0.49.15's dead-wire sweep confirmed `GuardianHome` genuinely has no live-data screen at all (not a dead wire — "there is no wire") and deliberately declined to build one, correctly reserving that as real, per-screen design judgment rather than folding it into an unrelated pass. That finding lived only in one CHANGELOG entry, not anywhere in MASTERFILE.md itself. Confirmed the gap is still real (no `guardian_home_live.dart` exists, `main_live_guardian.dart` still boots straight into `GuardianMoreScreen` instead, `api_client.dart` still only declares an unused `childRibbon` path constant) and added a real tracking row to MASTERFILE's own open-gaps table, in the same house style as this document's other deliberately-declined-not-built gaps.
+
+### Verification
+Three of five findings CONFIRMED on first re-verification (§5.26, the Windows dev-notes doc, the GuardianHome tracking note); two came back SUSPECT and both are closed correctly in this same entry, not shipped with the flaw. No test files touched by this pass — real combined assertion total is unchanged from v0.49.40's own real **6010**. `check-markup.mjs` 44/44. The new CI workflow step (`android-actions/setup-android@v3` + `sdkmanager`) is a real, live change to `.github/workflows/verify.yml` that cannot be verified locally — watched directly against this PR's own real CI run before merge, per this session's standing discipline for anything touching the CI pipeline itself.
+
+## [0.49.40] — 2026-08-24 — Tier-3 test-coverage fill: nine real coverage gaps closed at the HTTP/route layer, each independently adversarially verified — including a real, previously-silent revoke-idempotency bug found along the way
+
+The third tier of the post-audit "audit, fix, adjust, harden" mandate. A consistent shape across all nine: the underlying pool functions were already thoroughly, honestly tested — but nothing anywhere exercised the real HTTP route (identity/authorization boundary, request validation, error-code mapping) through `Api.handle()` itself. Investigated and closed via nine parallel, isolated-worktree agents, then every fix independently re-verified by a second, skeptical agent reading the actual base-branch code — all nine came back CONFIRMED, no rubber-stamping.
+
+### Added — real HTTP-layer coverage for six routes that had none
+- **`kiosk-pin/verify`** (`server/test/kiosk_pin_route.test.mjs`, 25 assertions): this route is `identityScopedByHandler: true`, meaning `api.ts`'s generic authorization block is skipped entirely and the handler's own manual identity check is the WHOLE boundary — untested until now. Proves the identity boundary, malformed-PIN-body handling, multi-guardian fan-out (no short-circuit), a zero-guardian child, and a locked guardian mixed with an unlocked sibling.
+- **Guardian-invite creation** (`packages/api/test/guardian_invite_create_route.test.mjs`, 51 assertions, real Postgres): the route's own hand-rolled `edgesFor()` "first lock" had zero coverage — proves a guardian of a *different* child only is refused, plus `restricted`/`closed`/`expired`/wrong-role edges, plus body validation and duplicate-invite semantics.
+- **Theme routes** (`server/test/theme_route.test.mjs`, 34 assertions): `GET` has no RLS backstop — `themeFor()` deliberately runs as `system`, so the route's own `can()` check is the ONLY lock for reads. Untested until now, including that an observer-only guardian is correctly denied even a read.
+- **Device-token routes** (`server/test/device_tokens_route.test.mjs`, 54 assertions): the pool-level RLS/constraint suite was already thorough; the route's own `DEVICE_PLATFORMS`/`DEVICE_CHANNELS` validation and its error-to-status mapping (confirming `account_deactivated` really maps to 403) had none.
+- **`/now`** (`server/test/now_route.test.mjs`, 16 assertions, real Postgres): both branches of real zone resolution — a real `child_tz_interval` hit vs. the `child.home_tz` fallback — were previously proven only at the pure-function layer, never through the route's own hand-rolled SQL against a real database.
+- **`POST /v1/me/delete`** (`server/test/me_delete_route.test.mjs`, 19 assertions): `deactivateAccount()` itself has deep, real coverage (three prior hardening passes: v0.47.0, v0.48.2, v0.48.3) — but nothing had ever called the actual route, so its own try/catch error-code mapping (`already_deactivated`→409, `account_not_found`→404, the child-principal `no_user_identity` guard) was unproven at the wire level.
+
+### Extended — real coverage added to three already-solid files
+- **WebAuthn registration** (`packages/db/test/auth_credentials.test.mjs`, +38 assertions): closes the one real gap in an otherwise thorough suite — the atomic `FOR UPDATE` fix from CHANGELOG v0.49.3 had only ever been proven sequentially, never under a genuine concurrent race between `storeWebauthnCredential()` and `deactivateAccount()` on the same row. Also adds real coverage for a second credential on the same user (multi-device) and the actual HTTP register/challenge+verify cycle, previously exercised only against `pool.ts` functions or the pure attestation parser directly.
+- **§8.8.1 captions** (`packages/a11y/src/a11y.ts`, `packages/a11y/test/a11y.test.mjs`): a real `CaptionPort` interface (`CaptionSegment`, `start`/`onSegment`/`stop`/`serializeForStorage`) added, mirroring this codebase's own established `StoragePort`/`RoomLifecyclePort` house pattern — an unimplemented, doc-commented contract for a captioning backend that genuinely does not exist yet (confirmed: no STT/translation code or API key anywhere in this repo). Deliberately interface-only, not a fake backend — building a real captioning engine was out of this task's scope, and the codebase's own established discipline (§19) is to disclose that plainly rather than fabricate something that looks complete.
+
+### Fixed — a real, previously-silent revoke-idempotency bug, found while closing the guardian-invite-revoke coverage gap
+`revokeGuardianInvite()`'s own documented contract promises a second revoke is idempotent (`RevokeInviteError` has no `already_revoked` reason by design) — but the implementation ran `UPDATE ... SET revoked_at = $2` unconditionally on every call, with no `revoked_at IS NULL` guard, so a double-tap or a client retry silently overwrote the real revocation instant with a later, fabricated one. Verified empirically against real Postgres before fixing: revoke at one timestamp, revoke again five months later, `revoked_at` silently became the second date. In a product whose own court-export feature exists to produce a trustworthy record of *when* access was revoked, that is a real integrity bug, not cosmetic. Fixed with a `revoked_at IS NULL` guard reusing the row lock already taken for the `already_accepted` check. `packages/db/test/guardian_invite.test.mjs` gains 6 new assertions covering both the fixed idempotency and the two genuinely-untested scenarios the task named (a nonexistent invite id, and a second revoke of an already-revoked one) — the other two named scenarios (a different guardian revoking; an already-accepted invite) turned out to already have real coverage.
+
+### Verification
+Every one of the nine fixes above was independently re-verified by a second, skeptical agent reading the actual pre-fix code directly. All nine came back CONFIRMED — no SUSPECT findings this pass, unlike Tier-2. `flutter analyze` clean, `flutter test` **1942/1942** (unchanged — this pass touches no Dart file). `tools/verify.sh`'s own JS/server total: **4068**, genuinely 0 failed (WSL Postgres 16 + Node 22 + a real `livekit-server` v1.8.0 binary), confirming all six new suite-loop wirings register real, non-zero assertion counts matching each finding's own claim exactly. **Real combined total: 6010** (4068 + 1942), not carried forward. `check-markup.mjs` 44/44.
+
+## [0.49.39] — 2026-08-24 — Tier-2 gap fill: eight real audit findings closed, each independently adversarially verified — two verifications surfaced real, additional gaps in their own fixes, closed in the same pass
+
+The second tier of the post-audit "audit, fix, adjust, harden" mandate. Investigated and fixed via eight parallel, isolated-worktree agents, then EVERY fix independently re-verified by a second, skeptical pass reading the actual base-branch code — not rubber-stamping the implementer's own report. Two of eight verifications came back SUSPECT, both correctly: real, additional gaps the first fix missed, both closed here before merge.
+
+### Fixed — a real dead wire in `take_and_go_screen.dart` that would have crashed every real take-and-go export
+`_takeAndGo()` read the bundle text as `result['bundleJson']` — a key that only exists on the *different* `GET .../export` route. The real `POST /v1/children/:childId/handover` route this screen actually calls spreads `TakeAndGoResult` verbatim (`packages/db/src/pool.ts`'s `takeAndGo()`), whose real key is `serialized`. `result['bundleJson']` was therefore always `null`, and `null as String` throws — on a call that had, by that point, already closed her guardianships server-side. Fixed to read the real key; the response's real `guardianshipsClosed`/`artifactsTransferred`/`journalEntriesTransferred`/`handedOverAt` fields — parsed into nothing before — now render too. The existing test's own mock had been silently matching the buggy client (`'bundleJson'` instead of `'serialized'`), masking the bug; corrected, plus new coverage for the singular/zero-count cases and a `handedOverAt` formatter.
+
+### Added — a real account-bootstrap route for a brand-new guardian, closing the gap CHANGELOG v0.49.9 explicitly declined to invent an answer for
+`guardian_setup.dart`'s passkey registration has always needed an already-authenticated guardian session, and nowhere did a first-time guardian ever acquire one. `POST /v1/guardian-invites/:inviteId/bootstrap` (`bootstrapGuardianInvite()`, `db/migrations/0020_guardian_invite_bootstrap.sql`) closes exactly that and nothing more: given an invite that has already been through the real accept route, it creates the invited party's first `app_user` row and mints an ordinary guardian session with zero guardianship edges — every other route's own `edgesFor()` check still refuses it exactly as it would refuse any guardian with no edges. Deliberately does NOT touch WebAuthn registration itself and does NOT create a guardianship row — both stay real, separate, disclosed-not-hidden gaps (see this route's own doc comment). Single-use enforced at the DB layer (`bootstrap_columns_paired`/`bootstrap_needs_accept` CHECK constraints, a partial unique index), not just in application code. 57 new assertions (`packages/api/test/guardian_bootstrap_route.test.mjs`) prove success against a real accepted invite and refusal for expired/revoked/wrong-invite/already-bootstrapped/email-collision cases.
+
+### Fixed — a child sending a message was structurally unrepresentable; now it is real
+`delivery_intent.sender_id`/`media_artifact.author_id` were `NOT NULL REFERENCES app_user(id)`, and a child principal has no `app_user` row at all — so a child-originated "Send one back" always, honestly, refused with `not_authorized`, indistinguishable from an actual sitter/coordinator denial. `db/migrations/0021_child_message_sender.sql` adds `author_child_id`/`sender_child_id` alongside the existing columns (mirroring `export_record`'s own exactly-one-of split); `server/routes.mjs`'s POST `.../messages` route derives the sending child's id from the verified session (never the body) exactly the way it already derived a guardian's `userId`; `pipeline.ts`'s `captureMessage()` accepts and threads it through. Message banking (§9.8.1, guardian-only) is deliberately untouched — `intent_batch.sender_id` stays `NOT NULL REFERENCES app_user(id)`, and a child-originated capture now fails loudly with a named error if it ever tries to start a batch, rather than hitting a raw constraint violation. New coverage: `pipeline.test.mjs`'s M8 suite, `messages_route.test.mjs`'s "D auth" group (real HTTP, real database), `message_capture.test.mjs`.
+
+### Fixed — the annotation-canvas engine's `redo()` could restore the wrong stroke after an erase, in EITHER ordering
+Two related bugs in `annotation_canvas.dart`/`packages/annotation/src/canvas.ts` (the shared undo/redo/erase engine backing `doodle_desk.dart`/`game_draw_together.dart`/`game_guess_doodle.dart`): (1) `undo()`'s skip condition only excluded a stroke erased by someone ELSE — a stroke the same actor self-erased fell through and was handed a live `undoneAt`, corrupting `redo()`'s later "most recently undone" comparison; found live, reproduced with a failing test before fixing, per this codebase's own discipline. (2) The reverse ordering — undo a stroke first (legitimately), THEN erase that same stroke — was a second, independent gap this fix's own first version missed: `erase()` left the stale `undoneAt` in place, so `redo()` could still select the now-erased stroke, silently no-op on the wrong one, and shadow whichever stroke was actually meant to come back. **Caught by this pass's own adversarial re-verification, not shipped on the first green run** — closed by having `erase()` itself clear `undoneAt` when it tombstones a stroke, enforcing "never both set" at the one real source rather than adding a second check to every future reader. The TypeScript source (`canvas.ts`, this engine's own declared source of truth) had BOTH bugs too, never fixed there — and had zero test coverage of its own anywhere in this repo; both are now fixed identically and a new 10-assertion `canvas.test.mjs` exists. `erase()` has no real call site in the shipped app yet (confirmed by grep), so severity was latent, not live — the fix closes the engine-level guarantee regardless.
+
+### Added — real call metadata in the certified court export bundle
+`call_log` (`db/migrations/0018_call_log.sql`, real since v0.49.35) was retained and written to, but nothing queried it FOR an export — `security.ts`'s own `RESIDUAL_RISKS` claim that call metadata is "Retained, because §14 court export needs it" had no real implementation behind it until now. `loadCallLog()` (shared by both `assembleRawExportBundle()` and `certifiedExportBundleFor()`, so the two export kinds can never quietly drift into describing a call differently) is folded into the certified export's own `bundleHash` computation alongside `{chain, attestation}` — a later edit to a call record is now detectable the same honest way a message-log edit already was, without pretending call_log has a hash chain of its own (it doesn't; `loadCallLog()` is deliberately never run through `verifyChain()`/`certify()`). 47+55 new assertions across `raw_export.test.mjs`/`court_export.test.mjs`.
+
+### Fixed — offline-outbox honesty: a connectivity gap no longer looks identical to a real rejection, and no longer discards the recording
+A failed "Send one back" used to collapse into one bucket — any exception, server rejection or dead signal alike, became the same scary "error, tap Try again," and tapping Try again re-recorded from scratch, discarding what she'd already made. `offline_outbox.dart` (new — a faithful port of `offline.ts`'s real outbox half, which had zero callers anywhere in the shipped product before this) now backs a genuine three-way split: an [ApiException] (the server actually answered) stays a real, distinct, never-retried `error`; anything else (no answer at all) is queued via `offline_outbox.dart`'s own real `enqueue`/`recordFailure`/`nextToSend`/`sent` state machine, retried automatically on real exponential backoff, and shown only the one audited, exact `offlineChildView` sentence — never a raw exception string. **A real regression this refactor introduced was caught by this pass's own adversarial re-verification and fixed before merge**: narrowing the try/catch to just the network call left the camera-picker call (`pickVideo()`, which can genuinely throw — permission denial, camera-in-use, a hardware fault) outside any handler, so a throwing picker left the UI stuck at a fake "Sending…" forever, no error, no retry, nothing honest shown — the same class of dishonesty this whole fix set out to eliminate, from a different cause. Fixed by giving the picker call its own try/catch with an honest `error` outcome. New coverage in `receipt_screen_test.dart`/`offline_outbox_test.dart`.
+
+### Fixed — two real gaps in the "still" surfaces: an honest empty state where a custody schedule genuinely has none, and a stale calendar/inbox reflow
+Found and fixed alongside `calendar_day_logic.dart`/`my_day.dart`/`inbox_screen.dart` — see those files' own updated headers for the exact before/after. New coverage in `calendar_day_logic_test.dart`/`my_day_test.dart`.
+
+### Added — a real "Call Dad" affordance on the Wear OS companion, genuinely wired to the phone's real call-start path
+MASTERFILE has described the Wear OS companion as "a demo shell with no phone↔watch data sync yet" since it was built. `WearSyncBridge.kt` (phone-side) and the watch module's own `MainActivity.kt` are extended so a real tap on the watch reaches the phone via the existing `MessageClient` channel and triggers the same real `POST /v1/children/:childId/calls` flow `guardian_more.dart`'s own "Call $childName" tile already uses (`child_home_live.dart`, `wear_sync_channel.dart`). **Honestly disclosed, not claimed live-verified**: no real Wear OS device exists in this environment — this is compiled and unit/contract-tested (`child_home_live_test.dart`, `wear_sync_channel_test.dart`, `transport.test.mjs`) against the real message-passing contract, not confirmed on real watch hardware.
+
+### Verification
+Every one of the eight fixes above was independently re-verified by a second, skeptical agent reading the actual pre-fix code directly — not trusting the implementing agent's own report. Two came back SUSPECT and both real, additional gaps they found are fixed in this same entry (the `redo()` ordering, the picker try/catch); the other six came back CONFIRMED. A real migration-numbering collision (two independent agents both picked `0019` next) was found integrating the parallel work and resolved (`0020_guardian_invite_bootstrap.sql`, `0021_child_message_sender.sql`) — every cross-referencing comment updated to match, not left stale. `flutter analyze` clean, `flutter test` **1942/1942** (1904 + 38). Rebased onto v0.49.38's own real 5581 after both #62 and #63 merged first — `tools/verify.sh`'s own JS/server total, freshly recomputed on top of that rebase rather than added by arithmetic: **3815** (v0.49.38's own real 3677 + this pass's 138), genuinely 0 failed (WSL Postgres 16 + Node 22 + a real `livekit-server` v1.8.0 binary). **Real combined total: 5757** (3815 + 1942), not carried forward. `check-markup.mjs` 44/44.
+
+## [0.49.38] — 2026-08-24 — Kiosk re-pin hardening: a verify-and-retry wrapper for `startLockTask()`, real-time PiP defeat detection, and a handoff-flag leak closed — plus two real bugs in this PR's own first fix, found and corrected via live re-testing
+
+Part of the post-audit "audit, fix, adjust, harden" pass (owner-authorized, 2026-08-24). Targets four related kiosk-pinning gaps the fresh 35-finding audit's synthesis flagged as needing "the same live-device dumpsys/logcat discipline used for PR #61 before merge, not just a green compile" — and that discipline is exactly what surfaced this entry's own two self-corrections below.
+
+### Fixed — `startLockTask()` verified, not fire-and-forget
+Confirmed live this session (a real Galaxy Tab S9 FE): `startLockTask()` can return without throwing yet not actually leave the device pinned. `KioskBridge.startLockTaskVerified()` (new) and its necessary duplicate in `WrapperJitsiMeetActivity.kt` (a separate Gradle module — see that file's own module-boundary note) now call `startLockTask()` once and poll `currentMode()`/`currentLockTaskMode()` for real settlement before reporting success, replacing both the platform-channel `M_START` handler's and the Jitsi wrapper's own previous single fire-and-forget calls.
+
+**This fix's own first version was wrong, caught by re-testing it live, not assumed correct after one green run.** It re-called `startLockTask()` on every retry (3×150ms), reasoning a repeat call was a safe no-op. Real `dumpsys`/logcat evidence from a live re-test showed otherwise: Android's own SystemUI confirmation surface for a non-device-owner pin (`ScreenPinningRequest`/`ScreenPinningConfirmation` — visible as WindowManager `addView`/`removeView` churn, one cycle per retry) is a genuine, asynchronous, several-hundred-ms transition, and re-invoking `startLockTask()` while it's still settling risks resetting it rather than helping — the original 3×150ms budget logged a false "did not pin" while `dumpsys` later showed the same launch settling to `PINNED` (with the OS's own "App is pinned" notice) well after the retry loop had already given up. Fixed twice more within this same pass: call `startLockTask()` exactly once, then only poll (never re-invoke), widened to a genuinely evidenced budget; and — a second real finding from the same re-test — `kiosk_shell.dart`'s `_engage()` fires from Dart's own `initState()`, a Flutter-lifecycle event with no defined relationship to the native Activity's window-focus state and empirically often earlier than it, so the verified-pin call now also gates on `Activity.hasWindowFocus()` before ever calling `startLockTask()`, polling for focus first rather than assuming `onResume()` already implies it.
+
+**Disclosed, not claimed fixed:** even with both corrections, this specific tablet's pin settlement remains variable under this test harness's own heavy load (the harness pre-warms the Jitsi SDK's underlying React Native bridge unconditionally at boot — confirmed via logcat, "Skipped 312 frames... doing too much work on the main thread" — which measurably competes with pin settlement for the main thread on cold start). This is the same device-specific flakiness already disclosed in v0.49.36 and explicitly accepted by the owner as a known, non-blocking quirk of this one physical unit, not something to keep re-chasing indefinitely. This pass's real, verified improvement is correctness (no more retry-interference with the OS's own transition, no more false-negative reporting within budget) — not a claim of newly-deterministic pinning on this tablet.
+
+### Fixed — `expecting_call_handoff` now clears on an explicit guardian stop, and can't orphan across a process kill
+`M_STOP` (the guardian's explicit "exit kiosk mode" action) previously only released the pin itself, never the separate `expecting_call_handoff` flag — if a call's own Activity had died abnormally mid-call (a process kill, never reaching its own `onDestroy()`), that flag stayed orphaned `true`, and the very next `onResume()` silently re-pinned the device, potentially seconds after a guardian had explicitly, successfully unpinned it, with no signal telling her why it re-locked. `KioskBridge.kt`'s `M_STOP` handler now calls `clearCallHandoff()` too — an explicit stop is a strictly stronger signal than "assume a call might still be in flight." Separately, `MainActivity.configureFlutterEngine()` now defensively clears the same flag on a genuinely fresh process start when `currentMode()` is already `none` — closing the same orphan risk for the case where the process itself (not just the call Activity) was the one killed, since neither manifest sets `android:process` and both share one.
+
+### Added — real-time defeat detection during PiP, not just on `onStop()`
+Android defers a backgrounded Activity's `onStop()` while a PiP window remains visible — meaning a kiosk pin silently lost mid-PiP could previously go undetected far longer than intended, or be indistinguishable from a clean call end. `WrapperJitsiMeetActivity.kt` now hooks the canonical `onPictureInPictureModeChanged(Boolean)` Activity callback (fires reliably and immediately on any real PiP transition, regardless of trigger) to check the real lock-task mode at that exact moment and immediately broadcast the existing `ACTION_CALL_LOCK_TASK_EXITED` defeat signal if the pin was silently lost — reusing the same signal `lock_controller.dart`'s `onLockTaskExited` already handles, no Dart-side change needed. New `Log.d` diagnostics in both `enterPiP()` and `onPictureInPictureModeChanged()` record lock-task mode and self-pin state at each transition, for the next time this needs live debugging.
+
+### Verification
+All four fixes compiled clean (`./gradlew -q :app:compileDebugKotlin`, exit 0, only the pre-existing benign deprecation warning present in every compile check this session). Live-tested on both real physical devices (Fold5 as guardian, Galaxy Tab S9 FE as child/kiosk) via `main_live_guardian_call_test.dart`/`main_live_child_kiosk_call_test.dart` against the real self-hosted Jitsi stack and local dev server — real `dumpsys`/logcat evidence is what surfaced and drove both self-corrections documented above, not assumption after a single pass. No JS/TS/Dart test files touched by this PR — rebased onto v0.49.37's own real 5581 after that PR merged first; **real, freshly computed assertion total: 5581** (3677 JS/server — WSL Postgres 16 + Node 22, a real `livekit-server` v1.8.0 binary fetched fresh for this run — + 1904 client, confirmed via a genuine native Windows `flutter test` run this same pass, not carried forward), unchanged from v0.49.37's own real total since this PR touches no JS/TS/Dart file. `check-markup.mjs` passes all 44 checks.
+
+## [0.49.37] — 2026-08-24 — Four real child-safety bugs from a fresh 118-agent audit, fixed; the global child-payload sweep wired into production for the first time — and a real regression it caused, found and fixed the same pass
+
+A fresh, from-scratch audit of the current codebase (not the 2026-08-14/17 scoping docs, which had drifted stale across dozens of shipped versions) ran 9 parallel finders across the gap-fill backlog, dead-wire discards, security/RLS, P1-P9 child-safety compliance, test coverage, and package-level upgrades, each finding adversarially verified by 3 independent skeptics against the real, current files. 35 of 36 raw findings confirmed real. This entry closes the four Tier-1 findings that needed no live device and no product-shape decision — real, mechanical, unit-testable bugs in exactly the surfaces meant to protect a child.
+
+### Fixed — P9: "on this day" era-mute silently bypassed for untagged material
+`packages/archive/src/archive.ts`'s `onThisDay()` checked `if (a.eraTag && prefs.mutedEras.includes(a.eraTag))` — the `a.eraTag &&` short-circuit meant any artifact with a `null` `eraTag` (a real, common state for legacy/untagged data; the column is nullable) skipped the mute check entirely and could never be suppressed by any era mute a family configured, in exactly the mechanism MASTERFILE §9.8.3 names as the P9 mitigation for unsolicited resurfacing of pre-separation material. Fixed to fail closed: once any era is muted, untagged material can't be proven to be from an unmuted era, so it's excluded too.
+
+### Fixed — P3: a real gap in the emergency-card leak guard's location-key list
+`packages/care/src/care.ts`'s `CARD_FORBIDDEN` (guarding the sitter/ER-nurse-visible emergency card — explicitly the least-trusted audience) maintained its own narrower duplicate of the location-key list its sibling `auditArrival()`'s `LOCATION_KEYS` already got right four lines away — `latitude`/`longitude`/`address` only, missing `lat`/`lng`/`coords`/`geohash`/`accuracy`/`altitude`. A field under any of those six names passed the card audit silently. `LOCATION_KEYS` is now hoisted above `CARD_FORBIDDEN` and shared by both guards, so a future fix to one can't silently leave the other stale.
+
+### Fixed — a real-harm bug: `buildCard()` silently overwrote a guardian's own emergency contact
+Same file's `buildCard()` unconditionally prepended the hardcoded US `911`/poison-control defaults and filtered OUT any caller-supplied `emergency_services`/`poison_control` contact — so a guardian's corrected local number, a non-US emergency line, or a building-specific line was dropped with zero error, warning, or trace, on the one surface this file's own header says "must work when everything else does not." A guardian-supplied contact of either kind now wins; the hardcoded default only fills in when none was supplied. `packages/emergency/src/emergency.ts` had **zero test coverage anywhere in this repo** before this pass — not referenced by any test file, not wired into `tools/verify.sh`'s suite list — despite its own header calling it the surface that "might matter at 3 a.m."; a real, dedicated `packages/emergency/test/emergency.test.mjs` (26 assertions) now covers the whole module, not just this fix, and is wired into `verify.sh`.
+
+### Added — the global child-payload sweep, wired into production for the first time
+`packages/globalaudit/src/globalaudit.ts`'s `GLOBAL_CHILD_FORBIDDEN`/`auditChildSurface()` — a real union of 23 separate per-module forbidden-field lists, built specifically so "a field one author knew was dangerous protects surfaces they never saw" — had zero real callers anywhere in the product. Every child-facing route still relied solely on its own local list, the exact failure mode the sweep exists to close. `packages/api/src/api.ts`'s `Api.handle()` is the one real choke point every response to a child principal passes through, so it's now enforced there, structurally, rather than left to a route author remembering to call it: a response to a `child`-role principal containing any forbidden field now fails closed with a real 500, naming the leaked field path, instead of shipping.
+
+**A real regression this same wiring caused, found and fixed before merge, not after:** the very first full local `verify.sh` run against this change turned up 3 genuine new failures — `POST /v1/children/:childId/handover` (take-and-go, §9.8.4), which honestly hands a child her own COMPLETE data bundle including her real parent-to-parent message log (`rungs.ts`'s own `NOT_HERS_TO_DELETE` — "she can have a copy of everything"), started 500ing on the sweep's own `messagelog` entry. A full self-export is a fundamentally different category from a curated UI surface, deliberately unfiltered by product design, not a payload that forgot to be curated. Added a fourth, narrow `Route` escape hatch, `skipChildPayloadSweep` — matching the shape of the existing three (`identityScopedByHandler`/`skipOuterSession`/`noSessionRequired`) — set on exactly this one route, with its own doc comment naming why. New coverage in `packages/api/test/stack.test.mjs` (section I, 7 assertions) proves both halves live: a genuine forbidden field in a child response is caught; the same response to a guardian is not swept (this is about what reaches the child, not a generic linter); a route with the new flag passes a field the sweep would otherwise ban straight through.
+
+### Fixed — a stale citation, corrected rather than propagated
+`globalaudit.ts`'s own header had cited "MASTERFILE §20.5" for years; §20.5 is actually "Recommended Phase 0 exit order," an unrelated section — no real MASTERFILE section documents this design decision. Corrected in both `globalaudit.ts` and the new comments this pass added to `api.ts`, rather than copied forward into a second file.
+
+### Verification
+Real, computed assertion total: **5581** (3677 JS/server + 1904 client, client unchanged — this pass touches no Dart file). **Corrected from this entry's own first published number, 5560, found wrong by real CI rather than by a second local guess:** PR CI's own `verify` run reported the true total (5581, genuinely 0 failed) and failed the MARKUP-correspondence gate against the smaller number this entry originally claimed. Root-caused, not just matched: the local WSL run this number first came from was missing `/tmp/livekit-server` at verification time — confirmed by re-fetching the identical v1.8.0 binary CI's own workflow uses and running `packages/session-runtime/test/live.test.mjs` standalone, which reported exactly 21 passed, 0 failed, precisely the gap between 5560 and 5581. `MARKUP.html`/`shell.html`/`package.json`'s `check:markup` placeholder are corrected to the real 5581, not the number a local run without that binary produced. No code changed by this correction — doc/CI parity only.
+
+## [0.49.36] — 2026-08-24 — Real OS picture-in-picture for the child, accepted as an explicit tradeoff and live-verified; a paired auto-navigate feature was built, live-tested, and honestly reverted when it proved unreachable
+
+The "On the Line" audit (2026-08-23) scoped better PiP/multitasking support and, separately, the owner asked for the child's side of a call to gain PiP with a shared-activity feature paired to it. MASTERFILE §5.24.4 had called guardian-only PiP a *structural* conclusion — a child in kiosk lock cannot leave the app, so PiP "solves a problem she does not have," and a PiP window is not full-screen, so whatever sits behind it is reachable. That tension was disclosed to the owner directly, twice, across two rounds of clarification (the first-choice option — a shared canvas with no PiP — turned out to be technically infeasible against the current Jitsi SDK once actually investigated). The owner's second, informed choice: accept real PiP for the child.
+
+### Fixed — a critical kiosk re-pin bug, found and closed before any PiP-enabling code shipped
+Tracing the real Android Activity lifecycle (not assumed) surfaced a genuine bug in the existing call-handoff design: `MainActivity.onResume()` fires for THREE different real events — a clean call end, a mid-call kiosk defeat, and a PiP entry (Android resumes the host Activity behind/around a floating PiP window). The original `consumeExpectingCallHandoff()` was a one-shot read-and-clear: whichever of those three resumed the Activity FIRST would consume the flag, leaving nothing to re-pin on a later, genuine call end — meaning a kiosk-locked child's device could end a real call and never re-lock, if PiP had been entered even once during that call. Fixed with a new signal, `KioskBridge.ACTION_CALL_ACTIVITY_DESTROYED`, broadcast from `WrapperJitsiMeetActivity.kt`'s own `onDestroy()` — the one real "this call Activity is gone for good" moment, distinct from every resume a PiP entry also produces. `KioskBridge.stillExpectingCallHandoff()` (peek, never consume) replaces the old consume-on-read method; `MainActivity.onResume()` now re-pins on every resume while a handoff is outstanding, and only the new destroyed-broadcast receiver ever actually clears the flag.
+
+### Added — real PiP for both roles
+`call_screen.dart`'s `callFeatureFlagsFor()` now sets `pipEnabled`/`pipWhileScreenSharingEnabled` true unconditionally (previously `isGuardian`-only, the v0.49.35 fix's own default). No custom Flutter PiP button exists anywhere — deliberately: Jitsi's native in-call toolbar/Home-press already offers real PiP entry once the flag is set, and a Flutter-drawn button in this screen's own `build()` would never be reachable during a real call regardless, since Jitsi's own native Activity owns the entire display once joined.
+
+### Built, live-tested, and reverted — an automatic "go to a drawing screen" on PiP entry
+The original plan paired real PiP with an automatic navigate-to-`DoodleDesk` the moment she PiP'd, so the call and a shared activity would feel like one continuous moment rather than two separate steps. This was built (a `didChangeAppLifecycleState` trigger, a new `InCallActivitiesScreen`), and three successive native fixes were attempted to make it reliable — bringing `MainActivity`'s task forward from the PiP-entry broadcast, hooking `onUserLeaveHint()` for the Home-press path once that broadcast turned out not to be the one Home actually uses, and a deliberate 400ms delay once an immediate call was found to lose a race against Android's own Home transition. **All three were tested live on a real, genuinely kiosk-pinned tablet, and all three failed the same way**: `dumpsys` traced the actual cause to `RootWindowContainer.startHomeOnTaskDisplayArea` — once a Home press initiates a PiP session, Android's own WindowManagerService has already decided the launcher is the sanctioned host behind that PiP window, and re-asserts it regardless of what an ordinary app does afterward. This is a real platform policy, not a race an app-level fix can win. Reverted rather than shipped half-working, per the owner's own explicit choice once shown the finding: `shouldShowInCallActivities()`, `didChangeAppLifecycleState`, and `InCallActivitiesScreen` are gone from `call_screen.dart`; the real PiP flags and the re-pin fix — both independently verified — stay. She can still open Doodle Desk on her own, from her own menu, the same way she always could; PiP just doesn't try to take her there automatically.
+
+### A real bug found and fixed along the way
+`api_client.dart`'s `devLoginFor()` (the dev-login helper every live-test entry point uses) had no timeout on its HTTP call, and hung indefinitely the moment a reverse-tunnel hiccup or a slow dev server was in the mix — exactly what stalled the first several live-test launch attempts this pass, diagnosed via a raw on-device `nc` probe rather than guessed. Fixed with a 6-second timeout, matching `call_screen.dart`'s own `_fetchRoom()` pattern. Dev-only; no production impact.
+
+### Verification — genuinely live, not just compiled
+Both roles' client builds ran on the real self-hosted Jitsi stack on two physical devices (Fold5 as guardian/Dad, a Galaxy Tab S9 FE as child/Ivy): a real call, started for real from the guardian's own "Call Ivy" tile, connected both sides — matching `CONFERENCE_JOINED`/`PARTICIPANT_JOINED` events, live audio/video, a stable 4+ minute connection. The tablet's own kiosk pin was confirmed genuinely engaging (`mLockTaskModeState=PINNED`, the real system "App is pinned" dialog) on at least one real run, and `beginCallHandoff`'s unpin-for-the-call/re-pin-on-resume sequence traced correctly through `dumpsys` and logcat exactly as designed. A real, pre-existing (not this PR's own) device limitation was also found and disclosed: this specific tablet does not reliably enter `LOCK_TASK_MODE_PINNED` on every launch, confirmed on both this PR's own test build and the completely unmodified `main_live.dart` — an environment quirk, not a regression.
+
+`flutter analyze` clean, zero issues, on the full client. Full client suite: **1904/1904 passing** (1897 + 7 net) — call_screen_test.dart's own PiP-flag assertion was updated in place for the new both-roles-true reality, and its `onCallEnd`/`isGuardianWho` coverage is unchanged; the reverted feature's own 7 tests were added and removed within this same pass, never shipped.
+
+**Real total: 5540, computed via a full local `tools/verify.sh` run, not carried forward.** `tools/verify.sh`'s own real JS/server total is **3636** (WSL Postgres 16 + Node 22) — unchanged from this pass's own diff, which touches no server/JS file — combined with the client's real 1904. Getting a genuine number surfaced and fixed two real local-verification gaps unrelated to this PR's own code, found rather than guessed past: `packages/homework/test/make-fixtures.sh` was silently crashing on `set -euo pipefail` because this Windows checkout's working copy had picked up CRLF line endings despite `.gitattributes`' own `*.sh text eol=lf` rule (the committed blob is correctly LF — a stale working-tree artifact, not a repo defect, fixed locally without a commit) — this alone was masking 30 real assertions as a silent 0/0; separately, no local `livekit-server` binary existed for the `live (latency floor, pictionary)` suite's own `live.test.mjs`, masking another 21 — fetched the identical v1.8.0 Linux binary and config CI's own workflow uses. `MARKUP.html`/`shell.html`/`package.json`'s `check:markup` placeholder are all synced to the real 5540, not a guess — `check-markup.mjs` passes all 44 checks locally against it.
+
+## [0.49.35] — 2026-08-23 — The "top priority" items from a real audit, built: call metadata is now genuinely retained, a dormant safety rule is finally reachable, and role-aware call hardening closes three real containment gaps
+
+A verified audit ("On the Line," 2026-08-23) found 53 confirmed gaps in the real calling system — this entry closes the ones it flagged high-priority and mechanical enough to build in one pass. The child-facing PiP/co-play work the same conversation raised is deliberately its own, separate PR — it needs live-device safety verification this one doesn't.
+
+### Added — real call metadata persistence (closes the audit's single biggest finding)
+`session-runtime/src/security.ts`'s own compliance ledger has claimed since before this pass that call metadata — "who called whom, when, for how long" — is "Retained, because §14 court export needs it." It never was. `db/migrations/0018_call_log.sql` adds the real table (metadata only — never content, never location, P3); `server/routes.mjs`'s call-start route now writes a real row (`packages/db/src/pool.ts`'s new `recordCallStart()`), and a new `POST /v1/children/:childId/calls/:sessionId/end` route (`recordCallEnd()`) marks it ended — idempotent by design, a second end-call is a real 200, never an error. Guardian-read (live edge required) only; the child has no policy on this table at all — who else should ever see it (MASTERFILE's own §16.2 #11) stays explicitly open.
+
+**Deliberately incomplete, disclosed not hidden:** the call-end route closes the record-keeping half of `revokeLiveAccess()`/`endSession()`'s own gap (both real, unit-tested, and — the audit found — never called from anywhere) but not the media-revocation half. Those two functions operate on a `RoomLifecyclePort` shaped around LiveKit's own server-side admin API; a repo-wide check found no real implementation of that port exists for the self-hosted Jitsi stack this app actually runs on — only a mock, in tests. A genuine Jicofo-backed adapter is real, separately-scoped work, not faked here.
+
+### Fixed — a dormant safety rule, finally reachable
+`server/routes.mjs`'s call-start route hardcoded `ladderStep: 'open'` on every call, despite already having the caller's real per-edge ladder step in hand one line earlier — which meant `rooms.ts`'s own tested "supervised calls are recorded and disclosed" logic could never fire through the one production call route, even for a guardian whose real edge genuinely is supervised. Now uses the real value. Proven with a new fixture (a genuinely supervised guardianship) in `calls_route.test.mjs`, not just asserted.
+
+### Fixed — three real containment gaps, role-aware
+`call_screen.dart`'s own header has claimed since before this pass that Jitsi's native settings UI is stripped for both roles. It wasn't — `FeatureFlags.settingsEnabled` was never actually set, so Jitsi's native Settings screen stayed reachable mid-call on both devices, including the child's kiosk-locked one. Fixed for both roles. Separately, `chatEnabled` was never disabled for the child — Jitsi's native, unmoderated, unarchived free-text in-call chat was live for her, unlike every other text surface in this app; now off for the child, unchanged for the guardian. And PiP-related flags applied identically regardless of role despite MASTERFILE already declaring PiP a guardian-only, structural decision — now genuinely role-conditional (`call_screen.dart`'s new `callFeatureFlagsFor()`, a top-level pure function so it's directly unit-tested rather than only reachable through a full widget round-trip).
+
+No custom "shrink to a mini window" UI was built for the guardian, on purpose: once `_jitsiMeet.join()` hands off, Jitsi's own native Activity — not this screen's own `build()` — owns the entire display, so a Flutter-side button here would never actually be reachable during a real call. Setting `pip.enabled: true` is the real, complete fix; it's what makes Jitsi's own native in-call toolbar offer the real PiP entry point, the same broadcast chain `WrapperJitsiMeetActivity.kt`'s own `enterPiP()` already wires end to end, confirmed by reading that native source directly rather than assumed.
+
+### Fixed — relay-only ICE, correctly scoped this time
+MASTERFILE §5.21.1 named `iceTransportPolicy: 'relay'` as a residual gap after the v0.49.33 TURN-relay fix. Verified against upstream lib-jitsi-meet documentation (not guessed): `iceTransportPolicy` is only a documented **P2P-connection** setting — with P2P already disabled (`ENABLE_P2P=0`, v0.49.33), there is no live P2P path for it to apply to today. Added anyway, nested under the same `p2p` config key `enabled: false` already uses, for the identical defense-in-depth reason: the day P2P is ever re-enabled on some other deployment this build points at, this ensures that path can still only negotiate a TURN-relayed candidate, never a direct one.
+
+### Verification
+`server/test/calls_route.test.mjs`: 31 assertions (14 pre-existing + 17 new — real call_log rows, the real supervised-ladder fix, the new call-end route's idempotency and child-access). `packages/api/test/contract.test.mjs` (31/31) and `packages/transport/test/transport.test.mjs` (66/66) both still green against the new two-param route. Full client suite: 1897 + 8 new (`call_screen_test.dart`) + updates to `guardian_more_test.dart` — all passing.
+
+## [0.49.34] — 2026-08-23 — A real caller for `POST /v1/children/:childId/calls`, verified live on two physical devices ringing and answering in real time
+
+**Correction to the [0.49.33] entry above's own wording:** it described the route as "finally has a real caller," but that was the server's own honesty (a real, tested route existed) getting ahead of the client — `api_client.dart`'s own `calls` constant said so directly: "no OliveApi method calls it yet." No screen anywhere in this client ever actually invoked the route. This entry is what actually closes that gap.
+
+### Added
+- `OliveApi.startCall(childId)` (`api_client.dart`) — the real client caller for `POST /v1/children/:childId/calls`. Decodes and returns the server's real `room`/`serverURL`/`identity`/`rang` verbatim.
+- `guardian_more.dart`'s "Call $childName" tile now calls `startCall()` and opens the real `CallScreen` already joined to the room that call just minted (`knownRoom`/`knownServerURL`), instead of `CallScreen`'s own dev-room-server fallback (`local-call-room-server.mjs`'s single fixed session) it silently used before. Added an optional `GuardianMoreScreen.onCallStarted` observation seam (same additive shape as `fetchAgreementOrder`/`onThemeApplied`) — null on every real call site, used only by the new dev-only test entry point below.
+- Three new widget tests (`guardian_more_test.dart`) covering the honest not-connected fallback, a real successful call-start (proving the real POST response's room/serverURL flow unmodified into `CallScreen`, and that `onCallStarted` fires with the real payload), and a real call-start failure (`no_edge`) surfacing an honest error and never opening `CallScreen` on a call that never started.
+
+### Added — dev-only live-device verification scaffolding (not shipped product surfaces)
+No real FCM/APNs credential exists anywhere in this environment (`push_channel.dart`'s own header — no `google-services.json` in this repo, confirmed directly) — a real `call_incoming` push genuinely cannot be delivered to a physical device here. Rather than invent a new production polling endpoint to work around that (a real design decision, not made unilaterally), the gap is bridged entirely within already-dev-only files:
+- `local-call-room-server.mjs` gains `POST`/`GET /pending-call` — an in-memory, single-most-recent-value, no-auth relay (same posture as its existing `/room` endpoint) for exactly one hop: handing a real just-minted room from the guardian device to the child device.
+- `main_live_guardian_call_test.dart` (new) — byte-for-byte `main_live_guardian.dart` plus `onCallStarted` wired to POST the real room to `/pending-call`.
+- `main_live_child_call_test.dart` gains a 1-second poll of `/pending-call`; on a genuinely new room, it feeds a real `PushPointer` into the same real, tested `buildCallIncomingHandler` a real push would use — real knock screen, real Answer button, real `CallScreen` join. Only the undeliverable FCM hop itself is bridged; everything downstream is the unmodified real code path.
+
+**Verified live on two physical devices (Fold5 as guardian/Dad, tablet as child/Ivy), guardian tap to child answer, in real time**: tapping "Call Ivy" on the Fold5 minted a real, freshly-random room; the tablet's real "Dad would like to talk" knock screen appeared on its own within ~2 seconds via the poll bridge, with no manual intervention; tapping Answer joined the identical room (`CONFERENCE_JOINED` logged the same URL on both devices, both against the self-hosted stack, not the public server); the Fold5's own log shows `PARTICIPANT_JOINED {"name":"Ivy"}` at the exact join moment, with live relayed (non-p2p) audio and video confirmed flowing both ways. A real bug was caught and fixed during this: the first attempt had the child join the public `meet.jit.si` rather than the self-hosted stack, because a real push — like `PushPointer` here — cannot carry `serverURL` either (`push.ts`'s own content-free payload shape); fixed with the same `--dart-define=OLIVE_JITSI_SERVER_URL` mechanism a real production build would use, not a shortcut through the dev bridge.
+
+Full client test suite: 1897 passed, 0 failed. Assertion total is 5516, not the 5513 first assumed here — CI's own `bash tools/verify.sh` run caught two real things this pass's first push got wrong: (1) neither `main_live_guardian_call_test.dart` nor `main_live_child_call_test.dart` carried the literal `UNVERIFIED` marker `packages/transport/test/transport.test.mjs`'s own "every Dart file is marked UNVERIFIED" check requires of every client source file — fixed, both now carry it alongside an honest note that they WERE actually run on real devices this pass, verify.sh's own automated pipeline just never builds/runs a dev-only `--target` directly; (2) the true total was never actually 5513 to begin with — that number was carried forward unverified from `MARKUP.html`'s own claim rather than confirmed against a real `tools/verify.sh` run, and `package.json`'s `check:markup` placeholder (also updated) inherited the same unverified assumption. `check:markup`'s own local check only ever compares two numbers a caller supplies — it does not independently compute the real total from source, so trusting it without ever actually running the full suite was the mistake here, not a tooling bug.
+
+No dedicated MARKUP screen entry for this — `guardian_more.dart` isn't a MARKUP screen of its own (its own header says so), and `callSecurity`'s existing description is about wire-level properties (opacity, tokens, TTL, relay enforcement) unaffected by which client button triggers a call, not client-wiring completeness.
+
+## [0.49.33] — 2026-08-23 — A real TURN relay, real relay-only enforcement, and the call_incoming ring path finally wired end to end
+
+Three independent research passes (signaling/room-coordination, client-side
+call lifecycle, self-hosted network topology) converged on the same real
+verdict: two devices on different home networks could not currently
+complete a call through this stack, and separately, `call_incoming` — fully
+built and tested on both the push and the client side — had zero real
+callers anywhere in this codebase. This entry closes the highest-leverage
+piece of both gaps. The fuller list of what's still open (persisted
+N-guardian room-coordination, the full §5.23–§5.28 call-quality UX, the
+camera-toggle SDK bug) is tracked separately, not folded in here.
+
+### Added — a real TURN relay (coturn)
+No TURN server existed anywhere in the self-hosted stack — confirmed by
+exhaustive grep, not assumed. Without one, any client whose own NAT/
+firewall blocks a direct or JVB-relayed path has no fallback at all; STUN
+alone (the only thing configured before this) tells a peer its own
+address, it does nothing when that address still isn't reachable through
+the OTHER side's NAT — the normal case for two independent home routers.
+`tools/jitsi-selfhost/docker-compose.override.yml` adds a real `coturn`
+service (time-limited shared-secret credentials via Prosody's own
+`external_service_secret`, matching how `docker-jitsi-meet`'s template
+already expected `TURN_CREDENTIALS` to be used); `gen-turn-secret.sh` (new,
+mirrors `generate-dev-cert.sh`'s own role) keeps that secret in sync
+between coturn and Prosody. Plain TURN only for this pass — TURNS needs
+the same real-domain/real-cert decision already deferred for the web UI,
+not invented here.
+
+Two real coturn image quirks found and fixed getting a clean deployment,
+neither obvious from the docs: (1) coturn auto-detects its own Docker-
+bridge-internal IP unless `--external-ip` is set explicitly — the exact
+class of bug `JVB_ADVERTISE_IPS` already exists to prevent for the
+videobridge, now also closed for TURN; (2) the official image's own
+entrypoint runs every CLI argument through `eval "echo $i"` (needed for
+its own default `$(detect-external-ip)` substitution) — a bare `-n` flag
+becomes `echo -n`, which prints nothing, silently turning the flag into an
+empty argument coturn then logs as `Unknown argument: `. Verified live
+end to end, not just read: coturn starts clean with zero warnings beyond
+two confirmed-benign ones (a cosmetic pidfile path, and a legacy STUN
+feature that needs two external IPs to matter); Prosody's own rendered
+config confirmed carrying real `external_service_secret` and matching
+`external_services` UDP+TCP entries; the client-served `config.js`
+confirmed reflecting it.
+
+### Fixed — a real, documented safety policy was not actually enforced
+MASTERFILE §5.21.1: "all media is relayed, always" — neither device may
+ever learn the other's real IP, a protective-order-relevant safety
+requirement, not a performance preference.
+`packages/session-runtime/src/security.ts`'s own `CallPolicy` already
+modeled `iceTransportPolicy: 'relay'` for exactly this reason, but it was
+never imported by the real Flutter client, and the self-hosted stack's own
+served config confirmed live: `config.p2p.enabled: true` — direct
+peer-to-peer is attempted by default upstream, exactly what this policy
+forbids. Fixed at the robust enforcement point — `tools/jitsi-selfhost/
+olive.env`'s new `ENABLE_P2P=0` disables it server-wide, so the policy
+holds no matter what any given client does or forgets to set — plus a
+client-side `configOverrides` override in `call_screen.dart` as defense in
+depth for the day this build points at some other Jitsi deployment that
+hasn't made the same choice. Verified live: `config.js` now confirmed
+serving `config.p2p.enabled: false`.
+
+### Added — the call_incoming ring path, wired end to end for the first time
+`packages/transport/src/push.ts` has declared a real `call_incoming` push
+kind with real copy since well before this pass; `client/lib/
+call_knock_screen.dart`'s `buildCallIncomingHandler()` has been real,
+tested wiring since before this pass too. Neither had a caller — confirmed
+independently by two research passes: `notifyDevices()` had zero HTTP call
+sites anywhere in `server/`, and this client's root widget had no
+`GlobalKey<NavigatorState>` for a push handler to navigate with.
+
+New `POST /v1/children/:childId/calls` (`server/routes.mjs`) closes both
+gaps at once, since they turned out to be the same missing piece: a callee
+can only be told to ring with a room she's actually authorized to join.
+Real, narrow, and deliberately not the fuller persisted N-guardian room-
+coordination service a production deployment eventually needs (recorded as
+a real, larger follow-up): authorized through the ordinary generic action
+gate (`action: 'call'`) rather than a hand-rolled check — `'call'` is
+already a real, recognized `Action` (`authorize.ts`'s own `can()`, the
+exact function `mintToken()` itself re-runs at mint per its I4 invariant),
+so this route reuses that existing, more thoroughly-tested authorization
+path instead of adding a fifth `action: null` exception to
+`contract.test.mjs`'s own deliberately narrow whitelist. Mints a real
+session via `createSession()`/`mintToken()` — the same pure, tested
+primitives `local-call-room-server.mjs` already reused, now given their
+first live, authenticated production caller — and calls the real
+`notifyDevices()` with a real `call_incoming` payload. A push-send failure
+never fails the call itself; the caller can still join and wait, same as
+before this route existed, just without the one improvement it adds on top.
+
+`packages/api/test/contract.test.mjs` caught two real gaps this route
+introduced before this entry's own final form: a server route with no
+matching `OliveApi` path constant (`client/lib/api_client.dart` now
+declares `calls`, unused by any real caller yet — same posture as that
+file's other not-yet-wired constants, see its own header) and — the
+reason `action: 'call'` is the design described above, not the route's
+original `action: null` — every other `:childId` route in this repo is
+required to declare a real action unless explicitly, individually
+whitelisted in that same test file, and adding a fifth whitelist entry
+would have been the wrong fix once a real, fitting `Action` (`'call'`)
+already existed to use instead.
+
+Client side: `main_live.dart` gains the `GlobalKey<NavigatorState>` both
+gaps were waiting on; `child_home_live.dart` wires it into `PushChannel`'s
+real `onForegroundPointer`. `CallScreen` gains an optional `knownRoom`/
+`knownServerURL` pair — when present, its own `_fetchRoom()` is skipped
+entirely and the call joins THAT exact room instead, which is what lets a
+knock answered from `CallKnockScreen` join the room the CALLER is already
+in, rather than two devices independently minting two different rooms and
+never actually meeting. A `call_incoming` push carries only `kind`/`ref`/
+`callHandle` by design (`push.ts`'s content-free `PushInput`) — no
+`serverURL` — so a new `OLIVE_JITSI_SERVER_URL` dart-define constant
+(matching the existing `OLIVE_API_BASE_URL` pattern) supplies it for a
+push-triggered join, while the real route's own response supplies both for
+a guardian-initiated one.
+
+### Tests
+New `server/test/calls_route.test.mjs` — real Postgres, real HTTP through
+`api.mjs`, 14 assertions: the real success path (a fresh, I1-compliant
+random room minted on every call, never the same room twice), a child
+principal refused, a guardian with no live edge refused, no session
+refused, and — the one property no other suite could prove, since nothing
+called `notifyDevices()` from a route before this — a real registered
+`device_token` row is genuinely read and a real send genuinely attempted
+(honestly `rang: false` in this environment, since no real FCM credential
+exists anywhere in this repo — a pre-existing, already-documented
+limitation, not a defect in this route). Wired into `tools/verify.sh`
+alongside `messages_route.test.mjs`, the identical pattern this test
+mirrors. `flutter analyze`/`flutter test`: clean, 1894/1894, no
+regressions in either file this pass touched.
+
+### Not fixed, tracked separately
+Self-hosted Jitsi's own room-level auth (`ENABLE_AUTH` unset) remains a
+deliberate Step 2 design choice. The camera-toggle bug reproduced live on
+the Tab S9 FE is very likely upstream (`jitsi-meet-sdk`/
+`react-native-webrtc`) — not touched this pass. The full §5.23–§5.28
+call-quality UX (frozen/dropped states, the quality ladder, sanitized
+error copy for the child) does not exist client-side yet. The persisted,
+N-guardian room-coordination service this route's own comment names as a
+real next step is scoped, not built.
+
+---
+
+## [0.49.32] — 2026-08-23 — Docker dev-stack: closing four confirmed, live security findings
+
+Found during a fresh audit pass (three parallel research passes, then 21
+adversarial re-verifiers checking the highest-stakes claims fresh against
+the actual source, refute-by-default) — four of seven claims checked lived
+in this exact stack, all four confirmed unanimously. All four close here,
+in one PR, rather than staged separately: each on its own still left the
+stack either reachable or the secret exposed.
+
+### Fixed — a committed session secret let anyone forge any identity,
+including escalated:true
+`docker-compose.dev.yml` hardcoded `SESSION_SECRET: dev-secret-docker-
+devicetest` in plaintext, committed, in a public repo. Sessions are
+HMAC-SHA256 over an unencrypted, caller-controlled JSON payload
+(`packages/auth/src/auth.ts`'s `issueSession`/`readSession`) with no DB
+round-trip, nonce, or revocation check at verification — anyone holding
+the secret could mint a token for any `userId`/`childId`/`roleName`,
+`escalated` or not, entirely offline, no server call needed. The verify
+pass found this reaches further than identity spoofing:
+`packages/api/src/api.ts` trusts a forged token's `escalated` flag
+directly, with zero re-check of the PIN-plus-biometric ceremony that flag
+is supposed to require — a forged token doesn't just spoof identity, it
+walks straight past the app's own two-factor guardian-escalation gate.
+Now read from `${SESSION_SECRET:?...}` — Compose fails fast with a clear
+message when no `.env` is present rather than falling back to any
+default, committed or otherwise. New `scaffold/.env.example` is the
+tracked template (generate a real value with `openssl rand -hex 32`);
+`scaffold/.env` itself is gitignored.
+
+### Fixed — DEV_LOGIN was hardcoded on by default
+`docker-compose.dev.yml` set `DEV_LOGIN: "1"` unconditionally — every
+clone following the documented setup got a server where `POST
+/v1/auth/dev-login` with a bare `{userId}`/`{childId}` mints a fully
+valid, real session with zero credential check of any kind
+(`server/index.mjs`'s own header already names this exactly, and fences
+it behind the flag for exactly that reason). Now `${DEV_LOGIN:-0}` — off
+unless a local `.env` opts in, matching what physical-device testing
+actually needs without shipping the committed file itself auth-disabled.
+
+### Fixed — the next image build would have baked real Jitsi secrets into
+its layers
+No `.dockerignore` existed anywhere in the repo. `Dockerfile`'s
+`COPY . .` build context is the whole `scaffold/` tree, which on any
+machine where the self-hosted Jitsi setup has already run includes a
+real, generated `tools/jitsi-selfhost/.jitsi-docker/.env` — six live
+Prosody/Jicofo/JVB/Jigasi/Jibri auth secrets. `.gitignore` already
+excludes this path from git; it has no effect on what Docker sends to the
+daemon. That same vendored checkout carries its own nested `.git/`, which
+would have swept in too. New `scaffold/.dockerignore` excludes it,
+`node_modules/` (reinstalled fresh by `npm ci` regardless), `.git/`, and
+any local `.env*`. Verified against the actual rebuilt image, not just
+read: neither `.jitsi-docker/` nor `.git/` is present anywhere inside it.
+
+### Fixed — the call-room coordinator was reachable by anyone on the LAN
+`GET /room?who=dad|ivy` (`tools/local-call-room-server.mjs`) issues a
+real, valid Jitsi room name and identity for one of two fixed principals
+based on nothing but that query string — no session, no header, no
+shared secret, and it quietly defeats the self-hosted stack's own
+room-name-as-secret model by handing the name to anyone who asks. Both
+this port and the main server's were published on every host interface
+(`"8787:8787"`/`"8123:8123"`), not just loopback. Physical devices have
+never needed that — they reach this stack exactly the same way they
+always have, `adb reverse tcp:8123 tcp:8123`/`adb reverse tcp:8787
+tcp:8787` to host loopback, which `tools/docker-dev/README.md` already
+documented — so restricting both to `"127.0.0.1:PORT:PORT"` closes real
+LAN/WiFi exposure with no change to the actual testing flow.
+`local-call-room-server.mjs` itself now binds `127.0.0.1` by default for
+safety when run bare; the containerized `callroom` service explicitly
+sets `CALLROOM_BIND_HOST=0.0.0.0` (required for Docker's own port
+forwarding to reach a process bound only to a container's own internal
+loopback — the real security boundary is the host-side port mapping, not
+this bind address).
+
+### Verified
+All four fixes tested live against the actual running stack, not only
+read: `docker compose ... up -d --build` fails fast with a clear message
+when `.env`/`SESSION_SECRET` is absent; `DEV_LOGIN=0` (the new default)
+makes `/v1/auth/dev-login` genuinely 404; `DEV_LOGIN=1` (opted in
+locally) still mints a real, working session; the call-room endpoint
+still returns a real room/identity through the container despite the
+bind-address change; `netstat` confirms both ports now listen on
+`127.0.0.1` only, no `0.0.0.0` wildcard; `docker run --rm
+olive-dev-server` confirms neither `.jitsi-docker/` nor `.git/` exists
+anywhere inside the rebuilt image.
+
+### Docs
+`tools/docker-dev/README.md` documents the new required first-time setup
+(`cp .env.example .env`, generate a real secret, opt into `DEV_LOGIN`)
+and the loopback-only binding, and explains why both matter in the same
+place the setup instructions live.
+
+### Not fixed, out of scope for this pass
+Self-hosted Jitsi's own room-level auth (`ENABLE_AUTH` unset) remains a
+deliberate design choice per its own Step 2 documentation — the
+room-name-as-secret model this fix restores meaning to, not a gap this
+pass closes on its own. Broader Docker-as-production-pillar work
+(healthcheck directives, a real production compose profile, a Postgres
+backup strategy, CI image publishing) and a handful of MASTERFILE
+documentation-staleness items scoped alongside these findings are tracked
+separately, not folded in here.
+
+---
+
+## [0.49.31] — 2026-08-22 — Device-adaptive backlog, legacy-games tier: game_kim.dart, game_hunt.dart, game_chain.dart, game_battleship.dart, game_hangman.dart get the comfortable-reading-width cap
+
+Closes the compatibility audit's other named device-adaptive gap alongside
+the 16-screen investigation v0.49.29 finished: **the pre-existing games**,
+five older titles that predate this whole backlog effort and had never had
+any device-adaptive treatment at all — `game_kim.dart`, `game_hunt.dart`,
+`game_chain.dart`, `game_battleship.dart`, `game_hangman.dart`. Each file's
+actual layout structure was read individually before deciding a treatment,
+the same discipline every tier in this backlog has held to. All five get
+the SAME treatment — `form_factors.dart`'s `comfortableReadingWidth` cap —
+for the same reason: none has a genuine simultaneous form+list or
+list+detail shape, so none gets a two-pane split.
+
+### Changed — reading-width cap
+- **`game_kim.dart`**, **`game_hunt.dart`**, **`game_chain.dart`** — each a
+  single `Scaffold > SafeArea > ListView` play screen with no separate
+  setup screen in the file. Wrapped in a `LayoutBuilder` computing
+  `columnsAt() >= 2` exactly like every other capped screen; the unchanged
+  `ListView` is centered and capped at `comfortableReadingWidth` (640) only
+  when it engages. `game_chain.dart`'s own 280ms `AnimatedContainer` is
+  untouched — only the outer width constraint changes.
+- **`game_kim.dart`**'s own real fix, found building this: capping the
+  outer width to 640 shrinks `_ItemGrid`'s `Wrap` cross-axis enough that its
+  two item grids can need an extra row for the same item count — genuinely
+  taller content, not a layout bug, and exactly the kind of thing a real
+  short-and-wide viewport (a Fold half-open in landscape, 673×420, is the
+  real §8.11.1 example) would hit for real. At the default 800×600 test
+  viewport this pushed the wrong-guess callout below the render window,
+  breaking a **pre-existing** widget test (`a wrong guess is gentle,
+  ungraded, and allows another try`) that asserts the callout is visible
+  without scrolling — confirmed by reproducing the same failure against the
+  ORIGINAL, unmodified file at a 600×600 surface size, proving this is a
+  latent fragility the cap exposes, not one it introduces. `_ItemGrid` now
+  takes a `compact` flag (wired to the screen's own `capWidth`): tiles stay
+  the pre-existing 88px floor whenever the cap is NOT engaged — byte-for-
+  byte identical to every posture that existed before this change — and
+  drop to a still-generous 72px floor only in the capped state this same
+  change introduces, restoring the original row count and closing the gap
+  with no scrolling required. `cacheExtent` was tried first and rejected:
+  Flutter's `SliverMultiBoxAdaptorElement.debugVisitOnstageChildren` gates
+  on `remainingPaintExtent` (the viewport's actual paint region), not
+  `cacheExtent` (a layout-ahead budget for scroll performance) — confirmed
+  by reading the Flutter SDK source directly rather than guessing twice.
+- **`game_battleship.dart`** — status banner through the tab-toggle through
+  the board through the play-again button, the WHOLE outer `ListView`,
+  wrapped the same way. The board's own pre-existing `Center` +
+  `ConstrainedBox(maxWidth: 460)` is untouched — additive on top of the new
+  outer cap, not a replacement for it — and the tab-toggle single-board-at-
+  a-time interaction model is untouched; turning it into a side-by-side
+  two-board layout would be a real interaction-model change out of scope
+  for this mechanical pass.
+- **`game_hangman.dart`** — two screens. `HangmanSetupScreen` (guardian-
+  facing word entry) gets the standard new-`LayoutBuilder` wrap.
+  `HangmanScreen` (child-facing play) is the more interesting case: it
+  ALREADY had a `LayoutBuilder` wrapping its `ListView`, with `constraints`
+  captured and never used — a dead parameter from an earlier audit. That
+  existing `LayoutBuilder` is now genuinely wired to compute the cap,
+  finishing what it was already set up to do, rather than nesting a second
+  one around it.
+
+### Tests
+- 1 new responsive-cap test per file for `game_kim.dart`/`game_hunt.dart`/
+  `game_chain.dart` (3), 2 for `game_battleship.dart` (the outer cap, and a
+  dedicated check that the board's own 460px cap plus the tab-toggle model
+  are both unaffected by it), 2 for `game_hangman.dart` (setup screen, and
+  the play screen's now-wired `LayoutBuilder`) — 7 new tests total, each
+  proving the cap engages only at a wide tablet/desktop width (rendering at
+  exactly `ff.comfortableReadingWidth`) and the Fold5 cover (344px) and
+  standard phone (390px) widths render at full, uncapped width with zero
+  behavior change.
+- Every pre-existing test in all five files re-verified passing unchanged,
+  including `game_kim.dart`'s `_ItemGrid` regression above — confirmed by
+  reproducing the failure against the original file first, then re-running
+  the full pre-existing suite after the fix.
+- `flutter analyze`: no issues found. `flutter test`: 1894/1894 (1887
+  baseline + 7 new), including the full client suite run together.
+
+### Backlog
+- Closes the pre-existing-games half of the device-adaptive-coverage
+  finding this compatibility audit named alongside the 16-screen
+  investigation v0.49.29 finished. `game_findthing.dart`,
+  `game_wordsearch.dart`, and `game_story.dart` remain a separate,
+  deliberately not-yet-scoped tier — migrating their own hand-rolled sizing
+  onto `columnsAt()` directly, not the reading-cap treatment this entry
+  gives, and a different-shaped decision this entry does not make for
+  them. See MASTERFILE.md §8.11.1's own status note for the updated count.
+
+---
+
+## [0.49.30] — 2026-08-22 — Live guardian entry point, real PIN onboarding, a real self-hosted-call bug found and fixed on physical hardware, and a containerized dev server
+
+Found while live-testing calling on two real devices for the first time
+against the self-hosted Jitsi stack (§16.2 #6 Step 2). Four independent
+pieces, all found in the course of that one test session.
+
+### Fixed — no live guardian entry point existed at all
+`main_live.dart`'s own boot sequence has always hardcoded a child dev-login
+with no guardian path — `guardian_more.dart` and everything under it
+(message banking, care note, emergency card, handover notes, availability,
+theme picker, kiosk PIN setup) sat completely unreachable from any real,
+running build, a gap that file's own comment already named directly. A new
+`main_live_guardian.dart` (a third build target, alongside `main.dart` and
+`main_live.dart`) boots straight into `GuardianMoreScreen` with a real
+guardian session. Deliberately does NOT boot the full ribbon/dual-clock
+`GuardianHome` — that widget needs a `/ribbon` endpoint `api_client.dart`
+only ever declared a path constant for (`OliveApi.childRibbon`), with no
+real server route and no client fetch method behind it anywhere in this
+codebase. Building that honestly (real server-side timezone/schedule
+computation, not fabricated ribbon data) is its own separate, larger piece
+of work — tracked, not invented here to make this entry point's job easier.
+
+### Fixed — the real kiosk-PIN-setup screen was never wired to its own real backend
+`GuardianSetupScreen.setGuardianPin` (backed by the already-real, already-
+tested `POST /v1/me/pin` → `setPinCredential`, scrypt-hashed, RLS-scoped)
+had zero callers at either of `guardian_more.dart`'s two `GuardianSetupScreen`
+call sites — a guardian could reach the screen, type a PIN, and it would
+silently do nothing beyond a "no backend wired" snackbar. Wired at both
+sites, following the same live/offline-preview conditional split every
+other real screen in this file already uses (`_openAvailability`,
+`fetchAgreementOrder`) — a fresh `devLoginFor(userId: ...)` per call, not a
+session cached on this stateless widget, the same posture `main_live.dart`'s
+own `_verifyGuardianPin`/`_fetchInitialTheme` already hold themselves to.
+A real "Call " tile was added to `guardian_more.dart`'s existing Calls
+section, which previously held only demo/info screens (closing ritual,
+call security info, live degrade, busy fork) and no way to actually place
+a call at all.
+
+### Fixed — the self-hosted Jitsi stack's served client config pointed devices at themselves
+§16.2 #6 Step 2 (self-hosted Jitsi) was staged and container-verified as of
+v0.49.28 but never confirmed against a real device — this pass tried, and
+every join attempt failed with a real Strophe `Websocket error`/`connfail`.
+Root cause, found by reading the actual served config rather than assuming
+the TLS-layer fix from v0.49.28 was sufficient: `config.js`'s
+`config.websocket`/`config.bosh` both hardcoded `wss://localhost:8443/...`
+— derived from `PUBLIC_URL`, left at its commented-out default. A physical
+device resolves `localhost` to itself, not the dev machine, so the
+WebSocket handshake had nowhere real to go regardless of the cert being
+correctly trusted. Fixed by setting `PUBLIC_URL` to the dev machine's real
+LAN address in `olive.env` (`tools/jitsi-selfhost/`) and restarting the
+stack; `config.js` now correctly serves the LAN address, and the very next
+join attempt produced a real `CONFERENCE_JOINED` event with a real room
+URL — the first time this Step has actually connected on real hardware.
+`network_security_config.xml` gained a second `<domain-config>` trusting
+the same dev cert for that LAN address (the existing entry only ever
+covered `127.0.0.1`, the loopback address `adb reverse`-based
+room-coordination traffic uses, a genuinely different concern from the
+LAN address real UDP media needs — see that file's own header for both).
+
+### Added — this project's own dev server, containerized
+`scaffold/Dockerfile` + `scaffold/docker-compose.dev.yml`
+(`scaffold/tools/docker-dev/README.md`) run `server/index.mjs` and
+`tools/local-call-room-server.mjs` as real Docker containers against a
+dedicated Postgres, replacing the bare `node` processes this session had
+been launching by hand — one of which silently died mid-session, taking
+both physical test devices' backend connectivity down with it, when the
+one-shot shell invocation that launched it exited and took `nohup`/`disown`
+down too, with no crash log and no symptom beyond "the app can't reach the
+server." `docker-compose.dev.yml`'s own `db` service provisions `app_owner`
+as NOSUPERUSER NOBYPASSRLS from creation (`tools/docker-dev/init-db.sql`)
+and the `migrate` one-shot service connects AS that role, so every table a
+migration creates is already correctly owned from the start — closing the
+same manual-grants-pass gap that produced a real `permission denied for
+table child_theme_preference` bug earlier this session, this time by
+construction rather than a follow-up fix.
+
+### Verification
+`flutter analyze` clean. `flutter test`: 1871/1871 (no new automated tests
+this pass — every fix here needed a real device/real network/real Docker
+stack to prove, not a widget test; the one new local-only regression this
+pass caught and fixed itself, a `guardian_more_test.dart` failure from the
+new Calls tile's subtitle text colliding with an existing "not connected"
+substring match, is a text-wording fix, not new coverage). Live-verified
+directly, not assumed: the guardian entry point booted clean and showed
+real backend-fetched content on a physical tablet; the PIN-setup screen's
+real backend call was exercised via `setPinCredential()` directly against
+a live database before the UI wiring existed, then via the wired UI path
+itself; the self-hosted-Jitsi fix is verified by a real `CONFERENCE_JOINED`
+event captured in that device's own logcat, not by re-reading the config.
+
+### A process note, recorded honestly rather than silently corrected
+This entry did not actually land in `CHANGELOG.md`/`MASTERFILE.md`/
+`MARKUP.html` when PR #54 merged — a `git add` call listing a nonexistent
+path (`scaffold/demo/DEMO.html`, which is gitignored, not tracked) failed
+atomically, silently leaving every doc-sync file unstaged; the commit was
+made without re-checking `git status` first, and a later `git reset --hard`
+discarded the uncommitted correct content before the gap was noticed. Found
+and fixed only when a later agent's own final report flagged the missing
+entry rather than assuming it wasn't needed. Reconstructed here from the
+original text, not rewritten from memory or summarized down.
+
+## [0.49.29] — 2026-08-22 — Device-adaptive backlog, batch C of 3 (final): handover_notes.dart, care_note.dart, availability_screen.dart, show_guardian.dart get the real two-pane split
+
+Closes out the device-adaptive two-pane backlog v0.49.27's investigation
+named: the last four nav-reachable content screens with a genuine
+compose-plus-list shape — `care_note.dart` (the batch B screen still
+outstanding after v0.49.26 independently closed its other three) plus all
+three of batch C (`handover_notes.dart`, `availability_screen.dart`,
+`show_guardian.dart`). Each screen was read individually and given its own
+Pane A / Pane B assignment before implementation, the same discipline every
+entry in this tier has held to.
+
+### Changed — real two-pane split
+- **`handover_notes.dart`** — the one screen in this batch that needed more
+  than a mechanical split: its compose row was pinned to the bottom of a
+  fixed-height `Column` (`Expanded` + `ListView.builder` above it, chat-
+  style), not already living in a scrollable form list the way every other
+  two-pane candidate so far has. Restructured into the established
+  `composeChildren`/`listChildren` idiom, `ListView.builder` replaced by a
+  plain `Column` inside `SingleChildScrollView` (same sliver-virtualization
+  fix `message_banking.dart`/`letters_screen.dart` already document, so
+  every entry genuinely exists in the tree). Pane A is the disclaimer plus
+  the add-note field and button; Pane B is the entries list, newest first.
+  P8's append-only invariant is untouched by the rearrangement — no
+  `_deleteEntry`, no `_editEntry`, no long-press menu, confirmed by the
+  file's own pre-existing "NO delete or edit affordance" test, unmodified
+  and still green.
+- **`care_note.dart`** — the straightforward case: Pane A is the intro text,
+  kind chips, note field, conditional guidance banner, Send button, and the
+  "not evidence" disclaimer; Pane B is the divider and the sent-notes list.
+  `ListView` replaced by `SingleChildScrollView` + `Column` for the same
+  virtualization reason above. Narrow order is untouched from before this
+  pass. `careNoteVisibleTo('child')` stays `false`, unreachable from this
+  file either way — a layout-only split adds no new interactive element.
+- **`availability_screen.dart`** — Pane A is the editable weekly-hours form
+  (heading, description, the 7 day rows, the save error if any, the Save
+  button); Pane B is the read-only co-guardians list. Already used
+  `SingleChildScrollView` + `Column`, so only the `LayoutBuilder`/pane split
+  itself was new. Fixed one real pre-existing bug this split exposed:
+  `_dayRow`'s start/end time picker `Row` (two `TextButton`s and a dash)
+  could overflow at a pane's narrower width — invisible before this pass
+  because the row always had the full screen width, but the default
+  800px-wide flutter test surface already triggers `columnsAt() >= 2`
+  (`columnsAt(800)` returns 2), so several *pre-existing* tests with real
+  window data (`Save round-trips...`, `clearing a day removes it...`)
+  started failing the moment the split landed. Changed that inner `Row` to
+  a `Wrap` — identical single-line rendering at full width, falls back to a
+  second line instead of overflowing at a narrower one. All pre-existing
+  tests pass again, unmodified.
+- **`show_guardian.dart`** — the most content-dense of the four: Pane A is
+  the ask composer alone; Pane B is the pending-asks section, the shelf,
+  and the received-show reply tiles, stacked together as a unit in their
+  original order — not spread across both panes. §9.10's three invariants
+  (the loud 3-ask cap, the reply-in-kind nudge, showing counts on the
+  guardian side only, per P2) are untouched; repositioning existing
+  elements into two columns adds no new interactive or scored element.
+- All four narrow paths render the exact same widgets as
+  `composeChildren`/`listChildren` spread back into one flat `Column`, not
+  a nested wrapper — `care_note.dart`, `availability_screen.dart`, and
+  `show_guardian.dart` in the screen's original top-to-bottom order
+  unchanged; `handover_notes.dart` deliberately reorders (compose above
+  list, matching this tier's own convention) as part of the restructuring
+  described above, which its own file header and this entry both call out
+  rather than leaving unstated.
+
+### Tests
+- 4 new tests per file (16 total), following the established four-case
+  shape: a genuinely wide viewport (1100×900) renders the two-pane `Row`
+  (a named `Key` per file — `handoverNotesTwoPaneRow`, `careNoteTwoPaneRow`,
+  `availabilityTwoPaneRow`, `showGuardianTwoPaneRow`) with both panes' real
+  content present; the Fold5 cover width (344px) and a standard phone width
+  (390px) both keep the single stacked column with no `Row` at all; and a
+  real interaction (adding a handover note, sending a care note, saving
+  availability, sending an ask) still works correctly inside the wide
+  two-pane layout.
+- Every pre-existing test in all four files re-verified passing unchanged,
+  including after the `availability_screen.dart` `_dayRow` overflow fix
+  above — confirmed by re-running each file's full pre-existing suite both
+  before and after that fix.
+- `flutter analyze`: no issues found. `flutter test`: 1887/1887 (1871
+  baseline + 16 new), including the full client suite run together.
+
+### Backlog
+- Closes the last 4 of the 16 nav-reachable content screens this tier's
+  investigation named (9 batch A + 3 batch B closed early via v0.49.26 + 4
+  here). **The 16-screen device-adaptive backlog investigation is now
+  fully closed.** What remains, unscoped: roughly 40 non-priority screens
+  with no device-adaptive layout of any kind, and the pre-existing
+  zero-adaptive games — neither has had the same per-screen read this tier
+  gave its 16, and neither is scoped by this entry. See MASTERFILE.md
+  §8.11.1's own status note for the updated count.
+
+---
+
+## [0.49.28] — 2026-08-22 — §16.2 #6 Step 2: the self-signed cert's hostname gap fixed, and a recurring Docker Desktop crash-loop resolved
+
+The self-signed-cert gap v0.46.2 left open — the one still blocking a real
+device join against the local self-hosted Jitsi stack — turned out to be
+two separate problems, and fixing only the obvious one (untrusted issuer)
+would not have fixed the other (no hostname match). Found and fixed by
+actually generating a cert and checking what's served over the wire, same
+standard the rest of this Step already holds itself to.
+
+### Fixed
+- **`docker-jitsi-meet`'s own self-signed cert has zero X.509v3
+  extensions.** `openssl x509 -in cert.crt -noout -ext subjectAltName`
+  returned "No extensions in certificate" — just a legacy `CN=*` wildcard.
+  Modern TLS clients (Chrome/Chromium since ~2017, Android's default
+  stack, which is what `jitsi_meet_flutter_sdk` ultimately rides on) ignore
+  CN for hostname verification and require `subjectAltName`. This is a
+  **second, independent failure mode** from "untrusted self-signed cert" —
+  a device told to fully trust this cert's issuer would still fail on
+  hostname grounds, since there's nothing in the cert asserting it's valid
+  for `127.0.0.1` (or anything else) at all.
+- **`scaffold/tools/jitsi-selfhost/generate-dev-cert.sh`** (new) generates
+  a replacement cert with `subjectAltName=IP:127.0.0.1,DNS:localhost`
+  (matching the loopback address `call_screen.dart` already reaches via
+  `adb reverse` — see that file's own header) and writes it to
+  docker-jitsi-meet's own operator-override path
+  (`${CONFIG}/storage/web/keys/` — its `s6-overlay` config script already
+  supports and prefers a supplied cert over generating its own; confirmed
+  by reading that script, not assumed) rather than fighting nginx config
+  directly. Copies the *public* half to
+  `client/android/app/src/main/res/raw/jitsi_dev_cert.pem` — committed,
+  since a cert's public half isn't a secret; the private key stays on the
+  generating machine, in the gitignored `CONFIG` storage dir, never
+  committed.
+- **`network_security_config.xml`** gains a `<trust-anchors>` block scoped
+  to the existing `127.0.0.1` `<domain-config>`, referencing
+  `@raw/jitsi_dev_cert` alongside the system store (so this scope doesn't
+  become the *only* thing 127.0.0.1 traffic can trust).
+- Not hardcoded: adding a LAN IP for WiFi-based device testing (instead of
+  `adb reverse`'s USB loopback) is a deliberate, separate, undefaulted step
+  — `./generate-dev-cert.sh 192.168.x.x` — for the same reason
+  `devRoomServerBase` no longer hardcodes one (CHANGELOG `[0.46.0]`,
+  "Fixed").
+
+### Verified
+- After restarting the `web` container, `openssl s_client -connect
+  127.0.0.1:8443` confirms nginx actually serves the new cert, with the
+  correct SAN, over the wire — not just present on disk.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+Whether Android's `<trust-anchors>` mechanism itself resolves the handshake
+on a real device is still open. This session's own browser tool turned out
+to run in an isolated context that doesn't consult the Windows certificate
+store: importing the dev cert into `Cert:\CurrentUser\Root` and reloading
+still showed `net::ERR_CERT_AUTHORITY_INVALID`, so that path could not
+confirm or refute the trust-anchor XML — the import was removed afterward
+(`certutil -delstore`) rather than left in place for a check that told us
+nothing. The TLS-level fix (correct SAN, correct cert actually served) is
+real and independent of that gap; physical two-device re-verification —
+still not done, still no hardware access this session — is what would
+close it for real.
+
+### Fixed — unrelated, but blocked all of the above
+- **Docker Desktop crash-looped on startup**, unable to bring the stack up
+  at all: `starting services: initializing <Inference manager|Secrets
+  Engine>: listening on unix://...: remove ...: The file cannot be
+  accessed by the system.` Root cause: when the backend is killed
+  uncleanly, the Unix-domain-socket files its sidecar services listen on
+  are left as corrupted Windows reparse points that normal
+  `Remove-Item`/`fsutil reparsepoint delete` can't touch — confirmed this
+  is a recurring pattern on this dev machine (matching prior
+  `*_old_20260804`-style workarounds already sitting in
+  `%LOCALAPPDATA%`), not a one-off. Disabling `EnableDockerAI` does not
+  prevent it — confirmed already off, crashed anyway.
+  `-ResetToFactoryDefault` also doesn't help headlessly. Fix: rename both
+  known-recurring stale paths out of the way before every launch attempt
+  (clearing only the one path a given crash names is whack-a-mole — the
+  next crash just leaves the other one stuck). Not part of this repo — a
+  one-time machine fix, `C:\Users\Obliv\bin\Fix-DockerDesktop.ps1`.
+
+## [0.49.27] — 2026-08-22 — Device-adaptive backlog, batch A of 3: nine more screens get the comfortable-reading-width cap
+
+Continues v0.49.25's per-screen judgment discipline, not a mechanical sweep:
+a dedicated, read-only investigation read each of sixteen still-backlogged
+nav-reachable content screens individually and split them by their actual
+content shape into two treatments. Nine screens whose body is genuinely a
+single scrollable column — this release, "batch A" — get the same
+`comfortableReadingWidth` cap v0.49.25 introduced, wrapped around each
+screen's existing body completely unchanged. The other seven this
+investigation named (`letters_screen.dart`, `wants_needs.dart`,
+`expenses_screen.dart`, `care_note.dart` — batch B; `handover_notes.dart`,
+`availability_screen.dart`, `show_guardian.dart` — batch C) have a genuine
+list-selects-detail or compose-plus-list shape and were queued for the
+two-pane `Row`/`Expanded` treatment in separate upcoming batches, not this
+one — but three of them landed sooner than planned: **v0.49.26** (PR #46,
+merged first, built concurrently and independently of this investigation)
+gave `letters_screen.dart`, `wants_needs.dart`, and `expenses_screen.dart`
+that exact two-pane treatment already, on its own separate read of each
+screen. This entry — rebased onto that merge, renumbered from a same-day
+`0.49.26` version collision to `0.49.27` — corrects its own original count
+accordingly rather than leaving a stale "not touched in this release" claim
+against files that, by the time this lands, already were.
+
+### Changed — comfortable reading-width cap (batch A of 3, not a two-pane split)
+- **`journal_screen.dart`** — a permanently STILL surface (§8.13.5, P7): the
+  width cap is a pure `LayoutBuilder`-gated wrapper around the existing
+  `SingleChildScrollView`, adding zero new motion. The one entry-save fade
+  (consequence motion, not autonomous) is untouched.
+- **`siblings_screen.dart`** — not child-facing; standard application of the
+  established pattern.
+- **`emergency_card.dart`** — §8.13.5 "still" surface, read once, possibly in
+  a hurry, by a frightened child or a sitter who has never opened the app
+  before; the allergy card's first-in-scan-order position (§9.6.3) is
+  preserved byte for byte — the wrapper only constrains width, the vertical
+  sequence is untouched.
+- **`exchange_screen.dart`** — guardian-side; five stacked sections (hero
+  handoff card, bag manifest, running late, arrival, coming up) keep their
+  fixed order, and the manifest rows' fixed-width sent/returned checkbox
+  columns are untouched.
+- **`meds_care.dart`** — guardian-only, never a surface the child carries,
+  confirmed not reachable from `child_home.dart`.
+- **`family_agreement_screen.dart`** — read-only custody-order render; only
+  the READY state is wrapped — loading/error/empty stay `Center`-based and
+  untouched — and no editing UI is added.
+- **`the_book.dart`** — only the compiled-book state is wrapped; the
+  too-few-favourites empty state is already centered/minimal and untouched.
+- **`year_book.dart`** — the wrapper sits OUTSIDE the existing
+  `AnimatedSwitcher`, whose own year-switch transition is completely
+  untouched.
+- **`shared_reading.dart`** — CHILD-REACHABLE (pushed from `child_more.dart`'s
+  "Read together" tile) and the highest-care file in this batch: §9.13.2's
+  own invariant ("no page count and no percentage reach her... His screen...
+  may say line 3 of 11 plainly") is exactly why this screen gets the
+  reading-width cap INSTEAD OF a two-pane split — a split would have put both
+  `_HerScreen` and `_HisScreen` on screen at once on a wide viewport,
+  permanently exposing his screen's line-count digits next to hers instead of
+  gating them behind the existing toggle. The wrapper goes around the whole
+  toggle-driven body; the toggle logic itself, and the fact that exactly one
+  of `_HerScreen`/`_HisScreen` is ever built at a time, are both completely
+  unchanged.
+
+### Tests
+- One new test per screen (ten total — `shared_reading_test.dart` gets two)
+  confirming: at a wide test width (1100px) the wrapped content's width is
+  capped at `comfortableReadingWidth` (640px); at the Fold5 cover width
+  (344px) and a standard phone width (390px) the content renders at full
+  width, unchanged from before this pass.
+  `shared_reading_test.dart`'s second new test additionally asserts that at
+  the wide capped width exactly one of `_HerScreen`/`_HisScreen`'s content
+  (found by key) is present in the tree, never both — a structural proof the
+  width cap did not accidentally reintroduce a simultaneous two-pane view.
+- Every pre-existing test in all nine files re-verified passing unchanged.
+  Several already exercise a >=660px-effective width
+  (`emergency_card_test.dart`/`exchange_screen_test.dart`/
+  `meds_care_test.dart`'s own 800px-wide `pump()` helper, and
+  `family_agreement_screen_test.dart`'s default 800x600 test surface), so the
+  new cap is genuinely active during those runs — confirmed none of their
+  assertions depend on horizontal width or position, only on content
+  presence and vertical order, so the cap changes nothing they check.
+
+### Backlog
+- Closes 9 of the ~56 screens remaining after v0.49.25 (all nine are
+  nav-reachable content screens). The nav-reachable content-screen subset,
+  previously estimated at 11–15, is a precise 16 per this batch's own
+  investigation, split 9 (batch A, here) + 7 (batch B/C, originally queued
+  separately). Of that 7, `letters_screen.dart`/`wants_needs.dart`/
+  `expenses_screen.dart` were independently closed by the concurrent v0.49.26
+  tier — see that correction above — leaving only `care_note.dart` from batch
+  B plus all of batch C (`handover_notes.dart`/`availability_screen.dart`/
+  `show_guardian.dart`): **4 nav-reachable screens remaining, not 7.**
+  Overall: roughly 56 − 9 (here) − 3 (v0.49.26, concurrently) ≈ **44
+  screens remaining**. See MASTERFILE.md §8.11.1's own status note for the
+  updated count.
+
+### Verification
+- `flutter analyze` clean. `flutter test` — every Dart widget test green
+  (1859 passed, 0 failed), including the ten new tests, every pre-existing
+  test in the nine touched files, and the full client suite run together.
+
+---
+
+## [0.49.26] — 2026-08-22 — Device-adaptive priority tier, continued: wants_needs.dart, expenses_screen.dart, letters_screen.dart get message_banking.dart's real two-pane split
+
+v0.49.25 closed 4 of the ~60-screen device-adaptive backlog and left roughly
+56 remaining, deliberately not attempted mechanically — each screen needs its
+own read and its own judgment call. This entry continues that same
+one-screen-at-a-time discipline for three more: `wants_needs.dart`,
+`expenses_screen.dart`, `letters_screen.dart`. All three were read in full
+before deciding, and all three turned out to share `message_banking.dart`'s
+exact shape — two halves already visible in one `Column` at once — so all
+three get the same real `columnsAt() >= 2` `Row`/`Expanded` split, not an
+invented breakpoint.
+
+A fourth candidate, `journal_screen.dart`, was read and planned for the same
+treatment, then deliberately dropped mid-build: a separate, further-along
+effort was found already giving it a `comfortableReadingWidth` cap instead of
+a two-pane split, reasoning from §8.13.5's "a permanently STILL surface" —
+compose and read staying in one calm column rather than being pulled apart
+into side-by-side panes. That is a more considered fit for this specific
+screen's own documented character than a mechanically-applied two-pane split
+would have been, so this pass defers to it rather than duplicating or
+overriding it with a conflicting design.
+
+### Changed — real two-pane split
+- **`wants_needs.dart`** — the cleanest of the three: its two halves are
+  already the pre-existing, self-contained `_ItemSection` widgets ("Things I
+  want" / "Things I need"), untouched, now simply arranged as two `Expanded`
+  panes in a `Row` when `columnsAt() >= 2`, or spread back into the exact
+  original stacked `Column` order below that threshold. No price/cost field
+  exists anywhere near this change — P4's "own list, own input, own section"
+  separation is a pure layout question here, untouched by this restructuring.
+- **`expenses_screen.dart`** — needed one addition the pattern hadn't needed
+  before: the screen's own "Guardian ↔ guardian only" orientation banner
+  belongs to neither pane, so it now renders once, full-width, unsplit,
+  above the two-pane region in both layouts — the same treatment
+  `letters_screen.dart` below also uses for its own info banner. **P6's own
+  gate is untouched and unconditional**: `if (!inboxVisibleTo(widget.viewerRole))
+  return const _NotAGuardianSurface();` still runs first in `build()`, before
+  any pane, before `_seedIfNeeded()`, before any financial widget is even
+  constructed — confirmed against the actual diff, not assumed, since this is
+  the one screen in this tier where a layout mistake could plausibly widen
+  what a non-guardian viewer receives rather than merely rearrange it. Pane A
+  is "Needs your answer" (the pending-approval cards); Pane B is "Ledger"
+  (the settled-expense list).
+- **`letters_screen.dart`** — same shape as `journal_screen.dart` was going
+  to get before it was dropped from this tier (compose card | letters list),
+  but built anyway since no competing effort claimed this file: the
+  mail-lock info banner stays unsplit above the region; Pane A is the "Dear
+  future me…" compose card (text field, open-age chips, Seal it button);
+  Pane B is the sealed/opened letters list.
+- All three narrow-width paths are the exact same widget tree the screen
+  rendered before this change — the same widget lists spread back into one
+  flat `Column`, in original order, not two nested `Column`s wrapped around
+  visually-equivalent content. All three keep `SingleChildScrollView` +
+  `Column` (never `ListView`), so every list entry genuinely exists in the
+  tree rather than being sliver-virtualized away.
+
+### Tests
+- `wants_needs_test.dart`, `expenses_screen_test.dart`,
+  `letters_screen_test.dart`: 4 new tests each (12 total), following
+  `message_banking_test.dart`'s established four-case shape exactly — a
+  genuinely wide viewport (1100×900) renders the two-pane `Row` with both
+  panes' real content present; the Fold5 cover width (344px) and a standard
+  phone width (390px) both keep the exact single stacked column with no
+  `Row` at all; and a real interaction (adding a want, resolving a pending
+  expense approval, sealing a letter) still works correctly inside the wide
+  two-pane layout. No pre-existing test in any of the three files was
+  modified or removed — including `expenses_screen.dart`'s own structural P6
+  tests (the child_home.dart source-scan, the non-guardian-viewerRole
+  render-nothing-financial check), which stay exactly as they were.
+- `flutter analyze`: no issues found. `flutter test`: 1861/1861 (1849 + 12
+  new), including the full pre-existing suite unchanged.
+- Every implementation was independently adversarially re-verified against
+  the real, current file contents and a real re-run of both commands — not
+  trusted from the implementing pass's own report — with particular scrutiny
+  on `expenses_screen.dart`'s P6 gate, confirmed byte-for-byte outside the
+  diff.
+
+### Backlog
+- This tier closes 3 more of the remaining ~56 screens named in v0.49.24's
+  finding, leaving roughly 53 before whatever `journal_screen.dart`'s own,
+  separate landing closes on its own account. `meds_care.dart` remains a
+  named, deferred candidate (three sections, not two — needs its own design
+  judgment, not a mechanical split) from v0.49.25's own account, untouched
+  again here.
+
+---
+
+## [0.49.25] — 2026-08-22 — Device-adaptive priority tier: message_banking.dart's real two-pane split, plus a comfortable-reading-width cap for three screens judged not to fit one
+
+v0.49.24's own 12th finding — roughly 60 screens with no device-adaptive
+layout at all, of which 15–19 are nav-reachable content screens — named a
+priority tier of 4 to start with: `message_banking.dart`,
+`homework_screen.dart`, `weeks_screen.dart`, `inbox_screen.dart`. Each of the 4 was actually
+read before deciding its treatment, not assigned one mechanically from the
+audit's generic label: only `message_banking.dart` genuinely has a
+form-plus-list shape that fits `court_export.dart`'s established two-pane
+`Row`/`Expanded` pattern. The other three do not — `homework_screen.dart` is
+explicitly documented (§8.13.5) as "the one surface in the product that asks
+her to concentrate," deliberately the sparsest surface in the product, with
+no list-selects-detail shape to split in the first place; `weeks_screen.dart`
+is a rhythm visualization (a `Wrap` of night-beads) that already reflows on
+its own as width grows; `inbox_screen.dart`'s only "detail" relationship is a
+`Navigator.push` to a full-screen `ReceiptScreen`, and turning that into a
+persistent side-by-side pane would change its interaction model — a bigger,
+separate design decision outside this pass's scope. This is a record of that
+per-screen judgment, not a mechanical apply-to-all.
+
+### Added
+- **`form_factors.dart` gains one new named constant, `comfortableReadingWidth`
+  (640).** A typography-driven reading-width cap, not a tenth posture —
+  orthogonal to `columnsAt()`: it only ever applies within a screen still
+  rendering ONE column. Documented in the constant's own doc comment as
+  explicitly NOT belonging in `formFactors`/`FORM_FACTORS`.
+
+### Changed — real two-pane split
+- **`message_banking.dart`** (guardian-side compose form + banked-message
+  list, genuinely both halves already visible in one `Column` at once) now
+  wraps its body in a `LayoutBuilder` and, at `columnsAt() >= 2`, renders the
+  compose half (heading, subtitle, message field, delivery-window stepper,
+  bank button, conditional repeat-warning banner) and the list half (divider,
+  summary line, conditional revoke-all row, every `_BankedTile`) as two
+  `Expanded` panes in a `Row`, keyed `bankingTwoPaneRow` for testability. At
+  `columnsAt() < 2` the two panes' widget lists are spread back into ONE flat
+  `Column` in the exact original order — not two nested `Column`s wrapped
+  around the same content, an actually-identical widget tree to before this
+  change, not merely a visually-equivalent one. No change to `_BankedTile`,
+  `_BankingMessage`/`_BankStatus`, or any state method.
+
+### Changed — comfortable reading-width cap (not a two-pane split)
+- **`homework_screen.dart`, `weeks_screen.dart`, `inbox_screen.dart`** each
+  wrap their existing scrollable body in the same `LayoutBuilder` gate
+  (`columnsAt() >= 2`) and, only when wide, center the unchanged content
+  inside a `ConstrainedBox(maxWidth: comfortableReadingWidth)` — so a single
+  column of prose stops stretching edge-to-edge on a 10-inch tablet or
+  desktop. `homework_screen.dart`'s `AnimatedSwitcher`/`fadeMs` motion-budget
+  logic is untouched inside the cap. `weeks_screen.dart` and
+  `inbox_screen.dart` each apply the cap to BOTH their empty-state and
+  populated-state return paths. Below the same threshold, all three render
+  their prior, uncapped `ListView`/`Center` tree exactly as before.
+
+### Tests
+- `message_banking_test.dart`: 4 new tests — the two-pane `Row` renders at a
+  wide viewport (1100px) and is genuinely functional there (composing and
+  banking still works); the Fold5 cover width (344px) and a standard phone
+  width (390px) both keep the single stacked column with no `Row` at all.
+- `homework_screen_test.dart`/`weeks_screen_test.dart`/`inbox_screen_test.dart`:
+  1 new test each confirming the cap engages (rendered content width equals
+  `comfortableReadingWidth`, 640, not the viewport) at a wide tablet/desktop
+  width and does NOT engage (content fills the full viewport width) at
+  either the Fold5 cover width or a standard phone width.
+- All pre-existing tests across all four files pass unchanged — including
+  ones that, at Flutter's default 800×600 test viewport, now exercise the
+  new wide-path code (columnsAt(800) = 2) rather than the narrow path,
+  since none of them depend on physical layout position, only on the
+  widget tree. `flutter test`: 1849/1849 passing (1842 + 7 new).
+  `flutter analyze`: no issues found.
+
+### Backlog
+- Of the ~60 screens with no device-adaptive layout named by v0.49.24, this
+  tier closes 4 — all nav-reachable content screens. Roughly 56 remain
+  overall; the nav-reachable content-screen subset drops from 15–19 to
+  11–15. See MASTERFILE.md §8.11.1's own status note for the updated count.
+
+---
+
+## [0.49.24] — 2026-08-22 — Compatibility/dependency-audit fix pass: 11 mechanical fixes across dependency resolution, device-adaptive coverage, and canvas performance
+
+**Header restored — a real, confirmed regression, not touched up cosmetically.**
+This entry's own header line was silently deleted by v0.49.25's merge commit
+(`c457a52`), leaving this body orphaned directly under v0.49.25's own
+`### Backlog` section with no heading of its own — exactly the class of
+silent deletion this file's own preamble calls a process failure. Found
+incidentally while resolving the v0.49.26/v0.49.27 rebase below (both land
+in this same region of the file); restored here rather than left, since nothing
+about the rebase this entry accompanies depends on leaving it broken.
+
+A 3-dimension compatibility audit (dependency-resolution, device-adaptive
+coverage, performance) ran over the whole app, every finding independently
+adversarially re-verified (a second pass tried to REFUTE each one by reading
+the actual code, and in one case running a diagnostic probe). 13 findings
+raised, 12 confirmed real, 1 correctly refuted — a `child_home.dart` action-
+grid claim that had no live bug once actually tested; left untouched. Of the
+12 confirmed, 11 were concrete, mechanical single/multi-file fixes, all
+shipped here. The 12th — roughly 60 screens with no device-adaptive layout
+at all, of which 15–19 are nav-reachable content screens that should
+eventually get a `form_factors.dart`-driven two-column tablet layout — is a
+prioritized backlog item, deliberately **not** attempted this pass: it needs
+real per-screen design and testing judgment a mechanical fix pass is not
+scoped to invent, and is left for a human decision.
+
+### Fixed — dependency resolution
+- **`scaffold/client/pubspec.yaml`'s declared SDK floor was looser than what
+  was already resolved.** `sdk: ">=3.4.0 <4.0.0"` with no `flutter:` key
+  understated both `pubspec.lock`'s own resolved `sdks:` stanza and the
+  Flutter version CI is actually pinned to (3.44.8). Now
+  `sdk: ">=3.12.0 <4.0.0"` / `flutter: ">=3.44.0"` — a floor tightened to
+  match what was already true, not a package-version change; `flutter pub
+  get` resolves cleanly, unchanged.
+- **`scaffold/package.json` declared no `engines` field**, so nothing
+  enforced that `jsdom` — the one dependency in this manifest with its own
+  `engines.node` constraint (`^22.22.2 || ^24.15.0 || >=26.0.0`, confirmed
+  via `package-lock.json`, not assumed) — could actually run on the Node
+  version installing it. Added that exact range plus `engineStrict: true`;
+  `.github/workflows/verify.yml`'s `actions/setup-node@v4` step, previously
+  a bare `'22'` (which resolves to whatever latest 22.x npm ships and is not
+  guaranteed to satisfy `^22.22.2`), now pins a concrete `'22.22.2'`.
+- **`jsdom` and `livekit-server-sdk` were misclassified as production
+  `dependencies`** despite neither shipping in any production code path —
+  their only real callers are `demo/src/play.ts` (a dev-only jsdom-driven
+  probe harness) and `packages/session-runtime/test/*.test.mjs` (test-only).
+  Both moved to `devDependencies`, alongside the existing `esbuild`;
+  `dependencies` now holds exactly chess.js, jpeg-js, luxon, pg, pngjs,
+  tesseract.js. `npm install` regenerated `package-lock.json` accordingly;
+  the demo build (jsdom) and `packages/session-runtime/test/session.test.mjs`
+  (livekit-server-sdk) both still resolve and pass, confirming
+  devDependencies still install normally via `npm install`/`npm ci` — CI's
+  own `verify.yml` never passes `--omit=dev`.
+- **`flutter_lints` was two majors behind (`^4.0.0` → `^6.0.0`).** Bumped;
+  `flutter pub get` resolved `flutter_lints 6.0.0` cleanly. `flutter analyze`
+  under the new ruleset surfaced 13 new info-level lints across the whole
+  `lib/` tree (`use_null_aware_elements` ×5 in `api_client.dart`,
+  `unnecessary_underscores` ×2, `unnecessary_library_name` ×2,
+  `unintended_html_in_doc_comment` ×4 in `game_guess_doodle.dart` and
+  `webauthn_channel.dart`) — none in the files this pass touches directly,
+  all fixed (9 via `dart fix --apply`, 4 by hand — wrapping angle-bracket
+  generic types in backticks inside doc comments). `flutter analyze` is
+  clean: **No issues found!**
+
+### Fixed — device-adaptive coverage
+Nine files each hand-rolled their own single, arbitrary pixel breakpoint
+(`maxWidth < 420` or `>= 560`) instead of `form_factors.dart`'s real,
+tested §8.11.1 posture logic (`columnsAt()`), textScale-unaware and
+matching none of that table's own nine boundaries — the exact anti-pattern
+§8.11.1's own v0.49.13 note already named and partially fixed elsewhere
+(`court_export.dart`, `game_tictactoe.dart`, `game_dotsboxes.dart`).
+- **`guardian_home.dart`'s action grid** hardcoded `crossAxisCount: 2` from
+  raw `constraints.maxWidth`. Now computes columns from `columnsAt()`,
+  clamped to `[2, 3]` — the clamp is load-bearing: an unclamped swap would
+  have collapsed both the Fold5 cover screen and the 7-inch `tabletSmall`
+  posture from the deliberately-tuned 2 columns down to 1, since
+  `columnsAt()` only returns 2+ above 660px effective width. Only scales up
+  on genuinely wide surfaces, never down.
+- **`storyteller_screen.dart`** (`constraints.maxWidth >= 560`),
+  **`degradation_banner.dart`**, **`colour_daily.dart`**,
+  **`colouring_screen.dart`**, **`doodle_desk.dart`**, and
+  **`maturation_ladder.dart`** (all `constraints.maxWidth < 420`) each now
+  read `columnsAt()` directly, matching the pattern already established in
+  `court_export.dart`/`game_tictactoe.dart`/`game_dotsboxes.dart`. Not
+  numerically neutral by design — the threshold shifts from the old literal
+  to `columnsAt()`'s real ~660px effective-width boundary and becomes
+  textScale-aware, matching the app's real posture boundaries rather than
+  an arbitrary number. `degradation_banner.dart`'s boolean sense was
+  already correct (`narrow` still means narrow) and needed no ternary
+  change; the other five needed none either — only the `narrow`/`wide`
+  computation changed, not how callers branch on it.
+- **`game_checkers.dart`/`game_chess.dart`'s board `ConstrainedBox`**
+  (`maxWidth < 420`) required more care: the consuming ternary read
+  `narrow ? constraints.maxWidth : 460` (narrow meant "fill the available
+  width"). Renaming the variable to `wide` (`columnsAt() >= 2`) without
+  flipping the ternary branches would have rendered the board backwards —
+  capped when it should fill, and vice versa — on both real test devices.
+  Both files now read `constraints: BoxConstraints(maxWidth: wide ? 460 :
+  constraints.maxWidth)`, branches flipped along with the rename, with the
+  same "real §8.11.1 posture logic, not a made-up breakpoint" comment
+  `game_tictactoe.dart`/`game_dotsboxes.dart` already use. Both files' own
+  widget tests, pinned to the Fold5 cover-screen width (344px) and to
+  344/673/390/1100px responsive-audit widths, pass unchanged — confirming
+  `columnsAt()` classifies 344px as narrow/1-column exactly as the old
+  breakpoint did, and that no test hardcoded the old 420px assumption in
+  the shifted 400–419px range.
+
+### Fixed — canvas performance
+Two files (`annotation_canvas.dart`, `annotation_canvas_view.dart`) plus
+their two real screen consumers (`game_draw_together.dart`,
+`game_guess_doodle.dart`) and one more sharing the same pointer-move hot
+path (`doodle_desk.dart`).
+- **`AnnotationCanvas.visible()` recomputed and re-sorted the full stroke
+  history on every call**, including once per pointer-move frame during a
+  live drag. Now cached (`_visibleCache`), invalidated only by a real
+  mutation (`add`/`undo`/`redo`/`erase`) — an unmutated canvas now returns
+  the exact same `List<Stroke>` instance between frames.
+- **`AnnotationCanvasView` painted the full committed stroke history and
+  the in-progress live stroke together, unconditionally, on one
+  `CustomPaint` every frame.** Split into two layers — a `RepaintBoundary`-
+  wrapped committed layer (`shouldRepaint` now `!identical(oldStrokes,
+  strokes)`, made meaningful by the caching above) and a small, always-
+  repainting live layer — so a live drag no longer repaints the whole
+  stroke history every pointer-move. `game_draw_together.dart`'s
+  `_SharedInkPainter` split into `_CommittedInkPainter`/`_LiveInkPainter`
+  (the former still implements the existing `InkPainterStrokes` seam for
+  test compatibility); `game_guess_doodle.dart`'s `_SoloInkPainter` got the
+  identical split (`_CommittedSoloInkPainter`/`_LiveSoloInkPainter` — Dart's
+  per-file privacy means the classes themselves can't be literally shared,
+  only the `InkPainterStrokes` seam, matching this file's own established
+  precedent for parallel-not-shared painter code).
+- **A companion O(n²) fix**, same hot path: `_onPanUpdate` in all three
+  files (`game_draw_together.dart`, `game_guess_doodle.dart`,
+  `doodle_desk.dart`) rebuilt `_liveStroke` as a brand-new list
+  (`[..._liveStroke, newPoint]`) on every pointer-move — an O(n²) copy
+  across a long stroke. Now `_liveStroke.add(newPoint)`, safe only because
+  `_onPanStart` already reassigns `_liveStroke` to a fresh list at the
+  start of every stroke and `_onPanEnd` already reassigns (never
+  `.clear()`s) it afterward — both preserved exactly as-is; `_onPanEnd`
+  hands `_liveStroke` to `AnnotationCanvas.add()` by reference with no
+  defensive copy there, so clearing in place would have corrupted the
+  just-committed stroke.
+- **One deliberate deviation from the first-drafted fix, found and fixed
+  before landing, not shipped and found later:** the originally-proposed
+  live-layer `shouldRepaint` compared `oldDelegate.live.length != live.length
+  || !identical(oldDelegate.live, live)`. With `_onPanUpdate` now mutating
+  `_liveStroke` in place instead of rebuilding it, the "old" and "new"
+  painter end up aliasing the *exact same* `List<StrokePoint>` object by
+  the time `shouldRepaint` runs — Dart lists are reference types, so both a
+  length comparison and `identical()` read the object's current,
+  already-mutated state either way, and neither can ever observe a change
+  mid-stroke. Confirmed directly with a throwaway `dart` probe (mutate a
+  list in place after aliasing it; both checks read true post-mutation),
+  not assumed from reading the diff. As shipped, `_LiveInkPainter`/
+  `_LiveSoloInkPainter.shouldRepaint` return `true` unconditionally — this
+  layer is small and already isolated by the committed layer's own
+  `RepaintBoundary`, so an unconditional repaint here is the correct, cheap
+  choice, not a missed optimization.
+- Existing `game_draw_together_test.dart`/`game_guess_doodle_test.dart`
+  helpers assumed a single `CustomPaint` under the canvas key; updated to
+  filter to the one whose painter implements `InkPainterStrokes` (the
+  committed layer), since the view now renders two. All pre-existing
+  functional widget tests across `annotation_canvas_test.dart`,
+  `game_draw_together_test.dart`, and `game_guess_doodle_test.dart` pass
+  unchanged otherwise, proving the refactor behavior-preserving. Not
+  independently verifiable this pass: the actual frame-timing improvement
+  during a long real drawing session needs a physical device, none
+  available tonight — deferred, not skipped.
+
+### Verified, not changed
+- `child_home.dart`'s action grid — the one refuted finding from the audit.
+  Read carefully and probed; no live bug exists at any tested width. Left
+  alone.
+- The broader ~60-screen device-adaptive coverage gap (`message_banking.dart`,
+  `homework_screen.dart`, `weeks_screen.dart`, `inbox_screen.dart`,
+  `journal_screen.dart`, and roughly 15 others) — catalogued, not built.
+  `form_factors.dart` was not added to any file beyond the nine named above.
+
+### Verification
+`flutter analyze` clean (0 issues) under the bumped `flutter_lints`.
+`flutter test` — all 1842 widget/unit tests pass, including the
+Fold5-cover/main, phone, and desktop-scale responsive-audit suites for
+`guardian_home.dart` (via `invariants_test.dart`), `game_checkers.dart`,
+`game_chess.dart`, and every other file this pass touched. `npm install`
+regenerates `package-lock.json` cleanly; the JS/TS suites this pass's
+dependency changes could plausibly affect (`packages/session-runtime/test/
+session.test.mjs`, 67/67; `demo/test/drive.test.mjs`, 116/116, jsdom-backed)
+pass, along with every other JS test file run directly (40 of 42 files ran
+clean; the remaining two — `packages/transport/test/notify.test.mjs` and
+`packages/homework/test/homework.test.mjs` — need a live Postgres and
+ImageMagick respectively, both real external dependencies this local
+Windows session does not have provisioned, exactly as `verify.yml`'s own
+comments describe; left to CI, which provisions both).
+
+---
+
+## [0.49.23] — 2026-08-21 — A documentation-staleness pass: one more wrong citation, one stale branch claim, one stale footer
+
+Second of two audit-style passes run tonight (the first, a 6-dimension
+adversarial code-quality audit over PRs #34–#41, landed as v0.49.22). This
+one is not about code correctness — it is a full staleness/citation sweep
+of `MASTERFILE.md`, this file, `MARKUP.html`/`scaffold/demo/shell.html`,
+both `docs/superpowers/specs/` design docs, `README.md`/`BRANCHES.md`, and
+every spec/migration/test-file citation carried by the fourteen Dart files
+Play Together and the theme suite added this session
+(`game_tictactoe.dart`, `game_dotsboxes.dart`, `game_draw_together.dart`,
+`game_guess_doodle.dart`, `game_silly_sentence.dart`,
+`game_would_you_rather.dart`, `game_two_truths.dart`,
+`game_twenty_questions.dart`, `game_copy_pattern.dart`, `game_find_it.dart`,
+`game_curated_activity.dart`, `annotation_canvas_view.dart`, `theme.dart`,
+`theme_picker_screen.dart`).
+
+### Fixed
+- **`theme_picker_screen.dart` cited the wrong test filename.** Its own
+  header said the child shell's no-settings-affordance contract was proven
+  by `child_no_settings_test.dart`; the real file — matching §8.16's own,
+  already-correct citation of the same test — is
+  `child_no_settings_contract_test.dart`. Same class of bug as the two
+  citation errors PR #41 already fixed (`game_two_truths.dart`'s fabricated
+  spec quote, `theme.dart`'s wrong migration filename); this pass swept all
+  fourteen new Dart files' citations against the real filesystem looking
+  for more instances of the same pattern and found exactly one.
+- **`BRANCHES.md` overstated how current the four `device/*` branches
+  are.** It said they were "sitting at the same commit as `main`" as of
+  2026-08-08 — true on that date, but read today it implies current parity.
+  `main` has since moved 37 commits ahead while the device branches
+  (correctly, by design — see that file's own "Working with a device
+  branch" section) have not. Reworded to state plainly that the branches
+  are still identical to *each other*, not to `main`, and that falling
+  behind `main` between deliberate merges is expected, not a sign anything
+  is broken.
+- **`MASTERFILE.md`'s own footer said "End of MASTERFILE v0.49.21"** —
+  stale since the v0.49.22 audit-fix pass bumped the document header two
+  versions past it without updating the matching line at the bottom.
+  Corrected, and now kept in the same edit as the header bump going
+  forward.
+
+### Verified, not changed
+- **§9.2's Play Together status notes** (Batches A/B/C, and the v0.49.22
+  audit-fix correction disclosing Batch A's shared-canvas-wrapper gap) were
+  read in full against the current source and already accurately describe
+  the FINAL, fully-corrected state — nothing here was an intermediate
+  snapshot left behind.
+- **§8.16's theme-customization status note** and both
+  `docs/superpowers/specs/` design docs were read in full: the Play
+  Together spec's own "common canvas-hosting wrapper" line (~74) matches
+  the real spec text verbatim (already correctly cited by MASTERFILE,
+  CHANGELOG v0.49.22, and `annotation_canvas_view.dart`'s own header); the
+  intuitivism spec correctly still lists screen-level simplification and
+  navigation/density as separate, not-yet-scoped later sub-projects — no
+  false "done" claim, no silently-dropped pending item.
+- **`MARKUP.html`/`scaffold/demo/shell.html`** — both already declared
+  5447 assertions and version 0.49.22, matching the real, independently
+  recomputed total (this pass added no test assertions, so the total does
+  not move). The `gamePicker` screen entry's text and its `amended
+  0.49.17` tag are correct AS WRITTEN: `packages/games/src/games.ts`'s own
+  `CATALOGUE` still has exactly the original four entries
+  (`tictactoe`/`dotsboxes`/`memory`/`story`) — Play Together Batches A–C
+  only ever touched the Flutter client's own `game_logic.dart` catalogue,
+  never the JS demo, exactly as v0.49.18–v0.49.21's own entries in this
+  file already state. Not stale; deliberately unchanged.
+- **Migration and source-file citations** across MASTERFILE and this file
+  were checked against the real filesystem. Two near-misses turned out to
+  be correct on inspection: `0002_seed.sql` is a real file, just under
+  `db/test/` rather than `db/migrations/`; `0008_account_deletion.sql`
+  (v0.49.4 era text) is a correct historical reference to a sibling
+  branch's migration that was renumbered to `0011` before merge, not a
+  citation of a file that was ever supposed to exist under that name on
+  `main`.
+- **`push_channel_test.dart`'s CRLF issue** — grepped for every mention in
+  this file. The many historical entries correctly describing it as an
+  open, pre-existing, unrelated failure are accurate AS OF THEIR OWN DATE
+  (the failure was real until PR #38); nothing describes it as still open
+  today, and v0.49.22's own entry already states plainly that it was fixed
+  for real ahead of that pass.
+
+### Found, deliberately not fixed here (out of scope for a citation pass)
+- **This file's own early version history, roughly `0.46.3` through
+  `0.48.0`, carries the version number `0.47.0` on five separate,
+  substantively different entries** (guardian authentication, real
+  homework OCR, account deletion, "send one back," and push delivery's
+  server side), plus one entry that was never assigned a version number at
+  all and still reads `## [Unreleased]` (the guardian-availability entry).
+  This is real, and it does mean this file's version numbers are not
+  globally unique across that stretch. It is left alone here because it is
+  pre-existing history from well before this session (dated 2026-08-08
+  through 2026-08-11) that MASTERFILE.md already cites correctly and
+  consistently AS WRITTEN — including a literal, working citation to
+  `` CHANGELOG's `[Unreleased]` → "Guardian availability" entry `` (§9,
+  guardian availability's own status note). Renumbering now would require
+  rewriting every one of those existing MASTERFILE cross-references too,
+  is a large, high-risk change with real potential to introduce new
+  breakage, and does not match this pass's scope (citation accuracy
+  against current reality, not a historical-record rewrite). Flagged here
+  for a human decision, not silently left undocumented.
+- **`VISUAL.html` is stuck at version `0.39.1`** while `MASTERFILE.md`,
+  this file, and `MARKUP.html` are all at `0.49.23` — roughly ten minor
+  versions of drift. This is a long-standing, self-acknowledged pattern in
+  this project (see this file's own `0.4.x`–`0.5.x`-era entries describing
+  VISUAL as periodically "refreshed," not updated every release) and is
+  not enforced by `check-markup.mjs`/`verify.sh`, which check MARKUP and
+  the demo against each other and against this file, never VISUAL. Bringing
+  it current would mean authoring roughly ten versions' worth of new visual
+  panels — genuine content/design work, not a citation fix — so it is
+  reported here rather than attempted blind in an unsupervised pass.
+
+### Verified
+- No code was changed. `flutter analyze` (client/): clean. `flutter test`
+  (client/): **1842 passed, 0 failed** — unchanged from v0.49.22, run
+  directly against a native Windows Flutter 3.44.8 install (matching CI's
+  own `subosito/flutter-action` pin).
+- `bash tools/verify.sh` run for real (not assumed): WSL2 Ubuntu 24.04,
+  Node 22.23.2 (matching CI's `actions/setup-node` pin — this environment's
+  default Node 18 cannot load this repo's `.ts` re-exports at all, an
+  environment gap, not a code bug), a real local Postgres 16 cluster on
+  port 5433, and a real `livekit-server` v1.8.0 binary fetched the same way
+  `.github/workflows/verify.yml` does. Every suite green, **3605 passed, 0
+  failed** for the JS/DB/demo/livekit portion; combined with the 1842 Dart
+  cases above, **5447 total** — exactly matching `MARKUP.html`'s and
+  `scaffold/demo/shell.html`'s already-declared count, confirmed rather
+  than assumed. C7/D2 fail only in a JS-only local run that has no Flutter
+  toolchain wired to `verify.sh` (the same "MISSING TOOLCHAIN, not a skip"
+  gap this file's own `tools/verify.sh` already names honestly) — not a
+  real drift.
+- Per this project's standing assertion-count-drift rule: no test
+  assertions were added or removed by this pass, so `MARKUP.html` and
+  `scaffold/demo/shell.html` keep their existing `5447`/`0.49.22` values as
+  the base and are bumped to `0.49.23` alongside every other canonical
+  document in this same pass; `DEMO.html` rebuilt; `check-markup.mjs
+  --total 5447` reconfirmed clean locally.
+
+---
+
+## [0.49.22] — 2026-08-21 — An adversarial audit of PRs #34–#40, and what it actually found
+
+Before this pass, tonight's run of work (PRs #34 through #40 — tic-tac-toe/
+dots-and-boxes, the six-palette theme suite, Play Together Batches A/B/C, and
+the `push_channel_test.dart` CRLF fix) went through a genuinely adversarial
+6-dimension audit, with every raised finding independently re-verified by a
+second pass whose job was to try to refute it. 9 findings were raised; all 9
+survived adversarial verification and are fixed here: 1 HIGH (a real P2
+child-safety gap), 4 MEDIUM, 4 LOW.
+
+### Fixed — HIGH (P2 child-safety)
+**`game_two_truths.dart`'s and `game_twenty_questions.dart`'s session history
+panels were a de facto win/loss tally.** Both build a session-persistent
+`_history` list, rendered in the shared `SessionHistoryPanel`
+(`game_curated_activity.dart`), where every entry encoded whether that
+round's guess was CORRECT or WRONG — "spotted the tall tale!" vs "was
+fooled — nicely done." in `game_two_truths.dart`; "guessed it!" vs "revealed"
+in `game_twenty_questions.dart`. That is a running correct/incorrect record
+— exactly what P2 ("no scores, streaks, ranks... no record") exists to
+prevent, even with no literal number ever shown. The batch's own sibling
+files, `game_would_you_rather.dart` and `game_silly_sentence.dart`, prove
+this was avoidable: they already populate the same shared history with
+CONTENT ONLY (what was chosen or written), never an outcome judgment.
+**Fix:** both files' `_history.add(...)` calls now record content only —
+`game_two_truths.dart`'s `_guess()` no longer branches on
+`revealed.guessedCorrectly!` for the persisted string, and
+`game_twenty_questions.dart`'s `_reveal()` no longer branches on
+`revealed.gotIt` for it — one neutral phrasing either way. The per-round
+TRANSIENT banner (`tallTaleResult`/`secretReveal`, reset every round, never
+persisted) keeps its softer "spotted"/"got past them"/"Nice — it was"
+wording deliberately; only the persisted list needed to lose the verdict.
+Both files' existing "P2 — nothing here counts anything" test groups gained
+a new test that reads the PERSISTED `sessionHistoryList`'s actual rendered
+content (not just its presence) across a mixed pair of rounds — one
+correct/gotIt, one incorrect/revealed — and asserts the outcome vocabulary
+never reaches it. This is a deliberately narrower sweep than the existing
+whole-screen forbidden-vocabulary test (which still correctly finds
+"spotted" in the transient banner and must keep doing so): checking
+PRESENCE of a history panel, not its content, is exactly the class of gap
+that let this ship uncaught the first time, so the new tests check content
+specifically, scoped to the one part of the screen where an outcome word
+would actually be a problem.
+
+### Fixed — MEDIUM
+- **`game_silly_sentence.dart`'s `decidedTo` template was grammatically
+  broken.** `textParts` inserted the action word directly after a period
+  with no subject: `['', ' decided to go ', '. Then, ', ' — ', '!']`
+  produced sentences like "...decided to go into the bathtub. Then, started
+  singing opera — because the moon told them to!" — a comma splice with no
+  subject for the second clause. Fixed: `'. Then, '` → `'. Then they '`,
+  reintroducing the subject pronoun, matching the convention the other four
+  templates already use. Verified against several real word-bank
+  combinations by hand; every resulting sentence now reads grammatically.
+- **`game_curated_activity.dart`'s shared `SessionHistoryPanel` had no
+  dedicated test for its own "newest-first" ordering contract.**
+  `entries[entries.length - 1 - i]` in its `itemBuilder` was exercised only
+  indirectly, by four consumer tests that each checked the panel EXISTS
+  after one round — never its content or order, and one entry can't
+  distinguish "newest first" from "append order" anyway. New file
+  `game_curated_activity_test.dart` (4 new test cases) pumps the widget
+  directly with `entries: ['first', 'second', 'third']` and asserts the
+  rendered order is `['third', 'second', 'first']`, plus the single-entry,
+  empty-list, and title-rendering cases the four indirect consumer tests
+  never isolated either.
+- **Batch A shipped without the spec's own required shared canvas wrapper.**
+  The approved spec (`docs/superpowers/specs/
+  2026-08-20-play-together-phase1-design.md`, line ~74) explicitly required
+  Batch A to share "a common canvas-hosting wrapper both screens use."
+  `game_draw_together.dart`'s `_Canvas` and `game_guess_doodle.dart`'s
+  `_Canvas` were near-identical, independently duplicated private widgets
+  instead (same Container/BoxDecoration/GestureDetector/CustomPaint
+  structure) — a silent omission against the batch's own approved design.
+  **Fix:** a new file, `annotation_canvas_view.dart`, exports
+  `AnnotationCanvasView` — the Container/decoration/GestureDetector/
+  CustomPaint boilerplate, parameterized by a caller-supplied `CustomPainter`
+  (so each screen keeps its own fixed-ink-color vs per-stroke-color painting
+  logic) and a `drawingEnabled` flag (`game_guess_doodle.dart` gates it on
+  `!revealed`; `game_draw_together.dart` leaves it always-on). Deliberately
+  a separate file from `annotation_canvas.dart` itself, which stays pure
+  Dart logic with no Flutter import by its own header's design. Both
+  screens' own private `_Canvas` classes are gone; both build on the shared
+  wrapper instead. A behavior-preserving refactor, not a rewrite — both
+  screens' full existing test suites (`game_draw_together_test.dart`,
+  `game_guess_doodle_test.dart`) pass unchanged against it. MASTERFILE's
+  Batch A status note now carries a correction disclosing this.
+- **`game_draw_together.dart` was missing the established `// ==== section
+  ====` divider convention** every other new game file — including its own
+  batch-mate `game_guess_doodle.dart` — uses. Fixed as part of the same
+  refactor above: a `state` divider above `DrawTogetherScreen`/
+  `_DrawTogetherScreenState`, a `widget` divider (byte-identical to
+  `game_guess_doodle.dart`'s own) above the painter/panel classes.
+
+### Fixed — LOW
+- **A hand-rolled 420px breakpoint survived in `game_tictactoe.dart` and
+  `game_dotsboxes.dart`.** Both had `final narrow = constraints.maxWidth <
+  420;` — not a real `form_factors.dart` posture boundary — capping the
+  single-column board at 460px. The capped `board` variable is only ever
+  used in the single-column (`!wide`) branch; the `wide` branch already
+  builds its own independently-capped `boardView` inside its `Expanded`. No
+  second breakpoint was doing any real work. Fixed: `narrow` and the
+  420/460 magic numbers are gone; the single-column board is simply
+  `Center(child: boardView)`.
+- **`game_two_truths.dart`'s header cited spec language that doesn't
+  exist.** It attributed "a place you've been"/"something you're good at"
+  to "the spec's own worked examples" — the actual spec gives this activity
+  no worked examples at all, just a one-line catalogue row (`"co-op, curated
+  prompt categories (not open text)"`). Reworded to attribute the reasoning
+  to this file's own judgment applying the spec's broader no-personal-data
+  intent, not to examples the spec never gave. The same fabricated
+  attribution in this CHANGELOG's own v0.49.20 "Design decision" entry is
+  corrected identically.
+- **`game_would_you_rather.dart`'s "power-read" prompt was mislabeled.**
+  Its id, `power-read`, named nothing the prompt was actually about (it
+  overlapped in theme with the separate `animal-talk` prompt: "be able to
+  talk to any animal" / "be able to understand every language in the
+  world"). Renamed to `power-animal-language`, matching its real content;
+  the options themselves are unchanged.
+- **`theme.dart` cited the wrong migration filename.** Its doc comment said
+  `db/migrations/0017_theme_preference.sql`; the real file (as every other
+  citation of it in this codebase — `routes.mjs`, `pool.ts`, `api_client.
+  dart`, the theme_preference test — already correctly says) is
+  `db/migrations/0017_child_theme_preference.sql`. Fixed.
+
+### Tests
+- `game_two_truths_test.dart` — 1 new test case, reading `sessionHistoryList`
+  content across a correct-then-incorrect pair of rounds.
+- `game_twenty_questions_test.dart` — 1 new test case, reading
+  `sessionHistoryList` content across a gotIt-then-revealed pair of rounds.
+- `game_curated_activity_test.dart` — new file, 4 test cases proving
+  `SessionHistoryPanel`'s newest-first ordering, single-entry, empty-list,
+  and title-rendering behavior directly, none of which any indirect
+  consumer test isolated before.
+- `flutter analyze` clean. Full `flutter test`: 1842 cases, all green (no
+  known-failing suite remains — `push_channel_test.dart`'s CRLF issue,
+  tracked since v0.49.6, was fixed for real in PR #38, ahead of this pass).
+- Per this project's standing assertion-count-drift rule: this entry
+  initially carried the v0.49.21 total forward unchanged (5441) pending the
+  real CI-computed total. CI ran, confirmed every suite green (`COMPUTED
+  TOTAL 5447 passed 0 failed`) and correctly failed C7/D2 on the stale
+  declared count — the six new Dart test cases above account for the
+  difference. `MARKUP.html`/`scaffold/demo/shell.html` are synced to 5447
+  in this same pass, `DEMO.html` rebuilt, and `check-markup.mjs --total
+  5447` reconfirmed clean locally.
+
+---
+
+## [0.49.21] — 2026-08-21 — Play Together, Batch C: two younger-age visual activities — Phase 1 complete
+
+Batch C of the Play Together Phase 1 spec (`docs/superpowers/specs/
+2026-08-20-play-together-phase1-design.md`) — the last of three sequential
+batches. Smallest and lowest-risk by design (icon/color/shape-based,
+pre-reader-friendly, self-scaling, no text-heavy content to draft), and it
+closes the whole initiative: every activity the spec named across Batch A,
+Batch B, and Batch C now has a real board or screen. **The catalogue's
+local pass-and-play roster grows from ten `GameKind`s to twelve.**
+
+### Added
+- **`client/lib/game_copy_pattern.dart`** (new) — Copy the Pattern, minAge
+  2. A genuine Simon-says: `firstPattern()`/`growPattern()` build a growing
+  sequence of tile indices (four color-AND-icon tiles — `patternTiles`),
+  played back visually one tile at a time (a real §8.13 consequence-
+  animation chain, 180ms transitions, never a loop), then tapped back on
+  the same four-tile grid. A correct full round grows the pattern by
+  exactly one and plays again — the pattern LENGTH is the entire difficulty
+  curve, with no parent-set dial, matching the spec's own reasoning that
+  this co-op activity has nothing to be "behind" at. Zero-text gameplay is
+  structural, not a claim: every tile's reference `name` exists only for a
+  `Semantics` label and a `Tooltip`, never rendered as on-screen text (a
+  widget test asserts this directly). A wrong tap resets INPUT PROGRESS
+  ONLY — the exact same pattern replays from its first tile, never
+  shrinking or restarting at length 1 — a conservative, explicitly-reasoned
+  open design decision (the spec didn't specify wrong-tap handling) made
+  per this run's overnight-autonomous instructions, matching this
+  codebase's existing house style for a child's mistakes (word search's
+  eight lives, checkers' no punishment) even more gently, since this
+  activity is co-op AND minAge 2. Device-adaptive per the spec's own words:
+  a single column stacks the pattern-display panel above the tap-grid; two-
+  plus columns sit them side by side, so a parent narrating "what comes
+  next" and the child's tap target are both visible without scrolling —
+  proven by the same layout-ROOT-type widget test (`Column` vs `Row`)
+  every prior batch established.
+- **`client/lib/game_find_it.dart`** (new) — Find It (I-Spy), minAge 2. A
+  curated scene (a fixed, in-repo arrangement of icon "objects" — never a
+  photo, never fetched, never generated at runtime) with tappable hidden
+  objects; the parent describes one out loud, the child taps it. Ships
+  three genuinely distinct curated scenes — `yardScene`, `kitchenScene`,
+  `toyBoxScene` — each with its own real icon set (Flutter's built-in
+  `Icons`, zero image assets, matching this codebase's icon-forward visual
+  style) AND its own hand-placed layout (a grid, an organic scatter, a
+  corners-plus-quadrants arrangement), never one scene re-skinned three
+  times with different icons at the same coordinates — asserted directly
+  by a test comparing every scene pair's icon sets and object positions.
+  **The one activity in the whole Phase 1 spec where device posture
+  changes real CONTENT, not just layout**: `visibleObjectsFor()` renders a
+  scene's first five hand-placed objects at a single-column posture and
+  its full curated set (nine per scene) at two-plus columns, text-scale-
+  aware exactly like `columnsAt()`'s own effective-width math (§8.8) so a
+  large accessibility text size correctly degrades a nominally-wide device
+  back toward the narrower object count too — proven by a widget test
+  asserting the actual rendered object COUNT differs between postures, not
+  just presence/absence of a panel. Icon-forward per this pass's own open
+  design decision: an object's plain-language `name` exists only for a
+  `Semantics` label and a `Tooltip`, never static on-screen text, matching
+  `game_copy_pattern.dart`'s identical choice for the identical reason. "X
+  of Y found" and the "New scene" action are both live gameplay state only
+  — reset on every new scene, never persisted or tallied across sessions
+  (P2).
+- **`game_logic.dart`** — `GameKind` gains `copyPattern`, `findIt`;
+  `catalogue` gains their `GameMeta` entries in `story`'s exact shape
+  (`competitive: false, handicaps: []`), real titles and warm, gentle
+  blurbs matching `minAge: 2`'s youngest audience.
+- **`child_home.dart`** — `GamePickerScreen`'s `onPlay` switch gains two
+  more cases. `memory` is now the ONLY `GameKind` still on the honest
+  not-built-yet fallback — every other case in the switch is real.
+- **`game_picker.dart`** — `_cardColor`/`_onCardColor`/`_kindIcon` extended
+  for the two new kinds (Dart's exhaustive-switch check requires this the
+  moment `GameKind` grows; cycles the same house container roles already
+  in use).
+
+### Verified
+- **`flutter analyze`** — clean (0 issues), full project.
+- **`flutter test`** — full suite, 1836 run, 1836 passed locally (the
+  `push_channel_test.dart` failure noted in v0.49.20's own entry is gone —
+  already fixed on `main` by PR #38's CRLF regex fix before this branch was
+  cut). **50 new** test cases: 20 in `game_copy_pattern_test.dart` (pure
+  pattern-growth/tap-checking correctness including the wrong-tap
+  input-progress-reset case, zero-text-gameplay assertions, the P2
+  forbidden-vocabulary sweep, the device-adaptive layout-ROOT structural
+  test, and real navigation reachability from `child_home.dart`), 26 in
+  `game_find_it_test.dart` (curated-scene variety — distinct icon sets AND
+  distinct layouts across all three scenes, real found/not-found
+  state-machine correctness including the already-found no-op case, the
+  device-posture object-COUNT test at narrow/wide/large-text-scale, P2, and
+  reachability), 2 more in `game_logic_test.dart` (the two new catalogue
+  entries' shape, and a new age-2 `forAge` gating test — the youngest gate
+  this catalogue has ever had), and 2 more in `game_picker_test.dart` (the
+  age-2 gating render check, and the wired `onPlay` reaching both new
+  kinds).
+
+### Design decision — wrong-tap handling in Copy the Pattern
+The spec describes the growth mechanic ("get it right → the pattern grows
+by one and plays again") but is silent on what a WRONG tap should do — a
+genuine open product question, and this run is unattended overnight with
+no one to ask. The conservative reading taken: a wrong tap resets input
+progress only, and the identical pattern (same length, same tiles) plays
+again — never shrinking the pattern, never restarting at length 1, never
+framed with any "wrong" color or word. This is the safest option available:
+it can't be read as punitive (nothing is lost — she just watches and tries
+again), it costs only a few seconds, and it matches this codebase's
+existing pattern for handling a child's mistakes gently rather than as a
+setback (word search's eight lives "because this is not a game about a
+child failing"; `game_dotsboxes.dart`'s "a competitive game closes with a
+plain factual line, never a verdict") — applied here even more
+conservatively, since this activity is co-op and the youngest minAge this
+catalogue has ever shipped.
+
+### Phase 1, complete
+Every activity `docs/superpowers/specs/2026-08-20-play-together-phase1-
+design.md` named is now real: Batch A's two canvas activities (Draw
+Together, Guess the Doodle — v0.49.18), Batch B's four curated-prompt
+activities (Silly Sentence Maker, Would You Rather, Two Truths and a Tall
+Tale, 20 Questions — v0.49.20), and this pass's two younger-age visual
+activities (Copy the Pattern, Find It). `GameKind.memory` remains the one
+deliberate, explicitly out-of-scope exception across all three batches — a
+separate, still-open photo-source product decision, not forgotten.
+
+## [0.49.20] — 2026-08-21 — Play Together, Batch B: four curated-prompt activities, one shared layout base
+
+Batch B of the Play Together Phase 1 spec (`docs/superpowers/specs/
+2026-08-20-play-together-phase1-design.md`) — the largest batch by activity
+count but, per the spec's own words, "mechanically the simplest once Batch A
+has proven the device-adaptive pattern": all four share the exact same real
+shape (a curated prompt/category, a simple turn-taking state machine, a
+running-history side panel at wide postures) and the actual work here was
+content — drafting real, warm, genuinely varied prompt/word/category banks,
+not a placeholder anywhere.
+
+### Added
+- **`client/lib/game_curated_activity.dart`** (new) — the small shared layout
+  base the spec's batching plan floated as optional for this batch
+  specifically, built once rather than re-derived four times. Exposes
+  `CuratedActivityLayout` (splits the current prompt from a running session
+  history using the exact same `form_factors.dart` `columnsAt()` math every
+  other Play Together screen uses) and `SessionHistoryPanel` (a real,
+  scrolling — not `shrinkWrap`/frozen — list of this session's history,
+  newest first). The narrow-width shape is genuinely different from Batch
+  A's tools panel, not a copy: at `foldCover` there is NO history panel at
+  all (nothing to move to a bottom bar — a session history is extra content,
+  not a relocated control), only appearing once there is real room for it at
+  two-plus columns. Each of the four game files below owns its own state
+  machine and curated content in full; only this layout shell is shared,
+  matching this codebase's "each group ports only what it needs" discipline.
+- **`client/lib/game_silly_sentence.dart`** (new) — Silly Sentence Maker,
+  minAge 4. Mad-libs: 80 curated words across four categories (`character`,
+  `place`, `action`, `reason` — 20 each) and five curated sentence templates,
+  every template's first blank fixed to `character` with an empty leading
+  text part so a capitalized phrase never lands mid-sentence. Each blank in
+  turn presents 4 random options from its category (a real choice for a
+  five-year-old, never a 20-item scroll, never typed) and alternates strictly
+  between 'child' and 'parent' starting with 'child' — `game_story.dart`'s
+  own "the CHILD starts." A finished sentence joins the session history;
+  reveal is "read it aloud" (text on screen, not actual TTS — no audio infra
+  exists for this).
+- **`client/lib/game_would_you_rather.dart`** (new) — Would You Rather,
+  minAge 4. 50 curated either/or pairs, reviewed for tone (silly and warm,
+  never a values judgment, nothing scary or gross beyond harmless kid-silly).
+  Both people answer the SAME prompt independently (an actor-switch toggle,
+  `game_guess_doodle.dart`'s artist-toggle shape, never a turn lock) before
+  either answer reveals — `WouldYouRatherRound` has no concept of a correct
+  or "better" answer at all, only two independently recorded picks, so P2's
+  "no scoring which answer was better" is structural, not a UI choice.
+- **`client/lib/game_two_truths.dart`** (new) — Two Truths and a Tall Tale,
+  minAge 6. **The one activity the spec flagged by name as needing real
+  design judgment** — see its own extensive header comment for the full
+  reasoning, summarized in "Design decision" below. Ships 30 curated round
+  sets across five trivia categories (Animal facts, Space & sky, Ocean life,
+  Food & cooking, Around the world — 90 statements total, two true + one
+  false per set), a curated category-chip picker (never open text), and the
+  same honor-system private reveal `game_guess_doodle.dart`'s secret word
+  and `game_twenty_questions.dart`'s secret both use for local pass-and-play
+  ("keep this facing you" — there is no way to hide pixels from someone
+  sharing the same physical screen). The guess is scored against the REAL
+  shuffled tall-tale position every round, never a fixed slot.
+- **`client/lib/game_twenty_questions.dart`** (new) — 20 Questions, minAge 5.
+  100 curated secrets across five categories (An animal, A food, Something in
+  this room, A job, A place to go), dealt from a curated category-chip picker
+  — never a free-text field for the secret. The app never tries to parse the
+  spoken QUESTIONS themselves (that would mean either free text or a
+  natural-language engine this codebase doesn't have); instead either person
+  taps 'Yes'/'No' after each question is asked out loud, which both
+  increments the tally AND builds a real per-round Q&A log ("Q1: Yes", "Q2:
+  No", ...) — the actual answer to the spec's own device-adaptive note for
+  this activity ("the running question log alongside the input"), since the
+  questions themselves were never capturable without reopening the free-text
+  risk. Twenty is a gentle, dismissible nudge, never a hard stop — P2 forbids
+  a punitive cutoff, and nothing here blocks a 21st question.
+- **`game_logic.dart`** — `GameKind` gains `sillySentence`, `wouldYouRather`,
+  `twoTruths`, `twentyQuestions`; `catalogue` gains their `GameMeta` entries
+  in `story`'s exact shape (`competitive: false, handicaps: []`), real
+  titles and blurbs matching the existing entries' warm, unscored tone.
+- **`child_home.dart`** — `GamePickerScreen`'s `onPlay` switch gains four more
+  cases; `story`/`tictactoe`/`dotsboxes`/`drawTogether`/`guessDoodle` and the
+  `memory` not-built-yet fallback are untouched.
+- **`game_picker.dart`** — `_cardColor`/`_onCardColor`/`_kindIcon` extended
+  for the four new kinds (Dart's exhaustive-switch check requires this the
+  moment `GameKind` grows; cycles the same four house container roles
+  already in use rather than introducing new ones).
+
+### Design decision — Two Truths and a Tall Tale's safe-content mechanism
+The classic party game has each player invent their own two true facts and
+one lie about themselves. The spec itself gives no worked examples for this
+activity — just a one-line catalogue row — so reading a category like `"a
+place you've been," "something you're good at"` as still that same
+personal-fact shape is this pass's own judgment applying the spec's broader
+no-personal-data intent, not a claim the spec spells out anywhere. It
+isn't safe: even with zero `TextField`s anywhere, a personal-fact category still
+pressures a child to think of and say something real and true about her own
+life — the same risk the spec's "never free text" rule targets, just moved
+from typing to speaking. Closing the typed channel while leaving the spoken
+one open would be a technicality, not actual safety, so this pass declined
+that shape entirely rather than build a version that only *looked* safe.
+Shipped instead: every statement in every round — both truths and the tall
+tale — is fixed, in-repo trivia the app itself authored, about the world
+(animals, space, the ocean, food, geography), never about either player.
+`TallTaleRoundSet` has no field a personal fact could even be entered into,
+structurally, not just by convention. This is the safest, most conservative
+reading of the spec's mandate available, keeping the "spot the fib" mechanic
+the activity is named for while making "safe without a hovering adult" true
+by construction — the same standard `game_guess_doodle.dart`'s curated word
+bank already set for this whole batch. The category itself is also a
+curated, tappable choice (five fixed labels), not chance alone —
+`game_twenty_questions.dart`'s own secret-category picker converged on the
+identical pattern independently, for the identical reason.
+
+### Verified
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full suite, 1756 run, 1755 passed locally (the one
+  failure is the same pre-existing, unrelated `push_channel_test.dart`
+  column-0 check noted since v0.49.6 — nothing this pass touched; flagged
+  separately for its own root-cause pass since this Windows checkout may be
+  hitting a CRLF-sensitive column count CI's Linux runner won't). **87 new**
+  test cases: 23 in `game_silly_sentence_test.dart`, 17 in
+  `game_would_you_rather_test.dart`, 22 in `game_two_truths_test.dart`, 23 in
+  `game_twenty_questions_test.dart` (curated-bank variety — minimum counts,
+  no duplicates, no stray whitespace — real state-machine correctness per
+  activity, the P2 forbidden-vocabulary sweep, a real device-adaptive
+  structural test asserting the layout ROOT's actual runtime type differs
+  between postures and that the history panel is genuinely absent at
+  `foldCover`, and real navigation reachability from `child_home.dart`), 1
+  more in `game_picker_test.dart` (the wired `onPlay` reaches all four new
+  kinds), and 1 more in `game_logic_test.dart` (the four new catalogue
+  entries' shape asserted directly, alongside updating the existing
+  catalogue-count and `forAge` assertions from six/pre-Batch-B to the real
+  ten-entry catalogue).
+
+### Declined this pass, honestly
+- **Batch C (Copy the Pattern, Find It)** is not built — scoped, sequenced,
+  and explicitly deferred by the spec's own batching plan, its own PR.
+
+## [0.49.19] — 2026-08-20 — A real theme, at last: six palettes, guardian-only, backend-synced
+
+`docs/superpowers/specs/2026-08-21-intuitivism-visual-foundation-design.md`,
+sub-project 1 — the design-token foundation only. Root cause found during
+scoping: the entire app's color identity had been
+`ColorScheme.fromSeed(seedColor: Colors.deepPurple)` in `main.dart`/
+`main_live.dart` since the very first build, never once customized. Every
+screen already builds on `Theme.of(context).colorScheme`, so this is the
+single highest-leverage place to start — fixing the seed catalog improves
+everything downstream without touching a single screen's own layout.
+
+### Added
+- **`client/lib/theme.dart`** (new) — `ThemePalette` (six real hue
+  identities: `classic`, `calmModern` [suggested default], `warmGrounded`,
+  `softPlayful`, `deepCozy`, `brightBold`) x `ThemeBrightness` (light/dark),
+  composed via a real `colorSchemeFor(AppTheme)` catalog function — each
+  palette its own real seed color through `ColorScheme.fromSeed()`, not 12
+  hand-tuned schemes. `classic` keeps `Colors.deepPurple` as an explicit
+  reset option. `AppTheme.toWire()`/`fromWire()` round-trip the server's
+  `theme_palette`/`theme_brightness` columns by enum name; `fromWire` FAILS
+  CLOSED to `defaultAppTheme` (`classic`/`light`) on a null, malformed, or
+  unrecognized value, the same discipline `verifyKioskPin`'s own doc comment
+  describes. `ThemeController` is a one-line `ValueNotifier<AppTheme>`
+  subclass — the spec's own suggested propagation shape, no new
+  state-management dependency.
+- **`client/lib/theme_picker_screen.dart`** (new) — the customization suite
+  itself. Palette cards are this file's own small local copy of
+  `game_picker.dart`'s `_GameCard` shape (Dart library privacy is per-file,
+  the same reason `game_draw_together.dart` already keeps its own small
+  copies of `doodle_desk.dart`'s private shapes), adapted for single-select.
+  A light/dark `SegmentedButton`. Selecting a card or the brightness toggle
+  updates only this screen's own local pending state and a scoped preview
+  `Theme` override — NEVER the ambient app theme and never a network call;
+  only the explicit Apply button writes anywhere (`PUT .../theme` when this
+  screen has a live session, plus an optional `onApplied` callback for a
+  caller with a real `ThemeController` in scope). Column count is driven by
+  `form_factors.dart`'s real `columnsAt()` (device-adaptive LAYOUT); the
+  color identity itself is device-independent by construction — the same
+  `AppTheme` renders identically on the Fold5 and a tablet. No score, rank,
+  or "you've tried N themes" tally of any kind — P2.
+- **`db/migrations/0017_child_theme_preference.sql`** (new) — a NEW,
+  narrowly-scoped table, not two new columns on `child` itself: `child` has
+  never had row-level security enabled at any point in this schema's
+  history (independently re-grepped, not assumed), and enabling it here as a
+  side effect of two preference columns would be exactly the undeclared
+  widening of an existing table's contract §0 warns against. One row per
+  child, both columns nullable (an unset row is a real, honest absence, not
+  a fabricated default), a `theme_preference_complete_or_absent` CHECK. RLS:
+  ANY guardian with a live edge to the child (`actor_has_edge()`,
+  0003_session_context.sql — the same helper `exportable_artifacts()`
+  already uses, reused rather than re-derived) may read and write; the child
+  reads her own row; nobody else can do either — real DB tests prove all of
+  it, including the negative case. `health_check`'s own `rls_unforced` audit
+  list is extended, carried forward in full per 0013/0014's own standing
+  discipline.
+- **`packages/db/src/pool.ts`** — `themeFor()`/`setChildTheme()`. The write
+  path deliberately opens its OWN session as the real calling guardian
+  (`withSession`, not `withSystemSession`) so 0017's own
+  `actor_has_edge()`-keyed RLS policy is the thing actually enforcing "a
+  guardian with a live edge can write" — the same "second lock" reasoning
+  `setAvailabilityWindows()` already documents.
+- **`server/routes.mjs`** — `GET`/`PUT /v1/children/:childId/theme`, both
+  registered with `action: 'settings'` — reusing, for the first time, the
+  Action `family-graph/src/authorize.ts` has declared since early in this
+  project and never wired to any real route (see `api_client.dart`'s own
+  pre-existing, unused `settings` path constant's header for the DIFFERENT,
+  escalation-gated future use of that same Action string this is NOT — a
+  normal authenticated guardian session, no `escalated: true`). PUT
+  explicitly rejects a non-guardian caller (`guardian_only`, mirroring
+  `PUT /v1/me/availability`'s own guard) ahead of the RLS layer that would
+  reject it anyway — two independent gates, not one.
+- **`packages/db/test/theme_preference.test.mjs`** (new, real RLS, real
+  Postgres) — round-trip, upsert-replace-not-append, a never-set child reads
+  back `null` honestly, and the full RLS matrix: both co-guardians of the
+  SAME child read AND write the SAME row (unlike
+  `guardian_availability_window`'s own per-guardian-owns-her-row shape, this
+  table is per-CHILD); a guardian/child with no live edge reads and writes
+  ZERO rows; the child reads her own row but can never write, even her own.
+- **`client/lib/guardian_more.dart`** — a new "Preferences" `HubSection`,
+  one `HubTile` opening `ThemePickerScreen`, wired the same optional
+  `baseUrl`/`guardianId`/`childId` way every other tile in this file already
+  is. Unlike `_openAvailability`, `_openThemePicker` always opens the real
+  screen — browsing/previewing a theme has no side effect, so there is
+  nothing to gate behind a live session the way a screen that fetches real
+  data on open needs to be; only Apply itself needs one, and the screen
+  already gives its own honest "not connected" feedback there.
+- **`main_live.dart`** — `_fetchInitialTheme()` resolves the active theme
+  BEFORE `runApp()` (same posture as this file's own Firebase init), failing
+  closed to `defaultAppTheme` on any devLogin/fetch failure. `OliveLive` is
+  now a `StatefulWidget` holding a `ThemeController` above `MaterialApp`;
+  `theme:`/`darkTheme:` are intentionally the SAME resolved `ColorScheme`,
+  with `themeMode` PINNED to the guardian's own explicit brightness choice
+  (never `ThemeMode.system` — an `AppTheme`'s brightness is a real
+  selection, not "follow the OS"). `MaterialApp.builder` wraps content in a
+  real `AnimatedTheme` (380ms) so a `_themeController` change (i.e. only a
+  guardian's own Apply) plays a brief, real crossfade — §8.13 permits
+  user-initiated consequence motion; nothing here loops or moves on its own.
+- **`client/test/theme_test.dart`**, **`theme_picker_screen_test.dart`**,
+  **`child_no_settings_contract_test.dart`** (new) — all 12 palette x
+  brightness `ColorScheme`s pairwise distinct (not a broken seed function
+  silently producing near-identical results), wire round-trip and
+  fail-closed fallback, the picker's own posture-driven column count at
+  Fold5 cover vs. a wide desktop-scale width, live-preview-vs-Apply behavior
+  proven directly (selecting ≠ writing), and — mirroring
+  `transport.test.mjs`'s own "child shell has no settings affordance"
+  contract check as a REAL client-side Dart test, not just a JS one reading
+  a Dart file from outside its own toolchain — `child_home.dart`'s own
+  source still contains zero "settings" references anywhere, comments
+  stripped, read from the actual file.
+
+### Known gap, stated honestly
+- `GuardianHome`/`GuardianMoreScreen` are not yet threaded into
+  `main_live.dart`'s own live navigation tree — the same pre-existing gap
+  every other `guardian_more.dart` tile already has today (Message banking,
+  Handover notes, Availability's own optional live wiring, …). This pass
+  closes the READ half of cross-device sync for real (session bootstrap
+  fetch-and-apply, verified locally); the WRITE UI is wired the same
+  optional, forward-compatible way every other guardian feature in this
+  codebase already is — ready the moment a live guardian session is threaded
+  into that tree, a separate, not-yet-done piece of navigation work.
+
+---
+
+## [0.49.18] — 2026-08-20 — Play Together, Batch A: two real canvas games, two real actors on one shared engine
+
+Batch A of the Play Together Phase 1 spec (`docs/superpowers/specs/
+2026-08-20-play-together-phase1-design.md`, merged just ahead of this PR) —
+built first, on purpose: it shares `annotation_canvas.dart`'s `AnnotationCanvas`
+reuse work and establishes the device-adaptive tools-panel-vs-bottom-sheet
+pattern Batches B and C will follow rather than each inventing their own.
+
+### Added
+- **`client/lib/game_draw_together.dart`** (new) — a shared, always-on canvas
+  co-op activity (minAge 4, `competitive: false`, no handicaps — nothing to
+  be behind at, `story`'s own catalogue shape). The second real consumer of
+  `annotation_canvas.dart`'s `AnnotationCanvas` outside `doodle_desk.dart`,
+  and the first with TWO real actors ('child'/'parent') drawing on it at
+  once. Both may draw whenever they like — no turn gate, this is
+  collaborative, not turn-based — but undo is scoped to whichever actor is
+  currently selected via a small switch, exactly matching the engine's own
+  per-actor undo guarantee: a parent's undo can never erase the child's
+  stroke. Reuses `doodle_desk.dart`'s existing, public `kBrushColors`/
+  `kBrushWidths` palette rather than re-authoring a second one; does NOT
+  reuse its six-stamp tray (out of scope for a first version) or its private
+  `_InkPainter`/`_Swatch`/`_BrushDot` (Dart library privacy is per-file, so
+  this file has its own small, independent copies of the same shape). Ships
+  no stroke count, no timer, no "finished" state — a shared blank canvas has
+  no finish line either, per `doodle_desk.dart`'s own explicit P2 precedent.
+- **`client/lib/game_guess_doodle.dart`** (new) — co-op-FRAMED (minAge 5,
+  `competitive: false`, no handicaps), the third real `AnnotationCanvas`
+  consumer. Only ONE actor's strokes are ever live — the guesser never
+  draws, and there is exactly one `GestureDetector` on the whole screen,
+  attributed to whichever person is currently "the artist" (swappable any
+  time via the same actor switch, never a turn lock). Includes a real,
+  drafted, in-repo curated word bank — `guessDoodleWords`, 86 words across
+  seven categories (animals, food, everyday objects, nature, places/
+  vehicles, actions, and a little gentle fantasy), no duplicates, every word
+  reviewed for warmth and age fit — the actual content-safety mechanism per
+  the spec's own "fixed, in-repo, curated constants, never free text"
+  discipline. A "New word — no penalty" button swaps the word freely
+  (matches this codebase's established free-takeback ethos) and starts a
+  fresh `AnnotationCanvas` for the new round — the engine has no bulk-clear
+  operation by design, so a new round gets a new instance rather than a
+  wipe. The outcome is deliberately soft — "did you get it?", surfaced by
+  either "I got it!" (the guesser) or "Reveal the word" (either person) —
+  and never counted: `_revealed`/`_gotIt` are per-round UI state only, reset
+  by every new word, the same "transient, not tallied" shape
+  `game_story.dart`'s own `_readingAsOne` toggle already uses.
+- **`game_logic.dart`** — `GameKind` gains `drawTogether` and `guessDoodle`;
+  `catalogue` gains their `GameMeta` entries in `story`'s exact shape
+  (`competitive: false, handicaps: []`), real titles and blurbs matching the
+  existing four entries' warm, unscored tone.
+- **`child_home.dart`** — `GamePickerScreen`'s `onPlay` callback is now a real
+  `switch` with cases for `story`, `drawTogether`, and `guessDoodle`; every
+  other `GameKind` (including `tictactoe`/`dotsboxes`, in flight on a
+  parallel branch) still falls through to the existing honest
+  not-built-yet acknowledgment via `default:` — this pass adds cases, it
+  does not touch or assume ownership of anyone else's.
+- **`game_picker.dart`** — migrated its own hand-rolled `constraints.maxWidth
+  >= 680 ? 3 : >= 420 ? 2 : 1` breakpoint onto `form_factors.dart`'s real,
+  tested `columnsAt()` — the exact anti-pattern that file's own header
+  already named as fixed elsewhere (`court_export.dart`, v0.49.13) but never
+  migrated here. textScale-aware, same §8.8 reason `court_export.dart`'s own
+  `columnsAt()` call already is. **One real, intentional column-count
+  change, not silent behavior drift:** the old breakpoint gave 3 columns
+  from 680px (any Fold-unfolded or tablet width); `columnsAt()` reserves 3
+  for genuine desktop width (>=1024px) and gives a 10-inch tablet (800px,
+  `tabletLarge`) 2 columns — matching `FORM_FACTORS`' own
+  `tabletLarge.columns` value, and giving each card more real width for its
+  blurb rather than less. No existing test asserted an exact column count
+  (only "no overflow" at four widths), so this is a genuine improvement
+  within the existing test contract, not a break of it — new tests below
+  assert the exact counts directly. **A second, real, pre-existing bug this
+  same migration's own new textScale test surfaced and this pass also
+  fixes:** `_GameCard`'s grid tile used a FIXED `mainAxisExtent: 182`
+  regardless of text scale — a genuine §8.8 accessibility overflow at large
+  text sizes, unrelated to which breakpoint chose the column count. Now
+  scales with `textScale` (clamped 1.0–2.0).
+
+### Verified
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full suite, **1597 run, 1596 passed locally** (0
+  failed on CI, which does not carry the platform-specific failure below),
+  **34 new**: 12 in `game_draw_together_test.dart` (per-actor stroke
+  attribution and undo scoping mirroring `annotation_canvas_test.dart`'s own
+  assertions, P2 vocabulary checks, a real structural Row-vs-Column layout
+  test via a keyed layout root, real navigation reachability from
+  `child_home.dart`), 15 in `game_guess_doodle_test.dart` (the same
+  per-actor/undo shape for the solo-drawer case, word-bank variety
+  assertions — minimum count, no duplicates — the soft reveal's two paths,
+  device-adaptive layout, navigation reachability), 6 more in
+  `game_picker_test.dart` (both new cards render and are age-gated
+  correctly, the wired `onPlay` reaches both new kinds, and a dedicated
+  group asserting the exact `columnsAt()`-driven column count at Fold5
+  cover/main, tablet, and desktop widths, including the textScale case),
+  and 1 more in `game_logic_test.dart` asserting the two new catalogue
+  entries' shape directly. The one local failure is the same pre-existing,
+  unrelated `push_channel_test.dart` failure noted since v0.49.6 — nothing
+  this pass touched.
+
+### Declined this pass, honestly
+- **Batches B (Silly Sentence Maker, Would You Rather, Two Truths and a Tall
+  Tale, 20 Questions) and C (Copy the Pattern, Find It)** are not built —
+  scoped, sequenced, and explicitly deferred by the spec's own batching
+  plan, one PR each, in order.
+## [0.49.17] — 2026-08-20 — Two more boards, and a real side panel instead of a hand-rolled breakpoint
+
+`GamePickerScreen` has offered four games since v0.17.0 — tic-tac-toe,
+dots-and-boxes, memory, and the co-op story — but only `story` ever reached a
+real screen; the other three fell through to an honest not-built-yet
+acknowledgment. `packages/games/src/games.ts`'s tic-tac-toe and dots-and-boxes
+branches have been real and tested since before this pass with zero client
+callers. This pass gives those two a real Dart client, ported directly from
+that engine rather than reinvented, matching `game_chess.dart`'s/
+`game_checkers.dart`'s established ENGINE-then-WIDGET pattern. `memory` is
+deliberately left untouched — a separate, still-open product decision about
+where real photos for that game come from, out of scope here.
+
+A scope addition mid-pass asked both new screens to genuinely adapt their
+layout by real device posture (`form_factors.dart`, v0.49.13) rather than a
+single no-overflow breakpoint, the same anti-pattern `court_export.dart` used
+to have — both screens now render a persistent side panel next to the board
+at `foldMain`/`tabletLarge`+ instead of the same stacked layout merely given
+more room.
+
+### Added
+- **`client/lib/game_tictactoe.dart`** (new) — `TttState`/`tttPlay()`/
+  `tttSetHandicap()`/`tttTakeBack()` port games.ts's tic-tac-toe branch
+  directly: real row/column/diagonal win detection, real draw detection, and
+  the `no_centre` handicap refused at `tttPlay()` itself (`handicap_forbids`),
+  not just a UI affordance the parent's simulated moves happen to avoid —
+  `tttLegalMoves()` (the simulated opponent's own candidate pool) excludes the
+  centre independently, so the refusal is enforced twice, not assumed once.
+  `GameTicTacToe` starts immediately with no handicap active (no setup gate,
+  the same simplicity `game_story.dart` already has) and opens the existing,
+  reusable `HandicapScreen` from a "Make it fair" AppBar action rather than a
+  second bespoke setup screen — tic-tac-toe is already a real
+  `game_logic.dart` catalogue entry. A handicap applies to the CURRENT game
+  state (board and move history untouched), honoring `HandicapScreen`'s own
+  "even mid-game" promise literally instead of restarting.
+- **`client/lib/game_dotsboxes.dart`** (new) — `DbState`/`dbPlay()`/
+  `dbSetHandicap()`/`dbTakeBack()` port games.ts's dots-and-boxes branch,
+  including `claimBoxes()`'s cascade rule (completing a box grants the SAME
+  side another move, verified for both a single box and a "double-cross" — one
+  edge completing two boxes at once) and the turn-still-flips-on-the-
+  game-ending-move quirk the source itself carries (harmless: `outcome` is
+  already non-null the instant that happens, so no further move is ever
+  accepted either way — ported as-is rather than "corrected"). `start_behind`
+  is ported exactly as games.ts wrote it too: the CHILD starts two boxes
+  AHEAD, not the parent behind, despite the handicap's own label text
+  ("Dad starts two boxes behind") describing it the other way around — both
+  phrasings name the same material two-box gap, so this is left standing
+  rather than reinterpreted, per the assignment's explicit instruction.
+- **Both screens' simulated parent** is a uniformly random legal move after a
+  short "thinking" delay, exactly matching `game_chess.dart`'s/
+  `game_checkers.dart`'s own precedent — no smarter AI, no deliberate losing.
+  For dots-and-boxes, the simulated parent keeps taking its own "thinking"
+  turn for as long as ITS moves keep completing boxes, the same recursive-
+  continuation shape `game_checkers.dart`'s `_applyBotMove` already uses for a
+  simulated multi-jump chain.
+- **A voice-note mic icon** on both AppBars shows the same honest
+  not-built-yet snackbar `game_chess.dart`/`game_checkers.dart` already show —
+  no audio-capture infrastructure exists in this codebase yet.
+- **`child_home.dart`**'s "Play together" `onPlay` converted from an
+  `if`/`else` to a `switch` on `GameKind`, adding real cases for
+  `.tictactoe`/`.dotsboxes`; `.memory` still falls through to the honest
+  not-built-yet path, `.story` unchanged.
+- **Posture-driven layout (mid-pass scope addition)** — both screens now read
+  `form_factors.dart`'s real `columnsAt()` instead of a hand-rolled
+  `constraints.maxWidth` check, the same technique `court_export.dart`
+  established (v0.49.13). At `foldCover`/`phone`/`tabletSmall` (1 column) the
+  board is the only thing on screen, full width, banners/buttons stacked
+  below it in a `Wrap`. At `foldMain`/`tabletLarge`+ (2+ columns) the board
+  shares the screen with a persistent side panel — the same banners plus a
+  real `Column` of full-width buttons, not the narrow layout's `Wrap` merely
+  given room to stop reflowing.
+
+### Verified
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full client suite, 1635 run, 1634 passed locally (the
+  one local failure is the same pre-existing, unrelated
+  `push_channel_test.dart` failure noted since v0.49.6 — nothing this pass
+  touched). 70 new assertions across `game_tictactoe_test.dart` (36) and
+  `game_dotsboxes_test.dart` (34): win/draw detection, `no_centre` refused
+  directly against the engine (never inferred from UI state alone),
+  `start_behind`/`child_first` mid-game side effects, free takebacks —
+  including dots-and-boxes' extra-turn edge case by name: undoing a
+  box-completing move's own follow-up move hands the extra turn BACK to the
+  same side, and undoing the box-completing move itself correctly restores
+  whichever side's turn it was immediately before that move — a Fold5
+  cover-width (344px) no-overflow sweep for both the ordinary and the
+  finished (two-button) control row, real navigation reachability from
+  `child_home.dart` (`widget_test.dart`), and — for the mid-pass scope
+  addition — a side-panel-present-vs-absent structural check at `foldCover`
+  vs. `foldMain`/tablet/desktop, mirroring `court_export_test.dart`'s
+  `reviewableAt()`/`requestableAt()` width tests rather than only asserting
+  no overflow.
+
+### Fixed — found during this pass's own adversarial self-verify
+- **A stale "is thinking…" banner could survive a mid-game `child_first`
+  handicap.** `_applyHandicap()` updated `_state` (correctly handing the turn
+  back to her) but never reset `_parentThinking`, so if she opened "Make it
+  fair" and chose `child_first` while the simulated parent's own delayed
+  reply was still pending, the turn banner kept reading "Dad is thinking…"
+  until that now-stale timer eventually fired and self-corrected — up to one
+  full `botThinkDelay` of visibly wrong state. Fixed by clearing
+  `_parentThinking` in the same `setState` that applies the handicap; a
+  regression test drives exactly this sequence in both screens.
+- **A defensive guard, not a bug found in the wild but added on the same
+  reasoning:** both screens' `_scheduleParentMove()` re-checks `outcome`/
+  `turn` before acting when its delayed callback finally fires, so a stale
+  timer left over from a take-back or a mid-game handicap change (both of
+  which can hand the turn away from the parent without cancelling an
+  already-scheduled "thinking" reply) is a safe no-op instead of an invalid
+  bot move. Verified directly: the take-back tests deliberately let a
+  day-long simulated "thinking" timer go stale, then fast-forward past it and
+  assert nothing breaks.
+- **Not a code bug, flagged honestly instead of silently working around it:**
+  dots-and-boxes' `outcome: 'draw'` branch is ported faithfully from
+  games.ts, but at this game's fixed `n = 4` (nine total boxes, an odd
+  number) a real tied game is mathematically impossible — the branch exists
+  for the general case the source itself models and is simply unreachable at
+  this specific board size. Left exactly as games.ts wrote it, since
+  "fixing" it would mean deviating from the source rather than porting it.
+
+### Verification note
+`flutter_test`'s `Future.delayed`-backed bot timers do not resolve themselves
+on teardown — a widget test that taps a move with a long `botThinkDelay` and
+never lets it fire fails with "A Timer is still pending" rather than the
+overflow it was meant to check. Both new test files' responsive-audit groups
+use `Duration.zero` + `pumpAndSettle()` for exactly this reason, and the
+take-back tests explicitly fast-forward past the deliberately-stale delay
+before the test ends.
+
+---
+
+## [0.49.16] — 2026-08-20 — Take and go: §9.8.4 gets its first real backend
+
+§21.7's own status note has said, since v0.47.0, exactly what was still
+missing: "the GUARDIAN half is real, the child's own §21.6 'take and go' is
+not yet... an eighteen-year-old exporting and closing out her OWN account,
+guardians losing access to her archive per §9.8.4, is a different,
+still-unbuilt operation." `POST /v1/children/:id/handover` — named in §7.9's
+own API surface listing since before this pass, never implemented — is that
+operation, now real, built as a genuine mirror of `deactivateAccount()`
+(same rigor: `FOR UPDATE` idempotency lock, one transaction, real row-count
+assertions, denial reasons returned rather than guessed) and reusing, not
+reinventing, both the export machinery and the maturation business rule
+this codebase already had, fully tested, sitting unwired.
+
+### Added
+- **`db/migrations/0016_child_take_and_go.sql`** — `export_record.requested_by`
+  is now nullable; a new `requested_by_child_id uuid REFERENCES child(id)`
+  column plus an `export_record_has_exactly_one_requester` CHECK mirror
+  `device_token`'s existing owner-column split (`owner_user_id`/
+  `owner_child_id`), the same shape for the same underlying reason — a row
+  may belong to a guardian OR a child, never both, never neither.
+  `export_record_no_child`'s RLS (0013) is left untouched: a child-initiated
+  row is written under a `system`-scoped session, after the route's own
+  identity check, not by loosening a policy written to admit no child
+  session at all.
+- **`packages/db/src/pool.ts`'s `takeAndGo(pool, childId, now?)`** — one
+  transaction: `packages/archive/src/archive.ts`'s `handover()` (real, unit-
+  tested since before this pass via `phase3.test.mjs`, never wired to
+  anything) is the unmodified source of truth for the age/deceased/
+  idempotency gate and the closure semantics — this function writes no
+  age-comparison logic of its own. On success: every live `guardianship`
+  edge for the child closes (`closed_reason = 'majority'`, a value the
+  schema's own CHECK has accepted since `0001_phase0_init.sql`),
+  `child.handed_over_at` is set, and a real, full export bundle is
+  assembled and hashed. `assembleRawExportBundle()` — extracted from
+  `rawExportBundleFor()`, the SAME code a guardian's own raw-export pull
+  already used, not a second implementation — additionally carries her REAL
+  journal (read under an actual `'child'`-role session, the one table
+  `journal_owner_only`'s RLS requires that specific role for — `'system'`
+  does not satisfy it) and a real copy of the parent-to-parent log (never
+  present in a guardian's own bundle for a different reason: nothing scopes
+  it away from a guardian session; it is simply never denied to her own,
+  per rungs.ts's own `NOT_HERS_TO_DELETE`: "she can have a copy of
+  everything; she cannot erase somebody else's record of their own
+  conduct"). Only PRESERVED artifacts count toward the returned
+  `artifactsTransferred`, mirroring `compileYearBook()`'s own reasoning
+  for the same distinction.
+- **`POST /v1/children/:childId/handover`** (`server/routes.mjs`) —
+  `action: null, identityScopedByHandler: true, skipOuterSession: true`,
+  the same "identity, not an edge" shape as `kiosk-pin/verify`: a child
+  holds no guardianship edge to HERSELF, so `can()` was never the right
+  tool. Certified export's own tier/allowance rule (§16.1 #3) is
+  deliberately NOT reused — it is a guardian legal-proceedings concept with
+  no meaning for a child taking her own archive; this writes `kind: 'raw'`,
+  same as a guardian's free, unlimited pull.
+- **`OliveApi.takeAndGo()`** (`client/lib/api_client.dart`) and
+  **`client/lib/take_and_go_screen.dart`** (new) — a genuine mirror of
+  `deletion_screen.dart`'s own rigor: states what she takes and what closes
+  BEFORE any destructive control is reachable, an acknowledge-before-enable
+  gate, an audited-copy discipline (`takeAndGoForbiddenCopy`, leaning on
+  `rungs.ts`'s `DELETION_FORBIDDEN_COPY` as its tone precedent — no "are you
+  sure," no offered delay, no guilt), and NO cooling-off period (§21.7's own
+  words: "a delay is a soft refusal dressed as care"). On success it writes
+  the real export bundle to a file and verifies the hash against it, same
+  shape as `deletion_screen.dart`'s own raw-export button. Reached from a
+  new, always-visible tile in `client/lib/child_more.dart` — the SCREEN, not
+  the hub, tells her honestly if she is not yet of age; this hub does not
+  gate its own visibility on a client-side age guess, matching every other
+  tile in it.
+
+### Verified
+- **`packages/db/test/take_and_go.test.mjs`** (new, 47 assertions) — real
+  Postgres, real RLS, real server, mirroring `deletion.test.mjs`'s own
+  structure: (A) `export_record_no_child` really refuses a child-role
+  session both ways (a filtered SELECT, a thrown 42501 on INSERT), and
+  `journal_owner_only` admits the exact matching child and refuses both a
+  different child AND `'system'`; (B) `not_yet_of_age`/`child_deceased`
+  denials touch nothing; (C) a real success closes both real guardianship
+  edges, counts only the preserved artifact, carries her real journal (2
+  entries) and a real copy of the log (1 entry, hash-verified), writes
+  `requested_by_child_id` (never `requested_by`), and a second call is
+  refused, not repeated; (D) a bystander guardian and the closed-out
+  guardian's own account are untouched, and her own `device_token` survives
+  (unlike a guardian's on deactivation); (E) a real HTTP server refuses a
+  wrong child's session, refuses a guardian's session, refuses no session at
+  all, and a genuine call over her own real dev-login session succeeds and
+  is refused on replay. **Not run this session — no Postgres available in
+  this environment** (consistent with every other `(real RLS)` suite in this
+  repo's own CHANGELOG history); wired into `tools/verify.sh`'s real-RLS
+  loop for CI to run for real.
+- **`packages/api/test/contract.test.mjs`** — extended with the fourth
+  `identityScopedByHandler` exception (31/31, up from 29/29).
+  **`server/test/routes.test.mjs`** (19/19), **`packages/api/test/
+  stack.test.mjs`** (107/107), **`packages/ledger/test/phase3.test.mjs`**
+  (95/95, `handover()`'s own pure-logic coverage, unchanged by this pass) —
+  all re-run locally after the `assembleRawExportBundle()` refactor, no
+  regressions.
+- **`flutter analyze`** — clean (0 issues) on every new/changed file.
+- **`flutter test`** — full suite, **1563 run, 1562 passed locally**
+  (**0 failed on CI**, which does not carry the platform-specific failure
+  below), including 16 new in `take_and_go_screen_test.dart` (copy audit,
+  disabled-until-acknowledged, a genuine success round trip with a real
+  file write and hash verification, `not_yet_of_age`/`already_handed_over`/
+  unreachable-server failures, and the same Fold5/phone/desktop responsive
+  sweep `deletion_screen_test.dart` already carries) and `child_more_test.dart`
+  unchanged (7/7). The one local failure is the same pre-existing, unrelated
+  `push_channel_test.dart` failure noted since v0.49.6 — nothing this pass
+  touched.
+
+### Declined this pass, honestly
+- **Rung 18's separate, more drastic action** — `packages/maturation/src/
+  rungs.ts`'s `requestDeletion()`/`deletionConfirmation()`, a full deletion
+  of every scope she owns (media, messages, journal, games, letters...) —
+  is NOT wired to anything here. §21.6 lists "take and go" as exporting
+  AND deleting the account; what is real now is the shared §9.8.4 mechanism
+  underlying all three of §21.6's paths (take-and-go, keep-as-archive,
+  becomes-a-parent) — guardian access ending, with a full export in hand.
+  A subsequent, full self-deletion of her own historical data is a
+  separate, heavier, and more consequential grant this pass declines to
+  invent unilaterally, consistent with this repo's own standing practice
+  of not shipping a guessed answer to an open product decision.
+- **A standalone, ad-hoc child export** (rung 17, "her own export, no
+  guardian approval, from seventeen," independent of majority) is still not
+  wired — `GET /v1/children/:childId/export` still 501s for a child
+  principal, now with an honest comment pointing at `takeAndGo()` instead
+  of the previous claim that no child-caller path exists anywhere.
+
+---
+
+## [0.49.15] — 2026-08-20 — Dead wire: real data, fetched, then thrown away
+
+A dedicated sweep for one recurring bug shape found across this codebase's
+earlier audits: a screen makes a real HTTP call, the backend genuinely
+computes and returns real data, and the screen either ignores part of the
+response or never calls the endpoint that already exists to serve it. Every
+candidate was re-verified fresh against current source before being touched
+— several from an earlier scoping pass turned out to already be fixed or
+were never real (see "Investigated, not changed" below); six were confirmed
+real and are fixed here, each a small, surgical read of a response this
+client was already receiving (or, in one case, a fetch call that existed on
+`OliveApi` with zero callers anywhere in this client).
+
+### Fixed — `child_home_live.dart` (§8.2, §8.2.5, §21.5)
+- **The Messages badge counted watched messages as unread.** `/inbox`
+  deliberately returns BOTH `'delivered'` (unwatched) and `'opened'`
+  (already watched) rows (server/routes.mjs's own query), but `_load()`
+  counted the raw list length — a child who had watched every message still
+  saw a badge claiming all of them were new. Now filtered to
+  `state == 'delivered'` before counting.
+- **`sleepsUntilHandover` was hardcoded `null` despite a real, working
+  endpoint.** `OliveApi.fetchNow()` — contract-checked against
+  `GET /v1/children/:childId/now`, which genuinely computes this via
+  `activeCustodyOrderFor()`/`sleepsUntilSideChange()` — existed with zero
+  callers anywhere in this client (an earlier pass's own header explained
+  why, correctly, at the time it was written; the endpoint has since landed
+  and stayed landed, and this pass is what finally called it). `_load()` now
+  fetches it alongside `/v1/me` and `/inbox`; ChildHome's "sleeps until the
+  handover" counter and the phone→watch sync this screen already had wired
+  (`_syncWear()`, §21.5) both go live off the same real value, still an
+  honest `null` when a child has no active custody order.
+
+### Fixed — `court_export.dart` / `api_client.dart` (§2.11, §16.1 #3)
+- **A `chain_broken` certified-export denial's real diagnostics were fetched
+  and silently dropped.** `server/routes.mjs` spreads a real `faults` array
+  (packages/ledger's `verifyChain()` output, forwarded by
+  `certifiedExportBundleFor()`) onto the 403 body, but `api_client.dart`'s
+  `_decode()` only ever read `error`/`message` — the array was in the HTTP
+  response and nowhere else. `ApiException` now carries `faults`, and
+  `LiveCourtExportScreen`'s denied state renders each one (`content_altered
+  @3`, `bad_genesis`, ...) when present.
+- **A successful export's whole-bundle hash and record id were fetched and
+  never shown.** The route's 200 body carries `bundleHash` (a hash over
+  `{chain, attestation}` together) and `exportRecordId` alongside
+  `attestation` — genuinely different from `attestation.bundleHash` (which
+  hashes the chain alone). `_load()` read only `attestation`; the other two
+  keys were parsed by nothing. Both now render in the ready state, gated by
+  the same §8.11.7 review-width rule as the attestation panel itself.
+
+### Fixed — `deletion_screen.dart` (§2.10, §2.11, §9.8, P8)
+- **`POST /v1/me/delete`'s real response body was discarded outright** —
+  `_confirm()` awaited `api.deleteAccount()` without even assigning the
+  result to a variable. `deactivateAccount()` (packages/db/src/pool.ts)
+  returns real counts of what it actually did — `cancelledDeliveryIntents`
+  chief among them, the exact thing `whatDeletionRemoves` already promises
+  abstractly ("Messages you had queued or banked but not yet delivered").
+  The success card now states the real count when it's nonzero, and shows
+  nothing at zero (this app's own "null/0 renders nothing" convention,
+  matching `child_home.dart`'s badge). The other counts returned
+  (`removedPinCredentials`/`removedWebauthnCredentials`/
+  `removedWebauthnChallenges`/`removedDeviceTokens`) stay unshown on
+  purpose — internal security bookkeeping, not something a guardian reading
+  a deletion confirmation has a use for.
+
+### Fixed — `family_agreement_screen.dart` (§5.4, §9.4)
+- **A holiday rule's real `priority` field was parsed and never read.**
+  `HolidayRuleView.priority` came straight off the wire but was never
+  rendered, and the holiday list was shown in raw wire order — even though
+  `priority` is the actual tie-break `schedule.ts`'s own `holidayOn()` uses
+  when two rules overlap ("Ties break on `priority`, then on the later
+  start"). A screen whose entire job is showing the real order on file was
+  silently showing the wrong one. New `sortedByPriority()` orders the list
+  exactly the way the engine does; each card now states its own priority
+  number, and a short explanatory line appears whenever more than one
+  holiday exists.
+
+### Investigated, not changed
+- **`child_home.dart`'s Messages badge itself** — already correctly wired
+  (`badgeCount: unreadCount`, rendered by `_Tile`/`_UnreadBadge`). The
+  scoping pass's "hardcoded literal `3`" candidate does not exist in current
+  source; discarded as already fixed.
+- **`GuardianHome` has no live-data screen at all** — confirmed genuinely
+  true (no `guardian_home_live.dart`, and `GuardianHome` itself takes every
+  field as a plain constructor argument with no fetch anywhere). This is not
+  a dead wire — there is no wire to begin with. Building one is a real,
+  screen-sized feature (mirroring `child_home_live.dart`'s own shape against
+  `/now`/`/ribbon`-equivalent guardian data that doesn't exist yet either) —
+  explicitly out of scope for a dead-wire sweep and NOT built here. Recorded
+  as a real product gap for a future pass to scope deliberately.
+- **`receipt_screen.dart`'s "Send one back"** — POST `/v1/children/:childId
+  /messages`'s real response (`id`/`artifactId`/`state`) is fetched and not
+  displayed, but this is not a dead wire: an internal delivery-intent id has
+  no use on a child-facing "Sent!" confirmation (this app never shows a
+  child an id — see `child_home.dart`'s own "her name not an id"
+  invariant), and the route's own comment already discloses a bigger,
+  pre-existing gap this pass did not create and is not scoped to close: a
+  `child` principal has no `app_user` row, so this route 403s
+  `not_authorized` for its only realistic caller today. A real schema
+  change, not a display fix.
+- **Every other real network call site** (`availability_screen.dart`,
+  `capture_gate.dart`, `guardian_more.dart`, `main_live.dart`,
+  `webauthn_channel.dart`) — read every field of every response it
+  receives; no drops found.
+
+### Tests
+- `child_home_live_test.dart` — the existing unread-count test now mixes
+  `'delivered'`/`'opened'` messages and asserts the real filtered count (2,
+  not the raw row count of 3); a new test proves a real, distinctive
+  `sleepsUntilHandover` (5) reaches both ChildHome's counter and the paired
+  Wear channel; every mock in this file gained a `/now` arm.
+- `court_export_test.dart` — the successful-export test now asserts the
+  real whole-bundle hash and record id render as DISTINCT values from the
+  attestation's own bundle hash; two new tests cover a `chain_broken` denial
+  that does/doesn't carry `faults`; the narrow-surface test asserts the new
+  fields stay gated too.
+- `api_client_test.dart` — two new tests prove `ApiException.faults` is
+  populated from a real 403 body and stays `null` (not an empty-list guess)
+  when the server sends none.
+- `deletion_screen_test.dart` — the existing success test now asserts the
+  real cancelled-count line; two new tests cover the singular ("1 ... was")
+  and zero (no line at all) cases.
+- `family_agreement_screen_test.dart` — three new pure-logic tests on
+  `sortedByPriority()` (higher priority first, tie-break on later start
+  matching `schedule.ts` exactly, does not mutate its input) plus a new
+  widget test proving two overlapping, deliberately wire-misordered holidays
+  render in real priority order (checked by vertical position, not just
+  presence).
+- `flutter analyze` clean. `flutter test`: 1547 cases (11 new), all green
+  except the same pre-existing, unrelated `push_channel_test.dart` failure
+  noted since v0.49.6.
+
+---
+
+## [0.49.14] — 2026-08-20 — An adversarial audit of gap-fill batch 2, and what it actually found
+
+Before merging PR #30 (v0.49.13), this pass ran a genuinely adversarial
+audit of everything gap-fill batch 2 shipped — PRs #26 through #30 —
+across five independent dimensions (security/RLS, P1–P9 child-safety
+compliance, null-safety/edge cases, spec-conformance against this
+codebase's own CHANGELOG/MASTERFILE claims, and test-coverage gaps), with
+every raised finding independently re-verified by a second pass whose job
+was to try to refute it. 15 findings were raised; 13 survived adversarial
+verification. All 13 are fixed here. Separately, mutation testing (7
+deliberate mutants reintroducing real bugs this session already fixed once,
+across PRs #26–#30) confirmed 7/7 killed by the existing test suites before
+this audit even started — recorded here for completeness, not because it
+found anything new.
+
+### Fixed — CRITICAL, would have shipped broken
+**The entire guardian-invitation accept flow (PR #26, v0.49.9) was
+completely non-functional for its only intended caller.** `Api.handle()`
+(`packages/api/src/api.ts`) required a valid `Bearer` session token
+unconditionally, before ever consulting a route's own flags. But
+`GET /v1/guardian-invites/:inviteId` and `POST .../accept` are explicitly
+designed to be reachable by an unauthenticated invited party — someone with
+no `app_user` row and therefore no session — using the invite's own random
+id as its credential, exactly like this codebase's WebAuthn-login routes
+(which get the identical bypass by being dispatched entirely outside
+`Api`, in `server/index.mjs`, before `api.handle()` is ever called).
+`api_client.dart`'s `fetchGuardianInvite()`/`acceptGuardianInvite()`
+deliberately send no `Authorization` header, exactly matching the intended
+design — so every real call from the client these functions were built for
+would 401 in production. Empirically confirmed against the real compiled
+`api.mjs` before writing the fix: `api.handle('GET', '/v1/guardian-invites/
+abc-123-def', {}, '')` returned `{"status":401,"body":{"error":
+"no_session"}}`, the handler never reached. No test caught this:
+`guardian_invite.test.mjs` calls `pool.mjs` functions directly, bypassing
+HTTP entirely; `contract.test.mjs` only checks route registration metadata;
+`routes.test.mjs` had zero guardian-invite coverage at all.
+
+**Fix:** a new `Route.noSessionRequired` flag on `Api` (a third escape
+hatch, after `identityScopedByHandler` and `skipOuterSession`, registration-
+time enforced to require `skipOuterSession` alongside it — there is no
+verified principal to scope `db.withSession()` with). `Ctx.principal`
+becomes `VerifiedPrincipal | null`, null only for these routes.
+`GET`/`POST .../accept` — the two routes that never touch `c.principal` at
+all — now set it; `POST .../revoke` and `POST .../guardianships` (which
+correctly need the caller's real identity) do not. Verified both ways: the
+bypassed routes now work end to end with no session, and revoke still
+correctly 401s with no session, proving the bypass is scoped to exactly
+the two routes that need it.
+
+### Fixed — HIGH
+**`channels.ts`'s `senderStatus()` gave the sender a false reason for
+non-delivery.** When a channel was SMS-eligible, a real adult number WAS on
+file, but the 90-minute escalation wait simply hadn't elapsed yet, the
+sender was told *"we don't have a number for the house — add one and we
+can let someone know next time"* — false on both counts: a number is on
+file, and SMS fires automatically once enough time passes. This directly
+violated the module's own stated purpose ("the sender is told what
+actually happened") and evaded `auditStatus()`/`STATUS_BANNED`, which only
+checks for false *delivery* claims, not a false *cause* for non-delivery.
+The same generic line was also wrong for a channel with no SMS fallback at
+all (e.g. `web`) — "add one" implies adding a number would help, when the
+channel itself is the limit. **Fix:** `route()`'s `rejected` entries gain a
+structured `code` (`'not_sms_eligible' | 'no_number' | 'not_yet_time'`),
+and `senderStatus()` branches on it instead of returning one hardcoded
+line for every `route:'none'` case. Three honest, distinct lines now exist
+for the three real reasons nothing could be sent.
+
+### Fixed — MEDIUM (child-safety / contract-integrity)
+- **`call_knock_screen.dart`'s read-aloud text was not verbatim.**
+  `_spokenText` appended a hand-composed instructional sentence — "You can
+  answer, say you are just talking, or say not now." — that appeared
+  nowhere on screen, contradicting both MASTERFILE §5.25.2/CHANGELOG
+  v0.49.12's own "reads ... back verbatim" claim and the read-aloud
+  feature's entire reason for existing (a11y_speech.dart's own "never
+  composes" design). Fixed: `_spokenText` is now the real prompt, the real
+  on-screen reassurance line, and the three real button labels
+  (`answerWords`), joined — nothing paraphrased. A new exact-match test
+  proves it word for word.
+- **`call_knock_screen.dart` bypassed the `admitSpeech()` gate** every
+  other real `speak()` call site (`emergency_card.dart`,
+  `handover_notes.dart`) uses — those two call `admitSpeech(SpeechTrigger
+  .tap)` before every `speak!(...)`, a structural guarantee that an
+  autonomous trigger is refused for real. This screen called `widget.
+  speak!(...)` directly, with no gate at all. Harmless today (the only call
+  site is a real tap) but the safety net every sibling screen relies on was
+  silently absent. Fixed: now imports `a11y_speech.dart` and gates
+  identically.
+- **`court_export.dart`'s `reviewableAt()` ignored text scale** while its
+  sibling `columnsAt()` — two lines away, same `build()` method — correctly
+  divided by it, exactly the mistake MASTERFILE §8.11.1 names by name:
+  "computing from device width is the mistake that makes accessible
+  layouts break on small screens." A guardian at 2.0x accessibility text on
+  a ~650px-wide screen (raw width above `reviewMinWidth`) has an
+  *effective* width of ~325px — narrower than the 344px Fold-cover case
+  this same pass already guards against overflow for — and would have
+  gotten the full certified-export review UI squeezed into that space.
+  Fixed: `reviewableAt()`/`requestableAt()` both take the same optional
+  `textScale` `columnsAt()` already does. Two new tests prove the exact
+  scenario the audit described, plus that a genuinely wide screen still
+  passes at the same text scale (the fix narrows correctly, it doesn't
+  just always refuse once any scaling is present).
+- **A stale "§8.12.3" citation (already corrected once, in `postures.ts`
+  itself, earlier in this same v0.49.13 pass) was reintroduced into every
+  file that pass touched to consume it** — five times in `court_export.
+  dart`, plus the brand-new test group name and a test title in
+  `court_export_test.dart`. The pass that fixed the citation at its origin
+  didn't propagate the fix to its own new consumer code. All eight
+  instances corrected to §8.11.7, the real match.
+
+### Fixed — coverage gaps (real, undisclosed, now closed)
+- **`notify.ts`'s `admission.ok === false` advice branch** — unreachable
+  with any real shipped channel (none in `devices.ts`'s `CHANNELS` combine
+  `push:false` with `fallback:'none'`), but live code in the exact path
+  this codebase's own header calls "the worst class of defect this product
+  can have," and it had never executed once under test. A new `admitDevice`
+  injection seam on `NotifyDeviceDeps` (same shape as the existing
+  `buildPush`/`sendGuard`/`sendFcm`/`sendApns` seams) lets a test force it;
+  a new test proves the `: admission.note` ternary arm produces the right
+  shape.
+- **`notify.ts`'s device-prune failure catch** (`try { pruned = await
+  removeDeviceTokenSystem(...) } catch { /* best-effort */ }`) had never
+  been exercised with a throwing prune. Deterministic by JS semantics, so
+  no live bug — but "guaranteed by language semantics" and "proven by a
+  real test" aren't the same claim, and this codebase doesn't treat them as
+  interchangeable elsewhere. Same injection-seam treatment; a new test
+  forces the throw and proves `pruned` stays `false`, the row survives, and
+  the original send failure is still reported correctly.
+- **`LiveCourtExportScreen`'s generic `catch (e)` block** (distinct from
+  its `on ApiException` branch) had zero coverage — every existing test
+  drives well-formed JSON at some status code, which `api_client.dart`
+  always wraps as `ApiException`. A real, reachable gap: `devLoginFor()`
+  calls `jsonDecode(res.body)` unconditionally, with no guard, before
+  checking the status code — a malformed dev-login response throws a raw
+  `FormatException` only the generic catch handles. A new test proves it:
+  the fallback error UI renders correctly and nothing escapes uncaught.
+- **`call_knock_screen.dart`'s real production timeout path** — the only
+  existing test that lets the real 90-second timer elapse supplies a
+  non-null `onTimedOut` test-seam callback, but that parameter's own doc
+  comment says production never supplies one. A new test proves the actual
+  production configuration (null callback, real timer, real
+  `Navigator.maybePop()`) dismisses correctly.
+
+### Fixed — documentation accuracy
+- `device_channels_test.dart`'s CHANGELOG entry (v0.49.11) claimed 15
+  assertions; the file has 14. Corrected.
+- `court_export_test.dart`'s new review-width-gate test group is now
+  accurately described below (it gained two more cases in this same pass,
+  for the text-scale fix above).
+
+### Also disclosed, deliberately not built this pass
+`court_export.dart`'s `requestableAt()`/`requestMinWidth` remains real,
+ported, and uncalled — now explicitly disclosed in its own doc comment
+(matching `form_factors.dart`'s own precedent for exactly this situation)
+rather than left silent. Concretely: `requestMinWidth` is 320px, and
+MASTERFILE §8.11.1's own floor for this entire app is 344px — every real
+width this screen can ever be given on a supported device already
+satisfies it, so no UI branch that consulted it could ever produce a
+different outcome. Wiring it in for real would mean inventing a
+sub-320px UI state no supported device can reach.
+
+### Tests
+- `stack.test.mjs` — new "H noSessionRequired" section (6 assertions)
+  proving the `Api` mechanism generically, alongside `guardian_invite.
+  test.mjs`'s new "G real route" section (7 assertions) proving the actual
+  guardian-invite routes end to end against real Postgres.
+- `channels.test.mjs` — section D extended/fixed (8 new/corrected
+  assertions) proving `senderStatus()`'s three real reasons.
+- `call_knock_screen_test.dart` — strengthened the read-aloud test to an
+  exact match (not substring containment) and added the production-timeout
+  case (2 new/strengthened assertions).
+- `court_export_test.dart` — 2 new text-scale cases plus 1 new generic-catch
+  case (3 new assertions); the review-width-gate group is now 6 cases, not
+  4 as first shipped.
+- `notify.test.mjs` — new "F3 silent device" and "F4 prune throws" sections
+  (7 new assertions) using the two new injection seams.
+- `flutter analyze` clean. Full `flutter test` (1536 cases) green except
+  the same pre-existing, unrelated `push_channel_test.dart` failure noted
+  since v0.49.6. Full JS suite (JS + real-Postgres) green.
+- A stale compiled artifact (`notify.mjs`) briefly reintroduced one of the
+  mutation-testing mutants after an incomplete revert during that pass —
+  caught by the regression sweep immediately after, not by assumption;
+  rebuilt from the real source and reconfirmed clean. Recorded because
+  this codebase's own discipline is to say so, not because it shipped
+  anywhere real.
+
+---
+
+## [0.49.13] — 2026-08-20 — The device matrix, ported; the court export finally honors its own promise
+
+Two queued items from the same original scoping pass as v0.49.12, both
+about responsive layout, closed together because they turned out to be
+genuinely related: a `FORM_FACTORS` Dart port, and `CourtExportScreen`'s
+breakpoint rebuild around `REQUEST_MIN_WIDTH`/`REVIEW_MIN_WIDTH`.
+
+### Added
+- **`client/lib/form_factors.dart`** (new) — a deliberately partial 1:1
+  port of `devices.ts`'s §8.11.1 section (`Posture`, `Orientation`,
+  `Viewport`, `FormFactor`, `FORM_FACTORS`, `NARROWEST`, `factor()`,
+  `postureFor()`, `columnsAt()`). §8.11.2's input/stylus subsection is not
+  ported — no client caller identified for it yet.
+- **`court_export.dart`**: `CourtExportScreen`'s Row-vs-Column layout
+  toggle for its two cards now uses `columnsAt()`'s real, tested 660px
+  effective-width threshold instead of an unexplained bare `760`.
+
+### Fixed — the real find of this pass
+`packages/devices/src/postures.ts`'s §8.11.7 rule ("requesting a certified
+export must work on a phone even if reviewing it does not") existed as
+real, tested pure logic (`REQUEST_MIN_WIDTH`, `REVIEW_MIN_WIDTH`,
+`reviewableAt()`, `requestableAt()`) since before this pass — with **zero**
+client enforcement. Both `CourtExportScreen` (the demo build) and
+`LiveCourtExportScreen` (the real, backend-wired one) rendered the FULL
+certified-export review UI — preview controls, "Generate certified
+export," the attestation panel — at any width, including a 344px Fold-
+cover screen. This directly contradicted the screen's own
+`requestConfirmation()` copy, which promises reviewing needs "a computer
+or a tablet." Both screens now show that honest message below 600px
+instead of the review UI; raw export, never gated by this rule, stays
+fully available at any width.
+
+Building this surfaced a second real bug, not just a missing feature:
+`LiveCourtExportScreen`'s first draft read the gate from
+`MediaQuery.sizeOf(context).width`. An isolated repro test proved that API
+does not reliably track a test's `tester.binding.setSurfaceSize()` — it
+reported the flutter_test default (800px) regardless of the actual surface
+size, while a sibling `LayoutBuilder`'s `constraints.maxWidth` correctly
+tracked it. Rather than work around this in the test, the production code
+was rebuilt on `LayoutBuilder`, matching `CourtExportScreen`'s own already-
+correct approach — more precise in production too, since it reflects the
+actual available width for this widget subtree, not the whole app window.
+
+A third wrong MASTERFILE citation (after the two `channels.ts` found in
+v0.49.11) was found and fixed in the same pass: `postures.ts`'s own header
+cited "§8.12.3" for this section — §8.12 does not exist anywhere in
+MASTERFILE, skipped entirely between §8.11 and §8.13. The real match is
+§8.11.7, "The audit, and honest exceptions," whose own closing line —
+"Requesting it must work there even if reviewing it does not" — is this
+section's exact spec.
+
+### Tests
+- `form_factors_test.dart` (new, 20 assertions) — proves the port matches
+  `devices.ts`'s own behavior, including the effective-width equivalence
+  (`columnsAt` at 2.0x text scale on a 1320px viewport equals 1.0x on
+  660px).
+- `court_export_test.dart` — new group "§8.12.3 review-width gate" (5
+  cases: below/at/one-pixel-below `reviewMinWidth`, raw export unaffected)
+  plus one new `LiveCourtExportScreen` case proving the same gate applies
+  to a REAL fetched attestation, not just the demo chain. All pre-existing
+  cases (including the 344px "no overflow" sweep) still pass unmodified.
+- `flutter analyze` clean. Full `flutter test` (1532 cases) green except
+  the same pre-existing, unrelated `push_channel_test.dart` failure noted
+  since v0.49.6. `transport.test.mjs`'s repo-wide Dart-source-scanning
+  checks pass on the new files.
+
+### Found, not fixed this pass
+`packages/devices/test/postures.test.mjs`'s own header separately cites a
+bare "§8.12" for this file's OTHER sections (tabletop placement, landscape,
+rotation, web-call access) — also unverified against a real MASTERFILE
+heading, and left alone this pass: tracing each of those sections to its
+real match is a larger, separate audit than this one narrowly-scoped
+citation fix.
+
+---
+
+## [0.49.12] — 2026-08-19 — Knocking, not ringing: §5.25.2's first real screen
+
+Queued as "a knock/waiting-room canned-copy reader — near-zero risk, reuses
+the now-real TTS infrastructure." That framing turned out to be wrong on
+inspection: `grep`-ing the client for any existing incoming-call UI found
+none at all — `packages/live/src/lifecycle.ts`'s §5.25.2 "knocking" section
+had zero client wiring, not an existing screen missing a speaker button.
+This entry corrects that scope honestly and builds the real thing: the
+first incoming-call experience this client has ever had.
+
+The "waiting room" half of the same source file (its own comment labels it
+"§5.25.5" — no matching MASTERFILE section exists for it) is explicitly
+NOT built here: it needs a supervisor-facing admission UI, and this
+codebase's own engine-capacity scoping pass already declined to invent
+`therapist_role_visibility_scope` and its sibling supervisor-UX questions
+unilaterally. Building the waiting room would mean re-opening exactly that
+declined territory — left alone, not silently expanded into.
+
+### Added
+- **`client/lib/call_knock.dart`** (new) — a deliberately PARTIAL 1:1 port
+  of `lifecycle.ts`'s §5.25.2 section only (`Knock`, `knockUnanswered()`,
+  `ANSWER_WORDS`, `ANSWER_BANNED`, `auditAnswerWords()`, `notNowOutcome()`).
+  Not ported: §5.25.1 (Fold posture-change — a different concern, belongs
+  with a future `FORM_FACTORS` port), §5.25.3 (device handoff — a session
+  concern), §5.25.4 (both-free windows — a guardian-side suggestion, not
+  this screen), and the waiting room (see above).
+- **`client/lib/call_knock_screen.dart`** (new) — the real UI. Deliberately
+  calm: no numeric countdown, no urgent color, no escalation — matching
+  §5.25.2's own "a knock waits" framing. Three real answer buttons sourced
+  from `ANSWER_WORDS`: "Answer" and "Just talking" both navigate to the
+  real, already-shipped `CallScreen` (the TS source names no technical
+  difference between the two words, and none is invented here); "Not now"
+  shows the real `notNowOutcome().line` ("Alright. He knows you are busy.")
+  then dismisses itself. An unanswered knock times out after the real 90
+  seconds (`knockWaitsSeconds`) and dismisses QUIETLY — no error, no red,
+  no "missed call" anywhere, per §9.13.4's already-settled rule applied
+  here for the first time. A speaker action (§8.8.5) reads the prompt and
+  every answer option back verbatim, falling back to the same honest "not
+  built yet" message as every other optionally-wired read-aloud button in
+  this client when no `speak` callback is supplied.
+- **`buildCallIncomingHandler()`** (same file) — the real, tested
+  integration point for `PushChannel.onForegroundPointer`. Honestly
+  disclosed as not yet wired to anything live: a real `call_incoming` push
+  carries no caller identity at all (`push.ts`'s own content-free
+  `PushInput` — only `kind`/`ref`/`callHandle`), so `from`/`who`/
+  `displayName` are supplied by whoever eventually calls this, the same
+  fixed-identity assumption `CallScreen`'s own existing call sites
+  (`child_home.dart`, `guardian_home.dart`) already make. Two more,
+  separate, pre-existing gaps stand between this and a live incoming call:
+  no `GlobalKey<NavigatorState>` exists in this client's root widget to
+  navigate from a background push tap, and no server route actually
+  triggers a `call_incoming` push yet (`notify.ts`'s own header:
+  `notifyDevices()` has zero HTTP call sites). Neither is fabricated here.
+
+### Tests
+- `call_knock_test.dart` (new, 16 assertions) — proves the port matches
+  `lifecycle.ts`'s own behavior label-for-label, including that every
+  banned word is actually caught, case-insensitively.
+- `call_knock_screen_test.dart` (new, 10 assertions) — the prompt and all
+  three answer options render verbatim; Answer and "Just talking" both
+  genuinely reach `CallScreen` (proven the same way `widget_test.dart`'s
+  own "reaches the real CallScreen" tests already do — through the real
+  fetch-failure error state, not a widget-type check); "Not now" shows the
+  real line then dismisses on its own; an unanswered knock times out after
+  a REAL 90 seconds (fast-forwarded via `tester.pump(Duration(seconds:
+  90))`, no injected fake clock) and leaves cleanly with no "missed"/
+  "Missed" text anywhere; the read-aloud button's honest fallback and real
+  speak path; `buildCallIncomingHandler()`'s three cases (navigates on a
+  real `call_incoming` pointer, ignores every other kind, no-ops safely on
+  an unmounted navigator).
+- `flutter analyze` clean. Full `flutter test` (1507 cases) green except
+  the same pre-existing, unrelated `push_channel_test.dart` failure noted
+  since v0.49.6. `transport.test.mjs`'s repo-wide Dart-source-scanning
+  checks (UNVERIFIED header present, no TODOs, balanced braces/parens) both
+  pass on the new files.
+
+---
+
+## [0.49.11] — 2026-08-18 — §8.11.4 channel awareness, and the bug two copies of it hid
+
+This codebase's own prior engine-room audit ranked `push_channel.dart`'s
+`CHANNELS`/`admitDevice()`/`channelAdvice()` wiring as its **top finding**:
+real, fully unit-tested pure logic (`packages/devices/src/devices.ts`
+§8.11.4) with zero production callers anywhere — server or client. Scoping
+this pass properly (a 4-agent research fan-out + synthesis, before any code
+was written) surfaced something the original finding didn't know about: a
+**second, independent, drifted copy** of the same channel facts in
+`packages/transport/src/channels.ts`, which had silently diverged from
+`devices.ts` and could route a `web` device to an SMS fallback `devices.ts`
+has never declared it eligible for. Both problems are fixed together, not
+separately — reconciling the duplication is what surfaced and fixed the bug.
+
+### Fixed
+- **The web/SMS bug.** `devices.ts`'s `CHANNELS` declares `web`'s fallback
+  as `foreground_socket` only, never SMS. `channels.ts`'s `route()` and
+  `reachability()` each independently re-derived SMS eligibility instead of
+  reading `devices.ts`'s own facts, and neither actually checked it — a
+  `web` device with an adult number on file and a long enough wait would
+  route straight to `sms_to_adult`, and `reachability()`'s guardian-facing
+  copy would promise "we can text the grown-up there" for a channel that
+  cannot. `channels.test.mjs`'s new §C ("the web/sms bug") proves this fails
+  before the fix and passes after it — not just that the happy path works.
+- **`channels.ts` now imports `Channel`/`CHANNELS`/`capability` from
+  `devices.ts`** rather than redeclaring them — one source of truth for a
+  channel's push/fallback facts, not two hand-maintained copies. `route()`'s
+  `sms_to_adult` branch and `reachability()`'s SMS mention both now gate on
+  `capability(channel).fallback === 'foreground_socket_and_sms'`.
+- **Two wrong MASTERFILE citations, present since `channels.ts`'s first
+  commit**, corrected: its header cited §10.5 ("Recording consent," unrelated
+  call-recording-consent law) for what is actually §8.11.4 ("The silent
+  device") — `devices.ts` already self-cited correctly; and its `ADULT_SMS`
+  section cited §10.4 (unrelated state-design-code/AADC law) for what is
+  actually §10.8 ("SMS bridge"). `postures.test.mjs`'s own header carried
+  the same wrong §10.5, copy-pasted from `channels.ts`; fixed there too.
+
+### Added
+- **`packages/transport/test/channels.test.mjs`** (new, 52 assertions) —
+  `channels.ts` had ZERO test coverage in its own package before this pass.
+  Its only prior exposure was transitive: `postures.test.mjs`, in the
+  DIFFERENT `devices` package, happened to import and exercise it alongside
+  unrelated tabletop/landscape/court-export coverage — verify.sh's own
+  suite label ("channels + postures + pending") is misleading; it is not
+  channels.ts's own suite. The new file covers `route()`'s full cascade,
+  `senderStatus()`/`auditStatus()`, `auditAdultSms()`, `socketPolicy()`,
+  `reachability()`, and the web/sms bug specifically (section C).
+- **`db/migrations/0015_device_token_channel.sql`** — `device_token` gains a
+  nullable `channel` column, CHECK-constrained to the six real §8.11.4
+  values. Nullable, not defaulted: nothing client-side can yet distinguish
+  `android_play`/`android_amazon`/`android_bare`, and writing a guessed
+  default into storage would be exactly the fabrication MASTERFILE §0
+  forbids. `NULL` means "unknown," honestly.
+- **`packages/db/src/pool.ts`** — `DeviceTokenRow.channel`,
+  `registerDeviceToken()`'s new optional `channel` parameter, and
+  `deviceTokensFor()`'s `channel` column read. The upsert's `channel`
+  column uses `COALESCE(EXCLUDED.channel, device_token.channel)`, not a
+  bare overwrite — a re-registration call that doesn't know the channel
+  (e.g. a token-refresh event) can never clobber a previously-known value.
+- **`server/routes.mjs`** — `POST /v1/me/device-tokens` accepts an optional
+  `channel` field, validated against `devices.ts`'s own `CHANNELS` (a third
+  hand-typed copy of the six-value enum was deliberately avoided).
+- **`packages/transport/src/notify.ts`** — `notifyDevices()`'s per-device
+  loop now resolves a channel (`device.channel`, or a conservative,
+  explicitly-commented `android_play` default for an Android device that
+  hasn't reported one yet — the OPTIMISTIC direction, not the safe one; see
+  `resolveChannel()`'s own doc comment for why) and calls `admitDevice()`
+  before attempting a send. A device that cannot push is now SKIPPED —
+  never handed to `fcm.ts`/`apns.ts` — and the result carries
+  `code: 'no_push_capability'` plus `channelAdvice()`'s real guardian-facing
+  copy in a new `advice` field, ready for whatever future caller surfaces
+  `notifyDevices()`'s results to a client (that caller still doesn't exist —
+  a separate, pre-existing, unchanged gap).
+- **`client/lib/device_channels.dart`** (new) — a deliberately PARTIAL 1:1
+  Dart port of `devices.ts`'s `Channel`/`ChannelCapability`/`CHANNELS`/
+  `capability()`/`channelAdvice()`. Partial on purpose: `admitDevice()` is
+  not ported, because nothing in this client calls it.
+- **`client/lib/push_channel.dart`** — `registerToken()` now reports
+  `channel: 'ios'` on iOS (omitted, never a guessed value, on Android — this
+  client cannot yet tell Play/Amazon/bare Android apart) and gains a real
+  `registrationAdvice` getter. Functionally inert on a real device today
+  (the only channel this client can currently report is always
+  push-capable, and no screen surfaces it yet either) but real and tested,
+  not a stub — the day Android channel detection lands, this needs no
+  changes to start mattering.
+
+### Tests
+- `channels.test.mjs` (new, 52 assertions), `device_channels_test.dart`
+  (new, 14 assertions — corrected v0.49.14; an adversarial audit found this
+  entry originally overcounted by one).
+- `notify.test.mjs` — new §F ("channel awareness"): a FireOS device is
+  skipped and carries real advice text, `sendFcm` is proven never called
+  for it; a Play Services device still sends normally. New §F2: a device
+  that never reported a channel falls back to the documented optimistic
+  default rather than being skipped.
+- `device_token.test.mjs` — new §F: a channel is really stored, a
+  channel-less re-registration does not clobber a known one, a genuinely
+  new channel value does overwrite.
+- `push_channel_test.dart` — 2 new cases: no `channel` key sent on a
+  non-iOS host; `channel: 'ios'` sent and `registrationAdvice` is null on
+  iOS (established via `debugDefaultTargetPlatformOverride`, reset via
+  `addTearDown` — no prior test file in this client used that override, so
+  this pass was careful not to leak it across tests).
+- `flutter analyze` clean. Full `flutter test` (1481 cases) green except the
+  same pre-existing, unrelated `push_channel_test.dart` failure noted since
+  v0.49.6 — one new instance of it caught and fixed mid-pass: this file's
+  own header disclosure convention ("UNVERIFIED — no Flutter toolchain")
+  had been omitted from `device_channels.dart`, which `transport.test.mjs`'s
+  own repo-wide convention check correctly failed on until fixed.
+- Full JS suite green: `channels.test.mjs`, `devices.test.mjs`,
+  `postures.test.mjs`, `notify.test.mjs`, `device_token.test.mjs`,
+  `transport.test.mjs`, `stack.test.mjs`, `contract.test.mjs` all re-run
+  against a freshly migrated database (15/15 migrations applied) after this
+  pass's changes, all green.
+
+### Found, not fixed this pass
+Real, credential-free Android APIs exist to detect a device's actual
+§8.11.4 channel — `GoogleApiAvailability.isGooglePlayServicesAvailable()`
+for Play Services presence, `PackageManager.getInstallSourceInfo()`/
+`getInstallerPackageName()` for store attribution (`com.android.vending` =
+Play, `com.amazon.venezia` = Amazon Appstore) — and a real MethodChannel
+bridge for it would follow the exact precedent `KioskBridge.kt`/
+`WearSyncBridge.kt` already set (see `devices.ts`'s own §8.11.4 header for
+the full account). Scoped and explicitly declined this pass, same reasoning
+as the already-deferred `LOCK_METHODS`/`childShellAllowed()` gap (v0.49.10):
+every existing MethodChannel bridge in this repo is `UNVERIFIED (no Flutter
+toolchain)` by its own header, and shipping a brand-new, uncompilable native
+bridge while calling channel detection "solved" would be exactly the
+fabrication MASTERFILE §0 forbids. Building it once would unblock BOTH this
+gap and `LOCK_METHODS`'s — they are blocked on the identical missing piece.
+
+A real foreground-socket delivery server (the `foreground_socket`/
+`foreground_socket_and_sms` fallback `channels.ts`'s own `route()`/
+`SocketPolicy` decide *for*) and real SMS sending (`ADULT_SMS`,
+`auditAdultSms()`) remain pure, tested decision/content-audit logic with no
+transport behind them — confirmed by grep across `server/`, `packages/
+session-runtime/`, and the whole repo: no WebSocket/socket-server
+implementation and no SMS-provider credential exist anywhere. Both are
+genuinely new subsystems, not present-but-unwired code, and are sized as
+their own future passes, not part of this one.
+
+---
+
+## [0.49.10] — 2026-08-18 — Read-aloud is real: on-device, tap-gated, verbatim
+
+§8.8.5's own spec (settled v0.39.0) had a full pure-logic implementation in
+`packages/a11y/src/a11y.ts` — `speakableText()`/`admitSpeech()`/the
+on-device-only, never-autonomous, default-on-below-8 posture — and zero
+client wiring. `flutter_tts` wasn't even a declared dependency. This closes
+that gap on the two screens where it matters most under real pressure: the
+emergency card (§9.6.3) and the parent-to-parent handover log (§21.7, P8).
+
+Built per an explicit user directive to deepen Galaxy Z Fold 5/tablet
+fidelity and add a cost-free, fully-wired, rule-based assistant layer for the
+child's (and possibly the adult's) live navigation of the app, spanning
+calls, games, learning, and observation tools. That directive was scoped
+first — a full review against every P1–P9 prohibition (§2.1) before any code
+was written — landing on read-aloud as the first slice: it is not
+generative, it reads real, already-displayed text back verbatim, and it
+never composes, summarizes, ranks, or infers anything.
+
+### Added
+- **`a11y_speech.dart`** (new) — a 1:1 semantic port of `a11y.ts`'s
+  `speakableText()`/`admitSpeech()`/`LABELS`, same function names and shapes
+  as the original, the same discipline `lock_controller.dart` already
+  applies porting `lock.ts`. No plugin dependency at all — testable with
+  zero mocking.
+- **`tts_channel.dart`** (new) — the real platform half, wrapping
+  `package:flutter_tts` (newly declared in `pubspec.yaml`, federated across
+  android/ios/linux/macos/web/windows, the same "real, federated plugin, no
+  fabricated native config" posture `image_picker`/`path_provider` already
+  use). Every platform speaks through its own **offline** synthesizer
+  (`AVSpeechSynthesizer` on iOS, `android.speech.tts.TextToSpeech` on
+  Android, ...) — never a cloud API. `buildSpeakCallback()` follows this
+  codebase's established real-callback-builder convention
+  (`buildRegisterPasskeyCallback`, `buildVerifyBiometricCallback`).
+- **`emergency_card.dart`** gains a speaker action in its `AppBar`, reading
+  the whole card back verbatim in the same allergy-first order the layout
+  already enforces — a single `_cardSpokenText` constant, so the spoken and
+  displayed versions can never drift apart.
+- **`handover_notes.dart`** gains one read-aloud button per entry, reading
+  that entry's author/timestamp/text only.
+- Both screens fall back to an honest `'Read aloud — not built yet.'`
+  SnackBar when no `speak` callback is supplied — the same "recorded, not
+  glossed over" posture `emergency_card.dart`'s own Call buttons already use
+  — rather than a silent no-op or a faked success.
+
+### Tests
+- `a11y_speech_test.dart` (new) — pure logic, proving the port matches
+  `a11y.ts`'s own behavior label-for-label.
+- `tts_channel_test.dart` (new) — mocks the real `MethodChannel('flutter_tts')`
+  (`kiosk_channel_test.dart`'s own mocking pattern for a different plugin),
+  proving stop-before-speak ordering, no queueing across repeated calls, and
+  `buildSpeakCallback`'s real integration.
+- `emergency_card_test.dart` — 3 new cases: the honest fallback message, a
+  real `speak` called exactly once with allergy-first verbatim text, and no
+  false-positive fallback message when a real callback exists.
+- `handover_notes_test.dart` — 3 new cases, plus two fixes surfaced by
+  adding a real `IconButton` to a screen with a pre-existing, too-broad
+  invariant test: the old `'NO delete or edit affordance'` test asserted no
+  `IconButton` existed anywhere on the tree at all — a broader proxy than
+  its actual intent — replaced with a precise per-button icon/tooltip check
+  that still fails if a real delete/edit button ever appears. Separately,
+  the taller rows the new buttons produce pushed a 5th card outside the
+  default (unsized) test viewport's built range — the identical class of
+  bug `emergency_card_test.dart`'s own `pump()` helper already guards
+  against — fixed with a `pumpTall()` helper
+  (`setSurfaceSize(Size(800, 1600))`).
+- `flutter analyze` clean across all 4 new/edited lib files and 4
+  new/edited test files. Full `flutter test` (1465 cases) green except the
+  same pre-existing, unrelated `push_channel_test.dart` failure noted since
+  v0.49.6.
+
+### Found, not fixed this pass
+The scoping pass that preceded this work also ranked
+`LOCK_METHODS`/`childShellAllowed()` wiring (device-distribution-channel-
+aware kiosk enforcement) as a candidate. On closer inspection it was
+deprioritized, not built: it depends on real distribution-channel detection
+infrastructure (Play Store track / sideload / MDM identification) that does
+not exist anywhere in this codebase yet, which makes it a materially larger
+effort than the scoping pass's own first read — recorded here rather than
+silently dropped. The remaining ranked candidates from the same scoping pass
+— a Dart port of `FORM_FACTORS`/`postureFor()`/`columnsAt()`,
+`push_channel.dart`'s `CHANNELS`/`admitDevice()`/`channelAdvice()` wiring
+(this codebase's own top-ranked finding from the prior engine-room audit), a
+knock/waiting-room canned-copy reader, and `CourtExportScreen`'s breakpoint
+rebuild around `REQUEST_MIN_WIDTH`/`REVIEW_MIN_WIDTH` — remain queued, not
+built this pass.
+
+---
+
+## [0.49.9] — 2026-08-17 — Gap-fill batch 2: the guardian invitation route, honestly incomplete
+
+The second real item built in gap-fill batch 2 (after v0.49.7's escalation
+screen; v0.49.8 was a correction to that item's own testing claim, not a
+third item). `invitation_screen.dart`'s own
+header named the missing piece precisely: "the API surface names
+`POST /v1/children/:id/guardianships`, but no such route exists in
+`server/routes.mjs`." This closes that route — and, in doing so, surfaces a
+real, deeper, still-open gap this pass does not invent an answer to.
+
+### Fixed
+- **`db/migrations/0014_guardian_invite.sql`** — a new `guardian_invite`
+  table, deliberately separate from `guardianship` (0001): create/read/
+  accept-decision/revoke, real RLS (`FORCE ROW LEVEL SECURITY`, an
+  `invited_by = current_actor()` policy), a `CHECK` that accepted and
+  revoked can never both be set, and `health_check`'s `rls_unforced` probe
+  extended to monitor it (carried the full list forward, same discipline
+  0013 already restated for `export_record`).
+- **`packages/db/src/pool.ts`** — `createGuardianInvite()`,
+  `getGuardianInvite()`, `acceptGuardianInvite()`, `revokeGuardianInvite()`.
+  The invited party has no `app_user` row and therefore no session; reading
+  and accepting a specific invite runs as `system`, with the invite's own
+  long, random id standing in for a credential — the same posture a
+  single-use WebAuthn challenge already uses for a not-yet-authenticated
+  caller.
+- **Four real routes** in `server/routes.mjs`: `POST
+  /v1/children/:childId/guardianships` (create — checks the caller holds a
+  live guardian edge to the child directly, since no `Action` exists in
+  `authorize.ts`'s enum for "invite"), `GET /v1/guardian-invites/:inviteId`,
+  `POST .../accept`, `POST .../revoke` (only the inviting guardian, RLS-
+  enforced — a stranger's attempt is indistinguishable from `not_found`,
+  proven by querying under their own session and finding zero rows, not by
+  trusting the function's return value alone).
+- **`invitation_screen.dart`** gains a real accept path (`baseUrl`/
+  `inviteId` supplied) alongside its existing simulated one (either
+  missing) — capture_gate.dart's own dual-path convention. A real failure
+  (expired/already_accepted/revoked/network) shows honestly instead of
+  optimistically firing `onAccept` anyway.
+- **`api_client.dart`** — `OliveApi.createGuardianInvite()` (needs a
+  guardian session) plus three free functions (`fetchGuardianInvite`,
+  `acceptGuardianInvite`, `revokeGuardianInvite`) matching
+  `webauthnLoginChallenge`/`Verify`'s own no-session shape. `revoke` has no
+  UI caller yet — no "manage sent invites" screen exists — the route and
+  wiring are real and tested regardless.
+
+### Found, not fixed this pass — a real, foundational gap
+No `guardianship` row is created anywhere in this flow, and can't be:
+closing that loop needs an app_user row for the invited party, and this
+codebase has never built an account-creation route for one — not for an
+invited second guardian, not even for the FIRST guardian.
+`guardian_setup.dart`'s passkey registration
+(`webauthn_channel.dart`'s `buildRegisterPasskeyCallback`) requires an
+already-authenticated `OliveApi` session before it can call
+`/v1/auth/webauthn/register/challenge` — and nowhere does a brand-new
+guardian ever acquire that first session. "How does a passwordless account
+get created at all" is a real, separate, foundational question this
+codebase has left unanswered since `guardian_setup.dart` was written
+("null in every build today," per that file's own header) — not something
+this migration's `accepted_at` should be read as having silently solved.
+
+### Tests
+- `packages/db/test/guardian_invite.test.mjs` (new) — 32 assertions
+  against real Postgres/real RLS: create, read (found + honest null),
+  accept (success/idempotency/expired/revoked), revoke (owner succeeds, a
+  non-owner's attempt is genuinely invisible under RLS not just refused by
+  app logic, already-accepted blocks revoke), the DB-level `CHECK` itself
+  (bypassing every function via a raw admin `UPDATE`), and `health_check`
+  confirming `FORCE ROW LEVEL SECURITY` actually took.
+- `packages/api/test/contract.test.mjs` — extended with a third, documented
+  A1 `identityScopedByHandler` exception (`POST .../guardianships`,
+  alongside the existing `kiosk-pin/verify` and `GET .../export`) and the
+  new routes' Dart-constant coverage.
+- `invitation_screen_test.dart` — 5 new cases for the real path (success,
+  loading state via a controlled `Completer` rather than a racy instant
+  mock, expired, network failure, missing-config fallback); all 10
+  pre-existing cases pass completely unchanged.
+- `api_client_test.dart` — 8 new cases across `createGuardianInvite`,
+  `fetchGuardianInvite`, `acceptGuardianInvite`, `revokeGuardianInvite`.
+- `flutter analyze` clean across the whole client. Full `flutter test`
+  green except the same pre-existing, unrelated `push_channel_test.dart`
+  failure noted since v0.49.6.
+- Real Postgres verification note: this WSL Postgres instance had stale
+  schema state from a much earlier session (0008 disagreed with the
+  applied copy) — dropped and recreated fresh rather than chased, matching
+  what CI's own `verify.sh` does on every run.
+
+---
+
+## [0.49.8] — 2026-08-17 — Gap-fill batch 2, part 2: escalateSession() resolved, not built on
+
+v0.49.7's "Found, not fixed" note below claimed `escalateSession()` had "no
+test file at all." That was a miss made by grepping only
+`packages/auth/test/` — the function is real, correct, and already tested,
+just from `packages/api/test/stack.test.mjs`, which owns all of `auth.ts`'s
+session/PIN coverage (alongside `packages/auth/test/attestation.test.mjs`,
+which owns the WebAuthn half). This entry corrects that record, closes the
+one branch that turned out to be genuinely uncovered, and answers the real
+open question — whether escalation should mint a live guardian API session
+— by declining to invent a consumer for it.
+
+### Corrected
+- MASTERFILE §7.1's status note and the top-of-document Status line both
+  said `escalateSession()` had no test coverage. It does:
+  `packages/api/test/stack.test.mjs`'s "C sessions" section already covers
+  both-factors-required, either factor alone refused (with the correct
+  `pin`/`biometric` reason each), a child role refused outright, and its own
+  15-minute TTL (`ESCALATION_TTL_MS`) distinct from an ordinary session's
+  60-minute one (`SESSION_TTL_MS`); "F api" section covers the real target —
+  a synthetic `escalated: true` test route proving `packages/api/src/api.ts`'s
+  `Api.handle()` actually enforces `Route.escalated`
+  (`m.route.escalated && !principal.escalated` → `403 escalation_required`)
+  before authorization even runs. What remains true and unchanged: no real
+  production route sets `escalated: true` — the synthetic route above exists
+  only in the test file, to prove the mechanism works, not because a real
+  feature calls it.
+
+### Tests
+- `packages/api/test/stack.test.mjs` — 3 new assertions closing the one
+  genuine gap this review found: `readSession()`'s malformed-token branches
+  (no `.` separator at all; a `.` at position 0, i.e. an empty payload; and
+  a payload that carries a valid HMAC over non-JSON bytes, hand-signed with
+  the test's own secret since that branch is only reachable past signature
+  verification) had no coverage anywhere in the repo. All three now assert
+  `reason: 'malformed'`.
+
+### Decided, not built
+Whether client-side kiosk escalation should also mint a live elevated
+guardian API session — v0.49.7's own open question — is answered by
+declining to invent a route to answer it. Nothing in §7.1's real API
+surface or §8.3 currently needs PIN+biometric step-up beyond what an
+ordinary authenticated guardian session already grants via `can()`'s
+guardianship-edge authorization; wiring `escalateSession()` to a route
+built only to give it a caller would be a fabricated product decision, the
+same class of thing §19's other declined-not-deferred items decline to be.
+`escalateSession()` and `Api`'s `Route.escalated` field stay in place,
+together, as real, tested, working groundwork for whichever future
+guardian action turns out to need it. One boundary on that future is
+permanent: **P7** (§2.1) names "guardian escalation" explicitly as a
+forbidden path to the child's journal, at any tier — no future route may
+spend this mechanism on the one thing graduated privacy exists to have no
+override for.
+
+---
+
+## [0.49.7] — 2026-08-17 — Gap-fill batch 2, part 1: guardian escalation has a real screen
+
+The first of gap-fill batch 2's three substantial items. `escalate()`
+(`lock_controller.dart`, real and unit-tested since day one — §8.3's
+PIN+biometric guardian-scope ceremony) had nowhere to go: `kiosk_shell.dart`'s
+own header explained it stayed unwired on purpose, because wiring it to
+nothing would be exactly the "declaration with nothing behind it" MASTERFILE
+§0 warns against. This gives it a real destination.
+
+### Fixed
+- **`guardian_escalation_screen.dart`** — the "guardian settings reachable
+  from the child's device" surface that used to not exist. Shows the
+  verified state and its expiry, and offers exactly one real action:
+  releasing the native kiosk lock (`KioskChannel.stop()`, a new method
+  wrapping the already-declared `mStop` platform-channel constant). No
+  voluntary "step back down without exiting" action exists, because
+  `lock_controller.dart` has no such state transition — inventing one was
+  out of scope for "wire escalate() to a screen."
+- **`kiosk_shell.dart`** gains a small, unobtrusive escalation trigger
+  (`_EscalationTrigger`) over the locked child surface — never inside
+  `widget.child` itself, keeping §8.1's "no settings affordance in the
+  child surface" intact. Tapping it: PIN entry (reusing `PinGate` as-is),
+  then — only if the PIN was right — the biometric factor, then
+  `lock.escalate()`. A denial (either factor, or cooldown) shows one
+  deliberately generic message; the child watching (§8.3's own framing)
+  never learns which factor failed.
+- **`webauthn_channel.dart`'s new `buildVerifyBiometricCallback`** — the real
+  biometric factor. Reuses the exact same real WebAuthn LOGIN round trip
+  (`webauthnLoginChallenge` → platform ceremony → `webauthnLoginVerify`)
+  already proven for guardian sign-in, against the device's configured
+  guardian `userId`. A real platform-authenticator assertion, checked
+  server-side — not a device-local biometric prompt taken on faith. The
+  resulting session token is intentionally discarded this pass: closing
+  "escalate() has nowhere to go" is not the same claim as "escalation grants
+  a live guardian API session" (see Found, not fixed below).
+- Two stale header claims in `kiosk_shell.dart`, corrected in passing since
+  this pass was already deep in the file: "there is no backend to check a
+  real guardian PIN against yet" (untrue since v0.47.0/`main_live.dart`'s
+  `_verifyGuardianPin`) and the render comment claiming exactly three
+  reachable surfaces (now four).
+
+### Tests
+- `kiosk_shell_test.dart` (new — this file had no dedicated test coverage
+  before this pass) — 6 cases: trigger presence, the full PIN+biometric
+  success path, PIN-only failure, biometric-only failure, the generic
+  denial message, and exiting kiosk mode calling the real native method.
+- `guardian_escalation_screen_test.dart` (new) — 8 cases including a
+  responsive audit at Fold5 cover/main, phone, and tablet/desktop widths.
+- `webauthn_channel_test.dart` (new — `buildRegisterPasskeyCallback` had no
+  dedicated test file either; out of scope to backfill here, only the new
+  function) — 5 cases covering the full round trip, a server-side
+  rejection, an unavailable platform authenticator, a cancelled ceremony,
+  and a network failure — all resolving to `false`, never a thrown
+  exception.
+- `kiosk_channel_test.dart` — 3 new cases for `stop()`, mirroring
+  `beginCallHandoff()`'s existing coverage pattern exactly.
+- `invariants_test.dart`'s existing kiosk-shell group updated for the new
+  required `verifyBiometric` parameter; all pre-existing cases still pass
+  unchanged.
+- `flutter analyze` clean across the whole client. Full `flutter test` green
+  except the same pre-existing, unrelated `push_channel_test.dart` failure
+  noted in v0.49.6 — confirmed still present on `main`, still untouched by
+  this pass.
+
+### Found, not fixed this pass
+`packages/auth/src/auth.ts` also exports `escalateSession()` — a real,
+separate server-side primitive that mints an independently-TTL'd escalated
+session token — with no caller anywhere in `server/` and no test file at
+all. Whether client-side kiosk escalation should also mint one of these
+(a live elevated guardian API session, not just a released kiosk lock) is
+an open question, not answered here — flagged as a follow-up, not silently
+left for someone to rediscover.
+
+---
+
+## [0.49.6] — 2026-08-17 — Gap-fill batch 1: five real gaps closed, one corrected as stale
+
+A full engine-capacity scoping pass (12 parallel batches over every real
+package) catalogued 24 named gaps against `demo/src/bridge.ts`'s own
+`UNDER_CONSTRUCTION` list and MASTERFILE §19/§20.2. Most are genuinely
+outside what this environment can build — a real device, a running
+LiveKit/Jitsi server, a print-fulfilment business partner, or an open
+product decision this pass declined to invent on the owner's behalf (a
+child-initiated "send a hug," curriculum-standard tagging, and insurance/
+benefits coordination were all explicitly *declined*, not deferred, and
+stay that way). This entry closes the five that were genuinely
+code-buildable with no external blocker, and corrects one catalogued gap
+that turned out to already be built.
+
+### Fixed
+- **`who_is_here_screen.dart` closes §17.1's last open line** —
+  "`isSingleGuardianViable()` tested; no UI to exercise it." Ports the
+  predicate 1:1 from `packages/family-graph/src/authorize.ts` and builds
+  §8.5.3's full spec on top: a solo live guardian is stated, never chosen
+  between; a guardian who hasn't accepted her invitation yet appears
+  greyed, with no nudge; nobody-here-yet is a supported, neutral state; and
+  where two have joined, both are selected by default and the *last*
+  selected guardian refuses to be deselected — she may never end up with
+  nobody. 18 test cases (widget + pure-logic), including a responsive audit
+  at Fold5 cover/main, phone, and tablet/desktop widths.
+- **`game_hangman.dart`** gives `packages/games/src/games2.ts`'s
+  `newHangman`/`guessLetter`/`hangmanMask`/`hangmanOutcome` (real, tested
+  since `games2.test.mjs`, `HANGMAN_LIVES = 8`) the one client widget it
+  was missing — `games_hub.dart`'s tile catalogue named it as a gap by
+  omission, unlike checkers/battleship/word search/chess, which all
+  already had one. Guardian-facing setup (word + optional hint) and
+  child-facing play (tap-only alphabet keyboard, TAP_ALWAYS_SUFFICES
+  §8.13.2) follow `game_wordsearch.dart`'s established split. A loss
+  reveals the word warmly, never as a scored defeat — the engine's own
+  "generous by default; this is not a game about a child failing" carried
+  into the copy. 22 test cases total: 7 pure-engine (ported directly from
+  `games2.test.mjs`'s own assertions) plus widget and responsive coverage.
+- **`FilesystemStorage` gives `StoragePort` a second, real implementation**
+  (`packages/storage/src/storage.ts`, §10.1/§5.6/§20.2b). Until now the
+  port had exactly one implementation, and `MemoryStorage`'s own docstring
+  said so explicitly: "test-only." `FilesystemStorage` does real disk I/O —
+  `put`/`get`/`delete`/`exists`/`list`/`signedUrl` all against real bytes on
+  a real (or mounted) volume, with path-traversal refused rather than
+  trusted. This is honestly scoped: a cloud provider (S3/GCS/Azure Blob)
+  still needs a real account and real credentials, neither of which exist
+  in this environment. What it closes is the narrower half of the gap —
+  self-hosted deployment no longer has zero non-test options.
+- **`school.test.mjs` and `print.test.mjs`** — the school layer (§11.5) and
+  print fulfilment (§9.15) were both already real, shipped logic, already
+  wired into `demo/src/play.ts`'s probe harness, and both had zero
+  dedicated automated coverage. 22 and 27 assertions respectively, wired
+  into `tools/verify.sh`'s JavaScript suites.
+
+### Corrected
+- **`siblings_aging_out_surface` was catalogued as a gap and isn't one.**
+  The scoping pass's own package-batch boundaries missed
+  `client/lib/siblings_screen.dart`, which already implements exactly this
+  — `StaggerNotice`/`_StaggerBanner` render "Ivy's archive has transferred
+  to her. Wren is still here" the moment one sibling's guardianship closes
+  while another's stays open, per §21.7. The browser demo has its own
+  independent, already-wired 'siblings' screen (`T.siblingView()`,
+  `T.siblingClose()`) proving the same thing. Recorded here rather than
+  rebuilt.
+
+### Tests
+- 18 test cases, `who_is_here_screen_test.dart` (new).
+- 22 test cases, `game_hangman_test.dart` (new).
+- 18 assertions, `packages/storage/test/storage.test.mjs` (new) — real
+  disk I/O against a throwaway temp directory, not mocked.
+- 22 assertions, `packages/school/test/school.test.mjs` (new).
+- 27 assertions, `packages/print/test/print.test.mjs` (new).
+- `flutter analyze` clean across the whole client; full `flutter test`
+  suite green except one pre-existing, unrelated failure
+  (`push_channel_test.dart`'s static-shape check on
+  `firebaseMessagingBackgroundHandler`) confirmed present on `main` before
+  this change and untouched by it — not fixed here, out of this pass's
+  scope.
+
+### Not built this pass — recorded, not silently dropped
+19 of the 24 catalogued gaps: `guardian_setup` (new invite/escalate
+routes), `child_async_video_sender_identity` and `child_account_take_and_go`
+(schema changes — held for their own reviewed PRs, same posture as SEC-01),
+`kiosk_device_bridges`→Wear OS phone↔watch sync and Windows/iOS halves
+(the latter two are environment/OS-blocked, not merely untested),
+`captions_and_translation` (no STT/translation exists at all; no API key
+exists in this repo either), `live_video_and_calls` (needs a real
+device-to-device session and a trusted TLS cert), `print_fulfilment`'s
+actual vendor integration (a business relationship), `ci_and_alerting_integration`
+(blocked on a GitHub token missing `workflow` scope — a 30-second fix for
+a human, not code), `foster_kinship_placement` (gated on counsel opinion
+and an agency partner), `therapist_role_visibility_scope`,
+`dispute_tiebreak_escalation`, `sibling_to_sibling_contact_ux`,
+`group_call_scheduling_ux`, and `child_device_reality` (five open
+product/UX decisions this pass declined to invent unilaterally), and three
+explicitly *declined* features that were never gaps to begin with —
+`child_initiated_affection_signal`, `curriculum_standard_tagging`,
+`insurance_benefits_coordination`.
+
+---
+
+## [0.49.5] — 2026-08-17 — RENDER-01/02: two demo screens threw since the repo's first commit
+
+`Every Door, Opened` (a full click-through rendering pass of the shipped
+demo, not a code read) found two screens that render an error-boundary
+fallback instead of their real content, every single time: "Observers" and
+"Accessibility." Traced to source, not guessed at: both call bridge
+functions — `T.observerView()`, `T.a11yView()` — that have never existed
+anywhere in this codebase, not since the initial commit. Fixed with real
+data from the real engines behind them, not invented to make the screen
+stop throwing.
+
+### Fixed
+- **`demo/src/bridge.ts` gains a real `observerView()`.** Built entirely
+  from `packages/observer/src/observer.ts`'s already-tested primitives —
+  `OBSERVER_MAY`/`OBSERVER_MAY_NOT` via `observerMay()` for the probe grid,
+  `activeObservers()` for what she's told, `invite()` for the therapist and
+  solo-invite examples, `auditObserverView()` demonstrating a real leak
+  catch. One addition to the engine itself: `OBSERVER_GRANT_TTL_DAYS = 180`
+  — "time-boxed by default" (this module's own header) never had a number
+  attached to it, unlike every other expiry concept in this codebase.
+  **Honestly scoped, not silently expanded:** the screen's own copy claims
+  "one parent cannot admit an observer alone," but `invite()` as written
+  doesn't enforce that (MASTERFILE §16.2 #11 marks the therapist-role scope
+  question as still open) — rather than fabricate a refusal to match the
+  copy, `soloRefused` shows the real, honest result of what `invite()`
+  actually does today.
+- **`demo/src/play.ts` gains a real `a11yView()` and `a11ySet()`.** A third,
+  related gap surfaced while fixing the first two: the click handlers for
+  toggling a setting or changing text scale already called
+  `T.a11ySet(key, value)` as a setter, matching every other piece of
+  toggleable demo state (`motionReduce`, `budgetTier`, `paneDock`, ...) —
+  but only the state object itself (`S.a11ySet`) was ever declared; no
+  setter function existed to go with it. Both are now real, backed by
+  `packages/a11y/src/a11y.ts`'s `layoutFor()`, `captionPolicy()`,
+  `captionsSurviveCall()`, and `auditLabel()` — including using the exact
+  1.5× / 673px numbers `a11y.ts`'s own §8.8.3 comment already works through
+  by hand, so the live view matches that comment's worked example exactly
+  at the default scale.
+
+### Tests
+- Verified directly: both new bridge functions called standalone (bundled
+  outside the demo shell) — no throw, correct shape, `a11ySet()` toggling
+  and `a11yView()` reflecting the change on the next read.
+- `demo/test/drive.test.mjs` — the demo's own comprehensive click-through
+  suite, which walks all 83 nav screens and asserts none render an error
+  card — now passes clean: 116/116, 0 failed, at both device viewports.
+  Note for whoever picks this up next: this exact suite has the assertions
+  that should have caught RENDER-01/02 from day one (`all N screens render
+  clean`, `no uncaught exceptions`), and CI history on `main` shows green
+  throughout. Worth a maintainer's own look at why — not chased down here,
+  since the fix itself doesn't depend on the answer and this pass had
+  already confirmed the bug three independent ways (direct browser click,
+  standalone function call, and now this suite) before writing it up.
+
+## [0.49.4] — 2026-08-16 — CI housekeeping: 8 real test files were never actually running
+
+`Merge Aftermath`'s TEST-01 through TEST-07 findings, all closed here — not
+code fixes, `tools/verify.sh` coverage fixes. Every file below already
+existed, already had real, well-formed assertions, and already passed
+standalone (confirmed before wiring, not assumed) — `npm test`/CI simply
+never invoked any of them, so a real regression in any one would have shipped
+silently.
+
+### Fixed
+- **`packages/db/test/health_alert.test.mjs`** — the one suite that proves
+  `tools/health-alert.mjs`'s orphan-risk alerting actually fires on a real
+  breach and stays quiet on a healthy database. Wired into the "DB suites
+  requiring a real NOSUPERUSER NOBYPASSRLS role" section (same
+  `DATABASE_URL`/`ADMIN_DATABASE_URL` split as its siblings there).
+- **`packages/api/test/messages_route.test.mjs`** — the only suite that
+  proves a `captureMessage()` REJECTION is honoured by the HTTP layer end to
+  end (no row written), not just by the pure pipeline function in isolation.
+  Same DB-role section.
+- **`packages/games/test/games2.test.mjs`** / **`games3.test.mjs`** —
+  checkers (mandatory captures, multi-jump, crowning), battleship, hangman,
+  chess, Kim's game, the scavenger hunt, and "the chain" all had real rule
+  logic under test with zero CI coverage.
+- **`packages/live/test/live.test.mjs`** — a genuine name collision hid this
+  one: `packages/session-runtime/test/live.test.mjs` (a different file, the
+  LiveKit integration suite) IS invoked, conditionally, in the "Live
+  LiveKit" section. This one — the latency-floor constant and Pictionary
+  round logic for the ten live async-degrading games — was never referenced
+  by its own full path anywhere and silently never ran.
+- **`packages/auth/test/attestation.test.mjs`** — the WebAuthn CBOR/COSE
+  key-parsing round trip: a real EC P-256 key pair, a hand-encoded synthetic
+  `COSE_Key` buffer from an independent encoder (not `attestation.ts`'s own
+  machinery, so the test can't just prove the two agree with each other),
+  through `parseAttestationObject()` + `extractCredentialPublicKey()`, then a
+  real signed assertion verified against the PEM this suite produced.
+- **`packages/api/test/contract.test.mjs`** — the exact, unambiguous
+  client/server route-contract check: every server-registered path must
+  appear word-for-word in `api_client.dart`'s path constants. Supersedes a
+  weaker, pre-existing check elsewhere whose own "unspecified route" logic
+  reduces to `String.includes('')`, which is always true — this is the one
+  that would actually catch a route renamed without updating the Dart
+  client.
+- **`packages/api/test/availability_contract.test.mjs`** — real
+  `registerRoutes()` through a real `Api` instance (only the `pg.Pool` is
+  faked), proving the availability route's real action requirement, real
+  `can()`/`edgesFor()` authorization, real body validation, and the real SQL
+  text/parameter order, without needing a live Postgres for this one.
+
+None of the eight needed a code change — every one already passed. All
+re-run for real (local Postgres 16 + Node 22, matching CI) before wiring:
+`games2.test.mjs` 72/72, `games3.test.mjs` 58/58, `live.test.mjs` 59/59,
+`attestation.test.mjs` 34/34, `contract.test.mjs` 27/27,
+`availability_contract.test.mjs` 26/26, `health_alert.test.mjs` 10/10,
+`messages_route.test.mjs` 20/20 — 306 passed, 0 failed. New total vs 0.49.3:
+4401 → 4707.
+
+## [0.49.3] — 2026-08-16 — SEC-01: deactivation left credentials live and re-registerable
+
+A round-2 post-merge audit (`Merge Aftermath`, scoping PRs #14–#19's shipped
+features plus repeat instances of already-caught bug classes) found a real,
+previously-shipped gap in account deactivation: `deactivateAccount()` never
+touched `device_token`, and nothing gated new device-token registration
+against `deactivated_at`. An independent adversarial-verify pass on that
+fix, before merge, then found the identical gap in two OTHER credential
+paths — WebAuthn passkeys and kiosk PINs — one of them materially worse
+than the original finding. All closed here.
+
+### Fixed
+- **A deactivated guardian's already-registered devices kept receiving push
+  indefinitely (High).** `deactivateAccount()` (`packages/db/src/pool.ts`)
+  removes `pin_credential`/`webauthn_credential`/`auth_challenge` rows for
+  the deactivating user but never touched `device_token` — the only cleanup
+  those rows ever got was reactive, one at a time, whenever FCM/APNs
+  happened to bounce a send with `UNREGISTERED`/`BadDeviceToken`. Fixed:
+  the same transaction now also `DELETE`s every `device_token` row this user
+  owns (`owner_user_id = userId`), returning a new `removedDeviceTokens`
+  count on `DeactivationResult`. `device_token_system_prune`
+  (`0012_push_device_token.sql`) already grants the `system` role this
+  transaction runs as unrestricted `DELETE`, so no RLS change was needed.
+- **The same still-valid session could register a BRAND-NEW device after
+  deactivating, not just retain an old one (High).** Sessions in this
+  codebase are signed, not stored (`auth.ts`'s own header) — an
+  already-issued token stays cryptographically valid until its own 1h TTL,
+  a documented, tested limitation (`deletion.test.mjs` section D's own
+  "KNOWN GAP" assertion: `GET /v1/me` returns 200 on a pre-deactivation
+  token, by design, and still does). What was NOT documented or intended:
+  that same stale token could keep growing fresh push surface, not merely
+  retain what it already had. Fixed with a targeted gate, not a general
+  session deny-list (which does not exist in this codebase and stays out
+  of scope) — `registerDeviceToken()` now checks `app_user.deactivated_at`
+  for non-child principals before the upsert and refuses with a new
+  `account_deactivated` error code, mirroring `server/index.mjs`'s existing
+  `devLogin` gate exactly. `server/routes.mjs`'s `POST /v1/me/device-tokens`
+  handler maps the new code to `403 {error: "account_deactivated"}`.
+  This one check-then-act gate is a narrow, accepted, documented race
+  (see its own comment in `pool.ts`) rather than a single atomic
+  transaction — low impact (one lingering token until the next dead-token
+  bounce), same order of magnitude as an already-accepted race a few lines
+  above it in the same file.
+- **A deactivated guardian could mint a brand-new WebAuthn passkey and
+  re-authenticate INDEFINITELY — not TTL-bound at all, worse than the
+  device-token case above (High).** Found by this fix's own pre-merge
+  adversarial review, not the original audit pass.
+  `storeWebauthnCredential()` had no `deactivated_at` check, and neither did
+  the real login path that consumes it, `webauthnLoginVerify()`
+  (`server/index.mjs`) — unlike `devLogin()` right above it in the same
+  file, which has always checked. A credential registered during the TTL
+  window survives past it: nothing else in this codebase ever revisits
+  `webauthn_credential`, and `can()` (`family-graph/authorize.ts`) never
+  checks `deactivated_at` either, so a session obtained this way carried
+  full, standing guardian access to every child the account still had a
+  live guardianship edge for. Fixed on both ends: `storeWebauthnCredential()`
+  now takes a real `FOR UPDATE` lock on the `app_user` row and checks
+  `deactivated_at` INSIDE the same transaction as the `INSERT` — atomic,
+  not a separate pre-check, since `app_user_read_all`
+  (`0011_account_deletion.sql`) is `USING (true)` and needs no system-role
+  workaround to read. `webauthnLoginVerify()` now checks `deactivated_at`
+  before spending the single-use challenge or running any signature
+  verification. Either fix alone would have closed the exploit; both
+  together match `devLogin`'s own belt-and-suspenders posture.
+- **The same gap in kiosk-PIN registration (Medium).** `setPinCredential()`
+  had no `deactivated_at` check either — same root cause, lower stakes
+  (this credential only ever produces `{ok: matched}` for kiosk escalation,
+  never issues a session — see `attemptPinFor()`'s own updated comment for
+  why THAT function needs no separate check: `deactivateAccount()` already
+  deletes the `pin_credential` row it would verify against). Fixed with the
+  same atomic `FOR UPDATE` shape as the WebAuthn fix above, since it cost
+  nothing extra to write once the pattern existed.
+
+### Housekeeping
+- MASTERFILE's own closing line still read "v0.49.1" while the header table
+  above it already said 0.49.2 — a §0 rule violation this pass's own version
+  bump made trivial to fix in the same edit. Fixed; both now agree.
+
+### Tests
+- `device_token.test.mjs` section E, `deletion.test.mjs` sections AB/B —
+  registration/deactivation cascade and the per-user gate, each extended
+  with a BYSTANDER row (a different, still-active guardian's own token)
+  that must survive untouched — `device_token`'s RLS gives `system`
+  unrestricted `DELETE` with no owner predicate, so only a fixture that
+  puts a second owner's row on the table at deactivation time can actually
+  prove the app-layer `WHERE owner_user_id = $1` scoping holds, rather than
+  being indistinguishable from an unscoped wipe.
+- `auth_credentials.test.mjs` — two new sections: **G** proves
+  `setPinCredential()`/`storeWebauthnCredential()` both refuse a deactivated
+  guardian and create no row; **H** spawns a real HTTP server
+  (`server/index.mjs`, the same pattern `deletion.test.mjs` section D uses)
+  and proves `webauthnLoginVerify()`'s gate fires — `403
+  account_deactivated` — before any challenge/signature work runs, with a
+  same-request positive control against a never-deactivated account proving
+  the 403 is really about deactivation, not a body-shape reject.
+- All touched suites re-run for real against local Postgres 16 with Node 22
+  (matching CI's declared `node-version: 22` — this codebase's `.mjs` build
+  output imports sibling modules by their literal `.ts` path, relying on
+  Node 22's type-stripping to run at all; noted here since it means these
+  suites cannot run locally on Node <22 despite passing on CI):
+  `device_token.test.mjs` 36/36, `deletion.test.mjs` 32/32,
+  `auth_credentials.test.mjs` 65/65, `availability.test.mjs` 23/23,
+  `message_capture.test.mjs` 33/33, `pool.test.mjs` 18/18,
+  `raw_export.test.mjs` 26/26, `court_export.test.mjs` 41/41,
+  `stack.test.mjs` 98/98, `routes.test.mjs` 19/19, `notify.test.mjs` 22/22,
+  `contract.test.mjs` 27/27 — 440 passed, 0 failed. 20 new assertions vs.
+  `main` (4381 → 4401), computed by diff, not guessed.
+
+## [0.49.2] — 2026-08-16 — merge review: a real coordinator lockout, an RLS monitoring gap, two stale claims
+
+Before merging v0.49.0/v0.49.1's rebase onto `main`, this pass ran an
+independent adversarial review of the merge-resolution work itself (the
+route-merge with feature/raw-export, the renumbered `0013_court_tier_flag.sql`
+migration, and the renumbered CHANGELOG/MASTERFILE entries) — not a re-review
+of the original PR's own already-reviewed content. Four findings, all
+confirmed real on independent verification against the actual code.
+
+### Fixed
+- **A real, pre-existing authorization bug: `coordinator` was unconditionally
+  locked out of certified export (High).** `server/routes.mjs`'s merged
+  `GET .../export` route was registered under the single coarse action
+  `'export.raw'`, on the claim (in that route's own comment, inherited from
+  before the rebase) that `'export.raw'` "is in exactly the same
+  guardian/coordinator `ROLE_CAPS` list" as `'export.certified'`. It is not:
+  `authorize.ts`'s `ROLE_CAPS.coordinator` holds `'export.certified'` but NOT
+  `'export.raw'`. Every `?kind=certified` request from a coordinator was
+  therefore 403'd by `api.ts`'s coarse A3 check (`role_lacks_capability`)
+  before the handler — and therefore `certifiedExportBundleFor()`'s own
+  correct, permissive `can('export.certified', ...)` check — ever ran,
+  regardless of court tier or the annual allowance. Not introduced by this
+  merge: this was the original PR's own design, present since `v0.49.0`,
+  never exercised by a test (`graph.test.mjs`'s own H8 section and
+  `court_export.test.mjs` both only ever tested `'guardian'`). Fixed by
+  registering the route `action: null, identityScopedByHandler: true`
+  (the same escape hatch `kiosk-pin/verify` already uses, for a different
+  reason: no single action string can gate two kinds with different
+  `ROLE_CAPS`) and moving real, independent authorization into each pool
+  function: `rawExportBundleFor()` now runs its own
+  `edgesFor()`+`can('export.raw', ...)` check up front — closing a second,
+  related gap this same fix would otherwise have opened, since removing the
+  route's coarse check also removed the ONLY place that was enforcing
+  per-edge `scope['export.raw'] === false` overrides (that function's own
+  SQL check never covered them; its own header comment said so explicitly).
+  `certifiedExportBundleFor()`'s own `can('export.certified', ...)` call was
+  always correct — it is now actually reachable. New regression test:
+  `court_export.test.mjs` section D seeds a real `coordinator` guardianship
+  edge and asserts `GET .../export?kind=certified` returns 200 for it
+  (previously 403 `role_lacks_capability`), and `packages/api/test/contract.test.mjs`'s
+  A1 section now explicitly allowlists this route's `action: null` alongside
+  `kiosk-pin/verify`'s, rather than blanket-excluding it.
+- **`0013_court_tier_flag.sql`'s `health_check.rls_unforced` monitoring list
+  was itself missing 3 of the 11 real `FORCE ROW LEVEL SECURITY` tables in
+  this schema (High).** The migration's own comment claimed its list was
+  "carried forward in full" from `0008_auth_credentials.sql`'s version — but
+  `0008`'s own list was itself incomplete, and `custody_order` (0007),
+  `guardian_availability_window` (0010), and `app_user` (0011) — the latter
+  guarding `court_tier` itself — were silently unmonitored. `health_check`'s
+  `rls_unforced` check is `'critical'` severity and read by
+  `tools/health-alert.mjs`; a future regression dropping `FORCE ROW LEVEL
+  SECURITY` from any of these three would have produced a false-clean
+  report, not an alert. Fixed by grepping every real `FORCE ROW LEVEL
+  SECURITY` statement across `db/migrations/` directly rather than trusting
+  `0008`'s list was already exhaustive — the list now names all 11 tables.
+- **Two stale claims in the v0.49.0 CHANGELOG entry**, both artifacts of
+  renumbering this branch's own version numbers to fit after `main`'s actual
+  latest — neither caught by the renumbering pass itself: (1) its own "NOT
+  verified" TODO instructed a future reader to bump `MARKUP.html` to
+  version `0.46.3` — the entry's OWN pre-renumbering number, not its real,
+  current `0.49.0`, and `0.46.3` was already in use by a real, different,
+  unrelated entry elsewhere in this file; (2) its own description of
+  `court_export.test.mjs` section D claimed it covers "400/403/200" status
+  shapes, but the merged route never returns 400 (the SAME entry's own
+  "Merge note" a few lines above already discloses that the original
+  400-for-bad-`kind` behavior was replaced by a fallthrough at merge time) —
+  the real shapes are 501/403/200, now corrected to say so.
+
+### Verified
+- `packages/api/test/contract.test.mjs`: 27 passed, 0 failed (was 24 — 3
+  new assertions for the export route's `action: null` allowlisting).
+- Every non-DB JS suite `tools/verify.sh` runs, re-run individually: all
+  green, 0 failures (the same pre-existing Windows `stack.test.mjs` libuv
+  teardown race and `homework.test.mjs` missing-ImageMagick gap this
+  session's prior entries already documented — neither touched by this
+  pass, neither counted as a failure).
+- `npm run build`: succeeds; `packages/db/src/pool.mjs` regenerated.
+- `court_export.test.mjs`'s new coordinator regression assertions were
+  read back against the real, independently-verified RBAC/allowance code
+  path rather than assumed — this dev environment has no working local
+  Postgres (same gap this session's prior entries already recorded), so
+  actually running them is CI's job.
+
+---
+
+## [0.49.1] — 2026-08-11 — certified export: adversarial review fixes
+
+An adversarial review examined v0.49.0's certified-export backend and raised
+three findings. Two were real; the third — a "checked and found NOT
+vulnerable" write-up covering cross-child access, `authorizeExport()`
+bypass, and `court_tier` self-elevation — is confirmed correct on rereading
+and needed no change, recorded below rather than silently accepted.
+Verifying the two real fixes required finally running
+`packages/db/test/court_export.test.mjs` against a real Postgres — it had
+never been run before (v0.49.0's own "NOT verified" entry says so plainly)
+— which surfaced two more real, pre-existing bugs in the suite's own
+fixture/cleanup code, unrelated to the review but blocking any real count
+until fixed. Fixed here too, on the same "found by actually running it"
+standard this project holds itself to.
+
+### Fixed
+- **TOCTOU on the annual free-certified-export allowance (Medium).**
+  `certifiedExportBundleFor()` (`packages/db/src/pool.ts:287-306`) queried
+  `export_record`'s trailing-12-month count and `app_user.court_tier` with no
+  lock of any kind, at the default READ COMMITTED isolation. Two (or N)
+  concurrent requests from the SAME guardian each read
+  `certifiedInLast12Months=0` before either committed its own `INSERT`, so
+  every one of them could walk away `was_free: true` — two browser tabs
+  defeated §16.1 #3's one-free-per-rolling-year rule outright, and no unique
+  constraint on `export_record` caught it either. Fixed with `SELECT
+  court_tier FROM app_user WHERE id = $1 FOR UPDATE`, moved to run BEFORE the
+  count query (a straight `count(*) ... FOR UPDATE` is rejected by Postgres —
+  `FOR UPDATE` cannot pair with an aggregate). A second concurrent
+  transaction now blocks on that row lock until the first COMMITs, so its own
+  count query is guaranteed to see the first request's row rather than race
+  it. Per-guardian granularity — two different guardians exporting at once
+  lock different rows and never block each other. Proven by a new regression
+  test, not just reasoned about: `packages/db/test/court_export.test.mjs`
+  section E fires 5 genuinely concurrent requests for the same still-
+  available credit; exactly one succeeds `was_free: true`, the other four are
+  denied `tier_required`, and the database itself — not just the in-process
+  results — shows exactly one `export_record` row.
+- **`CertifiedExportDenial` excluded the one denial reason
+  `authorizeExport()` actually returns (Low).** `ledger.ts`'s
+  `authorizeExport()` (untouched, pre-existing, line ~167) returns
+  `{reason:'tier_required'}` on every real certified-export denial — the
+  allowance is spent AND court tier is missing; there is no code path in
+  that function that ever returns `'annual_allowance_used'` despite it being
+  part of `ExportDenial`'s declared type. `pool.ts`'s own
+  `CertifiedExportDenial` type explicitly `Exclude`d `'tier_required'`,
+  reasoning (correctly) that `can()`'s OWN separate `tier_required` member
+  is unreachable here, but conflating that with `ExportDenial`'s
+  DIFFERENT `tier_required` — the literal value the very next line's
+  `authorizeExport()` call actually returns. Esbuild strips types without
+  checking them, so this compiled and shipped silently; the new test's own
+  assertions (`court_export.test.mjs` section B/D) asserted the wrong
+  literal (`'annual_allowance_used'`) and would have failed the first time
+  they were actually run. Fixed: `CertifiedExportDenial` now includes
+  `ExportDenial` directly (`packages/db/src/pool.ts`, the type's own
+  definition and its explanatory comment), the two test assertions now
+  check for the real value `'tier_required'`, and
+  `EXPORT_DENIAL_MESSAGES['tier_required']` (`server/routes.mjs`) now states
+  both halves of the real reason — the allowance is spent AND Court tier is
+  required — rather than only the tier half, matching §2.11's "a denial
+  must say plainly why" rule more completely than before.
+- **(found while re-running, not part of the review)
+  `court_export.test.mjs`'s own cleanup unconditionally `DELETE`d from
+  `message_log`.** `message_log_no_delete` (0006) rejects every delete,
+  unconditionally, by design (P8 — see `db/test/0005_court.test.sql`'s own
+  "DELETING an entry (P8)" `must_fail` case). The suite's `seedFamily()` and
+  its final teardown both ran a bare `DELETE FROM message_log ...` with no
+  disable/enable bracket around it (section C already uses exactly that
+  bracket to reach a tampered state — it just wasn't applied to cleanup),
+  so any run past the very first against an already-seeded database threw
+  `P8: ... DELETE is not permitted` before a single assertion executed.
+  Never caught, because the suite had never been run. Fixed with the same
+  admin-only `ALTER TABLE message_log DISABLE/ENABLE TRIGGER
+  message_log_no_delete` bracket section C already established.
+- **(found while re-running) section A's empty-chain check assumed a
+  per-child allowance the real, guardian-scoped rule does not have.** The
+  same section that establishes IVY/DAD's one 2026 free credit is spent
+  (`guardianFirst`) then, moments later, expected a SECOND child (SOLO,
+  same guardian DAD, `court_tier` still false) to also get a free certified
+  export. §16.1 #3's allowance is per-**guardian**, not per-`(guardian,
+  child)` — this file's own header comment and `pool.ts`'s own comment say
+  so explicitly — so that second call is correctly DENIED
+  (`tier_required`) by the real, unmodified `authorizeExport()`; the test's
+  expectation of `ok: true` was itself wrong. Fixed by granting DAD
+  `court_tier` for that one check only (isolating "does an empty chain
+  export honestly" from "does the allowance apply," which section B already
+  owns), then reverting before section B runs.
+
+### Verified
+- **The third (informational) finding re-checked, not just re-quoted.**
+  Cross-child access: `certifiedExportBundleFor()` re-derives the caller's
+  edges via `edgesFor()`/`can()` itself (`pool.ts:277-279`), independent of
+  and in addition to the route's coarse check — confirmed by reading
+  `api.ts`'s dispatch layer and `authorize.ts`'s `ROLE_CAPS`/`can()`
+  directly, not assumed from the write-up. Bypass/spoofed tier: `courtTier`
+  and `certifiedInLast12Months` are always freshly queried server-side from
+  `app_user`/`export_record` by the server-derived `requestedBy`, never
+  accepted as request input — confirmed by rereading the full function body.
+  Self-elevation of `court_tier`: grep across the worktree confirms the only
+  writers are `0008`'s own `DEFAULT false` and the test file's direct
+  `admin.query()` `UPDATE`s (fixture, not app code) — no route or handler
+  exposes a write path. No change needed; recorded rather than silently
+  accepted.
+- **`packages/db/test/court_export.test.mjs`: 39 passed, 0 failed** — run
+  for the first time ever, against a real Postgres 16 (see "NOT verified"
+  below for which one and why), re-run twice from a freshly re-seeded state
+  for idempotency, and once more end to end under the correct
+  `NOSUPERUSER NOBYPASSRLS` role (`app_owner`, per `db/DEPLOYMENT.md`'s own
+  documented requirement) rather than the `postgres` superuser used to
+  bring the database up — the same class of mistake §20.4's own process
+  finding #2 and standing rule 4 already warn about, self-caught mid-session
+  (an earlier pass run as `postgres` against `pool.test.mjs`, below, produced
+  3 false PASSes that RLS should have refused).
+- **`packages/db/test/pool.test.mjs`: 18 passed, 0 failed**, under
+  `app_owner`. Run first (by mistake) as `postgres`: 3 of 18 assertions in
+  its own "D real RLS" section came back FALSE PASS (`postgres` bypasses RLS
+  even under `FORCE` — exactly what `db/DEPLOYMENT.md`'s own §2 already
+  warns "measures nothing") — re-run correctly once the mistake was caught,
+  not reported on the wrong number.
+- **`packages/db/test/custody_order.test.mjs`: 16 passed, 0 failed** —
+  collateral check; this pass edits `pool.ts` but not `custody_order.test.mjs`
+  or anything it exercises.
+- **`packages/family-graph/test/graph.test.mjs`: 59 passed, 0 failed** —
+  `can()`'s own H8 export assertions, untouched by this pass, still hold
+  exactly as v0.49.0's own entry recorded.
+- **`packages/api/test/stack.test.mjs`: 94 passed, 0 failed**, followed by
+  the same pre-existing, unrelated Windows `UV_HANDLE_CLOSING` libuv
+  teardown crash that file's own header already documents — not this
+  change, and not counted as a failure.
+- **`packages/ledger/test/phase3.test.mjs`: 95 passed, 0 failed** —
+  `ledger.ts` itself is untouched by this pass (by design: the fix is in
+  the caller's type/wiring, not the pre-existing business rule); this
+  confirms `authorizeExport()`/`verifyChain()`/`certify()` are unaffected.
+- `npm run build` (scaffold/): succeeds; `packages/db/src/pool.mjs`
+  regenerated. `node --check` clean on every touched `.mjs`
+  (`server/routes.mjs`, `packages/db/src/pool.mjs`,
+  `packages/db/test/court_export.test.mjs`).
+- No Dart file is touched by this pass — `client/test/court_export_test.dart`
+  mocks the server's `error`/`message` strings directly rather than
+  hardcoding the real server's denial logic, so it is unaffected by the
+  `tier_required`/`annual_allowance_used` fix; `flutter analyze`/`flutter
+  test` were not re-run since there is nothing in this pass for them to
+  catch.
+
+### NOT verified
+- **Full `tools/verify.sh` / MARKUP.html↔DEMO.html↔shell.html
+  version-and-assertion-count sync: NOT attempted this pass.** v0.49.0's own
+  entry already disclosed this debt, blocked then by Docker Desktop being
+  completely unreachable. This pass unblocks Postgres specifically (see
+  below) but does not stand up tesseract, imagemagick, `livekit-server`, or
+  an Android SDK — all real dependencies `verify.sh`'s own `TOTAL_PASS`
+  requires, none of which this pass confirmed present in this fresh
+  worktree. Writing a partial or guessed total into `MARKUP.html` would be
+  exactly the fabricated-total failure mode §20.4's own standing rule 5
+  exists to prevent, so this entry does not attempt it — MARKUP/DEMO/
+  shell.html remain at their v0.46.2 figures, a known, disclosed gap, not a
+  silently accepted one. CI's own `verify.yml` provisions the full
+  toolchain and computes the real total on push.
+- **Docker Desktop remains broken on this machine** — the identical
+  corrupted `...\Docker\run\dockerInference` reparse point v0.49.0's own
+  entry already documented, confirmed again independently this session
+  (still refuses deletion via an elevated PowerShell `Remove-Item -Force`
+  as the file's own owner; `com.docker.backend.exe.log` shows the identical
+  `remove ...: The file cannot be accessed by the system` crash). Not
+  fixed — worked around via a real, already-installed, already-running
+  Postgres 16 inside this machine's own WSL2 Ubuntu-24.04 distribution
+  (port 5433, matching this repo's own established `localhost:5433`/
+  `postgres`/`postgres` convention exactly), reached from Windows-side
+  `node` either via the WSL bridge IP directly or via `localhost` port
+  forwarding (the latter proved intermittent across this session — several
+  `ECONNREFUSED`s mid-run — so the bridge IP was used for the runs recorded
+  above). A real non-Docker Postgres, not a fake or a mocked `pg.Pool`.
+
+---
+
+## [0.49.0] — 2026-08-11 — certified export gets a real backend
+
+`client/lib/court_export.dart`'s own header said it plainly: a real, well-built
+UI with a real 1:1 port of `ledger.ts`'s authorization logic, and "no backend
+exists yet to actually assemble or transfer these files." This closes that gap
+for the certified half (§2.11, §16.1 #3) — raw export is `feature/raw-export`'s
+own scope, a sibling branch not present in this checkout.
+
+### Added
+- **`db/migrations/0013_court_tier_flag.sql`** — `app_user.court_tier boolean
+  NOT NULL DEFAULT false`, the real, checkable Court-tier flag §16.1 #3's own
+  gate needed and never had, despite `0006_court_tier.sql` being *named* for
+  it. Per-guardian, not per-child or per-household: §16.1 #3's own wording is
+  "one free certified export per **guardian** per rolling 12 months," and
+  `ledger.ts`'s `ExportRequest`/`authorizeExport()` already carry `courtTier`
+  and `certifiedInLast12Months` as properties of the requester, never of the
+  child. **There is no payment processor anywhere in this codebase** (grep
+  confirms it, same finding this session already hit for Firebase, APNs, and
+  Twilio) — nothing here invents one. Nothing in this codebase can ever set
+  `court_tier` to `true` except a manual/admin path; the column comment says
+  so. Same migration closes a real, separate finding from reading (not
+  assuming) 0006's own RLS: `export_record` had **no row-level security at
+  all** despite being created in the same migration as `expense`/
+  `message_log`, which both got real policies — fixed with the same "not
+  child" shape as those two, plus `export_record` added to `health_check`'s
+  `rls_unforced` probe (which had the same blind spot).
+- **`packages/db/src/pool.ts`: `certifiedExportBundleFor()`.** Reads a
+  child's real `message_log` chain (real rows, real hash chain — no
+  synthetic fixture), independently re-verifies it via `ledger.ts`'s real
+  `verifyChain()` (a broken/tampered chain is refused with reason
+  `chain_broken`, never silently exported — see the "Verified" section for
+  why this is structurally almost unreachable and how the test suite reaches
+  it anyway), then calls `authorizeExport()` with REAL inputs: the real
+  `app_user.court_tier` flag and a REAL, freshly-queried count of this
+  guardian's `certified` `export_record` rows in the trailing 12 months
+  (`SELECT count(*) ... WHERE requested_by = $1 AND kind='certified' AND
+  created_at > now() - interval '12 months'` — deliberately **guardian**-
+  scoped, not `(guardian, child)`-scoped like 0006's own
+  `certified_exports_last_year()` SQL helper, which answers a narrower
+  question than §16.1 #3 actually specifies and is therefore NOT reused
+  here). On denial, returns the precise reason
+  (`tier_required`/`annual_allowance_used`/`chain_broken`/an RBAC reason) and
+  produces no bundle, no `export_record` row. On success, calls `certify()`
+  for a real `Attestation`, hashes the real bundle+attestation with
+  `ledger.ts`'s own `sha256Hex`, and inserts a real `export_record` row
+  (`was_free` true only on the genuine free case `authorizeExport()`
+  reports). The coarse RBAC check inside this function reuses
+  `family-graph/authorize.ts`'s real `can()` — see the function's own header
+  comment for why it deliberately passes `{court:true}` there rather than
+  the caller's real flag (that flag's job is done immediately after, by
+  `authorizeExport()`; `can()`'s own `'export.certified'` branch has no
+  concept of the annual allowance and would otherwise hard-block every
+  non-Court-tier guardian's legitimately free first export at the coarse
+  layer, before this function's own real check ever ran).
+- **`GET /v1/children/:childId/export?kind=certified`**
+  (`server/routes.mjs`) — registered under action `'export.raw'`
+  *deliberately*, not `'export.certified'`; the route's own comment explains
+  why (the same `can()` tier-blindness above, this time at `api.ts`'s
+  dispatch layer, which never passes a real tier into `can()` at all — using
+  `'export.certified'` here would 403 every non-Court-tier guardian before
+  the handler runs, defeating the free-allowance rule outright). Known,
+  honestly-scoped limitation, not silently glossed over: a `coordinator`-role
+  caller holds `'export.certified'` in `ROLE_CAPS` but not `'export.raw'`,
+  so cannot reach this route as built — real follow-up work, not attempted
+  this pass. **Merge note:** feature/raw-export (this PR's own sibling
+  branch, not present in the checkout this entry was originally written
+  against) had already shipped its own `GET .../export` registration on
+  `main` by the time this branch rebased in — `api.ts`'s `register()` has no
+  duplicate-route guard, so a second registration for the identical
+  method+path would have been silently unreachable dead code behind the
+  first, not an error. Merged into ONE handler instead: `kind=certified`
+  dispatches here; `kind=raw` or a missing `kind` falls through to the
+  already-shipped raw-export behavior unchanged (not the 400 this entry
+  originally specified for that case, back when raw export's route didn't
+  exist yet to fall through to).
+- **`client/lib/court_export.dart`: `LiveCourtExportScreen`.** Mirrors
+  `child_home_live.dart`'s own shape (`devLoginFor` → `OliveApi`, injectable
+  `httpClient`, loading/error/retry) with one addition that screen doesn't
+  need: a **denied** state, rendered honestly with the server's real reason
+  and plain-language message — never a crash, never a silent success. Wired
+  through `guardian_more.dart`'s existing `baseUrl`/`guardianId`/`childId`
+  params (already present for the Availability tile, added by a since-merged
+  sibling branch this entry was originally written before — reused here
+  rather than a second `liveBaseUrl`/`liveGuardianId`/`liveChildId` triple;
+  all default `null`, so `main.dart`'s offline preview build and every
+  existing test of the demo `CourtExportScreen` are unchanged); nothing in
+  this checkout yet constructs a live guardian entry point to pass them from
+  (`main_live.dart` only wires the child side today) — a real,
+  honestly-flagged follow-up, same posture as `child_home_live.dart`'s own
+  `sleepsUntilHandover` gap.
+- **`packages/db/test/court_export.test.mjs`** — real Postgres, no fakes:
+  (A) a guardian with no live edge to a child is refused
+  (`no_edge`) certify-exporting her, a real guardian succeeds, a guardian of
+  a child with zero log entries gets an honest empty (not fabricated)
+  export; (B) the real annual allowance — first certified export free,
+  second denied (`annual_allowance_used`), succeeds (not free) once
+  `court_tier` is set by hand; (C) a tampered chain — see "Verified" for how
+  this section reaches a state the schema's own triggers make otherwise
+  impossible — is refused with `chain_broken`, not exported, and leaves no
+  `export_record` row; (D) a route contract test against the REAL `Api` +
+  REAL `dbPort(pool)` + REAL `registerRoutes()`, hit over `api.handle()`
+  with real signed sessions, covering the 501/403/200 shapes above (a `kind`
+  other than `certified` isn't a 400 here — it falls through to the
+  already-shipped raw-export path on the same route, see the "Merge note"
+  above).
+- **`client/test/court_export_test.dart`** — `LiveCourtExportScreen` group:
+  loading, a real successful export (free and not-free), each real denial
+  reason rendered honestly and distinctly from a network/server error, and
+  retry recovering from denied into ready.
+
+### Fixed
+- **`server/index.mjs` / `packages/api/src/api.ts`: `content-type` now
+  declares `; charset=utf-8`.** Found by this pass's own test suite, not
+  hypothetically: `EXPORT_DENIAL_MESSAGES`' em dash is real UTF-8 content,
+  and an unlabelled `application/json` response defaults to Latin-1 per
+  RFC 2616 — `package:http` (this app's own live client) honors that default
+  literally, throwing on encode when a mocked response carried the
+  unlabelled header and non-ASCII content. Every other route's JSON has
+  been ASCII-only so far, which is exactly how this went unnoticed until
+  now. No behavior change for ASCII bodies; real UTF-8 bodies now round-trip
+  correctly instead of silently degrading to mojibake in production.
+
+### Verified
+- `node packages/db/test/court_export.test.mjs`: **NOT run this session —
+  see "NOT verified" below.**
+- `flutter analyze` (client/): clean.
+- `flutter test` (client/): all 1286 tests pass, including 29 new ones in
+  `court_export_test.dart`'s `LiveCourtExportScreen` group.
+- `npm run build` (scaffold/): succeeds; `packages/db/src/pool.mjs`
+  regenerated and its new cross-package imports (`family-graph/authorize.ts`,
+  `ledger/ledger.ts`, `ledger/sha256.ts`) resolve and execute under Node
+  24's native TypeScript stripping — confirmed with a direct
+  `import('./packages/db/src/pool.mjs')` smoke check, not assumed from the
+  esbuild output alone.
+- Every non-DB suite `tools/verify.sh` runs was re-run individually this
+  session (not just via the `npm test` chain, which a pre-existing,
+  unrelated Windows `UV_HANDLE_CLOSING` libuv teardown race in
+  `stack.test.mjs` — documented in that file's own header — halts partway
+  through on this platform regardless of this change): all 30 suites green,
+  0 failures, including `family-graph/test/graph.test.mjs` (59/59 — proves
+  `can()`'s own H8 export assertions, untouched by this change, still hold
+  exactly as before) and `api/test/stack.test.mjs` (94/94). `npm run demo &&
+  node demo/test/drive.test.mjs`: 116/116 — the Engine Room's own
+  `authorizeExport()` wiring (`demo/src/bridge.ts`), pure and untouched by
+  this change, still renders correctly.
+  `packages/homework/test/homework.test.mjs` could not run (missing
+  ImageMagick fixture generator) — pre-existing, unrelated to this change,
+  not touched by it.
+- `node --check` clean on every touched/added `.mjs` file
+  (`server/routes.mjs`, `server/index.mjs`, `packages/db/src/pool.mjs`,
+  `packages/db/test/court_export.test.mjs`); the DB test file's own
+  `DATABASE_URL` guard was confirmed firing correctly (`exit 2`, the
+  expected message, no DB attempted) rather than assumed from reading the
+  code.
+- `server/routes.mjs` and `packages/db/src/pool.ts`'s new code paths were
+  read back end to end against `family-graph/src/authorize.ts`'s real
+  `ROLE_CAPS`/`can()` and `db/migrations/0006_court_tier.sql`'s real trigger
+  functions line by line to confirm the RBAC/allowance/chain-verification
+  sequencing described above; this is a substitute for, not equivalent to,
+  running the real test file, and is called out as such rather than blended
+  into "Verified" above without qualification.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+`packages/db/test/court_export.test.mjs` (the RLS/authorization, annual-
+allowance, tampered-chain, and route-contract suite for everything in
+"Added" above) was **written but not run this session.** This dev machine's
+Docker Desktop backend is corrupted independent of anything in this
+change — `com.docker.backend.exe.log` shows it failing to start with
+`starting services: initializing Inference manager: listening on
+unix://…/dockerInference: remove …: The file cannot be accessed by the
+system`, and the underlying `%LocalAppData%\Docker\run\` socket files
+resist deletion by every tool tried (`rm -f`, PowerShell `Remove-Item
+-Force`, `[System.IO.File]::Delete()`, `cmd /c del`), including as the
+files' own owner — a Windows-level lock or reparse-point corruption below
+what a code-editing session can safely repair. No native Postgres install
+exists on this machine as a fallback. `tools/verify.sh`'s whole database
+section, and every other DB-backed suite in this repository
+(`pool.test.mjs`, `custody_order.test.mjs`), is equally blocked, so this is
+an environment gap, not one specific to this change — recorded here rather
+than silently skipped or asserted as passing without having run. The file
+itself was written, reviewed line-by-line against the real schema/trigger
+definitions and the real `can()`/`authorizeExport()` contracts (see
+"Verified"), and its imports/syntax confirmed loadable
+(`node --check`/direct import smoke tests on every touched `.mjs`), but
+**"loads without throwing" is not "the assertions inside it pass," and this
+entry does not claim the latter.** Whoever next has a working local Postgres
+should run
+`DATABASE_URL=... ADMIN_DATABASE_URL=... node packages/db/test/court_export.test.mjs`
+(after `npm run build`) before trusting this feature in anything beyond
+code review.
+
+**MARKUP.html/DEMO.html/shell.html version and assertion-count sync is
+NOT done this pass**, for the same reason: `tools/verify.sh` computes
+`TOTAL_PASS` by summing every suite including the database section, which
+hard-aborts (`ABORT: Postgres unreachable`) before producing any number at
+all on this machine right now — there is no real total to sync MARKUP's
+`<strong>NNNN assertions</strong>` tag to, for this session or anyone else
+on this same broken environment, and writing in a guessed number would be
+exactly the kind of unverified claim of correspondence this project's own
+`check-markup.mjs` exists to catch. Once a working Postgres is available:
+run `tools/verify.sh` for the real `TOTAL_PASS`, bump MARKUP.html's
+`version`/`spec` tags to this entry's own version (renumbered to `0.49.0`
+during the rebase onto main that added the entries above this one — not
+`0.46.3`, this entry's original, now-superseded number, which is also
+already in use by a real, different, already-merged entry elsewhere in this
+file), add this version's §07 changelog-correspondence row, mirror
+`version`/`spec`/`assertions` in `shell.html`, regenerate `DEMO.html`
+(`npm run demo`), then `node tools/check-markup.mjs --total <N>` until clean
+— the exact sequence already established this session for prior entries,
+just not run here. (Done as part of the same rebase — see the v0.49.1 CI
+green pass entry above.)
+
+---
+
+## [0.48.3] — 2026-08-16 — deactivateAccount() runs as `system`: auth_challenge's RLS is system-only, full stop
+
+v0.48.2's fix corrected `deactivateAccount()`'s column/table names
+(`RETURNING user_id`, `DELETE FROM auth_challenge`) but not its role: the
+transaction opened as `callerRoleName` (typically `guardian`), and
+`auth_challenge`'s RLS policy (`0008_auth_credentials.sql`) grants access
+to the `system` role only — a guardian-scoped `DELETE` against it silently
+affects 0 rows (RLS filters, doesn't error, so nothing short of actually
+running the suite against real Postgres in CI would catch it). Confirmed by
+the very next CI run: `removes the 1 webauthn_challenge row: expected 1,
+got 0` and `auth_challenge is gone: expected 0, got 1`.
+
+### Fixed
+- `deactivateAccount()` now runs its whole transaction as `roleName:
+  'system'` (keeping the real `userId`, not `withSystemSession`'s `null`),
+  once the existing child-caller guard clause has already run. Checked
+  against every RLS policy this transaction touches, not just the one that
+  failed: `auth_challenge_system_only` requires `role = system` (satisfied);
+  `app_user_self_update` (`0011_account_deletion.sql`) explicitly admits
+  `role = system OR id = current_actor()` (either arm already passed);
+  `pin_credential_owner_only`/`webauthn_credential_owner_only` check `role
+  != child AND current_actor() = user_id` — role-agnostic beyond excluding
+  `child`, and `current_actor()` is still the real `userId`, so still
+  satisfied; `delivery_intent` carries no RLS policy at all. The
+  guardian-vs-attacker RLS test (`GUARDIAN_B cannot deactivate GUARDIAN_A`)
+  exercises a separately-scoped raw session, never `deactivateAccount()`
+  itself — its own comment says so, and `deactivateAccount()` has no
+  separate "target" parameter: `userId` is always both `current_actor()`
+  and the `WHERE` target, and `routes.mjs` only ever passes the caller's
+  own `principal.userId`. Nothing this pass changes was a tested boundary.
+
+---
+
+## [0.48.2] — 2026-08-16 — CI green pass: two real deactivateAccount() bugs, one latent test bug, one misplaced suite
+
+Rebasing v0.48.1 onto `main` and running CI for real (not just locally) surfaced
+four distinct problems — none of them merge-conflict artifacts; all four were
+already-committed defects that had simply never been exercised against a real
+Postgres in CI before now.
+
+### Fixed
+- **`deactivateAccount()` (`packages/db/src/pool.ts`) had two real, unhit bugs**
+  going back to v0.47.0's account-deletion pass (#14). It was written against
+  `pin_credential`'s original v0.47.0-era shape (`0004_auth_and_reaper.sql`) —
+  but guardian authentication (#10, `0008_auth_credentials.sql`) had already
+  dropped and recreated `pin_credential` without an `id` column (the PK is
+  `user_id` itself now) and dropped `webauthn_challenge` entirely in favor of
+  `auth_challenge`. `deactivateAccount()`'s `DELETE FROM pin_credential ...
+  RETURNING id` and `DELETE FROM webauthn_challenge ...` both therefore threw
+  (`column "id" does not exist`, `relation "webauthn_challenge" does not
+  exist`) the moment they ran against the real schema — which, per CI's own
+  history, they never had. Fixed to `RETURNING user_id` and
+  `DELETE FROM auth_challenge`, with the stale comment (still describing
+  0004's `kind`-discriminated shape) corrected to describe the real one.
+- **`packages/db/test/deletion.test.mjs`'s fixtures had the same drift** —
+  its `insertFixtures()` inserted into `pin_credential` with a `kind` column
+  that no longer exists, and into `webauthn_challenge`, a table that no
+  longer exists. Updated to the real `pin_credential(user_id, pin_hash)` and
+  `auth_challenge(user_id, challenge, purpose)` shapes; its post-deletion
+  assertions updated to match (`SELECT user_id` not `SELECT id`; query
+  `auth_challenge` not `webauthn_challenge`).
+- **`packages/db/test/availability.test.mjs` had a latent, never-verified
+  assertion** (#11) — `guardiansOfChild()` has always returned
+  `{ userId: string }[]` (matching every real caller: `routes.mjs`,
+  `availabilityFor()`, `auth_credentials.test.mjs`), but this one assertion
+  called `.sort().join(',')` directly on the array as if it were `string[]`,
+  producing `[object Object]`. The commit that introduced it admitted the
+  suite was never run against a real Postgres at the time. Fixed to
+  `.map(g => g.userId)` before sorting.
+- **`tools/verify.sh` ran `packages/transport/test/notify.test.mjs` in the
+  pre-Postgres "JavaScript suites" section**, labelled "(mocked)" — but
+  `notifyDevices()`'s device-lookup/prune step is hard-wired to a real
+  `pg.Pool` (by design — the whole point of the suite is proving `sendGuard()`
+  against real DB-backed device rows), so it requires `DATABASE_URL` and
+  failed with 0 assertions run, every time, before Postgres even existed in
+  the script. Moved to the "DB suites requiring a real NOSUPERUSER
+  NOBYPASSRLS role" section (relabelled "(real DB)"), alongside
+  `device_token.test.mjs`, which it already mirrors.
+- **MARKUP.html / CHANGELOG.md ordering** — this PR's own three CHANGELOG
+  entries (0.48.1/0.48.0/0.47.0) had been rebased into place using their
+  original diff context, which anchored them mid-file rather than at the top
+  where the newest entry belongs; `check-markup.mjs`'s C1/D1 (MARKUP/demo
+  version tracks the newest CHANGELOG entry) correctly caught this. Moved to
+  the top of CHANGELOG.md. MARKUP.html's §07 table also collapsed 0.48.0 and
+  0.47.0 into a single labelled row, which meant the literal string "0.48.0"
+  never appeared in the document — C4c caught that too. Split back into three
+  rows, one per CHANGELOG heading.
+
+None of the above touch push delivery's actual behavior — every fix is either
+a schema-drift correction in already-shipped account-deletion code, a test
+fixed to match a contract it never actually exercised, or bookkeeping.
+
+## [0.48.1] — 2026-08-11 — §11 push delivery: adversarial-review hardening pass
+
+Three independent adversarial reviewers examined v0.47.0/v0.48.0's push
+delivery feature (already committed) against four questions (authz bypass
+on device-token registration, RLS correctness, reliability of the client
+payload parser, and resource hygiene of the FCM/APNs senders). Each of the
+seven raw findings was read against the actual code — not trusted on its
+own framing — before deciding to fix, or to record as not-real /
+already-handled / acceptable-as-designed. THE CONTRACT
+(`packages/transport/src/push.ts`'s `buildPush`/`auditPush`/`sendGuard`/
+`GENERIC`/`FORBIDDEN_DATA_KEYS`) is untouched. `packages/transport/src/
+channels.ts` and `packages/phase3/src/phase3.ts` (SMS) are untouched — out
+of scope, as before.
+
+### Fixed
+- **`client/lib/push_channel.dart`** — `PushPointer.fromData` used unguarded
+  `data['kind'] as String?`-style casts. FCM v1's data map is
+  server-enforced `map<string,string>`, but APNs (the day this client ships
+  an `ios/` folder — it has none yet) carries arbitrary JSON with no type
+  constraint on custom keys; a malformed/adversarial payload (`"kind": 7`)
+  threw an uncaught `TypeError` inside the foreground stream listener or the
+  background isolate entry point instead of degrading gracefully — for
+  `call_incoming` specifically, the one kind push.ts's own header says must
+  ring rather than fail silently, a crash meant it never rang at all. Fixed
+  with a new `_asString(dynamic v) => v is String ? v : null` helper in
+  place of the bare cast; a malformed value now degrades to `''`/`null`,
+  never throws. The content-free guarantee held either way (a crash
+  happens before anything is displayed/logged/forwarded) — this is a
+  reliability fix, not a privacy one.
+- **`packages/transport/src/apns.ts`** — `sendApns()`'s two error branches
+  (`session.on('error', ...)` and `req.on('error', ...)`) rejected the
+  promise but never called `session.close()` — only the clean `'end'` path
+  did. `sendApns()` opens a fresh `h2.connect(host)` session per call with
+  no pooling, so a batch of sends during a flaky network path (mid-write
+  `RST_STREAM`, transient connection error) would accumulate open HTTP/2
+  sessions/sockets in a long-running Node process, one per failure,
+  eventually risking file-descriptor/socket exhaustion unrelated to the
+  actual send outcome. Fixed by calling `session.close()` in both error
+  handlers before rejecting.
+- **`packages/transport/src/fcm.ts`** — `mintAccessToken()` had a real race:
+  the cache check and the cache write are separated by a network `await`,
+  so two `sendFcm()` calls landing concurrently (e.g. two households'
+  notifications firing near-simultaneously) while the cache is empty/expired
+  both read the same stale cache and each independently signed an RS256 JWT
+  and POSTed to Google's OAuth endpoint — redundant work scaling with
+  concurrent send volume, risking Google's own OAuth rate limits during a
+  broadcast burst. (Each token minted this way was individually valid — this
+  was a resource-efficiency bug, not a correctness one.) Fixed with a
+  module-level in-flight-mint promise (`inFlightMint`): a second caller
+  racing the same service account now joins the first mint instead of
+  starting its own. The actual sign+POST logic was extracted into
+  `doMintAccessToken()` so the in-flight promise can be recorded in
+  `inFlightMint` synchronously, before it is ever awaited — the ordering
+  that makes the join race-free.
+
+### Documented (not code fixes — recorded so the gap isn't silent)
+- **`packages/transport/src/notify.ts`** — `DeviceSendResult.message` carries
+  `String(e.message)` verbatim, including raw third-party OAuth/API response
+  text `fcm.ts`/`apns.ts` embed in their own thrown errors. Not fixed by
+  redacting: `notifyDevices()` has zero HTTP call sites as of this writing
+  (confirmed by grep across `server/routes.mjs`), so there is no live path
+  today where this reaches an API caller, and the message is genuinely
+  useful for server-side logs / a system-role caller debugging a failure —
+  the only kind of caller that exists today. Guessing at a redaction shape
+  before a real caller's actual needs exist to inform it would be worse than
+  documenting the gap. Added an explicit doc comment on `DeviceSendResult.
+  message` warning whoever wires the first real API-facing caller that this
+  field is not safe to return verbatim over HTTP — `code` is the
+  already-generalized, safe-to-expose signal for that purpose.
+
+### Findings recorded as not real / already handled / acceptable-as-designed
+- **Authorization/RLS review (informational, no bypass found).** Re-traced
+  by hand against the current code: `registerDeviceToken`/
+  `unregisterDeviceToken` take `principal` only from the HMAC-verified
+  session (`packages/api/src/api.ts`), never from the request body;
+  `deviceTokensFor()` is system-role-only and has zero importers outside
+  `notify.ts`, which itself has zero route call sites, so there is no HTTP
+  path to it at all; no route returns a raw device_token row (`POST`
+  returns only a fresh `id`, `DELETE` only a boolean), so there is no
+  enumeration oracle. Confirmed correct; no change needed.
+- **Dedupe-by-token reattribution has no family-graph check (low, by
+  design).** `db/migrations/0012_push_device_token.sql`'s own header already
+  documents this exact tradeoff at length: dedupe is by token because
+  `registerDeviceToken()` receives no client device id, and reattribution
+  under a new owner is deliberate (a shared device changing hands). The
+  finding's own text confirms nothing shipped in this diff exposes a raw
+  token to any caller (no route ever serializes one), so this is the
+  already-accepted, already-documented blast radius of a token leaking
+  through some other channel entirely — not a bug in this diff. No change.
+- **No sign-out flow calls `PushChannel.unregister()` (low, not an authz
+  issue).** True, and already honestly disclosed in-line
+  (`push_channel.dart`'s own comment: "No call site in this client uses
+  this yet"). Building a sign-out/child-switch flow is a real feature, not
+  a bug fix, and is out of scope for a review-response pass — flagged here
+  again rather than silently left, but not built.
+
+### Verified
+- `packages/transport/test/fcm.test.mjs`: **39/39** (34 prior + 5 new,
+  section B2 — proves exactly one OAuth token request occurs for two
+  concurrent `sendFcm()` calls racing an empty cache, both calls still
+  resolve, and both real sends carry the same coalesced bearer token).
+- `packages/transport/test/apns.test.mjs`: **39/39** (35 prior + 4 new,
+  section E — proves `session.close()` runs on both the session-level and
+  the stream-level error path via a new `fakeHttp2Erroring()` harness).
+- `client/test/push_channel_test.dart`: **21/22** (18 prior + 4 new
+  `PushPointer.fromData` non-String-value regression tests, all new ones
+  passing). The one failure — `firebaseMessagingBackgroundHandler ...
+  is declared at column 0 ... immediately preceded by @pragma('vm:entry-
+  point')` — is a **pre-existing environmental artifact, not a regression**:
+  proven via `git stash` that the UNMODIFIED committed file fails this same
+  literal-`\n` regex identically, because this Windows checkout's
+  `core.autocrlf=true` rewrites the file's LF line endings to CRLF on
+  checkout (verified at the byte level — the character immediately after
+  `@pragma('vm:entry-point')` is `\r`, not `\n`, in the checked-out working
+  tree, on both the pre-fix and post-fix file). Not touched here — a
+  checkout/line-ending fragility in a pre-existing test, unrelated to any
+  of the seven findings this pass addresses.
+- `client/test/child_home_live_test.dart` + `api_client_test.dart`:
+  **18/18** (unchanged from v0.48.0 — not touched this pass).
+- `flutter analyze`: clean, 0 issues.
+- Full `flutter test`, all 90 files, `--concurrency=2`: **1305 passed, 1
+  failed** (the same single pre-existing CRLF artifact above; every other
+  test, including all four newly added, passes).
+- `packages/transport/test/transport.test.mjs` (contract suite, unaffected
+  by this pass's changes): **65/66**, one pre-existing failure ("every Dart
+  file is marked UNVERIFIED") reproduced identically against the unmodified
+  committed HEAD via `git stash` before touching anything — unrelated to
+  push delivery, not introduced by this pass, not one of the seven
+  findings.
+- `npm run build`: clean (fcm.mjs/apns.mjs/notify.mjs/push_channel.dart
+  compile with no new esbuild errors).
+
+### NOT verified
+- **`packages/db/test/device_token.test.mjs` and `packages/transport/test/
+  notify.test.mjs` could not be re-run** — both require a live Postgres
+  (`DATABASE_URL`/`ADMIN_DATABASE_URL`), and no Postgres was reachable in
+  this sandbox this session: `localhost:5433`/`5432` both refused a raw TCP
+  connection, and the `docker` CLI itself did not return even after a
+  300-second wait (`docker-desktop`'s WSL2 distro was in the `Stopped`
+  state — confirmed via `wsl -l -v` — and `Docker Desktop.exe` was not
+  found at its expected install path to relaunch it). This independently
+  reproduces the exact same limitation the adversarial review's own
+  authorization finding already disclosed ("I was unable to run that suite
+  or any live-Postgres probe of my own in this environment"). Neither
+  suite exercises code this pass changed — `device_token.test.mjs` touches
+  none of it; `notify.test.mjs` exercises `notify.ts`, which received only
+  a doc-comment addition (see "Documented" above), no behavioral change —
+  but this is recorded as unverified, not silently assumed green.
+
+## [0.48.0] — 2026-08-11 — §11 push delivery, client side: real firebase_messaging wiring, completing the feature
+
+Closes the gap v0.47.0's own "NOT verified" section named explicitly:
+client-side registration. `firebase_messaging` (the standard, well-supported
+cross-platform Flutter plugin for FCM/APNs) is now a real dependency with
+real permission-request/token-retrieval/registration/refresh logic behind
+it, a real top-level background message handler, and a real foreground
+handler — both reading ONLY the content-free `kind`/`ref`/`callHandle`
+fields `push.ts`'s own `buildPush()` ever puts in a payload, never
+`message.notification` or any other `data` key, by construction (see
+`PushPointer`, which structurally has no field a leak could occupy).
+Together with v0.47.0's server-side work, MASTERFILE §11 push delivery is
+now implemented end to end — registration, dispatch, and client handling —
+still short only of what no environment here can supply: real credentials
+and a real device.
+
+### Added
+- **`client/lib/push_channel.dart`** (new) — `PushChannel`: real
+  `FirebaseMessaging.instance.requestPermission()`, real
+  `getToken()`/registration against `POST /v1/me/device-tokens`, and real
+  re-registration on every `onTokenRefresh` event (a token can rotate at any
+  time, not only at first launch — FCM's/APNs' own guidance). Ships a
+  `PushChannelDeps` test-only injection seam, mirroring
+  `packages/transport/src/notify.ts`'s own `NotifyDeviceDeps` one package
+  over — `FirebaseMessaging` has no simple mock-platform story to drive from
+  a black-box widget test in this environment, unlike `KioskChannel`/
+  `WearSyncChannel`, which this app owns end to end. `PushInitializationError`
+  is the client-side twin of `fcm.ts`/`apns.ts`'s own named,
+  fail-loudly-never-silently config-missing errors — thrown, never
+  swallowed, when `Firebase.initializeApp()` fails (which it genuinely does
+  in this checkout — no `google-services.json` exists, none fabricated; see
+  `pubspec.yaml`'s own comment on why a fake one would be worse than none).
+  Real firebase_messaging APIs are additionally guarded by
+  `pushSupportedOnThisPlatform` (mirrors `wear_sync_channel.dart`'s own
+  `Platform.isAndroid` guard) — `firebase_core` ships a real Windows plugin
+  implementation (confirmed by the actual diff `flutter pub get` made to
+  `windows/flutter/generated_plugins.cmake`), but `firebase_messaging` does
+  not, and this client's other real build target (besides Android) is
+  Windows, not iOS.
+- **`firebaseMessagingBackgroundHandler`** (`push_channel.dart`) — the real
+  Android background-message entry point. A genuine top-level function,
+  `@pragma('vm:entry-point')`-annotated, independently calling
+  `Firebase.initializeApp()` itself (a background isolate shares no state
+  with the main isolate — `main()`'s own init does not carry over). No
+  content-fetch call invented for any `kind`: the only real content endpoint
+  today, `GET /v1/children/:childId/inbox`, needs a `childId` this payload
+  does not and must not carry (push.ts's own header explains why) — logs
+  the opaque pointer and stops, honestly short of a fetch rather than
+  guessing at one.
+- **`OliveApi.registerDeviceToken`/`unregisterDeviceToken`**
+  (`client/lib/api_client.dart`) — real `POST`/`DELETE /v1/me/device-tokens`
+  calls against the backend's real routes (`scaffold/server/routes.mjs`),
+  matching every other `OliveApi` method's existing shape.
+  `client/pubspec.yaml` gained `firebase_core`/`firebase_messaging` (real
+  dependencies, real transitive `pubspec.lock` update — `flutter pub get`
+  actually run, not hand-edited).
+- **Wiring**: `child_home_live.dart`'s `_LiveChildHomeScreenState` — the one
+  place in this client a real, authenticated session already exists (mirrors
+  how `_syncWear()` already piggybacks on the same `token`/`api`) — now
+  builds a `PushChannel` and calls `initialize()` once `/v1/me`/`/inbox` load
+  successfully, disposing it in its own `dispose()`. Wrapped in try/catch:
+  push registration failing (which it does, honestly, absent real Firebase
+  config) must never break this screen's own readiness — a child or
+  guardian still sees their name and inbox count on a checkout with zero
+  push configuration. `main_live.dart`'s `main()` registers
+  `firebaseMessagingBackgroundHandler` before `runApp()`, per FlutterFire's
+  own required pattern, wrapped the same way for the same reason (a
+  demo/preview build must stay inspectable with zero config).
+- **`android/app/src/main/AndroidManifest.xml`** — checked, not modified:
+  `POST_NOTIFICATIONS` (required API 33+) was already declared (added
+  alongside `CAMERA`/`RECORD_AUDIO` in an earlier pass). No platform-manifest
+  gap existed to close.
+
+### Verified
+- `client/test/push_channel_test.dart` (18/18) — `firebaseMessagingBackgroundHandler`
+  proven to be a REAL top-level function via a `const` function-reference
+  assignment (a closure or instance method fails to COMPILE there, not just
+  misbehave — the strongest check available without `dart:mirrors`), plus a
+  source-shape regex confirming the `@pragma('vm:entry-point')` annotation
+  and column-0 placement; the foreground handler proven to never surface
+  `message.notification` title/body or any forbidden `data` key (simulates
+  push.ts's own canonical leak example, "Goodnight video from Dad," and
+  confirms only a bare `kind`/`ref` pointer ever reaches a caller); real
+  token registration, real `onTokenRefresh`-triggered re-registration, real
+  same-token dedupe (no redundant re-POST); the real (unmocked)
+  `PushInitializationError` path against this environment's genuine
+  Firebase-unconfigured failure; the real platform guard's no-op behavior on
+  this actual non-Android/iOS test host.
+- `client/test/child_home_live_test.dart` (9/9, up from 6/6) — three new
+  tests: a successful load calls `PushChannel.initialize()` exactly once;
+  disposing the screen disposes its `PushChannel`; a REAL (unmocked)
+  `PushChannel` — Firebase genuinely failing in this environment — never
+  breaks the screen's own ready state. Pre-existing tests updated to inject
+  a fake `PushChannel` so they keep testing name/unread-count/wear-sync
+  behavior without incidentally depending on real Firebase plugin timing.
+- `client/test/api_client_test.dart` (9/9, up from 6/6) — direct
+  `registerDeviceToken`/`unregisterDeviceToken` request-shape tests, matching
+  every other `OliveApi` method's own existing test convention.
+- `flutter analyze` — 0 issues.
+- Full `flutter test` suite, all 90 files, **1302/1302 passed, 0 failed**.
+  Run in six batches of ~15 files with `--concurrency=2` rather than one
+  invocation: the default concurrency genuinely hung (not a single slow
+  test — CPU/memory on the three `dart`/`dartvm`/`dartaotruntime` processes
+  went flat for minutes, confirmed via `Get-Process`) in this sandboxed
+  environment when running the whole 90-file, ~1300-assertion suite at once
+  in a single `flutter test` invocation; reproduced identically before any
+  push-specific test file was even reached, so this is this environment's
+  own resource ceiling, not a regression this change introduced. Every
+  individual file, including all three touched/new ones
+  (`push_channel_test.dart`, `child_home_live_test.dart`,
+  `api_client_test.dart`), was also run standalone with matching counts.
+
+### NOT verified
+- **Never run against a real device.** No real Firebase project exists in
+  this environment (no `google-services.json`, none fabricated — see
+  `pubspec.yaml`'s own comment). Permission dialogs, real tokens, and real
+  push delivery have never been exercised outside `flutter analyze`/
+  `flutter test`.
+- **No `ios/` platform folder exists in this client at all** (Android and
+  Windows are this app's only two real build targets — see
+  `main_live.dart`'s own header). `firebase_messaging`'s iOS path is real,
+  compiled code, exercised by nothing beyond the Dart analyzer, same as
+  every other platform-specific branch in this file until an `ios/` folder
+  and a `GoogleService-Info.plist` both exist.
+- **No sign-out flow exists in this client** (confirmed by grep across
+  `lib/` before writing `PushChannel.unregister()`), so
+  `DELETE /v1/me/device-tokens` has no real call site yet — `unregister()`
+  is written, compiles, and is unit-tested directly, but nothing in the app
+  calls it during normal use.
+- **Backend gaps this pass didn't touch, restated from v0.47.0 so this
+  entry is a complete picture of the whole feature:** never run against a
+  live FCM/APNs endpoint (no credentials anywhere in this environment); no
+  real server-side trigger calls `notifyDevices()` yet (no route/worker on
+  `main` writes anything that would).
+
+---
+
+## [0.47.0] — 2026-08-11 — §11 push delivery, server side: real FCM v1 + APNs senders, device_token, notifyDevices()
+
+Push has been a table entry in §11's tech-stack list since v0.4.0 and never
+had a sender behind it. This closes that gap on the server side: real device-
+token registration under real RLS, a real FCM v1 HTTP sender (real OAuth2
+JWT-bearer flow, node:crypto RS256), a real APNs HTTP/2 sender (real ES256
+provider-token JWT), and a single dispatch function that runs every payload
+through `sendGuard()` before either sender ever sees it. `packages/transport/
+src/push.ts` (buildPush/auditPush/sendGuard/GENERIC/FORBIDDEN_DATA_KEYS) is
+untouched — this is new code built on top of that existing, already-tested
+contract, not a redesign of it. No client-side work: that is a separate pass
+in the same worktree.
+
+### Added
+- **`db/migrations/0012_push_device_token.sql`** — `device_token` table.
+  Dual owner columns (`owner_user_id` / `owner_child_id`, exactly one set —
+  same "exactly one subject" shape 0004's `pin_credential` already uses),
+  because push targets are not only guardians: `call_incoming`/
+  `message_ready`/`turn_ready` ring/notify on the CHILD's own tablet too.
+  Dedupe is BY TOKEN (globally unique) — the migration's own header documents
+  why, given `registerDeviceToken`'s literal 4-arg signature has no
+  client-generated device id to dedupe by instead: the common case (same
+  token re-registering) is a real UPSERT; a genuine OS-level token rotation
+  becomes a new row, reaped reactively by `notifyDevices()` when FCM/APNs
+  reports the stale token dead. RLS: `ENABLE` + `FORCE`, five command-scoped
+  policies (insert/update/delete/select all self-scoped; system gets select-
+  all + prune-delete). **The first draft of this RLS shipped with no SELECT
+  policy for child/guardian at all, on the assumption their own UPDATE/
+  DELETE policies were sufficient to locate their own rows — found broken by
+  testing against a real database, not by review: Postgres's row-security
+  model does NOT let an UPDATE/DELETE policy's USING clause substitute for
+  SELECT visibility, so with none present, UPDATE/DELETE (and INSERT's
+  `RETURNING`) matched nothing at all, silently.** The migration's own header
+  keeps the wrong reasoning visible rather than deleting it, because the
+  mistake is the useful part for the next person reaching for the same
+  shortcut.
+- **`packages/db/src/pool.ts`** — `registerDeviceToken(pool, principal,
+  platform, token)`, `unregisterDeviceToken(pool, principal, token)`,
+  `deviceTokensFor(pool, owner)` (system-role only, never exposed over the
+  API), `removeDeviceTokenSystem(pool, id)` (system-role only, used by
+  `notify.ts` to reap a dead token). `registerDeviceToken` handles the one
+  case RLS's own-rows-only policies structurally cannot: re-registering an
+  existing token under a DIFFERENT owner (a family reassigns a physical
+  device). The caller-scoped UPSERT can't UPDATE a row it doesn't own — by
+  design, that is the security property — so on that specific RLS denial
+  (SQLSTATE 42501, "row-level security policy" in the message, not any other
+  permission error) the function falls back to a system-scoped delete of the
+  stale row followed by a retry of the exact same caller-scoped insert. A
+  race between the two steps surfaces as a real unique-constraint error on
+  retry, not a silently wrong result.
+- **`packages/transport/src/fcm.ts`** — real FCM v1 HTTP API sender. Real
+  OAuth2 self-signed-JWT-bearer flow (RFC 7523): RS256 JWT signed with
+  `node:crypto`'s `createSign`, POSTed to `https://oauth2.googleapis.com/
+  token`, bearer token cached until 60s before its real expiry. Real
+  `messages:send` request shape built from a `PushPayload` — `call_incoming`
+  (whose `notification` is already `null` by `buildPush()`'s own design)
+  becomes a DATA-ONLY FCM message; there is no real FCM v1 wire field for
+  "full-screen intent" to invent, so this file doesn't invent one — that is
+  the client's own job, building the notification locally from
+  `data.kind === 'call_incoming'`. `FCM_SERVICE_ACCOUNT_JSON` is read at
+  CALL TIME, never import time, and throws a specific, named error if unset.
+- **`packages/transport/src/apns.ts`** — real Apple Push Notification
+  service sender over real HTTP/2 (`node:http2`), against a configurable
+  host (`APNS_HOST`, defaulting to production; sandbox constant exported
+  too). Real ES256 provider-token JWT, signed with `node:crypto`'s one-shot
+  `sign()` using `dsaEncoding: 'ieee-p1363'` — the raw R‖S JOSE signature
+  format ES256 actually requires, not the DER encoding node defaults to for
+  EC keys — cached and reused up to 50 minutes per Apple's own hour-max
+  guidance. `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID` read at call time,
+  same fail-loudly rule as fcm.ts; `APNS_TOPIC` (the bundle id) is a fourth,
+  equally mandatory var the task's own env-var list didn't name but the real
+  API does — apns-topic is on every real request, so it's required here too.
+- **`packages/transport/src/notify.ts`** — `notifyDevices(pool, target,
+  input, deps?)`, the single place a `PushPayload` leaves this codebase.
+  Looks up `target`'s `device_token` rows, calls `buildPush()` then
+  `sendGuard()` — no exceptions, on every payload, before either sender ever
+  runs — then dispatches by platform. Per-device try/catch: one device's
+  failure is collected and reported, never thrown away, never aborting the
+  others. A platform's own definitive "this token is dead" signal
+  (`deviceGone`, set by fcm.ts/apns.ts on FCM's UNREGISTERED / a 404, or
+  Apple's Unregistered / BadDeviceToken) triggers a real prune via
+  `removeDeviceTokenSystem`. Ships an optional `NotifyDeviceDeps` injection
+  seam (every field defaults to the real function; a caller passing nothing
+  gets the exact original behavior) — added specifically because no
+  black-box test could otherwise prove sendGuard() actually blocks a leaky
+  payload (buildPush() only ever produces audit-clean output for real kinds)
+  or that one device's real failure doesn't abort another's real attempt
+  without a sender that can be told to fail/succeed on command, which no
+  live credential in this repo can arrange.
+- **`POST /v1/me/device-tokens`** / **`DELETE /v1/me/device-tokens`**
+  (`scaffold/server/routes.mjs`) — identity-only (`action: null`, same shape
+  as `GET /v1/me`), body `{platform, token}` / `{token}`. Validates platform
+  against the real `Platform` union before ever reaching the DB.
+- **`package.json`**'s `build` script gained esbuild lines for fcm.ts/
+  apns.ts/notify.ts, matching push.ts/channels.ts's own existing convention
+  in the same package (compiled `.mjs` produced, not committed).
+
+### Verified
+- `packages/db/test/device_token.test.mjs` (27/27) — real RLS against a live
+  Postgres (not `postgres`, an `app_owner`-equivalent `NOSUPERUSER
+  NOBYPASSRLS` role, same standard `db/DEPLOYMENT.md` sets for every RLS
+  suite in this repo): a principal can register/see/delete only their own
+  rows, across BOTH owner-column shapes and in both directions (guardian
+  can't touch a child's row, a different guardian can't touch this
+  guardian's row, a different child can't touch this child's row); real
+  UPSERT dedupe (same token twice is one row, stable id); real cross-owner
+  re-registration (new row, old row's content genuinely re-attributes);
+  system-only visibility and pruning; the table's own CHECK/UNIQUE
+  constraints hit directly.
+- `packages/transport/test/fcm.test.mjs` (34/34) and `apns.test.mjs`
+  (35/35) — against MOCKED transports only (see "NOT verified" below): real
+  JWT signatures verified with `node:crypto`'s own `verify()` against the
+  matching public key (proves these are real signed tokens, not
+  plausible-looking strings); real request shape (URL/headers/body) for
+  both the OAuth exchange and the actual send; token caching (a second send
+  within TTL makes no second auth round-trip / signs no second JWT); a
+  missing/invalid credential throws a specific, named error; `deviceGone`
+  set correctly on each platform's real dead-token signal and NOT set on a
+  transient server error.
+- `packages/transport/test/notify.test.mjs` (22/22) — structural proof
+  (source-text check) that `sendGuard` is imported from `push.ts` and
+  called between `buildPush` and either transport call; BEHAVIORAL proof
+  (via the injection seam, real `sendGuard` left un-overridden) that a
+  known-leaky payload is refused AND never reaches either sender; real
+  per-device isolation (one throws, the other still succeeds, both
+  reported); real pruning (the row is verified gone from the database, not
+  just reported as gone) and real non-pruning on a non-`deviceGone`
+  failure; and — with NO overrides at all, the real fcm.ts/apns.ts, real
+  env vars deliberately unset — both a real android and a real ios device
+  fail loudly with the real, specific config-missing error, neither
+  silently skipped, neither aborting the other.
+- Regression: `packages/transport/test/transport.test.mjs` (66/66,
+  unchanged — `push.ts` was never touched), `packages/db/test/
+  pool.test.mjs` (18/18) and `custody_order.test.mjs` (16/16), `packages/
+  api/test/stack.test.mjs` (94/94 — a pre-existing native libuv assertion
+  crash on process teardown after its real-socket section, unrelated to
+  this change and reproducible on an unmodified checkout), and the full
+  `npm test` chain's other suites, all green. `db/test/0001_constraints.
+  test.sql` (24/24) and `0005_court.test.sql` (11/11) confirmed unchanged
+  on a freshly migrated database, ruling out 0008 disturbing any earlier
+  migration's own guarantees.
+
+### NOT verified
+- **Never run against a live FCM or APNs endpoint.** No
+  `FCM_SERVICE_ACCOUNT_JSON` or `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID`
+  exists anywhere in this environment, and none was invented — every claim
+  above about request shape and signature correctness is proven against a
+  mocked transport, per this project's own standing honest-stub rule.
+- **No real trigger wired.** The live server route surface on this branch's
+  `main` is, confirmed by an earlier audit, essentially auth routes plus a
+  couple of GETs — no route or background worker on `main` writes anything
+  that would naturally call `notifyDevices()` (the delivery-sweep SQL
+  function from 0002 has no JS caller anywhere in this repo either). Rather
+  than bolt on a fake trigger route to claim end-to-end wiring, this ships a
+  real, directly-callable, thoroughly-tested `notifyDevices()` plus its own
+  real registration routes — genuinely useful, honestly short of "a message
+  arrives and a phone buzzes."
+- Client-side registration (calling `POST /v1/me/device-tokens` with a real
+  FCM/APNs token obtained on-device) is a separate pass in this same
+  worktree, not part of this change.
+
+---
+
+## [0.47.0] — 2026-08-11 — "Send one back" wired for real, and the gap it exposes
+
+`client/lib/receipt_screen.dart`'s "Send one back" was a snackbar-only stub
+(`_notBuiltYet`) since it was written — this pass gives it a real backend, end
+to end, and is honest about the one thing that real wiring surfaced rather
+than papering over: the async-message schema was built for guardian→child
+delivery only, and a child session cannot yet be a real sender.
+
+### Added
+- **`packages/db/src/pool.ts`: `childCtxFor()` and `persistCapturedMessage()`.**
+  `childCtxFor()` loads a real `ChildCtx` (home tz, tz timeline, day-parts)
+  from Postgres for `packages/messaging/src/pipeline.ts`'s `materialize()`.
+  `persistCapturedMessage()` is where `captureMessage()`'s pure `ok: true`
+  output actually lands — one `media_artifact` row, one `delivery_intent`
+  row, and (only when the caller is assembling a message-banking run, never
+  for a single reply) one new `intent_batch` row. Both run under `system`
+  role, mirroring `activeCustodyOrderFor()`'s own reasoning. Flags, rather
+  than fixes, a pre-existing gap: `media_artifact`/`intent_batch`/
+  `delivery_intent` carry no row-level security at all (unlike
+  `child_journal_entry`/`pin_credential`/`expense`/`custody_order`) —
+  closing that safely means auditing every existing reader of those tables
+  against a new policy, which is its own change.
+- **`server/routes.mjs`: `POST /v1/children/:childId/messages`**, the real
+  counterpart to the existing `GET .../inbox`. Sender identity is always
+  taken from the authenticated principal, never the request body (extends
+  `api.ts`'s own A3 reasoning to identity generally). Runs every request
+  through `captureMessage()` before persisting anything.
+- **`client/pubspec.yaml`: `image_picker`.** `receipt_screen.dart`'s "Send
+  one back" now really records a short clip (`pickVideo(source: camera)`),
+  really POSTs it through a new `api_client.dart` method
+  (`OliveApi.sendMessage()`) to the new route, and shows real
+  loading/success/error states — no more fake instant success and no more
+  swallowed failures.
+- Tests: `packages/db/test/message_capture.test.mjs` (33 assertions, real
+  Postgres), `packages/api/test/messages_route.test.mjs` (20 assertions,
+  real Postgres + real HTTP layer — including proving a `captureMessage()`
+  rejection is honoured by counting real rows before/after, not by trusting
+  the response body alone), and a rewritten
+  `client/test/receipt_screen_test.dart` (18 tests: the existing receipt
+  invariants, plus three new ones exercising the real send/error/cancel
+  flows against an injected `MockClient` and a fake picker).
+
+### Honest gap this pass found rather than hid
+`delivery_intent.sender_id` is `NOT NULL REFERENCES app_user(id)`
+(`db/migrations/0001_phase0_init.sql`), and a `child` principal carries no
+`userId` at all (`packages/auth/src/auth.ts`) — she has no `app_user` row to
+be attached as a sender. So the realistic caller for "Send one back" — the
+child's own session — reaches the new route, reaches `captureMessage()`, and
+is honestly refused (`not_authorized`), the same denial a sitter or
+coordinator gets (`pipeline.test.mjs`'s own M2 suite). This is not a bug
+introduced by this pass; it is a pre-existing product/schema gap this pass
+made reachable and provable instead of leaving implicit. Proven over real
+HTTP against a real database in `messages_route.test.mjs`'s "D auth" group,
+not merely asserted in a comment. Making a child a real sender needs a
+schema change (at minimum, some identity a child principal can be attached
+to as `sender_id`) that this pass did not make.
+
+Separately, and still true after this pass: this repo has no object storage
+backend (`packages/storage/src/storage.ts`'s `StoragePort` has no production
+implementation anywhere). The recorded clip is captured for real on-device;
+its bytes are never uploaded. `storageKey` is a locally-meaningful reference
+only.
+
+### Verified
+- `node packages/messaging/test/pipeline.test.mjs`: 32 passed, 0 failed
+  (unchanged — pipeline.ts itself was not modified).
+- `node packages/db/test/pool.test.mjs`: 18 passed, 0 failed (regression,
+  unchanged).
+- `node packages/db/test/custody_order.test.mjs`: 16 passed, 0 failed
+  (regression, unchanged).
+- `node packages/db/test/message_capture.test.mjs`: **33 passed, 0 failed**
+  (new).
+- `node packages/api/test/stack.test.mjs`: 94 passed, 0 failed (regression,
+  unchanged).
+- `node packages/api/test/messages_route.test.mjs`: **20 passed, 0 failed**
+  (new).
+- `flutter analyze` (client/): clean, no issues.
+- `flutter test` (client/): **1281 passed, 0 failed** — full suite,
+  including the rewritten `receipt_screen_test.dart` (18/18).
+- All DB suites above run against a real, isolated Postgres 16.14 database
+  under a dedicated `NOSUPERUSER NOBYPASSRLS` role
+  (`app_owner_gap_message_record_reply`), never the shared default.
+
+### NOT verified
+- **No live call site yet.** `inbox_screen.dart` — the only screen that
+  constructs `ReceiptScreen` — is still `main.dart`'s offline demo build and
+  does not supply the new `baseUrl`/`childId`/`sessionToken` params, so on
+  every existing screen today the button reports "This screen isn't
+  connected to a server yet." honestly rather than attempting a send. A live
+  call site (mirroring `child_home_live.dart`'s own pattern) is real
+  follow-up work.
+- **RLS on `media_artifact`/`intent_batch`/`delivery_intent`** — pre-existing
+  gap, surfaced above, not closed here.
+- Not run on a real device or emulator (no camera to actually record from in
+  this environment) — the client suites above exercise the wiring through an
+  injected picker and a mocked HTTP transport, not a physical camera.
+
+---
+
 ## [Unreleased]
 
 ### Added
@@ -126,6 +6312,61 @@ Silent deletion is a process failure.
     board-bounds check in `parseClientMessage` is the one
     checkers-specific constant, called out in its own comment as the seam
     to generalize).
+
+- **Guardian availability, real end to end — closes the `guardian_more.dart`
+  gap CHANGELOG's own 0.44.0 entry left "Out of scope, on purpose."**
+  MASTERFILE §9, MARKUP screen `availability` — "when he can actually be
+  reached, honestly rendered." A different feature from §21.3's "she
+  publishes her own availability" (the unbuilt age-15 ladder rung,
+  child-authored); this is the guardian-to-guardian one: each guardian's own
+  weekly reachability windows, visible to any live co-guardian and to their
+  shared child.
+  - `db/migrations/0010_availability.sql` — `guardian_availability_window`
+    (`guardian_id references app_user`, `weekday` 0=Sun..6=Sat matching
+    `packages/delivery-engine`'s own convention, `start_local`/`end_local`
+    `time`, nullable `note`). RLS: `ENABLE`+`FORCE`, four policies — a
+    guardian writes only her own rows (`guardian_id = current_actor()`, both
+    `USING` and `WITH CHECK`); any live co-guardian and the shared child can
+    read (mirrors `effective_guardianship`, the same "live edge" definition
+    `custody_order`'s own policies already use); a `system`-role read policy
+    for the trusted backend, safe because the route's own A3 authorization
+    already gated the call before it runs (same reasoning
+    `activeCustodyOrderFor()` already established for `custody_order`).
+  - `packages/db/src/pool.ts`: `setAvailabilityWindows()` (replace-all,
+    opens its own **guardian-scoped** session — not `withSystemSession`,
+    unlike this file's read helpers — so the RLS write policy is the thing
+    actually enforcing "own rows only," not just a comment claiming it),
+    `availabilityFor()` (every co-guardian's windows for a child, including
+    the caller's own, joined against `app_user.display_name`), and
+    `guardiansOfChild()` (every live guardian of a child — the function the
+    task asked to mirror `edgesFor`'s own shape, which did not exist before
+    this pass).
+  - `server/routes.mjs`: `GET /v1/children/:childId/availability` (action
+    `calendar.view` — no dedicated Action exists yet, same acknowledged gap
+    `/now`'s own route comment already calls out) and
+    `PUT /v1/me/availability` (identity-only, `action: null`; the guardian
+    always writes under her own `principal.userId`, never a body value).
+    `packages/api/src/api.ts`'s `Method` union gained `'PUT'` — the first
+    route in this codebase to need it.
+  - `client/lib/availability_screen.dart` — a real `StatefulWidget`: real
+    `OliveApi` calls, real loading/error/ready states, `TimeOfDay` pickers
+    for each day, a read-only co-guardian section, no fake network delay.
+    Follows `child_home_live.dart`'s `LiveChildHomeScreen` shape (baseUrl +
+    ids, an internal dev-login), not `guardian_setup.dart`'s. Stated
+    limitation: shows/edits one start-end range per day, matching the task's
+    own shape; the schema allows more than one per day, and any such extra
+    windows are round-tripped on Save rather than silently dropped.
+    `client/lib/api_client.dart` gained `getAvailability()`/`setAvailability()`.
+  - `guardian_more.dart`'s `Availability` tile (formerly the sole entry in a
+    now-removed `HubSection(title: 'Not yet built')`) and `guardian_home.dart`'s
+    own separate quick-access `Availability` tile (a second, previously
+    undiscovered stub calling the same dead-end `_notBuiltYet`) both now open
+    the real screen when a live session (`baseUrl`/`guardianId`/`childId`)
+    is threaded in — optional fields, all null at every current call site
+    (this preview build's demo data still carries none of them, same
+    honest-stub posture `guardian_setup.dart`'s passkey button already
+    takes), so both tiles fall back to accurate "not connected" feedback
+    rather than the now-false "not built yet".
 
 ### Fixed
 - **Secure network play — remediation of two independent adversarial security
@@ -245,6 +6486,110 @@ Silent deletion is a process failure.
   so the new tests are known to detect the specific bugs, not just pass
   vacuously.
 
+### Verified — guardian availability
+- `node packages/api/test/availability_contract.test.mjs` (new): **26
+  passed, 0 failed**. Drives the REAL `registerRoutes()` from
+  `server/routes.mjs` through a real `Api` instance with a fake `pg.Pool`
+  (query text/param assertions, not a hand-waved stub) — real route
+  registration, the real `can()`/`edgesFor()` authorization path, real body
+  validation, and the real replace-all DELETE-then-INSERT `pool.mjs` issues.
+- `node packages/api/test/stack.test.mjs` (regression, unmodified by this
+  pass): **94 passed, 0 failed** — the `Method` union's new `'PUT'` member
+  changed nothing about existing routes.
+- `npm run build` (esbuild) succeeds; `packages/db/src/pool.mjs` regenerated
+  from the edited `pool.ts` and committed alongside it (this package commits
+  its `.mjs`, confirmed via `git ls-files` first).
+- `flutter analyze` (client): clean, 0 issues.
+- `flutter test client/test/availability_screen_test.dart` (new): **8
+  passed, 0 failed**.
+- `flutter test client/test/guardian_more_test.dart`: **8 passed, 0
+  failed** (2 rewritten for the honest "not connected" wording, 1 new for
+  the live-wired real-screen path).
+- `flutter test client/test/widget_test.dart`: **15 passed, 0 failed** (1
+  rewritten — `guardian_home.dart` turned out to carry a SECOND, previously
+  undiscovered `Availability` stub on its own quick-access grid, not only
+  the one in `guardian_more.dart` the task named; wired both from one
+  shared `_openAvailability()` helper rather than leaving a second dead tap
+  next to the newly-real one).
+
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **`db/migrations/0010_availability.sql`'s RLS, and the new
+  `packages/db/test/availability.test.mjs`** (real-Postgres RLS negative
+  tests: a guardian's UPDATE/DELETE/INSERT against another guardian's rows
+  each independently probed, plus the co-guardian/shared-child read
+  policies) — this suite is written and requires only `DATABASE_URL` /
+  `ADMIN_DATABASE_URL` to run (same gate as the existing `pool.test.mjs` /
+  `custody_order.test.mjs`), but no Postgres or Docker daemon was reachable
+  in this session's sandbox (`psql`/`pg_ctl` absent, `docker ps` failed to
+  reach the daemon) to actually run it against. Run it for real before
+  trusting the RLS claims above as anything more than "compiles and reads
+  correctly" — `DB=verify_gap_guardian_availability bash tools/verify.sh`-style
+  isolation, per this session's own instructions.
+- The Fold5/physical-device state from v0.46.1/v0.46.2 above is untouched by
+  this pass and remains exactly as unverified as those entries already say.
+- **2026-08-11 — §20.2b: `orphan_risk`/`retention_breach` alerting, closed
+  further.** The MASTERFILE line this closes ("orphan_risk and
+  retention_breach are also still views with no alerting") was already
+  half-stale before this round: `tools/healthcheck.mjs` (pre-existing)
+  already turns the `health_check` view into a non-zero exit inside
+  `tools/verify.sh`. Audited first, per the task: this repository has no
+  `db/migrations/0008_auth_credentials.sql` (`0004_auth_and_reaper.sql` is
+  the real auth/credentials migration), and `health_check` is not an inline
+  query duplicated per migration — `0005_observability.sql` and
+  `0006_court_tier.sql` both use `CREATE OR REPLACE VIEW health_check`, the
+  same technique this repo already uses to evolve `orphan_risk` and
+  `retention_breach` themselves, so 0006's definition was already the single
+  canonical source (0007_custody_order.sql does not touch it). Nothing to
+  consolidate into a new `system_health_check` view; building one anyway
+  would have been the second competing copy the task was trying to prevent.
+  New:
+  - **`scaffold/tools/health-alert.mjs`** — connects with `pg` directly over
+    `DATABASE_URL` (falling back to `ADMIN_DATABASE_URL`), the split used by
+    `packages/db/test/*.mjs`, so no `psql` binary is required. Queries
+    `health_check`; for any row where `observed > threshold` prints one
+    structured `ALERT check_name=… severity=… count=… threshold=…
+    description="…"` line per breach to **stderr** and exits non-zero. When
+    clean, prints a one-line `all clear — N health check(s), 0 breaches` to
+    stdout and exits 0. An unreachable database or a missing `health_check`
+    view is a separate ABORT (exit 2). Its own header comment states plainly
+    that it does **not** send an email, Slack message, or page anyone — no
+    such integration exists anywhere in this repository; wiring the exit
+    code into a real cron job and a real notification channel is future
+    work.
+  - **`scaffold/db/migrations/0009_health_check_canonical.sql`** — an audit
+    finding recorded as a migration, not a schema redefinition. Changes no
+    table and no view *definition*; adds `COMMENT ON VIEW` documentation to
+    `health_check`, `orphan_risk`, and `retention_breach` in the catalog
+    itself, naming `health_check` as canonical so the next added check
+    extends one view instead of choosing between two. Numbered `0009`, not
+    `0008` — `0008` was independently claimed by a sibling branch
+    (`feature/account-deletion`'s `0008_account_deletion.sql`) built in
+    parallel off the same `main`; renumbered here to keep both branches'
+    migrations mergeable in sequence.
+  - **`scaffold/tools/verify.sh`** — new "Health alert" step, right after
+    the existing "Health" step, running `tools/health-alert.mjs` against the
+    same freshly migrated `$DB`. Only a hard ABORT counts against the
+    suite's `PROBLEMS` total; an unexpected breach on a freshly seeded
+    database is reported but does not gate the exit code, per this task's
+    own scope. `scaffold/package.json` gained a matching `health:alert`
+    script alongside the existing `health` one.
+  - **`scaffold/packages/db/test/health_alert.test.mjs`** — real Postgres,
+    real `health_check` view. Seeds the exact
+    `db/test/0004_e2e_message.test.sql` §7 "ORPHAN DETECTION" fixture shape
+    (a `media_artifact` expiring before the pending `delivery_intent`
+    pointing at it), spawns the real script as a subprocess, and asserts a
+    non-zero exit whose stderr names `check_name=orphan_risk` with
+    `severity=high`; compares against a captured baseline rather than
+    assuming the database started at zero, so the assertion holds even on a
+    database another suite has already touched. Separately asserts a clean
+    exit 0 with an `all clear` line — but only when the whole database is
+    independently confirmed to have zero rows across every `health_check`
+    row first; reports an honest SKIP instead of a false pass or a false
+    failure otherwise. 10/10 passing against a freshly migrated, isolated
+    database (`verify_gap_health_alerting`), not the shared
+    `verify_run`/`olive` databases other suites use.
+
 ### Reversed
 - **§16.2 #6 — call/video infrastructure, reversed at the owner's direction.**
   v0.40.0 settled on staying on LiveKit Cloud (see the callout above the tech
@@ -252,8 +6597,9 @@ Silent deletion is a process failure.
   **Jitsi Meet + Jitsi Videobridge** as the basis for all calls, video calls,
   screen-sharing, and streaming. Staged in two steps — Step 1 (in progress)
   proves the calling UX against Jitsi's public `meet.jit.si` server via the
-  official `jitsi_meet_flutter_sdk`; Step 2 (not started) self-hosts the full
-  stack (Prosody, Jicofo, Jitsi Videobridge). `scaffold/client/pubspec.yaml`
+  official `jitsi_meet_flutter_sdk`; Step 2 (staged and container-verified
+  as of v0.46.2, not yet device-verified) self-hosts the full stack
+  (Prosody, Jicofo, Jitsi Videobridge). `scaffold/client/pubspec.yaml`
   dropped `livekit_client` for `jitsi_meet_flutter_sdk`;
   `scaffold/tools/local-call-server.mjs` (LiveKit token minting) was replaced
   by `scaffold/tools/local-call-room-server.mjs` (Jitsi room-name
@@ -277,9 +6623,1123 @@ Silent deletion is a process failure.
   here worth keeping a foothold in. Should not be re-proposed absent new
   direction from the owner.
 
+### Fixed
+- **2026-08-11 — `tools/verify.sh` reported 2 phantom Dart test failures on
+  CI, never locally.** GitHub Actions reported `dart widget invariants 1291
+  passed 2 failed` on `feature/real-authentication`'s HEAD, reproducibly
+  across a fresh run and a manual rerun — but `flutter test` run directly
+  (not through `verify.sh`) showed `1291 passed, 0 failed` every time, on
+  Windows and on four independent WSL2/Ubuntu-24.04 attempts (default
+  timezone, `TZ=UTC`, a from-scratch clean clone, and reduced concurrency).
+  Root cause, found via a two-step CI diagnostic that dumped the reporter's
+  real output into the log: the script's failure-count extraction,
+  `grep -oE '\-[0-9]+' | tail -1`, searched the ENTIRE captured
+  `--reporter compact` output for any hyphen-digit substring rather than the
+  reporter's own summary line — and `client/test/api_client_test.dart` has a
+  real test named `...a non-2xx response (e.g. 403 not_this_child) returns
+  false, never throws`. Every Dart test genuinely passes, so a clean run
+  never emits a real `-N` counter to compete with it; the incidental `-2` in
+  `non-2xx` was the only match, and the script confidently reported it as
+  "2 failed" against a suite with zero real failures. Not a Linux-only
+  platform bug at all — a false-red in the verification script's own
+  reporting, the same class of bug this file's header already exists to
+  catch, just pointing the opposite direction from the false-greens it was
+  written for. **Fixed**: `tools/verify.sh` now anchors both the pass and
+  fail extraction to the reporter's own `^<elapsed> +passed[ -failed]:`
+  line-start prefix — structured data the reporter itself emits — instead of
+  a free-floating search, so no test's own description text can collide
+  with it. No Dart source, test, or lib file needed any change. **Verified**:
+  confirmed directly on GitHub Actions' own `ubuntu-24.04` runner (not just
+  locally) — `dart widget invariants 1291 passed 0 failed`, and the full
+  `tools/verify.sh` run went from `COMPUTED TOTAL 3950 passed 2 failed` to
+  `3950 passed 0 failed`. `MARKUP.html`/`shell.html`'s assertion counts
+  (previously `3984`, already stale/unverified — see the "NOT verified"
+  note under [0.47.0] below) are corrected to `3950` to match, confirmed via
+  `node tools/check-markup.mjs --total 3950`: 44/44 passed.
+### Added — raw export, §16.1 #3 / §2.11, real for the first time
+`client/lib/deletion_screen.dart`'s "Download raw export" button was a
+snackbar-only stub ("not built yet"). `db/migrations/0006_court_tier.sql`'s
+`export_record` table has existed since that migration landed, with nothing
+writing to it — this closes that gap for the RAW half of §16.1 #3 (certified
+export, court-tier, remains unbuilt server-side; `client/lib/court_export
+.dart`'s certified card is still its own standalone demo).
+
+- **`packages/db/src/pool.ts` — `rawExportBundleFor()`.** Assembles a child's
+  delivered/opened `delivery_intent` rows (with joined `media_artifact`
+  metadata), `child_journal_entry` rows, and `message_log` for a live
+  guardian, and inserts a real `export_record` row (`kind: 'raw'`,
+  `was_free: true`) with a real sha256 `bundle_hash` computed over the exact
+  serialized bundle (`packages/ledger/src/sha256.ts`'s `sha256Hex`, the same
+  primitive `ledger.ts`'s `certify()` already uses for certified export — not
+  reinvented). Returns the exact serialized string alongside the hash
+  (`serialized`) so a caller can verify byte-for-byte rather than
+  re-encoding and risking a false mismatch.
+  - `delivery_intent`/`media_artifact` carry **no row-level security policy
+    at all** (confirmed against `db/DEPLOYMENT.md`'s own RLS inventory), and
+    `message_log`'s policy (`log_no_child`) blocks the `child` role but does
+    **not** scope by `child_id` — a guardian session querying either table
+    directly for the wrong child gets that child's real rows back. This
+    function therefore re-derives "is the caller a live `guardian` edge of
+    THIS child" itself in SQL (not closed, not expired, inside its valid
+    range, not restricted) before running a single content query — the
+    second lock `authorize.ts`'s own header describes for `can()`, applied
+    one layer deeper because these tables have no first lock of their own.
+  - `child_journal_entry` is queried unconditionally (never hardcoded
+    empty) — P7 (`journal_owner_only`, 0001) returns zero rows to every
+    guardian caller for real, enforced by Postgres, not by this file
+    remembering to leave a table out.
+  - **Honest scope limit:** a child pulling her own export (§21.2 rung 17,
+    `packages/maturation/src/rungs.ts`'s `authorizeExport()`) is **not**
+    implemented here — that function's own age gate (`age < 17`) has no
+    wiring to any route or to `VerifiedPrincipal`, and
+    `export_record.requested_by` is `NOT NULL REFERENCES app_user(id)`,
+    which a child principal (no `app_user` row — `auth.ts`) cannot honestly
+    satisfy. A child principal reaching this function throws rather than
+    faking either.
+- **`server/routes.mjs` — `GET /v1/children/:childId/export`.** Matches
+  MASTERFILE §7.9's already-documented shape exactly. Uses the existing
+  `export.raw` `Action` (in `family-graph/src/authorize.ts`'s union since
+  before this pass, with nothing behind it — `ROLE_CAPS` already restricts it
+  to the `guardian` role alone). A child caller gets an honest `501
+  child_self_export_not_implemented`, not a silent empty bundle.
+- **`client/lib/api_client.dart` — `fetchRawExport()`**, and
+  **`client/lib/deletion_screen.dart`'s `_export()`** now makes a real
+  dev-login + export network round trip, writes the server's exact
+  `bundleJson` bytes to a real file in the app's documents directory
+  (`path_provider`, newly added to `pubspec.yaml`), independently
+  recomputes the sha256 client-side against the saved file
+  (`client/lib/sha256.dart`, the existing port), and shows the real file
+  path and hash — or an honest failure/hash-mismatch state — never a fake
+  success. In-flight state disables the button against a double tap.
+
+### Verified
+- `node packages/db/test/raw_export.test.mjs` — 26/26 passed, against a real
+  Postgres (0001–0007 applied), including: a closed former guardian, a
+  guardian of a different child, and a restricted-but-live guardian edge all
+  get `not_a_live_guardian` and no bundle; a live guardian gets exactly the
+  one delivered intent (not the pending one) with real artifact metadata;
+  `journalEntries` is empty despite a real seeded row (P7); the full
+  message_log chain is present; `export_record` is written with `kind:
+  'raw'`, `was_free: true`, and a `bundle_hash` independently recomputed
+  from the returned bundle and matched against both the response and the
+  persisted row; a second export writes a second row (unlimited, not
+  upserted).
+- Manual end-to-end smoke test against a live `server/index.mjs` (DEV_LOGIN):
+  a real guardian dev-login + `GET .../export` returns a real bundle,
+  `exportRecordId`, and `bundleHash`; a guardian with no edge to the child
+  gets `403 no_edge` at the route layer (before `rawExportBundleFor` runs at
+  all); a child dev-login against her own export gets `501
+  child_self_export_not_implemented`.
+- `flutter analyze` clean, whole `client/` (`No issues found!`). `flutter
+  test client/test/deletion_screen_test.dart` — 15/15 passed. Full
+  `flutter test` (every suite in `client/test/`) — **1282/1282 passed**,
+  confirming this pass's changes (the new file-write/hash-verify path,
+  `path_provider`'s new transitive deps, the Windows plugin-registrant
+  regeneration) regressed nothing elsewhere in the client. New/updated
+  widget tests exercise the real (MockClient-transported) network round
+  trip, a real temp-file write and read-back, a hash-mismatch path, a
+  server-denial path, and the in-flight button state.
+
+### Fixed — a real Flutter-test-harness bug, found and worth recording
+Writing `deletion_screen_test.dart` surfaced a genuine, reproducible gap in
+how this project's own tests must be written, not specific to this feature:
+a **real asynchronous `dart:io` call made from inside a widget's own async
+callback (or a test's `setUp`) hangs indefinitely under the plain
+`flutter test` widget-test binding** (`AutomatedTestWidgetsFlutterBinding`)
+— confirmed by isolating it to a two-line repro (`await Directory.systemTemp
+.createTemp(...)` alone hung for the full 10-minute default test timeout;
+swapping to `createTempSync` fixed it instantly, no other change). `_export
+()`'s file write and every dart:io call added to its tests now use the sync
+variant for exactly this reason (see both files' own comments). Flutter's
+own docs name `tester.runAsync(...)` as the correct fix for a test that
+needs the operation to stay genuinely asynchronous; the sync variant was
+chosen here as simpler and more than fast enough for a one-shot local JSON
+write this size. Worth a project-wide note for the next person who hits an
+unexplained `pumpAndSettle`/test timeout touching real files.
+
+### NOT verified — and why
+- **Certified export** (the other half of §16.1 #3) is still entirely
+  unbuilt server-side; `client/lib/court_export.dart` remains its own
+  standalone, backend-less demo, untouched by this pass.
+- **A child's own raw export (rung 17)** is a documented gap, not a silent
+  one — see `rawExportBundleFor()`'s own header for exactly why (age gate,
+  `export_record.requested_by`'s FK).
+- No physical-device run of the wired button — this pass's live testing was
+  `flutter test` (mocked transport) plus a manual `curl`/`fetch`-equivalent
+  smoke test against a real `server/index.mjs` process on this dev machine,
+  not an on-device tap through the actual client UI.
+
 Phase 2 decisions: §16.2 #6 Step 2 (self-hosting Jitsi). §21.9 D — whether
 "becomes a parent" reuses the account. (§16.2 #8 was resolved in 0.40.0 — this
 line went stale for three versions before being caught here.)
+
+---
+
+## [0.47.0] — 2026-08-09 — real guardian authentication, adversarially reviewed twice, then hardened
+
+Five prior commits on `feature/real-authentication` (backend schema/routes,
+two parallel client phases, two parallel adversarial reviews) built and
+reviewed real guardian PIN + WebAuthn/passkey authentication — replacing
+`client/lib/main.dart`'s hardcoded, unauthenticated `'1273'` kiosk PIN — but
+none of it had reached CHANGELOG.md or MASTERFILE.md yet, and the reviews'
+findings were still open. This entry closes both gaps: what shipped across
+all five commits, what the two reviews found, what got fixed for real (with a
+real test proving it, not just the absence of the bug), and what is
+genuinely device-verified versus still open.
+
+### Added (prior commits, recorded here for the first time)
+- **`db/migrations/0008_auth_credentials.sql`** — `pin_credential` (scrypt
+  hash, `failed_attempts`, `locked_until`, RLS: owner-only, no `system`
+  bypass), `webauthn_credential` (ES256 public key, `sign_count`, same
+  owner-only posture plus a narrow `system` lookup-by-`credential_id` policy
+  for pre-session login), `auth_challenge` (`system`-role-only, single-use).
+- **`packages/auth/src/auth.ts`** extended with `hashPin`/`verifyPin`
+  (scrypt N=32768), `verifyAssertion` (WebAuthn signature/challenge/rpId/
+  signCount checks), `newChallenge`, session issuance/escalation.
+- **`packages/auth/src/attestation.ts`** — a real CBOR/COSE parser for
+  WebAuthn registration `attestationObject`s, hand-rolled (no dependency),
+  proven via a full round trip: a real EC P-256 keypair, a synthetic
+  COSE_Key built with a **separate** test-only encoder, through
+  `parseAttestationObject`/`extractCredentialPublicKey`, then a real signed
+  assertion checked against the extracted PEM by `verifyAssertion` itself.
+- **`packages/db/src/pool.ts`** accessors: `guardiansOfChild`,
+  `pinCredentialFor`, `setPinCredential`, `recordPinAttempt`,
+  `createChallenge`, `consumeChallenge` (single-use via one atomic
+  `UPDATE ... WHERE consumed_at IS NULL RETURNING`), `storeWebauthnCredential`,
+  `webauthnCredentialsForUser`, `webauthnCredentialById`,
+  `updateWebauthnSignCount`.
+- **`server/routes.mjs`/`server/index.mjs`** — the real routes (§7.1 below
+  has the actual list; it differs from that section's original placeholders).
+- **Client**: `client/lib/guardian_setup.dart` (real PIN + passkey
+  enrollment), `client/lib/main_live.dart`'s `_verifyGuardianPin` (the real
+  backend check wired into `KioskShell`, replacing the demo stub),
+  `client/lib/webauthn_channel.dart`, `client/lib/api_client.dart` additions.
+- **`client/android/.../WebAuthnBridge.kt`** — real `androidx.credentials`
+  1.6.0 Credential Manager integration: `app.olive/webauthn` method channel,
+  platform-attachment-only registration (`authenticatorAttachment:
+  "platform"`, `residentKey: "required"`), runtime API-28 floor
+  (`MIN_PASSKEY_SDK_INT`) below this app's real minSdk 26, distinct error
+  codes per `MethodChannel.Result#error()` rather than a folded generic
+  failure.
+
+### Fixed — adversarial review findings
+Two independent reviews of the above surfaced nine findings (two CRITICAL,
+four MEDIUM, three LOW). Each was re-verified against the actual current
+code before being touched — a reviewer can be wrong, or a later commit can
+have already fixed it — and every one has a real, testable outcome below.
+
+- **[CRITICAL, confirmed and fixed] Connection-pool self-deadlock.**
+  `packages/api/src/api.ts`'s `Api.handle()` opens ONE pooled connection via
+  `db.withSession()` and holds it for a handler's entire lifetime — but
+  `kiosk-pin/verify`, `/v1/me/pin`, and both `webauthn/register/*` handlers
+  never touch that connection at all; each runs its own, differently-scoped
+  session(s) directly against the raw `pg.Pool` (correctly so — PIN checks
+  must run as each individual GUARDIAN's own session, RLS-owner-scoped,
+  never as the calling child's). Concurrent requests to these routes each
+  hold one pool slot hostage doing nothing while trying to acquire a second
+  from the same bounded pool (`pg.Pool` default `max: 10`) — a real,
+  reproduced, self-referential deadlock, not mere slowness. **Fixed**: a new
+  `Route.skipOuterSession` flag (`packages/api/src/api.ts`) lets a route opt
+  out of the wasted/dangerous outer wrapper entirely; the four affected
+  routes now set it (`server/routes.mjs`). **Verified live**: a real
+  server against a real Postgres (WSL2, port 5433), 20 and then 50
+  *concurrent* `POST kiosk-pin/verify` requests, both batches completing in
+  under 350ms with zero hangs and the server answering an unrelated
+  follow-up request throughout — the exact scenario the review's own
+  reproduction hung at 10-15 concurrent requests. New test:
+  `packages/api/test/stack.test.mjs` §G (4 new assertions) proves the
+  mechanism directly: `db.withSession()` is called 0 times for a
+  `skipOuterSession` route, the handler still runs, its `q` throws if a
+  future edit starts calling it, and an ordinary route is unaffected.
+- **[CRITICAL, confirmed and fixed] Concurrent PIN brute-force bypassed the
+  lockout entirely.** `pinCredentialFor()` (a plain, unlocked `SELECT`) and
+  `recordPinAttempt()` (a separate transaction) left a real gap: N
+  simultaneous guesses all read "not locked" before any one of them observed
+  a lock a sibling was mid-imposing, so every guess ran a real scrypt
+  verification regardless of `PIN_MAX_ATTEMPTS` — the review measured
+  200/200 concurrent guesses executing scrypt against one guardian. **Fixed**:
+  a new `packages/db/src/pool.ts` function, `attemptPinFor()`, folds
+  "check the lock", "verify", and "record the outcome" into ONE transaction
+  behind a `SELECT ... FOR UPDATE` row lock, so concurrent attempts against
+  the same guardian genuinely serialize at Postgres rather than racing ahead
+  on stale reads. `server/routes.mjs`'s kiosk-pin/verify loop now calls it
+  instead of the three separate calls. **Verified against real Postgres**:
+  `packages/db/test/auth_credentials.test.mjs` §F fires 19 concurrent wrong
+  guesses at one guardian and proves AT MOST `PIN_MAX_ATTEMPTS` (5) of them
+  ever reach `verifyPin()` — the rest correctly observe the lock and skip it
+  — and that the real PIN is refused while locked. **Verified live over real
+  HTTP**: a real device/curl stress test against the real running server
+  actually drove the account into `locked_until` state from concurrent
+  wrong guesses, then confirmed the correct PIN still worked once the lock
+  was cleared.
+- **[MEDIUM, confirmed and fixed] `sign_count` compare-and-swap race
+  (TOCTOU).** `updateWebauthnSignCount()` was an unconditional `UPDATE`, no
+  comparison against the row's live value — two truly concurrent logins
+  (a cloned authenticator used at the same moment as the real one) presenting
+  the same next `signCount` could both pass `verifyAssertion()`'s snapshot
+  check and both get written, both issued a session. **Fixed**: the `UPDATE`
+  now carries `WHERE credential_id = $1 AND ($2 = 0 OR sign_count < $2)
+  RETURNING sign_count`, returns whether it actually took effect, and
+  `server/index.mjs`'s `webauthnLoginVerify()` refuses to issue a session
+  when it didn't. The `$2 = 0` clause deliberately never blocks this app's
+  real authenticators (Android platform/synced passkeys, which report
+  `signCount=0` on every genuine login by design) — verified not to
+  regress that case. **Verified against real Postgres**:
+  `auth_credentials.test.mjs` §E proves a stale/equal write is refused and
+  the row is unchanged, that exactly one of two truly simultaneous
+  same-target writes succeeds, and that the always-0 case still always
+  succeeds.
+- **[MEDIUM, confirmed and fixed] `verifyAssertion()`'s clone-detection
+  skipped enforcement based on the INCOMING `signCount` alone.** Per WebAuthn
+  L2 §7.2 step 21, the replay check should be skipped only when BOTH the
+  incoming AND the stored counter are 0; checking only the incoming side let
+  an attacker holding a cloned key forge every future assertion with
+  `signCount=0` and unconditionally bypass the guard forever, regardless of
+  how far the real counter had advanced, while also regressing the stored
+  counter back to 0. **Fixed**: `packages/auth/src/auth.ts` now computes
+  `counterMeaningful = !(signCount === 0 && c.signCount === 0)` and only
+  enforces `signCount <= c.signCount` when that holds — a stored counter that
+  legitimately advanced past 0 now correctly rejects a later `signCount=0`
+  assertion as a replay, while an authenticator that has always reported 0
+  is unaffected. **Verified**: `packages/auth/test/attestation.test.mjs` §E,
+  real signed assertions (real EC P-256 keypair) — signCount=0 against a
+  credential with `signCount=5` stored is now rejected; signCount=0 against
+  a `signCount=0` credential (the real always-0 Android case) still accepts.
+- **[LOW, confirmed and fixed] `verifyAssertion()` never checked the UV
+  (user-verified) flag.** Only bit 0x01 (UP) was inspected; the app requests
+  `userVerification: "required"` client-side, but that is only a request an
+  untrusted client makes to its own local authenticator — the server had no
+  independent check that verification actually happened. **Fixed**: added
+  `if ((flags & 0x04) === 0) return { ok: false, reason: 'user_not_verified' }`.
+  **Verified**: `attestation.test.mjs` §D — UP-without-UV is rejected,
+  UP+UV is accepted, UV-without-UP is still independently rejected on the UP
+  check.
+- **[MEDIUM, confirmed and fixed] Android login didn't set
+  `preferImmediatelyAvailableCredentials`, silently re-opening the
+  roaming/cross-device fallback registration explicitly forbids.**
+  `WebAuthnBridge.kt`'s `handleAuthenticate()` used the bare
+  `GetCredentialRequest(listOf(option))` constructor, leaving the flag at its
+  default `false` — the one real lever available on the GET side to keep
+  login platform-only (`authenticatorAttachment` doesn't exist on
+  `PublicKeyCredentialRequestOptionsJSON`). **Fixed**: now builds via
+  `GetCredentialRequest.Builder().addCredentialOption(option)
+  .setPreferImmediatelyAvailableCredentials(true).build()` — confirmed
+  against the real, decompiled `androidx.credentials:credentials:1.6.0` AAR
+  (`javap`'d fresh for this fix, not assumed from docs: the Builder's real
+  constructor takes NO arguments; options are added via
+  `addCredentialOption()`, not passed to the constructor — a first attempt
+  using `Builder(listOf(option))` **failed to compile** against the real
+  class and was caught immediately by a real `flutter build apk`, then
+  corrected). **Verified**: `flutter build apk --debug --target=lib/main_live.dart`
+  succeeds end to end (`:app:compileDebugKotlin` clean) and the resulting
+  APK installs and runs on a real device.
+- **[MEDIUM, confirmed, fixed] `auth_credentials.test.mjs` (and the
+  pre-existing `pool.test.mjs`/`custody_order.test.mjs`) never ran in CI.**
+  All three need a real, connectable `NOSUPERUSER NOBYPASSRLS` role that
+  genuinely OWNS every table (`db/DEPLOYMENT.md`'s `app_owner`) — nothing in
+  `tools/verify.sh` or `.github/workflows/verify.yml` provisioned one.
+  **Fixed**: `tools/verify.sh` now provisions a real, passworded `app_owner`
+  after the existing SQL suites run (finishing the job those suites already
+  start — 0001/0003 create the role for their own narrower purposes), and
+  runs all three `.mjs` suites against it, folding their pass/fail counts
+  into the script's own computed total. **Verified**: ran the exact SQL
+  block by hand against a fresh Postgres — it provisions cleanly — then ran
+  all three suites against the resulting role: 18, 16, and 57 passed, 0
+  failed respectively (see Verified section below for the same numbers run
+  standalone). `.github/workflows/verify.yml` needed no separate change —
+  it already invokes `tools/verify.sh`.
+- **[LOW, reviewed and accepted as a documented, unchanged trade-off]
+  Response-timing side channel in `kiosk-pin/verify`.** Confirmed real (a
+  skipped-lock path is ~64ms faster than a real scrypt verification) and
+  already explicitly disclosed in the handler's own comment as a deliberate,
+  narrow trade-off (favoring hiding WHICH guardian/whether any PIN exists
+  over hiding lockout counts). Not changed — a full fix would mean running
+  scrypt unconditionally against every guardian, a real, avoidable cost
+  bought for a narrower leak than the one already closed.
+- **[LOW, reviewed and accepted as a documented, unchanged trade-off]
+  Multi-guardian "any match wins" divides brute-force resistance by guardian
+  count.** Confirmed real by code reading, and confirmed that the specific
+  attack the review checked for — rotating guesses across a shared child's
+  guardians to evade one guardian's own lockout — does NOT work
+  (`pin_credential` keys purely on `user_id`, globally, independent of which
+  child's kiosk the guess arrived through). The residual, narrower exposure
+  (N guardians ⇒ roughly N× the per-window guess budget against ANY match)
+  is exactly the trade-off `db/migrations/0008_auth_credentials.sql`'s own
+  comments already document as intentional. Not changed.
+
+### Verified
+- `npm run build`: clean (all `packages/*/src/*.ts` → `.mjs`).
+- `node packages/auth/test/attestation.test.mjs`: **34 passed, 0 failed**
+  (16 new: §D UV-flag enforcement, §E signCount=0 fix).
+- `node packages/api/test/stack.test.mjs`: **98 passed, 0 failed** (4 new:
+  §G `skipOuterSession`).
+- `node packages/api/test/contract.test.mjs`: **25 passed, 0 failed.**
+- Against a real Postgres 16 (WSL2 Ubuntu-24.04, port 5433 — Docker Desktop
+  would not start in this environment; its backend process exited within a
+  minute of launch, so WSL2's own already-installed Postgres was used
+  instead, matching this project's own prior "e2e via WSL2 Postgres"
+  precedent) with a real, freshly-provisioned `app_owner`
+  (`NOSUPERUSER NOBYPASSRLS`, owning every table):
+  `node packages/db/test/pool.test.mjs`: **18 passed, 0 failed.**
+  `node packages/db/test/custody_order.test.mjs`: **16 passed, 0 failed.**
+  `node packages/db/test/auth_credentials.test.mjs`: **57 passed, 0 failed**
+  (14 new: §E CAS race coverage, §F concurrent-burst lockout coverage).
+- `cd client && flutter analyze`: **no issues found.**
+- `cd client && flutter test`: **1291 passed, 0 failed** — one real
+  regression found and fixed along the way: `test/guardian_more_test.dart`'s
+  "the one genuinely unbuilt tile stays an honest stub" test tried to `tap()`
+  the 'Availability' tile, which the WebAuthn dev-verification tile (added
+  by the prior commit) had pushed below even this file's own generous 1800px
+  test surface — the file's own header comment had already anticipated this
+  exact class of drift once before. Fixed with `tester.ensureVisible()`
+  rather than a taller magic-number surface, which would only defer the same
+  failure to the next added tile.
+- **Real device, real end-to-end kiosk-PIN verification** (the actual
+  release-blocker fix) — a Retroid Pocket 2+ (API 28, real hardware over
+  `adb`): set a real guardian PIN via a live `POST /v1/me/pin` call, built
+  `main_live.dart` with `--dart-define=OLIVE_API_BASE_URL=http://127.0.0.1:8123`
+  and installed it, `adb reverse tcp:8123 tcp:8123` to a real
+  `server/index.mjs` against the real WSL2 Postgres. Backgrounding the app
+  triggered a real kiosk defeat → `PinGate` (native "Screen pinned" dialog
+  confirmed `startLockTask` genuinely engaged). Entered a WRONG PIN on the
+  real, shoulder-surf-shuffled keypad: real rejection (dots reset, keypad
+  reshuffled, `failed_attempts` incremented in the real database). Entered
+  the RIGHT PIN: real acceptance, unlocked into the live `ChildHome` screen
+  ("Hi Ivy", "Live: name and message count are real, fetched from the server
+  just now."), `failed_attempts` reset to 0 in the database. Screenshots
+  taken via `adb exec-out screencap` at each step. A second candidate device
+  (a Samsung Galaxy Z Fold5, `SM-F946U`, API 36) had the APK installed
+  successfully but was **not** used for the interactive walkthrough — it is
+  the operator's own personal phone with a real, secured lock screen
+  (PIN/biometric), and bypassing another person's device lock is out of
+  scope for this session regardless of ADB access; a Galaxy Watch6 (API
+  unconfirmed) was connected but not applicable to a phone-kiosk flow.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **The WebAuthn passkey ceremony itself (registration + login) was not
+  interactively re-verified on real hardware this pass.** The native Kotlin
+  bridge compiles clean against the real AAR (see the Android fix above) and
+  a debug APK containing it installs and runs, but actually walking through
+  Credential Manager's system UI — create a passkey, unlock with biometric,
+  sign in with it — needs a device with a configured screen lock/biometric.
+  The only such device connected was the operator's own personal, secured
+  phone, correctly left untouched (see above). The prior commit
+  (`4fc154d`) claims this ceremony was "verified end-to-end on real
+  hardware" for the code as it stood before this pass's Android fix; this
+  entry's fix (`preferImmediatelyAvailableCredentials`) is a login-side,
+  additive change to a request builder and does not touch the signature/
+  attestation logic that ceremony exercises, but it has not been
+  independently re-confirmed interactively since. Recorded as an open,
+  device-blocked gap rather than assumed fine because it compiles.
+- **`tools/verify.sh` was not run end-to-end in this environment.** This is a
+  Windows machine with no native `psql`/`PGBIN` toolchain, no local Docker
+  daemon (Docker Desktop's backend exited within a minute of every launch
+  attempt), and no Android SDK wired into `verify.sh`'s own gate the way CI
+  has one. Every suite `verify.sh` would run was instead run standalone
+  (see Verified above) against a real WSL2 Postgres, and the new `app_owner`
+  provisioning SQL block added to `verify.sh` was run by hand, standalone,
+  against that same Postgres and confirmed to succeed — but the full script,
+  and therefore the exact new COMPUTED total `tools/check-markup.mjs
+  --total N` would need, was not obtained. **`MARKUP.html`/`shell.html`'s
+  assertion counts are deliberately left untouched in this pass** rather
+  than guessed — per this project's own standing rule (a hardcoded/guessed
+  total is the same defect either way it drifts) and per this exact
+  instruction for this pass. Whoever next runs `tools/verify.sh` in an
+  environment with the full toolchain should update `MARKUP.html` and
+  confirm `node tools/check-markup.mjs --total <N>` passes before that
+  entry is closed.
+- **The full `tools/verify.sh` Android/Wear/LiveKit/OCR toolchain gates**
+  (`:wear:assembleDebug`, `livekit-server`, `tesseract`/`imagemagick`) were
+  not exercised — out of scope for an authentication-focused pass, and
+  unrelated to any of the nine findings above.
+## [0.47.0] — 2026-08-11 — real homework OCR closes §20.2b's OCR gap
+
+§20.2b's own table named this precisely: "OCR: Homework capture specified,
+not built." capture.ts's image-quality gate (`gateImage`) and tutor-hint
+output guard (`guardHint`) were real and unit-tested from day one, but
+nothing computed a real `ImageStats` from a real photo, nothing OCR'd a
+photo into `Problem.text`, the client had no camera, and no hint generator
+fed the guard. All four are real now — the guard and gate themselves are
+UNCHANGED, on purpose (capture.ts wasn't touched).
+
+### Added
+- **`packages/homework/src/measure.ts`** — real `ImageStats` from raw
+  PNG/JPEG bytes (`pngjs` + `jpeg-js`, both pure JS — checked against
+  `sharp`/`canvas` first and rejected them for needing a native/prebuilt
+  binary this environment can't guarantee elsewhere either). Sharpness via
+  variance-of-Laplacian over a greyscale-downsampled copy, clipping via a
+  tolerance-banded 0/255 histogram, skew via a projection-profile angle
+  search (rotate candidates, keep the one maximising row-ink variance) —
+  all three documented inline as approximate, matching capture.ts's own
+  "measured, not guessed" posture. Also `deskewToPng`/`rotateImage`, used
+  both to actually deskew a photo pre-OCR and, empirically, to prove that
+  correction improves real OCR recovery (see `measure.test.mjs`).
+- **`packages/homework/src/hints.ts`** — a RULE-BASED hint generator.
+  **This is not an AI model and the code says so in its own header**: no
+  LLM API key is configured anywhere in this repository, so problems are
+  pattern-matched by regex shape (fraction +/-, multiplication,
+  subtraction, addition, else a generic never-leaks-a-number fallback) into
+  one of five canned templates. Every output still passes through the
+  EXISTING `guardHint()` before it can reach a response.
+- **`packages/homework/src/split.ts`** — a numbered-list heuristic
+  (`splitProblems`) that breaks one OCR'd text block into per-problem
+  strings, falling back to one whole-text problem when no numbering is
+  found.
+- **`packages/homework/src/capture-route.ts`** — the pipeline: gate →
+  deskew → tesseract.js OCR → split → generate a hint → guard it. DB-free
+  and directly unit-testable (no HTTP server, no Api instance needed).
+  tesseract.js's Node worker is pointed at an OS-tmpdir cache path rather
+  than its own CWD-relative default, so a real run doesn't drop a ~5MB
+  `eng.traineddata` into the repo root (found the hard way — the default
+  landed one there on this session's own first real OCR call).
+- **`POST /v1/children/:childId/homework/capture`** (`server/routes.mjs`),
+  action `homework.annotate` (an existing WRITES action reused, not a new
+  one invented — capture PRODUCES new content, so an observer-only
+  guardian is correctly denied the same way any other homework write
+  already is). Accepts base64 image bytes in the JSON body; on a gate
+  refusal returns the verdict's own `reason`/`advice`, unchanged, at 422;
+  on success returns the deskew angle, raw OCR text, and per-problem
+  guarded hints.
+- **`Route.skipOuterSession`** (`packages/api/src/api.ts`) — new, additive,
+  optional field on the existing `Route` interface. The capture route sets
+  it: it does no Postgres access at all, so holding a pooled connection
+  open for the whole multi-second `tesseract.js` `recognize()` call would
+  cost every concurrent capture a wasted connection for no benefit. A1
+  (declared action) and A3 (childId from path) are enforced before this
+  flag is even consulted, so authorization is unaffected either way; a
+  route that opts out and still needs the DB is responsible for its own
+  `withSession()`/`withSystemSession()` call, exactly like `/now`'s
+  handler already does for `activeCustodyOrderFor`.
+- **`packages/homework/test/gen-fixtures.mjs`** — a pure-JS worksheet-image
+  generator (hand-rolled 5x7 bitmap font, real box-blur, `measure.ts`'s own
+  `rotateImage` for the skew fixture) used by `measure.test.mjs`'s
+  known-blurred/known-skewed classification checks. No ImageMagick
+  dependency, unlike the pre-existing `make-fixtures.sh` (see "NOT
+  verified" below for why that mattered here).
+- **`packages/homework/test/gen_ocr_fixture.py`** — a Pillow-based
+  generator used only by `capture-route.test.mjs`, where real recognizable
+  text matters and a real TrueType font measurably reads far better than
+  the hand-rolled bitmap one (an earlier draft of this generator, tested
+  and rejected, actually read WORSE than a deliberately-blurred version of
+  itself). A real, declared toolchain dependency (Python 3 + Pillow), same
+  posture `make-fixtures.sh` already takes for ImageMagick/tesseract —
+  MISSING TOOLCHAIN reports as a failed assertion, never a silent skip.
+- **`client/lib/api_client.dart`** — `HomeworkProblemResult` and
+  `OliveApi.captureHomework()`, POSTing base64 image bytes and treating a
+  422 quality-gate refusal as a normal decoded body (not a thrown
+  exception), matching capture_gate.dart's existing "one more try" flow.
+- **`image_picker: ^1.2.3`** (`client/pubspec.yaml`) — federated across
+  android/ios/linux/macos/web/windows per pub.dev's own package metadata
+  (checked, not assumed).
+- **`tesseract.js: ^7.0.0`, `pngjs: ^7.0.0`, `jpeg-js: ^0.4.4`**
+  (`scaffold/package.json`) — self-contained WASM OCR, no external
+  account/API key.
+
+### Fixed / changed
+- **`client/lib/capture_gate.dart`** — the real path: when
+  `simulateCapture` is NOT overridden AND `baseUrl`/`childId`/
+  `sessionToken` are all supplied, this screen now takes an actual photo
+  via `image_picker` and POSTs the raw bytes to the new endpoint, rather
+  than duplicating `ImageStats` math in Dart. `onCaptured` now carries a
+  `HomeworkCaptureOutcome` (real problems, or `null` on the still-supported
+  simulated path) instead of a bare `ImageStats`. When neither
+  `simulateCapture` nor full real-path config is supplied (the offline
+  demo build, `lib/main.dart`, or any call site not yet wired to a live
+  session), this screen falls back to the exact same simulated demo cycle
+  it has always used — not a crash on a missing `baseUrl`, and honestly
+  re-labelled on screen either way.
+- **`client/lib/homework_screen.dart`** — renders the server's real
+  recognized problems + real guarded hints when capture used the real
+  path; `_demoProblems` is DEMOTED (task's own wording) to a fallback-only
+  path for the simulated capture case, not removed — it's what
+  `homework_screen_test.dart`'s guard-interception test still exercises.
+- **`client/lib/child_home.dart` / `child_home_live.dart`** — additive
+  optional `baseUrl`/`childId`/`sessionToken`/`httpClient` threaded from
+  the live entry point's own already-minted dev-login session down to the
+  Homework tile, so the real path is actually reachable from navigation on
+  the live build, not merely compiled. The offline demo build
+  (`lib/main.dart`) passes none of this and is unaffected.
+
+### Verified
+- `node packages/homework/test/measure.test.mjs`: **20 passed, 0 failed** —
+  unit-level Laplacian/clipping/decode/rotate checks against known pixel
+  data, plus end-to-end checks against real generated images: a real clean
+  worksheet passes the gate, a real deliberately-blurred one is refused
+  `too_blurred` with sharpness two orders of magnitude below clean, a real
+  deliberately-8°-skewed one is refused `too_skewed`, and applying the
+  measured correction (`rotateImage` by `-skewDegrees`) measurably
+  straightens it back to a passing gate.
+- `node packages/homework/test/capture-route.test.mjs`: **34 passed, 0
+  failed** — a real photo in, real recognizable text out (digits for all
+  three problem shapes recovered), the numbered-list heuristic splitting
+  OCR text into exactly 3 problems, every returned hint guarded and
+  non-leaking, different problem shapes getting different hint templates,
+  a real blurred/skewed photo refused pre-OCR with the gate's own unchanged
+  advice, the split heuristic's fallback-to-whole-text path, all 4 rule-
+  based hint templates, and — the specific ask — a deliberately-leaky hand-
+  crafted hint against a REAL OCR-derived problem still refused by the
+  existing `guardHint()`.
+- `node packages/api/test/stack.test.mjs`: **94 passed, 0 failed** — the
+  new `Route.skipOuterSession` field is additive; every pre-existing A1/A2/
+  A3 assertion still holds unchanged.
+- `node packages/homework/test/snapshot.test.mjs`: **30 passed, 0 failed**
+  (unaffected regression check — this suite has no ImageMagick dependency).
+- `flutter analyze` (client): **clean**.
+- `flutter test` (client): **1286 tests passed, 0 failed** — includes 4 new
+  real-path tests in `capture_gate_test.dart` (POST + real success,
+  server-side gate refusal renders the server's own advice, honest on-
+  screen disclosure differs from the simulated copy, a network failure
+  surfaces a plain error rather than a fabricated verdict) plus 3 new
+  `api_client_test.dart` cases for `captureHomework` (200 success, 422
+  decoded as a normal body, a genuine 500 still throws). Every pre-existing
+  test, including the full simulated demo-sequence flow in
+  `homework_screen_test.dart`, passes UNCHANGED.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **`node packages/homework/test/homework.test.mjs` (the pre-existing K
+  group) could not be run in this session's dev environment**: it shells
+  out to ImageMagick (`magick`/`convert`) to generate its own fixtures, and
+  this Windows box has no ImageMagick installed at all — only Windows'
+  own unrelated `system32\convert.exe` resolves to the name `convert`,
+  which is not ImageMagick and was not invoked. This is a pre-existing gap
+  in this file (untouched by this change, and outside this task's scope to
+  fix) that this session's own environment happened to expose; a real
+  Tesseract-OCR install IS present here and was used directly by both new
+  test suites above. `homework.test.mjs`'s J (quality gate) and L (tutor
+  guard) groups exercise logic this change didn't touch.
+- **`image_picker`'s real camera path was never driven end to end on a
+  physical device or emulator** — no device/emulator was attached in this
+  session. `flutter analyze`/`flutter test` cover everything up to and
+  excluding the literal on-device shutter press; the injected-`takePhoto`/
+  `MockClient` tests in `capture_gate_test.dart` cover the POST/response
+  handling around it.
+- **tesseract.js's first real OCR call on a fresh machine needs network
+  access once** (to fetch its WASM core + English traineddata from its own
+  CDN; cached locally after, at the OS-tmpdir path this change configures)
+  — an honest operational note, not a hidden dependency.
+- **Persisting recognized problems for later retrieval** (the broader
+  §7.5 `GET /v1/homework/:id`, `POST .../annotations` surface MASTERFILE
+  already specifies) is a real, separate follow-up. This route is
+  deliberately scoped to closing exactly the OCR gap §20.2b named — no new
+  DB table, no migration, no RLS policy was added, because none was
+  needed for that scope.
+
+---
+## [0.46.3] — 2026-08-11 — a real family agreement screen, backed by the real custody order
+
+`guardian_setup.dart`'s "Review the family agreement" button had no
+`onOpenAgreement` wired at all — tapping it always fell through to the
+screen's own honest-stub snackbar ("Family agreement — not built yet").
+MASTERFILE names no bespoke "family agreement" data model anywhere (grepped —
+there is none), so rather than invent one, this is a real, read-only view of
+the actual custody order already backed by db/migrations/0007_custody_order.sql
+and packages/custody/src/schedule.ts's tested `Order`/`HolidayRule` types and
+`activeCustodyOrderFor()` loader — the same closest-real-thing reasoning
+`deletion_screen.dart`'s own header already documents for "deletion."
+
+### Added
+- **`GET /v1/children/:childId/custody-order`** (`scaffold/server/routes.mjs`,
+  action `calendar.view` — no dedicated Action exists for this either, same
+  gap `/now` already calls out). Resolves the child's real zone
+  (`child_tz_interval`, falling back to `child.home_tz`, mirroring `/now`'s
+  own logic) to find the order active on her local date via the existing
+  `activeCustodyOrderFor()`, and returns it as `{ order: Order | null }` —
+  `null` for a real child with no `custody_order` row yet (honest absence,
+  not a 404 and not a guessed schedule), a real 404 (`child_not_found`) for a
+  child that does not exist at all.
+- **`OliveApi.getCustodyOrder(childId)`** (`client/lib/api_client.dart`).
+- **`client/lib/family_agreement_screen.dart`** — new. Fetches and renders
+  the real order: the pattern spelled out in plain words (`2-2-3` → "2
+  nights, then 2 nights, then 3 nights…"), order timezone, exchange time,
+  anchor date, effective window, and the holiday rules list (name, date
+  range, which side holds it in even/odd years). Read-only — no editing UI,
+  deliberately (an "agreement" is a legal document; this screen's job is
+  rendering the real one honestly, not letting anyone quietly change it from
+  a phone). Real loading/error/empty states via an injected `fetchOrder`
+  callback (same DI pattern `GuardianSetupScreen.registerPasskey` already
+  uses) — a child with no `custody_order` row shows "No agreement on file,"
+  never a crash or a fabricated schedule. Honestly notes that the order
+  tracks two sides ("A"/"B") but does not itself record which guardian is
+  which — that mapping is not part of this build.
+- **`guardian_more.dart`'s "Guardian setup" tile now passes a real
+  `onOpenAgreement`** that opens `FamilyAgreementScreen`, replacing the
+  previous `null` (which fell through to `guardian_setup.dart`'s own
+  honest-stub snackbar — that fallback is untouched and still fires for any
+  other caller that leaves `onOpenAgreement` unset).
+  `GuardianMoreScreen` gained `childId` (defaults to `seed-dev.mjs`'s real
+  seeded "Ivy," the same id `main_live.dart`'s own `_defaultChildId` already
+  uses — not a fabricated placeholder) and an optional
+  `fetchAgreementOrder` override. `main.dart`'s demo shell is deliberately
+  offline (see that file's own header) and has no baseUrl/session
+  anywhere in its navigation tree, so the default `fetchAgreementOrder`
+  (`_noLiveBackendWired`) does not pretend to reach a server that isn't
+  there — it throws a real error, which `FamilyAgreementScreen`'s own real
+  error state then surfaces truthfully ("Couldn't load the agreement… No
+  live backend is wired into this preview build yet"). A live caller
+  supplies the real thing, e.g. `(id) => OliveApi(baseUrl,
+  token).getCustodyOrder(id)` — main_live.dart does not do this yet for the
+  guardian side (only the child side is live today, via
+  `child_home_live.dart`); wiring that is real follow-up work, not silently
+  glossed over.
+- **`server/test/routes.test.mjs`** — new route contract test (no real
+  Postgres; a hand-written fake `DbPort` + fake `pg.Pool`, mirroring
+  `packages/api/test/stack.test.mjs`'s own "F · API" pattern). Covers auth
+  (no session → 401), authz (no edge → 403 `no_edge`; wrong child on a child
+  token → 403 `wrong_child`), the populated state (exact `Order` field
+  round-trip, both a guardian and the owning child can read it), the empty
+  state (`{ order: null }`, status 200, not an error), and the
+  child-does-not-exist state (404 `child_not_found`, distinct from "no order
+  yet"). Wired into `npm test`/`npm run test:routes` and
+  `tools/verify.sh`'s suite list.
+- **`client/test/family_agreement_screen_test.dart`** — new widget test.
+  Covers the populated state (plain-words pattern, timezone/exchange
+  time/anchor date, holiday rule with even/odd side, read-only — no
+  `TextField`/`TextFormField` anywhere), the empty state (no order → "No
+  agreement on file," never a crash), the error state (a thrown
+  `fetchOrder` → the real error UI, `Try again` recovers), and the required
+  responsive viewports (Fold5 cover/main, phone, tablet/desktop).
+  `client/test/guardian_more_test.dart` gained two integration tests proving
+  the "Guardian setup" → "Review the family agreement" path now reaches a
+  real `FamilyAgreementScreen` (not the old snackbar dead end) and shows a
+  real error when no live backend is wired.
+
+### Fixed
+- `family_agreement_screen.dart`'s `_ReadyView` was first written with a
+  plain `ListView`, which the responsive-viewport tests caught immediately
+  (missing holiday text, missing trailing notice) — the exact sliver-drops-
+  offscreen-children issue `guardian_home.dart`'s own comment already
+  documents. Changed to `SingleChildScrollView` + `Column`, same fix. A
+  `_DetailRow`'s value text (e.g. "6:00 PM (America/New_York)") also
+  overflowed at the Fold5 cover width (344px) because only the fixed-length
+  *label* was wrapped in `Expanded`, not the variable-length *value* —
+  swapped which side gets the flexible space.
+
+### Verified
+- `node server/test/routes.test.mjs`: **19 passed, 0 failed.**
+- `node packages/db/test/custody_order.test.mjs` (real Postgres, isolated
+  `verify_gap_familyagreement` database, `app_owner` NOSUPERUSER NOBYPASSRLS
+  role — db/DEPLOYMENT.md's own requirement): **16 passed, 0 failed** —
+  confirms the RLS and the `Order` shape this route depends on, unchanged.
+  `node packages/db/test/pool.test.mjs` (same database): **18 passed, 0
+  failed** — no regression.
+  `node packages/api/test/stack.test.mjs`: **94 passed, 0 failed** — no
+  regression (the file's own known Windows/libuv teardown assertion after
+  the count line is pre-existing, unrelated to this change).
+- `flutter analyze` (client/): **No issues found.**
+- `flutter test` (client/), full suite: **1294 passed, 0 failed** —
+  includes 14 new tests in `family_agreement_screen_test.dart` and 2 new
+  integration tests in `guardian_more_test.dart`, with no regressions
+  anywhere else in the suite.
+## [0.47.0] — 2026-08-11 — account deletion, for real — §2.10, §2.11, §9.8, P8
+
+`client/lib/deletion_screen.dart` was a fully honest, fully specified UI stub —
+the retention facts, the forbidden-language audit, the acknowledge-before-enable
+gate — whose `_confirm()` only showed a snackbar. §21.7 calls this "the hardest
+button anyone builds here"; this pass makes it real, for a guardian deleting
+their own account.
+
+### Added
+- **`db/migrations/0011_account_deletion.sql`** — `app_user.deactivated_at
+  timestamptz`. The row itself is never deleted (`message_log.author_id` and a
+  delivered `delivery_intent.sender_id` both reference it with no cascading
+  delete). RLS on `app_user` for the first time — no earlier migration put any
+  policy on this table. Unlike every other RLS table in this codebase (one `FOR
+  ALL` policy each), three narrow, command-scoped policies: `SELECT`/`INSERT`
+  stay open (unchanged behavior for the broad reads this table already serves —
+  `GET /v1/me`, the inbox's sender-name join, dev-login's lookup), `UPDATE` is
+  restricted to `current_role_name() = 'system' OR id = current_actor()`, and no
+  `DELETE` policy exists at all — Postgres itself now refuses `DELETE FROM
+  app_user` for every non-superuser role.
+- **`packages/db/src/pool.ts`'s `deactivateAccount(pool, userId, callerRoleName)`**
+  — one transaction: cancels `delivery_intent` rows authored by the user that
+  are NOT `delivered`/`opened` (the schema's real state enum has six values;
+  `pending`/`ready`/`expired`/`revoked` all count as "not yet delivered"),
+  removes every `pin_credential`/`webauthn_credential`/`webauthn_challenge` row
+  for that user, and sets `deactivated_at` — asserting row counts throughout
+  (`FOR UPDATE` existence/idempotency check first, `RETURNING` on every mutating
+  statement). Refuses a `'child'` caller role outright (children have no login
+  of their own to delete, §11) and refuses a second call on an
+  already-deactivated account (`already_deactivated`) rather than silently
+  repeating.
+- **`POST /v1/me/delete`** (`server/routes.mjs`) — identity-only (`action:
+  null`, same shape as the existing `GET /v1/me`), acting only on
+  `c.principal.userId` from the verified session; nothing in the request body
+  can widen or redirect the target.
+- **`server/index.mjs`'s dev-login** now checks `deactivated_at` and refuses
+  with `403 account_deactivated` — the one real login/session-issuing path this
+  codebase has today (no PIN/WebAuthn login endpoint exists anywhere yet;
+  `packages/auth/src/auth.ts`'s own header says so).
+- **`OliveApi.deleteAccount()`** (`client/lib/api_client.dart`) and a real
+  `_confirm()` in `deletion_screen.dart` — real success copy (audited against
+  `deletionForbiddenClaims`, same as the retention facts always were) and a
+  real, honest error on failure. `baseUrl`/`sessionToken`/`httpClient` are new,
+  optional constructor fields — see "NOT verified" below for why optional.
+
+### Verified
+- **`packages/db/test/deletion.test.mjs` — 29/29** against real Postgres (not a
+  fake `DbPort`): a delivered message and its `message_log` entry survive
+  byte-for-byte; every non-delivered `delivery_intent` state and every
+  credential row is actually gone; RLS blocks one guardian from deactivating
+  another's account via a direct `UPDATE` (0 rows) while confirming the same
+  guardian CAN touch their own row (1 row) — the real attack surface, since
+  `deactivateAccount()` has no separate "target" parameter to trick; and — the
+  literal ask, "a deactivated user's subsequent login attempt fails" — proven
+  by spawning the REAL `server/index.mjs` as a child process and hitting real
+  HTTP: dev-login succeeds before deletion, 403s after. Regression-checked
+  against this same database: `pool.test.mjs` 18/18, `custody_order.test.mjs`
+  16/16, both unchanged by the new `app_user` RLS.
+- **`flutter analyze`** — clean (0 issues; the pass surfaced two real
+  `use_build_context_synchronously` lints from the new `await`s, fixed with
+  `context.mounted`).
+- **`flutter test`** — full suite, **1281 passed, 0 failed**, including 14 in
+  `deletion_screen_test.dart` covering success, in-flight progress, a wrong
+  session (401), and an unreachable server, all against a real
+  `OliveApi`/`MockClient`, not a hand-waved stub.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+- **No live guardian entry point exists anywhere in this client** to supply
+  `deletion_screen.dart` a real `baseUrl`/`sessionToken` — `main.dart` is
+  deliberately offline (its own header says so) and `main_live.dart` wires up
+  only the child side (`LiveChildHomeScreen`). `baseUrl`/`sessionToken` are
+  therefore optional with defaults, so `guardian_more.dart`'s existing call
+  site keeps compiling and, if tapped today, makes a genuine network call that
+  fails honestly (no session / unreachable host) — not a fake success, but not
+  end-to-end device-verified either. A real live guardian shell is a
+  separate, larger gap this pass does not close.
+- **A pre-deletion session token stays valid until its own 1h TTL.** Sessions
+  in this codebase are signed, not stored (`auth.ts`'s own header) — there is
+  no server-side session table to revoke early. `deletion.test.mjs`'s section D
+  asserts this gap explicitly rather than leaving it untested. Closing it needs
+  a real session/deny-list, out of scope here.
+- **`flutter test`/`flutter analyze`** ran clean for THIS session — still not
+  part of `tools/verify.sh`'s automated pipeline for Dart (that gate depends on
+  a `FLUTTER_BIN` being present on the CI runner, unchanged by this pass).
+- **`npm run test:stack` (`packages/api/test/stack.test.mjs`) crashes on
+  process exit on this Windows environment** (`UV_HANDLE_CLOSING` assertion in
+  libuv, after printing its own 94/94 passed) — pre-existing, unrelated to this
+  change (nothing in `packages/api`/`packages/auth`/`packages/storage` was
+  touched), and it aborts `npm test`'s `&&` chain at that point. Verified no
+  regression by running every downstream suite individually instead
+  (time-engine, delivery-engine, family-graph, session-runtime, messaging,
+  transport, custody, phase12, phase3 — all green); `packages/homework/test/
+  homework.test.mjs` separately fails for an unrelated, pre-existing reason
+  (`make-fixtures.sh` needs a shell image tool not installed on this host).
+
+---
+
+## [0.46.2] — 2026-08-08 — §16.2 #6 Step 2 staged and container-verified
+
+The other bug from v0.46.0's callout — the public server's moderator lobby —
+gets its fix staged: a local `docker-jitsi-meet` stack
+(`scaffold/tools/jitsi-selfhost/`), actually brought up on this dev machine
+rather than only written and assumed correct. Doing so surfaced three real
+bugs, all fixed; what's confirmed and what isn't is kept explicit below,
+same standard v0.46.0/v0.46.1 already hold this project to.
+
+### Added
+- **`scaffold/tools/jitsi-selfhost/`** — `setup.sh` (clones
+  `jitsi/docker-jitsi-meet` pinned to `stable-11146-1` into a gitignored
+  `.jitsi-docker/`, layers `olive.env` over upstream's `env.example`, runs
+  `gen-passwords.sh`, installs `docker-compose.override.yml`),
+  `olive.env` (anonymous domain — no `ENABLE_AUTH` — is the whole point;
+  see its own inline comments for why each setting is what it is), and
+  `docker-compose.override.yml` (the Windows bind-mount fix, see "Fixed").
+  `scaffold/tools/with-jitsi.sh` mirrors `with-livekit.sh`'s lifecycle
+  pattern (bring up, wait for health, optionally run a command, `down` to
+  tear down) but — unlike `with-livekit.sh` — leaves the stack running by
+  default, since a multi-container compose stack is too slow to cycle per
+  test run.
+- **`JITSI_SERVER_URL` env var** in `local-call-room-server.mjs`, defaulting
+  to `https://meet.jit.si` so the original v0.46.0 finding stays
+  reproducible with no config; override to point at the local Step 2 stack.
+  `call_screen.dart`'s header comment updated to match.
+
+### Fixed — three bugs found by actually running this, not by reading the compose file
+- **Docker Desktop's containerd-snapshotter image store corrupted these
+  images' user resolution.** Every container failed identically —
+  `unable to find user s6: no matching entries in passwd file` — reproduced
+  even with a bare `docker run --entrypoint sh`, ruling out a compose/volume
+  cause. Root cause: `UseContainerdSnapshotter: true` in Docker Desktop's
+  own `settings-store.json`; the classic `overlay2` graphdriver doesn't have
+  this bug. Fixed by flipping the setting, restarting Docker Desktop, and
+  re-pulling the images clean. Not specific to this project.
+- **JVB's colibri HTTP port (`8080` default) collides with
+  `server/index.mjs`'s own `PORT` default.** Found via `docker compose ps`
+  after first bringing the stack up, not from reading `docker-compose.yml`
+  — the collision is with this project's own server, not anything in
+  upstream Jitsi. Fixed: `JVB_COLIBRI_PORT=8181` in `olive.env`.
+- **Prosody couldn't write its own TLS cert.** `docker-jitsi-meet`'s default
+  `${CONFIG}/storage/prosody:/var/lib/prosody` bind mount, with `CONFIG` a
+  Windows host path, loses POSIX ownership through Docker Desktop's
+  file-sharing translation — Prosody's container (uid 1000) can never write
+  into it, so cert generation silently failed (`The directory
+  /var/lib/prosody is not owned by the current user`), cascading into
+  Jicofo and JVB's XMPP connections failing outright (`No stream features
+  to proceed with`) — the whole signaling chain was down, presenting as a
+  Jicofo/JVB problem rather than obviously a Prosody one. Fixed:
+  `docker-compose.override.yml` gives Prosody's two writable paths named
+  Docker volumes instead of Windows bind mounts, installed automatically by
+  `setup.sh`.
+
+### Verified
+- All four containers (prosody, jicofo, jvb, web) reach a stable `Up` state
+  with no restart loop, after the three fixes above.
+- Jicofo's log shows it discovering Prosody's components (lobby, breakout,
+  av-moderation, etc.), joining the JVB brewery MUC, and registering the
+  videobridge — the full signaling handshake completes, not just individual
+  containers reporting healthy in isolation.
+- Prosody's own **live-rendered** config
+  (`/run/prosody/config/conf.d/jitsi-meet.cfg.lua` inside the container,
+  read directly rather than inferred from env vars) confirms
+  `authentication = "jitsi-anonymous"` on `VirtualHost "meet.jitsi"`, with
+  `muc_lobby_rooms` loaded as an available module but no forced-lobby or
+  auth-gated-moderator setting anywhere in the rendered config — the actual
+  mechanism, not just the compose file, that avoids the meet.jit.si
+  moderator-lobby finding from v0.46.0.
+- `curl -sk https://127.0.0.1:8443/` returns the real Jitsi Meet SPA
+  (HTTP 200).
+- Stack torn down cleanly after verification (`with-jitsi.sh down`); named
+  volumes (certs, registered users) persist for the next `up`.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+No real WebRTC join was completed. The stack's self-signed cert (no
+`ENABLE_LETSENCRYPT` — that needs a real public DNS name, out of scope for
+localhost dev) blocks a browser outright — confirmed via the Chrome
+devtools protocol: `net::ERR_CERT_AUTHORITY_INVALID` on every request to
+`https://127.0.0.1:8443` — and would equally block
+`jitsi_meet_flutter_sdk` on a real device, which has no client-side
+"skip cert validation" flag. Fixing that (a `<trust-anchors>` entry in
+`network_security_config.xml` for dev builds, or running the stack behind a
+tunnel with a real cert) is not done here. Physical two-device
+re-verification — the standard v0.46.0 itself holds this project to — is
+also not done: this session has no attached Android hardware, and the
+cert-trust gap above would block it even if it did. Tracked in
+`scaffold/tools/jitsi-selfhost/README.md`'s status note, and in the §16.2
+#6 callout and §20.2b in MASTERFILE.md.
+
+---
+
+## [0.46.1] — 2026-08-08 — the kiosk-lock half of §16.2 #6 fixed, not yet re-verified live
+
+v0.46.0 drove §16.2 #6 Step 1 end to end on two physical devices and found
+two independent bugs. This increment fixes one of them — the child-side
+kiosk-lock/Activity conflict — and evaluates the three options v0.46.0's
+callout left open. The other bug (the public server's moderator lobby) is
+untouched, still gated on Step 2.
+
+### Fixed
+- **Kiosk lock-task vs. the Jitsi call Activity (§16.2 #6, §5.20).**
+  `jitsi_meet_flutter_sdk` launches calls in `WrapperJitsiMeetActivity`
+  (`singleTask`), which Android's `ActivityTaskManager` opens in a new task
+  regardless of shared package identity — exactly what screen-pinning
+  refuses mid-lock, logging `Attempted Lock Task Mode violation` and leaving
+  `call_screen.dart`'s "Joining…" spinner waiting forever on a callback from
+  an Activity that never started.
+  - **Device-Owner lock-task allowlisting — ruled out.** Both real test
+    devices already carry ordinary Google/system accounts;
+    `dpm set-device-owner` refuses on a device with any existing account
+    short of a factory reset. Not viable for an already-provisioned family
+    phone, which is this app's actual deployment shape.
+  - **Embedding the call without a second Activity — deferred.** Jitsi's
+    Android SDK is React-Native-based with no fragment/embedded-view entry
+    point today; a Flutter `PlatformView` bridge into it is real future
+    work, not a same-session change.
+  - **Implemented: a lock-task handoff**, not a plain unpin/re-pin. A naive
+    exit-and-re-enter was checked against `WrapperJitsiMeetActivity`'s own
+    `singleTask` semantics and found to leave the *entire call*, not just
+    the transition, unpinned — the call Activity opens in a separate task
+    that re-pinning the original Activity never reaches. Instead:
+    `client/lib/kiosk_channel.dart` gets `beginCallHandoff()`;
+    `KioskBridge.kt`'s new `beginCallHandoff` method unpins `MainActivity`
+    and flags the coming `onStop()` as an intentional handoff rather than a
+    kiosk defeat; the already-patched
+    `client/third_party/jitsi_meet_flutter_sdk_patched/.../WrapperJitsiMeetActivity.kt`
+    self-pins for the call's duration and reports its own mid-call defeat
+    (Back+Recents during the call) back through the same `lockTaskExited`
+    event path an ordinary defeat already uses — calling capability adds no
+    new, undetected escape route. The app module and the Jitsi plugin
+    module have no compile-time reference path between them (a library
+    can't depend on the app consuming it), so the two sides coordinate
+    through a SharedPreferences flag and a `LocalBroadcastManager` action,
+    string-mirrored across files the same way the MethodChannel/EventChannel
+    names already are.
+  - Surfaced one real build gap along the way: `androidx.localbroadcastmanager`
+    was reachable from `WrapperJitsiMeetActivity.kt`'s own module (a
+    transitive dependency of `org.jitsi:jitsi-meet-sdk`) but not from the
+    app module — Flutter wires plugin modules in as `implementation`, which
+    doesn't expose a dependency's own transitive deps to the consumer.
+    `compileDebugKotlin` failed with `Unresolved reference
+    'localbroadcastmanager'` until `android/app/build.gradle.kts` declared
+    it explicitly.
+
+### Verified
+- `flutter analyze`: clean. `flutter test`: all 1239 tests pass, including
+  3 new ones in `test/kiosk_channel_test.dart` covering `beginCallHandoff`'s
+  method-channel contract and its `MissingPluginException` degradation.
+- `node packages/transport/test/transport.test.mjs`: 66 passed, 0 failed —
+  the Android-source-no-longer-UNVERIFIED assertion still holds against the
+  new `KioskBridge.kt` code.
+- Full Gradle/Kotlin build succeeds across both the app module and the
+  patched Jitsi plugin module (`flutter build apk --debug`).
+- Reinstalled on the real Fold5 from v0.46.0's session: the OS's own "App is
+  pinned" dialog appeared and `dumpsys activity activities` reported
+  `mLockTaskModeState=PINNED`, confirming screen-pinning still engages
+  correctly under the changed `MainActivity.kt`.
+
+### NOT verified — and why this entry says so rather than claiming otherwise
+Whether `WrapperJitsiMeetActivity` actually launches under the handoff
+without the violation, and whether the pin visibly survives the Activity
+swap, was **not** confirmed live this session. A concurrent session was
+mid-edit on this same repo (§16.2 #6 Step 2 self-hosting work) and, per
+logcat (`PackageManager: installation completed for package:
+com.olivebranch.olive_client`), reinstalled the app on the same physical
+Fold5 mid-test, killing the run before the call attempt completed. This
+failure mode produces no crash and no visible error under `flutter test` —
+a green CI run would look identical whether the fix works or not — so it is
+recorded here as unverified rather than assumed working from the code path
+alone. See `client/docs/MANUAL_VERIFY_call_lock_task.md` for the exact
+procedure to finish this once the devices are free, and update that file's
+own Provenance section with the real outcome when it's run.
+
+---
+
+## [0.46.0] — 2026-08-07 — the client's first live screen, a CI blind spot closed, and the call verified broken on real devices
+
+A stranded branch merge finished, a real CI gap found and fixed, and — the
+headline finding — §16.2 #6 Step 1 (Jitsi over the public server) driven
+end to end on two physical Android devices rather than trusted from code
+review. It does not work, on either device, for two independent reasons.
+
+### Added
+- **`LiveChildHomeScreen` (`client/lib/child_home_live.dart`) +
+  `main_live.dart`.** The first client screen wired to real network calls
+  instead of demo constants: fetches `/v1/me` + `/inbox` through the
+  existing dev-login path, reuses `ChildHome` unmodified so every invariant
+  its own test suite already asserts still holds on the live path, and is
+  honest about what isn't real yet — `presence` and `sleepsUntilHandover`
+  render as an absence, not a guessed number, since no day-part or
+  custody-schedule endpoint exists server-side. 4 new tests (loading,
+  real-data render, unreachable-server retry, recovery).
+- **`server/routes.mjs`**: `/v1/me` now resolves a real `display_name`
+  instead of returning bare ids.
+
+### Fixed
+- **`.github/workflows/verify.yml` had never once run.** It lived at
+  `scaffold/.github/workflows/verify.yml` — GitHub Actions only discovers
+  workflows under `<repo-root>/.github/workflows/`. Confirmed via
+  `gh api repos/.../actions/workflows` returning zero registered workflows
+  despite Actions being enabled repo-wide and the file existing on every
+  branch since it was introduced; `gh run list` returned an empty run
+  history for the entire project. Fixed with a `git mv` to the true root.
+  **Not live yet** — blocked on an OAuth token missing the `workflow` scope
+  needed to push a change under `.github/workflows/`; the commit is queued
+  and pushes as soon as that scope is granted.
+- **`call_screen.dart`'s `devRoomServerBase` hardcoded a dead LAN IP**
+  (`192.168.1.78`, from a network this project is no longer on) — silently
+  breaks two-device testing with no clue why. Switched to `127.0.0.1` +
+  `adb reverse tcp:8787 tcp:8787` per device, which works over USB
+  regardless of whether the phones and the dev machine share a WiFi network.
+- **`network_security_config.xml` still whitelisted the old LAN IP** after
+  the fix above — config drift caught in the same pass. Updated to match.
+
+### Verified — and found broken, on two real devices
+§16.2 #6 Step 1 was driven end to end on a guardian tablet and a child's
+Galaxy Z Fold5, in both join orders. Neither completes, for two independent
+reasons (full detail in the §16.2 #6 callout in MASTERFILE.md and the new
+§20.2b row):
+
+- **The child's kiosk lock blocks the call from ever starting**, and this
+  is orthogonal to Step 1 vs. Step 2 — self-hosting will not fix it alone.
+  `jitsi_meet_flutter_sdk` opens calls in a separate `singleTask` Activity;
+  Android's screen-pinning (§5.20, engaged for real on the child side)
+  refuses to launch it — `E/ActivityTaskManager: Attempted Lock Task Mode
+  violation` — and `call_screen.dart`'s "Joining…" spinner waits forever on
+  a callback from an Activity the OS never started.
+- **The public `meet.jit.si` server puts new rooms in a moderator-approval
+  lobby** — `[app:lobby] Lobby starting knocking (membersOnly = ...)` in the
+  SDK's own log, on the guardian side, which otherwise connected cleanly and
+  captured real camera/mic. No login/moderator flow exists to clear it. This
+  is evidence *for* Step 2 (self-hosting), not a reason to distrust Jitsi
+  generally.
+
+Neither device crashed — both degrade to a stuck-but-recoverable state,
+confirmed against a full logcat capture with zero `FATAL EXCEPTION`s from
+the app across the session. Homework capture, the emergency card, and
+general navigation were also spot-checked on both physical devices (tablet
++ Fold5) with no crashes or layout issues found beyond what the 0.45.0
+responsive pass already covered.
+
+---
+
+## [0.45.0] — 2026-08-04 — Windows joins the kiosk bridge, a watch companion, and a responsive-hardening pass across every screen
+
+§8.3's platform table listed Android real, Windows and iOS as gaps. This
+increment closes the Windows half honestly — a real bridge that has never
+actually been run end to end, not a rewritten contract stub — and adds a
+Wear OS companion that is explicitly a demo shell. It also runs the full
+95-screen client back through the four required viewports and fixes what
+that audit found.
+
+### Added
+- **`client/windows/runner/kiosk_bridge.{h,cpp}`** — a real Win32 kiosk
+  implementation, not a stub: strips the window's caption/system menu/
+  resize border and maximizes it, installs a `WH_KEYBOARD_LL` hook that
+  swallows the Windows key, Alt+Tab, and Ctrl+Esc, and re-arms it on a 3s
+  heartbeat to detect the OS silently dropping a slow low-level hook. **This
+  is an app-level lock, not OS Assigned Access** — see the §8.3 table
+  correction below. **Ctrl+Alt+Del is deliberately left untouched** —
+  OS-reserved, not deliverable to any user-mode hook — and the header
+  comment says so rather than implying otherwise by omission.
+  `lockTaskMode()`/`isDeviceOwner()` report `"assigned"`/`false`, matching
+  what Windows actually lets an app claim. `flutter_window.{h,cpp}` wires it
+  into the engine messenger; `scaffold/native/windows/AssignedAccessBridge.cs`
+  (the old contract-only C# stub) is deleted — `scaffold/native/` is now
+  empty.
+- **A Galaxy Watch6 companion** (`client/android/wear/`) — a standalone Wear
+  OS Gradle module (Jetpack Wear Compose) showing a sleeps-until-handover
+  count and a "Call Dad" button. Compiles and installs as a real,
+  standalone-launchable APK. **Explicitly a demo**: phone↔watch sync via the
+  Wear Data Layer API is not implemented.
+- **`tools/verify.sh` gains a `:wear:assembleDebug` gate**, same "gap, not
+  skip" posture as the existing `:app:compileDebugKotlin` one.
+- **Responsive-hardening pass, all 95 client files**, re-audited at the four
+  required viewports (Fold5 cover 344px, Fold5 main 673×841, phone 390px,
+  tablet/desktop ~1100px). Ten real overflow/layout bugs found and fixed —
+  the chess/checkers button bars, the chain/story turn banners, the
+  word-search default grid, `the_book.dart`'s stat row,
+  `weeks_screen.dart`'s legend chip, `collection_screen.dart` (plus a latent
+  reorder identity-key bug found the same pass), `court_export.dart` /
+  `gallery_screen.dart`, `guardian_home.dart`'s action grid, and a real dead
+  prop in `child_home.dart`: `unreadCount` was accepted by the constructor
+  but never rendered anywhere — now drives a badge on the Messages tile.
+  ~55 files were confirmed already correct at all four widths, with test
+  coverage added regardless so this is a permanent regression guard, not a
+  one-time pass.
+
+### Fixed
+- Two hygiene bugs bundled in because they were on files already open for
+  the audit: `birthday_marked.dart`'s duplicated month-name list, and a
+  misplaced widget `Key`.
+
+### Verified
+- `flutter analyze` (client): clean.
+- `flutter test` (client): **1235 passed, 0 failed** (up from 76).
+- `npm run test:transport`: 60 passed, 0 failed, including new Windows
+  J-bridge contract assertions.
+- `:wear:compileDebugKotlin` and `:wear:assembleDebug`: BUILD SUCCESSFUL.
+
+### Out of scope, on purpose
+- **`flutter build windows` does not run here** — the local Visual Studio
+  Build Tools install is missing the "Desktop development with C++"
+  workload (confirmed via `vswhere.exe` and `flutter doctor -v` — a real
+  gap, not a code problem). Substitute verification: the new/modified C++
+  was compiled directly with `cl.exe /W4` against the cached Flutter
+  Windows embedder headers — 0 errors, 0 warnings. **Still marked
+  UNVERIFIED** in both the header comment and the transport contract test,
+  same discipline Android only dropped the marker under after an actual
+  successful build+run on a real device.
+- Phone↔watch data sync (Wear Data Layer API) — flagged for follow-up, not
+  attempted this pass.
 
 ---
 

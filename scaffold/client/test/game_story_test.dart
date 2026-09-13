@@ -59,6 +59,21 @@ void main() {
       expect(find.textContaining("Ivy's turn"), findsOneWidget);
     });
 
+    testWidgets('the empty state is a real icon + message, not bare text, and clears on the first line',
+        (tester) async {
+      await tester.pumpWidget(wrap(const GameStoryScreen()));
+      expect(find.byIcon(Icons.auto_stories_outlined), findsOneWidget);
+      expect(find.textContaining('Type the very first line'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'Once there was a dragon');
+      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+      await tester.pump();
+
+      // The empty-state icon+message is gone the moment there is a real line.
+      expect(find.byIcon(Icons.auto_stories_outlined), findsNothing);
+      expect(find.textContaining('Type the very first line'), findsNothing);
+    });
+
     testWidgets('adding a line appends it and hands the turn to the other side', (tester) async {
       await tester.pumpWidget(wrap(const GameStoryScreen()));
       await tester.enterText(find.byType(TextField), 'Once there was a very small dragon');
@@ -129,6 +144,29 @@ void main() {
       await tester.pumpWidget(wrap(const GameStoryScreen()));
       final Size size = tester.getSize(find.widgetWithText(FilledButton, 'Add'));
       expect(size.height, greaterThanOrEqualTo(48.0));
+    });
+
+    group('responsive audit — Fold5, phone, and tablet/desktop widths', () {
+      // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+      // unfolded main screens), plus a standard phone width and a
+      // short-and-wide desktop/tablet width now that Windows is a real
+      // target. The default "Ivy's turn to add a line" banner is exactly
+      // what overflowed the Fold5 cover width before the pill was made to
+      // shrink instead — see game_story.dart's _TurnBanner.
+      for (final MapEntry<String, Size> entry in const <String, Size>{
+        'Fold5 cover (344 CSS px)': Size(344, 882),
+        'Fold5 unfolded main (~673 CSS px)': Size(673, 841),
+        'a standard phone (~390 CSS px)': Size(390, 844),
+        'a tablet/desktop (~1100 CSS px)': Size(1100, 800),
+      }.entries) {
+        testWidgets('renders without overflow at ${entry.key}', (tester) async {
+          await tester.binding.setSurfaceSize(entry.value);
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          await tester.pumpWidget(wrap(const GameStoryScreen()));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+        });
+      }
     });
   });
 }

@@ -2,7 +2,7 @@
  * auth + storage + api — adversarial suite.
  * MASTERFILE §7, §8.3, §10.1, §20.5 items 1-3.
  */
-import { createHash, createSign, generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createHash, createHmac, createSign, generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
   hashPin, verifyPin, verifyAssertion, newChallenge,
   issueSession, readSession, escalateSession,
@@ -135,6 +135,24 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
   check('C sessions', 'not escalated by default',
     readSession(SECRET, t, NOW).principal.escalated, 'false');
 
+  // Token-shape branches — previously reached by nothing anywhere in the repo
+  // (readSession's own `dot < 1` guard and its JSON.parse catch), found while
+  // reviewing escalateSession() for MASTERFILE §7.1's open question below.
+  check('C sessions', 'no dot at all → malformed',
+    readSession(SECRET, 'nodothere', NOW).reason, 'malformed');
+  check('C sessions', 'dot at position 0 (empty payload) → malformed',
+    readSession(SECRET, '.abc', NOW).reason, 'malformed');
+  {
+    // A validly-signed payload that isn't JSON at all — the ONLY way to reach
+    // readSession's JSON.parse catch branch is a MAC that actually verifies,
+    // so this hand-signs with the real secret rather than tampering with a
+    // real token's payload (which would fail at bad_signature first, above).
+    const badPayload = Buffer.from('not json').toString('base64url');
+    const badMac = createHmac('sha256', SECRET).update(badPayload).digest('base64url');
+    check('C sessions', 'validly-signed non-JSON payload → malformed',
+      readSession(SECRET, `${badPayload}.${badMac}`, NOW).reason, 'malformed');
+  }
+
   // A forged principal shape must not slip through even with a valid MAC.
   const forged = issueSession(SECRET, { userId: null, roleName: 'guardian',
     childId: null, escalated: true }, NOW);
@@ -227,6 +245,111 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
   // Idempotent: a second pass over already-reaped keys must not error.
   const again = await reap(db, st, new Date(NOW));
   check('E reaper', 'second pass is safe', again.examined, 4);
+
+  // mk() above is deliberately fixed to its own 4-row fixture (dueForReaping
+  // closes over mk()'s own local `rows`, not anything reassigned on the
+  // returned object afterward) — the three blocks below build their own
+  // minimal db/storage fakes directly rather than fighting that shape.
+
+  // blobsAlreadyGone — storage.delete() resolving false (its own "true if
+  // it existed" contract), NOT a throw. Found by this project's own
+  // post-tier audit: this used to be silently merged into blobsDeleted,
+  // indistinguishable from a real delete. The row is still safely deleted
+  // (the invariant this function protects — "the blob is gone" — holds
+  // either way), but the count is kept separate so a real spike is visible
+  // as its own operational signal.
+  {
+    const gRows = [{ artifactId: 'g1', storageKey: 'k/never-existed', preserved: false,
+      expiresAt: '2026-07-01T00:00:00Z' }];
+    const gDeleted = [], gTombs = [];
+    // Never put() at all — st.delete() on a key that was never written
+    // resolves false, exactly like a blob that's already been cleaned up.
+    const gSt = new MemoryStorage();
+    const gDb = {
+      dueForReaping: async () => gRows,
+      deleteArtifactRow: async (id) => { gDeleted.push(id); return true; },
+      tombstone: async (id, key, err) => { gTombs.push({ id, key, err }); },
+    };
+    const rg = await reap(gDb, gSt, new Date(NOW));
+    check('E reaper', 'a blob that was already gone is NOT counted as a real delete',
+      rg.blobsDeleted, 0);
+    check('E reaper', 'it IS counted separately, not silently dropped',
+      rg.blobsAlreadyGone, 1);
+    check('E reaper', 'the row is still deleted — the blob being gone either way is '
+      + 'not itself an error', gDeleted.includes('g1'), 'true');
+    check('E reaper', 'no tombstone for an already-gone blob — this is not a failure',
+      gTombs.length, 0);
+  }
+
+  // Row delete fails AFTER a successful blob delete — found by this
+  // project's own post-tier audit: this call used to be unguarded, so a
+  // thrown error here propagated out of reap()'s whole loop, killing every
+  // OTHER candidate in the same batch, and left the row un-tombstoned so
+  // dueForReaping()'s own ORDER BY guaranteed the SAME row would be
+  // returned first again on every future sweep — a single transient
+  // failure could indefinitely block every other family's overdue media
+  // behind it. Two candidates prove both halves: the poisoned one is
+  // tombstoned, not thrown, AND the one behind it still gets examined.
+  {
+    const hRows = [
+      { artifactId: 'h1', storageKey: 'k/row-delete-fails', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+      { artifactId: 'h2', storageKey: 'k/behind-the-poisoned-row', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+    ];
+    const hDeleted = [], hTombs = [];
+    const hSt = new MemoryStorage();
+    for (const r of hRows) await hSt.put(r.storageKey, Buffer.from('bytes'));
+    const hDb = {
+      dueForReaping: async () => hRows,
+      deleteArtifactRow: async (id) => {
+        if (id === 'h1') throw new Error('connection reset');
+        hDeleted.push(id); return true;
+      },
+      tombstone: async (id, key, err) => { hTombs.push({ id, key, err }); },
+    };
+    const rh = await reap(hDb, hSt, new Date(NOW));
+    check('E reaper', 'a row-delete failure does not throw out of reap() — the whole '
+      + 'sweep completing at all is the proof', rh.examined, 2);
+    check('E reaper', "the poisoned row's blob is genuinely gone (delete ran before the "
+      + 'row-delete failure)', await hSt.exists('k/row-delete-fails'), 'false');
+    check('E reaper', 'the poisoned row is tombstoned so it is discoverable and excluded '
+      + 'from future sweeps, not silently left to loop forever', rh.tombstoned, ['h1']);
+    check('E reaper', "the poisoned row's own tombstone records the REAL failure, "
+      + 'distinguishable from a blob-delete failure', hTombs[0]?.err,
+      'row delete failed after blob delete resolved: connection reset');
+    check('E reaper', 'the candidate BEHIND the poisoned one is still examined and '
+      + 'reaped normally — this is the actual poison-pill fix, not just "does not crash"',
+      hDeleted.includes('h2'), 'true');
+    check('E reaper', "the poisoned row's own tombstone is the only one written",
+      hTombs.length, 1);
+  }
+
+  // Even the tombstone WRITE itself failing must not crash the sweep — the
+  // degraded outcome is "retried next sweep," never "every candidate after
+  // this one in tonight's batch is never examined."
+  {
+    const kRows = [
+      { artifactId: 'k1', storageKey: 'k/row-delete-and-tombstone-fail', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+      { artifactId: 'k2', storageKey: 'k/still-examined', preserved: false,
+        expiresAt: '2026-07-01T00:00:00Z' },
+    ];
+    const kSt = new MemoryStorage();
+    for (const r of kRows) await kSt.put(r.storageKey, Buffer.from('bytes'));
+    const kDb = {
+      dueForReaping: async () => kRows,
+      deleteArtifactRow: async () => { throw new Error('db unreachable'); },
+      tombstone: async () => { throw new Error('db unreachable'); },
+    };
+    let threw = false;
+    let rk;
+    try { rk = await reap(kDb, kSt, new Date(NOW)); } catch { threw = true; }
+    check('E reaper', 'a tombstone write ALSO failing does not propagate out of reap()',
+      threw, false);
+    check('E reaper', 'the candidate behind a doubly-failed row is still examined',
+      rk?.examined, 2);
+  }
 }
 
 // ===========================================================================
@@ -383,6 +506,182 @@ const edge = (o = {}) => ({ childId: CHILD_A, userId: DAD, role: 'guardian', sco
   check('F api', 'P7 blocked over a real socket', unauth.status, 403);
   await unauth.arrayBuffer();
   await srv.close();
+}
+
+// ===========================================================================
+// G · skipOuterSession — the connection-pool self-deadlock fix
+// ===========================================================================
+// Real, live-reproduced bug (adversarial review of the real-authentication
+// feature): a handler that ignores the outer `q` and instead runs its own,
+// differently-scoped session(s) against the raw pool still had that outer
+// session opened and held for its entire lifetime by api.handle() — wasted at
+// best, and under concurrency a self-referential deadlock at worst (every
+// slot in the bounded pool filled by outer wrappers each blocked on their own
+// handler's inner connect(), which can never be satisfied because the pool is
+// already full of them). skipOuterSession:true is the fix; this proves BOTH
+// halves of it against the real Api class, not just against a route that
+// happens not to need `q`.
+{
+  const calls = [];
+  const db = {
+    edgesFor: async () => [],
+    withSession: async (p, fn) => { calls.push(p); return fn(async () => []); },
+  };
+  const api = new Api(SECRET, db, () => NOW);
+  let handlerRan = false, qThrew = false;
+  api.register({
+    method: 'POST', path: '/v1/me/skip-test', action: null, skipOuterSession: true,
+    handler: async (c, q) => {
+      handlerRan = true;
+      try { await q('SELECT 1'); } catch { qThrew = true; }
+      return { body: { ok: true } };
+    },
+  });
+  const tok = issueSession(SECRET, { userId: DAD, roleName: 'guardian',
+    childId: null, escalated: false }, NOW);
+  calls.length = 0;
+  const res = await api.handle('POST', '/v1/me/skip-test',
+    { authorization: `Bearer ${tok}` }, '{}');
+  check('G skipOuterSession', 'the handler still runs and its response is returned',
+    `${res.status}/${handlerRan}`, '200/true');
+  check('G skipOuterSession', 'db.withSession() is NEVER called for this route — '
+    + 'no outer connection is checked out at all', calls.length, 0);
+  check('G skipOuterSession', 'the q it is handed throws if actually called '
+    + '(a route that starts using q without dropping the flag fails loudly)',
+    qThrew, 'true');
+
+  // Sanity: an ordinary route (no flag) keeps calling db.withSession exactly
+  // as before — the opt-out changes nothing for every other route.
+  api.register({ method: 'GET', path: '/v1/me/normal-test', action: null,
+    handler: async () => ({ body: { ok: true } }) });
+  calls.length = 0;
+  await api.handle('GET', '/v1/me/normal-test', { authorization: `Bearer ${tok}` }, '');
+  check('G skipOuterSession', 'a route WITHOUT the flag still opens the outer session',
+    calls.length, 1);
+}
+
+// ===========================================================================
+// H · noSessionRequired — the guardian-invite 401 fix
+// ===========================================================================
+// Real, adversarially-found bug (audit of gap-fill batch 2's guardian-invite
+// feature): api.handle() required a Bearer token unconditionally, before
+// ever consulting a route's own flags — so GET/POST .../accept, both
+// explicitly built for a caller with NO session at all (the invited party
+// has no app_user row yet), 401'd every real call. packages/db/test/
+// guardian_invite.test.mjs's own new "G real route" section proves the fix
+// against the actual guardian-invite routes end to end, against real
+// Postgres; this section proves the underlying Api MECHANISM generically,
+// the same way "G skipOuterSession" above proves its own mechanism against
+// a synthetic route rather than only a real-feature call site.
+{
+  const calls = [];
+  const db = {
+    edgesFor: async () => [],
+    withSession: async (p, fn) => { calls.push(p); return fn(async () => []); },
+  };
+  const api = new Api(SECRET, db, () => NOW);
+
+  check('H noSessionRequired', 'registration refuses noSessionRequired without '
+    + 'skipOuterSession — there is no principal to scope db.withSession() with', (() => {
+      try {
+        api.register({ method: 'GET', path: '/v1/no-session-bad-test', action: null,
+          noSessionRequired: true, handler: async () => ({ body: {} }) });
+        return 'did not throw';
+      } catch (e) { return e.message.includes('noSessionRequired') ? 'threw correctly' : 'threw wrong error'; }
+    })(), 'threw correctly');
+
+  let handlerCtx = null;
+  api.register({
+    method: 'GET', path: '/v1/no-session-test/:inviteId', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => { handlerCtx = c; return { body: { ok: true, id: c.params.inviteId } }; },
+  });
+
+  calls.length = 0;
+  const res = await api.handle('GET', '/v1/no-session-test/abc-123', {}, '');
+  check('H noSessionRequired', 'the handler runs with NO Authorization header at all — '
+    + 'the exact call shape api_client.dart\'s fetchGuardianInvite() makes',
+    `${res.status}/${res.body?.id}`, '200/abc-123');
+  check('H noSessionRequired', 'ctx.principal is null, not a fabricated identity',
+    handlerCtx?.principal, 'null');
+  check('H noSessionRequired', 'the path param is still correctly extracted',
+    handlerCtx?.params?.inviteId, 'abc-123');
+  check('H noSessionRequired', 'db.withSession() is never called — same guarantee as '
+    + 'skipOuterSession, since noSessionRequired implies it', calls.length, 0);
+
+  // Sanity: an ordinary route right next to it is completely unaffected —
+  // the bypass is per-route, not global.
+  api.register({ method: 'GET', path: '/v1/still-needs-session-test', action: null,
+    handler: async () => ({ body: { ok: true } }) });
+  const stillGated = await api.handle('GET', '/v1/still-needs-session-test', {}, '');
+  check('H noSessionRequired', 'a sibling route with no explicit flag still 401s '
+    + 'with no session — the bypass never leaks to routes that did not ask for it',
+    `${stillGated.status}/${stillGated.body?.error}`, '401/no_session');
+}
+
+// ===========================================================================
+// I · CHILD PAYLOAD SWEEP — MASTERFILE §20.5, wired in for real 2026-08-24.
+// A fresh audit found `auditChildSurface()`/`GLOBAL_CHILD_FORBIDDEN` had zero
+// real callers anywhere despite this file's own header describing it as the
+// "no future module writes its own — it imports this" guard. Wiring it into
+// `handle()` itself — the one real choke point every response to a child
+// principal passes through — real-500'd a genuine, already-shipped route
+// the same pass (take-and-go's own full self-export bundle, which legitimately
+// includes her real message log by product design) before `skipChildPayloadSweep`
+// was added to fix it. Both halves proven here, not just reasoned about.
+// ===========================================================================
+{
+  const calls = [];
+  const db = { edgesFor: async () => [edge()], withSession: async (p, fn) => {
+    calls.push(p.roleName); return fn(async () => []);
+  } };
+  const api = new Api(SECRET, db, () => NOW);
+
+  api.register({ method: 'GET', path: '/v1/children/:childId/leaky-test',
+    action: 'message', handler: async () => ({ body: { streak: 3 } }) });
+  api.register({ method: 'GET', path: '/v1/children/:childId/clean-test',
+    action: 'message', handler: async () => ({ body: { title: 'A dragon' } }) });
+  api.register({ method: 'GET', path: '/v1/children/:childId/full-export-test',
+    action: 'message', skipChildPayloadSweep: true,
+    handler: async () => ({ body: { messageLog: ['real entry'] } }) });
+
+  const childTok2 = issueSession(SECRET, { userId: null, roleName: 'child',
+    childId: CHILD_A, escalated: false }, NOW);
+  const guardianTok = issueSession(SECRET, { userId: DAD, roleName: 'guardian',
+    childId: null, escalated: false }, NOW);
+  const hitAs = (tok, path) => api.handle('GET', path,
+    { authorization: `Bearer ${tok}` }, '');
+
+  const leaked = await hitAs(childTok2, `/v1/children/${CHILD_A}/leaky-test`);
+  check('I child sweep', 'a real forbidden field in a response to a CHILD is caught, not shipped',
+    leaked.status, 500);
+  check('I child sweep', 'the real leaked field path is named in the error, for a developer to find',
+    leaked.body?.fields?.[0], 'streak');
+
+  const clean = await hitAs(childTok2, `/v1/children/${CHILD_A}/clean-test`);
+  check('I child sweep', 'a clean response to a child passes through untouched',
+    clean.status, 200);
+  check('I child sweep', 'and its real body is preserved, not stripped or replaced',
+    clean.body?.title, 'A dragon');
+
+  const guardianSameShape = await hitAs(guardianTok,
+    `/v1/children/${CHILD_A}/leaky-test`);
+  check('I child sweep', 'the SAME forbidden-field response to a GUARDIAN is not swept — '
+    + 'this guard is specifically about what reaches the CHILD, not a generic linter',
+    guardianSameShape.status, 200);
+
+  // Real, live bug fixed the same pass this shipped: a full self-export
+  // bundle (take-and-go) legitimately contains fields the sweep would
+  // otherwise flag, by deliberate product design (rungs.ts's own
+  // NOT_HERS_TO_DELETE — "she can have a copy of everything"), not a leak.
+  const fullExport = await hitAs(childTok2,
+    `/v1/children/${CHILD_A}/full-export-test`);
+  check('I child sweep', 'skipChildPayloadSweep: true lets a real, deliberate full-export '
+    + 'route through untouched — the one narrow, individually-reviewed exception',
+    fullExport.status, 200);
+  check('I child sweep', 'and its real body — including a field the sweep would otherwise ban — '
+    + 'is genuinely preserved, not silently emptied',
+    fullExport.body?.messageLog?.[0], 'real entry');
 }
 
 // ---------------------------------------------------------------------------

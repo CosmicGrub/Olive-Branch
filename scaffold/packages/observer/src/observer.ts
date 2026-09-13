@@ -59,6 +59,19 @@ export function observerMay(cap: string): boolean {
 export function observerSeesGuardian(): false { return false; }
 export function guardianSeesOthersObservers(): false { return false; }
 
+/**
+ * "Time-boxed by default" (this file's own header) never had a number attached
+ * to it — every OTHER expiry-bearing concept in this codebase does (PIN
+ * lockouts, session TTLs, challenge windows), so an observer grant should not
+ * be the one exception that expires "eventually." Six months: long enough
+ * that a genuinely present grandparent or therapist isn't nagged every season,
+ * short enough that a grant nobody remembers making doesn't quietly become
+ * permanent. Renewal is just re-inviting — invite() already handles an
+ * already-accepted, non-revoked observer being re-added the same way a fresh
+ * one is, so there is no separate "renew" verb to build.
+ */
+export const OBSERVER_GRANT_TTL_DAYS = 180;
+
 export type InviteError = 'not_a_guardian' | 'already_invited' | 'child_cannot_invite';
 
 export function invite(

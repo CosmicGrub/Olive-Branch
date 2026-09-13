@@ -1,7 +1,8 @@
-// OLIVE BRANCH — find the thing. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.12.2,
-// §8.14. Renders MARKUP screen 'findThing'.
+// OLIVE BRANCH — find the thing. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9.12.2, §8.14. Renders MARKUP screen
+// 'findThing'.
 //
 // A 1:1 semantic port of the find-the-thing section of
 // packages/activities/src/activities.ts (FindTarget, FindScene,
@@ -222,14 +223,14 @@ class _GameFindThingScreenState extends State<GameFindThingScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Find the thing')),
       body: SafeArea(child: Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Row(children: [
             Text(_scene.target.glyph, style: const TextStyle(fontSize: 26)),
             const SizedBox(width: 8),
             Expanded(child: Text('Find ${_scene.target.label}',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
           ])),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Wrap(spacing: 8, children: [
             for (final FindDifficulty d in FindDifficulty.values)
               ChoiceChip(
@@ -300,12 +301,15 @@ class _FoundBanner extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Widget content = Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(14)),
       child: Column(children: [
         Text('You found $label!',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: scheme.onTertiaryContainer)),
-        const SizedBox(height: 10),
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700, color: scheme.onTertiaryContainer)),
+        const SizedBox(height: 12),
         SizedBox(width: double.infinity, height: 48,
           child: FilledButton.tonal(onPressed: onAgain, child: const Text('Find something new'))),
       ]),

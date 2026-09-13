@@ -192,4 +192,40 @@ void main() {
       expect(find.textContaining('You won'), findsNothing);
     });
   });
+
+  group('responsive audit — Fold5, phone, and tablet/desktop widths, §9.2', () {
+    // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+    // unfolded main screens), plus a standard phone width and a
+    // short-and-wide desktop/tablet width now that Windows is a real target.
+    for (final MapEntry<String, Size> entry in const <String, Size>{
+      'Fold5 cover (344 CSS px)': Size(344, 882),
+      'Fold5 unfolded main (~673 CSS px)': Size(673, 841),
+      'a standard phone (~390 CSS px)': Size(390, 844),
+      'a tablet/desktop (~1100 CSS px)': Size(1100, 800),
+    }.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (t) async {
+        await t.binding.setSurfaceSize(entry.value);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(wrap(const GameCheckers(childName: 'Ivy', parentName: 'Dad')));
+        await t.pump();
+        expect(t.takeException(), isNull);
+      });
+    }
+
+    testWidgets('the undo/play-again controls wrap instead of a fixed Row', (t) async {
+      // Regression guard: "Take that back" + "Play again" together were a
+      // bare Row with no Expanded/Flexible, which overflowed by 170px on
+      // the Fold5 cover width and 124px at a standard phone width once the
+      // game finished (verified against an isolated reproduction of this
+      // exact markup before the fix). A plain Row here would silently
+      // reintroduce that overflow the moment a game actually finishes.
+      // useTallSurface: this control row sits below the board, past the
+      // default 800x600 test surface's fold, inside the raw ListView this
+      // screen (deliberately, per its own file-header comment) uses — the
+      // same sliver-realization pitfall this codebase documents elsewhere.
+      useTallSurface(t);
+      await t.pumpWidget(wrap(const GameCheckers(childName: 'Ivy', parentName: 'Dad')));
+      expect(find.byType(Wrap), findsOneWidget);
+    });
+  });
 }

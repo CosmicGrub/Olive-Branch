@@ -161,6 +161,22 @@ export const CARE_NOTE_BANNED = [
   'you need to start', 'this is why',
 ] as const;
 
+/**
+ * Same tone guard, reused verbatim for a DIFFERENT field: an availability-
+ * window note (db/migrations/0010_availability.sql) — a freeform note
+ * attached to when a guardian says they're available/unavailable, e.g. "at
+ * work" or "with grandma" — is served straight to the child's own session
+ * (0010's own `guardian_availability_child_read` policy). A care note above
+ * is NOT: `writeCareNote()`'s own return always sets `visibleToChild: false`.
+ * That makes an availability note the MORE exposed of the two fields, not
+ * the less — a dig hidden in "unavailable because your mother..." reaches
+ * the child directly, with no adult in between to absorb it first — so it
+ * gets the identical refusal, not a second, independently-curated word list
+ * for server/routes.mjs's invalidAvailabilityBody() to drift out of sync
+ * with this one by hand.
+ */
+export const AVAILABILITY_NOTE_BANNED = CARE_NOTE_BANNED;
+
 export function writeCareNote(
   id: string, childId: string, fromUserId: string, items: CareItem[], at: string,
 ): { ok: true; note: CareNote } | { ok: false; reason: 'empty' | 'accusatory'; found?: string[] } {

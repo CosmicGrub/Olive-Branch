@@ -34,6 +34,17 @@ void main() {
       expect(find.text('2 of 3 waiting'), findsOneWidget);
     });
 
+    testWidgets('nothing pending renders a real icon+message empty state, not bare text',
+        (t) async {
+      await pump(t, const ShowGuardianScreen(initialAsks: []));
+      expect(find.text('0 of 3 waiting'), findsOneWidget);
+      expect(find.text('Nothing waiting right now.'), findsOneWidget);
+      // A real empty-state treatment, not a lone Text node: a calm icon
+      // sits with the message rather than the message standing alone.
+      expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+      expect(find.textContaining('error'), findsNothing);
+    });
+
     testWidgets('sending a third ask fills the cap with no confirmation needed', (t) async {
       await pump(t, const ShowGuardianScreen());
       await t.enterText(find.byType(TextField).first, 'Show me your shoes');
@@ -134,6 +145,112 @@ void main() {
       await pump(t, const ShowGuardianScreen());
       final Size size = t.getSize(find.widgetWithText(FilledButton, 'Send the ask'));
       expect(size.height, greaterThanOrEqualTo(48.0));
+    });
+  });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires. Unlike the
+    // other files in this batch, this screen uses tester.binding's own
+    // surface size (see `pump` above) rather than tester.view — the two
+    // control different layers (root surface vs. FlutterView), so the width
+    // sweep below drives tester.view directly instead of routing through
+    // `pump`, then restores the tall canvas the rest of this file relies on.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('renders composer, shelf, and the cap dialog without overflow '
+          'at ${entry.key}', (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        await t.pumpWidget(wrap(const ShowGuardianScreen(childName: 'Maya')));
+        expect(t.takeException(), isNull);
+
+        // Fill the cap and trigger the retirement confirmation dialog — the
+        // most content-dense surface this screen can show.
+        await t.enterText(find.byType(TextField).first, 'Show me your shoes');
+        await t.tap(find.widgetWithText(FilledButton, 'Send the ask'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+
+        await t.enterText(find.byType(TextField).first, 'One more ask');
+        await t.tap(find.widgetWithText(FilledButton, 'Send the ask'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+        expect(find.text('Three are already waiting'), findsOneWidget);
+
+        await t.tap(find.text('Cancel'));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
+
+  group('guardian showcase — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'ask composer and the activity feed as two side-by-side panes', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen(childName: 'Maya')));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsOneWidget);
+      // Pane A content (the composer) and Pane B content (a pending ask)
+      // are both genuinely present at once.
+      expect(find.text('Ask her to show you something'), findsOneWidget);
+      expect(find.text("Show me the biggest dinosaur you've got"), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (t) async {
+      await t.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen(childName: 'Maya')));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsNothing);
+      expect(find.text('Ask her to show you something'), findsOneWidget);
+      expect(find.text("Show me the biggest dinosaur you've got"), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, '
+        'not the two-pane Row', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen(childName: 'Maya')));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('sending an ask still works correctly inside the wide two-pane layout',
+        (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const ShowGuardianScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsOneWidget);
+      await t.enterText(find.byType(TextField).first, 'Show me your shoes');
+      await t.tap(find.widgetWithText(FilledButton, 'Send the ask'));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('showGuardianTwoPaneRow')), findsOneWidget);
+      expect(find.text('3 of 3 waiting'), findsOneWidget);
+      expect(find.text('Show me your shoes'), findsOneWidget);
+      expect(t.takeException(), isNull);
     });
   });
 }

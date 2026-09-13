@@ -1,7 +1,8 @@
-// OLIVE BRANCH — the scavenger hunt. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session). MASTERFILE §9.2 (Shipped
-// v0.19.0), §9.7.2, P3. Renders MARKUP screen 'hunt'.
+// OLIVE BRANCH — the scavenger hunt. No longer UNVERIFIED — verified by CI (a Flutter toolchain
+// now runs for real in tools/verify.sh's automated pipeline — also manually
+// built and run via `flutter analyze` / `flutter test` this session;
+// CHANGELOG v0.49.61). MASTERFILE §9.2 (Shipped v0.19.0), §9.7.2, P3.
+// Renders MARKUP screen 'hunt'.
 //
 // A 1:1 semantic port of the scavenger-hunt section of
 // packages/games/src/games3.ts (HuntPrompt, Hunt, SUGGESTED_PROMPTS, newHunt,
@@ -30,7 +31,7 @@
 // the id of a real `media_artifact` — a photograph, put through the same
 // quality-gated capture flow §9.1's homework screen formalises. No camera
 // plugin is wired into this preview build (pubspec.yaml carries only
-// jitsi_meet_flutter_sdk, and this file does not add to it — see the
+// livekit_client, and this file does not add to it — see the
 // per-group "new files only" constraint this build was made under), so
 // "Found it!" below generates a placeholder artifact id locally rather than
 // a real photograph. The state machine it drives (submitFind, huntProgress,
@@ -38,6 +39,7 @@
 // the photograph itself is a stand-in, and the UI never claims otherwise —
 // it says "Found it!", not "Photo saved."
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // =========================================================== ported logic ===
 // packages/games/src/games3.ts — the scavenger hunt section.
@@ -205,30 +207,44 @@ class _GameHuntScreenState extends State<GameHuntScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Scavenger hunt')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('${widget.parentName} hid these around the house',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        // No timer, ever — §9.2. This is the only progress language on the
-        // whole screen, and it is a goal ("X more to find"), not a score.
-        Text('${progress.found} of ${progress.total} found — go find them whenever you like.',
-          style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
-        const SizedBox(height: 16),
-        for (final HuntPrompt p in _hunt.prompts)
-          _HuntTile(prompt: p, onFound: () => _found(p.id)),
-        if (complete) Padding(padding: const EdgeInsets.symmetric(vertical: 16),
-          child: _Celebration(name: widget.parentName, played: _celebrated)),
-        if (saved.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          const Divider(),
-          const SizedBox(height: 8),
-          Text('Saved for your book', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700,
-            color: scheme.onSurfaceVariant)),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: [for (final HuntArtifactEntry a in saved)
-            Chip(avatar: const Icon(Icons.photo_outlined, size: 18), label: Text(a.caption))]),
-        ],
-      ])),
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered, never split —
+      // same real columnsAt() gate every other reading-cap screen uses
+      // (form_factors.dart). Nothing below this changes.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          Text('${widget.parentName} hid these around the house',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          // No timer, ever — §9.2. This is the only progress language on the
+          // whole screen, and it is a goal ("X more to find"), not a score.
+          Text('${progress.found} of ${progress.total} found — go find them whenever you like.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 16),
+          for (final HuntPrompt p in _hunt.prompts)
+            _HuntTile(prompt: p, onFound: () => _found(p.id)),
+          if (complete) Padding(padding: const EdgeInsets.symmetric(vertical: 16),
+            child: _Celebration(name: widget.parentName, played: _celebrated)),
+          if (saved.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text('Saved for your book', style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [for (final HuntArtifactEntry a in saved)
+              Chip(avatar: const Icon(Icons.photo_outlined, size: 18), label: Text(a.caption))]),
+          ],
+        ]);
+        return capWidth
+            ? Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                child: content))
+            : content;
+      })),
     );
   }
 }
@@ -243,7 +259,7 @@ class _HuntTile extends StatelessWidget {
     final bool found = prompt.artifactId != null;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       color: found ? scheme.surfaceContainerHighest : null,
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -251,8 +267,7 @@ class _HuntTile extends StatelessWidget {
           Icon(found ? Icons.check_circle : Icons.travel_explore_outlined,
             color: found ? scheme.primary : scheme.onSurfaceVariant),
           const SizedBox(width: 12),
-          Expanded(child: Text(prompt.text, style: TextStyle(
-            fontSize: 15,
+          Expanded(child: Text(prompt.text, style: Theme.of(context).textTheme.bodyLarge?.copyWith(
             decoration: found ? TextDecoration.lineThrough : TextDecoration.none,
             color: found ? scheme.onSurfaceVariant : null,
           ))),
@@ -282,9 +297,13 @@ class _Celebration extends StatelessWidget {
       decoration: BoxDecoration(color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(16)),
       child: Column(children: [
         Text('You found everything $name hid!',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: scheme.onTertiaryContainer)),
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700, color: scheme.onTertiaryContainer)),
         const SizedBox(height: 4),
-        Text('That was a good one.', style: TextStyle(color: scheme.onTertiaryContainer)),
+        Text('That was a good one.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onTertiaryContainer)),
       ]),
     );
     return TweenAnimationBuilder<double>(

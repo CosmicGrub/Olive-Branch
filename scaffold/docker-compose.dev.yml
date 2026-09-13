@@ -1,0 +1,232 @@
+# OLIVE BRANCH — the live two-device-testing dev stack, containerized.
+# See tools/docker-dev/README.md for why this exists, what it does and
+# does not replace, and how to point physical devices at it.
+#
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# `--build` on every invocation is deliberate, not a habit to drop later —
+# "previous, current, and future builds" all go through this same path, so
+# rebuilding is the normal way to pick up new code, not an occasional
+# maintenance step. Compose's own layer cache (see Dockerfile's comment on
+# COPY order) keeps a no-op rebuild fast when only source changed.
+name: olive-dev
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      # Overridable via ./.env now (see .env.example), not a bare literal —
+      # this was the one credential in this file the 21a1c92 (v0.49.32)
+      # pass moved SESSION_SECRET/DEV_LOGIN off of but never touched. No
+      # `:?` here unlike SESSION_SECRET below: this role is only ever
+      # dialed over the compose bridge network (service name `db`) by
+      # `migrate`/`server`, or from the host itself via the loopback-only
+      # mapping right below, so an existing .env with no POSTGRES_PASSWORD
+      # line keeps working exactly as before rather than failing to start.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - olive-dev-pgdata:/var/lib/postgresql/data
+      # Runs once, only against a truly empty volume — see that file's own
+      # header for what it does and why app_owner must be NOSUPERUSER
+      # NOBYPASSRLS rather than reusing the `postgres` superuser role.
+      - ./tools/docker-dev/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      # Loopback-only, not "5434:5432" (which publishes on every host
+      # interface) — the one port in this stack 21a1c92 (v0.49.32) missed
+      # when it restricted `server`/`callroom` to 127.0.0.1. Nothing needs
+      # LAN reachability here: `migrate`/`server` dial `db` by service name
+      # over the compose bridge network, never through this host mapping,
+      # and a developer running `psql -h 127.0.0.1 -p 5434` from the host
+      # itself still works identically. seed-dev.mjs populates this
+      # database with real-shaped family data (a child's name and birth
+      # date, a guardian identity, an active custody-order pattern, a
+      # delivered video-message artifact) that a device on the same WiFi
+      # could otherwise read or write directly, with no session/auth layer
+      # in the way at all — 5434, not Postgres's default 5433/5432 this
+      # project's other local Postgres instances (the WSL-native one, and
+      # the separate olive-verify-pg container tools/verify.sh's own
+      # CI-parity check uses) already claim — a distinct port keeps this
+      # stack from ever silently colliding with either.
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+    # Connects AS app_owner (not postgres) so every table migrate.mjs
+    # creates is already owned by the real NOBYPASSRLS role from the start
+    # — no separate GRANT/ALTER TABLE OWNER TO pass needed afterward, the
+    # exact manual step this session had to do by hand for the WSL-native
+    # database every time a new migration landed.
+    command: ["node", "tools/migrate.mjs"]
+    restart: "no"
+
+  server:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8123"
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+      # Both read from ./.env (untracked — see .env.example), not a literal
+      # here. A committed SESSION_SECRET plus a permanently-on DEV_LOGIN
+      # were both real, confirmed findings: anyone holding the secret could
+      # forge a session for any user/child with escalated:true and no
+      # server round-trip, and DEV_LOGIN=1 needed no credential at all.
+      # `:?` fails fast with no secret rather than falling back to a weak
+      # default; DEV_LOGIN now defaults OFF so the committed file itself
+      # never ships with auth disabled — see .env.example to opt in.
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
+      DEV_LOGIN: "${DEV_LOGIN:-0}"
+      # MASTERFILE §16.2 #6 REVERSED AGAIN — server/routes.mjs's real
+      # POST /v1/children/:childId/calls route now needs a real LiveKit
+      # Cloud project, not a LAN-IP self-hosted Jitsi address; same three
+      # values, same reasoning as the identical block below on `callroom`.
+      # Optional here (not `:?`-required, unlike SESSION_SECRET/
+      # MEDIA_SIGNING_SECRET above): most of this dev stack — every screen
+      # except a real call attempt — works with none of the three set;
+      # routes.mjs itself already fails loudly (500 call_backend
+      # _unconfigured) on an actual call POST if they're missing, which is
+      # the right place for that failure to surface, not a hard container
+      # -start requirement that would block testers who aren't touching
+      # calls today. Set all three from ./.env (untracked — see
+      # .env.example) once a real LiveKit Cloud project exists.
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      # Pinned to the same absolute path the volume below mounts — see
+      # docker-compose.prod.yml's matching line for why this is written
+      # explicitly rather than left to server/routes.mjs's own
+      # DEFAULT_MEDIA_STORAGE_ROOT fallback.
+      MEDIA_STORAGE_ROOT: /app/data/media
+      # Same `:?`-required discipline as SESSION_SECRET above, and the same
+      # real bug that discipline exists to prevent: without a persisted
+      # value, routes.mjs's own FilesystemStorage minted a fresh random
+      # signing secret every process start, silently invalidating every
+      # outstanding signed media URL on the next `docker compose up`/restart
+      # — found by this project's own post-tier audit.
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
+    ports:
+      # Loopback-only, not "8123:8123" (which publishes on every host
+      # interface). Physical devices reach this exactly the same way they
+      # always have — adb reverse tcp:8123 tcp:8123 targets host loopback,
+      # never a LAN IP (see tools/docker-dev/README.md) — so this closes
+      # real LAN/WiFi exposure with no change to the actual testing flow.
+      - "127.0.0.1:8123:8123"
+    volumes:
+      # Named volume, matching `db`'s own `olive-dev-pgdata` pattern below —
+      # without this, every uploaded photo/video a tester attaches during a
+      # demo is gone the next time this container gets recreated (`--build`
+      # is this file's own documented normal invocation, top of file), which
+      # is a worse tester experience than losing a fixture DB row, not a
+      # better one. See docker-compose.prod.yml's matching comment for the
+      # full data-loss reasoning this mirrors.
+      - olive-dev-media:/app/data/media
+    command: ["node", "server/index.mjs"]
+    restart: unless-stopped
+    healthcheck:
+      # server/index.mjs's own GET /healthz — a real SELECT 1 against the DB
+      # pool, not just "the process exists" (see that file's own comment on
+      # why: "healthy" only means something if it proves the server can
+      # actually reach Postgres). No curl/wget in node:22-slim; Node 22+
+      # ships a native fetch, so this needs nothing extra installed in the
+      # image. start_period gives the process time to open its DB pool on
+      # first boot before failures start counting against retries.
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  callroom:
+    build: .
+    # No dependency on `server`/`migrate` — the room-coordination server
+    # only calls into packages/session-runtime directly (see its own file
+    # header), it never talks to Postgres or the main server.
+    environment:
+      # MASTERFILE §16.2 #6 REVERSED AGAIN — local-call-room-server.mjs
+      # itself now exits loudly at boot (see its own header) if any of
+      # these three is unset; unlike `server` above, this container's
+      # entire job is minting real call tokens, so there is no sense in
+      # which it can usefully run without them. tools/jitsi-selfhost/'s own
+      # README documents the now-superseded self-hosted LAN-address path
+      # this replaces, left in place per §21.7 rather than deleted.
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      # Required inside a container: local-call-room-server.mjs now binds
+      # 127.0.0.1 by default (see its own header), which would make it
+      # unreachable through Docker's own port-forwarding — the forwarder
+      # connects to the container's bridge-network address, not its
+      # loopback. The real security boundary here is the host-side port
+      # mapping below ("127.0.0.1:8787:8787"), not this bind address.
+      CALLROOM_BIND_HOST: "0.0.0.0"
+    ports:
+      # Loopback-only — see the identical note on `server` above. This
+      # endpoint hands out a real Jitsi room name + identity to anyone who
+      # asks who=dad|ivy with zero auth of its own (that gap is separate
+      # and still real — see local-call-room-server.mjs's own header) but
+      # publishing on every interface meant anyone on the same WiFi could
+      # reach it too; loopback-only plus the same adb-reverse pattern
+      # closes that half.
+      - "127.0.0.1:8787:8787"
+    command: ["node", "tools/local-call-room-server.mjs"]
+    restart: unless-stopped
+    healthcheck:
+      # local-call-room-server.mjs's own GET /healthz — this process never
+      # touches Postgres, so unlike `server` above there's no dependency
+      # worth probing; the HTTP listener answering IS the whole contract.
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  scheduler:
+    build: .
+    # OPT-IN ONLY — gated behind the `scheduler` Compose profile, so a plain
+    # `docker compose -f docker-compose.dev.yml up -d --build` (this file's
+    # own documented default invocation, above) never starts it. A
+    # background sweep mutating live `delivery_intent` rows on the exact
+    # database someone is mid-debug against is a real footgun, not a
+    # hypothetical one — see scaffold/docs/scheduler.md for the full
+    # reasoning and tools/scheduler.mjs's own header for what the job does.
+    # Turn it on explicitly:
+    #   docker compose -f docker-compose.dev.yml --profile scheduler up -d --build
+    profiles: ["scheduler"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      # Same app_owner connection every other service here uses — see
+      # `migrate`'s own comment on why app_owner, not postgres.
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+      # Real nightly cadence by default (03:00 UTC). Override for a tighter
+      # loop while testing the scheduler itself — see
+      # scaffold/docs/scheduler.md.
+      SCHEDULER_HOUR_UTC: "${SCHEDULER_HOUR_UTC:-3}"
+      # Same real bug docker-compose.prod.yml's own identical comment
+      # explains: without this, `reap-media` silently deletes real rows
+      # while its own `FilesystemStorage` writes/deletes against this
+      # container's own disconnected filesystem, never the volume below —
+      # found by this project's own post-tier audit, not a hypothetical.
+      MEDIA_STORAGE_ROOT: /app/data/media
+    volumes:
+      - olive-dev-media:/app/data/media
+    command: ["node", "tools/scheduler.mjs", "loop"]
+    restart: unless-stopped
+
+volumes:
+  olive-dev-pgdata:
+  olive-dev-media:

@@ -131,4 +131,53 @@ void main() {
       month: 3, authoritative: '2019-03-14', age: 7, now: fixedNow, onComplete: (_) {}));
     expect(find.byIcon(Icons.settings), findsNothing);
   });
+
+  testWidgets('a day cell declares the app-wide 48dp tap-target floor', (tester) async {
+    // §8.4 discipline: the day cell's own declared minimum now matches the
+    // rest of the app (48, not 40). On a 7-column GridView.count this floor
+    // can only raise a cell already at/above 48 — SliverGridRegularTileLayout
+    // hands every cell a *tight* BoxConstraints, so the grid's own per-cell
+    // math (not this constraint) is what actually determines rendered size.
+    // See the comment on _DayCell in birthday_day.dart for the full story.
+    await pump(tester, BirthdayDayScreen(
+      month: 3, authoritative: '2019-03-14', age: 7, now: fixedNow, onComplete: (_) {}));
+    final cell = tester.widget<Container>(find.descendant(
+      of: find.ancestor(of: find.text('14'), matching: find.byType(InkWell)),
+      matching: find.byType(Container)).first);
+    expect(cell.constraints, const BoxConstraints(minWidth: 48, minHeight: 48));
+  });
+
+  group('responsive — required audit viewports', () {
+    // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and a
+    // desktop/tablet-scale width. Checked both on the seven-column day grid
+    // and on the year-check question (the two distinct layouts this screen
+    // renders).
+    const viewports = {
+      'Fold5 cover (344x882)': Size(344, 882),
+      'Fold5 main (673x841)': Size(673, 841),
+      'phone (390x844)': Size(390, 844),
+      'tablet/desktop (1200x800)': Size(1200, 800),
+    };
+
+    for (final entry in viewports.entries) {
+      testWidgets('day grid renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(MaterialApp(home: BirthdayDayScreen(
+          month: 3, authoritative: '2019-03-14', age: 7, now: fixedNow, onComplete: (_) {})));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('year-check question renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(MaterialApp(home: BirthdayDayScreen(
+          month: 3, authoritative: null, age: 7, now: fixedNow, onComplete: (_) {})));
+        await tester.tap(find.text('14'));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 }

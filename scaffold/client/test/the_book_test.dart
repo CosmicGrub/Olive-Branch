@@ -7,9 +7,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/the_book.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
+
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
 
 void main() {
   // Clipboard.setData goes over a real platform channel with no native side
@@ -87,6 +105,60 @@ void main() {
       await tester.tap(find.text('Copy text'));
       await tester.pumpAndSettle();
       expect(find.text('Copied'), findsOneWidget);
+    });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      final String label = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('the compiled book renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(TheBookScreen.demo(childName: 'Ivy')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('the export panel renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(TheBookScreen.demo(childName: 'Ivy')));
+        await tester.ensureVisible(find.text('Export as plain text'));
+        await tester.tap(find.text('Export as plain text'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('the too-few state renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const TheBookScreen(childName: 'Ivy')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // The compiled-book body is what's wrapped; the too-few empty state is
+    // already centered/minimal and left untouched. On a wide tablet/desktop
+    // viewport the single column is only ever capped to a comfortable
+    // reading width and centered, never split. The Fold5 cover and phone
+    // widths are completely untouched by this cap.
+    testWidgets('the cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (tester) async {
+      Future<void> pumpAt(Size size) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(TheBookScreen.demo(childName: 'Ivy')));
+        await tester.pump();
+      }
+
+      await pumpAt(const Size(1100, 900));
+      expect(tester.getSize(find.byType(SingleChildScrollView)).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 820)); // Fold5 cover
+      expect(tester.getSize(find.byType(SingleChildScrollView)).width, 344);
+
+      await pumpAt(const Size(390, 844)); // standard phone
+      expect(tester.getSize(find.byType(SingleChildScrollView)).width, 390);
     });
   });
 }

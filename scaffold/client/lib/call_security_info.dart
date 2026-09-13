@@ -147,13 +147,14 @@ class _CallSecurityInfoScreenState extends State<CallSecurityInfoScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('How this call is kept private',
           style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           'Every video call runs in its own private room, verified on the wire. '
           'This is a local demonstration of those checks — the real checks run '
           'server-side on every call, not just here.',
-          style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 18),
+          style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 16),
         for (final c in _checks) _CheckTile(c),
         const SizedBox(height: 12),
         SizedBox(width: double.infinity, height: 48,
@@ -171,17 +172,21 @@ class _CheckTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
-    child: Padding(padding: const EdgeInsets.all(14),
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(padding: const EdgeInsets.all(16),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Pass/fail red-green is left as a hardcoded, theme-independent
+        // signal on purpose: this is a security checklist, and a passed/
+        // failed indicator needs to read the same way regardless of the
+        // app's purple seed colour.
         Icon(check.passed ? Icons.check_circle : Icons.error,
           color: check.passed ? Colors.green.shade600 : Colors.red.shade600),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${check.id} · ${check.title}',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          Text(check.detail, style: const TextStyle(fontSize: 13)),
+          Text(check.detail, style: Theme.of(context).textTheme.bodyMedium),
         ])),
       ])),
   );

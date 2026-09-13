@@ -1,6 +1,7 @@
-// OLIVE BRANCH — the Year Book. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §2.10, §9.8.2.
-// Renders MARKUP screen 'yearbook': "A year of her, preserved."
+// OLIVE BRANCH — the Year Book. No longer UNVERIFIED — verified by CI (a Flutter toolchain now
+// runs for real in tools/verify.sh's automated pipeline — CHANGELOG
+// v0.49.61). MASTERFILE §2.10, §9.8.2. Renders MARKUP screen 'yearbook':
+// "A year of her, preserved."
 //
 // This screen is a thin UI over `compileYearBook()` (archive_models.dart, a
 // 1:1 port of packages/archive/src/archive.ts) — every number on it, printable
@@ -19,6 +20,7 @@
 import 'package:flutter/material.dart';
 
 import 'archive_models.dart';
+import 'form_factors.dart' as ff;
 
 // ==================================================================== demo =
 // In-memory only — see api_client.dart: there is no /v1/children/:id/yearbook
@@ -111,48 +113,76 @@ class _YearBookScreenState extends State<YearBookScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Year book')),
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered, never split —
+      // the wrapper goes OUTSIDE the AnimatedSwitcher below, which keeps its
+      // existing transition completely untouched. Same real columnsAt()
+      // gate every other width decision in the app uses.
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: <Widget>[
-            const Text('A year of her, preserved.',
-                style: TextStyle(fontSize: 13, color: Colors.black54)),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: <Widget>[
-                for (final int y in _years)
-                  ChoiceChip(
-                    label: Text('$y'),
-                    selected: _selectedYear == y,
-                    onSelected: (_) => setState(() => _selectedYear = y),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: Column(
-                key: ValueKey<int>(_selectedYear),
-                crossAxisAlignment: CrossAxisAlignment.start,
+        child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+          final double textScale = MediaQuery.textScalerOf(context).scale(1);
+          final bool capWidth = ff.columnsAt(
+              ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+          final Widget content = ListView(
+            padding: const EdgeInsets.all(16),
+            children: <Widget>[
+              Text('A year of her, preserved.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 4),
+              // Real, computed once from the already-correct per-year counts
+              // this screen already has (no new data, no backend call) —
+              // guardian-facing only (this screen has no child call site, so
+              // P2's "no count shown to the CHILD" doesn't apply here; this
+              // is the archive's own custodian seeing the archive's own
+              // size, the same posture court_export.dart already takes with
+              // its own guardian-facing counts).
+              Text(
+                "Her archive so far: ${_years.fold<int>(0, (int n, int y) => n + compileYearBook(_all, 'ivy', y).artifactCount)} pieces across ${_years.length} year${_years.length == 1 ? '' : 's'}.",
+                style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
                 children: <Widget>[
-                  _CoverCard(book: book, childName: _childName),
-                  const SizedBox(height: 16),
-                  if (book.places.isNotEmpty) ...<Widget>[
-                    _PlacesCard(book.places),
-                    const SizedBox(height: 16),
-                  ],
-                  for (final YearBookSection section in book.sections) ...<Widget>[
-                    _SectionCard(section: section, artifacts: _all),
-                    const SizedBox(height: 12),
-                  ],
-                  const SizedBox(height: 4),
-                  _PrintableCard(book: book, scheme: scheme),
+                  for (final int y in _years)
+                    ChoiceChip(
+                      label: Text('$y'),
+                      selected: _selectedYear == y,
+                      onSelected: (_) => setState(() => _selectedYear = y),
+                    ),
                 ],
               ),
-            ),
-          ],
-        ),
+              const SizedBox(height: 16),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Column(
+                  key: ValueKey<int>(_selectedYear),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _CoverCard(book: book, childName: _childName),
+                    const SizedBox(height: 16),
+                    if (book.places.isNotEmpty) ...<Widget>[
+                      _PlacesCard(book.places),
+                      const SizedBox(height: 16),
+                    ],
+                    for (final YearBookSection section in book.sections) ...<Widget>[
+                      _SectionCard(section: section, artifacts: _all),
+                      const SizedBox(height: 12),
+                    ],
+                    const SizedBox(height: 4),
+                    _PrintableCard(book: book, scheme: scheme),
+                  ],
+                ),
+              ),
+            ],
+          );
+          return capWidth
+              ? Center(
+                  child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                      child: content))
+              : content;
+        }),
       ),
     );
   }
@@ -166,23 +196,27 @@ class _CoverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           begin: Alignment.topLeft, end: Alignment.bottomRight,
           colors: <Color>[scheme.primaryContainer, scheme.tertiaryContainer],
         ),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        // A deliberate, oversized cover-hero numeral — the same one-off
+        // treatment §8.2.5's sleeps-countdown documents, not a candidate for
+        // a textTheme role.
         Text('${book.year}', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800)),
         const SizedBox(height: 4),
-        Text("$childName's year", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
+        Text("$childName's year", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 12),
         Text('${book.artifactCount} pieces preserved',
-            style: TextStyle(fontSize: 13, color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
+            style: textTheme.bodySmall?.copyWith(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
       ]),
     );
   }
@@ -193,26 +227,30 @@ class _PlacesCard extends StatelessWidget {
   final List<YearBookPlace> places;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            Text('WHERE THIS YEAR HAPPENED',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6,
-                    color: Theme.of(context).colorScheme.primary)),
-            const SizedBox(height: 8),
-            for (final YearBookPlace p in places)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(children: <Widget>[
-                  Expanded(child: Text(p.zone, style: const TextStyle(fontSize: 13.5))),
-                  Text('${p.days} day${p.days == 1 ? '' : 's'} captured',
-                      style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
-                ]),
-              ),
-          ]),
-        ),
-      );
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text('WHERE THIS YEAR HAPPENED',
+              style: textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700, letterSpacing: 0.6, color: scheme.primary)),
+          const SizedBox(height: 8),
+          for (final YearBookPlace p in places)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: <Widget>[
+                Expanded(child: Text(p.zone, style: textTheme.bodyMedium)),
+                Text('${p.days} day${p.days == 1 ? '' : 's'} captured',
+                    style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              ]),
+            ),
+        ]),
+      ),
+    );
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -225,16 +263,19 @@ class _SectionCard extends StatelessWidget {
     final Map<String, Artifact> byId = <String, Artifact>{
       for (final Artifact a in artifacts) a.id: a,
     };
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Row(children: <Widget>[
             Expanded(child: Text(section.title,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-            Text('${section.artifactIds.length}', style: const TextStyle(color: Colors.black45)),
+                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
+            Text('${section.artifactIds.length}',
+                style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -264,7 +305,7 @@ class _PieceChip extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
           Icon(_iconForKind(artifact.kind), size: 22),
           const SizedBox(height: 4),
-          Text(_shortDate(artifact.capturedAt), style: const TextStyle(fontSize: 10)),
+          Text(_shortDate(artifact.capturedAt), style: Theme.of(context).textTheme.labelSmall),
         ]),
       );
 }
@@ -276,9 +317,10 @@ class _PrintableCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final TextTheme textTheme = Theme.of(context).textTheme;
     if (book.printable) {
       return Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
             color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
@@ -286,9 +328,9 @@ class _PrintableCard extends StatelessWidget {
             const Icon(Icons.auto_stories_outlined),
             const SizedBox(width: 8),
             Expanded(child: Text('Ready to print — ${book.artifactCount} pieces make a proper Year Book',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5))),
+                style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -302,7 +344,7 @@ class _PrintableCard extends StatelessWidget {
       );
     }
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
@@ -313,7 +355,7 @@ class _PrintableCard extends StatelessWidget {
               'Not a book yet — just ${book.artifactCount} piece${book.artifactCount == 1 ? '' : 's'} so far. '
               'Under twelve, this would print as a slideshow, not a Year Book, so we say so rather than '
               'offer to print one.',
-              style: const TextStyle(fontSize: 12.5)),
+              style: textTheme.bodySmall),
         ),
       ]),
     );

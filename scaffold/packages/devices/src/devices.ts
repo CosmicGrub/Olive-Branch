@@ -166,6 +166,42 @@ export function stylusRequired(): false { return false; }
 // ============================================ §8.11.4 delivery channels =====
 /**
  * The finding.
+ *
+ * This is the STATIC half of §8.11.4: given only a channel, is push even
+ * possible, and what does the guardian get told. The DYNAMIC half — given a
+ * channel PLUS real-time state (is the app foregrounded, is a socket held,
+ * how long has an item waited), which route fires right now — lives in
+ * `packages/transport/src/channels.ts`'s `route()`/`reachability()`. That
+ * file imports `Channel`/`CHANNELS`/`capability` from here rather than
+ * redeclaring them (fixed v0.49.11, after the redeclaration had silently
+ * drifted — `channels.ts`'s own header tells that story). This file is the
+ * one place a channel's push/fallback facts are decided; nowhere else
+ * should declare a second copy.
+ *
+ * Wired into real push dispatch as of v0.49.11 —
+ * `packages/transport/src/notify.ts`'s `notifyDevices()` now calls
+ * `admitDevice()` per device before attempting FCM/APNs, and skips the send
+ * (rather than firing it into a device that cannot receive it) when
+ * `!capability.push`. What is still NOT real: `device_token` only learns a
+ * device's precise channel (`android_play` vs `android_amazon` vs
+ * `android_bare`) if the CLIENT reports one, and no client code anywhere
+ * detects this today — `client/lib/push_channel.dart` only ever knows
+ * "ios" or "android," never which flavor of Android. Real, credential-free
+ * on-device APIs exist to detect it for real (`GoogleApiAvailability
+ * .isGooglePlayServicesAvailable()` for Play Services presence;
+ * `PackageManager.getInstallSourceInfo()`/`getInstallerPackageName()` for
+ * store attribution — `com.android.vending` for Play, `com.amazon.venezia`
+ * for the Amazon Appstore), and a real MethodChannel bridge for it would
+ * follow the exact precedent `KioskBridge.kt`/`WearSyncBridge.kt` already
+ * set. Scoped and explicitly declined this pass, for the same reason
+ * `LOCK_METHODS`/`childShellAllowed()` wiring was declined in the same
+ * gap-fill pass (see CHANGELOG v0.49.10's "Found, not fixed" note): every
+ * existing MethodChannel bridge in this repo is `UNVERIFIED (no Flutter
+ * toolchain)` by its own header, and writing a brand-new, uncompilable
+ * native bridge and calling channel detection "solved" would be exactly the
+ * fabrication this codebase's house rule forbids. Building it once would
+ * unblock BOTH this gap and `LOCK_METHODS`' — they are blocked on the
+ * identical missing piece.
  */
 export type Channel =
   | 'android_play'    // FCM

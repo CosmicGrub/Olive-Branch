@@ -1,0 +1,146 @@
+name: verify
+# Deliberately NOT `on: [push, pull_request]` -- that fires this whole
+# ~14-16 minute suite TWICE for every commit on an open PR branch (once per
+# event, same commit, identical result). Measured against this repo's own
+# history: 49 of 138 finished runs (35.5%) were exact push/pull_request
+# duplicates before this change. `push` is scoped to `main` so a feature
+# branch commit is verified exactly once, via `pull_request`; `main` still
+# gets its own real post-merge verification via `push`.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: olive }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PSQL_CMD: psql postgresql://postgres:postgres@localhost:5432/olive
+      PGBIN: /usr/lib/postgresql/16/bin
+      PORT: '5432'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22.22.2' }
+      # The Dart client is analysed and its widget invariants executed.
+      # verify.sh treats a missing toolchain as a gap, not a skip.
+      #
+      # 3.24.5 (this pin's original value) predates Color.withValues()/
+      # toARGB32() -- Flutter framework APIs this codebase actually uses
+      # (birthday_marked.dart, capture_gate.dart, colour_pick.dart,
+      # colouring_screen.dart), not just a pubspec SDK-constraint mismatch.
+      # `flutter analyze` failed outright and 52 widget tests failed as a
+      # result -- never caught before because this workflow never actually
+      # ran until it was moved to the true repo root. Pinned to 3.44.8,
+      # the exact version this whole project has actually been built and
+      # verified against locally all session.
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.44.8', channel: stable }
+      - run: flutter pub get
+        working-directory: scaffold/client
+      # Explicit pin, matching the Flutter pin's own discipline right above.
+      # tools/verify.sh's own Android gate (client/android/app/build.gradle
+      # .kts §5.20) genuinely runs -- confirmed via this repo's own CI logs
+      # ("android kotlin compile / wear os compile ... clean"), not the
+      # MISSING-TOOLCHAIN fallback its own condition implies when no SDK is
+      # present -- because ubuntu-latest runners ship a pre-installed
+      # Android SDK and set ANDROID_HOME/ANDROID_SDK_ROOT before any step
+      # runs. That pre-installed SDK's platform/build-tools versions are
+      # controlled entirely by GitHub's own runner-image rotation, not by
+      # this repo, and can drift silently whenever that image changes --
+      # the exact reproducibility gap the Flutter pin above exists to
+      # close, just for the other toolchain. compileSdk/targetSdk 36 is the
+      # real, current value app/build.gradle.kts's own maxOf() floor-guards
+      # resolve to under Flutter 3.44.8 (confirmed by reading that file and
+      # the pinned Flutter SDK's own FlutterExtension.kt directly); 36.0.0
+      # is the matching build-tools release.
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      # tesseract is a REAL dependency of the homework suite, not a nicety —
+      # the OCR assertions shell out to it. imagemagick is a real dependency
+      # too: make-fixtures.sh shells out to `magick`/`convert` to generate the
+      # OCR test images fresh every run (nothing here is a committed binary) —
+      # without it the suite silently reports 0 assertions instead of failing
+      # loudly, which is exactly the false-green this project's own verify.sh
+      # header says it was written to stop happening.
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client tesseract-ocr imagemagick
+      # Pillow is a REAL dependency too: packages/homework/test/gen_ocr_fixture.py
+      # generates the real-OCR-quality worksheet images capture-route.test.mjs
+      # actually recognizes text from, and it imports PIL directly. Without it
+      # the suite's own honest toolchain check (group P) fails loudly with
+      # "0 passed, 1 failed" -- caught here for the first time because this
+      # is the first CI run this branch's suite ever actually executed on
+      # (a GitHub Actions billing block had silently swallowed every earlier
+      # run before it could reach this step at all). Installed via apt, not
+      # `pip install` -- this runner's system Python is PEP-668 "externally
+      # managed" (Ubuntu 24.04), so a bare pip install fails outright;
+      # confirmed directly against a matching Ubuntu 24.04 environment
+      # before landing this line, not assumed.
+      - run: sudo apt-get install -y python3-pil
+      # livekit-server is a real dependency of the live suite, not optional.
+      # verify.sh treats a missing binary as a gap, not a skip.
+      - name: fetch livekit-server
+        run: |
+          curl -sL -o /tmp/lk.tar.gz \
+            https://github.com/livekit/livekit/releases/download/v1.8.0/livekit_1.8.0_linux_amd64.tar.gz
+          tar xzf /tmp/lk.tar.gz -C /tmp
+          printf 'port: 7880\nrtc:\n  tcp_port: 7881\n  port_range_start: 50000\n  port_range_end: 50020\n  use_external_ip: false\nkeys:\n  devkey: devsecret_at_least_32_chars_long_xx\nlogging:\n  level: warn\n' > /tmp/lk.yaml
+      - run: npm ci || npm install
+        working-directory: scaffold
+
+      # db/migrations/0022_backup_reader_role.sql references BOTH app_owner
+      # (`ALTER DEFAULT PRIVILEGES FOR ROLE app_owner ...`) and backup_reader
+      # by name, and Postgres validates a DDL statement's role names exist
+      # regardless of who runs it -- this M1-M4 check connects as the bare
+      # `postgres` superuser (PSQL_CMD above), which has never needed either
+      # role to exist for any of the first 21 migrations, none of which
+      # reference a role by name. 0022 is the first one that does. The real
+      # Docker dev/prod flow creates both roles via
+      # tools/docker-dev/init-db.sql (mounted as docker-entrypoint-initdb.d,
+      # run once against a truly empty volume); tools/verify.sh's own later
+      # steps create app_owner again for ITS separate scratch database. This
+      # workflow's bare Postgres SERVICE container (above) has no equivalent
+      # bootstrap for either, and this M1-M4 check runs before verify.sh ever
+      # gets a chance to provision anything -- confirmed live in CI, in two
+      # stages (first "role \"backup_reader\" does not exist", then, once
+      # that was fixed, "role \"app_owner\" does not exist" one statement
+      # later in the same migration). Both created here, mirroring
+      # init-db.sql's own real role definitions, before any migration runs.
+      - run: |
+          psql postgresql://postgres:postgres@localhost:5432/olive -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_owner') THEN
+              CREATE ROLE app_owner NOSUPERUSER NOBYPASSRLS LOGIN PASSWORD 'app_owner';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_reader') THEN
+              CREATE ROLE backup_reader NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS
+                LOGIN PASSWORD 'backup_reader';
+            END IF;
+          END
+          $$;
+          SQL
+
+      # M1-M4. Runs twice: the second run must be a clean no-op, which is the
+      # idempotency property under test rather than an assumption.
+      - run: node tools/migrate.mjs
+        working-directory: scaffold
+      - run: node tools/migrate.mjs | grep -q 'up to date'
+        working-directory: scaffold
+
+      # Computes its own totals, gates on MARKUP correspondence, and fails if
+      # any suite reports zero assertions.
+      - run: bash tools/verify.sh
+        working-directory: scaffold
+
+      # A monitoring view nobody queries is a comment.
+      - run: node tools/healthcheck.mjs
+        working-directory: scaffold

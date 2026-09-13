@@ -88,12 +88,21 @@ check('C4b', 'every declared screen version exists in the CHANGELOG',
   unknown.join(',') || 'none', 'none');
 
 // Every CHANGELOG version from 0.8.0 onward (when MARKUP became visual) must
-// appear somewhere in MARKUP — either as a screen version or in the ledger.
+// appear somewhere in MARKUP — either as a screen's data-since/data-amended,
+// or as its own version-history table row (<tr><td>VERSION</td>). A plain
+// `MK.includes(v)` substring search over the whole document used to stand in
+// for this and was a false-positive machine: a version number embedded in
+// another entry's own PROSE (e.g. "...9-tile grid since v0.44.0...") reads
+// as "represented" to a substring search without v0.44.0 ever appearing in
+// its own screen attribute or table row. Structural, not textual — the same
+// class of fix C4a/C4b already apply to data-since/data-amended.
+const versionRowVersions = [...MK.matchAll(/<tr><td>([\d.]+)<\/td>/g)].map(m => m[1]);
+const represented = new Set([...declaredVersions, ...versionRowVersions]);
 const visualEra = clVersions.filter(v => {
   const [a, b] = v.split('.').map(Number);
   return a > 0 || b >= 8;
 });
-const unrepresented = visualEra.filter(v => !MK.includes(v));
+const unrepresented = visualEra.filter(v => !represented.has(v));
 check('C4c', 'every visual-era CHANGELOG version appears in MARKUP',
   unrepresented.join(',') || 'none', 'none');
 
@@ -231,14 +240,29 @@ if (!DEMO) {
 // ═══════════════════════════════════════════════════════════════════════════
 {
   const pkgJson = JSON.parse(R('/scaffold/package.json'));
-  const buildScript = pkgJson.scripts.build;
-  const built = [...buildScript.matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_]+)\.ts/g)]
+  // v0.49.67: the esbuild entry list moved out of package.json's build
+  // script (which had outgrown Windows cmd.exe's command-line limit) into
+  // tools/build.mjs, one row per entry. Scan both, so this list is right
+  // whichever file carries the entries — without this, the build script
+  // alone matched nothing and E2/F1-F4 passed VACUOUSLY while E5 flagged
+  // every node-only declaration as stale. Found by running this checker
+  // against the moved list, not assumed.
+  const buildScript = (pkgJson.scripts.build + '\n' + R('/scaffold/tools/build.mjs'));
+  // File-name group allows a hyphen (v0.49.57 fix) — it used to be
+  // [a-z0-9_]+ only, which silently failed to match ANY hyphenated .ts
+  // filename (e.g. capture-route.ts, livekit-token.ts) at every one of
+  // this file's four occurrences of this pattern, so those modules were
+  // invisible to E2/E5/F1-F4 rather than flagged. Found while adding
+  // livekit-token.ts's own nodeOnly declaration (§16.2 #6 REVERSED AGAIN)
+  // got rejected by E5 as "stale" — the module the declaration named was
+  // real, but this regex couldn't see it built at all.
+  const built = [...buildScript.matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_-]+)\.ts/g)]
     .map(m => `${m[1]}/${m[2]}`);
   const uniqueBuilt = [...new Set(built)].sort();
 
   const bridge = R('/scaffold/demo/src/play.ts');
   const imported = new Set(
-    [...bridge.matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_]+)\.ts/g)]
+    [...bridge.matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_-]+)\.ts/g)]
       .map(m => `${m[1]}/${m[2]}`));
 
   const manifestMatch = DEMO.match(/"nodeOnly":\s*(\[[\s\S]*?\])/);
@@ -252,8 +276,16 @@ if (!DEMO) {
   check('E2', 'every built module is wired into the demo or declared node-only',
     unaccounted.length ? `unaccounted: ${unaccounted.join(', ')}` : 'none', 'none');
 
+  // Originally node:-builtin-only (http, crypto) because every prior
+  // node-only module's real reason was a builtin. db/pool is the first
+  // exception: its actual reason is the `pg` npm package, a real dependency
+  // just as un-demoable in a browser as any builtin, so a bare package name
+  // (lowercase, no spaces -- the shape of an npm package specifier) is
+  // accepted too. Either way this stays a "did someone actually name
+  // something real" check, not a rubber stamp -- E7 below still verifies
+  // the named dependency is genuinely imported by that module's source.
   check('E3', 'every node-only declaration names the dependency',
-    nodeOnly.every(n => typeof n.dep === 'string' && /^node:/.test(n.dep)), true);
+    nodeOnly.every(n => typeof n.dep === 'string' && /^(node:[\w/]+|[a-z][\w.-]*)$/.test(n.dep)), true);
 
   // A module cannot be both wired and excused — that would let a real regression
   // hide behind a stale declaration.
@@ -305,8 +337,8 @@ if (!DEMO) {
   };
   const allSrc = (() => {
     const pkgJson = JSON.parse(R('/scaffold/package.json'));
-    const mods = [...new Set([...pkgJson.scripts.build
-      .matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_]+)\.ts/g)]
+    const mods = [...new Set([...(pkgJson.scripts.build + '\n' + R('/scaffold/tools/build.mjs'))
+      .matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_-]+)\.ts/g)]
       .map(m => `${m[1]}|${m[2]}`))];
     return mods.map(m => srcOf(...m.split('|'))).join('\n');
   })();
@@ -367,8 +399,8 @@ if (!DEMO) {
   const behaviourless = [];
   {
     const pkgJson = JSON.parse(R('/scaffold/package.json'));
-    for (const m of [...new Set([...pkgJson.scripts.build
-      .matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_]+)\.ts/g)]
+    for (const m of [...new Set([...(pkgJson.scripts.build + '\n' + R('/scaffold/tools/build.mjs'))
+      .matchAll(/packages\/([a-z0-9-]+)\/src\/([a-z0-9_-]+)\.ts/g)]
       .map(x => `${x[1]}|${x[2]}`))]) {
       const [pkg, file] = m.split('|');
       const src = srcOf(pkg, file);

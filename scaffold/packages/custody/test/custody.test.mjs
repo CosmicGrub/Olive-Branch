@@ -3,7 +3,7 @@
  */
 import { DateTime } from 'luxon';
 import { patternSideOn, holidayOn, sideOn, blocks, exchanges,
-  sleepsUntilSideChange, childCalendarLabel } from '../src/schedule.mjs';
+  sleepsUntilSideChange, childCalendarLabel, freeGuardianNow } from '../src/schedule.mjs';
 
 let pass=0,fail=0;const rows=[];
 const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
@@ -176,6 +176,72 @@ const order=(o={})=>({pattern:'2-2-3',orderTz:NYC,anchorLocalDate:'2026-01-05',
   check('F labels','no legal vocabulary reaches the child view',
     /custody|possession|party|petitioner|respondent/i.test(
       bs.map(b=>childCalendarLabel(b,names)).join(' ')), 'false');
+}
+
+// G · FREE GUARDIAN NOW — presence design spec §3, added alongside
+// server/routes.mjs's GET .../presence. A pure function (no DB) — the
+// on-duty exclusion itself is the CALLER's job (that guardian is simply
+// never in `candidates`); this group only proves the availability-window
+// resolution and tie-break, per this function's own doc comment.
+{
+  const dad = { userId: 'dad-1', name: 'Dad' };
+  const mom = { userId: 'mom-1', name: 'Mom' };
+  const w = (guardianId, guardianName, weekday, startLocal, endLocal) =>
+    ({ guardianId, guardianName, weekday, startLocal, endLocal });
+
+  check('G free-now', 'a single active window returns that guardian',
+    freeGuardianNow([dad], [w('dad-1', 'Dad', 1, '17:00', '20:00')], 1, '18:00')
+      ?.guardianId, 'dad-1');
+  check('G free-now', 'a window that has not started yet is not active',
+    freeGuardianNow([dad], [w('dad-1', 'Dad', 1, '17:00', '20:00')], 1, '16:59'), 'null');
+  check('G free-now', 'a window that has already ended is not active',
+    freeGuardianNow([dad], [w('dad-1', 'Dad', 1, '17:00', '20:00')], 1, '20:00'), 'null');
+  check('G free-now', 'start is inclusive',
+    freeGuardianNow([dad], [w('dad-1', 'Dad', 1, '17:00', '20:00')], 1, '17:00')
+      ?.guardianId, 'dad-1');
+  check('G free-now', 'a window on a different weekday is ignored',
+    freeGuardianNow([dad], [w('dad-1', 'Dad', 2, '17:00', '20:00')], 1, '18:00'), 'null');
+  check('G free-now', 'no candidates means no one is ever free, even with a matching window',
+    freeGuardianNow([], [w('dad-1', 'Dad', 1, '17:00', '20:00')], 1, '18:00'), 'null');
+  check('G free-now', 'a window belonging to a guardian NOT in candidates is ignored — '
+    + "this is how the caller's on-duty exclusion actually takes effect",
+    freeGuardianNow([mom], [w('dad-1', 'Dad', 1, '17:00', '20:00')], 1, '18:00'), 'null');
+  check('G free-now', 'no windows at all means no one is free',
+    freeGuardianNow([dad, mom], [], 1, '18:00'), 'null');
+
+  // Tie-break — "no seniority, no primary/secondary, no custody weighting"
+  // (MASTERFILE §5.27.4), only "then simply first" (earliest start) applies.
+  check('G free-now', 'two guardians both free — the EARLIER start wins, not registration '
+    + 'order or alphabetical name',
+    freeGuardianNow([dad, mom],
+      [w('mom-1', 'Mom', 1, '17:30', '20:00'), w('dad-1', 'Dad', 1, '17:00', '20:00')],
+      1, '18:00')?.guardianId, 'dad-1');
+  check('G free-now', 'an exact-tie start time falls back to guardianId, purely for '
+    + 'determinism — the comment beside this code says so explicitly, not a product rule',
+    freeGuardianNow([dad, mom],
+      [w('mom-1', 'Mom', 1, '17:00', '20:00'), w('dad-1', 'Dad', 1, '17:00', '20:00')],
+      1, '18:00')?.guardianId, 'dad-1');
+
+  // Overnight windows — real bug found by this feature's own adversarial
+  // review before shipping: the first draft's weekday pre-filter defeated
+  // isWindowActiveNow()'s own wrap-aware branch the moment local time
+  // crossed midnight into the window's second calendar day. Not reachable
+  // via real Postgres data today (guardian_availability_window's own
+  // CHECK (end_local > start_local) forbids storing such a row at all —
+  // see isWindowActiveNow()'s comment) but exercised directly here as a
+  // pure-function proof that the logic itself is actually correct, not
+  // merely untested.
+  check('G free-now', "an overnight window (22:00-06:00, dated yesterday) is still active "
+    + 'after midnight, the wrap-around case', freeGuardianNow([dad],
+      [w('dad-1', 'Dad', 0, '22:00', '06:00')], /* nowWeekday */ 1, '03:00')
+      ?.guardianId, 'dad-1');
+  check('G free-now', 'the same overnight window is correctly inactive once its post-'
+    + 'midnight half has also ended', freeGuardianNow([dad],
+      [w('dad-1', 'Dad', 0, '22:00', '06:00')], 1, '06:00'), 'null');
+  check('G free-now', "a guardian's yesterday-dated ORDINARY (non-wrap) window must NOT "
+    + 'bleed into today at the same clock time — the exact false-positive this fix had to '
+    + 'avoid while adding the wrap-around case above',
+    freeGuardianNow([dad], [w('dad-1', 'Dad', 0, '08:00', '09:00')], 1, '08:30'), 'null');
 }
 
 let g='';

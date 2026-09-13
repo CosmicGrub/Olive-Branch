@@ -1,5 +1,10 @@
 /**
- * MASTERFILE §20.5 — the global sweep.
+ * The global sweep. (Not §20.5 — this module's own header cited that section
+ * for years; a 2026-08-24 audit found §20.5 is actually "Recommended Phase 0
+ * exit order," an unrelated section. No real MASTERFILE section documents
+ * this design decision; corrected here rather than propagated further —
+ * see CHANGELOG for the pass that fixed it, alongside wiring this module
+ * into a real production caller for the first time.)
  *
  * Twenty-three separate forbidden-field lists had accumulated across the
  * codebase, one per module, each written when that module was built. Every one of
@@ -38,7 +43,11 @@ export const GLOBAL_CHILD_FORBIDDEN = [
   'last_seen', 'inactive', 'absent', 'daysago', 'days_ago',
   // adult machinery
   'expenses', 'courtexport', 'court_export', 'messagelog', 'message_log',
-  'carenote', 'care_note', 'custody', 'litigation', 'invoice', 'balance',
+  'carenote', 'care_note', 'custody', 'litigation', 'invoice',
+  // 'balance' lives in the P6 financial group below, not here — a real,
+  // harmless duplicate (Set-deduped at runtime either way) found and fixed
+  // by this package's own first test file, packages/globalaudit/test/
+  // globalaudit.test.mjs, which asserts the list carries no duplicates.
   // her own private things
   'journal', 'diary', 'privatenote', 'private_note', 'therapistnote',
   'therapist_note',

@@ -54,8 +54,115 @@ const why = (d) => d.allow ? 'allow' : d.reason;
     why(can('expense.view', [edge()], CHILD_A, NOW, 'child')), 'P6_child_financial');
   check('H2 P6', 'child cannot create expenses',
     why(can('expense.create', [edge()], CHILD_A, NOW, 'child')), 'P6_child_financial');
+  // expense.resolve (accept/dispute/reimburse) -- added alongside the real
+  // expense backend; P6's own startsWith('expense.') check already covers
+  // any new expense.* action without modification, but this is proven here
+  // rather than assumed.
+  check('H2 P6', 'child cannot resolve expenses either',
+    why(can('expense.resolve', [edge()], CHILD_A, NOW, 'child')), 'P6_child_financial');
   check('H2 P6', 'guardian still can',
     can('expense.view', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  check('H2 P6', 'guardian can resolve',
+    can('expense.resolve', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  // §17.3 observer -- expense.resolve is a real decision, not a read; an
+  // observer-only guardian must be refused the same way expense.create
+  // already is.
+  check('H2 P6', 'an observer-only guardian cannot resolve an expense',
+    why(can('expense.resolve', [edge({ observerOnly: true })], CHILD_A, NOW, 'guardian')),
+    'observer_readonly');
+  // coordinator holds expense.view (read-only, MASTERFILE's own "Read-only
+  // across... the expense ledger") but never expense.resolve -- a real
+  // decision belongs to a guardian party to it, not a court-appointed reader.
+  check('H2 P6', 'a coordinator cannot resolve an expense -- read-only role',
+    why(can('expense.resolve', [edge({ role: 'coordinator' })], CHILD_A, NOW, 'coordinator')),
+    'role_lacks_capability');
+}
+
+// ---------------------------------------------------------------------------
+// H2b -- emergency_card.edit, added alongside the real medications/
+// emergency-card backend. Not P6-blocked (this is medical, not financial)
+// but guardian-only to write: MASTERFILE's own "sitter role readable"
+// carve-out (§7.7/§9.6.3) is read-only, never write.
+// ---------------------------------------------------------------------------
+{
+  check('H2b medical', 'guardian can edit the emergency card',
+    can('emergency_card.edit', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  check('H2b medical', 'a sitter can VIEW the emergency card -- the real, narrow '
+    + 'read carve-out this role exists for',
+    can('emergency_card.view', [edge({ role: 'sitter' })], CHILD_A, NOW, 'sitter').allow, 'true');
+  check('H2b medical', 'a sitter cannot EDIT the emergency card -- read-only, never write',
+    why(can('emergency_card.edit', [edge({ role: 'sitter' })], CHILD_A, NOW, 'sitter')),
+    'role_lacks_capability');
+  check('H2b medical', 'a step_parent can VIEW medications but cannot LOG a dose -- '
+    + 'a real, pre-existing ROLE_CAPS distinction, not new to this pass',
+    why(can('medication.log', [edge({ role: 'step_parent' })], CHILD_A, NOW, 'step_parent')),
+    'role_lacks_capability');
+  // §17.3 observer -- editing the emergency card is a real write.
+  check('H2b medical', 'an observer-only guardian cannot edit the emergency card',
+    why(can('emergency_card.edit', [edge({ observerOnly: true })], CHILD_A, NOW, 'guardian')),
+    'observer_readonly');
+}
+
+// ---------------------------------------------------------------------------
+// H2c -- care_note.view/write, added alongside the real care_note backend.
+// Deliberately excludes coordinator: MASTERFILE's own "a care note is
+// outside the court-tier log" (care_note.dart's file header) means a
+// coordinator must never see one, unlike medication.view/emergency_card
+// .view which every court-tier role legitimately holds.
+// ---------------------------------------------------------------------------
+{
+  check('H2c care note', 'guardian can write a care note',
+    can('care_note.write', [edge()], CHILD_A, NOW, 'guardian').allow, 'true');
+  check('H2c care note', 'a sitter can write a care note -- she is the one on '
+    + 'shift to notice, same reasoning medication.log already has for her',
+    can('care_note.write', [edge({ role: 'sitter' })], CHILD_A, NOW, 'sitter').allow, 'true');
+  check('H2c care note', 'a step_parent can VIEW a care note but cannot WRITE one -- '
+    + 'the same view/write split medication.view/medication.log already has for this role',
+    why(can('care_note.write', [edge({ role: 'step_parent' })], CHILD_A, NOW, 'step_parent')),
+    'role_lacks_capability');
+  check('H2c care note', 'a coordinator cannot even VIEW a care note -- it is '
+    + 'deliberately outside the court-tier record',
+    why(can('care_note.view', [edge({ role: 'coordinator' })], CHILD_A, NOW, 'coordinator')),
+    'role_lacks_capability');
+  check('H2c care note', 'a trusted_adult has no care-note access at all',
+    why(can('care_note.view', [edge({ role: 'trusted_adult' })], CHILD_A, NOW, 'trusted_adult')),
+    'role_lacks_capability');
+  // §17.3 observer -- writing a care note is a real write.
+  check('H2c care note', 'an observer-only guardian cannot write a care note',
+    why(can('care_note.write', [edge({ observerOnly: true })], CHILD_A, NOW, 'guardian')),
+    'observer_readonly');
+}
+
+// ---------------------------------------------------------------------------
+// H2d -- `letter`, added alongside the real letters backend. The ONE
+// child-owned, guardian-excluded Action in this whole union -- see
+// db/migrations/0028_care_note_letter.sql's own header. Listed in NO
+// role's ROLE_CAPS, so every guardian-shaped role is refused via the
+// ordinary role_lacks_capability path even holding a real, live, unrestricted
+// edge -- there is no scope override or court tier that admits one.
+// ---------------------------------------------------------------------------
+{
+  const allRoles = ['guardian', 'step_parent', 'trusted_adult', 'sitter',
+    'coordinator', 'foster_parent', 'caseworker', 'therapist'];
+  let leaked = 0;
+  for (const role of allRoles) {
+    const d = can('letter', [edge({ role, scope: { letter: true } })],
+      CHILD_A, NOW, role, { court: true });
+    if (d.allow) leaked++;
+  }
+  check('H2d letter', 'no guardian-shaped role can ever reach letter, '
+    + 'even with a scope override and court tier', leaked, 0);
+  check('H2d letter', 'the real reason is role_lacks_capability, not a scope/tier fluke',
+    why(can('letter', [edge()], CHILD_A, NOW, 'guardian')), 'role_lacks_capability');
+  // The child's own real reachability is NOT provable through can() with a
+  // real edge (a child principal is always called with edges=[] --
+  // api.ts's own outer-gate design, see server/routes.mjs's own comment on
+  // the /letters routes) -- it is the ABSENCE of a p6/p7 special case for
+  // 'letter' that lets a child session's request reach the route handler at
+  // all, proven here the same way H1 proves P7's own presence.
+  check('H2d letter', "'letter' is not P6/P7-blocked -- the child path relies on "
+    + 'that absence, not an explicit allow',
+    why(can('letter', [], CHILD_A, NOW, 'child')), 'no_edge');
 }
 
 // ---------------------------------------------------------------------------

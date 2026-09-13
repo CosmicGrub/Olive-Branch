@@ -4,8 +4,11 @@
 // a care note is not evidence (7-day TTL, never in the court log), and the
 // child never sees it. The tone guard is enforced BEFORE a note is created
 // — a rejected note must never enter the sent list at all.
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/care_note.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -81,6 +84,198 @@ void main() {
     testWidgets('no settings affordance on this guardian screen', (t) async {
       await t.pumpWidget(wrap(const CareNoteScreen()));
       expect(find.byIcon(Icons.settings), findsNothing);
+    });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop widths', () {
+    Future<void> atSize(WidgetTester t, Size size, Widget child) async {
+      t.view.physicalSize = size;
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      await t.pumpWidget(wrap(child));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('renders on the Fold5 cover-screen width (344 CSS px) without overflow',
+        (t) async {
+      await atSize(t, const Size(344, 882), const CareNoteScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders on the Fold5 unfolded main screen (~673x841) without overflow',
+        (t) async {
+      await atSize(t, const Size(673, 841), const CareNoteScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a standard phone width (390 logical px) without overflow',
+        (t) async {
+      await atSize(t, const Size(390, 900), const CareNoteScreen());
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('renders at a tablet/desktop width (1100, short-and-wide) without overflow',
+        (t) async {
+      await atSize(t, const Size(1100, 700), const CareNoteScreen());
+      expect(t.takeException(), isNull);
+    });
+  });
+
+  group('care note — responsive two-pane split (§8.11.1, form_factors.dart)', () {
+    Future<void> sendOneNote(WidgetTester t) async {
+      await t.pumpWidget(wrap(const CareNoteScreen()));
+      await t.enterText(find.byType(TextField), 'She had a rough night.');
+      await t.tap(find.text('Send note'));
+      await t.pump();
+    }
+
+    testWidgets('a genuinely wide viewport (tablet/desktop, >=660px effective) renders the '
+        'compose form and the sent-notes list as two side-by-side panes', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await sendOneNote(t);
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsOneWidget);
+      // Pane A content (compose) and Pane B content (the sent note) are
+      // both genuinely present at once.
+      expect(find.textContaining('A soft channel'), findsOneWidget);
+      expect(find.text('She had a rough night.'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('the Fold5 cover width (344px) keeps the exact stacked single column '
+        'unchanged — no two-pane Row at all', (t) async {
+      await t.binding.setSurfaceSize(const Size(344, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await sendOneNote(t);
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsNothing);
+      expect(find.textContaining('A soft channel'), findsOneWidget);
+      expect(find.text('She had a rough night.'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a standard phone width (390px) also keeps the stacked single column, '
+        'not the two-pane Row', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await sendOneNote(t);
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('sending a note still works correctly inside the wide two-pane layout',
+        (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 900));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(const CareNoteScreen()));
+      await t.pumpAndSettle();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsOneWidget);
+      await t.enterText(find.byType(TextField), 'Wide-pane care note.');
+      await t.tap(find.text('Send note'));
+      await t.pump();
+
+      expect(find.byKey(const Key('careNoteTwoPaneRow')), findsOneWidget);
+      expect(find.text('Wide-pane care note.'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  });
+
+  group('live wiring — the real care-note route '
+      '(server/routes.mjs, packages/db/src/pool.ts careNotesFor/writeCareNoteRow)', () {
+    testWidgets('shows a loading indicator, then real fetched notes replace '
+        'the empty demo start', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.url.path.endsWith('/care-notes')) {
+          return http.Response(jsonEncode({'entries': [
+            {'id': 'n1', 'fromUserId': 'dad-1', 'fromUserName': 'Dad',
+             'items': [{'kind': 'mood', 'note': 'Real note from the real server.'}],
+             'createdAt': '2026-08-04T08:00:00.000Z', 'expiresAt': '2026-08-11T08:00:00.000Z'},
+          ]}), 200);
+        }
+        return http.Response('not found', 404);
+      });
+      await t.pumpWidget(wrap(CareNoteScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock)));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await t.pumpAndSettle();
+
+      expect(find.text('Real note from the real server.'), findsOneWidget);
+    });
+
+    testWidgets('sending a note POSTs to the real route and appends the real response',
+        (t) async {
+      final List<http.Request> posts = <http.Request>[];
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          posts.add(req);
+          return http.Response(jsonEncode({
+            'id': 'n2', 'items': [{'kind': 'mood', 'note': 'A real morning note.'}],
+            'createdAt': '2026-08-04T09:00:00.000Z', 'expiresAt': '2026-08-11T09:00:00.000Z',
+          }), 201);
+        }
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await t.pumpWidget(wrap(CareNoteScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField), 'A real morning note.');
+      await t.tap(find.text('Send note'));
+      await t.pumpAndSettle();
+
+      expect(posts, hasLength(1));
+      expect(posts.single.url.path, '/v1/children/child-a/care-notes');
+      expect(jsonDecode(posts.single.body), {
+        'items': [{'kind': 'mood', 'note': 'A real morning note.'}],
+      });
+      expect(find.text('A real morning note.'), findsOneWidget);
+    });
+
+    testWidgets('a real 400 accusatory response is decoded into the same guidance '
+        'banner text the demo path already renders', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        if (req.method == 'POST') {
+          return http.Response(jsonEncode({'error': 'accusatory', 'found': ['you always']}), 400);
+        }
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      await t.pumpWidget(wrap(CareNoteScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a', httpClient: mock)));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byType(TextField), 'You always do this.');
+      await t.tap(find.text('Send note'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('without "you always"'), findsOneWidget);
+      // Same proof the demo-path test above uses: the sent list is only
+      // ever populated by _NoteTile, which always wraps in a Card, so zero
+      // Cards here proves the rejected note never joined it.
+      expect(find.byType(Card), findsNothing);
+    });
+
+    testWidgets('with no live params supplied, the demo fixtures render exactly '
+        'as before — no network call, no loading state', (t) async {
+      await t.pumpWidget(wrap(const CareNoteScreen()));
+      await t.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Send note'), findsOneWidget);
     });
   });
 }

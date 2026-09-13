@@ -45,10 +45,23 @@ export function offlineBundle(card: EmergencyCard): {
   return { bundle, bytes: Buffer.byteLength(JSON.stringify(bundle)) };
 }
 
+// §9.7.2, prohibition P3 — the same location-key list `auditArrival` below
+// uses, hoisted above `CARD_FORBIDDEN` so both real guards share ONE
+// definition of "this looks like a coordinate." `CARD_FORBIDDEN` used to
+// maintain its own narrower duplicate (`latitude`, `longitude`, `address`
+// only) — a real, live gap on the exact surface built for the LEAST
+// trusted audience (a sitter/ER nurse handed the emergency card): a field
+// named `lat`, `lng`, `coords`, `geohash`, `accuracy`, or `altitude` passed
+// `auditBundle()` silently. Two guards duplicating the same fact drift
+// apart the moment only one gets fixed — sharing the constant makes that
+// structurally impossible instead of relying on remembering to update both.
+const LOCATION_KEYS = ['lat', 'latitude', 'lng', 'lon', 'longitude', 'coords',
+  'geohash', 'accuracy', 'altitude', 'address'];
+
 /** Keys that must never appear in a sitter-visible bundle. */
 export const CARD_FORBIDDEN = [
   'expense', 'expenses', 'amount', 'journal', 'custody', 'order_ref',
-  'orderRef', 'messages', 'archive', 'latitude', 'longitude', 'address',
+  'orderRef', 'messages', 'archive', ...LOCATION_KEYS,
 ] as const;
 
 export function auditBundle(b: Record<string, unknown>):
@@ -143,9 +156,6 @@ export function recordArrival(
     delayMinutes: Math.max(0, Math.round(arrivedAt.diff(scheduledAt, 'minutes').minutes)),
   };
 }
-
-const LOCATION_KEYS = ['lat','latitude','lng','lon','longitude','coords',
-  'geohash','accuracy','altitude','address'];
 
 export function auditArrival(e: Record<string, unknown>):
   { ok: true } | { ok: false; leaks: string[] } {

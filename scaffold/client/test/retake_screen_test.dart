@@ -12,6 +12,23 @@ import 'package:olive_client/retake_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 void main() {
   testWidgets('renders the gate\'s advice verbatim', (t) async {
     await t.pumpWidget(wrap(RetakeScreen(
@@ -57,5 +74,20 @@ void main() {
       reason: QualityFailure.tooBlurred,
       onRetry: () {})));
     expect(find.byIcon(Icons.settings), findsNothing);
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      testWidgets('renders without overflow at ${size.width.toInt()}x${size.height.toInt()}',
+          (t) async {
+        await useSurface(t, size);
+        await t.pumpWidget(wrap(RetakeScreen(
+          advice: 'Hold still and try again.',
+          reason: QualityFailure.tooBlurred,
+          onRetry: () {})));
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
   });
 }

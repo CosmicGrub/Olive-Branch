@@ -11,6 +11,16 @@ import 'package:olive_client/maturation_ladder.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
+// Required responsive-audit matrix: MASTERFILE's own mandated minimums
+// (Fold5 cover/main), a standard phone width, and — now that Windows is a
+// real target — a short-and-wide desktop-scale width.
+const Map<String, Size> kResponsiveWidths = <String, Size>{
+  'Fold5 cover (344px)': Size(344, 900),
+  'Fold5 main (~673x841)': Size(673, 841),
+  'phone (390px)': Size(390, 900),
+  'tablet/desktop (1100px)': Size(1100, 900),
+};
+
 // Stable across rebuilds (unlike widget instances, which get recreated on
 // every setState) — tapping by this fixed title text is the robust way to
 // expand every rung tile in a loop.
@@ -203,14 +213,16 @@ void main() {
       expect(find.textContaining('{name}'), findsNothing);
     });
 
-    testWidgets('renders without overflow on the Fold5 cover-screen width', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(344, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(wrap(const MaturationLadderScreen(
-        childName: 'Ivy', childAgeYears: 12, viewer: LadderViewer.child)));
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-    });
+    for (final MapEntry<String, Size> entry in kResponsiveWidths.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const MaturationLadderScreen(
+          childName: 'Ivy', childAgeYears: 12, viewer: LadderViewer.child)));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('guardian viewer — irreversibility is structural, not just copy', () {
@@ -332,13 +344,76 @@ void main() {
       expect(find.byIcon(Icons.favorite_outline), findsNothing);
     });
 
-    testWidgets('renders without overflow on the Fold5 main-screen size', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(673, 841));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(wrap(const MaturationLadderScreen(
-        childName: 'Ivy', childAgeYears: 15, viewer: LadderViewer.guardian)));
+    for (final MapEntry<String, Size> entry in kResponsiveWidths.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (tester) async {
+        await tester.binding.setSurfaceSize(entry.value);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(wrap(const MaturationLadderScreen(
+          childName: 'Ivy', childAgeYears: 15, viewer: LadderViewer.guardian)));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
+  group('proactive child reveal — §21.9 C, mirrored onto the child side', () {
+    // childSeenRungReveals is app-run-scoped (module-level), by design — see
+    // its own doc comment. Cleared before each test here so this group's
+    // own assertions don't depend on what order other tests in this file
+    // happened to run in, or what age they used.
+    setUp(() => childSeenRungReveals.clear());
+
+    testWidgets('a newly-crossed rung pushes a real full-screen reveal, unprompted',
+        (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
+      // Deliver the postFrameCallback's own push AND let its route
+      // transition finish — a single pump() only delivers the callback
+      // itself, not the animated MaterialPageRoute it schedules.
+      await tester.pumpAndSettle();
+      expect(find.text('Her own list'), findsWidgets); // the rung's real title
+      expect(find.textContaining('Your list is yours now'), findsOneWidget); // its real ceremony text
+      expect(find.byKey(const Key('rungRevealDismiss')), findsOneWidget);
+    });
+
+    testWidgets('dismissing the reveal returns to the ladder underneath, unharmed',
+        (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('rungRevealDismiss')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('rungRevealDismiss')), findsNothing);
+      expect(find.textContaining('Ivy'), findsWidgets); // back on the real ladder screen
+    });
+
+    testWidgets('the same rung is never revealed a second time this app run', (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('rungRevealDismiss')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('rungRevealDismiss')));
+      await tester.pumpAndSettle();
+
+      // A fresh navigation to the SAME rung state — same posture as a real
+      // app run where she leaves this screen and comes back.
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.child,
+        now: DateTime(2026, 1, 1))));
       await tester.pump();
-      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('rungRevealDismiss')), findsNothing);
+    });
+
+    testWidgets('the guardian viewer never gets this reveal — it is child-only',
+        (tester) async {
+      await tester.pumpWidget(wrap(MaturationLadderScreen(
+        childName: 'Ivy', childAgeYears: 10, viewer: LadderViewer.guardian,
+        now: DateTime(2026, 1, 1))));
+      await tester.pump();
+      expect(find.byKey(const Key('rungRevealDismiss')), findsNothing);
     });
   });
 }

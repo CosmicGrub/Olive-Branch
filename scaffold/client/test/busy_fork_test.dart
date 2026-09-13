@@ -106,4 +106,37 @@ void main() {
       expect(bank.height, greaterThanOrEqualTo(48.0));
     });
   });
+
+  group('responsive — Fold5 cover/main, phone, tablet/desktop', () {
+    // Fold5 cover (344 CSS px), Fold5 main (~673x841, nearly square), a
+    // standard phone (390), and a desktop-scale short-and-wide width (1100)
+    // — the four widths this repo's responsive audit requires.
+    const widths = <String, Size>{
+      'fold5 cover': Size(344, 820),
+      'fold5 main': Size(673, 841),
+      'phone': Size(390, 844),
+      'tablet/desktop': Size(1100, 800),
+    };
+
+    for (final entry in widths.entries) {
+      testWidgets('renders the fork, the emergency path, and the reason chips '
+          'without overflow at ${entry.key}', (t) async {
+        t.view.physicalSize = entry.value;
+        t.view.devicePixelRatio = 1.0;
+        addTearDown(t.view.resetPhysicalSize);
+        addTearDown(t.view.resetDevicePixelRatio);
+
+        await t.pumpWidget(wrap(const BusyForkScreen(
+          childName: 'Ivy', initialReason: Unavailable.withOtherParent)));
+        expect(t.takeException(), isNull);
+
+        final withOtherParent = find.text('At her other house');
+        await t.ensureVisible(withOtherParent);
+        await t.pumpAndSettle();
+        await t.tap(withOtherParent);
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
 }

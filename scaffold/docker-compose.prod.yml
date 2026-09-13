@@ -1,0 +1,342 @@
+# OLIVE BRANCH — production-oriented Compose profile.
+#
+# A GENUINELY SEPARATE file from docker-compose.dev.yml, not that file with a
+# few env vars flipped — CHANGELOG's v0.49.32 entry named "a real production
+# compose profile" as a disclosed, out-of-scope gap alongside healthcheck
+# directives and a Postgres backup strategy; this closes that one. Read
+# alongside scaffold/docs/backup-and-restore.md (the operator runbook) and
+# tools/docker-dev/README.md (the dev file's own scope note, which already
+# says "Production deployment... none of that is in scope here" — this file
+# is what answers that).
+#
+# WHAT IS STRUCTURALLY DIFFERENT FROM docker-compose.dev.yml, and why:
+#
+#  1. DEV_LOGIN is the literal string "0" below — not `${DEV_LOGIN:-0}`.
+#     There is no environment variable, no .env entry, no override of any
+#     kind that can turn this on in this file. docker-compose.dev.yml's own
+#     v0.49.32 fix made DEV_LOGIN default OFF; this file goes one step
+#     further and makes it UNREACHABLE — server/index.mjs's dev-login route
+#     (POST /v1/auth/dev-login, a real session with zero credential check)
+#     structurally cannot be reached through this compose file no matter
+#     what any operator's .env.prod contains.
+#
+#  2. Real secrets, not dev's hardcoded database passwords.
+#     tools/docker-dev/init-db.sql (the dev bootstrap) hardcodes
+#     PASSWORD 'app_owner' / 'backup_reader' — fine for a throwaway local
+#     volume nobody depends on, not acceptable for anything real. `db` here
+#     runs tools/docker-dev/init-db.prod.sh instead (see that file's own
+#     header): it reads APP_OWNER_PASSWORD / BACKUP_READER_PASSWORD from the
+#     environment and fails closed (`:?`) if either is unset, the same
+#     posture SESSION_SECRET already has in both files.
+#
+#  3. restart: always, not unless-stopped, on every long-running service —
+#     appropriate for a host that is expected to keep this running
+#     indefinitely (dev's unless-stopped exists so a developer's explicit
+#     `docker compose down` is respected without a second flag; a
+#     production host has no equivalent "I'm just testing" state).
+#
+#  4. Real resource limits (`deploy.resources`). Numbers below are a
+#     documented STARTING BASELINE sized for this product's own actual scale
+#     — MASTERFILE's whole thesis is "a family," not a multi-tenant SaaS
+#     fleet; a handful of households sharing one small instance, not
+#     thousands of concurrent users. They are NOT load-tested; this
+#     environment has no real production traffic to measure. Treat them as a
+#     documented, changeable starting point, not a tuned result — the honest
+#     alternative to shipping no limits at all (where one runaway query can
+#     take the whole host down) or inventing precision this pass cannot back
+#     up.
+#
+#  5. No LAN-specific dev defaults. `LIVEKIT_URL`/`LIVEKIT_API_KEY`/
+#     `LIVEKIT_API_SECRET` are each `${...:?...}` here (MASTERFILE §16.2 #6
+#     REVERSED AGAIN — a real LiveKit Cloud project, not the old
+#     `JITSI_SERVER_URL`'s self-hosted LAN address), not docker-dev's
+#     hardcoded `192.168.1.175` (a specific dev machine's LAN IP,
+#     meaningless anywhere else, and meaningless for a managed cloud
+#     service regardless).
+#
+#  6. A real `backup` service (see below) wired to the backup_reader
+#     identity db/migrations/0022_backup_reader_role.sql grants — the actual
+#     operator-facing entry point scaffold/docs/backup-and-restore.md walks
+#     through.
+#
+#  7. `--build` is NOT the documented invocation here, unlike the dev file's
+#     own header ("previous, current, and future builds... rebuilding is the
+#     normal way to pick up new code"). A production host should run a
+#     specific, known image tag (`server.image`/`callroom.image` below) built
+#     and pushed deliberately (see .github/workflows/ — CI image publishing
+#     is a disclosed, honestly out-of-scope piece of this same pass; see that
+#     workflow file's own header), not whatever happens to be in the local
+#     build context at the moment `up` runs.
+#
+#  8. `server` has a named volume for uploaded media (`olive-prod-media`,
+#     mounted at MEDIA_STORAGE_ROOT=/app/data/media) — docker-compose.dev.yml
+#     does not. Dev's own db data already gets a named volume
+#     (`olive-dev-pgdata`) while media does not, an inconsistency worth
+#     fixing there too, but this file cannot leave a real family's uploaded
+#     photos of their kid living only in a container's writable layer while
+#     that's pending.
+#
+#  9. `scheduler` is part of the default service set here, NOT gated behind
+#     a Compose profile the way docker-compose.dev.yml's own `scheduler`
+#     service is — see that service's own comment below for why the dev
+#     rationale (a live debug session footgun) doesn't transfer to
+#     production, where the opposite risk (silently never delivering
+#     anything because an operator didn't know to pass a second flag)
+#     dominates instead.
+#
+# WHAT IS DELIBERATELY UNCHANGED / STILL OUT OF SCOPE:
+#   No reverse proxy or TLS termination — this repository has no domain and
+#   no certificate material (tools/docker-dev/README.md's own scope note:
+#   "no concept of secrets management, horizontal scaling, or a real
+#   domain"), and fabricating one here would be security theater, not
+#   hardening. Ports stay loopback-bound, same as dev, for the same reason:
+#   the app has no auth-in-front-of-auth story yet. A real deployment needs a
+#   reverse proxy (nginx/Caddy) with a real certificate in front of this —
+#   genuinely separate infrastructure work, not a Compose-file change.
+#
+# Usage:
+#   cp .env.prod.example .env.prod   # fill in real secrets — see that file
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod \
+#     --profile ops run --rm backup            # see backup-and-restore.md
+name: olive-prod
+
+services:
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD must be set — see .env.prod.example}
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}
+      BACKUP_READER_PASSWORD: ${BACKUP_READER_PASSWORD:?BACKUP_READER_PASSWORD must be set — see .env.prod.example}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-olive_prod}
+    volumes:
+      - olive-prod-pgdata:/var/lib/postgresql/data
+      # The PROD bootstrap (real secrets from the environment), not dev's
+      # static init-db.sql — see this file's own top-of-file note #2 and
+      # init-db.prod.sh's own header for why these cannot be the same file.
+      - ./tools/docker-dev/init-db.prod.sh:/docker-entrypoint-initdb.d/init-db.prod.sh:ro
+    ports:
+      # Host port overridable (default matches docker-compose.dev.yml's own
+      # choice, for familiarity) — a real host may already have something
+      # bound to 5434.
+      - "127.0.0.1:${DB_HOST_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          # See top-of-file note #4 — a documented baseline, not a
+          # load-tested figure. Postgres's own guidance for a small instance
+          # is roughly 25% of available memory to shared_buffers; 1GB total
+          # comfortably covers that plus OS cache for a dataset this
+          # product's real scale (one family's records, not a fleet's).
+          memory: 1g
+          cpus: "1.0"
+
+  migrate:
+    image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+    command: ["node", "tools/migrate.mjs"]
+    restart: "no"
+
+  server:
+    image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
+    restart: always
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8123"
+      DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set — see .env.prod.example (openssl rand -hex 32) — use a DIFFERENT value than any dev .env}
+      # See top-of-file note #1 — deliberately a literal, not an
+      # interpolation. Nothing in .env.prod, no override, no shell export
+      # can make this anything other than "0" through this file.
+      DEV_LOGIN: "0"
+      LIVEKIT_URL: ${LIVEKIT_URL:?LIVEKIT_URL must be set — see .env.prod.example, a real LiveKit Cloud project, no LAN-IP dev default here}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set — see .env.prod.example}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set — see .env.prod.example}
+      # Pinned explicitly rather than left to server/routes.mjs's own
+      # DEFAULT_MEDIA_STORAGE_ROOT fallback (derived from import.meta.url —
+      # an internal implementation detail, not a contract). The volume
+      # mount below targets this exact path; keeping both written down
+      # side by side here is what makes the pairing legible and keeps them
+      # from silently drifting apart if that fallback's derivation ever
+      # changes.
+      MEDIA_STORAGE_ROOT: /app/data/media
+      # Same `:?`-required discipline as SESSION_SECRET above, and the same
+      # real bug that discipline exists to prevent: without a persisted
+      # value, routes.mjs's own FilesystemStorage minted a fresh random
+      # signing secret every process start, silently invalidating every
+      # outstanding signed media URL on the next restart (a routine
+      # `restart: always` recovery, an OOM kill under this service's own
+      # 512m limit, a rolling redeploy) and structurally forbidding ever
+      # scaling this service past one replica — found by this project's own
+      # post-tier audit.
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — see .env.prod.example (openssl rand -hex 32) — use a DIFFERENT value than any dev .env}
+    ports:
+      - "127.0.0.1:${SERVER_HOST_PORT:-8123}:8123"
+    volumes:
+      # Without this, every uploaded photo/video (POST
+      # /v1/children/:childId/media, server/routes.mjs) lives only in the
+      # container's writable layer — gone on the next `docker compose up`
+      # that recreates the container (a new image pull, a resource-limit
+      # change, a host reboot), not just a deliberate `down -v`. That is a
+      # real data-loss bug in this file, not a hardening nice-to-have: a
+      # family's actual photos of their kid disappearing on a routine
+      # redeploy. Named volume, same durability pattern already used for
+      # `olive-prod-pgdata` below.
+      - olive-prod-media:/app/data/media
+    command: ["node", "server/index.mjs"]
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          # A single-process Node HTTP server serving a family's worth of
+          # traffic, not a request-per-second-tuned fleet node — see note #4.
+          memory: 512m
+          cpus: "0.5"
+
+  callroom:
+    image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
+    restart: always
+    environment:
+      LIVEKIT_URL: ${LIVEKIT_URL:?LIVEKIT_URL must be set — see .env.prod.example}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set — see .env.prod.example}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set — see .env.prod.example}
+      CALLROOM_BIND_HOST: "0.0.0.0"
+    ports:
+      - "127.0.0.1:${CALLROOM_HOST_PORT:-8787}:8787"
+    command: ["node", "tools/local-call-room-server.mjs"]
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+
+  # `docker compose -f docker-compose.prod.yml --profile ops run --rm backup`
+  # — see scaffold/docs/backup-and-restore.md. NOT part of `up -d` (the
+  # `ops` profile keeps it out of the default service set entirely — this is
+  # a deliberate, operator-run action, never a background daemon making its
+  # own decisions about when to dump a live database). Runs as
+  # backup_reader, the same real-but-narrow identity
+  # tools/backup-db.sh/db/migrations/0022_backup_reader_role.sql document —
+  # BYPASSRLS so the dump is actually complete (see that migration's header
+  # for why app_owner itself cannot do this job), SELECT-only so a leaked
+  # credential cannot write anything. Uses the official postgres:16 image
+  # directly rather than this app's own image — pg_dump/pg_restore need to
+  # match the server's exact Postgres version, and this app's own image
+  # (node:22-slim) doesn't carry Postgres client tools at all; bundling them
+  # into the app image would mean every server/callroom container also
+  # shipped a copy of tools it never uses.
+  backup:
+    image: postgres:16
+    profiles: ["ops"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://backup_reader:${BACKUP_READER_PASSWORD:?BACKUP_READER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+    volumes:
+      - ./tools:/tools:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      # Real bug, found by this project's own post-tier audit: this service
+      # backed up Postgres and NOTHING else, while docs/backup-and-restore.md
+      # and db/DEPLOYMENT.md's own checklist both claimed "Backups exclude
+      # nothing — preserved artifacts are irreplaceable." Both were false —
+      # a database restore alone leaves every media_artifact.storage_key
+      # pointing at bytes that no longer exist anywhere. Read-only: this
+      # service only ever needs to READ the volume to back it up, same
+      # least-privilege posture backup_reader's own SELECT-only grant above
+      # already applies to the database side.
+      - olive-prod-media:/media:ro
+    entrypoint: ["bash", "-c",
+      "bash /tools/backup-db.sh /backups && bash /tools/backup-media.sh /media /backups"]
+
+  # NOT profile-gated, unlike docker-compose.dev.yml's own `scheduler`
+  # service — a deliberate divergence from that file's pattern, not an
+  # oversight, so it is written down here rather than left for a diff to
+  # explain. Dev gates this behind `--profile scheduler` because a
+  # background sweep silently rewriting `delivery_intent` rows out from
+  # under a developer's live debug session is a real footgun (see
+  # scaffold/docs/scheduler.md). That specific risk is about a *human
+  # actively poking at the same database at the same time* — it has no
+  # equivalent in production, where nobody is expected to be hand-editing
+  # `delivery_intent` rows while the stack runs. What production DOES need
+  # is the opposite failure mode closed: an operator who runs the
+  # documented `up -d` (this file's own header, top of file) and reasonably
+  # expects that to mean "the app is fully running" — not "the app is
+  # running except the one background job that makes intents actually get
+  # delivered, which needs a second, undocumented-outside-this-comment
+  # flag." Requiring `--profile scheduler` here would mean the default
+  # production invocation silently never delivers anything, forever, until
+  # an operator reads this file closely enough to notice the gap — the
+  # same class of silent gap `db/DEPLOYMENT.md` and this file's own note #4
+  # both already argue against elsewhere. So: part of the default service
+  # set, real secret injection (`:?`) same as every other service here.
+  scheduler:
+    image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
+    restart: always
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+      SCHEDULER_HOUR_UTC: "${SCHEDULER_HOUR_UTC:-3}"
+      # Real bug, found by this project's own post-tier audit: without this,
+      # `reap-media`'s `FilesystemStorage` falls back to the exact same
+      # literal path string `server` uses (both share one image/WORKDIR), so
+      # `storage.delete()` LOOKED correct but silently ran against THIS
+      # container's own empty, disconnected writable layer, not the real
+      # volume below — every delete() hit ENOENT, returned false (not a
+      # throw, so reap()'s own tombstone-on-failure path never fired), and
+      # the media_artifact row was deleted anyway. Net effect: the DB record
+      # proving retention was honored disappears; the actual blob (a
+      # child's face or voice) is orphaned on `server`'s volume forever,
+      # invisible to every future sweep — exactly the "reaper that deletes
+      # rows and leaves media is not a retention policy" failure
+      # packages/storage/src/storage.ts's own header names as the reason
+      # this feature exists at all. Pinned explicitly, same reasoning as
+      # `server`'s own identical comment above.
+      MEDIA_STORAGE_ROOT: /app/data/media
+    volumes:
+      # The other half of the same fix — without this mount, the env var
+      # above points at a path that exists but is never the real volume.
+      # Same named volume `server` writes to; `reap-media` needs to delete
+      # the exact bytes `server` wrote, not a private copy.
+      - olive-prod-media:/app/data/media
+    command: ["node", "tools/scheduler.mjs", "loop"]
+    deploy:
+      resources:
+        limits:
+          # One `materialize()` call per still-pending row, once a day, plus
+          # a health-alert subprocess — lighter than `server`, not idle
+          # (see note #4).
+          memory: 256m
+          cpus: "0.25"
+
+volumes:
+  olive-prod-pgdata:
+  olive-prod-media:

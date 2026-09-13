@@ -7,6 +7,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/game_battleship.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -147,6 +148,49 @@ void main() {
       expect(find.byKey(const Key('bsEnemy_0')), findsNothing);
     });
 
+    testWidgets('a shot can be freely, unlimitedly taken back — the same house rule '
+        'checkers/dots-and-boxes already have', (t) async {
+      useTallSurface(t);
+      // A short, real bot delay + pumpAndSettle after every interaction —
+      // same pattern game_checkers_test.dart's own bot-response tests use —
+      // so a miss's own scheduled parent shot always resolves before the
+      // next assertion, rather than leaving a pending Timer at teardown.
+      await t.pumpWidget(wrap(GameBattleship(
+        random: Random(7), botThinkDelay: const Duration(milliseconds: 10))));
+      for (var i = 0; i < bsFleet.length; i++) {
+        await t.tap(find.byKey(Key('bsOwn_${i * 8}')));
+        await t.pump();
+      }
+      // Now in the playing phase, enemy waters showing by default.
+      expect(find.byKey(const Key('bsUndo')), findsOneWidget);
+      final Widget undoBefore = t.widget(find.byKey(const Key('bsUndo')));
+      expect((undoBefore as OutlinedButton).onPressed, isNull, reason: 'nothing to undo yet');
+
+      await t.tap(find.byKey(const Key('bsEnemy_0')));
+      await t.pumpAndSettle(const Duration(milliseconds: 20));
+      // A real shot landed (and, on a miss, the bot's own real reply already
+      // resolved) — the button is enabled because there is now real history.
+      final OutlinedButton undoAfter = t.widget(find.byKey(const Key('bsUndo')));
+      expect(undoAfter.onPressed, isNotNull, reason: 'a real shot was just taken');
+
+      // Drain the whole history one tap at a time — every pop is a real,
+      // free takeback; the button disables itself only once truly empty.
+      var guard = 0;
+      while ((t.widget(find.byKey(const Key('bsUndo'))) as OutlinedButton).onPressed != null) {
+        guard++;
+        expect(guard, lessThan(20), reason: 'undo should terminate, not loop forever');
+        await t.tap(find.byKey(const Key('bsUndo')));
+        await t.pumpAndSettle(const Duration(milliseconds: 20));
+      }
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('no undo button during placement — nothing to take back yet', (t) async {
+      useTallSurface(t);
+      await t.pumpWidget(wrap(const GameBattleship(random: null)));
+      expect(find.byKey(const Key('bsUndo')), findsNothing);
+    });
+
     testWidgets('no settings affordance and no score/rank language anywhere', (t) async {
       useTallSurface(t);
       await t.pumpWidget(wrap(const GameBattleship(random: null)));
@@ -162,6 +206,84 @@ void main() {
       expect(find.text('Good game.'), findsNothing);
       expect(find.textContaining('You lost'), findsNothing);
       expect(find.textContaining('You win'), findsNothing);
+    });
+  });
+
+  group('responsive audit — Fold5, phone, and tablet/desktop widths, §9.2', () {
+    // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+    // unfolded main screens), plus a standard phone width and a
+    // short-and-wide desktop/tablet width now that Windows is a real target.
+    for (final MapEntry<String, Size> entry in const <String, Size>{
+      'Fold5 cover (344 CSS px)': Size(344, 882),
+      'Fold5 unfolded main (~673 CSS px)': Size(673, 841),
+      'a standard phone (~390 CSS px)': Size(390, 844),
+      'a tablet/desktop (~1100 CSS px)': Size(1100, 800),
+    }.entries) {
+      testWidgets('renders without overflow at ${entry.key}', (t) async {
+        await t.binding.setSurfaceSize(entry.value);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(wrap(const GameBattleship(random: null)));
+        await t.pump();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
+
+  group('responsive — comfortable reading width cap (form_factors.dart)', () {
+    // On a wide tablet/desktop viewport the whole outer column — status
+    // banner through the tab-toggle through the board through the
+    // play-again button — is only ever capped to a comfortable reading
+    // width and centered, never split; the Fold5 cover and phone widths are
+    // completely untouched. This is strictly ADDITIVE on top of the board's
+    // own pre-existing 460px cap, not a replacement for it.
+    testWidgets('the outer cap engages only on a wide tablet/desktop viewport — '
+        'never at the Fold5 cover or phone width', (t) async {
+      Future<void> pumpAt(Size size) async {
+        await t.binding.setSurfaceSize(size);
+        await t.pumpWidget(wrap(const GameBattleship(random: null)));
+        await t.pump();
+      }
+
+      addTearDown(() => t.binding.setSurfaceSize(null));
+
+      await pumpAt(const Size(1100, 900));
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+
+      await pumpAt(const Size(344, 882)); // Fold5 cover
+      expect(t.getSize(find.byType(ListView)).width, 344);
+
+      await pumpAt(const Size(390, 844)); // standard phone
+      expect(t.getSize(find.byType(ListView)).width, 390);
+    });
+
+    testWidgets('the board keeps its own 460px cap regardless of the outer '
+        'reading-cap, and the tab-toggle single-board model is unaffected', (t) async {
+      await t.binding.setSurfaceSize(const Size(1100, 2200));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(wrap(GameBattleship(random: Random(42))));
+      await t.pump();
+
+      // The outer reading-cap is engaged at this width...
+      expect(t.getSize(find.byType(ListView)).width, ff.comfortableReadingWidth);
+      // ...yet the board itself never exceeds its own pre-existing 460px cap,
+      // in the placement phase...
+      expect(t.getSize(find.byType(AspectRatio)).width, 460);
+
+      // Placing the full fleet flips into play; still exactly one board
+      // ever renders at a time, and it is still capped at 460px.
+      for (var i = 0; i < bsFleet.length; i++) {
+        await t.tap(find.byKey(Key('bsOwn_${i * 8}')));
+        await t.pump();
+      }
+      expect(find.byKey(const Key('bsEnemy_0')), findsOneWidget);
+      expect(find.byKey(const Key('bsOwn_0')), findsNothing);
+      expect(t.getSize(find.byType(AspectRatio)).width, 460);
+
+      await t.tap(find.text('Your fleet'));
+      await t.pump();
+      expect(find.byKey(const Key('bsOwn_0')), findsOneWidget);
+      expect(find.byKey(const Key('bsEnemy_0')), findsNothing);
+      expect(t.getSize(find.byType(AspectRatio)).width, 460);
     });
   });
 

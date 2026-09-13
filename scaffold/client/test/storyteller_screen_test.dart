@@ -6,6 +6,7 @@
 // invariants (no settings affordance, 48dp touch targets).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/library_logic.dart';
 import 'package:olive_client/storyteller_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -23,6 +24,23 @@ Future<void> useNarrowSurface(WidgetTester tester) async {
 Future<void> askForAStory(WidgetTester tester) async {
   await tester.tap(find.text('Tell me a story!'));
   await tester.pumpAndSettle();
+}
+
+/// MASTERFILE's own mandated minimum widths for a responsive audit: the
+/// Fold5's cover screen and its unfolded main screen, plus a standard phone
+/// width and a desktop-scale width now that Windows is a real target (§5.20).
+const List<Size> kResponsiveSizes = <Size>[
+  Size(344, 820), // Fold5 cover screen
+  Size(673, 841), // Fold5 main screen, unfolded
+  Size(390, 844), // standard phone
+  Size(1100, 900), // tablet / desktop-scale, short-and-wide
+];
+
+Future<void> useSurface(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
 }
 
 void main() {
@@ -112,6 +130,26 @@ void main() {
       expect(find.text('Stop here for tonight'), findsNothing);
     });
 
+    testWidgets('the turn-row/"The end" swap is a real completion moment, not an instant cut',
+        (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+
+      expect(find.byKey(const ValueKey('turnRow')), findsOneWidget);
+      expect(find.byKey(const ValueKey('theEnd')), findsNothing);
+
+      for (int i = 0; i < 11; i++) {
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+      }
+      // Reached the end: the turn controls are gone, "The end" is in, and
+      // pumpAndSettle above already proves the crossfade settles cleanly
+      // rather than hanging mid-animation.
+      expect(find.byKey(const ValueKey('turnRow')), findsNothing);
+      expect(find.byKey(const ValueKey('theEnd')), findsOneWidget);
+    });
+
     testWidgets('starring toggles the icon and adds a chip to the shelf', (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
@@ -130,6 +168,22 @@ void main() {
       await tester.tap(find.descendant(of: readingCard, matching: find.byIcon(Icons.star_rounded)));
       await tester.pump();
       expect(find.text('Your starred stories'), findsNothing);
+    });
+
+    testWidgets('a starred-story chip never overflows, even for the longest '
+        'shapeTitles entry, on the narrowest required width — regression '
+        'for the flaky RenderFlex overflow freshStory\'s random title length '
+        'could intermittently trigger here', (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy',
+        initialFavourites: [
+          Favourite(code: 'the_thing_that_was_lost', title: 'The Thing That Was Lost',
+            starredAt: '2026-01-01T00:00:00.000Z', timesRead: 1),
+        ])));
+      await tester.pump();
+      expect(find.text('Your starred stories'), findsOneWidget);
+      expect(find.textContaining('The Thing That Was Lost'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('bookmarking mid-story adds an entry under "Left off partway"',
@@ -164,6 +218,56 @@ void main() {
       expect(find.text('YOUR LINE!'), findsNothing); // resumed AFTER the refrain, not on it
     });
 
+    testWidgets('rereading an unstarred story twice nudges her to star it — once, not '
+        'on every reread after', (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+      await tester.tap(find.text('Stop here for tonight'));
+      await tester.pump();
+
+      // Never starred — confirm before relying on that below.
+      expect(find.byIcon(Icons.star_rounded), findsNothing);
+
+      // First reread (count=1): storyArtifact()'s own timesRead>=2 threshold
+      // isn't met yet, so no nudge.
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsNothing);
+
+      // Bookmark isn't cleared by resuming — tap it again for a second
+      // reread (count=2), which crosses the threshold.
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsOneWidget);
+      // Let the 4-second SnackBar actually finish dismissing (pumpAndSettle
+      // alone doesn't wait out a real-time auto-dismiss Timer with no
+      // animation frame scheduled in between) before the next check.
+      await tester.pump(const Duration(seconds: 5));
+
+      // A third reread of the SAME story must not nudge again.
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsNothing);
+    });
+
+    testWidgets('an already-starred story is never nudged — she already said it\'s a keeper',
+        (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+      await tester.tap(find.text('Stop here for tonight'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.star_border_rounded)); // star it
+      await tester.pump();
+
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pick up right where you stopped'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('star it to keep it close'), findsNothing);
+    });
+
     testWidgets('§8.4 the ask button and the star control are at least 48dp', (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
@@ -192,6 +296,25 @@ void main() {
       expect(find.textContaining('error'), findsNothing);
       expect(find.textContaining('failed'), findsNothing);
     });
+  });
+
+  group('responsive — Fold5 cover/main, phone, and desktop-scale widths', () {
+    for (final size in kResponsiveSizes) {
+      final String label = '${size.width.toInt()}x${size.height.toInt()}';
+      testWidgets('the ask card renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('the reading card renders without overflow at $label', (tester) async {
+        await useSurface(tester, size);
+        await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+        await askForAStory(tester);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('storyteller safety — §15, P1', () {

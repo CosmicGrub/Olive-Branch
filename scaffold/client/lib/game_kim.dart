@@ -1,5 +1,6 @@
-// OLIVE BRANCH — Kim's game. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2.
+// OLIVE BRANCH — Kim's game. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs
+// for real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.2.
 //
 // Unlike checkers/battleship/word search, there is no `packages/games`
 // source for this title — MASTERFILE §9.2 describes it only in prose:
@@ -29,6 +30,7 @@
 //     game against the parent.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 class KimItem {
   const KimItem({required this.id, required this.icon, required this.label});
@@ -142,54 +144,68 @@ class _GameKimState extends State<GameKim> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Kim's game")),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text(_scene.title, style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text('made of stand-in pictures for now — a real photo of the table comes later',
-          style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic,
-            color: scheme.onSurfaceVariant)),
-        const SizedBox(height: 16),
-        Text(_studying
-            ? 'Take a good look at ${widget.parentName}\'s table.'
-            : "Which one's missing?",
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 12),
-        _ItemGrid(items: visibleItems, keyPrefix: 'kimTable'),
-        const SizedBox(height: 20),
-        if (_studying)
-          Center(child: SizedBox(height: 48, child: FilledButton.icon(
-            key: const Key('kimReady'),
-            onPressed: _reveal,
-            icon: const Icon(Icons.visibility),
-            label: const Text("I'm ready"))))
-        else ...[
-          if (solved) _SolvedBanner(missing: _missing)
-          else ...[
-            Text('Tap the thing you think is gone:',
-              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 10),
-            _ItemGrid(items: _choiceOrder, keyPrefix: 'kimChoice', onTap: _guess,
-              highlightWrong: _lastGuessCorrect == false),
-            if (_lastGuessCorrect == false) const Padding(
-              padding: EdgeInsets.only(top: 10),
-              child: _CalloutKim(text: 'Not quite — want to look again?'),
-            ),
-          ],
+      // On a wide tablet/desktop viewport the single column is only ever
+      // capped to a comfortable reading width and centered, never split —
+      // same real columnsAt() gate every other reading-cap screen uses
+      // (form_factors.dart). Nothing below this changes.
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool capWidth = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
+          Text(_scene.title, style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 4),
+          Text('made of stand-in pictures for now — a real photo of the table comes later',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 16),
-          Row(children: [
-            OutlinedButton.icon(
-              onPressed: _sameTableAgain,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Same table again')),
-            const SizedBox(width: 12),
-            if (solved) FilledButton.icon(
-              key: const Key('kimNextTable'),
-              onPressed: _nextTable,
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('Another table')),
-          ]),
-        ],
-      ])),
+          Text(_studying
+              ? 'Take a good look at ${widget.parentName}\'s table.'
+              : "Which one's missing?",
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          _ItemGrid(items: visibleItems, keyPrefix: 'kimTable', compact: capWidth),
+          const SizedBox(height: 20),
+          if (_studying)
+            Center(child: SizedBox(height: 48, child: FilledButton.icon(
+              key: const Key('kimReady'),
+              onPressed: _reveal,
+              icon: const Icon(Icons.visibility),
+              label: const Text("I'm ready"))))
+          else ...[
+            if (solved) _SolvedBanner(missing: _missing)
+            else ...[
+              Text('Tap the thing you think is gone:',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              _ItemGrid(items: _choiceOrder, keyPrefix: 'kimChoice', onTap: _guess,
+                highlightWrong: _lastGuessCorrect == false, compact: capWidth),
+              if (_lastGuessCorrect == false) const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: _CalloutKim(text: 'Not quite — want to look again?'),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(children: [
+              OutlinedButton.icon(
+                onPressed: _sameTableAgain,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Same table again')),
+              const SizedBox(width: 12),
+              if (solved) FilledButton.icon(
+                key: const Key('kimNextTable'),
+                onPressed: _nextTable,
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text('Another table')),
+            ]),
+          ],
+        ]);
+        return capWidth
+            ? Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                child: content))
+            : content;
+      })),
     );
   }
 }
@@ -200,15 +216,15 @@ class _SolvedBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     key: const Key('kimSolved'),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.tertiaryContainer,
       borderRadius: BorderRadius.circular(16)),
     child: Row(children: [
       const Icon(Icons.celebration_outlined),
-      const SizedBox(width: 10),
+      const SizedBox(width: 8),
       Expanded(child: Text('Yes! The ${missing.label.toLowerCase()} was missing.',
-        style: const TextStyle(fontWeight: FontWeight.w600))),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
     ]),
   );
 }
@@ -219,41 +235,52 @@ class _CalloutKim extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedContainer(
     duration: const Duration(milliseconds: 200),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12)),
-    child: Text(text, style: const TextStyle(fontSize: 13)),
+    child: Text(text, style: Theme.of(context).textTheme.bodySmall),
   );
 }
 
 class _ItemGrid extends StatelessWidget {
   const _ItemGrid({required this.items, required this.keyPrefix,
-    this.onTap, this.highlightWrong = false});
+    this.onTap, this.highlightWrong = false, this.compact = false});
   final List<KimItem> items;
   final String keyPrefix;
   final ValueChanged<KimItem>? onTap;
   final bool highlightWrong;
+  /// True only when the screen's own reading-width cap (form_factors.dart)
+  /// has engaged. A narrower cross-axis for the SAME item count needs the
+  /// Wrap to add a row it never needed at full width, which on a short
+  /// viewport (a real §8.11.1 example: the Fold half-open in landscape,
+  /// 673x420) can push the wrong-guess callout below the fold. Tiles stay
+  /// exactly 88px — the pre-existing, byte-for-byte narrow-posture size —
+  /// whenever the cap is NOT engaged; this only ever shrinks them a little
+  /// under the cap this same change introduces, never on any posture that
+  /// existed before it.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Wrap(spacing: 10, runSpacing: 10, children: [
+    final double tileMin = compact ? 72 : 88;
+    return Wrap(spacing: 8, runSpacing: 8, children: [
       for (final item in items) InkWell(
         key: Key('${keyPrefix}_${item.id}'),
         onTap: onTap == null ? null : () => onTap!(item),
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          constraints: const BoxConstraints(minWidth: 88, minHeight: 88),
-          padding: const EdgeInsets.all(10),
+          constraints: BoxConstraints(minWidth: tileMin, minHeight: tileMin),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: scheme.primaryContainer,
             borderRadius: BorderRadius.circular(16)),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(item.icon, size: 30, color: scheme.onPrimaryContainer),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(item.label, textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11.5, color: scheme.onPrimaryContainer)),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onPrimaryContainer)),
           ]),
         ),
       ),

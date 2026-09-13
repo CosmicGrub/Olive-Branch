@@ -15,10 +15,13 @@
 // credential of any kind checked. This must never reach anything but a local
 // dev database, and is fenced behind DEV_LOGIN=1 for exactly that reason.
 import { createServer } from 'node:http';
-import { issueSession } from '../packages/auth/src/auth.mjs';
-import { Api } from '../packages/api/src/api.mjs';
-import { createPool, dbPort } from '../packages/db/src/pool.mjs';
-import { registerRoutes } from './routes.mjs';
+import { createHash } from 'node:crypto';
+import { issueSession, verifyAssertion } from '../packages/auth/src/auth.mjs';
+import { Api, MAX_REQUEST_BODY_BYTES } from '../packages/api/src/api.mjs';
+import { createPool, dbPort, withSystemSession, createChallenge, consumeChallenge,
+         webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
+import { registerRoutes, RP_ID, RP_ORIGIN, defaultMediaStorage } from './routes.mjs';
+import { serveSignedMedia } from './signed_media.mjs';
 import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -32,7 +35,7 @@ if (!SESSION_SECRET) { console.error('SESSION_SECRET required'); process.exit(2)
 const pool = createPool(DATABASE_URL);
 const secret = Buffer.from(SESSION_SECRET, 'utf8');
 const api = new Api(secret, dbPort(pool));
-registerRoutes(api);
+registerRoutes(api, pool);
 
 // ---- network play (checkers, live) — MASTERFILE §5.14, §5.17, §5.19 ------
 // In-memory only (packages/game-sync/src/table.ts's T7): no table, token, or
@@ -59,29 +62,199 @@ async function devLogin(rawBody) {
         { userId: null, roleName: 'child', childId, escalated: false }, Date.now());
       return { status: 200, body: { token } };
     }
-    const rows = await q(`SELECT id FROM app_user WHERE id = $1`, [userId]);
+    const rows = await q(`SELECT id, deactivated_at FROM app_user WHERE id = $1`, [userId]);
     if (!rows.length) return { status: 404, body: { error: 'user_not_found' } };
+    // MASTERFILE §2.10/§2.11/P8 — "what goes: the deleting guardian's
+    // login/session". This is the one real login/session-issuing path that
+    // exists in this codebase today (see this file's own header: no real
+    // PIN/WebAuthn login endpoint is implemented anywhere yet, so there is no
+    // second login path to gate the same way). pool.ts's deactivateAccount()
+    // already removes this user's pin_credential/webauthn_credential rows,
+    // which would make a REAL PIN/WebAuthn login fail on its own the moment
+    // one exists (nothing left to verify against) — this check is what closes
+    // the gap for the login path that actually exists right now.
+    if (rows[0].deactivated_at) {
+      return { status: 403, body: { error: 'account_deactivated' } };
+    }
     const token = issueSession(secret,
       { userId, roleName: 'guardian', childId: null, escalated: false }, Date.now());
     return { status: 200, body: { token } };
   });
 }
 
+/**
+ * WebAuthn LOGIN — the real, production-safe replacement for dev-login above,
+ * not itself dev-only. Lives here rather than server/routes.mjs's
+ * api.register() calls for the same structural reason dev-login does: it
+ * ESTABLISHES a session, so there is no pre-existing one for api.handle() to
+ * authenticate first.
+ *
+ * The challenge/verify pair takes a `userId` hint rather than implementing a
+ * discoverable-credential (resident-key) flow: this app already knows its
+ * small, fixed set of real accounts per family (the same household that
+ * shares a kiosk device), which is exactly dev-login's own justification for
+ * accepting a bare id instead of a full identity-lookup UI. That is a real,
+ * deliberate scope decision recorded here, not a shortcut hiding a gap — a
+ * resident-key/usernameless flow is a genuine follow-up, not silently
+ * assumed unnecessary.
+ */
+async function webauthnLoginChallenge(rawBody) {
+  let body;
+  try { body = JSON.parse(rawBody || '{}'); }
+  catch { return { status: 400, body: { error: 'bad_json' } }; }
+  const { userId } = body ?? {};
+  if (typeof userId !== 'string' || !userId) {
+    return { status: 400, body: { error: 'userId_required' } };
+  }
+  const exists = await withSystemSession(pool,
+    (q) => q(`SELECT id FROM app_user WHERE id = $1`, [userId]));
+  if (!exists.length) return { status: 404, body: { error: 'user_not_found' } };
+  const challenge = await createChallenge(pool, userId, 'login');
+  return { status: 200, body: { challenge, rpId: RP_ID } };
+}
+
+async function webauthnLoginVerify(rawBody) {
+  let body;
+  try { body = JSON.parse(rawBody || '{}'); }
+  catch { return { status: 400, body: { error: 'bad_json' } }; }
+  const { userId, credentialId, clientDataJSON, authenticatorData, signature } = body ?? {};
+  if (!userId || !credentialId || !clientDataJSON || !authenticatorData || !signature) {
+    return { status: 400, body: { error: 'bad_request' } };
+  }
+
+  // SEC-01 follow-up (round-2 audit's adversarial verify) — devLogin() above
+  // has always checked deactivated_at before issuing a token; this, the
+  // OTHER real login path, did not. Checked early, before spending the
+  // single-use challenge (consumeChallenge below) or running the signature
+  // verification: on a deactivated account there is nothing further worth
+  // doing. An unrecognized userId falls through unchanged to the existing
+  // challenge-lookup failure below (401 challenge_expired) rather than a new
+  // branch here — a user_not_found leak this early would tell an
+  // unauthenticated caller something a login endpoint shouldn't. Complements
+  // storeWebauthnCredential()'s own atomic registration gate (pool.ts) — that
+  // one stops a NEW credential from being minted after deactivation; this one
+  // stops an OLDER credential, registered before deactivation, from still
+  // being usable to log in afterward. Either alone would close the exploit
+  // the round-2 audit found; both together match devLogin's own belt-and-
+  // suspenders posture (existence check AND deactivated_at check) rather
+  // than leaning on just one.
+  const existing = await withSystemSession(pool,
+    (q) => q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [userId]));
+  if (existing.length && existing[0].deactivated_at) {
+    return { status: 403, body: { error: 'account_deactivated' } };
+  }
+
+  let clientData;
+  try { clientData = JSON.parse(Buffer.from(clientDataJSON, 'base64url').toString('utf8')); }
+  catch { return { status: 400, body: { error: 'type_mismatch' } }; }
+
+  // Atomic single-use consume BEFORE the signature check — a challenge that
+  // fails verification is still spent, so a captured-but-failed attempt
+  // cannot be retried against a fresh signature attempt using the same
+  // challenge. See pool.ts's consumeChallenge() for the single-UPDATE
+  // atomicity this relies on.
+  const consumed = await consumeChallenge(pool, userId, 'login', clientData.challenge ?? '');
+  if (!consumed) return { status: 401, body: { error: 'challenge_expired' } };
+
+  const credential = await webauthnCredentialById(pool, credentialId);
+  if (!credential || credential.userId !== userId) {
+    return { status: 401, body: { error: 'unknown_credential' } };
+  }
+
+  const now = Date.now();
+  const result = verifyAssertion({
+    assertion: { credentialId, clientDataJSON, authenticatorData, signature },
+    credential,
+    expectedChallenge: clientData.challenge ?? '',
+    expectedOrigin: RP_ORIGIN,
+    expectedRpIdHash: createHash('sha256').update(RP_ID, 'utf8').digest(),
+    // challengeIssuedAt: now — this repo enforces the challenge TTL and
+    // single-use exactly once, inside consumeChallenge()'s own atomic UPDATE
+    // (which already applies auth.ts's own 5-minute default, see pool.ts's
+    // CHALLENGE_TTL_MS). Passing `now` here makes verifyAssertion()'s OWN,
+    // independent TTL check a deliberate no-op rather than a second, weaker
+    // copy of the same rule that could silently drift out of sync with the
+    // DB-side constant.
+    challengeIssuedAt: now,
+    now,
+  });
+  if (!result.ok) {
+    // Denial names the real reason (auth.ts's own AuthFailure), matching
+    // this codebase's "denial names the reason" convention rather than a
+    // generic 'invalid' — see packages/api/test/stack.test.mjs's P6/P7 cases.
+    return { status: 401, body: { error: result.reason } };
+  }
+
+  // A real compare-and-swap, not a bare write — see pool.ts's own comment on
+  // updateWebauthnSignCount(). `false` here means a concurrent request for
+  // this same credential already advanced sign_count to (or past) this exact
+  // value first: the specific race a cloned authenticator used at the same
+  // moment as the real one would produce. Denying the SECOND request to
+  // finish is the whole point — a session must never be issued off the losing
+  // side of that race.
+  const advanced = await updateWebauthnSignCount(pool, credentialId, result.newSignCount);
+  if (!advanced) {
+    return { status: 401, body: { error: 'signcount_replay' } };
+  }
+  const token = issueSession(secret,
+    { userId, roleName: 'guardian', childId: null, escalated: false }, now);
+  return { status: 200, body: { token } };
+}
+
 const server = createServer((req, res) => {
   let raw = '';
-  req.on('data', (c) => { raw += c; if (raw.length > 2_000_000) req.destroy(); });
+  // Same cap Api.listen() enforces, imported rather than a second,
+  // independently-configured copy of the same number — see
+  // MAX_REQUEST_BODY_BYTES's own doc comment (api.ts) for why this is no
+  // longer a flat 2,000,000 as of the storage-wiring pass.
+  req.on('data', (c) => { raw += c; if (raw.length > MAX_REQUEST_BODY_BYTES) req.destroy(); });
   req.on('end', async () => {
     const send = (out) => {
       res.writeHead(out.status, {
-        'content-type': 'application/json',
+        // charset=utf-8 explicit, not implied: RFC 2616's default charset for
+        // an unlabelled response is ISO-8859-1/latin1, and at least one real
+        // client in this codebase (package:http, used by court_export.dart's
+        // live path) honors that default literally -- an em dash in a denial
+        // message (server/routes.mjs's EXPORT_DENIAL_MESSAGES) is exactly the
+        // kind of content that would otherwise round-trip corrupted, found
+        // while wiring the certified-export denial copy for real.
+        'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',
         'x-content-type-options': 'nosniff',
       });
       res.end(JSON.stringify(out.body));
     };
     try {
+      // Docker healthcheck target (docker-compose.dev.yml / .prod.yml's
+      // `server` service) — see this pass's CHANGELOG entry for why a real
+      // HTTP check matters here: `depends_on: condition: service_healthy`
+      // is only honest if "healthy" means the server can actually reach
+      // Postgres, not just that the process bound a port. A bare `SELECT 1`
+      // is the cheapest real proof of that — no session, no RLS context, no
+      // app-data read, just "is this connection pool actually usable right
+      // now." Unauthenticated deliberately, same posture as any other
+      // liveness probe: it reveals only up/down, nothing about any family's
+      // data.
+      if (req.method === 'GET' && req.url === '/healthz') {
+        try {
+          await pool.query('SELECT 1');
+          return send({ status: 200, body: { status: 'ok' } });
+        } catch (e) {
+          console.error('healthz: database unreachable', e);
+          return send({ status: 503, body: { status: 'db_unreachable' } });
+        }
+      }
       if (req.method === 'POST' && req.url === '/v1/auth/dev-login') {
         return send(await devLogin(raw));
+      }
+      if (req.method === 'POST' && req.url === '/v1/auth/webauthn/login/challenge') {
+        return send(await webauthnLoginChallenge(raw));
+      }
+      if (req.method === 'POST' && req.url === '/v1/auth/webauthn/login/verify') {
+        return send(await webauthnLoginVerify(raw));
+      }
+      if (req.method === 'GET' && req.url && req.url.startsWith('/media/')) {
+        return await serveSignedMedia(req.url, res, defaultMediaStorage);
       }
       send(await api.handle(req.method ?? 'GET', req.url ?? '/', req.headers, raw));
     } catch (e) {

@@ -1,28 +1,39 @@
-// OLIVE BRANCH — homework helper. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.1, §8.13.5. Renders
-// MARKUP screen 'homework'.
+// OLIVE BRANCH — homework helper. MASTERFILE §9.1, §8.13.5, §20.2b. Renders
+// MARKUP screen 'homework'. UNVERIFIED against a real device/camera — see
+// the file-wide convention this codebase uses for exactly this caveat.
 //
 // "Photograph the sheet; the quality gate refuses blur and skew before OCR
 // ever runs." The capture half is capture_gate.dart pushed from the button
 // below; this file is what she sees before and after that gate passes.
 //
-// HONEST STUB, twice over, both said on screen rather than glossed over:
-//  - No OCR backend exists yet, so the "recognized problems" below are
-//    canned demo text, not extracted from a real photo.
-//  - The "hint" is a canned demo response run through
-//    homework_quality_gate.dart's guardHint(), not a live model call — but
-//    the guard itself is real: some of the canned responses are
-//    deliberately answer-leaking, to prove the guard actually intercepts
-//    them rather than always being fed something already safe.
+// §20.2b's own "OCR: Homework capture specified, not built" gap is closed:
+// when capture_gate.dart's REAL path ran (see that file's header — needs a
+// live baseUrl/childId/sessionToken), the "recognized problems" below are
+// the server's own real OCR output (packages/homework/src/capture-route.ts)
+// and each hint has already been through the real, server-side guardHint()
+// (packages/homework/src/capture.ts). `_demoProblems` below still exists,
+// DEMOTED to exactly one job: the fallback content shown when capture ran
+// on the SIMULATED path (no live backend configured, or a test's own
+// [CaptureGateScreen.simulateCapture] override) — there is no server
+// response to show in that case, so this file's own local guardHint() port
+// (homework_quality_gate.dart) still runs against canned text, same as
+// before, including the deliberately-leaking half of the pair so the guard
+// stays demonstrably load-bearing on that path too.
 //
-// §9.1's tutor guard is an OUTPUT guard, not a prompt: whatever a "model"
-// produces, only a vetted hint or the same fixed safe fallback ever reaches
+// §9.1's tutor guard is an OUTPUT guard, not a prompt: whatever produced a
+// hint, only a vetted hint or the same fixed safe fallback ever reaches
 // her — she is never shown *that* something was refused, only ever a hint,
 // because the failure mode this guards against is a tired parent reading a
 // leaked answer out loud, not a curious child learning the guard exists.
 // §9.1 also requires AI assistance be "logged and visible, never silent" —
 // so every accepted hint is labelled "AI hint" on screen, not slipped in
-// as if a person wrote it.
+// as if a person wrote it. That labelling is doubly honest on the real path:
+// hints.ts's own header is explicit that the generator is rule-based
+// pattern-matching, not an AI model — there is no LLM wired into this
+// repository anywhere (no API key configured for one) — but the "AI HINT"
+// label is kept as-is here because that is this screen's existing, tested
+// vocabulary for "assistance a person didn't personally write", which a
+// rule-based generator's output still is.
 //
 // §8.13.5: `homework` is a "still" surface, "the one surface in the product
 // that asks her to concentrate" — SURFACE_MOTION in motion_rules.dart's TS
@@ -35,10 +46,16 @@
 // P2/P6 checked explicitly by this file's test: no score, streak, or
 // completion badge for finishing a worksheet, and no financial surface
 // anywhere near it.
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'capture_gate.dart';
+import 'form_factors.dart' as ff;
 import 'homework_quality_gate.dart';
 import 'motion_rules.dart';
+import 'tabletop_split.dart';
 
 class _DemoProblem {
   const _DemoProblem(this.text, this.goodHint, this.leakyHint);
@@ -50,7 +67,9 @@ class _DemoProblem {
   final String leakyHint;
 }
 
-/// Canned "recognized problems" — see file header on the OCR stub.
+/// Fallback-only canned "recognized problems" — see file header. Used ONLY
+/// when this screen's own capture ran the simulated path, never when a real
+/// server response is available.
 const List<_DemoProblem> _demoProblems = <_DemoProblem>[
   _DemoProblem('6 x 7', 'Try skip-counting by 7, six times.', 'The answer is 42.'),
   _DemoProblem('3/4 + 1/4', 'What do the bottom numbers need to match before you can add?',
@@ -60,8 +79,23 @@ const List<_DemoProblem> _demoProblems = <_DemoProblem>[
 ];
 
 class HomeworkScreen extends StatefulWidget {
-  const HomeworkScreen({super.key, this.childName = 'Ivy'});
+  const HomeworkScreen({
+    super.key,
+    this.childName = 'Ivy',
+    this.baseUrl,
+    this.childId,
+    this.sessionToken,
+    this.httpClient,
+  });
   final String childName;
+
+  /// Real-path configuration, threaded straight through to
+  /// CaptureGateScreen — see that file's header for what happens when these
+  /// are null (falls back to the simulated demo cycle, same as always).
+  final String? baseUrl;
+  final String? childId;
+  final String? sessionToken;
+  final http.Client? httpClient;
 
   @override
   State<HomeworkScreen> createState() => _HomeworkScreenState();
@@ -70,12 +104,38 @@ class HomeworkScreen extends StatefulWidget {
 class _HomeworkScreenState extends State<HomeworkScreen> {
   bool _captured = false;
 
-  /// Which problems currently show a revealed hint (index -> verdict).
+  /// Non-null only when capture_gate.dart's REAL path produced a real
+  /// server response. Null after a SIMULATED capture — homework_screen's
+  /// own _demoProblems fallback is what renders in that case.
+  List<HomeworkProblemResult>? _realProblems;
+  /// Her own photo, real path only — see HomeworkCaptureOutcome.photo's own
+  /// doc comment for why this exists at all.
+  Uint8List? _realPhoto;
+
+  /// Which DEMO-path problems currently show a revealed hint (index ->
+  /// verdict) — the real path never needs this: a real problem's hint is
+  /// already guarded server-side and is shown as soon as it's tapped open,
+  /// with no separate guard call to make client-side.
   final Map<int, HintVerdict> _revealed = <int, HintVerdict>{};
+
+  /// Which REAL-path problems currently show a revealed hint (index ->
+  /// visible).
+  final Set<int> _realRevealed = <int>{};
+
+  int get _problemCount => _realProblems?.length ?? _demoProblems.length;
 
   Future<void> _startCapture() async {
     final bool? ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const CaptureGateScreen()));
+      MaterialPageRoute<bool>(builder: (_) => CaptureGateScreen(
+        baseUrl: widget.baseUrl,
+        childId: widget.childId,
+        sessionToken: widget.sessionToken,
+        httpClient: widget.httpClient,
+        onCaptured: (outcome) {
+          _realProblems = outcome.problems;
+          _realPhoto = outcome.photo;
+        },
+      )));
     if (ok == true && mounted) setState(() => _captured = true);
   }
 
@@ -87,6 +147,69 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
     setState(() => _revealed[i] = verdict);
   }
 
+  void _revealRealHint(int i) => setState(() => _realRevealed.add(i));
+
+  /// The captured-photo/recognized-problems block — a real, previously
+  /// inline chunk of `build()`, factored out so the foldTabletop branch
+  /// below (intuitivism pass, sub-project 3c, Part 2) can reuse it verbatim
+  /// inside its own `viewing` half instead of a second, hand-copied version
+  /// that could drift from this one.
+  Widget _capturedContent(int fadeMs) => AnimatedSwitcher(
+        duration: Duration(milliseconds: fadeMs),
+        child: _captured
+            ? Column(key: const ValueKey('problems'), children: [
+                const SizedBox(height: 8),
+                // Real path only — the simulated path correctly shows
+                // nothing extra here, preserving this file's own honest
+                // real-vs-simulated split. Same crossfade the problems list
+                // below already uses, not a second animation invented for
+                // this.
+                if (_realPhoto != null)
+                  AnimatedSwitcher(
+                    duration: Duration(milliseconds: fadeMs),
+                    child: ClipRRect(
+                      key: const ValueKey('realPhotoThumbnail'),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(_realPhoto!,
+                        height: 140, width: double.infinity, fit: BoxFit.cover)),
+                  ),
+                if (_realPhoto != null) const SizedBox(height: 12),
+                Align(alignment: Alignment.centerLeft,
+                  child: Text('Photo looks good — here\'s what we found:',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600))),
+                const SizedBox(height: 12),
+                for (int i = 0; i < _problemCount; i++)
+                  _ProblemCard(
+                    // Real path: the server's own OCR'd text. Demo fallback
+                    // (simulated capture only): canned text.
+                    text: _realProblems != null
+                        ? _realProblems![i].text
+                        : _demoProblems[i].text,
+                    verdict: _realProblems != null
+                        // Already guarded server-side (capture-route.ts's
+                        // own guardHint() call) — wrapping it as
+                        // HintVerdict.ok reuses _HintBubble's existing
+                        // rendering/labelling unchanged rather than
+                        // duplicating it for this path.
+                        ? (_realRevealed.contains(i)
+                            ? HintVerdict.ok(_realProblems![i].hint)
+                            : null)
+                        : _revealed[i],
+                    fadeMs: fadeMs,
+                    onHint: () => _realProblems != null
+                        ? _revealRealHint(i)
+                        // A visible dev toggle would leak the mechanism to
+                        // a child; alternating leaky/good by index instead
+                        // keeps this row exercising both guard paths
+                        // without any UI that says "try to break it".
+                        : _revealHint(i, leaky: i.isOdd),
+                  ),
+              ])
+            : const SizedBox.shrink(key: ValueKey('empty')),
+      );
+
   @override
   Widget build(BuildContext context) {
     final int fadeMs = durationFor(quietnessOf('homework'), crossfadeMs);
@@ -94,16 +217,64 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
       appBar: AppBar(title: const Text('Homework')),
       // ListView, not a fixed Column — matches emergency_card.dart's own
       // reasoning: generous text can exceed a small phone's viewport.
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(18),
+      body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // §8.13.5: this is deliberately the sparsest, "still" surface in the
+        // product — no second pane here, ever (see file header). On a wide
+        // tablet/desktop viewport the single column is only ever capped to a
+        // comfortable reading width and centered, never split. Same real
+        // columnsAt() gate every other width decision in the app uses.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final ff.Viewport viewport =
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight);
+        final bool capWidth = ff.columnsAt(viewport, textScale) >= 2;
+        // Intuitivism pass, sub-project 3c, Part 2 — threaded in ahead of
+        // the pre-existing capWidth branching below (which stays completely
+        // untouched for every other posture), the same
+        // `postureFor(viewport) == Posture.foldTabletop` check
+        // game_connect4.dart's own `outerPad` conditional already uses.
+        if (ff.postureFor(viewport) == ff.Posture.foldTabletop) {
+          // A disclosed judgment call: this screen has no separate global
+          // "next problem" control (every recognized problem already shows
+          // at once, each with its own inline "Get a hint" button) — so
+          // `viewing` is the worksheet/hint content (intro text, the photo
+          // once captured, and every problem card, hint bubbles included)
+          // and `controls` is the one real global action this screen has,
+          // the capture trigger itself.
+          final Widget worksheetArea = Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text("Let's get your worksheet", style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(
+              'Take a clear photo of the page and we\'ll help you spot where '
+              'to start — never the answers themselves.',
+              style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            _capturedContent(fadeMs),
+          ]);
+          final Widget captureControls = !_captured
+              ? SizedBox(width: double.infinity, height: 56,
+                  child: FilledButton.icon(
+                    key: const Key('takePhotoButton'),
+                    onPressed: _startCapture,
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('Take a photo', style: TextStyle(fontSize: 16))))
+              : const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: TabletopSplit(viewing: worksheetArea, controls: captureControls),
+          );
+        }
+        final Widget content = ListView(
+          padding: const EdgeInsets.all(16),
           children: [
             Text("Let's get your worksheet", style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
               'Take a clear photo of the page and we\'ll help you spot where '
               'to start — never the answers themselves.',
-              style: TextStyle(fontSize: 14.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 20),
             if (!_captured)
               SizedBox(
@@ -113,34 +284,16 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                   onPressed: _startCapture,
                   icon: const Icon(Icons.camera_alt_outlined),
                   label: const Text('Take a photo', style: TextStyle(fontSize: 16)))),
-            AnimatedSwitcher(
-              duration: Duration(milliseconds: fadeMs),
-              child: _captured
-                  ? Column(key: const ValueKey('problems'), children: [
-                      const SizedBox(height: 6),
-                      Align(alignment: Alignment.centerLeft,
-                        child: Text('Photo looks good — here\'s what we found:',
-                          style: TextStyle(fontSize: 13.5,
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600))),
-                      const SizedBox(height: 10),
-                      for (int i = 0; i < _demoProblems.length; i++)
-                        _ProblemCard(
-                          text: _demoProblems[i].text,
-                          verdict: _revealed[i],
-                          fadeMs: fadeMs,
-                          // A visible dev toggle would leak the mechanism to
-                          // a child; alternating leaky/good by index instead
-                          // keeps this row exercising both guard paths
-                          // without any UI that says "try to break it".
-                          onHint: () => _revealHint(i, leaky: i.isOdd),
-                        ),
-                    ])
-                  : const SizedBox.shrink(key: ValueKey('empty')),
-            ),
+            _capturedContent(fadeMs),
           ],
-        ),
-      ),
+        );
+        return capWidth
+            ? Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+                    child: content))
+            : content;
+      })),
     );
   }
 }
@@ -156,10 +309,10 @@ class _ProblemCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(
         margin: const EdgeInsets.only(bottom: 12),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(text, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             AnimatedSwitcher(
               duration: Duration(milliseconds: fadeMs),
               child: verdict == null
@@ -197,11 +350,11 @@ class _HintBubble extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // §9.1 — "logged and visible, never silent": always labelled, so
           // it never reads as a person answering.
-          Text('AI HINT', style: TextStyle(fontSize: 10.5, letterSpacing: 0.6,
-            fontWeight: FontWeight.w700,
+          Text('AI HINT', style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            letterSpacing: 0.6, fontWeight: FontWeight.w700,
             color: Theme.of(context).colorScheme.onSecondaryContainer.withValues(alpha: 0.7))),
-          const SizedBox(height: 3),
-          Text(shown, style: const TextStyle(fontSize: 15)),
+          const SizedBox(height: 4),
+          Text(shown, style: Theme.of(context).textTheme.bodyLarge),
         ])),
       ]),
     );

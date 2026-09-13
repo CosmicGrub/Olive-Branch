@@ -15,6 +15,7 @@
 // The child-facing mechanism (cycling, counters, "42 of 180") never appears
 // here at all — this screen only exists on the guardian side of the app.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 enum _BankStatus { queued, delivered }
 
@@ -95,95 +96,138 @@ class _MessageBankingScreenState extends State<MessageBankingScreen> {
       setState(() => _windowNights = (_windowNights + delta).clamp(_minWindow, _maxWindow));
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Message banking')),
-        // A bounded, small list — SingleChildScrollView over Column, NOT
-        // ListView, so every banked entry genuinely exists in the tree rather
-        // than being sliver-virtualized away outside the current viewport.
-        body: SafeArea(
-            child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Record tonight, deliver on her night',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  const Text(
-                      "Each message lands at her bedtime, in her timezone, on the night you pick below.",
-                      style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-                  const SizedBox(height: 16),
-                  TextField(
-                      controller: _controller,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          hintText: "Tonight's goodnight message...")),
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    // Expanded, not a bare Text + Spacer: on a narrow physical
-                    // screen (confirmed on-device, not caught by the default
-                    // test surface size) the label plus both fixed-width
-                    // stepper controls overflowed the row by a few pixels.
-                    // Expanded lets the label wrap instead of overflowing.
-                    const Expanded(child: Text('Deliver over the next',
-                      style: TextStyle(fontSize: 13))),
-                    IconButton(
-                        onPressed: () => _changeWindow(-1),
-                        icon: const Icon(Icons.remove_circle_outline)),
-                    SizedBox(
-                        width: 64,
-                        child: Text('$_windowNights nights',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.w600))),
-                    IconButton(
-                        onPressed: () => _changeWindow(1),
-                        icon: const Icon(Icons.add_circle_outline)),
-                  ]),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: FilledButton(
-                          onPressed: _controller.text.trim().isEmpty ? null : _bank,
-                          child: const Text('Bank this message'))),
-                  if (_willCycle)
-                    Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.errorContainer,
-                                borderRadius: BorderRadius.circular(10)),
-                            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              const Icon(Icons.repeat, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: Text(
-                                      'This will repeat: $_queuedCount messages queued for a '
-                                      '$_windowNights-night window. Record more, or shorten the '
-                                      'window, so nights stop reusing a message.',
-                                      style: const TextStyle(fontSize: 12.5))),
-                            ]))),
-                  const SizedBox(height: 20),
-                  const Divider(),
-                  Text(
-                      '${_messages.length} nights banked · $_deliveredCount delivered · '
-                      '$_queuedCount queued',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  if (_queuedCount > 0)
-                    Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                            onPressed: _revokeAllQueued,
-                            icon: const Icon(Icons.cancel_outlined),
-                            label: Text('Revoke remaining ($_queuedCount)'))),
-                  const SizedBox(height: 8),
-                  for (final _BankedMessage m in _messages)
-                    _BankedTile(
-                        message: m,
-                        onRevoke: m.status == _BankStatus.queued ? () => _revokeOne(m.id) : null),
+  Widget build(BuildContext context) {
+    // Pane A — compose: heading, subtitle, the message field, the
+    // delivery-window stepper, the bank button, and (conditionally) the
+    // repeat-warning banner. Same widgets, same order, as this screen always
+    // rendered — only ever split out into a named list so the wide/narrow
+    // branches below can share it verbatim rather than diverging.
+    final List<Widget> composeChildren = <Widget>[
+      Text('Record tonight, deliver on her night',
+          style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 4),
+      const Text(
+          "Each message lands at her bedtime, in her timezone, on the night you pick below.",
+          style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+      const SizedBox(height: 16),
+      TextField(
+          controller: _controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: "Tonight's goodnight message...")),
+      const SizedBox(height: 12),
+      Row(children: [
+        // Expanded, not a bare Text + Spacer: on a narrow physical
+        // screen (confirmed on-device, not caught by the default
+        // test surface size) the label plus both fixed-width
+        // stepper controls overflowed the row by a few pixels.
+        // Expanded lets the label wrap instead of overflowing.
+        const Expanded(child: Text('Deliver over the next',
+          style: TextStyle(fontSize: 13))),
+        IconButton(
+            onPressed: () => _changeWindow(-1),
+            icon: const Icon(Icons.remove_circle_outline)),
+        SizedBox(
+            width: 64,
+            child: Text('$_windowNights nights',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600))),
+        IconButton(
+            onPressed: () => _changeWindow(1),
+            icon: const Icon(Icons.add_circle_outline)),
+      ]),
+      const SizedBox(height: 8),
+      SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: FilledButton(
+              onPressed: _controller.text.trim().isEmpty ? null : _bank,
+              child: const Text('Bank this message'))),
+      if (_willCycle)
+        Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(10)),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Icon(Icons.repeat, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: Text(
+                          'This will repeat: $_queuedCount messages queued for a '
+                          '$_windowNights-night window. Record more, or shorten the '
+                          'window, so nights stop reusing a message.',
+                          style: const TextStyle(fontSize: 12.5))),
                 ]))),
-      );
+    ];
+
+    // Pane B — the banked list: divider, summary line, the conditional
+    // revoke-all row, then every _BankedTile. Same discipline as above.
+    final List<Widget> listChildren = <Widget>[
+      const Divider(),
+      Text(
+          '${_messages.length} nights banked · $_deliveredCount delivered · '
+          '$_queuedCount queued',
+          style: const TextStyle(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 4),
+      if (_queuedCount > 0)
+        Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+                onPressed: _revokeAllQueued,
+                icon: const Icon(Icons.cancel_outlined),
+                label: Text('Revoke remaining ($_queuedCount)'))),
+      const SizedBox(height: 8),
+      for (final _BankedMessage m in _messages)
+        _BankedTile(
+            message: m,
+            onRevoke: m.status == _BankStatus.queued ? () => _revokeOne(m.id) : null),
+    ];
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Message banking')),
+      // A bounded, small list — SingleChildScrollView over Column, NOT
+      // ListView, so every banked entry genuinely exists in the tree rather
+      // than being sliver-virtualized away outside the current viewport.
+      body: SafeArea(
+          child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // number — matches court_export.dart's own two-pane threshold: the
+        // compose form and the banked list sit side by side once the
+        // viewport can genuinely afford two real columns at the current
+        // text scale. Below that, this is byte-for-byte the same single
+        // stacked Column this screen always rendered.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: wide
+                ? Row(
+                    key: const Key('bankingTwoPaneRow'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: composeChildren)),
+                      const SizedBox(width: 24),
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: listChildren)),
+                    ])
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    ...composeChildren,
+                    const SizedBox(height: 20),
+                    ...listChildren,
+                  ]));
+      })),
+    );
+  }
 }
 
 class _BankedTile extends StatelessWidget {

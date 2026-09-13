@@ -81,6 +81,18 @@ export function materialize(intent: Intent, ctx: ChildCtx, now: DateTime): Resul
   const graceFloor = now.minus({ minutes: PAST_GRACE_MINUTES });
 
   switch (intent.policy) {
+    // Deliberately does NOT consult gate.ts's own asleep/school day-part
+    // block — a settled product decision (owner-confirmed 2026-08-31,
+    // v0.49.59), not an oversight. §6.4's gate is a CLIENT-side live warning
+    // shown to the sender before she sends (server/routes.mjs's GET /now ->
+    // send_time_guard.dart's GuardPrompt) — advisory, not an enforced hold.
+    // An explicit send genuinely means "send now": a guardian who taps "Send
+    // now anyway" past the warning, or any caller that resolves a policy to
+    // 'immediate' at all, gets exactly that — no silent server-side defer to
+    // the next reachable window. Making this case ALSO check gate() would
+    // turn an advisory prompt into a hard block with no corresponding UX for
+    // "your message was queued instead of delivered," which nothing in this
+    // codebase has ever specified. If that changes, it belongs here.
     case 'immediate':
       return { ok: true, scheduledAt: now, tz: zoneNow, anomaly: 'none', rolled: false };
 

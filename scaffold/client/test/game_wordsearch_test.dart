@@ -125,4 +125,36 @@ void main() {
       expect(find.byKey(const Key('wsComplete')), findsOneWidget);
     });
   });
+
+  group('responsive audit — Fold5, phone, and tablet/desktop widths', () {
+    // MASTERFILE's own mandated minimum widths (the Fold5's cover and
+    // unfolded main screens), plus a standard phone width and a
+    // short-and-wide desktop/tablet width now that Windows is a real
+    // target. Covers both the guardian setup screen and the child play
+    // screen (a size x size GridView-free grid built from LayoutBuilder).
+    for (final MapEntry<String, Size> entry in const <String, Size>{
+      'Fold5 cover (344 CSS px)': Size(344, 882),
+      'Fold5 unfolded main (~673 CSS px)': Size(673, 841),
+      'a standard phone (~390 CSS px)': Size(390, 844),
+      'a tablet/desktop (~1100 CSS px)': Size(1100, 800),
+    }.entries) {
+      testWidgets('setup screen renders without overflow at ${entry.key}', (t) async {
+        await t.binding.setSurfaceSize(entry.value);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(wrap(const WordSearchSetupScreen()));
+        await t.pump();
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('play screen renders without overflow at ${entry.key}', (t) async {
+        final result = buildWordSearch(
+          ['Ivy', 'Biscuit', 'Maple Street', 'Soccer'], size: 12, random: Random(1));
+        await t.binding.setSurfaceSize(entry.value);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(wrap(WordSearchScreen(puzzle: result.puzzle!, childName: 'Ivy')));
+        await t.pump();
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
 }

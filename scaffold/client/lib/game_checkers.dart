@@ -1,5 +1,6 @@
-// OLIVE BRANCH — checkers. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §9.2, P2.
+// OLIVE BRANCH — checkers. No longer UNVERIFIED — verified by CI (a Flutter toolchain now runs for
+// real in tools/verify.sh's automated pipeline — CHANGELOG v0.49.61).
+// MASTERFILE §9.2, P2.
 //
 // The rules engine below (CkSide/CkPiece/CheckersState/checkersMoves/
 // playCheckers/checkersCount) is a 1:1 semantic port of the `CHECKERS`
@@ -26,6 +27,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
 enum CkSide { child, parent }
@@ -475,7 +477,11 @@ class _GameCheckersState extends State<GameCheckers> {
         ],
       ),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 420;
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // breakpoint.
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
         final networked = widget.network != null;
         final waitingForPeer = networked &&
             (_netStatus == CkNetStatus.connecting || _netStatus == CkNetStatus.waitingForPeer);
@@ -515,7 +521,7 @@ class _GameCheckersState extends State<GameCheckers> {
           ) else const _GoodGameBanner(),
           const SizedBox(height: 12),
           Center(child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: narrow ? constraints.maxWidth : 460),
+            constraints: BoxConstraints(maxWidth: wide ? 460 : constraints.maxWidth),
             child: AspectRatio(aspectRatio: 1, child: _Board(
               state: _state, selected: _selected,
               legalDestinations: _legalFromSelected.map((m) => m.to).toSet(),
@@ -523,7 +529,10 @@ class _GameCheckersState extends State<GameCheckers> {
             )),
           )),
           const SizedBox(height: 16),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          // Wrap, not a Row: on the Fold5 cover screen (344 CSS px) "Take
+          // that back" and "Play again" together don't fit on one line, and
+          // this must wrap to a second row rather than overflow.
+          Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 12, children: [
             SizedBox(height: 48, child: OutlinedButton.icon(
               key: const Key('ckUndo'),
               // Undo is local-board-only. In a live networked game the peer
@@ -533,7 +542,6 @@ class _GameCheckersState extends State<GameCheckers> {
               icon: const Icon(Icons.undo),
               label: const Text('Take that back'),
             )),
-            const SizedBox(width: 12),
             if (finished && !networked) SizedBox(height: 48, child: FilledButton.icon(
               key: const Key('ckPlayAgain'),
               onPressed: _reset,
@@ -578,7 +586,7 @@ class _TallyRow extends StatelessWidget {
   Widget build(BuildContext context) => Row(children: [
     Expanded(child: _TallyChip(label: childName, count: childCount,
       color: Theme.of(context).colorScheme.primaryContainer)),
-    const SizedBox(width: 10),
+    const SizedBox(width: 12),
     Expanded(child: _TallyChip(label: parentName, count: parentCount,
       color: Theme.of(context).colorScheme.secondaryContainer)),
   ]);
@@ -592,11 +600,11 @@ class _TallyChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 48),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      Text('$count', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+      Text('$count', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
     ]),
   );
 }
@@ -605,13 +613,13 @@ class _GoodGameBanner extends StatelessWidget {
   const _GoodGameBanner();
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.tertiaryContainer,
       borderRadius: BorderRadius.circular(16)),
     child: const Row(children: [
       Icon(Icons.emoji_events_outlined),
-      SizedBox(width: 10),
+      SizedBox(width: 8),
       Expanded(child: Text('Good game.', style: TextStyle(fontWeight: FontWeight.w600))),
     ]),
   );
@@ -623,11 +631,11 @@ class _CalloutBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedContainer(
     duration: const Duration(milliseconds: 200),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12)),
-    child: Text(text, style: const TextStyle(fontSize: 13)),
+    child: Text(text, style: Theme.of(context).textTheme.bodySmall),
   );
 }
 
@@ -689,7 +697,14 @@ class _PieceView extends StatelessWidget {
         shape: BoxShape.circle,
         color: color,
         border: Border.all(color: Colors.white.withValues(alpha: 0.85), width: 2.5),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1.5))],
+        // Soft and tinted toward the theme's own shadow role, not a flat
+        // grey/black box-shadow.
+        boxShadow: [
+          BoxShadow(
+              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.25),
+              blurRadius: 3,
+              offset: const Offset(0, 1.5)),
+        ],
       ),
       child: piece.king
           ? const Center(child: Icon(Icons.star, color: Colors.white, size: 16))

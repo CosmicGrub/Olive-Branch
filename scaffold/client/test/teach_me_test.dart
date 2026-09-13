@@ -75,6 +75,22 @@ void main() {
       expect(find.text('Nothing taught yet — pick an idea above whenever you feel like it.'), findsNothing);
     });
 
+    testWidgets('the empty taught-list state carries its own icon, distinct from the banner',
+        (t) async {
+      await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
+      // One emoji_objects_outlined (the banner) and one distinct lightbulb for
+      // the empty state — never the same glyph twice on one screen.
+      expect(find.byIcon(Icons.emoji_objects_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.lightbulb_outline), findsOneWidget);
+
+      await t.enterText(find.byType(TextField), 'A card trick');
+      await t.pump();
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.tap(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.pump();
+      expect(find.byIcon(Icons.lightbulb_outline), findsNothing);
+    });
+
     testWidgets('tapping a seed idea fills the text field', (t) async {
       await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
       await t.tap(find.text('A card trick'));
@@ -132,6 +148,57 @@ void main() {
       await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
       expect(find.byIcon(Icons.settings), findsNothing);
       expect(find.byIcon(Icons.settings_outlined), findsNothing);
+    });
+
+    group('responsive — no overflow at any required viewport width', () {
+      // childAge 9 renders the full compose form (seed chips + medium chips)
+      // plus a taught lesson with "asked again" copy showing — the busiest
+      // layout this screen has.
+      Widget buildScreen() => wrap(TeachMeScreen(childName: 'Maya', childAge: 9, parentName: 'Dad',
+        initialLessons: [
+          Lesson(id: 'l1', fromUserId: 'demo-child', title: 'How to whistle with two fingers',
+            medium: TeachMedium.demonstrate, taughtAt: DateTime(2026, 1, 1), askedAgain: 1),
+        ]));
+
+      Future<void> pumpAt(WidgetTester t, Size size) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(buildScreen());
+        await t.pump();
+      }
+
+      testWidgets('Fold5 cover screen (344 CSS px wide)', (t) async {
+        await pumpAt(t, const Size(344, 900));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('Fold5 unfolded main screen (~673x841, nearly square)', (t) async {
+        await pumpAt(t, const Size(673, 841));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('standard phone width (~390px)', (t) async {
+        await pumpAt(t, const Size(390, 844));
+        expect(t.takeException(), isNull);
+      });
+
+      testWidgets('tablet/desktop width (~1100px, short and wide)', (t) async {
+        await pumpAt(t, const Size(1100, 800));
+        expect(t.takeException(), isNull);
+      });
+    });
+
+    testWidgets('intro banner uses the house 12-radius compact-banner shape '
+        'shared with expenses_screen/meds_care/morning_briefing/care_note/'
+        'guardian_setup', (t) async {
+      await t.pumpWidget(wrap(const TeachMeScreen(childName: 'Maya', childAge: 9)));
+      final container = t.widget<Container>(find.ancestor(
+        of: find.byIcon(Icons.emoji_objects_outlined),
+        matching: find.byType(Container),
+      ).first);
+      final decoration = container.decoration! as BoxDecoration;
+      expect((decoration.borderRadius! as BorderRadius).topLeft, const Radius.circular(12));
+      expect(container.padding, const EdgeInsets.all(12));
     });
   });
 }

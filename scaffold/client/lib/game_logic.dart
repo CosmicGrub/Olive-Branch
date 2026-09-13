@@ -32,7 +32,11 @@
 /// A = child, B = parent, always. Mirrors games.ts's `Side`.
 enum Side { a, b }
 
-enum GameKind { tictactoe, dotsboxes, memory, story }
+enum GameKind {
+  tictactoe, dotsboxes, memory, story, drawTogether, guessDoodle,
+  sillySentence, wouldYouRather, twoTruths, twentyQuestions,
+  copyPattern, findIt,
+}
 
 /// One condition the child may impose on the parent for a given game.
 class Handicap {
@@ -101,6 +105,88 @@ const List<GameMeta> catalogue = [
     minAge: 5,
     competitive: false,
     blurb: 'One line each. Nobody wins.',
+    handicaps: [],
+  ),
+  // Batch A (Play Together phase 1) — both reuse annotation_canvas.dart's
+  // AnnotationCanvas, both co-op, both carry no handicap for the same reason
+  // 'story' does: nothing to be behind at.
+  GameMeta(
+    kind: GameKind.drawTogether,
+    title: 'Draw together',
+    minAge: 4,
+    competitive: false,
+    blurb: 'One shared page. Draw whatever you like.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.guessDoodle,
+    title: 'Guess the doodle',
+    minAge: 5,
+    competitive: false,
+    blurb: 'One of you draws it, the other guesses.',
+    handicaps: [],
+  ),
+  // Batch B (Play Together phase 1) — four curated-prompt activities, all
+  // in the same co-op shape as 'story'/'drawTogether'/'guessDoodle': a
+  // fixed, in-repo, curated content bank instead of free text, no handicap
+  // because there is nothing to be behind at. See game_curated_activity.dart
+  // for the shared layout base all four use, and each game file's own
+  // header for its curated content and (for game_two_truths.dart) the
+  // safe-content design reasoning the spec singled out by name.
+  GameMeta(
+    kind: GameKind.sillySentence,
+    title: 'Silly sentence maker',
+    minAge: 4,
+    competitive: false,
+    blurb: 'Build the silliest sentence you can, one word at a time.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.wouldYouRather,
+    title: 'Would you rather',
+    minAge: 4,
+    competitive: false,
+    blurb: 'Impossible choices, no wrong answers.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.twoTruths,
+    title: 'Two truths and a tall tale',
+    minAge: 6,
+    competitive: false,
+    blurb: 'Two are true. Can she guess the made-up one?',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.twentyQuestions,
+    title: '20 questions',
+    minAge: 5,
+    competitive: false,
+    blurb: 'Yes, no, and a secret only one of you knows.',
+    handicaps: [],
+  ),
+  // Batch C (Play Together phase 1, the closing batch) — two younger-age,
+  // icon/color/shape-based activities, minAge 2, in exactly 'story's own
+  // co-op shape: competitive: false, handicaps: [] — self-scaling
+  // difficulty (a growing pattern length; a curated scene's own fixed
+  // object count) means there is nothing for a parent-set handicap to
+  // apply to, the same reasoning every other Batch A/B entry above already
+  // states. See game_copy_pattern.dart / game_find_it.dart for the real,
+  // curated content and the zero-text-gameplay mechanism both rest on.
+  GameMeta(
+    kind: GameKind.copyPattern,
+    title: 'Copy the pattern',
+    minAge: 2,
+    competitive: false,
+    blurb: 'Watch it light up, then tap it back — it grows one more every time.',
+    handicaps: [],
+  ),
+  GameMeta(
+    kind: GameKind.findIt,
+    title: 'Find it',
+    minAge: 2,
+    competitive: false,
+    blurb: 'A picture full of little things to spot — point, and she taps it.',
     handicaps: [],
   ),
 ];

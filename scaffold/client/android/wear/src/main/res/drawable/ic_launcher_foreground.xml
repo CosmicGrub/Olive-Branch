@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A single leaf/branch glyph, simple enough to read at watch-icon size. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 C40,30 30,42 30,58 C30,74 42,86 58,84 C74,82 82,68 78,52 C75,40 66,32 54,30 Z" />
+    <path
+        android:fillColor="#6750A4"
+        android:pathData="M54,38 L54,80" android:strokeColor="#6750A4" android:strokeWidth="4" />
+</vector>

@@ -4,6 +4,13 @@
 # Regenerated build artifact (npm run demo -> demo/build.mjs)
 DEMO.html
 
+# Compiled TS->JS build output, one per row of scaffold/tools/build.mjs's
+# ENTRIES list (esbuild, .ts -> sibling .mjs). `npm run build` regenerates
+# these on every `npm test`/`npm run verify` invocation and in the Docker
+# image (tools/verify.sh line ~45, Dockerfile) — never trust a committed
+# .mjs here, only ever a freshly built one.
+scaffold/packages/*/src/*.mjs
+
 # Dependencies
 node_modules/
 scaffold/node_modules/
@@ -14,6 +21,31 @@ scaffold/client/.dart_tool/
 scaffold/client/android/.gradle/
 scaffold/client/ios/Pods/
 
+# §16.2 #6 Step 2 — vendored third-party checkout + generated secrets,
+# not Olive source. See scaffold/tools/jitsi-selfhost/README.md.
+scaffold/tools/jitsi-selfhost/.jitsi-docker/
+
+# Local docker-compose.dev.yml overrides (SESSION_SECRET, DEV_LOGIN) — see
+# scaffold/.env.example, the tracked template this is copied from. Never
+# commit the real file.
+scaffold/.env
+
+# Same as scaffold/.env above, for docker-compose.prod.yml — see
+# scaffold/.env.prod.example, the tracked template. Real production secrets
+# (DB passwords, SESSION_SECRET) never belong in git.
+scaffold/.env.prod
+
+# tools/backup-db.sh's default output directory and
+# docker-compose.prod.yml's `backup` service default volume target — real
+# Postgres dumps of a family's data, never committed.
+scaffold/backups/
+
+# Real family media, written by FilesystemStorage (server/routes.mjs's
+# `defaultMediaStorage`, MASTERFILE §20.2b) — a self-hosted deployment's own
+# persistent volume, never source-controlled content. See MEDIA_STORAGE_ROOT
+# to point this somewhere else entirely.
+scaffold/data/
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db
@@ -22,3 +54,4 @@ Thumbs.db
 *.zip
 /budget.ts
 /stream.ts
+.superpowers/

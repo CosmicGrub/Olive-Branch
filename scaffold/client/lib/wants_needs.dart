@@ -9,6 +9,7 @@
 // structurally separate (own list, own input, own section) so a want can
 // never quietly slide into the needs list or vice versa.
 import 'package:flutter/material.dart';
+import 'form_factors.dart' as ff;
 
 class WantsNeedsScreen extends StatefulWidget {
   const WantsNeedsScreen({super.key});
@@ -46,32 +47,69 @@ class _WantsNeedsScreenState extends State<WantsNeedsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Wants & needs')),
-    body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-      _ItemSection(
-        key: const Key('wantsSection'),
-        title: 'Things I want',
-        icon: Icons.star_border,
-        items: _wants,
-        controller: _wantController,
-        hint: 'Something you want…',
-        onAdd: _addWant,
-        onToggle: _toggleWant,
-      ),
-      const SizedBox(height: 20),
-      _ItemSection(
-        key: const Key('needsSection'),
-        title: 'Things I need',
-        icon: Icons.check_circle_outline,
-        items: _needs,
-        controller: _needController,
-        hint: 'Something you need…',
-        onAdd: _addNeed,
-        onToggle: _toggleNeed,
-      ),
-    ])),
-  );
+  Widget build(BuildContext context) {
+    // Pane A — the wants section, verbatim and in the same order this
+    // screen always rendered it. Already fully self-contained (heading +
+    // input row + item list), so no further splitting is needed.
+    final Widget wantsSection = _ItemSection(
+      key: const Key('wantsSection'),
+      title: 'Things I want',
+      icon: Icons.star_border,
+      items: _wants,
+      controller: _wantController,
+      hint: 'Something you want…',
+      onAdd: _addWant,
+      onToggle: _toggleWant,
+    );
+
+    // Pane B — the needs section, verbatim. The two lists stay in their own
+    // sections here just as they always have — see the P4 note above.
+    final Widget needsSection = _ItemSection(
+      key: const Key('needsSection'),
+      title: 'Things I need',
+      icon: Icons.check_circle_outline,
+      items: _needs,
+      controller: _needController,
+      hint: 'Something you need…',
+      onAdd: _addNeed,
+      onToggle: _toggleNeed,
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Wants & needs')),
+      // SingleChildScrollView over Column, NOT ListView, so every item
+      // genuinely exists in the tree rather than being sliver-virtualized
+      // away outside the current viewport (matches message_banking.dart's
+      // own documented reasoning for this same substitution).
+      body: SafeArea(
+          child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
+        // Real §8.11.1 posture logic (form_factors.dart), not a made-up
+        // breakpoint — the two peer sections sit side by side once the
+        // viewport can genuinely afford two real columns at the current
+        // text scale. Below that, this is byte-for-byte the same single
+        // stacked column this screen always rendered.
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final bool wide = ff.columnsAt(
+            ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: wide
+                ? Row(
+                    key: const Key('wantsNeedsTwoPaneRow'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: wantsSection),
+                      const SizedBox(width: 24),
+                      Expanded(child: needsSection),
+                    ])
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    wantsSection,
+                    const SizedBox(height: 20),
+                    needsSection,
+                  ]));
+      })),
+    );
+  }
 }
 
 // No price/cost field on this class, by design — see the P4 note above.

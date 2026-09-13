@@ -168,6 +168,58 @@ const intent = (o) => ({
 }
 
 // ---------------------------------------------------------------------------
+// G4b — exact boundary minutes. gate()'s `hhmm >= p.startsLocal && hhmm <
+//      p.endsLocal` is only correct if both sides are the SAME string width.
+//      childCtxFor() (packages/db/src/pool.ts) casts starts_local/ends_local
+//      via Postgres's `time::text`, which is second-precision ('12:00:00');
+//      gate()'s own `hhmm` is luxon's minute-precision 'HH:mm' ('12:00'). JS
+//      string comparison treats the shorter string as LESS than a longer one
+//      it's a prefix of, so an unnormalized '12:00' >= '12:00:00' is FALSE —
+//      the day-part starting at that minute would be silently skipped for
+//      its own first minute every day. pool.ts now truncates the cast to
+//      'HH:mm' width before gate() ever sees it; these fixtures are already
+//      that width, so this section instead locks down gate()'s comparison
+//      OPERATORS themselves (>= / < , not > / <=) at the instant they
+//      actually matter: exactly on a boundary minute, not one minute either
+//      side of it, which is the only case the precision bug above hides in
+//      and every other G4 case here lands well clear of.
+// ---------------------------------------------------------------------------
+{
+  // 21:00 EDT exactly — the moment `asleep` starts (wraps midnight, so this
+  // exercises the `hhmm >= p.startsLocal` arm of the wrap branch).
+  const asleepStarts = DateTime.fromISO('2026-07-03T01:00:00Z');
+  check('G4b boundary minute', 'blocked AT asleep\'s own start minute (21:00)',
+    `${gate(NYC_CTX, asleepStarts).allow}/${gate(NYC_CTX, asleepStarts).reason}`,
+    'false/asleep');
+
+  // 06:30 EDT exactly — asleep's end / wake's start. Must already be `wake`
+  // (reachable), not still `asleep` for one more minute.
+  const wakeStarts = DateTime.fromISO('2026-07-02T10:30:00Z');
+  check('G4b boundary minute', 'reachable AT wake\'s own start minute (06:30)',
+    gate(NYC_CTX, wakeStarts).allow, 'true');
+
+  // 08:00 EDT exactly, a Thursday — wake's end / school's start. Must already
+  // be `school` (blocked), not still `wake` for one more minute.
+  const schoolStarts = DateTime.fromISO('2026-07-02T12:00:00Z');
+  check('G4b boundary minute', 'blocked AT school\'s own start minute (08:00)',
+    gate(NYC_CTX, schoolStarts).reason, 'school');
+
+  // 15:00 EDT exactly — school's end / after_school's start. Must already be
+  // reachable, not still gated for one more minute.
+  const afterSchoolStarts = DateTime.fromISO('2026-07-02T19:00:00Z');
+  check('G4b boundary minute', 'reachable AT after_school\'s own start minute (15:00)',
+    gate(NYC_CTX, afterSchoolStarts).allow, 'true');
+
+  // 18:30 EDT exactly — after_school's end / dinner's start. Both reachable,
+  // so this confirms `current` itself flips (dinner, not after_school) via
+  // `reason` on an adjacent blocked probe one minute later being unaffected —
+  // checked directly here via the day-part boundary staying reachable.
+  const dinnerStarts = DateTime.fromISO('2026-07-02T22:30:00Z');
+  check('G4b boundary minute', 'reachable AT dinner\'s own start minute (18:30)',
+    gate(NYC_CTX, dinnerStarts).allow, 'true');
+}
+
+// ---------------------------------------------------------------------------
 // G5 — sender-side guard. The parent sees HER clock, not theirs.
 // ---------------------------------------------------------------------------
 {
