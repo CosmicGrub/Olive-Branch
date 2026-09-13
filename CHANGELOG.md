@@ -14,6 +14,162 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.74] — 2026-09-12 — Device pairing & provisioning
+
+Full design spec: `docs/superpowers/specs/2026-09-12-device-pairing
+-provisioning-design.md`. Replaces the build-time `--dart-define=
+OLIVE_CHILD_ID=...`/`OLIVE_GUARDIAN_ID=...` provisioning step with a real
+in-app pairing flow, for a family that already exists — `seed-dev.mjs`
+remains the only creation path, unchanged. The second item in the
+post-sub-project-1 onboarding/parental-controls arc named by v0.49.73's own
+entry; sub-project 2 (PIN-gated parental controls) and automatic first-run
+detection remain deferred.
+
+### Added
+- **`device_pairing_code` and `paired_device`** (`db/migrations
+  /0032_device_pairing.sql`) — two new tables. `device_pairing_code` is a
+  short-lived (10 minute), single-use code: an unguessable `id` (the QR
+  payload) plus a 6-digit `numeric_code` fallback, `role`/`target_id`
+  naming which existing identity it will bind, `failed_attempts` for the
+  redeem-time lockout. `paired_device` is what a redeemed code actually
+  mints — `role`/`target_id`, a plain timestamp `label` (no device
+  fingerprinting attempted), `revoked_at`. Real RLS on both: owner-write
+  (`created_by = current_actor()`) for a code's creating guardian, an EXACT
+  mirror of `guardian_invite_owner_rw` (0014); family-scoped read/revoke on
+  `paired_device` reusing `kiosk-pin/verify`'s own "every live guardian of
+  this child" scoping (`actor_has_edge()`, 0003) rather than a new
+  definition; and a `system`-role redeem path mirroring `guardian_invite`'s
+  own accept-flow precedent EXACTLY, since the redeeming device has no
+  session at all yet.
+- **A `deviceId` claim on signed sessions** (`packages/auth/src/auth.ts`'s
+  `VerifiedPrincipal`/`issueSession`/`readSession`) and the matching
+  revocation check in `packages/api/src/api.ts`'s `handle()` — a
+  `deviceId`-bearing session whose `paired_device` row is `revoked_at` is
+  refused with a distinct `device_revoked` (401) before authorization ever
+  runs. Optional field, so every EXISTING session-issuing call site
+  (`DEV_LOGIN`, WebAuthn login, guardian-invite bootstrap, kiosk-pin
+  escalation) is unaffected — none of them sets it, and `readSession`
+  defaults an absent claim to `null`.
+- **Six real routes** (`server/routes.mjs`, `packages/db/src/pool.ts`'s
+  `createDevicePairingCode()`/`cancelDevicePairingCode()`/
+  `redeemDevicePairingCode()`/`pairedDevicesForChild()`/
+  `revokePairedDevice()`/`isPairedDeviceRevoked()`): `POST .../children/
+  :childId/device-pairing-codes` (guardian, live edge to the child,
+  re-verifies the caller's own PIN via the existing `attemptPinFor`
+  machinery — a light re-auth gate, not the kiosk-PIN route's "check every
+  guardian" shape), `POST /v1/me/device-pairing-codes` (any guardian, bound
+  to their own identity), `POST /v1/device-pairing-codes/:codeId/cancel`
+  (RLS-scoped, not in the design spec's own Routes list — a disclosed
+  judgment call: the spec's own Flow section requires a working
+  Cancel-before-use button and the migration's own `revoked_at` column
+  exists for exactly that), `POST /v1/device-pairing/redeem` (no session;
+  validates expiry/revocation/redemption/role-match; a numeric-code lockout
+  after `DEVICE_CODE_MAX_ATTEMPTS` (5) failed attempts on a role-mismatch
+  against a genuinely-identified code — see `pool.ts`'s own doc comment for
+  why THAT, not a blind numeric guess, is the "miss" this counter tracks,
+  and why no separate lockout-duration column exists at all; atomic
+  mint-session+insert-paired_device+mark-redeemed), `GET .../paired-devices`
+  (guardian, family-scoped list), and `POST .../paired-devices/:deviceId
+  /revoke` (guardian, live edge). Numeric-code generation actively retries
+  on collision against currently-outstanding codes, per the design spec's
+  own note that `numeric_code` is not a primary key. A malformed body on
+  any route is a 400, matching every other route in this app.
+- **`add_device_screen.dart`** (new, off Guardian More, parallel to the
+  existing guardian-invite entry point) — role picker (child, or the
+  guardian's own other device; "which child" when more than one), PIN
+  re-entry, then a real QR (`pretty_qr_code` — `qr_flutter`, the
+  long-standing default, has zero listed maintainers and no release in
+  roughly three years, confirmed before switching) plus the 6-digit
+  fallback and a live, plain-numeric countdown, plus a real Cancel.
+- **`pairing_redeem_screen.dart`** (new) — shown at boot
+  (`main_live.dart`/`main_live_guardian.dart`) whenever there's no locally
+  -stored identity AND no dart-define set (`bool.hasEnvironment`, not a
+  `defaultValue` comparison — the two are not the same question). Scan
+  (`mobile_scanner`) or type; `role_mismatch` and every other real server
+  reason gets its own distinct message, never folded into a generic
+  network-failure one. On success, stores `{sessionToken, deviceId, role,
+  targetId}` via `flutter_secure_storage` — the FIRST on-device persistence
+  this app has ever needed — and proceeds into the app exactly as a
+  dart-define'd boot does today. The dart-define path itself is completely
+  unchanged.
+- **`paired_devices_list.dart`** (new, guardian-only) — lists every device
+  paired to a child's family with a revoke action per row, reachable from
+  the same Add-a-device area.
+- **`DeviceRevokedException`** (`api_client.dart`) — a dedicated
+  `ApiException` subtype for the one specific server reason
+  (`device_revoked`) a caller must react to distinctly (clear secure
+  storage, route back to pairing) rather than folding into the generic
+  network-failure path.
+- **Session/theme boot wiring** (`main_live.dart`/`main_live_guardian.dart`)
+  — the boot-time helpers these two files already own
+  (`_verifyGuardianPin`/`_fetchInitialTheme`) now prefer a redeemed device's
+  own real, `deviceId`-bearing session over a fresh `devLoginFor()` call
+  when one is stored, with a real reaction to `DeviceRevokedException`
+  (clears storage). Disclosed, honest limit: `LiveChildHomeScreen`/
+  `LiveGuardianHomeScreen`'s own internal, per-screen `devLoginFor()` calls
+  are UNCHANGED by this pass — a full "every live screen prefers a
+  persisted paired-device session" rewiring is a real, separate follow-up,
+  not invented here (see this feature's own PR description). A
+  guardian-role redeem also has no `childId` to resolve at all (a
+  guardian-role code binds to the guardian's own identity, never a
+  particular child) — `main_live_guardian.dart` keeps its pre-existing
+  `OLIVE_CHILD_ID` default regardless of pairing state; resolving "which
+  child(ren) does a multi-child guardian's new device actually show" is out
+  of scope here.
+
+### Testing
+- `server/test/device_pairing_route_test.mjs` (new, fake-pool route
+  contract, mirroring `kiosk_pin_route.test.mjs`'s own technique) — 55
+  assertions: generate (child-role, guardian-role, wrong-PIN, malformed
+  body), cancel (idempotent, not-found), redeem (success, already-redeemed,
+  revoked, expired, role-mismatch, the numeric lockout, not-found,
+  malformed body — including a decoded real session proving the minted
+  `deviceId` claim), list (family scoping, no-edge refusal), revoke
+  (idempotent, not-found, a co-guardian succeeding), and the real
+  `device_revoked` refusal proven through `api.handle()` end to end.
+- `packages/db/test/device_pairing.test.mjs` (new, real Postgres/real RLS,
+  mirroring `guardian_invite.test.mjs`'s own technique) — 46 assertions:
+  create, the owner-only RLS boundary (a stranger's own session genuinely
+  sees zero rows), the system-role redeem path proven the same way
+  `guardian_invite`'s own accept-flow test proves it, the family-scoped
+  list/revoke including the real "second lock" (a stranger's own session
+  sees zero of a real child's real devices even when asked about that exact
+  childId), `health_check`'s `rls_unforced` reporting zero for both new
+  tables, and the real HTTP route end to end (redeem, a genuine revoke via
+  the pool function, then the SAME session token refused as
+  `device_revoked` on a completely different route, `GET /v1/me`).
+- `add_device_screen_test.dart`, `pairing_redeem_screen_test.dart`,
+  `paired_devices_list_test.dart` (new) and `main_live_test.dart`/
+  `main_live_guardian_test.dart` (new — no prior file existed to extend;
+  see each file's own header for why `main()` itself isn't directly
+  testable and what real coverage stands in for it) — 41 Dart assertions
+  total. `flutter analyze` clean.
+- All new/extended `.test.mjs`/`.dart` files registered in `tools/verify.sh`,
+  matching the existing placement pattern exactly.
+
+### Doc-sync
+`MASTERFILE.md` (v0.49.74, new §11 blockquote), this entry, `MARKUP.html`
+(new `addDevice`/`pairingRedeem`/`pairedDevicesList` screen entries),
+`scaffold/demo/shell.html` (all three declared `notDemoed` with full
+rationale — a live server-generated code/QR/countdown and on-device secure
+storage have no honest static-demo counterpart, the same posture
+`obGender`/`invitation`/`jokebook`/`themePicker` already establish).
+
+`tools/verify.sh` run in full on this branch: **7511/7511 assertions
+passing**, `flutter analyze` clean, zero regressions in any pre-existing
+suite. Four pre-existing, environment-only gaps, all disclosed and
+unrelated to this change: a homework-OCR fixture-generation gap and a
+Windows ESM path issue in `media_signing_secret.test.mjs` (both
+Windows-sandbox-specific, reproducing identically against an unmodified
+`main`), no `livekit-server` binary on this machine, and
+`tools/healthcheck.mjs` requiring a native `psql` binary this sandbox lacks
+(confirmed a false alarm, not a real breach: `tools/health-alert.mjs`'s own
+DATABASE_URL-based check reports "all clear — 8 health checks, 0
+breaches", and a direct query of `health_check` independently confirms
+zero rows exceed threshold).
+
+---
+
 ## [0.49.73] — 2026-09-12 — Onboarding & Guardian Access, sub-project 1: real identity capture, and a required guardian PIN
 
 Full design spec: `docs/superpowers/specs/2026-09-12-onboarding-identity-pin

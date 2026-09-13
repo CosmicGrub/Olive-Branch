@@ -14,19 +14,49 @@
 // against a running server/index.mjs (DEV_LOGIN=1 required — see that
 // file's own header for why). childId defaults to the seed data in
 // server/seed-dev.mjs ("Ivy").
+//
+// Device pairing & provisioning (docs/superpowers/specs/2026-09-12-device
+// -pairing-provisioning-design.md): when NO `OLIVE_CHILD_ID` dart-define is
+// set AND no identity is stored on-device (flutter_secure_storage — the
+// first on-device persistence this app has ever needed, see
+// device_identity.dart's own header), this boots into PairingRedeemScreen
+// instead of the kiosk shell. The dart-define path above is UNCHANGED —
+// `bool.hasEnvironment` is what lets this file tell "the define is genuinely
+// absent" apart from "the define happens to equal its own default value",
+// which `String.fromEnvironment`'s defaultValue alone cannot distinguish.
+// Once redeemed, this proceeds into the SAME KioskShell/LiveChildHomeScreen
+// tree the dart-define path already builds — see _bootLiveApp() below —
+// with ONE disclosed, honest limitation: LiveChildHomeScreen's OWN internal
+// per-call devLoginFor() (child_home_live.dart's `_load()`) is UNCHANGED by
+// this pass, so a redeemed device's ongoing traffic to that screen still
+// goes through DEV_LOGIN, exactly as the dart-define path always has. Only
+// the boot-time helpers THIS file owns (_verifyGuardianPin/
+// _fetchInitialTheme) genuinely prefer the real, deviceId-bearing session
+// this device redeemed, when one exists — real, working revocation
+// detection at kiosk-unlock and at next-cold-boot time, not a claim this
+// pass rewired every live screen's own auth path (a real, separate,
+// disclosed follow-up — see this PR's own description).
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'child_home_live.dart';
+import 'device_identity.dart';
 import 'kiosk_shell.dart';
+import 'pairing_redeem_screen.dart';
 import 'push_channel.dart';
 import 'theme.dart';
 
-const _defaultBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
+const _dartDefineBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
     defaultValue: 'http://10.0.2.2:8123'); // Android emulator's host-loopback alias
-const _defaultChildId = String.fromEnvironment('OLIVE_CHILD_ID',
+const _dartDefineChildId = String.fromEnvironment('OLIVE_CHILD_ID',
     defaultValue: 'aaaaaaaa-0000-4000-8000-000000000001'); // seed-dev.mjs's Ivy
+// `bool.hasEnvironment`, NOT a defaultValue comparison — see this file's own
+// header for why the two are not the same question. True on every existing
+// `flutter run --dart-define=OLIVE_CHILD_ID=...` invocation, dev or CI,
+// unaffected by this feature.
+const _hasChildIdDartDefine = bool.hasEnvironment('OLIVE_CHILD_ID');
 
 /// The real backend PIN check — replaces the former hardcoded
 /// `_demoVerifyGuardianPin` ('1273', never checked against anything). This is
@@ -37,8 +67,8 @@ const _defaultChildId = String.fromEnvironment('OLIVE_CHILD_ID',
 ///
 /// Reuses child_home_live.dart's own session plumbing rather than inventing
 /// a second path: the same `devLoginFor()` dev-login helper, against the same
-/// `_defaultBaseUrl`/`_defaultChildId` this file already defines (see that
-/// file's `_load()` for the pattern this mirrors). A fresh dev-login per PIN
+/// `_dartDefineBaseUrl`/[childId] this file already resolves at boot (see
+/// that file's `_load()` for the pattern this mirrors). A fresh dev-login per PIN
 /// attempt, not a token cached across this screen's lifetime: dev-login is a
 /// stateless, side-effect-free shortcut fenced behind DEV_LOGIN=1 (see
 /// server/index.mjs's own header) with nothing worth preserving between
@@ -51,13 +81,26 @@ const _defaultChildId = String.fromEnvironment('OLIVE_CHILD_ID',
 /// `devLoginFor()` call in front of it is wrapped the same way here — a
 /// server that's unreachable, or a dev-login that 404s/500s, must reject the
 /// PIN, never accept it. A broken network must never look like a correct PIN.
-Future<bool> _verifyGuardianPin(String pin) async {
+///
+/// [sessionToken], when non-null (a redeemed, paired device — see this
+/// file's own header), is used DIRECTLY instead of a fresh `devLoginFor()`
+/// call — the real, deviceId-bearing credential this device actually holds,
+/// which a DEV_LOGIN-only deployment may not even accept. A real
+/// [DeviceRevokedException] here (this device was cut off since it last
+/// booted) clears the stored identity so the NEXT cold boot lands back on
+/// the pairing screen — see this file's own header for the honest limit of
+/// that reaction (it does not hot-swap the CURRENTLY running app).
+Future<bool> _verifyGuardianPin(String pin,
+    {required String childId, required String? sessionToken}) async {
   try {
-    final token = await devLoginFor(_defaultBaseUrl, childId: _defaultChildId);
-    final api = OliveApi(_defaultBaseUrl, token);
-    final ok = await api.verifyKioskPin(_defaultChildId, pin);
+    final token = sessionToken ?? await devLoginFor(_dartDefineBaseUrl, childId: childId);
+    final api = OliveApi(_dartDefineBaseUrl, token);
+    final ok = await api.verifyKioskPin(childId, pin);
     api.close();
     return ok;
+  } on DeviceRevokedException {
+    unawaited(DeviceIdentityStore().clear());
+    return false;
   } catch (_) {
     return false;
   }
@@ -96,16 +139,34 @@ Future<bool> _liveVerifyBiometricStub() async => true;
 /// `AppTheme.fromWire` is ALSO fail-closed on a malformed body — this
 /// try/catch is the outer layer, catching a network/auth failure reaching
 /// the server at all.
-Future<AppTheme> _fetchInitialTheme() async {
+///
+/// [sessionToken] — see [_verifyGuardianPin]'s own doc comment; identical
+/// reasoning and identical [DeviceRevokedException] reaction, applied here
+/// at boot time rather than at kiosk-unlock time.
+Future<AppTheme> _fetchInitialTheme(String childId, String? sessionToken) async {
   try {
-    final token = await devLoginFor(_defaultBaseUrl, childId: _defaultChildId);
-    final api = OliveApi(_defaultBaseUrl, token);
-    final wire = await api.fetchTheme(_defaultChildId);
+    final token = sessionToken ?? await devLoginFor(_dartDefineBaseUrl, childId: childId);
+    final api = OliveApi(_dartDefineBaseUrl, token);
+    final wire = await api.fetchTheme(childId);
     api.close();
     return AppTheme.fromWire(wire['theme'] as Map<String, dynamic>?);
+  } on DeviceRevokedException {
+    await DeviceIdentityStore().clear();
+    return defaultAppTheme;
   } catch (_) {
     return defaultAppTheme;
   }
+}
+
+/// Boots the real kiosk shell for [childId] — the common tail of BOTH the
+/// dart-define path and a freshly-redeemed pairing (see this file's own
+/// header). Extracted so `main()` and the pairing screen's own
+/// `onRedeemed` callback (below) share one real implementation rather than
+/// two copies that could drift.
+Future<void> _bootLiveApp({required String childId, required String? sessionToken}) async {
+  // Resolved BEFORE runApp() -- see _fetchInitialTheme()'s own doc comment.
+  final initialTheme = await _fetchInitialTheme(childId, sessionToken);
+  runApp(OliveLive(initialTheme: initialTheme, childId: childId, sessionToken: sessionToken));
 }
 
 Future<void> main() async {
@@ -133,18 +194,76 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('[olive.push] background handler not registered at boot: $e');
   }
-  // Resolved BEFORE runApp() -- see _fetchInitialTheme()'s own doc comment.
-  final initialTheme = await _fetchInitialTheme();
-  runApp(OliveLive(initialTheme: initialTheme));
+
+  // Device pairing & provisioning boot branch — see this file's own header.
+  // The dart-define path below is completely unchanged when the define IS
+  // set; `DeviceIdentityStore().load()` is never even called in that case,
+  // matching the design spec's own "dart-define, when present, keeps
+  // working exactly as today" line literally, not just in effect.
+  if (!_hasChildIdDartDefine) {
+    final stored = await DeviceIdentityStore().load();
+    if (stored == null) {
+      runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl));
+      return;
+    }
+    await _bootLiveApp(childId: stored.targetId, sessionToken: stored.sessionToken);
+    return;
+  }
+  await _bootLiveApp(childId: _dartDefineChildId, sessionToken: null);
+}
+
+/// Shown at boot when there's no dart-define AND no stored identity — see
+/// this file's own header. A minimal MaterialApp wrapper (this build's real
+/// theme/kiosk tree doesn't exist yet at this point — there is no identity
+/// to fetch a theme FOR), matching invitation_screen.dart's own convention
+/// of a screen owning its own Scaffold with no assumed ancestor chrome.
+class _PairingBootApp extends StatelessWidget {
+  const _PairingBootApp({required this.baseUrl});
+  final String baseUrl;
+
+  /// Persists the real identity this device just redeemed, then re-enters
+  /// the app via the SAME [_bootLiveApp] the dart-define path already uses
+  /// — `runApp()` a second time is a legitimate, ordinary way to replace a
+  /// Flutter app's root widget, not a workaround; there is no `OliveLive`
+  /// instance yet at this point for a callback to hand state to instead.
+  Future<void> _onRedeemed(Map<String, dynamic> result) async {
+    final identity = DeviceIdentity(
+      sessionToken: result['sessionToken'] as String,
+      deviceId: result['deviceId'] as String,
+      role: result['role'] as String? ?? 'child',
+      targetId: result['targetId'] as String,
+    );
+    await DeviceIdentityStore().save(identity);
+    await _bootLiveApp(childId: identity.targetId, sessionToken: identity.sessionToken);
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Olive (pairing)',
+    theme: ThemeData(colorScheme: colorSchemeFor(defaultAppTheme), useMaterial3: true),
+    home: PairingRedeemScreen(baseUrl: baseUrl, role: 'child', onRedeemed: _onRedeemed),
+  );
 }
 
 class OliveLive extends StatefulWidget {
-  const OliveLive({super.key, this.initialTheme = defaultAppTheme});
+  const OliveLive({super.key, this.initialTheme = defaultAppTheme,
+    required this.childId, required this.sessionToken});
 
   /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
   /// fail-closed to [defaultAppTheme] on any failure -- this widget never
   /// re-derives that fallback itself.
   final AppTheme initialTheme;
+
+  /// Resolved BEFORE this widget is constructed — either the dart-define
+  /// value, or a redeemed/stored identity's own targetId. See this file's
+  /// own header.
+  final String childId;
+
+  /// Non-null only for a redeemed, paired device — see [_verifyGuardianPin]/
+  /// [_fetchInitialTheme]'s own doc comments for how this is used instead
+  /// of a fresh `devLoginFor()` call at THIS file's own boot-time call
+  /// sites.
+  final String? sessionToken;
 
   @override
   State<OliveLive> createState() => _OliveLiveState();
@@ -212,11 +331,12 @@ class _OliveLiveState extends State<OliveLive> {
           child: child!,
         ),
         home: KioskShell(
-          verifyPin: _verifyGuardianPin,
+          verifyPin: (pin) => _verifyGuardianPin(pin,
+            childId: widget.childId, sessionToken: widget.sessionToken),
           verifyBiometric: _liveVerifyBiometricStub,
           child: LiveChildHomeScreen(
-            baseUrl: _defaultBaseUrl,
-            childId: _defaultChildId,
+            baseUrl: _dartDefineBaseUrl,
+            childId: widget.childId,
             navigatorKey: _navigatorKey,
           ),
         ),

@@ -72,6 +72,17 @@ export interface Ctx {
 export interface DbPort {
   edgesFor(userId: string): Promise<Edge[]>;
   withSession<T>(p: VerifiedPrincipal, fn: (q: Query) => Promise<T>): Promise<T>;
+  /**
+   * device-pairing-provisioning design spec — checked in `handle()` below
+   * for every session that carries a `deviceId` claim (only sessions minted
+   * via POST /v1/device-pairing/redeem ever do). Fails CLOSED on an
+   * unresolvable device id (deleted row, which nothing in this schema ever
+   * does, or a malformed id) — same discipline every other security decision
+   * in this codebase already takes on a DB lookup (attemptPinFor,
+   * verifyAssertion, ...): "device not found" must never read as "device not
+   * revoked."
+   */
+  isDeviceRevoked(deviceId: string): Promise<boolean>;
 }
 export type Query = (sql: string, params?: unknown[]) => Promise<any[]>;
 
@@ -272,6 +283,20 @@ export class Api {
     const s = readSession(this.secret, token, this.now());
     if (!s.ok) return { status: 401, body: { error: s.reason } };
     const principal = s.principal;
+
+    // device-pairing-provisioning design spec — a session minted via
+    // POST /v1/device-pairing/redeem carries a `deviceId` claim; every OTHER
+    // session-issuing path (DEV_LOGIN, WebAuthn login, guardian-invite
+    // bootstrap, kiosk-pin escalation) carries none, so this is a pure no-op
+    // for every request this codebase served before this claim existed
+    // (readSession's own `body.deviceId ?? null` default). Checked here,
+    // before authorization, so a revoked device is refused on identity
+    // grounds — the same 401 posture `expired`/`bad_signature` already
+    // get — rather than reaching A3's childId/edge logic at all.
+    if (principal.deviceId) {
+      const revoked = await this.db.isDeviceRevoked(principal.deviceId);
+      if (revoked) return { status: 401, body: { error: 'device_revoked' } };
+    }
 
     if (m.route.escalated && !principal.escalated) {
       return { status: 403, body: { error: 'escalation_required' } };
