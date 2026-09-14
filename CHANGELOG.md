@@ -120,11 +120,19 @@ pass**: the real-Postgres suites (including this pass's own new
 live LiveKit suite — this session had no reachable Postgres, a
 non-functional Docker Desktop (a known, previously-documented crash-loop),
 and no WSL access, so none of `tools/verify.sh`'s database-backed sections
-could run here. A real, full `tools/verify.sh` run (WSL, per
-`docs/windows-dev-notes.md`) is required before this PR's MARKUP/DEMO
-assertion-count figures can be synced — left un-synced here deliberately
-rather than estimated (see this repo's own standing rule on that exact
-mistake).
+could run in that sandbox. A real, full `tools/verify.sh` run (WSL) since
+found one genuine, disclosed bug this session's own local-only checks
+could never have caught: `packages/db/test/child_profile.test.mjs`'s
+"B RLS" group silently depended on "A loader"'s final leftover state
+(a 'boy' write) rather than setting up its own fixture — this pass's own
+new null-gender tests, appended to the end of "A", changed that leftover
+state to `null` and broke B's unstated assumption for a reason that had
+nothing to do with RLS at all. Fixed by giving "B RLS" its own explicit
+setup. With that real failure closed, **`tools/verify.sh`'s real
+`COMPUTED TOTAL`: 7749/7749 assertions passing, 0 failed** — the
+authoritative figure now reflected in MARKUP/DEMO, superseding the
+earlier sandbox-only estimate above rather than either number being
+fabricated.
 
 ## [0.49.75] — 2026-09-13 — PIN-gated parental controls: visibility & pacing
 
