@@ -4,6 +4,7 @@
 // 'Ivy', ParentPresence('Dad', ...)) so the real backend and the Flutter
 // client's existing placeholder data describe the same family.
 import pg from 'pg';
+import { hashPin } from '../packages/auth/src/auth.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
@@ -73,6 +74,52 @@ await client.query(
            now() - interval '1 hour', now() + interval '88 days')`,
   [IVY, DAD, artifact.rows[0].id]);
 
+// Automatic First-Run Detection (docs/superpowers/specs/2026-09-14
+// -automatic-first-run-detection-design.md) — REQUIRED compatibility fix,
+// not optional follow-up work (that spec's own "Compatibility consequence"
+// section). Both new boot gates (main_live_guardian.dart's hasPin check,
+// main_live.dart's hasOnboarded check) apply uniformly regardless of how
+// identity was resolved, so they now apply to every dart-define-provisioned
+// dev/CI/demo build too — main_live.dart's/main_live_guardian.dart's own
+// `_dartDefineChildId`/`_dartDefineGuardianId` defaults are exactly IVY/DAD
+// below. Without these two inserts, a fresh seed would leave the seeded
+// guardians with no PIN and the seeded child with no `child_profile` row,
+// landing every existing dart-define-provisioned test/demo flow on
+// GuardianSetupScreen/the child onboarding branch instead of
+// GuardianHome/ChildHome — silently, not as a loud, obviously-related
+// failure. ON CONFLICT DO NOTHING, matching every insert above: a real
+// developer who has since set her OWN PIN, or a child who has since
+// genuinely re-onboarded with a different real answer, is never silently
+// overwritten by a later reseed.
+//
+// '1234' is a throwaway dev/CI-only PIN — never treated as a real secret
+// anywhere this codebase actually checks it (attemptPinFor()'s own real
+// scrypt hash + lockout counter still gate it exactly like any other PIN);
+// picked purely to be typeable, the same reason MOM/DAD/IVY's own ids above
+// are hardcoded constants rather than generated fresh each run.
+await client.query(
+  `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
+   VALUES ($1, $2, 0, NULL, now())
+   ON CONFLICT (user_id) DO NOTHING`, [DAD, hashPin('1234')]);
+await client.query(
+  `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
+   VALUES ($1, $2, 0, NULL, now())
+   ON CONFLICT (user_id) DO NOTHING`, [MOM, hashPin('1234')]);
+// A real, honest answer, not a fabricated skip — see child_profile's own
+// header for why a genuinely skipped child has NO ROW at all rather than a
+// NULL-gender one. `hasOnboarded` only ever checks row EXISTENCE (routes.mjs's
+// own GET /v1/me handler), so any real value works here; 'girl' is used
+// because it is the honest one — this exact seeded child is referred to as
+// "her"/"she" throughout this codebase's own comments (this file's own
+// header, main.dart's ParentPresence('Dad', ...) comment,
+// onboarding_gender.dart's own header, 0031_child_profile.sql's own header),
+// not an arbitrary placeholder picked for this pass alone.
+await client.query(
+  `INSERT INTO child_profile (child_id, gender, set_at)
+   VALUES ($1, 'girl', now())
+   ON CONFLICT (child_id) DO NOTHING`, [IVY]);
+
 await client.query('COMMIT');
-console.log(`seeded: child ${IVY} (Ivy), guardians ${DAD} (Dad) + ${MOM} (Mom), one delivered message`);
+console.log(`seeded: child ${IVY} (Ivy, onboarded), guardians ${DAD} (Dad) + ${MOM} (Mom), ` +
+  `both PIN-set, one delivered message`);
 await client.end();

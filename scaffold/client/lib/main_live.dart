@@ -36,6 +36,15 @@
 // detection at kiosk-unlock and at next-cold-boot time, not a claim this
 // pass rewired every live screen's own auth path (a real, separate,
 // disclosed follow-up — see this PR's own description).
+//
+// Automatic First-Run Detection (docs/superpowers/specs/2026-09-14
+// -automatic-first-run-detection-design.md) — closes the other item device
+// pairing's own spec explicitly deferred: "has THIS child ever completed
+// onboarding," enforced now, not merely available. Both boot paths above
+// (`main()`'s dart-define branch and a freshly-redeemed/stored pairing) now
+// go through `_bootWithOnboardingGate` before `_bootLiveApp` — see that
+// function's own doc comment, and `_OnboardingBootApp`'s, for the full
+// account of the new pre-KioskShell onboarding branch this adds.
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -44,6 +53,7 @@ import 'api_client.dart';
 import 'child_home_live.dart';
 import 'device_identity.dart';
 import 'kiosk_shell.dart';
+import 'onboarding_flow.dart';
 import 'pairing_redeem_screen.dart';
 import 'push_channel.dart';
 import 'theme.dart';
@@ -162,11 +172,101 @@ Future<AppTheme> _fetchInitialTheme(String childId, String? sessionToken) async 
 /// dart-define path and a freshly-redeemed pairing (see this file's own
 /// header). Extracted so `main()` and the pairing screen's own
 /// `onRedeemed` callback (below) share one real implementation rather than
-/// two copies that could drift.
+/// two copies that could drift. As of Automatic First-Run Detection (docs/
+/// superpowers/specs/2026-09-14-automatic-first-run-detection-design.md),
+/// neither of those two callers invokes this directly any more — both go
+/// through [_bootWithOnboardingGate] below, which calls this ONLY once
+/// `hasOnboarded` is genuinely true. This function itself is otherwise
+/// completely unchanged: it is still the one real path into
+/// KioskShell/ChildHome, exactly as before that gate existed.
 Future<void> _bootLiveApp({required String childId, required String? sessionToken}) async {
   // Resolved BEFORE runApp() -- see _fetchInitialTheme()'s own doc comment.
   final initialTheme = await _fetchInitialTheme(childId, sessionToken);
   runApp(OliveLive(initialTheme: initialTheme, childId: childId, sessionToken: sessionToken));
+}
+
+/// Resolves a usable session token for [childId] — [sessionToken] when
+/// non-null (a redeemed, paired device), else a fresh `devLoginFor()` call,
+/// the identical `sessionToken ?? await devLoginFor(...)` pattern
+/// [_verifyGuardianPin]/[_fetchInitialTheme] above already establish. Unlike
+/// those two, the resolved token is RETURNED (never discarded) — Automatic
+/// First-Run Detection's own [_OnboardingBootApp] below needs a concrete,
+/// non-null token to thread into its own live-wired `ObGenderScreen`
+/// (onboarding_gender.dart's `_isLive` getter requires one), for BOTH the
+/// pairing path (already non-null) AND the dart-define path (always null
+/// until this function resolves one). A [DeviceRevokedException] here
+/// reacts the same honest way those two already do (clears the stored
+/// identity for the next cold boot) and surfaces as `null`, same as any
+/// other resolution failure — this function's own caller below fails closed
+/// on a null return, exactly like every other boot-time network failure
+/// this file already treats as "assume the less-trusted state," never "let
+/// her through anyway."
+Future<String?> _resolveSessionToken(String childId, String? sessionToken) async {
+  if (sessionToken != null) return sessionToken;
+  try {
+    return await devLoginFor(_dartDefineBaseUrl, childId: childId);
+  } on DeviceRevokedException {
+    unawaited(DeviceIdentityStore().clear());
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// GET /v1/me's `hasOnboarded` field (Automatic First-Run Detection, docs/
+/// superpowers/specs/2026-09-14-automatic-first-run-detection-design.md) —
+/// FAILS CLOSED like every other boot-time gate this file already enforces
+/// ([_verifyGuardianPin]'s own doc comment: "a broken network must never
+/// look like a correct PIN"; applied here to "never look like a completed
+/// onboarding"): a null [token] (resolution already failed), or a `/v1/me`
+/// call that throws for any reason, reports `false` — the pre-lock-task
+/// onboarding branch, never a silent pass into KioskShell.
+Future<bool> _fetchHasOnboarded(String childId, String? token) async {
+  if (token == null) return false;
+  try {
+    final api = OliveApi(_dartDefineBaseUrl, token);
+    final me = await api.fetchMe();
+    api.close();
+    return me['hasOnboarded'] == true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// The Automatic First-Run Detection boot gate itself (docs/superpowers/
+/// specs/2026-09-14-automatic-first-run-detection-design.md) — sits between
+/// identity resolution and [_bootLiveApp], now the ONLY path either `main()`
+/// or [_PairingBootApp]'s own `onRedeemed` uses to reach it. Applies
+/// IDENTICALLY to both callers — "driven purely by identity state, not by
+/// how that identity got resolved," the design spec's own line — since
+/// neither this function nor anything it calls branches on how [childId]/
+/// [sessionToken] were obtained.
+///
+/// A fresh, concrete token is resolved once here ([_resolveSessionToken])
+/// and reused for BOTH the `hasOnboarded` check and (when the gate engages)
+/// [_OnboardingBootApp]'s own live wiring — one resolution, not two.
+Future<void> _bootWithOnboardingGate({
+  required String childId, required String? sessionToken,
+}) async {
+  final token = await _resolveSessionToken(childId, sessionToken);
+  final hasOnboarded = await _fetchHasOnboarded(childId, token);
+  if (hasOnboarded) {
+    await _bootLiveApp(childId: childId, sessionToken: sessionToken);
+    return;
+  }
+  runApp(_OnboardingBootApp(
+    baseUrl: _dartDefineBaseUrl,
+    childId: childId,
+    token: token,
+    // The ORIGINAL sessionToken (possibly null), not the locally-resolved
+    // [token] above — _bootLiveApp's own downstream helpers already know
+    // how to resolve a null sessionToken themselves (their own
+    // `sessionToken ?? devLoginFor(...)` pattern), so there is nothing
+    // gained by threading the already-resolved one through, and doing so
+    // would be the one place in this file where a boot helper receives a
+    // token it did not resolve itself.
+    onOnboarded: () => _bootLiveApp(childId: childId, sessionToken: sessionToken),
+  ));
 }
 
 Future<void> main() async {
@@ -206,10 +306,16 @@ Future<void> main() async {
       runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl));
       return;
     }
-    await _bootLiveApp(childId: stored.targetId, sessionToken: stored.sessionToken);
+    await _bootWithOnboardingGate(childId: stored.targetId, sessionToken: stored.sessionToken);
     return;
   }
-  await _bootLiveApp(childId: _dartDefineChildId, sessionToken: null);
+  // Automatic First-Run Detection applies HERE too — the dart-define path
+  // is otherwise completely unchanged (identity resolution itself is
+  // untouched, matching device pairing's own precedent above), but it now
+  // goes through the SAME gate the paired path does, not straight to
+  // _bootLiveApp — see _bootWithOnboardingGate's own doc comment for why
+  // that is the point, not an oversight.
+  await _bootWithOnboardingGate(childId: _dartDefineChildId, sessionToken: null);
 }
 
 /// Shown at boot when there's no dart-define AND no stored identity — see
@@ -222,10 +328,13 @@ class _PairingBootApp extends StatelessWidget {
   final String baseUrl;
 
   /// Persists the real identity this device just redeemed, then re-enters
-  /// the app via the SAME [_bootLiveApp] the dart-define path already uses
-  /// — `runApp()` a second time is a legitimate, ordinary way to replace a
-  /// Flutter app's root widget, not a workaround; there is no `OliveLive`
-  /// instance yet at this point for a callback to hand state to instead.
+  /// the app via the SAME [_bootWithOnboardingGate] the dart-define path
+  /// already uses (Automatic First-Run Detection applies identically to a
+  /// freshly-redeemed device, per that gate's own doc comment) — `runApp()`
+  /// a second time is a legitimate, ordinary way to replace a Flutter app's
+  /// root widget, not a workaround; there is no `OliveLive`/
+  /// `_OnboardingBootApp` instance yet at this point for a callback to hand
+  /// state to instead.
   Future<void> _onRedeemed(Map<String, dynamic> result) async {
     final identity = DeviceIdentity(
       sessionToken: result['sessionToken'] as String,
@@ -234,7 +343,7 @@ class _PairingBootApp extends StatelessWidget {
       targetId: result['targetId'] as String,
     );
     await DeviceIdentityStore().save(identity);
-    await _bootLiveApp(childId: identity.targetId, sessionToken: identity.sessionToken);
+    await _bootWithOnboardingGate(childId: identity.targetId, sessionToken: identity.sessionToken);
   }
 
   @override
@@ -242,6 +351,64 @@ class _PairingBootApp extends StatelessWidget {
     title: 'Olive (pairing)',
     theme: ThemeData(colorScheme: colorSchemeFor(defaultAppTheme), useMaterial3: true),
     home: PairingRedeemScreen(baseUrl: baseUrl, role: 'child', onRedeemed: _onRedeemed),
+  );
+}
+
+/// Shown at boot when identity is resolved but `GET /v1/me`'s `hasOnboarded`
+/// is false — Automatic First-Run Detection (docs/superpowers/specs/
+/// 2026-09-14-automatic-first-run-detection-design.md). Mirrors
+/// [_PairingBootApp]'s own shape EXACTLY, per the design spec's own explicit
+/// instruction to reuse that shape rather than invent a second, different
+/// pattern for "content that must run before lock-task engages": a bare
+/// `MaterialApp` root with no `KioskShell`/lock-task ANYWHERE in this
+/// tree — a child mid-onboarding can never be inside an engaged kiosk lock,
+/// because the widget that engages it (`KioskShell`, `OliveLive`'s own
+/// `home:`) simply does not exist on this branch of the widget tree at all.
+///
+/// Runs the UNCHANGED `onboarding_flow.dart` sequence — "the identical
+/// sequence 'Redo the welcome tour' already runs, nothing new invented" (the
+/// design spec's own line) — with real live wiring threaded through to its
+/// one network-calling step (`ObGenderScreen`, via
+/// `OnboardingFlowScreen`'s own `childId`/`baseUrl`/`sessionToken`
+/// params). [token] is ALREADY resolved by [_bootWithOnboardingGate]
+/// (`_resolveSessionToken`) before this widget is ever constructed — a
+/// fresh `devLoginFor()` call for the dart-define path, the real stored
+/// credential for a paired one — so `onboarding_gender.dart`'s own `_isLive`
+/// getter is genuinely live on BOTH boot paths here, not only the paired
+/// one. [token] can still be null (every resolution attempt failed — see
+/// that function's own doc comment), in which case this screen still
+/// renders and still lets her walk through it, simply without a live write
+/// at the end — the same graceful, non-trapping degradation
+/// `onboarding_gender.dart`'s own header already describes for an offline
+/// `ObGenderScreen`, not a new failure mode this class invents.
+///
+/// [onOnboarded] fires once [OnboardingFlowScreen]'s own sequence genuinely
+/// reaches its real end (that file's new `onComplete` callback — see its
+/// own doc comment) — NOT on an early abandon (back-navigation mid-flow,
+/// the existing `if (stepResult == null) return setState(...)` early-outs
+/// `onboarding_flow.dart` already has for every step, untouched by this
+/// pass), which leaves this screen on-site rather than silently proceeding
+/// into KioskShell before `child_profile` genuinely has a chance to exist.
+class _OnboardingBootApp extends StatelessWidget {
+  const _OnboardingBootApp({
+    required this.baseUrl, required this.childId,
+    required this.token, required this.onOnboarded,
+  });
+  final String baseUrl;
+  final String childId;
+  final String? token;
+  final Future<void> Function() onOnboarded;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Olive (onboarding)',
+    theme: ThemeData(colorScheme: colorSchemeFor(defaultAppTheme), useMaterial3: true),
+    home: OnboardingFlowScreen(
+      childId: childId,
+      baseUrl: baseUrl,
+      sessionToken: token,
+      onComplete: onOnboarded,
+    ),
   );
 }
 

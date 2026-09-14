@@ -14,6 +14,118 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.76] — 2026-09-14 — Automatic first-run detection
+
+Full design spec: `docs/superpowers/specs/2026-09-14-automatic-first-run
+-detection-design.md`. The fourth and final item in the onboarding/
+parental-controls arc that opened with v0.49.73 — closes the one deferral
+device pairing (v0.49.74) explicitly disclaimed solving: "has THIS child
+ever completed onboarding, has THIS guardian ever set a PIN," now enforced
+automatically at boot rather than left to a manual "Guardian setup"/"Redo
+the welcome tour" tap. The universal single-app direction remains a
+separate, later-queued idea, untouched here.
+
+### The signal fix
+- **`onboarding_gender.dart`'s `_finish()` now calls `PUT /v1/children/
+  :childId/profile` UNCONDITIONALLY** — on a real Boy/Girl tap AND on Skip.
+  An explicit `null` gender is now a real, meaningful value ("onboarding
+  completed, gender declined"), written as a row with `gender: NULL` and a
+  real `set_at` — the same honest-absence-vs-malformed-request discipline
+  `child_theme_preference`'s own header already established. No DB
+  migration needed: `gender` was already nullable, `set_at` already
+  existed (`0031_child_profile.sql`).
+- **`PUT /v1/children/:childId/profile`'s body validation loosened**
+  (`routes.mjs`'s `invalidProfileBody()`): accepts `{gender: 'boy' |
+  'girl' | null}`. A body missing the `gender` key entirely, or carrying
+  the wrong type, is still a 400 `bad_gender` — unchanged.
+  `setChildGender()` (`packages/db/src/pool.ts`) now accepts `gender:
+  string | null`.
+
+### Added
+- **`GET /v1/me` gains `hasOnboarded`** — symmetric with the existing
+  `hasPin`: `null` for a guardian caller, `true`/`false` for a child
+  caller, computed from `child_profile` row existence for that `childId`.
+- **Guardian-side boot gate** (`main_live_guardian.dart`): after identity
+  resolves (pairing or dart-define) and `GET /v1/me` is fetched,
+  `hasPin === false` renders `GuardianSetupScreen` in place of
+  `GuardianHome` — no dismiss action, no back-navigation around it,
+  re-checked fresh on every launch. `GuardianSetupScreen` itself is
+  unchanged; only what decides the initial screen changed.
+- **Child-side boot gate** (`main_live.dart`): after identity resolves and
+  `GET /v1/me` is fetched, `hasOnboarded === false` runs the *existing*,
+  unchanged `onboarding_flow.dart` sequence inside a NEW pre-`KioskShell`
+  root (`_OnboardingBootApp`), mirroring `_PairingBootApp`'s own shape.
+  Only on that flow's real completion (a new, optional `onComplete`
+  callback on `OnboardingFlowScreen`) — which now always writes the
+  `child_profile` row per the signal fix above — does boot proceed into
+  `_bootLiveApp` → `KioskShell` → `ChildHome`. Kiosk lock-task cannot
+  engage on this branch: `KioskShell` does not exist anywhere in
+  `_OnboardingBootApp`'s own widget tree.
+- **Both gates apply uniformly** regardless of how identity was resolved
+  (paired or dart-define) — driven purely by identity state, by design.
+- **`seed-dev.mjs` updated to satisfy both gates out of the box**
+  (required compatibility fix, not optional follow-up): pre-sets a PIN
+  for the seeded guardians (Dad/Mom, a throwaway dev-only PIN) and
+  pre-creates a `child_profile` row for the seeded child (Ivy), both
+  `ON CONFLICT DO NOTHING` so a real developer's own subsequent choices
+  are never overwritten by a later reseed. Without this, every existing
+  dart-define-provisioned test/demo flow would have silently regressed
+  into the new screens instead of GuardianHome/ChildHome.
+
+### Disclosed judgment calls
+- The exact shape of `_OnboardingBootApp` (a bare `MaterialApp` wrapper
+  around the unchanged `OnboardingFlowScreen`, mirroring `_PairingBootApp`
+  exactly) — no MARKUP screen entry of its own, the same precedent
+  `_PairingBootApp` itself already set (only the SCREEN it shows,
+  `pairingRedeem`, got one; the boot wrapper never did). `obGender`'s own
+  MARKUP entry is amended instead, since its real behaviour changed.
+- `device_pairing_route_test.mjs` is where this pass added `hasOnboarded`'s
+  test coverage alongside `hasPin`'s — the design spec's own research
+  named this file as `hasPin`'s existing home; direct inspection while
+  implementing found `hasPin` had NO test coverage anywhere in this
+  repo's JS/TS suite before this pass, and this file's own `db
+  .withSession` stub could not have exercised a real `GET /v1/me` call at
+  all. Both gaps are closed together here, extending this file's fake
+  Postgres state (`children`/`appUsers`/`childProfiles`) rather than
+  opening a separate `me`-only test file.
+- Failure-mode posture for both boot gates: a `GET /v1/me` call that fails
+  for ANY reason (network, token resolution) fails CLOSED — `hasPin`/
+  `hasOnboarded` are treated as `false`, routing to the gate rather than a
+  silent pass into Home/KioskShell. The same "a broken network must never
+  look like a correct PIN" discipline `main_live.dart`'s own
+  `_verifyGuardianPin` already documents, applied here to two new checks.
+
+### Verified
+`npm run build` clean; 63 of the 65 non-database JS/TS suites
+`tools/verify.sh` lists ran directly in this environment: **3646/3646
+assertions passing, 0 failed** (the remaining two —
+`packages/homework/test/homework.test.mjs`,
+`server/test/media_signing_secret.test.mjs` — could not even start,
+failing at process-spawn/module-load time for reasons specific to this
+session's own `Z:`-mounted Windows checkout, unrelated to any file this
+pass touches; confirmed via `git status` before concluding that, not
+assumed). `flutter analyze` clean; **2562/2562 Dart assertions passing, 0
+failed** (native Windows Flutter 3.44.8, matching CI's own pin). Demo
+build + drive: `node demo/build.mjs` clean, **116/116 demo-drive
+assertions passing, 0 failed** (`demo/test/drive.test.mjs`, every
+viewport). `tools/check-markup.mjs`/`tools/check-release-target.mjs` both
+run for real: 42/44 and 2/2 checks pass respectively — the two
+check-markup failures are exactly C7/D2 (assertion-count correspondence),
+which require the real `--total` `tools/verify.sh` itself computes; every
+other structural check (versions, screen/ref correspondence, engine-room
+coverage) passes clean at this version. **NOT independently verified this
+pass**: the real-Postgres suites (including this pass's own new
+`packages/db/test/child_profile.test.mjs` additions and the new
+`server/test/seed_dev.test.mjs`), the Android/Kotlin compile gate, and the
+live LiveKit suite — this session had no reachable Postgres, a
+non-functional Docker Desktop (a known, previously-documented crash-loop),
+and no WSL access, so none of `tools/verify.sh`'s database-backed sections
+could run here. A real, full `tools/verify.sh` run (WSL, per
+`docs/windows-dev-notes.md`) is required before this PR's MARKUP/DEMO
+assertion-count figures can be synced — left un-synced here deliberately
+rather than estimated (see this repo's own standing rule on that exact
+mistake).
+
 ## [0.49.75] — 2026-09-13 — PIN-gated parental controls: visibility & pacing
 
 Full design spec: `docs/superpowers/specs/2026-09-13-parental-controls-

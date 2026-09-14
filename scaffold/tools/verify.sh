@@ -367,6 +367,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db theme preference (real RLS)|packages/db/test/theme_preference.test.mjs" \
             "db game favorites (real RLS)|packages/db/test/game_favorites.test.mjs" \
             "db child profile (real RLS)|packages/db/test/child_profile.test.mjs" \
+            "seed-dev.mjs satisfies both first-run gates out of the box (real DB)|server/test/seed_dev.test.mjs" \
             "db device pairing & provisioning (real RLS)|packages/db/test/device_pairing.test.mjs" \
             "db parental controls: guardian_activity_override (real RLS)|packages/db/test/guardian_activity_override.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \

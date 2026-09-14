@@ -99,6 +99,64 @@ void main() {
       expect(src, contains('DeviceIdentityStore().clear()'));
     });
   });
+
+  group('C — Automatic First-Run Detection\'s own boot gate (docs/superpowers/'
+      'specs/2026-09-14-automatic-first-run-detection-design.md), asserted '
+      'against this file\'s own source, mirroring Group B\'s own technique', () {
+    final src = File('lib/main_live.dart').readAsStringSync();
+
+    test('BOTH boot paths go through _bootWithOnboardingGate now, never '
+        '_bootLiveApp directly -- applies identically regardless of how '
+        'identity was resolved', () {
+      expect(src, contains(
+        'await _bootWithOnboardingGate(childId: stored.targetId, sessionToken: stored.sessionToken);'));
+      expect(src, contains(
+        'await _bootWithOnboardingGate(childId: _dartDefineChildId, sessionToken: null);'));
+      expect(src, contains(
+        'await _bootWithOnboardingGate(childId: identity.targetId, sessionToken: identity.sessionToken);'));
+    });
+
+    test('hasOnboarded is fetched fresh from GET /v1/me before deciding the '
+        'boot branch, re-checked every launch, never cached', () {
+      expect(src, contains("me['hasOnboarded'] == true"));
+      expect(src, contains('final hasOnboarded = await _fetchHasOnboarded(childId, token);'));
+    });
+
+    test('hasOnboarded true proceeds straight into _bootLiveApp (KioskShell/'
+        'ChildHome); false runs _OnboardingBootApp instead', () {
+      expect(src, contains('if (hasOnboarded) {'));
+      expect(src, contains('await _bootLiveApp(childId: childId, sessionToken: sessionToken);'));
+      expect(src, contains('runApp(_OnboardingBootApp('));
+    });
+
+    test('a network/token-resolution failure fails CLOSED to the onboarding '
+        'branch (hasOnboarded false), never a silent pass into KioskShell -- '
+        'the same "a broken network must never look like ..." discipline '
+        '_verifyGuardianPin already documents, applied here', () {
+      expect(src, contains('if (token == null) return false;'));
+    });
+
+    test('_OnboardingBootApp runs the UNCHANGED OnboardingFlowScreen -- the '
+        'identical sequence already reached via "Redo the welcome tour", '
+        'nothing new invented -- with real live wiring, and its own '
+        'onComplete is exactly what proceeds into _bootLiveApp', () {
+      expect(src, contains('home: OnboardingFlowScreen('));
+      expect(src, contains('onComplete: onOnboarded,'));
+      expect(src, contains(
+        'onOnboarded: () => _bootLiveApp(childId: childId, sessionToken: sessionToken),'));
+    });
+
+    test('_OnboardingBootApp NEVER references KioskShell anywhere in its own '
+        'class body -- kiosk lock-task structurally cannot engage while this '
+        'branch is on screen, not merely "doesn\'t happen to today"', () {
+      final start = src.indexOf('class _OnboardingBootApp');
+      final end = src.indexOf('class OliveLive extends StatefulWidget');
+      expect(start, greaterThan(-1), reason: '_OnboardingBootApp class not found');
+      expect(end, greaterThan(start), reason: 'OliveLive class not found after it');
+      final classBody = src.substring(start, end);
+      expect(classBody, isNot(contains('KioskShell')));
+    });
+  });
 }
 
 /// Mirrors kiosk_shell_test.dart's own identical helper — the event channel

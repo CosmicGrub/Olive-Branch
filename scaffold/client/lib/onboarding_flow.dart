@@ -9,10 +9,13 @@
 // note's prose order] without any code changes" — this file is that
 // sequencing glue, choosing the assignment's prose order.
 //
-// There is no real first-run detector in this preview build (see
-// main.dart's own header on why EntryGate always renders both halves), so
-// this screen is reached as a demo re-run from ChildMoreScreen ("Redo the
-// welcome tour") rather than automatically on first launch.
+// There is no real first-run detector in the OFFLINE preview build (see
+// main.dart's own header on why EntryGate always renders both halves,
+// unchanged and out of scope for Automatic First-Run Detection below), so
+// on THAT build this screen is still reached only as a demo re-run from
+// ChildMoreScreen ("Redo the welcome tour"), never automatically. The LIVE
+// build (main_live.dart) is different as of that same pass — see
+// [onComplete]'s own doc comment.
 //
 // Each screen's onContinue/onComplete fires while it is still on screen; it
 // does not pop itself (confirmed by reading onboarding_name.dart's
@@ -33,6 +36,16 @@
 // header) — reused verbatim from ChildMoreScreen's own already-
 // authenticated session, the same live-wiring convention letters_screen.dart
 // already established for a live screen reached through this exact chain.
+//
+// Automatic First-Run Detection (docs/superpowers/specs/2026-09-14
+// -automatic-first-run-detection-design.md) adds [onComplete] — the ONLY
+// change this file makes for that spec, and additive/optional like every
+// field above it. This whole file is otherwise reused UNCHANGED as the
+// spec's own "identical sequence 'Redo the welcome tour' already runs,
+// nothing new invented" line requires: main_live.dart's new
+// `_OnboardingBootApp` runs this exact widget, live-wired, as its own
+// pre-KioskShell root, and uses [onComplete] as its signal to proceed —
+// see that class's own header.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'birthday_day.dart';
@@ -54,6 +67,7 @@ class OnboardingFlowScreen extends StatefulWidget {
     this.baseUrl,
     this.sessionToken,
     this.httpClient,
+    this.onComplete,
   });
 
   /// What the guardian entered at setup — used only if she skips the name
@@ -65,6 +79,19 @@ class OnboardingFlowScreen extends StatefulWidget {
   final String? baseUrl;
   final String? sessionToken;
   final http.Client? httpClient;
+  /// Fires once `_run()` reaches its own real end — EVERY step reached its
+  /// own real "continue," never an early back-navigation abandon (this
+  /// file's own `if (x == null) return setState(...)` early-outs below,
+  /// unchanged by this addition). Optional and additive (default null,
+  /// unchanged behaviour for every existing caller — ChildMoreScreen's own
+  /// "Redo the welcome tour" entry point never sets this): Automatic
+  /// First-Run Detection's new pre-KioskShell boot wrapper
+  /// (main_live.dart's `_OnboardingBootApp`) is the one caller that does,
+  /// using this as its own signal that `child_profile` has genuinely been
+  /// written (ObGenderScreen's own real-tap-AND-Skip write, per that
+  /// screen's file header) and boot may proceed — see that class's own
+  /// header for the full account.
+  final Future<void> Function()? onComplete;
 
   @override
   State<OnboardingFlowScreen> createState() => _OnboardingFlowScreenState();
@@ -161,6 +188,11 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         _lastChildName = childName;
       });
     }
+    // Fires AFTER the finishing-ceremony screen itself pops, and even when
+    // this widget is no longer mounted (the pre-KioskShell boot wrapper's
+    // own onComplete calls runApp() again, which does not need — and must
+    // not depend on — this widget's own BuildContext still being valid).
+    await widget.onComplete?.call();
   }
 
   @override

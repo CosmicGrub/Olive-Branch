@@ -1167,11 +1167,16 @@ class OliveApi {
 
   /// PUT .../profile — onboarding_gender.dart's real tap-and-persist path.
   /// Child-session-only (server/routes.mjs rejects any other caller with
-  /// `child_only`); [gender] must be `'boy'` or `'girl'` — the exact wire
-  /// values routes.mjs's own `invalidProfileBody()` admits, everything else
-  /// is a 400. Called only on a REAL tap, never on Skip — see
-  /// onboarding_gender.dart's own header for why a skip writes nothing here.
-  Future<Map<String, dynamic>> putChildGender(String childId, String gender) =>
+  /// `child_only`); [gender] is `'boy'`, `'girl'`, or `null` — the exact
+  /// wire values routes.mjs's own `invalidProfileBody()` admits (an explicit
+  /// `null` IS a valid, meaningful value as of Automatic First-Run Detection,
+  /// docs/superpowers/specs/2026-09-14-automatic-first-run-detection-design
+  /// .md — only a body missing the `gender` key entirely, or the wrong
+  /// type, is a 400), everything else is a 400. Called UNCONDITIONALLY now
+  /// — on a real Boy/Girl tap AND on Skip — see onboarding_gender.dart's own
+  /// header for why a Skip's `null` write is as real and as meaningful as a
+  /// real tap's.
+  Future<Map<String, dynamic>> putChildGender(String childId, String? gender) =>
       _put(childProfile, childId: childId, body: {'gender': gender});
 
   /// Posts a raw homework photo (PNG or JPEG bytes — server/routes.mjs's

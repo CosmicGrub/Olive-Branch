@@ -14,6 +14,15 @@
 // "live wiring" group below proves a real tap mid-flow reaches the real
 // route, the same way child_more_test.dart proves the equivalent for
 // LettersScreen.
+//
+// Automatic First-Run Detection (docs/superpowers/specs/2026-09-14
+// -automatic-first-run-detection-design.md) adds [onComplete] -- the
+// "onComplete fires on real completion" group below proves it fires exactly
+// once the finishing ceremony is really reached, and does NOT fire on an
+// early abandon (a step returning null, the SAME early-out every step
+// above already has) -- main_live.dart's own `_OnboardingBootApp` depends
+// on this distinction to decide whether it is safe to proceed into
+// KioskShell.
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -152,6 +161,69 @@ void main() {
       expect(puts, hasLength(1));
       expect(puts.single.url.path, '/v1/children/real-child-9/profile');
       expect(jsonDecode(puts.single.body), {'gender': 'girl'});
+    });
+  });
+
+  group('onComplete fires on real completion (Automatic First-Run '
+      'Detection, main_live.dart\'s _OnboardingBootApp depends on this)', () {
+    testWidgets('fires exactly once, only once the finishing ceremony is '
+        'genuinely reached', (tester) async {
+      var completions = 0;
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(wrap(OnboardingFlowScreen(
+        onComplete: () async { completions++; },
+      )));
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+
+      // 1. Name.
+      await tester.enterText(find.byType(TextField), 'Ivy');
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      // Not yet -- only the first of seven steps has completed.
+      expect(completions, 0);
+
+      // 2. Age.
+      await tester.tap(find.text('7'));
+      await tester.pump();
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+
+      // 2b. Gender -- skipped, a supported outcome.
+      await tester.tap(find.text('Skip for now'));
+      await tester.pumpAndSettle();
+      expect(completions, 0, reason: 'the flow is not finished yet -- only '
+        'the identity-capture portion is');
+
+      // 3. Who.
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+
+      // 4. Colour -- skipped.
+      await tester.tap(find.text('Skip for now'));
+      await tester.pumpAndSettle();
+
+      // 5. Birthday month.
+      await tester.tap(find.text('March'));
+      await tester.pump();
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+
+      // 6. Birthday day.
+      await tester.tap(find.text('14'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Yes'));
+      await tester.pumpAndSettle();
+      expect(completions, 0, reason: 'the finishing ceremony screen has not '
+        'even been reached yet');
+
+      // 7. Birthday marked -- the finishing ceremony. onComplete fires only
+      // once THIS pops too, not merely once she reaches it.
+      await tester.tap(find.text('All done!'));
+      await tester.pumpAndSettle();
+
+      expect(completions, 1);
     });
   });
 

@@ -3308,18 +3308,27 @@ export async function recordGamePickerOpen(
 /**
  * PUT .../profile — onboarding_gender.dart's real tap-and-persist path
  * (Onboarding & Guardian Access sub-project 1, docs/superpowers/specs/
- * 2026-09-12-onboarding-identity-pin-design.md). Child-write only, the
+ * 2026-09-12-onboarding-identity-pin-design.md; Skip-also-writes signal fix,
+ * Automatic First-Run Detection, docs/superpowers/specs/2026-09-14
+ * -automatic-first-run-detection-design.md). Child-write only, the
  * IDENTICAL `withSession({ roleName: 'child', ... })` shape
- * recordGamePickerOpen() above already uses — a real tap, upserted once;
- * a Skip never calls this function at all (routes.mjs's own handler), so
- * a NULL `gender` is never written here, only a real 'boy'/'girl' value.
- * `set_at` is always `now()` on every real call, matching this table's own
- * "overwritten, never a log" shape (0031_child_profile.sql's own header) —
- * a child who taps a second, different answer later simply replaces the
- * first, honestly, rather than accumulating history nothing reads.
+ * recordGamePickerOpen() above already uses — a real tap, upserted once.
+ *
+ * `gender` is now `string | null`: routes.mjs's `_finish()` call site calls
+ * this UNCONDITIONALLY, on a real Boy/Girl tap AND on Skip — an explicit
+ * `null` is a real, meaningful answer ("onboarding completed, gender
+ * declined"), not the fabricated default 0031's own header originally
+ * warned against; that header's "a skipped child has NO ROW here" account
+ * describes this function's ORIGINAL, pre-this-pass caller (routes.mjs
+ * never invoked it at all on a Skip), not a constraint this function itself
+ * ever enforced. `set_at` is always `now()` on every real call, whether
+ * `gender` is 'boy'/'girl'/null — matching this table's own "overwritten,
+ * never a log" shape (0031_child_profile.sql's own header) — a child who
+ * taps a second, different answer (or a later Skip) later simply replaces
+ * the first, honestly, rather than accumulating history nothing reads.
  */
 export async function setChildGender(
-  pool: pg.Pool, childId: string, gender: string,
+  pool: pg.Pool, childId: string, gender: string | null,
 ): Promise<void> {
   await withSession(pool, { roleName: 'child', userId: null, childId }, async (q) => {
     await q(

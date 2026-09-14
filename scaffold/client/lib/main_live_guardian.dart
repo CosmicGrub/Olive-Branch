@@ -46,6 +46,14 @@
 // pairing — resolving "which child(ren) a multi-child guardian's newly
 // paired device should actually show" is a real, disclosed gap the design
 // spec itself doesn't address (out of scope: see this PR's own description).
+//
+// Automatic First-Run Detection (docs/superpowers/specs/2026-09-14
+// -automatic-first-run-detection-design.md) — closes the LAST item that
+// design deferred: "has THIS guardian ever set a PIN," enforced now, not
+// merely available. After identity resolves (either path above) and
+// `GET /v1/me` is fetched, `hasPin === false` renders GuardianSetupScreen in
+// place of GuardianHome (see `OliveLiveGuardian.hasPin`'s own doc comment) —
+// applies identically to both boot paths, driven purely by identity state.
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -53,6 +61,7 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'device_identity.dart';
 import 'guardian_home_live.dart';
+import 'guardian_setup.dart';
 import 'pairing_redeem_screen.dart';
 import 'push_channel.dart';
 import 'theme.dart';
@@ -94,13 +103,74 @@ Future<AppTheme> _fetchInitialTheme(String guardianId, String? sessionToken) asy
   }
 }
 
+/// GET /v1/me's `hasPin` field (Automatic First-Run Detection, docs/
+/// superpowers/specs/2026-09-14-automatic-first-run-detection-design.md) —
+/// same fail-closed discipline [_fetchInitialTheme] above already documents
+/// (a broken network must never look like a guardian who has already
+/// finished setup), applied here: any failure to resolve a token or to
+/// reach `/v1/me` at all reports `false`, the GuardianSetupScreen branch,
+/// never a silent pass into GuardianHome. [sessionToken], when non-null, is
+/// used directly instead of a fresh `devLoginFor()` call — the identical
+/// preference [_fetchInitialTheme] already gives a redeemed/paired device's
+/// own real credential.
+Future<bool> _fetchHasPin(String guardianId, String? sessionToken) async {
+  try {
+    final token = sessionToken ?? await devLoginFor(_dartDefineBaseUrl, userId: guardianId);
+    final api = OliveApi(_dartDefineBaseUrl, token);
+    final me = await api.fetchMe();
+    api.close();
+    return me['hasPin'] == true;
+  } on DeviceRevokedException {
+    await DeviceIdentityStore().clear();
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Real POST /v1/me/pin (OliveApi.setGuardianPin) for the boot-time gate
+/// below — same shape guardian_more.dart's own `_liveSetGuardianPin`
+/// already establishes for GuardianSetupScreen reached from the hub,
+/// adapted here to prefer [sessionToken] over a fresh devLoginFor() call,
+/// the identical preference [_fetchInitialTheme]/[_fetchHasPin] above
+/// already give a redeemed/paired device's own real credential.
+Future<void> Function(String pin) _liveSetGuardianPin(
+    {required String guardianId, required String? sessionToken}) {
+  return (String pin) async {
+    final token = sessionToken ?? await devLoginFor(_dartDefineBaseUrl, userId: guardianId);
+    final api = OliveApi(_dartDefineBaseUrl, token);
+    try {
+      await api.setGuardianPin(pin);
+    } finally {
+      api.close();
+    }
+  };
+}
+
+/// GuardianSetupScreen.checkExistingPin for the boot-time gate below —
+/// reuses [_fetchHasPin] directly rather than a second implementation of
+/// the identical `GET /v1/me` call.
+Future<bool> Function() _liveCheckExistingPin(
+    {required String guardianId, required String? sessionToken}) {
+  return () => _fetchHasPin(guardianId, sessionToken);
+}
+
 /// Boots the real guardian shell for [guardianId] — the common tail of both
 /// the dart-define path and a freshly-redeemed pairing. Mirrors
-/// main_live.dart's own `_bootLiveApp` exactly.
+/// main_live.dart's own `_bootLiveApp` exactly, PLUS [_fetchHasPin] —
+/// Automatic First-Run Detection's own guardian-side gate, resolved here
+/// (before construction) the same way [initialTheme] already is, so
+/// [OliveLiveGuardian] never has to show a loading state to decide its own
+/// `home:`. This is also the function GuardianSetupScreen's own
+/// `onComplete` re-invokes below — "the very next boot proceeds to
+/// GuardianHome normally" (the design spec's own line) is implemented
+/// literally: completing setup re-runs this exact boot, which re-resolves
+/// `hasPin` fresh and this time finds it true.
 Future<void> _bootLiveApp({required String guardianId, required String? sessionToken}) async {
   final initialTheme = await _fetchInitialTheme(guardianId, sessionToken);
+  final hasPin = await _fetchHasPin(guardianId, sessionToken);
   runApp(OliveLiveGuardian(initialTheme: initialTheme,
-    guardianId: guardianId, sessionToken: sessionToken));
+    guardianId: guardianId, sessionToken: sessionToken, hasPin: hasPin));
 }
 
 Future<void> main() async {
@@ -156,7 +226,7 @@ class _PairingBootApp extends StatelessWidget {
 
 class OliveLiveGuardian extends StatefulWidget {
   const OliveLiveGuardian({super.key, this.initialTheme = defaultAppTheme,
-    required this.guardianId, required this.sessionToken});
+    required this.guardianId, required this.sessionToken, required this.hasPin});
   final AppTheme initialTheme;
 
   /// Resolved BEFORE this widget is constructed — either the dart-define
@@ -165,6 +235,19 @@ class OliveLiveGuardian extends StatefulWidget {
 
   /// Non-null only for a redeemed, paired device.
   final String? sessionToken;
+
+  /// GET /v1/me's `hasPin` field, resolved BEFORE this widget is
+  /// constructed (`_bootLiveApp`, mirroring [initialTheme]'s own
+  /// resolved-before-construction posture) — Automatic First-Run Detection
+  /// (docs/superpowers/specs/2026-09-14-automatic-first-run-detection-design
+  /// .md). `false` renders [GuardianSetupScreen] in place of
+  /// [LiveGuardianHomeScreen] as this MaterialApp's own `home:` — a hard,
+  /// non-dismissible gate (there is nothing else in this tree's own
+  /// Navigator stack to back-navigate TO), re-resolved fresh on every
+  /// launch. Applies identically whether [guardianId] came from a
+  /// dart-define or a redeemed pairing — this field is driven purely by
+  /// identity state, never by how that identity was resolved.
+  final bool hasPin;
 
   @override
   State<OliveLiveGuardian> createState() => _OliveLiveGuardianState();
@@ -204,14 +287,36 @@ class _OliveLiveGuardianState extends State<OliveLiveGuardian> {
           child: child!,
         ),
         // LiveGuardianHomeScreen owns its own Scaffold in every _LoadState —
-        // see its own build() method; no wrapping Scaffold needed here.
+        // see its own build() method; GuardianSetupScreen owns its own
+        // Scaffold too — no wrapping Scaffold needed here either way.
         // No longer `const` — guardianId is resolved at runtime now (the
         // dart-define value, or a redeemed/stored identity's own targetId).
-        home: LiveGuardianHomeScreen(
-          baseUrl: _dartDefineBaseUrl,
-          guardianId: widget.guardianId,
-          childId: _dartDefineChildId,
-        ),
+        //
+        // Automatic First-Run Detection — widget.hasPin false substitutes
+        // GuardianSetupScreen for GuardianHome outright (see [hasPin]'s own
+        // doc comment): no dismiss action, no back-navigation around it.
+        // setGuardianPin/checkExistingPin are wired the identical way
+        // guardian_more.dart's own hub entry point already wires them;
+        // checkExistingPin is somewhat redundant here (widget.hasPin is
+        // already known false, or this branch would not be showing at all)
+        // but wiring it anyway matches that same established convention
+        // and costs nothing. onComplete re-runs _bootLiveApp — see that
+        // function's own doc comment for why that literally implements "the
+        // very next boot proceeds to GuardianHome normally."
+        home: widget.hasPin
+          ? LiveGuardianHomeScreen(
+              baseUrl: _dartDefineBaseUrl,
+              guardianId: widget.guardianId,
+              childId: _dartDefineChildId,
+            )
+          : GuardianSetupScreen(
+              setGuardianPin: _liveSetGuardianPin(
+                guardianId: widget.guardianId, sessionToken: widget.sessionToken),
+              checkExistingPin: _liveCheckExistingPin(
+                guardianId: widget.guardianId, sessionToken: widget.sessionToken),
+              onComplete: () => _bootLiveApp(
+                guardianId: widget.guardianId, sessionToken: widget.sessionToken),
+            ),
       );
     },
   );

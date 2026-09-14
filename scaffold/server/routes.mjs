@@ -207,14 +207,30 @@ function invalidGameFavoritesBody(body) {
 }
 
 // PUT .../profile's body — the exact wire values db/migrations/
-// 0031_child_profile.sql's own CHECK constraint admits. A specific 400 here,
-// same reasoning invalidThemeBody()/invalidGameFavoritesBody() above give,
-// rather than a bare Postgres constraint-violation 500.
+// 0031_child_profile.sql's own CHECK constraint admits, PLUS an explicit
+// `null` — Automatic First-Run Detection (docs/superpowers/specs/2026-09-14
+// -automatic-first-run-detection-design.md). A specific 400 here, same
+// reasoning invalidThemeBody()/invalidGameFavoritesBody() above give, rather
+// than a bare Postgres constraint-violation 500.
 const CHILD_GENDERS = new Set(['boy', 'girl']);
 
+// `gender` MUST be a key of the body, but a `null` VALUE is now a real,
+// meaningful answer ("onboarding completed, gender declined" —
+// onboarding_gender.dart's `_finish()` calls this route unconditionally now,
+// on Skip as well as a real tap), never the same as the key being absent
+// altogether. `'gender' in body` is the honest-absence-vs-malformed-request
+// line this function draws: a body with no `gender` key at all (or the
+// wrong type) is still a 400 `bad_gender` — a client that forgot the field
+// entirely gets the identical rejection it always has — while `{gender:
+// null}` is accepted and reaches setChildGender() below with a real,
+// non-fabricated NULL. This is the same discipline child_theme_preference's
+// own header already established for ITS two nullable columns, applied here
+// for the first time to this table.
 function invalidProfileBody(body) {
   if (!body || typeof body !== 'object') return 'body_must_be_object';
-  if (!CHILD_GENDERS.has(body.gender)) return 'bad_gender';
+  if (!('gender' in body)) return 'bad_gender';
+  const { gender } = body;
+  if (gender !== null && !CHILD_GENDERS.has(gender)) return 'bad_gender';
   return null;
 }
 
@@ -358,6 +374,23 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // about the wrong id entirely for a child session).
       const hasPin = c.principal.roleName === 'child'
         ? null : (await pinCredentialFor(pool, c.principal.userId)) !== null;
+      // hasOnboarded — Automatic First-Run Detection (docs/superpowers/
+      // specs/2026-09-14-automatic-first-run-detection-design.md). Symmetric
+      // with hasPin immediately above: `null` for a guardian caller (this is
+      // a per-CHILD signal, the same reason hasPin is a per-guardian one and
+      // reports null for a child), `true`/`false` for a child caller,
+      // computed from `child_profile` row EXISTENCE for that childId — never
+      // from `gender`'s own value, since a real, honest answer can be a NULL
+      // gender now (the signal fix above) and a guardian-provisioned
+      // `child`/`birth_date` row is populated at seed/creation time, never by
+      // onboarding, so neither is a usable proxy on its own (see this
+      // design spec's own "Two real, disclosed gaps" section). Reuses the
+      // identical `SELECT ... WHERE child_id = $1` existence-check shape
+      // this file already runs for `displayName` above, just against
+      // `child_profile` instead of `child`.
+      const hasOnboarded = c.principal.roleName === 'child'
+        ? (await q(`SELECT 1 FROM child_profile WHERE child_id = $1`, [c.principal.childId])).length > 0
+        : null;
       return { body: {
         userId: c.principal.userId,
         childId: c.principal.childId,
@@ -365,6 +398,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         escalated: c.principal.escalated,
         displayName: displayName ?? null,
         hasPin,
+        hasOnboarded,
       } };
     },
   });
