@@ -14,6 +14,90 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.75] — 2026-09-13 — PIN-gated parental controls: visibility & pacing
+
+Full design spec: `docs/superpowers/specs/2026-09-13-parental-controls-
+pacing-design.md`. Sub-project 2 of the post-sub-project-1 onboarding/
+parental-controls arc — the required guardian PIN (v0.49.73) existed
+specifically to unblock this. The first guardian-writable table that has
+ever actually controlled what a child can access: hide/show any ChildHome
+tile, game, joke, or drawing/activity outright, or bidirectionally
+adjust/pre-empt the existing per-item age-based unlock. Automatic first-run
+detection and the universal single-app direction remain deferred.
+
+### Added
+- **`guardian_activity_override`** (`db/migrations
+  /0033_guardian_activity_override.sql`) — one row per (child, activity_key)
+  holding `visible` (NULL=default/shown, false=hidden), `min_age_override`
+  (NULL=catalogue default), and `revealed_at` (a manual one-time reveal).
+  `activity_key` is a bare namespaced string (`tile:storyteller`,
+  `game:chess`, `joke:knock_knock`, `activity:doodle`, ...), matching
+  `guardian_game_favorite`'s (0030) own precedent rather than inventing a
+  cross-cutting catalogue table. RLS mirrors `child_theme_preference`
+  (0017) exactly — guardian FOR ALL via `actor_has_edge()`, child
+  SELECT-only via `current_child()`, ENABLE+FORCE — with one disclosed
+  divergence: no system-role read policy, so the dual-purpose GET route
+  runs as the real calling principal and RLS alone decides scope.
+- **`GET/PUT/DELETE /v1/children/:childId/activity-overrides[/:activityKey]`**
+  (`server/routes.mjs`) — GET is dual-purpose (child filters her own
+  catalogue, guardian renders the settings screen, no role branch in the
+  handler); PUT is a guardian-only partial upsert (`{visible?,
+  minAgeOverride?, reveal?, unreveal?}`, at least one field required,
+  `reveal`/`unreveal` mutually exclusive); DELETE clears a row entirely.
+  Precedence, implemented once in `client/lib/activity_overrides.dart`
+  (never per-screen): `visible=false` always wins; otherwise a set
+  `revealed_at` always shows; otherwise the effective gate is
+  `minAgeOverride ?? <catalogue's own default minAge>`.
+- **`POST /v1/me/verify-controls-pin`** — the screen-entry PIN gate
+  (`requireOwnPin()`, reused verbatim from the device-pairing routes),
+  gating a single, separate endpoint the client calls once when the
+  Parental Controls screen opens, never per-write.
+- **8 previously-ungated games given a real `minAge`** (`client/lib/
+  game_logic.dart`'s new `hubGameMinAge` map, additive alongside the
+  existing 12-item `catalogue`/`GameKind`/`forAge()`, deliberately not
+  merged into it — see that file's own header for why): checkers (6),
+  battleship (7), wordsearch (6), hangman (6), chess (7), word chain (5),
+  Kim's game (5), scavenger hunt (5) — a disclosed judgment call, reading-
+  dependent games skewed older, chess given the single highest floor for
+  the deepest ruleset of any of the 20 games in this app.
+- **`parental_controls_screen.dart`** — guardian-only, PIN-gated, reached
+  from Guardian More's "Family setup" section (same convention as "Add a
+  device"). Two tabs (Visibility/Pacing) via `SegmentedButton` — no
+  TabBar/TabController precedent exists anywhere in this client, a
+  disclosed judgment call. Visibility: every ChildHome tile plus every
+  individual game/joke/activity, a toggle switch each. Pacing: only the
+  age-gateable items (all 20 games, jokes — drawing/activities have no
+  existing minAge concept, out of scope per the design spec), a +/-
+  stepper for the effective minAge plus a Reveal now/Un-reveal button.
+- **Consumption wired into `child_home.dart`** (6 named tiles —
+  deliberately excluding "My day" and "Play together", the latter being a
+  pure navigation door onto games/jokes this same table already controls
+  item-by-item), **`game_picker.dart`/`games_hub.dart`** (all 20 games +
+  visibility for "Find the thing"), **`jokebook_screen.dart`** (54 jokes),
+  and **`child_more.dart`** (Doodle desk/Colouring, visibility-only).
+  Fetched once per session in `child_home_live.dart`'s `_load()` (fails
+  open to "show everything" on a failed fetch, matching this screen's
+  existing best-effort-secondary-fetch convention for presence/push — a
+  disclosed tradeoff for a parental-control feature). House style
+  unchanged everywhere: a hidden/not-yet-paced item simply never appears —
+  no lock icon, no countdown.
+
+### Disclosed judgment calls
+- The 8 games' minAge values (above).
+- `minAgeOverride: null` is accepted by the PUT route as an explicit reset
+  of just the age override, independent of `visible`/`reveal`/`unreveal` —
+  beyond the design spec's literal body shape, but a natural extension of
+  it.
+- The precedence rule (`effectiveVisibility()`) is implemented client-side
+  (`activity_overrides.dart`), not server-side in `packages/db/src/pool
+  .ts` (the design spec offered either): only the Dart-side catalogues
+  hold each item's own default minAge today — `games2.ts`'s `Kind2`/
+  `games3.ts` have no minAge/CATALOGUE concept at all server-side, and this
+  pass does not add one, since nothing in this feature reads it.
+- The Visibility/Pacing tab switch uses `SegmentedButton`, this app's own
+  established two-way-switch convention (`doodle_desk.dart`'s
+  `_ToolSwitch`), in the absence of any TabBar precedent.
+
 ## [0.49.74] — 2026-09-12 — Device pairing & provisioning
 
 Full design spec: `docs/superpowers/specs/2026-09-12-device-pairing

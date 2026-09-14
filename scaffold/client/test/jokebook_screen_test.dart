@@ -8,6 +8,7 @@
 // invariants (no settings affordance, 48dp touch targets).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/activity_overrides.dart';
 import 'package:olive_client/game_picker.dart';
 import 'package:olive_client/joke_logic.dart';
 import 'package:olive_client/jokebook_screen.dart';
@@ -116,6 +117,65 @@ void main() {
       await tester.pumpWidget(wrap(JokebookScreen(childName: 'Ivy', childAge: 12, pick: () => 0.999)));
       await tellMeOne(tester);
       expect(currentJoke(tester).minAge, 12);
+    });
+  });
+
+  group('parental controls, visibility & pacing — activity_overrides.dart consumption', () {
+    testWidgets('a guardian-hidden joke (visible:false) never comes up, even at an eligible age',
+        (tester) async {
+      await useNarrowSurface(tester);
+      final hiddenId = kJokeCatalogue.firstWhere((j) => j.minAge <= 12).id;
+      final overrides = {
+        'joke:$hiddenId': const ActivityOverride(activityKey: '', visible: false),
+      };
+      await tester.pumpWidget(wrap(JokebookScreen(
+          childName: 'Ivy', childAge: 12, overrides: overrides)));
+      await tellMeOne(tester);
+      for (var i = 0; i < 25; i++) {
+        expect(currentJoke(tester).id, isNot(hiddenId), reason: 'draw $i');
+        await reveal(tester);
+        await tester.tap(find.text('Tell me another!'));
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('a guardian reveal (revealedAt set) surfaces a joke below her real age',
+        (tester) async {
+      await useNarrowSurface(tester);
+      // The oldest joke in the catalogue — normally unreachable at age 0.
+      // childAge: 0 (below every real minAge in the catalogue) makes the
+      // reveal the ONLY eligible joke, so this is fully deterministic
+      // regardless of pick() or catalogue ordering — never a flaky "did it
+      // happen to draw the revealed one this time" test. This is the real
+      // regression-catcher for the "forAge() as a pre-filter would apply
+      // the age gate twice" bug this feature's own PR found and fixed —
+      // childAge 0 makes `forAge(0)` return an EMPTY list, so if the fix
+      // ever regresses back to `forAge(age).where(effectiveVisibility)`,
+      // this test fails outright (no eligible pool at all) rather than
+      // just picking a different, still-valid joke.
+      final revealedJoke = kJokeCatalogue.reduce((a, b) => a.minAge >= b.minAge ? a : b);
+      final overrides = {
+        'joke:${revealedJoke.id}': ActivityOverride(activityKey: '', revealedAt: DateTime.now()),
+      };
+      await tester.pumpWidget(wrap(JokebookScreen(
+          childName: 'Ivy', childAge: 0, overrides: overrides)));
+      await tellMeOne(tester);
+      expect(currentJoke(tester).id, revealedJoke.id);
+    });
+
+    testWidgets('a starred-then-hidden joke drops off the shelf, matching favourites\' own precedent',
+        (tester) async {
+      await useNarrowSurface(tester);
+      final favourite = kJokeCatalogue.first;
+      final overrides = {
+        'joke:${favourite.id}': const ActivityOverride(activityKey: '', visible: false),
+      };
+      await tester.pumpWidget(wrap(JokebookScreen(
+        childName: 'Ivy', childAge: 12,
+        initialFavourites: [JokeFavourite(id: favourite.id, starredAt: DateTime.now().toIso8601String())],
+        overrides: overrides,
+      )));
+      expect(find.text(favourite.setup), findsNothing);
     });
   });
 

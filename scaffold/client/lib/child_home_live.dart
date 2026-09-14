@@ -65,6 +65,7 @@
 // every build without a navigator key already had.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'activity_overrides.dart';
 import 'api_client.dart';
 import 'call_knock_screen.dart' show buildCallIncomingHandler;
 import 'call_screen.dart';
@@ -130,6 +131,15 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // from ChildHome's own point of view, matching `_sleepsUntilHandover`'s
   // own null-is-honest-absence posture above.
   ParentPresence? _presence;
+  // Parental controls, visibility & pacing (docs/superpowers/specs/2026-09-
+  // 13-parental-controls-pacing-design.md) — fetched ONCE per load, in its
+  // own try/catch below, same "a secondary fetch never traps the primary
+  // screen" posture `presence`'s own comment already states. Null (never
+  // fetched, or the fetch failed) means every tile/game/joke/activity
+  // renders exactly as it did before this feature existed — the honest,
+  // fail-open-to-"show everything" default this app already takes for
+  // every other optional signal on this screen.
+  Map<String, ActivityOverride>? _overrides;
   // The session token _load() mints is otherwise used-once-and-discarded
   // (only `api` above holds it); retained here so ChildHome's own Homework
   // tile can reach the REAL capture_gate.dart path (§9.1, §20.2b) with the
@@ -176,6 +186,19 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       } catch (e) {
         debugPrint('[olive.presence] not loaded this run: $e');
       }
+      // Parental controls, visibility & pacing — same best-effort,
+      // never-traps-the-primary-screen posture as presence immediately
+      // above. A failed fetch here fails OPEN (every tile/game/joke/
+      // activity shows at its catalogue default), the same posture this
+      // screen already takes for every other optional signal — a disclosed
+      // tradeoff for a parental-control feature, not a silent gap; see
+      // this feature's own PR description.
+      Map<String, dynamic>? overridesJson;
+      try {
+        overridesJson = await api.fetchActivityOverrides(widget.childId);
+      } catch (e) {
+        debugPrint('[olive.activityOverrides] not loaded this run: $e');
+      }
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
       // `entries`, not `messages` -- server/routes.mjs's own GET .../inbox
@@ -208,6 +231,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           free['theirLocalTime'] as String,
           free['freeUntilHerTime'] as String,
         );
+        _overrides = overridesJson == null ? null : decodeActivityOverrides(overridesJson);
         _sessionToken = token;
         _state = _LoadState.ready;
       });
@@ -335,6 +359,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             childId: widget.childId,
             sessionToken: _sessionToken,
             httpClient: widget.httpClient,
+            overrides: _overrides,
           )),
         ])));
     }

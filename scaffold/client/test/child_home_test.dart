@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:olive_client/activity_overrides.dart';
 import 'package:olive_client/child_home.dart';
 import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/live_game_picker.dart';
@@ -249,6 +250,38 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byType(LiveGamePickerScreen), findsNothing);
       expect(find.text('Games'), findsOneWidget);
+    });
+  });
+
+  group('parental controls, visibility & pacing — activity_overrides.dart consumption', () {
+    testWidgets('a guardian-hidden tile (visible:false) never renders, the design spec\'s own '
+        'exact 6 named tiles', (t) async {
+      await t.pumpWidget(wrap(const ChildHome(
+        childName: 'Ivy', presence: null, sleepsUntilHandover: 3, unreadCount: 2,
+        overrides: {
+          'tile:messages': ActivityOverride(activityKey: 'tile:messages', visible: false),
+          'tile:homework': ActivityOverride(activityKey: 'tile:homework', visible: false),
+        },
+      )));
+      await t.pumpAndSettle();
+      expect(find.text('Messages'), findsNothing);
+      expect(find.text('Homework'), findsNothing);
+      // Unrelated tiles, AND the two deliberately-uncontrolled ones (My day,
+      // Play together — see child_home.dart's own comment on why those two
+      // stay outside this table), are all untouched.
+      expect(find.text('My day'), findsOneWidget);
+      expect(find.text('Play together'), findsOneWidget);
+      expect(find.text('Storyteller'), findsOneWidget);
+      expect(find.text('Show & tell'), findsOneWidget);
+      expect(find.text('My list'), findsOneWidget);
+      expect(find.text('More for you'), findsOneWidget);
+    });
+
+    testWidgets('a null overrides map behaves exactly as before this feature existed', (t) async {
+      await t.pumpWidget(wrap(_home));
+      await t.pumpAndSettle();
+      expect(find.text('Messages'), findsOneWidget);
+      expect(find.text('Homework'), findsOneWidget);
     });
   });
 }

@@ -35,6 +35,7 @@ import 'hub_widgets.dart';
 import 'add_device_screen.dart';
 import 'invitation_screen.dart';
 import 'paired_devices_list.dart';
+import 'parental_controls_screen.dart';
 import 'jokebook_screen.dart';
 import 'live_game_picker.dart';
 import 'lock_advisory_screen.dart';
@@ -604,6 +605,24 @@ class GuardianMoreScreen extends StatelessWidget {
                 ))
               : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('Paired devices needs a live session — no backend in this preview build.'),
+                  duration: Duration(seconds: 3)))),
+          // Parental controls: visibility & pacing (docs/superpowers/specs/
+          // 2026-09-13-parental-controls-pacing-design.md) — same live-
+          // session gate every tile in this section already uses; the PIN
+          // re-verification this screen itself does (POST /v1/me/verify-
+          // controls-pin) is the real gate, not this snackbar fallback.
+          HubTile(icon: Icons.shield_outlined, title: 'Parental controls',
+            subtitle: baseUrl != null
+              ? "Hide or pace anything $childName sees"
+              : 'Needs a live session — no backend in this preview build',
+            onTap: () => (baseUrl != null && guardianId != null)
+              ? _open(context, ParentalControlsScreen(
+                  baseUrl: baseUrl!, guardianId: guardianId!,
+                  childId: childId, childName: childName,
+                  httpClient: availabilityHttpClient,
+                ))
+              : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Parental controls needs a live session — no backend in this preview build.'),
                   duration: Duration(seconds: 3)))),
           HubTile(icon: Icons.key_outlined, title: 'Guardian setup',
             subtitle: baseUrl != null

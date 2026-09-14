@@ -27,7 +27,10 @@
 // P2: no read count, no "jokes told", no favourite tally. Favouriting is
 // binary — starred or not — and the shelf lists titles only.
 // No settings affordance anywhere on this child-facing screen (§8.1).
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'activity_overrides.dart';
 import 'form_factors.dart' as ff;
 import 'hub_widgets.dart';
 import 'joke_logic.dart';
@@ -42,11 +45,23 @@ class JokebookSection extends StatelessWidget {
     this.childName = 'Ivy',
     this.childAge = 7,
     this.parentName = 'Dad',
+    this.overrides,
   });
   final String childName;
   /// Same default GamePickerScreen itself uses — see its own doc comment.
   final int childAge;
   final String parentName;
+
+  /// Parental controls, visibility & pacing (docs/superpowers/specs/2026-
+  /// 09-13-parental-controls-pacing-design.md) — this child's guardian-set
+  /// overrides, threaded straight through to [JokebookScreen] below. Null
+  /// means no live session, and the jokebook behaves exactly as before this
+  /// feature existed. The Jokebook TILE itself (this whole section) has no
+  /// separate visibility key of its own — hiding it wholesale isn't part of
+  /// this pass's scope (only individual jokes are gateable; see
+  /// game_picker.dart's own analogous "Play together" tile, which is
+  /// likewise never itself hidden).
+  final Map<String, ActivityOverride>? overrides;
 
   @override
   Widget build(BuildContext context) => HubSection(title: 'Just for laughs', children: [
@@ -56,9 +71,45 @@ class JokebookSection extends StatelessWidget {
       subtitle: 'A quick one, and another, and another',
       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
         builder: (_) => JokebookScreen(
-          childName: childName, childAge: childAge, parentName: parentName))),
+          childName: childName, childAge: childAge, parentName: parentName,
+          overrides: overrides))),
     ),
   ]);
+}
+
+/// The same pick algorithm joke_logic.dart's own randomJoke() uses, over an
+/// overrides-filtered pool — kept here rather than folded into that file so
+/// joke_logic.dart stays a pure, untouched 1:1 port of jokes.ts (this
+/// file's own header), with zero knowledge of a table that didn't exist
+/// when it was ported. House style, reconfirmed by the design spec: a
+/// hidden/not-yet-paced joke simply never enters [pool] — no lock icon, no
+/// countdown, same discipline forAge() itself already held every pick on
+/// this screen to before this feature existed.
+///
+/// Deliberately filters the FULL [kJokeCatalogue], never `forAge(age)` as a
+/// pre-filter — `forAge(age).where(effectiveVisibility(...))` would apply
+/// the age gate TWICE, the second time unconditionally, so a guardian's
+/// `revealedAt` (meant to override the age gate) could never resurrect a
+/// joke `forAge` had already excluded before [effectiveVisibility] ever got
+/// a chance to reconsider it. [effectiveVisibility] already reimplements
+/// `forAge`'s own `age >= minAge` comparison as its own no-override
+/// fallback path, so this is both correct and non-redundant.
+Joke? _randomVisibleJoke(
+  int age,
+  Map<String, ActivityOverride>? overrides, {
+  String? excludeId,
+  double Function()? pick,
+}) {
+  final pool = kJokeCatalogue
+      .where((j) => j.id != excludeId)
+      .where((j) => effectiveVisibility(
+            overrides: overrides, activityKey: 'joke:${j.id}',
+            childAge: age, defaultMinAge: j.minAge,
+          ))
+      .toList();
+  if (pool.isEmpty) return null;
+  final r = pick != null ? pick() : math.Random().nextDouble();
+  return pool[(r * pool.length).floor() % pool.length];
 }
 
 // ============================================================== the screen ==
@@ -71,6 +122,7 @@ class JokebookScreen extends StatefulWidget {
     this.colourSeed,
     this.initialFavourites = const [],
     this.pick,
+    this.overrides,
   });
 
   final String childName;
@@ -85,6 +137,11 @@ class JokebookScreen extends StatefulWidget {
   /// call sites omit it and get a real random.
   final double Function()? pick;
 
+  /// Parental controls, visibility & pacing — see JokebookSection's own doc
+  /// comment. Null means no live session; every joke behaves exactly as
+  /// before this feature existed.
+  final Map<String, ActivityOverride>? overrides;
+
   @override
   State<JokebookScreen> createState() => _JokebookScreenState();
 }
@@ -97,7 +154,8 @@ class _JokebookScreenState extends State<JokebookScreen> {
   String get _nowIso => DateTime.now().toIso8601String();
 
   void _tellMeOne() => setState(() {
-        _current = randomJoke(widget.childAge, excludeId: _current?.id, pick: widget.pick);
+        _current = _randomVisibleJoke(
+            widget.childAge, widget.overrides, excludeId: _current?.id, pick: widget.pick);
         _revealed = false;
       });
 
@@ -159,7 +217,20 @@ class _JokebookScreenState extends State<JokebookScreen> {
                   onAnother: _tellMeOne,
                 );
           final shelf = _Shelf(
-            favourites: _favourites,
+            // A joke a guardian hides after she's already starred it stops
+            // appearing on the shelf going forward — the "never retroactive"
+            // rule is about what's not yet been SHOWN to her, not about a
+            // permanent right to keep a since-hidden joke visible in her own
+            // list (matching game_favorites_logic.dart's own favouritesFor()
+            // "a kind no longer in the live catalogue silently drops out"
+            // precedent).
+            favourites: _favourites.where((f) {
+              final joke = byId(f.id);
+              return joke != null && effectiveVisibility(
+                overrides: widget.overrides, activityKey: 'joke:${joke.id}',
+                childAge: widget.childAge, defaultMinAge: joke.minAge,
+              );
+            }).toList(),
             accent: accent,
             onOpen: _openFavourite,
           );

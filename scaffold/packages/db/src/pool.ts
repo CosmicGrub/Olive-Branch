@@ -3995,6 +3995,156 @@ export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Pr
   });
 }
 
+// ===========================================================================
+// GUARDIAN ACTIVITY OVERRIDE — docs/superpowers/specs/2026-09-13-parental-
+// controls-pacing-design.md ("sub-project 2: visibility & pacing").
+// db/migrations/0033_guardian_activity_override.sql.
+// ===========================================================================
+
+export interface ActivityOverride {
+  activityKey: string;
+  visible: boolean | null;
+  minAgeOverride: number | null;
+  revealedAt: string | null;
+  setBy: string;
+  setAt: string;
+}
+
+function rowToActivityOverride(r: any): ActivityOverride {
+  return {
+    activityKey: r.activity_key,
+    visible: r.visible,
+    minAgeOverride: r.min_age_override,
+    revealedAt: r.revealed_at,
+    setBy: r.set_by,
+    setAt: r.set_at,
+  };
+}
+
+/**
+ * GET /v1/children/:childId/activity-overrides — the design spec's own
+ * dual-purpose route: a child reads to filter her own catalogue, a guardian
+ * reads to render the settings screen, "no role branch needed in the
+ * handler — RLS alone decides what's visible to which caller." That only
+ * holds if this function opens the session as the REAL calling principal
+ * (whichever role/actor routes.mjs's A2/A3 already verified), not as
+ * `system` the way themeFor()/gameFavoritesFor() do — 0033's own migration
+ * deliberately has no system-role read policy for exactly this reason (see
+ * that migration's own header). `withSession(pool, principal, ...)` is the
+ * SAME function routes.mjs's outer, otherwise-unused `q` wrapper already
+ * opens one layer up; this is a second, real, differently-scoped connection
+ * doing the actual work, the identical "outer wrapper is a stub, the pool.ts
+ * function opens its own" shape every other route in this file already
+ * takes (setChildTheme(), pairedDevicesForChild(), ...).
+ *
+ * `principal` is narrowed to exactly what withSession() needs — the caller
+ * passes `c.principal` verbatim (routes.mjs), never anything reconstructed
+ * from the request body.
+ */
+export async function activityOverridesFor(
+  pool: pg.Pool,
+  principal: Pick<VerifiedPrincipal, 'roleName' | 'userId' | 'childId'>,
+  childId: string,
+): Promise<ActivityOverride[]> {
+  return withSession(pool, principal, async (q) => {
+    const rows = await q(
+      `SELECT activity_key, visible, min_age_override, revealed_at, set_by, set_at
+         FROM guardian_activity_override
+        WHERE child_id = $1
+        ORDER BY activity_key`,
+      [childId],
+    );
+    return rows.map(rowToActivityOverride);
+  });
+}
+
+export interface ActivityOverridePatch {
+  visible?: boolean;
+  minAgeOverride?: number | null;
+  reveal?: boolean;
+  unreveal?: boolean;
+}
+
+/**
+ * PUT /v1/children/:childId/activity-overrides/:activityKey — guardian-only,
+ * a partial upsert: only the fields actually present in the patch are
+ * touched, everything else on an existing row is left exactly as it was
+ * (routes.mjs's invalidActivityOverrideBody() already rejected a fully-empty
+ * patch and a reveal+unreveal conflict before this is ever called). The
+ * `$7`/`$8`/`$9` "was this field present at all" booleans are what make a
+ * single INSERT ... ON CONFLICT DO UPDATE a real partial update rather than
+ * clobbering a column no one asked to change back to NULL — the ON CONFLICT
+ * branch's CASE picks EXCLUDED.<col> (this call's new value) when the field
+ * was present, or the row's own already-stored value when it wasn't; the
+ * plain INSERT branch (no existing row yet) just uses VALUES(...) directly.
+ *
+ * Deliberately opens its OWN guardian-scoped session (`withSession`, not
+ * `withSystemSession`), the exact same reasoning setChildTheme() gives:
+ * 0033's own activity_override_guardian_edge policy is keyed on
+ * actor_has_edge(child_id), evaluated against current_actor() — running
+ * this as `system` would leave that NULL and the WITH CHECK would fail
+ * outright for every caller. `guardianId` MUST be the authenticated
+ * caller's own principal.userId (routes.mjs passes c.principal.userId),
+ * never anything from the request body.
+ */
+export async function setActivityOverride(
+  pool: pg.Pool, guardianId: string, childId: string, activityKey: string,
+  patch: ActivityOverridePatch,
+): Promise<void> {
+  const hasVisible = patch.visible !== undefined;
+  const hasMinAge = patch.minAgeOverride !== undefined;
+  // reveal/unreveal are mutually exclusive by the time this is called
+  // (routes.mjs's own 400 above) — either may set revealed_at, so a single
+  // "was reveal or unreveal present" flag plus the one value that flag
+  // implies is enough.
+  const touchesRevealedAt = patch.reveal === true || patch.unreveal === true;
+  const revealedAtValue = patch.reveal === true ? new Date().toISOString() : null;
+
+  await withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null },
+    async (q) => {
+      await q(
+        `INSERT INTO guardian_activity_override
+           (child_id, activity_key, visible, min_age_override, revealed_at, set_by, set_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())
+         ON CONFLICT (child_id, activity_key) DO UPDATE SET
+           visible = CASE WHEN $7 THEN EXCLUDED.visible
+                          ELSE guardian_activity_override.visible END,
+           min_age_override = CASE WHEN $8 THEN EXCLUDED.min_age_override
+                          ELSE guardian_activity_override.min_age_override END,
+           revealed_at = CASE WHEN $9 THEN EXCLUDED.revealed_at
+                          ELSE guardian_activity_override.revealed_at END,
+           set_by = EXCLUDED.set_by,
+           set_at = now()`,
+        [childId, activityKey,
+         hasVisible ? patch.visible : null,
+         hasMinAge ? patch.minAgeOverride : null,
+         touchesRevealedAt ? revealedAtValue : null,
+         guardianId,
+         hasVisible, hasMinAge, touchesRevealedAt],
+      );
+    });
+}
+
+/**
+ * DELETE /v1/children/:childId/activity-overrides/:activityKey —
+ * guardian-only, clears the row entirely (back to the catalogue default in
+ * every column) — the design spec's own line. A delete of a row that never
+ * existed is a harmless no-op, same idempotent posture
+ * cancelDevicePairingCode()/revokePairedDevice() already take on a
+ * double-tap.
+ */
+export async function deleteActivityOverride(
+  pool: pg.Pool, guardianId: string, childId: string, activityKey: string,
+): Promise<void> {
+  await withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null },
+    async (q) => {
+      await q(
+        `DELETE FROM guardian_activity_override WHERE child_id = $1 AND activity_key = $2`,
+        [childId, activityKey],
+      );
+    });
+}
+
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */
 export function dbPort(pool: pg.Pool): DbPort {
   return {

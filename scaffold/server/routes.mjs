@@ -45,6 +45,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          setChildGender, pinCredentialFor,
          createDevicePairingCode, cancelDevicePairingCode, redeemDevicePairingCode,
          pairedDevicesForChild, revokePairedDevice,
+         activityOverridesFor, setActivityOverride, deleteActivityOverride,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -214,6 +215,43 @@ const CHILD_GENDERS = new Set(['boy', 'girl']);
 function invalidProfileBody(body) {
   if (!body || typeof body !== 'object') return 'body_must_be_object';
   if (!CHILD_GENDERS.has(body.gender)) return 'bad_gender';
+  return null;
+}
+
+/**
+ * PUT .../activity-overrides/:activityKey's body — docs/superpowers/specs/
+ * 2026-09-13-parental-controls-pacing-design.md's own exact Routes-section
+ * contract: `{visible?, minAgeOverride?, reveal?, unreveal?}`, all optional
+ * but at least one required (a fully-empty body is a 400), `reveal`/
+ * `unreveal` mutually exclusive in the same call (both present is also a
+ * 400). Same invalidXBody() convention as invalidThemeBody()/
+ * invalidGameFavoritesBody()/invalidProfileBody() above — a specific 400
+ * reason, never a bare Postgres error (this table has no CHECK constraints
+ * of its own for a malformed value to trip in the first place, so without
+ * this function a bad `minAgeOverride` would silently upsert as garbage,
+ * not fail at all).
+ *
+ * `minAgeOverride` accepts an explicit `null` (reset just the age override
+ * back to the catalogue default, independent of `visible`/`revealed_at`) in
+ * addition to a real integer 0-18 — the one field-level judgment call this
+ * route makes beyond the spec's own literal wording; see this PR's own
+ * description.
+ */
+function invalidActivityOverrideBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'body_must_be_object';
+  const hasVisible = Object.prototype.hasOwnProperty.call(body, 'visible');
+  const hasMinAge = Object.prototype.hasOwnProperty.call(body, 'minAgeOverride');
+  const hasReveal = Object.prototype.hasOwnProperty.call(body, 'reveal');
+  const hasUnreveal = Object.prototype.hasOwnProperty.call(body, 'unreveal');
+  if (!hasVisible && !hasMinAge && !hasReveal && !hasUnreveal) return 'empty_body';
+  if (hasReveal && hasUnreveal) return 'reveal_unreveal_conflict';
+  if (hasVisible && typeof body.visible !== 'boolean') return 'bad_visible';
+  if (hasMinAge && body.minAgeOverride !== null &&
+      !(Number.isInteger(body.minAgeOverride) && body.minAgeOverride >= 0 && body.minAgeOverride <= 18)) {
+    return 'bad_minAgeOverride';
+  }
+  if (hasReveal && body.reveal !== true) return 'bad_reveal';
+  if (hasUnreveal && body.unreveal !== true) return 'bad_unreveal';
   return null;
 }
 
@@ -728,6 +766,109 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const result = await revokePairedDevice(
         pool, c.childId, c.params.deviceId, c.principal.userId, now);
       if (!result.ok) return { status: 404, body: { error: result.reason } };
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // ===========================================================================
+  // PARENTAL CONTROLS — VISIBILITY & PACING — docs/superpowers/specs/2026-09-
+  // 13-parental-controls-pacing-design.md ("sub-project 2"). The first
+  // guardian-writable table that actually controls what a child can access
+  // (0033_guardian_activity_override.sql) — hide/show any ChildHome tile or
+  // catalogue item outright, or bidirectionally adjust/pre-empt the existing
+  // per-item age-based unlock. Sub-project 1's required guardian PIN
+  // (CHANGELOG v0.49.73) exists specifically to unblock this feature.
+  // ===========================================================================
+
+  // POST /v1/me/verify-controls-pin — the screen-entry gate the design
+  // spec's own Routes section calls for: "PIN gating is at screen entry, not
+  // per-write... reuse requireOwnPin() exactly as the device-pairing routes
+  // do... [gating] a single, separate endpoint the client calls once when
+  // the Parental Controls screen opens." Route name/shape is this PR's own
+  // disclosed judgment call, taking the spec's own offered example verbatim
+  // ("e.g. POST /v1/me/verify-controls-pin ... — implementer's call,
+  // disclose it"): no existing route already answers "is this guardian's
+  // PIN correct, right now" on its own — kiosk-pin/verify checks EVERY
+  // guardian of a child, a materially different question (see that route's
+  // own header) — so this is a new, narrow, identity-only route (no
+  // :childId; Parental Controls PIN-gates the SCREEN, not any one child's
+  // data) rather than a second branch grafted onto an unrelated one.
+  // Returns nothing beyond {ok:true}: the client's own local "PIN verified
+  // this app session" flag is what actually reveals the Visibility/Pacing
+  // tabs, matching the spec's own "client only reveals the screen after
+  // that one verification call succeeds for the current app session" line —
+  // nothing server-side is escalated or time-limited by this call, unlike
+  // §8.3's `escalated: true` flows.
+  api.register({
+    method: 'POST', path: '/v1/me/verify-controls-pin', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const pin = c.body?.pin;
+      const pinCheck = await requireOwnPin(c.principal.userId, pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // GET /v1/children/:childId/activity-overrides — dual-purpose: the CHILD's
+  // own session calls this to filter her catalogue, and a GUARDIAN's session
+  // calls it to render the settings screen. `action: 'settings'` reused
+  // verbatim from the theme/game-favorites/profile routes above — same
+  // shape (an observer-only guardian denied per §17.3, a child principal
+  // reaching the handler regardless of ROLE_CAPS) — but UNLIKE those routes,
+  // this one does NOT open its own `system`-role session:
+  // activityOverridesFor() (packages/db/src/pool.ts) runs as `c.principal`
+  // itself, so 0033's RLS (guardian via actor_has_edge(), child via
+  // current_child(), deliberately no system-role read policy at all) is a
+  // REAL second lock here, not merely a comment — the design spec's own "No
+  // role branch needed in the handler — RLS alone decides what's visible to
+  // which caller" line, taken literally.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/activity-overrides', action: 'settings',
+    handler: async (c) => {
+      const overrides = await activityOverridesFor(pool, c.principal, c.childId);
+      return { body: { overrides } };
+    },
+  });
+
+  // PUT .../activity-overrides/:activityKey — guardian-only. `action:
+  // 'settings'` admits a child principal to the HANDLER (api.ts's child
+  // branch skips ROLE_CAPS entirely), so the in-handler `guardian_only`
+  // check below is the real gate for a child's write — the identical shape
+  // PUT .../theme already uses for the same reason.
+  api.register({
+    method: 'PUT', path: '/v1/children/:childId/activity-overrides/:activityKey', action: 'settings',
+    handler: async (c) => {
+      if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_only' } };
+      }
+      const reason = invalidActivityOverrideBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      await setActivityOverride(pool, c.principal.userId, c.childId, c.params.activityKey, {
+        visible: c.body.visible,
+        minAgeOverride: c.body.minAgeOverride,
+        reveal: c.body.reveal,
+        unreveal: c.body.unreveal,
+      });
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // DELETE .../activity-overrides/:activityKey — guardian-only, clears the
+  // row entirely — the design spec's own "back to the catalogue default in
+  // every column" line. A delete of a row that never existed is a harmless
+  // no-op, same idempotent posture cancelDevicePairingCode()/
+  // revokePairedDevice() already take on a double-tap.
+  api.register({
+    method: 'DELETE', path: '/v1/children/:childId/activity-overrides/:activityKey', action: 'settings',
+    handler: async (c) => {
+      if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_only' } };
+      }
+      await deleteActivityOverride(pool, c.principal.userId, c.childId, c.params.activityKey);
       return { status: 200, body: { ok: true } };
     },
   });
