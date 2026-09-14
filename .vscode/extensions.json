@@ -1,0 +1,9 @@
+{
+  // Flutter's official VS Code extension (Dart-Code.flutter) pulls in
+  // Dart-Code.dart-code as a dependency automatically — installing the one
+  // recommendation below is enough for hot reload, the Widget Inspector /
+  // Layout Explorer in DevTools, and the Flutter Outline panel.
+  "recommendations": [
+    "Dart-Code.flutter"
+  ]
+}
