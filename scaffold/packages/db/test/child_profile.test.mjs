@@ -154,6 +154,17 @@ await admin.query('COMMIT');
 // child_game_picker_state_owner_only's own "guardian-excluded" shape, 0030).
 // ===========================================================================
 {
+  // Section A's own final assertions (above) deliberately leave CHILD_A's
+  // row on a NULL gender — that's the real behavior this pass is proving
+  // (a real answer replaced by a later null one, upsert not accumulate).
+  // Section B is a self-contained RLS chain that starts from a known 'boy'
+  // and walks it through an update to 'girl' — it must set up its own
+  // fixture state rather than silently inherit whatever A's tests happened
+  // to leave behind, or a later reordering/addition inside A (exactly what
+  // just happened here) silently breaks B for a reason that has nothing to
+  // do with RLS at all.
+  await setChildGender(pool, CHILD_A, 'boy');
+
   const asChildA = (fn) => withSession(pool, { roleName: 'child', userId: null, childId: CHILD_A }, fn);
   const asChildB = (fn) => withSession(pool, { roleName: 'child', userId: null, childId: CHILD_B }, fn);
   const asDad = (fn) => withSession(pool, { roleName: 'guardian', userId: DAD, childId: null }, fn);
