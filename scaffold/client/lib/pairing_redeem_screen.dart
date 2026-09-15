@@ -20,6 +20,7 @@
 // [_blockedReasonMessage] already establishes for its own failure modes.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'api_client.dart' show ApiException, redeemDevicePairingCode;
@@ -150,11 +151,23 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
           TextField(
             key: const Key('pairingCodeField'),
             controller: _codeController,
+            // This screen's whole purpose is typing a code — the cursor
+            // should be ready the moment it renders, not require an extra
+            // tap first.
+            autofocus: true,
             keyboardType: TextInputType.number,
+            // A numeric keyboard alone doesn't guarantee digits-only input
+            // on every platform/IME (paste, some IMEs) — enforced for real
+            // here, matching guardian_setup.dart's own PIN fields.
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 28, letterSpacing: 6, fontWeight: FontWeight.w700),
             maxLength: 6,
-            decoration: const InputDecoration(counterText: '', hintText: '000000'),
+            decoration: const InputDecoration(
+              // A persistent label, not just a hint that vanishes once
+              // typing starts — this field otherwise has no name at all
+              // once it's non-empty.
+              labelText: 'Pairing code', counterText: '', hintText: '000000'),
             onSubmitted: _submit,
           ),
           const SizedBox(height: 16),

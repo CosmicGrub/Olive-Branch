@@ -105,6 +105,47 @@ await admin.query('COMMIT');
   const stillUnset = await admin.query(
     `SELECT gender FROM child_profile WHERE child_id = $1`, [CHILD_B]);
   check('A loader', "CHILD_B's row is untouched by CHILD_A's write", stillUnset.rows.length, 0);
+
+  // Automatic First-Run Detection's own signal fix (docs/superpowers/specs/
+  // 2026-09-14-automatic-first-run-detection-design.md): setChildGender()
+  // now accepts an explicit `null` — a REAL row, not the "no row at all"
+  // shape the never-set case above proves. `set_at` is genuinely populated
+  // even though `gender` itself is NULL, which is exactly what lets
+  // `hasOnboarded` (routes.mjs's GET /v1/me handler) tell "onboarded, gender
+  // declined" apart from "never opened the app" by row existence alone.
+  await setChildGender(pool, CHILD_B, null);
+  const nullWrite = await admin.query(
+    `SELECT gender, set_at FROM child_profile WHERE child_id = $1`, [CHILD_B]);
+  check('A loader', 'an explicit null gender really writes a row now (the signal fix), not '
+    + 'the honest "no row" shape a Skip used to leave before this pass',
+    nullWrite.rows.length, 1);
+  check('A loader', 'gender is really NULL, not the string "null" or a coerced default',
+    nullWrite.rows[0]?.gender === null, 'true');
+  check('A loader', 'set_at is really populated even though gender is NULL',
+    nullWrite.rows[0]?.set_at != null, 'true');
+
+  // A later real answer replaces the null-gender row too — the SAME
+  // upsert-not-accumulate contract every other write in this section proves,
+  // now confirmed across the null case specifically.
+  await setChildGender(pool, CHILD_B, 'boy');
+  const replacedNull = await admin.query(
+    `SELECT gender FROM child_profile WHERE child_id = $1`, [CHILD_B]);
+  check('A loader', 'a real answer after a null one replaces it — still one row, still '
+    + 'overwritten, never a log', replacedNull.rows[0]?.gender, 'boy');
+
+  // And the reverse direction — a real answer can be replaced BY a null one
+  // too (CHILD_A currently holds 'boy' from the replace-not-accumulate case
+  // above), proving null is accepted on an UPDATE path, not only on a
+  // fresh INSERT.
+  await setChildGender(pool, CHILD_A, null);
+  const realThenNull = await admin.query(
+    `SELECT gender, set_at FROM child_profile WHERE child_id = $1`, [CHILD_A]);
+  check('A loader', 'a real answer can be replaced by a later null one too — the ON CONFLICT '
+    + 'DO UPDATE path accepts null exactly like the fresh-INSERT path above',
+    realThenNull.rows[0]?.gender === null, 'true');
+  check('A loader', "set_at moved forward on this null-replacing-real UPDATE too, not left "
+    + "at the earlier real write's own timestamp",
+    realThenNull.rows[0]?.set_at != null, 'true');
 }
 
 // ===========================================================================
@@ -113,6 +154,17 @@ await admin.query('COMMIT');
 // child_game_picker_state_owner_only's own "guardian-excluded" shape, 0030).
 // ===========================================================================
 {
+  // Section A's own final assertions (above) deliberately leave CHILD_A's
+  // row on a NULL gender — that's the real behavior this pass is proving
+  // (a real answer replaced by a later null one, upsert not accumulate).
+  // Section B is a self-contained RLS chain that starts from a known 'boy'
+  // and walks it through an update to 'girl' — it must set up its own
+  // fixture state rather than silently inherit whatever A's tests happened
+  // to leave behind, or a later reordering/addition inside A (exactly what
+  // just happened here) silently breaks B for a reason that has nothing to
+  // do with RLS at all.
+  await setChildGender(pool, CHILD_A, 'boy');
+
   const asChildA = (fn) => withSession(pool, { roleName: 'child', userId: null, childId: CHILD_A }, fn);
   const asChildB = (fn) => withSession(pool, { roleName: 'child', userId: null, childId: CHILD_B }, fn);
   const asDad = (fn) => withSession(pool, { roleName: 'guardian', userId: DAD, childId: null }, fn);

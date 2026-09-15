@@ -22,7 +22,8 @@ void main() {
     testWidgets('a redeemed device (non-null sessionToken) builds the real guardian home '
         'for its OWN guardianId, not the seed default', (tester) async {
       await tester.pumpWidget(const OliveLiveGuardian(
-        initialTheme: defaultAppTheme, guardianId: 'redeemed-guardian-42', sessionToken: 'real-token'));
+        initialTheme: defaultAppTheme, guardianId: 'redeemed-guardian-42', sessionToken: 'real-token',
+        hasPin: true));
       await tester.pump();
       final home = tester.widget<LiveGuardianHomeScreen>(find.byType(LiveGuardianHomeScreen));
       expect(home.guardianId, 'redeemed-guardian-42');
@@ -31,10 +32,44 @@ void main() {
     testWidgets('the dart-define path (null sessionToken) builds the identical tree shape',
         (tester) async {
       await tester.pumpWidget(const OliveLiveGuardian(
-        initialTheme: defaultAppTheme, guardianId: 'dart-define-guardian', sessionToken: null));
+        initialTheme: defaultAppTheme, guardianId: 'dart-define-guardian', sessionToken: null,
+        hasPin: true));
       await tester.pump();
       final home = tester.widget<LiveGuardianHomeScreen>(find.byType(LiveGuardianHomeScreen));
       expect(home.guardianId, 'dart-define-guardian');
+    });
+  });
+
+  group('A2 — Automatic First-Run Detection: hasPin gates GuardianSetupScreen '
+      'in place of GuardianHome (docs/superpowers/specs/2026-09-14-automatic'
+      '-first-run-detection-design.md)', () {
+    testWidgets('hasPin: false renders GuardianSetupScreen instead of '
+        'LiveGuardianHomeScreen — no dismiss action, no way back to Home', (tester) async {
+      await tester.pumpWidget(const OliveLiveGuardian(
+        initialTheme: defaultAppTheme, guardianId: 'g-1', sessionToken: null, hasPin: false));
+      await tester.pump();
+      expect(find.byType(LiveGuardianHomeScreen), findsNothing);
+      expect(find.text('Set up your account'), findsOneWidget);
+    });
+
+    testWidgets('hasPin: true renders LiveGuardianHomeScreen directly, no setup '
+        'screen anywhere in the tree', (tester) async {
+      await tester.pumpWidget(const OliveLiveGuardian(
+        initialTheme: defaultAppTheme, guardianId: 'g-1', sessionToken: null, hasPin: true));
+      await tester.pump();
+      expect(find.byType(LiveGuardianHomeScreen), findsOneWidget);
+      expect(find.text('Set up your account'), findsNothing);
+    });
+
+    testWidgets('applies identically to a redeemed pairing (non-null sessionToken) — '
+        'the gate is driven purely by identity state, not how identity was resolved',
+        (tester) async {
+      await tester.pumpWidget(const OliveLiveGuardian(
+        initialTheme: defaultAppTheme, guardianId: 'paired-g', sessionToken: 'real-token',
+        hasPin: false));
+      await tester.pump();
+      expect(find.byType(LiveGuardianHomeScreen), findsNothing);
+      expect(find.text('Set up your account'), findsOneWidget);
     });
   });
 
@@ -73,6 +108,20 @@ void main() {
         'disclosed limit — see this file\'s own header)', () {
       expect(src, contains('_dartDefineChildId'));
       expect(src, isNot(contains("result['childId']")));
+    });
+
+    test('_bootLiveApp resolves hasPin fresh (via GET /v1/me) BEFORE constructing '
+        'OliveLiveGuardian, on both boot paths -- Automatic First-Run Detection is '
+        're-checked every launch, never cached across boots', () {
+      expect(src, contains("me['hasPin'] == true"));
+      expect(src, contains('final hasPin = await _fetchHasPin(guardianId, sessionToken);'));
+      expect(src, contains('hasPin: hasPin'));
+    });
+
+    test('GuardianSetupScreen\'s onComplete re-invokes _bootLiveApp itself -- "the very '
+        'next boot proceeds to GuardianHome normally" implemented literally as a fresh '
+        'boot, not a local setState flip', () {
+      expect(src, contains('onComplete: () => _bootLiveApp('));
     });
   });
 }

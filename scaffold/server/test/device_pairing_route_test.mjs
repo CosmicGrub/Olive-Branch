@@ -22,6 +22,18 @@
  * emit, imported here unmodified — the same "prove the real production code
  * path, not a fake's opinion of it" posture kiosk_pin_route.test.mjs's own
  * header already states.
+ *
+ * Section G (Automatic First-Run Detection, docs/superpowers/specs/
+ * 2026-09-14-automatic-first-run-detection-design.md) extends this beyond
+ * this file's own feature: GET /v1/me is registered on the SAME shared
+ * `api` instance (registerRoutes(api, pool) registers every route in
+ * routes.mjs, not only this feature's six), and this file already owned
+ * every fixture that handler needs (DAD's own real PIN from section A,
+ * CHILD_A/CHILD_B). `db.withSession`'s own stub and the `children`/
+ * `appUsers`/`childProfiles` fake state exist to make that call genuinely
+ * work, not merely compile — see those additions' own comments for the
+ * fuller account, including a real, confirmed gap this section closes:
+ * `hasPin` had zero test coverage anywhere in this repo before it.
  */
 import { randomBytes } from 'node:crypto';
 import { issueSession, hashPin, readSession } from '../../packages/auth/src/auth.mjs';
@@ -47,6 +59,17 @@ const credentials = new Map(); // userId -> { pin_hash, failed_attempts, locked_
 const setCred = (userId, pin) => credentials.set(userId, { pin_hash: hashPin(pin), failed_attempts: 0, locked_until: null });
 setCred(DAD, '1357');
 setCred(MOM, '2468');
+
+// child.display_name / app_user.display_name — just enough for GET /v1/me's
+// real handler (section G below), never modeled anywhere else in this file
+// before now. Automatic First-Run Detection (docs/superpowers/specs/
+// 2026-09-14-automatic-first-run-detection-design.md).
+const children = new Map([[CHILD_A, 'Ivy'], [CHILD_B, 'Eli']]);
+const appUsers = new Map([[DAD, 'Dad'], [MOM, 'Mom']]);
+// child_profile row EXISTENCE only (child_id -> true) — the real column
+// shape (gender/set_at) is irrelevant to hasOnboarded, which only ever
+// checks row existence (routes.mjs's own GET /v1/me handler).
+const childProfiles = new Set();
 
 // userId -> [{ child_id, role }] -- just enough of guardianship+
 // effective_guardianship for the REAL edgesFor()/the paired_device family
@@ -186,6 +209,24 @@ function fakeQuery(sql, params = []) {
     return [];
   }
 
+  // --------------------------- GET /v1/me — section G below (Automatic
+  // First-Run Detection). Three plain SELECTs that routes.mjs's own GET
+  // /v1/me handler issues through the OUTER session `q`, not through
+  // `pool` directly (unlike pinCredentialFor() above, which the fake
+  // `pool` already answered before this file ever tested /v1/me at all).
+  if (/^\s*SELECT display_name FROM child WHERE id = \$1\s*$/i.test(sql)) {
+    const [childId] = params;
+    return children.has(childId) ? [{ display_name: children.get(childId) }] : [];
+  }
+  if (/^\s*SELECT display_name FROM app_user WHERE id = \$1\s*$/i.test(sql)) {
+    const [userId] = params;
+    return appUsers.has(userId) ? [{ display_name: appUsers.get(userId) }] : [];
+  }
+  if (/^\s*SELECT 1 FROM child_profile WHERE child_id = \$1\s*$/i.test(sql)) {
+    const [childId] = params;
+    return childProfiles.has(childId) ? [{ '?column?': 1 }] : [];
+  }
+
   throw new Error(`fake query: unexpected sql: ${sql}`);
 }
 
@@ -196,11 +237,16 @@ const pool = {
   }),
 };
 
-// Fake DbPort for the Api itself -- every route in this file is
-// identityScopedByHandler/skipOuterSession, so this is never actually
-// consulted for THESE routes; kept minimal, same posture
-// kiosk_pin_route.test.mjs's own fake `db` already takes.
-const db = { edgesFor: async () => [], withSession: async (_p, fn) => fn(async () => []),
+// Fake DbPort for the Api itself -- every route THIS FILE'S OWN device-
+// pairing sections exercise is identityScopedByHandler/skipOuterSession, so
+// `withSession` was never actually consulted for any of them; GET /v1/me
+// (section G below, Automatic First-Run Detection) is the one route
+// registered on this SAME shared `api` instance that genuinely needs it —
+// `withSession`'s own `q` now routes through the identical `fakeQuery()`
+// `pool` above already uses, rather than a bare `async () => []` stub that
+// would make `hasOnboarded`/`displayName` silently resolve to nothing no
+// matter what fake state exists.
+const db = { edgesFor: async () => [], withSession: async (_p, fn) => fn(fakeQuery),
   isDeviceRevoked: (id) => isPairedDeviceRevoked(pool, id) };
 
 const api = new Api(SECRET, db, () => NOW);
@@ -399,18 +445,69 @@ let redeemedDeviceId;
 // F · a session with NO deviceId claim at all (DEV_LOGIN/every pre-existing
 // path) is completely unaffected by any of this -- the spec's own "sessions
 // from DEV_LOGIN carry no deviceId and are unaffected" line. Reuses this
-// file's own already-registered list route rather than /v1/me (whose real
-// handler needs more of app_user than this file's minimal fake pool
-// emulates) -- proves the identical point: an ordinary guardian session
-// (guardianTok() below never sets deviceId) is never even checked against
-// isPairedDeviceRevoked(), and section D's own DAD list call above already
-// succeeded (200) on exactly such a session, so this section asserts the
-// same fact a second, more explicit way.
+// file's own already-registered list route rather than /v1/me (this file's
+// device-pairing sections deliberately stay scoped to that feature's own
+// routes; GET /v1/me gets its own dedicated section, G below, added for
+// Automatic First-Run Detection rather than folded in here) -- proves the
+// identical point: an ordinary guardian session (guardianTok() below never
+// sets deviceId) is never even checked against isPairedDeviceRevoked(), and
+// section D's own DAD list call above already succeeded (200) on exactly
+// such a session, so this section asserts the same fact a second, more
+// explicit way.
 // ===========================================================================
 {
   const ordinary = await hit('GET', `/v1/children/${CHILD_A}/paired-devices`, guardianTok(MOM));
   check('F unaffected', 'an ordinary session with no deviceId claim is never blocked as '
     + 'device_revoked, regardless of what paired_device rows exist', ordinary.status, 200);
+}
+
+// ===========================================================================
+// G · GET /v1/me — `hasPin` (guardian) and `hasOnboarded` (child), Automatic
+// First-Run Detection (docs/superpowers/specs/2026-09-14-automatic-first-run
+// -detection-design.md). This is the file the design spec's own research
+// named as `hasPin`'s existing test coverage — direct inspection while
+// implementing this spec found that claim did not hold: `hasPin` had NO
+// test coverage anywhere in this repo's JS/TS suite before this section
+// (confirmed by grep, not assumed), and this file's own `db.withSession`
+// stub could not have exercised a real GET /v1/me call at all until the
+// fake-state additions above (`children`/`appUsers`/`childProfiles`,
+// `db.withSession` routed through `fakeQuery`) — see those additions' own
+// comments. Both fields land together here rather than splitting `hasPin`
+// into its own separate correction: they are the SAME response, resolved by
+// the SAME handler, and every fixture this section needs (DAD's real PIN
+// from section A's own `setCred`, CHILD_A/CHILD_B's real display names) was
+// already sitting in this file, unused by any GET /v1/me call until now.
+// ===========================================================================
+{
+  const dadMe = await hit('GET', '/v1/me', guardianTok(DAD));
+  check('G me', "a guardian with a PIN (DAD, set by section A's own setCred) -> hasPin true",
+    dadMe.body.hasPin, true);
+  check('G me', "hasOnboarded is really null (never undefined, never the string \"null\") "
+    + 'for a guardian caller -- a per-CHILD signal, symmetric with hasPin being null for a '
+    + 'child caller', dadMe.body.hasOnboarded === null, true);
+
+  const strangerMe = await hit('GET', '/v1/me', guardianTok(STRANGER));
+  check('G me', 'a guardian with NO pin_credential row (STRANGER) -> hasPin false, never '
+    + 'null/undefined for a real guardian caller', strangerMe.body.hasPin, false);
+
+  const childAMeBefore = await hit('GET', '/v1/me', childTok(CHILD_A));
+  check('G me', 'a child with no child_profile row yet -> hasOnboarded false',
+    childAMeBefore.body.hasOnboarded, false);
+  check('G me', 'hasPin is really null for a child caller -- unchanged, symmetric behaviour',
+    childAMeBefore.body.hasPin === null, true);
+
+  // A real child_profile row (any shape -- hasOnboarded only ever checks
+  // EXISTENCE, never the gender value, matching routes.mjs's own comment).
+  childProfiles.add(CHILD_A);
+  const childAMeAfter = await hit('GET', '/v1/me', childTok(CHILD_A));
+  check('G me', 'the SAME child, now with a child_profile row -> hasOnboarded true, '
+    + 're-resolved fresh on this fresh GET /v1/me call', childAMeAfter.body.hasOnboarded, true);
+
+  // A DIFFERENT child (CHILD_B), still with no row of her own -- proves this
+  // is scoped per-child, not a global flag CHILD_A's own write flipped.
+  const childBMe = await hit('GET', '/v1/me', childTok(CHILD_B));
+  check('G me', "CHILD_B's own hasOnboarded is unaffected by CHILD_A's row -- per-child, "
+    + 'not global', childBMe.body.hasOnboarded, false);
 }
 
 // ---------------------------------------------------------------------------

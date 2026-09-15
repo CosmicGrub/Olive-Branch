@@ -1,7 +1,11 @@
 /**
  * server/routes.mjs — route contract test: PUT /v1/children/:childId/profile.
  * Onboarding & Guardian Access sub-project 1 (docs/superpowers/specs/
- * 2026-09-12-onboarding-identity-pin-design.md).
+ * 2026-09-12-onboarding-identity-pin-design.md). Extended for Automatic
+ * First-Run Detection's own signal fix (docs/superpowers/specs/2026-09-14
+ * -automatic-first-run-detection-design.md, section G below): an explicit
+ * `{gender: null}` is now a real, accepted write, distinct from a body
+ * missing the `gender` key entirely (still a 400, unchanged).
  * db/migrations/0031_child_profile.sql, packages/db/src/pool.ts's
  * setChildGender(), routes.mjs's own invalidProfileBody().
  *
@@ -129,14 +133,19 @@ const body = (o) => JSON.stringify(o);
   check('C validation', 'reason is body_must_be_object', nonObject.body.error, 'body_must_be_object');
 
   const missingField = await hit('PUT', path(CHILD_A), childTok, body({}));
-  check('C validation', 'missing gender -> 400', missingField.status, 400);
+  check('C validation', 'missing gender key entirely -> 400 (still, unchanged by Automatic '
+    + 'First-Run Detection)', missingField.status, 400);
   check('C validation', 'reason is bad_gender', missingField.body.error, 'bad_gender');
 
+  const wrongType = await hit('PUT', path(CHILD_A), childTok, body({ gender: 3 }));
+  check('C validation', 'a wrong-typed gender -> 400', wrongType.status, 400);
+  check('C validation', 'reason is bad_gender (wrong type)', wrongType.body.error, 'bad_gender');
+
   const badValue = await hit('PUT', path(CHILD_A), childTok, body({ gender: 'other' }));
-  check('C validation', 'a gender outside boy/girl -> 400', badValue.status, 400);
+  check('C validation', 'a gender outside boy/girl/null -> 400', badValue.status, 400);
   check('C validation', 'reason is bad_gender (again)', badValue.body.error, 'bad_gender');
 
-  // None of the three rejected PUTs above may have touched the row — still
+  // None of the four rejected PUTs above may have touched the row — still
   // exactly what B's last successful write left it as.
   check('C validation', 'an invalid PUT never reaches setChildGender() — row is untouched',
     profileStore.get(CHILD_A), 'girl');
@@ -206,6 +215,36 @@ const body = (o) => JSON.stringify(o);
   const noSessionGet = await hit('GET', path(CHILD_A), null);
   check('F no read route', 'even with no session at all, the route is unrouted before auth '
     + 'is ever checked -> 404, not 401', noSessionGet.status, 404);
+}
+
+// G · Automatic First-Run Detection's own signal fix (docs/superpowers/
+// specs/2026-09-14-automatic-first-run-detection-design.md): an EXPLICIT
+// `{gender: null}` is now accepted and really reaches setChildGender() with
+// a real null — never a 400, and never silently coerced into something
+// else. Distinguishes "no key at all" (still a 400, section C above) from
+// "the key is present with an honest null value" (a real write) — this is
+// the whole point of the fix, so it gets its own section rather than being
+// folded into C. Placed last (after E/F already exercised and moved the
+// row) so it is free to change profileStore's own final value without
+// disturbing any earlier section's own assertions about it.
+{
+  const explicitNull = await hit('PUT', path(CHILD_A), childTok, body({ gender: null }));
+  check('G explicit null', 'an explicit {gender: null} -> 200, not 400',
+    explicitNull.status, 200);
+  check('G explicit null', 'PUT acks ok', explicitNull.body.ok, 'true');
+  check('G explicit null', 'setChildGender() really receives null, not the string "null" '
+    + 'or a coerced default', profileStore.get(CHILD_A), 'null');
+
+  // A body with no `gender` key at all is STILL a 400 — the fix admits an
+  // honest null value, never a missing key. Re-proven here, after the fix's
+  // own success case, so this exact contrast is visible in one place.
+  const stillMissing = await hit('PUT', path(CHILD_A), childTok, body({}));
+  check('G explicit null', 'a body missing the gender key entirely is still 400, even now',
+    stillMissing.status, 400);
+  check('G explicit null', 'reason is still bad_gender', stillMissing.body.error, 'bad_gender');
+  check('G explicit null', 'the still-missing-key PUT never touched the row -- still null '
+    + 'from the explicit-null write above, not reset by the rejected PUT',
+    profileStore.get(CHILD_A), 'null');
 }
 
 // ---------------------------------------------------------------------------

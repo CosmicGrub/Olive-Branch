@@ -179,13 +179,29 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
       setState(() { _pinPhase = _PinPhase.success; _pinSetThisSession = true; });
     } catch (e) {
       if (!mounted) return;
-      // Same "real reason, not a guess" convention child_home_live.dart's own
-      // error surface already uses for an ApiException.
       setState(() {
         _pinPhase = _PinPhase.failed;
-        _pinError = e is ApiException ? '${e.statusCode}: ${e.error}' : 'Could not set your PIN.';
+        _pinError = _pinErrorMessage(e);
       });
     }
+  }
+
+  /// A real server reason, in plain language — never the raw status/error
+  /// code this previously surfaced verbatim (e.g. "500: internal_error"),
+  /// which meant nothing to a guardian and read as broken. Codes matched
+  /// here are POST /v1/me/pin's own real, exhaustive set (server/routes.mjs)
+  /// — everything else (network failure, or the route's own catch-all ->
+  /// 500) falls to the generic fallback rather than a fabricated specific
+  /// reason. Same distinguish-the-real-reason discipline
+  /// pairing_redeem_screen.dart's own `_messageFor` already establishes for
+  /// this app's other PIN/code flow.
+  String _pinErrorMessage(Object e) {
+    if (e is! ApiException) return 'Could not set your PIN. Check your connection and try again.';
+    return switch (e.error) {
+      'pin_required' || 'invalid_pin_format' => 'Enter a 4-8 digit PIN.',
+      'account_deactivated' => 'This account is no longer active.',
+      _ => 'Could not set your PIN. Check your connection and try again.',
+    };
   }
 
   @override
@@ -252,8 +268,28 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
               const SizedBox(height: 24),
               Icon(Icons.pin_outlined, size: 40, color: scheme.primary),
               const SizedBox(height: 16),
-              Text('Kiosk PIN', style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w700)),
+              // "Required" is stated HERE, at the top of this section, not
+              // only discovered after scrolling to a disabled "Finish setup"
+              // button — a guardian skimming this screen sees immediately
+              // that this section (unlike the optional, not-yet-wired
+              // passkey section above it) is the one she can't skip. Wrap,
+              // not Row: at the Fold5 cover width (344px) "Kiosk PIN" in
+              // titleLarge bold plus the badge no longer fit one line —
+              // Wrap drops the badge to its own line there instead of
+              // overflowing, matching this screen's own left-aligned
+              // (not centered) heading convention.
+              Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 4,
+                children: [
+                  Text('Kiosk PIN', style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: scheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(8)),
+                    child: Text('Required', style: Theme.of(context).textTheme.labelSmall
+                      ?.copyWith(color: scheme.onPrimaryContainer, fontWeight: FontWeight.w700)),
+                  ),
+                ]),
               const SizedBox(height: 8),
               Text('A 4-8 digit code her kiosk lock checks when you need back in — '
                   'separate from your passkey above, and never used to sign in.',

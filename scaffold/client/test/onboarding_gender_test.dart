@@ -1,12 +1,16 @@
 // OLIVE BRANCH — onboarding_gender.dart / onboarding_logic.dart (acceptGender)
 // tests. Onboarding & Guardian Access sub-project 1 (docs/superpowers/specs/
-// 2026-09-12-onboarding-identity-pin-design.md). §8.5.
+// 2026-09-12-onboarding-identity-pin-design.md). §8.5. Signal fix, Automatic
+// First-Run Detection (docs/superpowers/specs/2026-09-14-automatic-first-run
+// -detection-design.md): a Skip now PUTs too — see the "live wiring" group
+// below.
 //
 // Mirrors onboarding_age_test.dart's own depth for the equivalent
 // tap-and-continue shape, plus a live-wiring group (mirroring
 // letters_screen_test.dart's own MockClient pattern) for the one thing this
-// screen does that onboarding_age.dart never has: a real tap genuinely
-// persists, via a real PUT, and a Skip never does.
+// screen does that onboarding_age.dart never has: EVERY real completion here
+// genuinely persists, via a real PUT — a real tap sends a real gender, and a
+// Skip sends an explicit null, both equally real writes now.
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -132,33 +136,67 @@ void main() {
       expect(got!.selected, 'boy');
     });
 
-    testWidgets('Skip never calls the network at all, even when live-wired',
+    testWidgets('Skip now PUTs the real route too — Automatic First-Run '
+        'Detection\'s own signal fix (docs/superpowers/specs/2026-09-14-'
+        'automatic-first-run-detection-design.md): an explicit null gender '
+        'is a real, meaningful answer, not something to withhold',
         (tester) async {
-      var called = false;
-      final mock = MockClient((req) async { called = true; return http.Response('not found', 404); });
+      final List<http.Request> puts = <http.Request>[];
+      final mock = MockClient((req) async {
+        if (req.method == 'PUT' && req.url.path.endsWith('/profile')) {
+          puts.add(req);
+          return http.Response(jsonEncode({'ok': true}), 200);
+        }
+        return http.Response('not found', 404);
+      });
       GenderStep? got;
       await pump(tester, (s) => got = s,
         baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock);
       await tester.tap(find.text('Skip for now'));
       await tester.pumpAndSettle();
 
-      expect(called, isFalse, reason: 'a skip must never write a fabricated row');
-      expect(got!.skipped, isTrue);
+      expect(puts, hasLength(1), reason: 'a Skip now writes a real row -- '
+        'onboarding completed, gender honestly declined');
+      expect(puts.single.url.path, '/v1/children/child-a/profile');
+      expect(jsonDecode(puts.single.body), {'gender': null});
+      expect(got!.skipped, isTrue, reason: 'the step itself still reports a '
+        'skip -- only the WIRE behaviour changed, never the local outcome');
     });
 
-    testWidgets('continuing with no tap (live-wired) also never calls the '
-        'network — the same honest skip as the explicit Skip link',
+    testWidgets('continuing with no tap (live-wired) PUTs the identical '
+        'null-gender row — the same honest skip as the explicit Skip link',
         (tester) async {
-      var called = false;
-      final mock = MockClient((req) async { called = true; return http.Response('not found', 404); });
+      final List<http.Request> puts = <http.Request>[];
+      final mock = MockClient((req) async {
+        if (req.method == 'PUT' && req.url.path.endsWith('/profile')) {
+          puts.add(req);
+          return http.Response(jsonEncode({'ok': true}), 200);
+        }
+        return http.Response('not found', 404);
+      });
       GenderStep? got;
       await pump(tester, (s) => got = s,
         baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock);
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
 
-      expect(called, isFalse);
+      expect(puts, hasLength(1));
+      expect(jsonDecode(puts.single.body), {'gender': null});
       expect(got!.skipped, isTrue);
+    });
+
+    testWidgets('a failed Skip write is swallowed too, not shown, and never '
+        'traps her on this screen — the identical best-effort posture a '
+        'failed real-tap write already gets', (tester) async {
+      final mock = MockClient((req) async => http.Response('boom', 500));
+      GenderStep? got;
+      await pump(tester, (s) => got = s,
+        baseUrl: 'http://api.test', sessionToken: 'tok', httpClient: mock);
+      await tester.tap(find.text('Skip for now'));
+      await tester.pumpAndSettle();
+
+      expect(got!.skipped, isTrue, reason: 'she still advances even though the write failed');
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('a failed write is swallowed, not shown, and never traps her '
