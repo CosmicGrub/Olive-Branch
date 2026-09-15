@@ -218,6 +218,28 @@ void main() {
       expect(find.text('YOUR LINE!'), findsNothing); // resumed AFTER the refrain, not on it
     });
 
+    // Design spec: docs/superpowers/specs/2026-09-15-design-tokens-named-
+    // migration-design.md, Fix #4 — the bookmark row migrated from a bare
+    // Card+ListTile onto HubTile (hub_widgets.dart), which needed a new
+    // optional [trailing] slot (see that widget's own header) to carry the
+    // "remove bookmark" action HubTile's plain icon/title/subtitle/onTap
+    // shape has no room for. Chrome-only migration — this proves that real
+    // action still works, not just the tap-to-resume destination the test
+    // above already covers.
+    testWidgets('the trailing "Remove bookmark" button still clears the '
+        'bookmark after the HubTile migration', (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(const StorytellerScreen(childName: 'Ivy')));
+      await askForAStory(tester);
+      await tester.tap(find.text('Stop here for tonight'));
+      await tester.pump();
+      expect(find.text('Left off partway'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Remove bookmark'));
+      await tester.pump();
+      expect(find.text('Left off partway'), findsNothing);
+    });
+
     testWidgets('rereading an unstarred story twice nudges her to star it — once, not '
         'on every reread after', (tester) async {
       await useNarrowSurface(tester);

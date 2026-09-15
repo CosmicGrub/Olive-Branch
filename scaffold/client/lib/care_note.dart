@@ -34,6 +34,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
 // =========================================================== guardian.ts ===
@@ -369,10 +370,25 @@ class _NoteTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final int daysLeft = note.expiresAt.difference(now).inDays;
-    return Card(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
-      leading: Icon(_kindIcon(note.items.first.kind)),
-      title: Text(note.items.first.note),
-      subtitle: Text(daysLeft <= 0 ? 'Expires today' : 'Expires in $daysLeft days'),
-    ));
+    // Card+Padding+Column, not Card+ListTile — matches this feature
+    // family's other 5 sibling cards (expenses_screen.dart/letters_screen
+    // .dart/handover_notes.dart/meds_care.dart/emergency_card.dart), for
+    // internal consistency within this one feature family, not a broader
+    // list-chrome ruling (see hub_widgets.dart's own HubTile for that
+    // separate, narrower migration). design spec: docs/superpowers/specs/
+    // 2026-09-15-design-tokens-named-migration-design.md, Fix #3.
+    return Card(margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Padding(padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(_kindIcon(note.items.first.kind)),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(note.items.first.note),
+            const SizedBox(height: 4),
+            Text(daysLeft <= 0 ? 'Expires today' : 'Expires in $daysLeft days',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ])),
+        ])));
   }
 }

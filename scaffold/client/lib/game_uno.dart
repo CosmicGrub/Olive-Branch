@@ -65,12 +65,24 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side, auditLiveView;
 import 'local_pairing.dart';
 import 'uno_bot.dart';
 import 'uno_deck.dart';
 import 'uno_session.dart';
+
+/// foldTabletop's own outer padding — real-device-tested minimum,
+/// deliberately NOT shared with the other 4 local-play games' own
+/// identical-shaped constant, and deliberately NOT grown even though it is
+/// already the tightest of the five: shrinking is safe, growing risks
+/// reintroducing an overflow at foldTabletop's constrained ~420dp height
+/// (this screen's own build() header has the full account — nearly 300px
+/// overflowed there before the SingleChildScrollView fix). design_tokens
+/// .dart's own header / docs/superpowers/specs/2026-09-15-design-tokens-
+/// named-migration-design.md, Fix #2.
+const double _foldTabletopPad = 8.0;
 
 /// A real per-device card-size multiplier, keyed off the same real
 /// postures form_factors.dart already defines for the rest of this app
@@ -657,7 +669,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       // particular) get tighter outer padding so the table has real room
       // to breathe instead of losing it to a fixed 16dp gutter tuned for
       // a taller screen.
-      final outerPad = posture == ff.Posture.foldTabletop ? 8.0 : 16.0;
+      final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
       return Scaffold(
         appBar: AppBar(title: const Text('Uno')),
         // SingleChildScrollView, not a bare Center — real-device testing at

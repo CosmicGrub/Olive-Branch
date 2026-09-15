@@ -52,6 +52,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
 enum ViewerRole { guardian, child }
@@ -456,8 +457,8 @@ class _ApprovalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 8),
-    child: Padding(padding: const EdgeInsets.all(12),
+    margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+    child: Padding(padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(item.summary, style: const TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),

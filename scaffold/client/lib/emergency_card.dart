@@ -35,6 +35,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'api_client.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
 /// Same "recorded, not glossed over" pattern as child_home.dart's helper —
@@ -378,7 +379,7 @@ class _AllergyCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: scheme.error, width: 3)),
-      child: Padding(padding: const EdgeInsets.all(16), child:
+      child: Padding(padding: const EdgeInsets.all(AppSpacing.md), child:
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(Icons.warning_rounded, color: scheme.error, size: 32),
           const SizedBox(width: 12),

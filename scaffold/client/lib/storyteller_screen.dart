@@ -23,6 +23,7 @@
 // same honest-stub posture as message_banking.dart's seeded demo state.
 import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
+import 'hub_widgets.dart';
 import 'library_logic.dart';
 import 'storyteller_logic.dart' as story;
 import 'tabletop_split.dart';
@@ -546,18 +547,24 @@ class _Shelf extends StatelessWidget {
         Text('Left off partway', style: Theme.of(context).textTheme.titleSmall
           ?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
-        for (final b in bookmarks) Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            minVerticalPadding: 14,
-            leading: const Icon(Icons.bookmark_rounded),
-            title: Text(b.title),
-            subtitle: const Text('Pick up right where you stopped'),
-            onTap: () => onResumeBookmark(b),
-            trailing: IconButton(icon: const Icon(Icons.close_rounded),
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              tooltip: 'Remove bookmark', onPressed: () => onClearBookmark(b.code)),
-          ),
+        // HubTile (hub_widgets.dart), not a bare Card+ListTile — a genuine
+        // navigation row (tap a bookmark, resume the story), the exact role
+        // HubTile already exists for elsewhere in the app. Design spec:
+        // docs/superpowers/specs/2026-09-15-design-tokens-named-migration-
+        // design.md, Fix #4. The "remove bookmark" action has no home in
+        // HubTile's plain icon/title/subtitle/onTap shape, so this is the
+        // one call site that supplies HubTile's new optional [trailing]
+        // (see that widget's own header) rather than letting the default
+        // chevron render — chrome-only migration, the real clear-bookmark
+        // behavior is unchanged.
+        for (final b in bookmarks) HubTile(
+          icon: Icons.bookmark_rounded,
+          title: b.title,
+          subtitle: 'Pick up right where you stopped',
+          onTap: () => onResumeBookmark(b),
+          trailing: IconButton(icon: const Icon(Icons.close_rounded),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            tooltip: 'Remove bookmark', onPressed: () => onClearBookmark(b.code)),
         ),
         const SizedBox(height: 12),
       ],

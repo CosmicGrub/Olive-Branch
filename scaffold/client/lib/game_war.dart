@@ -32,10 +32,19 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side, auditLiveView;
 import 'local_pairing.dart';
 import 'war_deck.dart';
+
+/// foldTabletop's own outer padding — real-device-tested minimum,
+/// deliberately NOT shared with the other 4 local-play games' own
+/// identical-shaped constant: shrinking is safe, growing risks
+/// reintroducing an overflow at foldTabletop's constrained ~420dp height.
+/// design_tokens.dart's own header / docs/superpowers/specs/2026-09-15-
+/// design-tokens-named-migration-design.md, Fix #2.
+const double _foldTabletopPad = 12.0;
 
 /// Same real per-device scale this app's other games now use, keyed off
 /// form_factors.dart's own postures rather than a bespoke breakpoint —
@@ -324,7 +333,7 @@ class _GameWarScreenState extends State<GameWarScreen> {
           PairingPhase.error => throw StateError('handled above'),
         };
       }
-      final outerPad = posture == ff.Posture.foldTabletop ? 12.0 : 24.0;
+      final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
       return Scaffold(
         appBar: AppBar(title: const Text('War')),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own

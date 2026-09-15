@@ -37,6 +37,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
 // ================================================================ care.ts ===
@@ -360,8 +361,8 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
         const _SectionLabel('Scheduled medications'),
         const SizedBox(height: 8),
         for (final _Medication med in _meds.where((_Medication m) => !m.isPrn))
-          Card(margin: const EdgeInsets.only(bottom: 8), child: Padding(
-            padding: const EdgeInsets.all(12),
+          Card(margin: const EdgeInsets.only(bottom: AppSpacing.sm), child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${med.name} · ${med.dose}', style: const TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
@@ -382,7 +383,11 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
         const _SectionLabel('As needed'),
         const SizedBox(height: 8),
         for (final _Medication med in _meds.where((_Medication m) => m.isPrn))
-          Card(child: Padding(padding: const EdgeInsets.all(12),
+          // Explicit margin, not Flutter's own undocumented Card default
+          // (EdgeInsets.all(4.0)) this used to silently inherit — design
+          // spec (docs/superpowers/specs/2026-09-15-design-tokens-named-
+          // migration-design.md, Fix #3).
+          Card(margin: const EdgeInsets.all(AppSpacing.sm), child: Padding(padding: const EdgeInsets.all(AppSpacing.md),
             child: Row(children: [
               Expanded(child: Text('${med.name} · ${med.dose}',
                 style: const TextStyle(fontWeight: FontWeight.w600))),
@@ -394,7 +399,11 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
         const SizedBox(height: 20),
         const _SectionLabel('Shared medical record'),
         const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.all(12),
+        // Explicit margin, not Flutter's own undocumented Card default
+        // (EdgeInsets.all(4.0)) this used to silently inherit — design spec
+        // (docs/superpowers/specs/2026-09-15-design-tokens-named-migration-
+        // design.md, Fix #3).
+        Card(margin: const EdgeInsets.all(AppSpacing.sm), child: Padding(padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Allergies', style: TextStyle(fontWeight: FontWeight.w600)),
             for (final String a in _allergies) Text(a),
