@@ -64,8 +64,18 @@ class _BirthdayMarkedScreenState extends State<BirthdayMarkedScreen> with Single
       body: SafeArea(child: Center(child: Padding(
         padding: const EdgeInsets.all(24),
         child: outcome.ok
-          ? ScaleTransition(
-              scale: CurvedAnimation(parent: _pop, curve: Curves.easeOutBack),
+          ? AnimatedBuilder(
+              // Real bug, found by review: a raw CurvedAnimation (this
+              // curve's own real ~10% overshoot) fed straight into
+              // ScaleTransition with no clamp — the sole easeOutBack call
+              // site anywhere in this app with none. Every other site
+              // clamps at least one of opacity/scale; this clamps scale
+              // itself directly, matching that established discipline.
+              animation: _pop,
+              builder: (context, child) => Transform.scale(
+                scale: Curves.easeOutBack.transform(_pop.value).clamp(0.0, 1.0),
+                child: child,
+              ),
               child: _Marked(event: outcome.event!, childName: widget.childName,
                 accent: accent, onDone: widget.onDone))
           // Honest fallback: reachable only if this screen is wired without a

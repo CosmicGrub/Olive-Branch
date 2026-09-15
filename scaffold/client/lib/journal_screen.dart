@@ -15,10 +15,13 @@
 //     never called from this widget with anything but role 'child'.
 //
 // §8.13.5 — the journal is a permanently STILL surface: no ambient motion,
-// nothing loops, ever. The only animation in this file is a single sub-400ms
-// fade-in on the entry she just saved — consequence motion, not autonomous.
+// nothing loops, ever. The only animation in this file is the entry she just
+// saved appearing, timed via motion_rules.dart's durationFor(quietnessOf
+// ('journal'), ...) — which resolves to an instant (0ms) appearance, same
+// still-surface treatment as homework_screen.dart, not a timed fade.
 import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
+import 'motion_rules.dart';
 
 // ================= ported from packages/agency/src/agency.ts (readJournal) =
 class JournalEntry {
@@ -249,10 +252,16 @@ class _JournalTile extends StatelessWidget {
         ]),
       ));
     if (!justAdded) return card;
-    // Consequence motion only, and well under the 400ms budget (§8.13.1) —
-    // fires once, on the entry she just wrote, then never again for it.
+    // Real bug, found by review: this was hardcoded to 350ms and justified
+    // against §8.13.1's 400ms *consequence* budget — the wrong, looser rule.
+    // The journal is one of §8.13.5's four permanently "still" surfaces
+    // (bedtime/homework/journal/emergency-card), which governs it instead:
+    // motion_rules.dart now carries 'journal' in _quietSurfaces, and this
+    // mirrors homework_screen.dart's own established durationFor() call —
+    // resolving to an instant (0ms) appearance, not a timed fade.
+    final int fadeMs = durationFor(quietnessOf('journal'), crossfadeMs);
     return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1), duration: const Duration(milliseconds: 350),
+      tween: Tween(begin: 0, end: 1), duration: Duration(milliseconds: fadeMs),
       builder: (context, v, child) => Opacity(opacity: v, child: child),
       child: card,
     );

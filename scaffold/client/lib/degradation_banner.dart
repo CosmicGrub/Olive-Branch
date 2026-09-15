@@ -203,30 +203,46 @@ class DegradationBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final n = notice;
-    if (n == null) return const SizedBox.shrink();
-    assert(auditNotice(n), 'a stream notice must never blame her, her network, or her device');
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Container(
-        margin: const EdgeInsets.only(top: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        constraints: const BoxConstraints(minHeight: 48),
-        decoration: BoxDecoration(
-          // Deliberately literal, not themed: this scrim sits atop live video
-          // of arbitrary colour and must stay legible regardless of the
-          // app's own light/dark theme — a themed surface colour here could
-          // wash out against a bright or dark camera feed.
-          color: Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.volume_up_rounded, color: Colors.white, size: 20),
-          const SizedBox(width: 8),
-          Flexible(child: Text(n.line, textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: Colors.white, fontWeight: FontWeight.w500))),
-        ]),
-      ),
+    if (n != null) {
+      assert(auditNotice(n), 'a stream notice must never blame her, her network, or her device');
+    }
+    // Real bug, found by review: this used to hard-cut in and out via a
+    // bare conditional (SizedBox.shrink() vs. the real banner) — no
+    // transition at all, on a live-call surface a child is actively
+    // watching. AnimatedSwitcher's own 120ms crossfadeMs matches
+    // motion_rules.dart's real constant of the same name (MASTERFILE
+    // §8.13.5: "'Still' means a crossfade, not a cut"). Re-keyed on the
+    // notice's own text (not just null-vs-not), so a CHANGED notice
+    // crossfades too, not just the show/hide transition.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 120),
+      transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+      child: n == null
+        ? const SizedBox.shrink(key: ValueKey('degradationBannerHidden'))
+        : Align(
+            key: ValueKey('degradationBanner:${n.line}'),
+            alignment: Alignment.topCenter,
+            child: Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              constraints: const BoxConstraints(minHeight: 48),
+              decoration: BoxDecoration(
+                // Deliberately literal, not themed: this scrim sits atop live video
+                // of arbitrary colour and must stay legible regardless of the
+                // app's own light/dark theme — a themed surface colour here could
+                // wash out against a bright or dark camera feed.
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.volume_up_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Flexible(child: Text(n.line, textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: Colors.white, fontWeight: FontWeight.w500))),
+              ]),
+            ),
+          ),
     );
   }
 }

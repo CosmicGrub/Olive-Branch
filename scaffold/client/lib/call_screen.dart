@@ -917,6 +917,28 @@ class InCallView extends StatelessWidget {
   /// keeps its exact prior Stack-overlay rendering, unconditionally.
   final bool tabletop;
 
+  /// The real remote view — video, or the honest §5.23.1 NEVER_BLANK
+  /// listening surface — crossfaded between the two, not hard-cut. Real
+  /// bug, found by review: this used to be a bare ternary swap, duplicated
+  /// at both this widget's own call sites (tabletop and non-tabletop),
+  /// with no transition at all on a live-call surface a child is actively
+  /// watching whenever the quality ladder steps down to audio-only
+  /// (§5.28) or a track genuinely arrives/drops. Same 120ms crossfadeMs
+  /// convention as motion_rules.dart / DegradationBanner's own fix.
+  Widget _remoteView() => AnimatedSwitcher(
+    duration: const Duration(milliseconds: 120),
+    transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+    // KeyedSubtree, not a key passed directly into either branch's own
+    // constructor — sidesteps needing to know whether the vendored
+    // lk.VideoTrackRenderer widget itself exposes a `key` param, while
+    // still giving AnimatedSwitcher the distinct identity it needs to
+    // detect "this is a different child" between the two states.
+    child: remoteTrack != null
+      ? KeyedSubtree(key: const ValueKey('remoteVideo'), child: lk.VideoTrackRenderer(remoteTrack!))
+      : KeyedSubtree(key: const ValueKey('remoteListening'),
+          child: _ListeningSurfaceView(remoteName: remoteName, remoteMode: remoteMode)),
+  );
+
   @override
   Widget build(BuildContext context) {
     if (tabletop) {
@@ -926,11 +948,7 @@ class InCallView extends StatelessWidget {
       // — a real Column split via TabletopSplit, not the Stack overlay
       // below (which stays completely untouched for every other posture).
       final Widget videoArea = Stack(children: [
-        Positioned.fill(
-          child: remoteTrack != null
-              ? lk.VideoTrackRenderer(remoteTrack!)
-              : _ListeningSurfaceView(remoteName: remoteName, remoteMode: remoteMode),
-        ),
+        Positioned.fill(child: _remoteView()),
         DegradationBanner(notice: notice),
         if (localTrack != null)
           Positioned(
@@ -987,17 +1005,7 @@ class InCallView extends StatelessWidget {
       return TabletopSplit(viewing: videoArea, controls: Center(child: controlsRow));
     }
     return Stack(children: [
-    Positioned.fill(
-      child: remoteTrack != null
-          ? lk.VideoTrackRenderer(remoteTrack!)
-          // Never a black rectangle here — §5.23.1's NEVER_BLANK. Covers
-          // every real reason there's no picture to show: he chose
-          // audio-only, still connecting, or the quality ladder stepped
-          // down to its own audio-only rung (§5.28) — all honestly the
-          // same "nothing to look at but the call is real" state from her
-          // side of the screen.
-          : _ListeningSurfaceView(remoteName: remoteName, remoteMode: remoteMode),
-    ),
+    Positioned.fill(child: _remoteView()),
     DegradationBanner(notice: notice),
     if (localTrack != null)
       Positioned(

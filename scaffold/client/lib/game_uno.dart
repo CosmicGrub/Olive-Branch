@@ -1419,8 +1419,11 @@ class _ActionMomentGlow extends StatefulWidget {
 }
 
 class _ActionMomentGlowState extends State<_ActionMomentGlow> with SingleTickerProviderStateMixin {
+  // Real bug, found by review: this ran 700ms, nearly double
+  // motion_rules.dart's maxConsequenceMs (400) / MASTERFILE §8.13.1's
+  // documented consequence budget. Brought inside it.
   late final AnimationController _controller =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
   late String _lastCode = widget.card.code;
 
   bool get _isAction => widget.card.type == UnoCardType.skip || widget.card.type == UnoCardType.reverse ||
@@ -1463,10 +1466,22 @@ class _ActionMomentGlowState extends State<_ActionMomentGlow> with SingleTickerP
         builder: (context, child) {
           final t = _controller.value;
           if (t == 0) return const SizedBox(width: 100, height: 100);
-          final fade = t < 0.5 ? t * 2 : (1 - t) * 2; // rises then fades — one shot, never sustained
+          // Real bug, found by review: this envelope used to drive both
+          // halves off the controller's own raw LINEAR value — a
+          // hand-rolled fade with no easing applied anywhere. A rise-then-
+          // fade pulse isn't a single monotonic Curves.* shape, so each
+          // half now gets its own real eased curve instead (ease-out
+          // rising in, ease-in fading out) rather than a bare linear ramp.
+          final fade = t < 0.5
+            ? Curves.easeOut.transform((t * 2).clamp(0, 1))
+            : Curves.easeIn.transform(((1 - t) * 2).clamp(0, 1));
           return Opacity(
             opacity: fade.clamp(0, 1),
             child: Transform.scale(
+              // Scale still grows monotonically off the controller's own
+              // raw t (not the eased fade envelope above) — a deliberate,
+              // separate "expanding ring" shape distinct from the pulse's
+              // rise-then-fade opacity, unchanged from before this fix.
               scale: 1.0 + t * 0.7,
               child: Container(
                 width: 100, height: 100,
@@ -1501,8 +1516,11 @@ class _RoundEndCelebration extends StatelessWidget {
     final theme = Theme.of(context);
     return TweenAnimationBuilder<double>(
       // Consequence: plays once as this real winner-state first mounts,
-      // never repeats, never loops.
-      tween: Tween(begin: 0, end: 1), duration: const Duration(milliseconds: 420), curve: Curves.easeOutBack,
+      // never repeats, never loops. 380ms, matching the real established
+      // sibling win-reveal pattern (game_findthing.dart/game_hunt.dart) —
+      // this was 420ms, a real bug the review found (20ms over both the
+      // 400ms consequence budget and its own true siblings' shared value).
+      tween: Tween(begin: 0, end: 1), duration: const Duration(milliseconds: 380), curve: Curves.easeOutBack,
       builder: (context, t, child) => Transform.scale(scale: 0.7 + 0.3 * t.clamp(0, 1), child: Opacity(opacity: t.clamp(0, 1), child: child)),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
