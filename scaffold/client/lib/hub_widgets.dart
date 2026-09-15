@@ -20,12 +20,22 @@ class HubTile extends StatelessWidget {
     required this.title,
     this.subtitle,
     required this.onTap,
+    this.trailing,
   });
 
   final IconData icon;
   final String title;
   final String? subtitle;
   final VoidCallback onTap;
+  /// Optional, additive — every existing caller (60 call sites across 4
+  /// files, pre-dating this field) omits it and keeps getting the plain
+  /// chevron below, unchanged. Only storyteller_screen.dart's own bookmark
+  /// row supplies one today (its "remove bookmark" button, migrated onto
+  /// HubTile from a bare Card+ListTile — design spec: docs/superpowers/
+  /// specs/2026-09-15-design-tokens-named-migration-design.md, Fix #4 —
+  /// which needs its own real action alongside the row's own onTap-to-
+  /// resume, not just a static chevron).
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +67,7 @@ class HubTile extends StatelessWidget {
               ],
             )),
             const SizedBox(width: 8),
-            const Icon(Icons.chevron_right),
+            trailing ?? const Icon(Icons.chevron_right),
           ]),
         ),
       ),

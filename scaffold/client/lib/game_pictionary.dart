@@ -40,10 +40,19 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'annotation_canvas.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side, LiveKind, DeckState, newDeck, draw, auditLiveView,
   Pictionary, newPictionary, guessDrawing;
 import 'local_pairing.dart';
+
+/// foldTabletop's own outer padding — real-device-tested minimum,
+/// deliberately NOT shared with the other 4 local-play games' own
+/// identical-shaped constant: shrinking is safe, growing risks
+/// reintroducing an overflow at foldTabletop's constrained ~420dp height.
+/// design_tokens.dart's own header / docs/superpowers/specs/2026-09-15-
+/// design-tokens-named-migration-design.md, Fix #2.
+const double _foldTabletopPad = 10.0;
 
 // ==================================================================
 // ==== wire — pure functions, no Flutter import, independently testable ===
@@ -368,7 +377,7 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
           PairingPhase.error => throw StateError('handled above'),
         };
       }
-      final outerPad = posture == ff.Posture.foldTabletop ? 10.0 : 16.0;
+      final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
       return Scaffold(
         appBar: AppBar(title: const Text('Draw & guess')),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own

@@ -14,6 +14,139 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.77] — 2026-09-14 — Design tokens & named migration (UI/UX review theme #4)
+
+Full design spec: `docs/superpowers/specs/2026-09-15-design-tokens-named-
+migration-design.md`. Fourth of seven themes a multi-agent UI/UX review
+surfaced; themes #1-3 (first-run boot polish, Revoke confirmation,
+hardcoded colors) already shipped. `theme.dart` catalogs color only — both
+MASTERFILE §8.16 and the originating intuitivism-foundation spec always
+scoped spacing/radius tokens as later, deferred work that never happened.
+This is that deferred half, applied ONLY to the review's own concretely-
+named problem spots — not a retrofit of the ~100 other files with their own
+one-off spacing drift.
+
+### Added
+- **`client/lib/design_tokens.dart`** — `AppSpacing` (xs=4/sm=8/md=12/
+  lg=16/xl=24/xxl=32) and `AppRadius` (sm=8/md=12/lg=16), matched to this
+  codebase's own already-dominant `EdgeInsets`/`BorderRadius` literals
+  (confirmed by grep, not invented). Deliberately its own file, not an
+  extension of `theme.dart` (built around a palette/brightness contract
+  that has nothing to do with spacing) or `form_factors.dart` (whose own
+  `comfortableReadingWidth` doc comment already guards against exactly
+  that role).
+
+### Fixed
+- **ChildHome's grid silently collapsed to 1 column at the real 7-inch
+  tabletSmall width (600-660px)** — `guardian_home.dart`'s own grid already
+  floors `columnsAt()`'s output to `.clamp(2, 3)` for this exact reason;
+  `child_home.dart`'s structurally identical grid had no floor at all.
+  Fixed with the same clamp, cited to guardian_home.dart's own precedent —
+  **with one real, implementation-discovered scope narrowing**: the floor
+  applies only from 600px physical width up, not universally. Applying it
+  unconditionally (as first attempted) broke two real, common narrow
+  widths — the Fold5 cover screen (344px) and a genuinely common phone
+  width (390px, and a plain 360x740 non-foldCover phone) — because this
+  screen's own `foldCover`-only "More" tile reopens its full Featured/
+  Standard grid at that SAME narrow physical width, and unlike
+  `guardian_home.dart`, ChildHome's Featured grid has no adaptive per-width
+  `mainAxisExtent` (guardian_home.dart's own 108/136 effectiveColumnWidth
+  breakpoint is what actually lets ITS clamped 2-narrow-columns fit at
+  344px). Caught by a real local `flutter test` run — two genuine
+  `RenderFlex overflowed` failures, not assumed or guessed at — and fixed
+  by scoping the floor to widths where 2 columns can safely fit, rather
+  than porting guardian_home.dart's larger adaptive-height machinery into
+  this screen (out of scope for this spec).
+- **5-game foldTabletop padding duplication** (`game_connect4.dart`,
+  `game_war.dart`, `game_pictionary.dart`, `game_puzzle.dart`,
+  `game_uno.dart`) — each hand-rolled `outerPad = posture == foldTabletop ?
+  X : Y`, copy-pasted, with 3 divergent `X`/`Y` pairs. `X` (the
+  foldTabletop-specific, real-device-tuned minimum) stays EXACTLY as each
+  game already had it — 12/12/10/10/8 — now a named local constant with a
+  comment explaining why it is deliberately NOT shared (growing it risks
+  reintroducing a real overflow bug this spec has no device to re-verify
+  against). `Y` (the "else" branch) is unified onto `AppSpacing.lg` (16) —
+  3 of 5 games already used it; connect4/war tighten from 24, the only
+  actual behavior change here.
+- **Coordination-feature card family normalized** (`expenses_screen.dart`'s
+  `_ApprovalCard`, `letters_screen.dart`, `handover_notes.dart`,
+  `meds_care.dart` — both card variants, `emergency_card.dart`'s
+  `_AllergyCard` inner padding only, `care_note.dart`) — card margin onto
+  `AppSpacing.sm` (8) and inner padding onto `AppSpacing.md` (12),
+  replacing bare literals AND, for `meds_care.dart`'s PRN/shared cards,
+  Flutter's own undocumented `Card` default (`EdgeInsets.all(4.0)`) those
+  two silently inherited with no explicit `margin:` at all. `care_note
+  .dart`'s `_NoteTile` additionally converted from `Card`+`ListTile` to
+  `Card`+`Padding`+`Column`, matching its 5 siblings' shape.
+- **`story_library.dart`/`storyteller_screen.dart`'s two genuine
+  navigation rows** (tap a bookmark, open/resume a story) migrated from a
+  bare `Card`+`ListTile` onto `HubTile` (`hub_widgets.dart`) — the widget
+  already used for exactly this role in 4 other files/60 call sites. The
+  other 7 files' visually-similar but read-only `Card`+`ListTile` rows
+  (`exchange_screen.dart`, `expenses_screen.dart`'s other one,
+  `expiry_digest.dart`, `message_banking.dart`, `morning_briefing.dart`,
+  `show_guardian.dart`) are explicitly left untouched — a different
+  semantic role (data display, not navigation), per the spec's own
+  narrowly-scoped Fix #4.
+
+### Disclosed judgment calls
+- `HubTile` (`hub_widgets.dart`) gained one new, additive, optional
+  `trailing` field (default `null`, every existing call site unaffected)
+  so `storyteller_screen.dart`'s bookmark row could keep its real "remove
+  bookmark" action — HubTile's plain icon/title/subtitle/onTap shape had
+  no room for it, and dropping it would have been a real functional
+  regression, not the chrome-only migration this spec calls for.
+- `child_home.dart`'s clamp exclusion band (see Fixed, above) — the spec's
+  own text described the clamp as an isolated, safe change; a real local
+  test run proved otherwise for widths under 600px. The 600px floor
+  matches the exact number guardian_home.dart's own comment already cites
+  ("tabletSmall posture, min 600px"), not an invented threshold.
+- `meds_care.dart`'s two cards missing `margin:` entirely got
+  `EdgeInsets.all(AppSpacing.sm)` — matching the shape of the Flutter
+  default (`EdgeInsets.all(4.0)`) they used to silently inherit, just at
+  the new token value, rather than switching to an asymmetric
+  `only(bottom:)` shape none of this file's existing code used for them.
+- `care_note.dart`'s `_NoteTile` reorganizes its icon/text content into a
+  `Row`(icon)+`Column`(title, expiry subtitle) inside the new `Padding`,
+  mirroring `letters_screen.dart`'s `_LetterTile` (the closest sibling
+  also showing an icon beside its text) rather than inventing a new shape;
+  the expiry line uses `textTheme.bodySmall`/`onSurfaceVariant` to
+  approximate `ListTile`'s own default subtitle styling.
+- `guardian_home_test.dart` has no width-band test literally analogous to
+  the new `child_home_test.dart` case this spec's own Testing section asks
+  to mirror (confirmed: that file only ever pumps ChildHome/GuardianHome
+  at 344px/900px, never 600-660px) — the new test instead reuses THIS
+  file's own pre-existing `crossAxisCountsAt()` helper, established in the
+  same group for exactly this class of assertion.
+- Local `_foldTabletopPad` constants (Fix #2) are file-private top-level
+  `const double`s, matching this codebase's own existing convention in
+  `game_war.dart`/`game_uno.dart` (`warRoundCap`, `_userCardScaleMin`) —
+  not the spec's own illustrative name verbatim in every file, since two
+  games (connect4, uno) already used `outerPad`/other names nearby that
+  made a shared literal name clearer.
+
+### Verified
+`flutter analyze` clean. **2583/2583 Dart client assertions passing, 0
+failed** (native Windows Flutter 3.44.8, matching CI's own pin) — a real,
+full local `flutter test` run of this pass's entire touched surface plus
+the whole existing client suite, not estimated. This number is not
+directly comparable to v0.49.76's own quoted 2562/2562: two intervening
+PRs (#114 Revoke confirmation, #115 hardcoded colors) added their own new
+Dart tests without updating that figure, so 2562 was already stale before
+this pass touched anything; 2583 is this session's own fresh, real count
+of everything currently on `main` plus this pass's 14 new test cases.
+**NOT independently re-verified this pass**: `tools/verify.sh`'s JS/
+server/DB suites, the Android/Kotlin + Wear OS compiles, and the live
+LiveKit suite — this pass touches no server/TypeScript/JS file at all, and
+this sandbox has no native `psql`/reachable Postgres client, no WSL, no
+Android SDK, and no LiveKit binary, so none of those sections could run
+here. The last real, disclosed `COMPUTED TOTAL` remains v0.49.76's own
+**7749/7749**, unclaimed and unchanged by this pass rather than re-guessed
+— per this repo's own established discipline (v0.49.76's own entry, among
+others) of never asserting a total that wasn't actually computed.
+
+---
+
 ## [0.49.76] — 2026-09-14 — Automatic first-run detection
 
 Full design spec: `docs/superpowers/specs/2026-09-14-automatic-first-run

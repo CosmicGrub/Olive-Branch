@@ -15,6 +15,7 @@
 // print. It renders `libraryChildView()`'s narrow title+code shape wherever
 // it can, and the tests hold this file to `auditLibraryChildView()`.
 import 'package:flutter/material.dart';
+import 'hub_widgets.dart';
 import 'library_logic.dart';
 import 'storyteller_logic.dart' as story;
 
@@ -248,15 +249,18 @@ class _SearchResultTile extends StatelessWidget {
   const _SearchResultTile({required this.entry, required this.onTap});
   final ChildLibraryEntry entry;
   final VoidCallback onTap;
+  // HubTile (hub_widgets.dart), not a bare Card+ListTile — a genuine
+  // navigation row (tap a bookmark, open a story), the exact role HubTile
+  // already exists for elsewhere in the app. Design spec: docs/superpowers/
+  // specs/2026-09-15-design-tokens-named-migration-design.md, Fix #4.
+  // HubTile's own Container already guarantees a minHeight of 56 — well
+  // over 48dp — so the old minVerticalPadding: 14 tuning is no longer
+  // needed.
   @override
-  Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 8),
-    child: ListTile(
-      minVerticalPadding: 14, // keeps the row's tap target comfortably over 48dp
-      leading: Icon(Icons.auto_stories_rounded, color: Theme.of(context).colorScheme.primary),
-      title: Text(entry.title),
-      onTap: onTap,
-    ),
+  Widget build(BuildContext context) => HubTile(
+    icon: Icons.auto_stories_rounded,
+    title: entry.title,
+    onTap: onTap,
   );
 }
 

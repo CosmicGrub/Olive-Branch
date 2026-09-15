@@ -127,6 +127,24 @@ void main() {
       }
     });
 
+    // Design spec: docs/superpowers/specs/2026-09-15-design-tokens-named-
+    // migration-design.md, Fix #4 — _SearchResultTile migrated from a bare
+    // Card+ListTile onto HubTile (hub_widgets.dart). Chrome-only change:
+    // this proves the real destination is unchanged, mirroring the
+    // browsable-shelf group's own "tapping the first tile opens a reading
+    // screen" test above.
+    testWidgets('tapping a recently-starred result opens the same reading '
+        'screen, attributed to the storyteller (HubTile migration, chrome-'
+        'only)', (tester) async {
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(StoryLibraryScreen.demoLarge(childName: 'Ivy')));
+      await tester.pumpAndSettle();
+      expect(find.text('Recently starred'), findsOneWidget);
+      await tester.tap(find.byType(InkWell).first);
+      await tester.pumpAndSettle();
+      expect(find.text('told by the storyteller'), findsOneWidget);
+    });
+
     testWidgets('a query that matches nothing says so kindly', (tester) async {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(StoryLibraryScreen.demoLarge(childName: 'Ivy')));

@@ -22,9 +22,19 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'connect4_bot.dart';
 import 'connect4_engine.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side, auditLiveView;
 import 'local_pairing.dart';
+
+/// foldTabletop's own outer padding — real-device-tested minimum (this
+/// screen's 6-row board overflowed at foldTabletop's ~420dp height above
+/// this), deliberately NOT shared with the other 4 local-play games' own
+/// identical-shaped constant: shrinking is safe, growing risks
+/// reintroducing that overflow. design_tokens.dart's own header / docs/
+/// superpowers/specs/2026-09-15-design-tokens-named-migration-design.md,
+/// Fix #2.
+const double _foldTabletopPad = 12.0;
 
 class GameConnect4Screen extends StatefulWidget {
   const GameConnect4Screen({super.key, required this.role, required this.displayName});
@@ -222,7 +232,7 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
           };
         }
       }
-      final outerPad = posture == ff.Posture.foldTabletop ? 12.0 : 24.0;
+      final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
       return Scaffold(
         appBar: AppBar(title: const Text('Connect 4')),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own

@@ -54,6 +54,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
 // ============ ported from packages/maturation/src/maturation.ts (letters) ==
@@ -535,8 +536,8 @@ class _LetterTile extends StatelessWidget {
     final opened = letter.openedAt != null;
     final ready = !opened && currentAge >= letter.openAtAge;
 
-    return Card(margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(padding: const EdgeInsets.all(16),
+    return Card(margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Padding(padding: const EdgeInsets.all(AppSpacing.md),
         child: AnimatedSize(
           // Consequence-driven expand/reveal only, well under the motion
           // budget — never ambient, never looping.

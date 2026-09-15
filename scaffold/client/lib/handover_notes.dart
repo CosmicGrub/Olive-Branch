@@ -51,6 +51,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'api_client.dart';
+import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
 class _HandoverEntry {
@@ -373,9 +374,9 @@ class _EntryTile extends StatelessWidget {
       Text(entry.text, style: const TextStyle(fontSize: 14)),
     ];
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
       ),
     );

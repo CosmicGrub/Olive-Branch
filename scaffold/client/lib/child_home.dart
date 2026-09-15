@@ -121,8 +121,33 @@ class ChildHome extends StatelessWidget {
     // bounded size, not the scrollable's own unbounded scroll-axis extent.
     body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
       final double textScale = MediaQuery.textScalerOf(context).scale(1);
-      final int cross = ff.columnsAt(
+      final int rawCross = ff.columnsAt(
           ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale);
+      // Floor of 2, not columnsAt()'s raw output — the identical fix
+      // guardian_home.dart's own build() already applies to its Featured/
+      // Standard grids (see that file's own comment): columnsAt() returns 1
+      // below 660px effective width, which would collapse the real 7-inch
+      // tabletSmall posture (min 600px, "often the child's only device")
+      // down to a single stacked column here too. Design spec: docs/
+      // superpowers/specs/2026-09-15-design-tokens-named-migration-design.md,
+      // Fix #1.
+      //
+      // Only from 600px physical width up (tabletSmall's own floor, per
+      // guardian_home.dart's own comment), confirmed by two real local
+      // `flutter test` failures, not assumed: below 600px (foldCover at
+      // 344/390px, AND a genuinely narrow non-foldCover phone at 360x740 —
+      // neither foldCover-classified, both real) this screen's own 'More'
+      // tile (below) reopens this exact `full` layout at the SAME narrow
+      // physical width captured here, and unlike guardian_home.dart this
+      // screen's Featured grid has no adaptive per-width mainAxisExtent
+      // bump (that file's own 108/136 effectiveColumnWidth breakpoint is
+      // what actually lets ITS clamped 2-narrow-columns fit at 344px
+      // without overflow) — so flooring to 2 there overflowed for real, a
+      // new bug, not the one this fix targets. FoldCover already gets its
+      // own dedicated, deliberately single-column `collapsed` layout below
+      // regardless of `cross`'s value, so excluding narrow widths here
+      // changes nothing about what actually renders there.
+      final int cross = constraints.maxWidth >= 600 ? rawCross.clamp(2, 3) : rawCross;
       // Deliberately more conservative than game_picker.dart's own 1.0-2.0
       // clamp (its _GameCard fixed-182px bug is exactly the class of thing
       // this clamp exists to prevent repeating — see this file's own header

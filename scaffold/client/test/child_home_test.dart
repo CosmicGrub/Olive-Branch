@@ -96,6 +96,26 @@ void main() {
       expect(c.featured, 3);
       expect(c.standard, 3);
     });
+
+    // Design spec: docs/superpowers/specs/2026-09-15-design-tokens-named-
+    // migration-design.md, Fix #1. columnsAt() itself returns 1 below 660px
+    // effective width (form_factors.dart) — before this fix, ChildHome
+    // called it with no floor at all and would genuinely collapse to a
+    // single stacked column here, at the real 7-inch tabletSmall posture
+    // (min 600px, "often the child's only device"). guardian_home.dart's
+    // own build() already applies the identical `.clamp(2, 3)` to its
+    // Featured/Standard grids for the exact same reason (see that file's
+    // own comment) — this mirrors it here. NOTE: guardian_home_test.dart
+    // itself has no directly-analogous width-band test to mirror line-for-
+    // line (confirmed: it only ever pumps at 344px/900px) — this instead
+    // reuses THIS file's own crossAxisCountsAt() helper, already
+    // established above for exactly this class of assertion.
+    testWidgets('a 620px width (600-660px tabletSmall band) — still two '
+        'columns, no collapse to one', (t) async {
+      final c = await crossAxisCountsAt(t, const Size(620, 1400));
+      expect(c.featured, 2);
+      expect(c.standard, 2);
+    });
   });
 
   group('ChildHome — text-scale regression, the exact bug class §8.11.1 already '
