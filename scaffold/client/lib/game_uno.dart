@@ -575,16 +575,35 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
         const SizedBox(height: 16),
         Wrap(spacing: 16, runSpacing: 16, alignment: WrapAlignment.center, children: [
           for (final c in UnoColor.values)
-            InkWell(
+            // Real bug, found by review: four identical, unlabeled
+            // circles — a screen-reader user heard four indistinguishable
+            // buttons and couldn't complete a Wild play at all, and a
+            // colorblind player (red/green confusion is the common case,
+            // and red and green are two of exactly four values here) had
+            // no way to tell them apart either, at the one moment a
+            // wrong color choice actually matters for gameplay. Both
+            // fixed together: a real Semantics label for a screen
+            // reader, and the color's own name as real visible text for
+            // a sighted colorblind player — matching colour_pick.dart's
+            // own SwatchTile pattern one file over.
+            Semantics(button: true, label: _colorName(c), child: InkWell(
               onTap: () => Navigator.of(context).pop(c),
               customBorder: const CircleBorder(),
-              child: Container(
-                width: 64, height: 64,
-                decoration: BoxDecoration(color: _colorFor(c), shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))]),
-              ),
-            ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(color: _colorFor(c), shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))]),
+                ),
+                const SizedBox(height: 4),
+                // Excluded from semantics so it doesn't double-announce
+                // alongside the Semantics(label:) above — the visible
+                // text is for sighted colorblind players, the label is
+                // for a screen reader, each doing its own real job once.
+                ExcludeSemantics(child: Text(_colorName(c), style: Theme.of(context).textTheme.labelSmall)),
+              ]),
+            )),
         ]),
       ]),
     )),
@@ -904,6 +923,18 @@ Color _colorFor(UnoColor c) => switch (c) {
   UnoColor.green => const Color(0xFF3A9B4C), UnoColor.blue => const Color(0xFF2E6BC7),
 };
 
+/// The one real, shared name for each color — used everywhere a color
+/// needs to be told apart by something other than hue (a Semantics label
+/// for a screen reader, or real visible text for a colorblind player who
+/// can see the screen fine but can't reliably tell red from green). Real
+/// bug, found by review: this app has two spots — the Wild color picker
+/// and the "color in play" indicator — that used to convey UnoColor by a
+/// bare colored circle and nothing else.
+String _colorName(UnoColor c) => switch (c) {
+  UnoColor.red => 'Red', UnoColor.yellow => 'Yellow',
+  UnoColor.green => 'Green', UnoColor.blue => 'Blue',
+};
+
 /// The big center symbol a real Uno card shows: the number, or an icon for
 /// an action card, or the wild badge. Kept separate from the corner
 /// indicator text below since real cards show both at once.
@@ -951,7 +982,20 @@ class _UnoCardFace extends StatelessWidget {
     // that here so the mirrored bottom-right corner stays readable.
     final needsUnderline = card.type == UnoCardType.number && (card.number == 6 || card.number == 9);
     Widget cornerLabel() {
-      final text = Text(corner, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13));
+      // Real bug, found by review: plain white text laid straight on the
+      // card's own saturated ground. Computed WCAG contrast: yellow
+      // ≈1.68:1, green ≈3.51:1 — both fail the 4.5:1 AA bar this text
+      // size needs; even red only barely clears it at 4.89:1. Real
+      // physical Uno cards solve this with a black outline behind the
+      // white numeral — mirrored here with a stroked black copy of the
+      // same glyph laid directly behind the white fill, so every color
+      // reads the same crisp way instead of needing a different text
+      // color per ground.
+      final text = Stack(children: [
+        Text(corner, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
+          foreground: Paint()..style = PaintingStyle.stroke..strokeWidth = 2.5..color = Colors.black)),
+        Text(corner, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+      ]);
       if (!needsUnderline) return text;
       return Column(mainAxisSize: MainAxisSize.min, children: [
         text,
@@ -1228,8 +1272,14 @@ class _UnoBoard extends StatelessWidget {
         FilledButton.icon(onPressed: onDeclareUno, icon: const Icon(Icons.campaign),
           label: const Text('Call "Uno!"'))
       else if (someoneElseVulnerable)
+        // Real bug, found by review: never named which seat was actually
+        // vulnerable — at a 3-4 seat table that's real ambiguity, the
+        // only prior indication being the vulnerable seat's own
+        // color/error-tinted _SeatTag highlight, with no text anywhere.
+        // Same "which one" answer _currentTurnName() already gives for
+        // whose turn it is.
         OutlinedButton.icon(onPressed: onCatch, icon: const Icon(Icons.pan_tool_alt_outlined),
-          label: const Text('Catch — they forgot to call Uno!')),
+          label: Text('Catch — ${_vulnerableSeatName()} forgot to call Uno!')),
       const SizedBox(height: 8),
       _SeatTag(name: 'You', color: myColor),
       const SizedBox(height: 10),
@@ -1401,10 +1451,45 @@ class _UnoBoard extends StatelessWidget {
   String _currentTurnName() =>
     opponents.where((o) => o.seatId == turnSeatId).firstOrNull?.name ?? 'them';
 
-  Widget _colorLabel(ThemeData theme) => Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-    const Text('Color in play  '),
-    Container(width: 16, height: 16, decoration: BoxDecoration(color: _colorFor(currentColor), shape: BoxShape.circle)),
-  ]);
+  /// The real, specific name of whichever opponent [unoVulnerableSeatId]
+  /// currently names — the same "which one, at a 3-4 seat table" answer
+  /// [_currentTurnName] already gives for whose turn it is. Only ever
+  /// consulted when that opponent, not the human player, is the
+  /// vulnerable seat (see _UnoBoard's own someoneElseVulnerable check).
+  String _vulnerableSeatName() =>
+    opponents.where((o) => o.seatId == unoVulnerableSeatId).firstOrNull?.name ?? 'them';
+
+  // Real bug, found by review: after a Wild is played, the discard
+  // pile's own top-card face renders solid black regardless of the
+  // chosen color (matching a real physical Wild card, which stays black
+  // once played), so this small dot used to be the ONLY indicator
+  // anywhere on screen of what must be matched — no text name, and no
+  // Semantics label. A colorblind player (red/green confusion is the
+  // common case, and red and green are two of exactly four values here)
+  // or a screen-reader user had no way to read it. Fixed with the
+  // color's own real name, visible and announced once.
+  Widget _colorLabel(ThemeData theme) {
+    final name = _colorName(currentColor);
+    return Semantics(
+      label: 'Color in play: $name',
+      // FittedBox, not a bare Row — this label now carries the color's
+      // real name (not just a bare dot), and _multiSeatLayout's own
+      // stage width is deliberately bounded (a real, separate fix). At
+      // the narrowest real posture this app supports (Fold5 cover,
+      // 344dp) the two together left no slack for the wider text,
+      // producing a real RenderFlex overflow — caught by this file's own
+      // existing responsive test, not assumed. Scaling down to fit
+      // matches this app's own "never overflow, degrade instead"
+      // discipline rather than growing the stage width back out to
+      // accommodate one label.
+      child: ExcludeSemantics(child: FittedBox(fit: BoxFit.scaleDown, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        const Text('Color in play: '),
+        Container(width: 16, height: 16, decoration: BoxDecoration(color: _colorFor(currentColor), shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+      ]))),
+    );
+  }
 
   /// A face-down opponent card at fan position [i] of [count] — a slight
   /// per-card rotation plus a small downward arc toward the fan's edges,
