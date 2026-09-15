@@ -82,8 +82,44 @@ void main() {
     expect(find.text('Try again'), findsOneWidget);
   });
 
-  testWidgets('tapping Revoke calls the real revoke route and the row updates to Revoked',
+  testWidgets('tapping Revoke asks for confirmation first — the real route is not '
+      'called on the bare tap alone', (tester) async {
+    // Revoke is an immediate, hard-to-undo action (a real device gets
+    // signed out) — this proves the confirm-first gate is real, not just
+    // present, matching deletion_screen.dart's own established pattern for
+    // this app's other irreversible action.
+    final calledPaths = <String>[];
+    await pump(tester, client: stubClient(
+      [device(id: 'd1', role: 'child', label: 'Kitchen tablet')], calledPaths: calledPaths));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('revokeDeviceButton_d1')));
+    await tester.pump();
+
+    expect(calledPaths, isNot(contains('POST /v1/children/child-1/paired-devices/d1/revoke')),
+      reason: 'the route must not fire until the dialog is confirmed');
+    expect(find.text('Revoke this device?'), findsOneWidget);
+  });
+
+  testWidgets('confirming the dialog with "Keep it" cancels — the route is never called',
       (tester) async {
+    final calledPaths = <String>[];
+    await pump(tester, client: stubClient(
+      [device(id: 'd1', role: 'child', label: 'Kitchen tablet')], calledPaths: calledPaths));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('revokeDeviceButton_d1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Keep it'));
+    await tester.pumpAndSettle();
+
+    expect(calledPaths, isNot(contains('POST /v1/children/child-1/paired-devices/d1/revoke')));
+    expect(find.byKey(const Key('revokeDeviceButton_d1')), findsOneWidget,
+      reason: 'the device is still there — nothing was revoked');
+  });
+
+  testWidgets('confirming the dialog calls the real revoke route and the row updates '
+      'to Revoked', (tester) async {
     final calledPaths = <String>[];
     await pump(tester, client: stubClient(
       [device(id: 'd1', role: 'child', label: 'Kitchen tablet')], calledPaths: calledPaths));
@@ -91,6 +127,11 @@ void main() {
     expect(find.byKey(const Key('revokeDeviceButton_d1')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('revokeDeviceButton_d1')));
+    await tester.pumpAndSettle();
+    // The dialog's own confirm action is a FilledButton, distinct from the
+    // row's TextButton — both are labeled "Revoke", so the widget type is
+    // what disambiguates which one this taps.
+    await tester.tap(find.widgetWithText(FilledButton, 'Revoke'));
     await tester.pumpAndSettle();
 
     expect(calledPaths, contains('POST /v1/children/child-1/paired-devices/d1/revoke'));
