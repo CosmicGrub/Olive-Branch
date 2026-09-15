@@ -88,16 +88,34 @@ UnoBotMove chooseUnoMove(UnoSession session, String botSeatId, UnoCpuDifficulty 
     return _asMove(legal.first, hand, rand);
   }
 
-  // Hard: play action cards more aggressively once ANY other seat is
-  // close to going out, otherwise prefer thinning the color already
-  // scarcest in hand (keeps the remaining hand flexible for longer).
-  final closestOpponent = opponentHandCounts.values.isEmpty
-      ? null
-      : opponentHandCounts.values.reduce((a, b) => a < b ? a : b);
+  // Hard: play action cards more aggressively once the SPECIFIC seat any
+  // of them would actually reach is close to going out, otherwise
+  // prefer thinning the color already scarcest in hand (keeps the
+  // remaining hand flexible for longer).
+  //
+  // Real bug, found by review: this used to trigger off the globally
+  // closest opponent, then play whichever action card came first in
+  // hand — but Skip/Reverse/Draw Two can only ever land on the one seat
+  // uno_session.dart's own seatAfter() names (the seat immediately next
+  // in the current turn direction from the player), never "whichever
+  // opponent is closest." On a 3-4 seat table this could press an
+  // uninvolved seat while handing the REAL threat their turn one slot
+  // sooner than it would otherwise arrive — the opposite of pressing
+  // them. seatAfter() is exposed public for exactly this reason, the
+  // same precedent as isLegalUnoPlay(): the strategy layer reuses the
+  // engine's own real seat-order arithmetic instead of a second,
+  // driftable copy.
+  final nextSeatId = seatAfter(session.seatOrder, botSeatId, session.clockwise);
+  final nextSeatCount = opponentHandCounts[nextSeatId];
   final actionCards = nonWild.where((c) =>
     c.type == UnoCardType.skip || c.type == UnoCardType.reverse || c.type == UnoCardType.drawTwo).toList();
-  if (closestOpponent != null && closestOpponent <= 3 && actionCards.isNotEmpty) {
-    return _asMove(actionCards.first, hand, rand);
+  if (nextSeatCount != null && nextSeatCount <= 3 && actionCards.isNotEmpty) {
+    // Prefer Draw Two — the one action card that actually grows the
+    // real target's hand rather than just costing them a turn — when
+    // several are legal and the whole point is to hinder someone
+    // genuinely close to winning.
+    final drawTwos = actionCards.where((c) => c.type == UnoCardType.drawTwo).toList();
+    return _asMove(drawTwos.isNotEmpty ? drawTwos.first : actionCards.first, hand, rand);
   }
   if (nonWild.isNotEmpty) {
     final counts = <UnoColor, int>{};

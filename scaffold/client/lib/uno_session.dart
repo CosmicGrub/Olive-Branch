@@ -202,6 +202,18 @@ String _seatAfter(List<String> order, String from, bool clockwise) {
   return order[(i + step + order.length) % order.length];
 }
 
+/// Public — uno_bot.dart's own Hard-tier strategy layer reuses this exact
+/// primitive to know which specific seat an action card (Skip/Reverse/
+/// Draw Two) would actually reach, rather than keeping a second,
+/// driftable copy of this same seat-order arithmetic. Same precedent as
+/// [isLegalUnoPlay]: the authoritative rule stays here; the strategy
+/// layer just reads it instead of guessing. Real bug, found by review:
+/// the bot used to target whichever opponent held the globally fewest
+/// cards, but Skip/Reverse/Draw Two can only ever land on the one seat
+/// this function names — the seat immediately next in the CURRENT turn
+/// direction from the player, never "whichever opponent is closest."
+String seatAfter(List<String> order, String from, bool clockwise) => _seatAfter(order, from, clockwise);
+
 /// Deals a real, fresh 108-card game: 7 cards to each seat in
 /// [seatOrder] (2-4 seats), an opening discard drawn until a plain
 /// number card appears (a common, honest simplification of the real,
