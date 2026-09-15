@@ -62,7 +62,19 @@ jobs:
       # resolve to under Flutter 3.44.8 (confirmed by reading that file and
       # the pinned Flutter SDK's own FlutterExtension.kt directly); 36.0.0
       # is the matching build-tools release.
+      # packages: 'platform-tools' overrides the action's own default
+      # ('tools platform-tools') — Google's SDK repository dropped the
+      # legacy `tools` package (deprecated since 2019) on 2026-09-14,
+      # breaking every consumer of that default with no code change on
+      # either side: "Warning: Failed to find package 'tools'" / exit 1,
+      # before this workflow's own explicit sdkmanager --install below ever
+      # runs. platforms;android-36/build-tools;36.0.0 are already installed
+      # explicitly on the next line, so `tools` was never actually needed
+      # here — dropping it from the packages list is the fix, not a
+      # workaround for anything this repo did.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
       # tesseract is a REAL dependency of the homework suite, not a nicety —
       # the OCR assertions shell out to it. imagemagick is a real dependency
