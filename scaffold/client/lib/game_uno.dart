@@ -353,6 +353,20 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
 
   void _handleIncomingTurn(LocalTurnPayload payload) {
     final type = payload['type'];
+    // ALWAYS reply to a real 'uno_action' request, accepted or refused —
+    // real bug, found by review. Every branch below used to just `return`
+    // silently on refusal (wrong turn, an illegal play, a Catch that
+    // missed its window, a malformed card, an already-resolved Wild Draw
+    // Four). The peer's own _peerAwaitingResult flag — which disables its
+    // whole board — is only ever cleared by a SUBSEQUENT uno_state_delta,
+    // and a silently-rejected request had none coming: the peer was
+    // stuck on "Sending…" for the rest of the round with no timeout and
+    // no way out short of restarting. Every PlayResult/DrawResult/
+    // ChallengeResult/CatchResult already carries the unchanged session
+    // back on refusal (see uno_session.dart), so resending it costs
+    // nothing and is enough to unstick the peer via the normal
+    // uno_state_delta handler — the same always-reply shape declareUno's
+    // own branch already used, just generalized to every branch here.
     if (type == 'uno_action' && _amAuthority) {
       final session = _authoritySession;
       if (session == null) return;
@@ -371,41 +385,48 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       }
       if (action == 'catchUno') {
         final r = catchMissedUno(session, peerSeatId, _rand);
-        if (!r.accepted) return;
-        setState(() => _authoritySession = r.session);
+        if (r.accepted) setState(() => _authoritySession = r.session);
         unawaited(_sendStateDelta(r.session));
         return;
       }
       if (action == 'acceptWD4') {
         final r = acceptWildDrawFour(session, peerSeatId, _rand);
-        if (!r.accepted) return;
-        setState(() => _authoritySession = r.session);
+        if (r.accepted) setState(() => _authoritySession = r.session);
         unawaited(_sendStateDelta(r.session));
         return;
       }
       if (action == 'challengeWD4') {
         final r = challengeWildDrawFour(session, peerSeatId, _rand);
-        if (!r.accepted) return;
-        setState(() => _authoritySession = r.session);
+        if (r.accepted) setState(() => _authoritySession = r.session);
         unawaited(_sendStateDelta(r.session));
         return;
       }
 
-      if (session.turnSeatId != peerSeatId) return; // not their turn — refuse, matches every other game's re-validation
+      if (session.turnSeatId != peerSeatId) {
+        // Not their turn — refuse, matches every other game's
+        // re-validation. Still reply (see this method's own header) so a
+        // request that raced an unrelated turn change doesn't strand the
+        // peer either.
+        unawaited(_sendStateDelta(session));
+        return;
+      }
       UnoSession? next;
       if (action == 'draw') {
         final r = drawCard(session, peerSeatId, _rand);
         if (r.accepted) next = r.session;
       } else if (action == 'playCard') {
         final card = UnoCard.fromCode(payload['cardCode'] as String?);
-        if (card == null) return;
-        final color = _decodeColor(payload['chosenColor']);
-        final r = playCard(session, peerSeatId, card, chosenColor: color, rand: _rand);
-        if (r.accepted) next = r.session;
+        // A null card (malformed cardCode) falls straight through to the
+        // always-reply tail below with next still null, same as any
+        // other refusal — no separate early return needed.
+        if (card != null) {
+          final color = _decodeColor(payload['chosenColor']);
+          final r = playCard(session, peerSeatId, card, chosenColor: color, rand: _rand);
+          if (r.accepted) next = r.session;
+        }
       }
-      if (next == null) return;
-      setState(() => _authoritySession = next);
-      unawaited(_sendStateDelta(next));
+      if (next != null) setState(() => _authoritySession = next);
+      unawaited(_sendStateDelta(next ?? session));
       return;
     }
     if (type == 'uno_state_delta' && !_amAuthority) {
@@ -598,7 +619,23 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
     return LayoutBuilder(builder: (context, constraints) {
       final posture = ff.postureFor(ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
       final Widget body;
-      if (_amAuthority && _authoritySession != null) {
+      if (_mode == _Mode.vsPeer && _pairing.phase == PairingPhase.error) {
+        // A hard transport failure takes priority over any game already in
+        // progress — matches every sibling local-play screen's own
+        // build()-entry check (game_connect4.dart:209, game_puzzle.dart:129,
+        // game_pictionary.dart:357, game_war.dart:318) and local_pairing
+        // .dart's own documented contract. Real bug, found by review: this
+        // was the one local-play game that never re-checked pairing.phase
+        // once a round had started, so a genuine dropped connection (the
+        // peer's phone locks, leaves Wi-Fi range, or the app backgrounds)
+        // left both devices silently stranded — one possibly frozen on
+        // "Sending…" — with no error shown and no recovery but
+        // force-closing the app. Scoped to vsPeer only: vsCpu never
+        // depends on pairing state at all (see _startVsCpu's own header),
+        // so this must never interrupt it.
+        body = _MessageView(message: _pairing.errorMessage ?? "Can't play locally right now.",
+          icon: Icons.error_outline);
+      } else if (_amAuthority && _authoritySession != null) {
         // A real game already under way, as authority (vsCpu always, or
         // vsPeer as the dealer) — takes priority regardless of live pairing
         // state. vsCpu in particular never depended on pairing succeeding
@@ -643,8 +680,9 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
               : const _Status(message: 'Waiting for Dad to deal…'),
           PairingPhase.peerLost =>
             _MessageView(message: _pairing.errorMessage!, icon: Icons.wifi_off_outlined),
-          PairingPhase.error =>
-            _MessageView(message: _pairing.errorMessage ?? "Can't play locally right now.", icon: Icons.error_outline),
+          // Handled above, before this switch is ever reached — matches
+          // every sibling local-play screen's identical idiom.
+          PairingPhase.error => throw StateError('handled above'),
         };
       } else {
         // _mode == _Mode.none — the real entry point. vs-CPU needs no
@@ -1213,13 +1251,24 @@ class _UnoBoard extends StatelessWidget {
   /// 2-seat vsCpu game render.
   Widget _twoSeatLayout(BuildContext context, ThemeData theme) {
     final opponent = opponents.first;
+    final opponentFanCount = opponent.handCount.clamp(0, 14);
+    // Real bug, found by review: every card in this fan is Positioned, so
+    // the Stack below had ZERO non-positioned children — Flutter's own
+    // sizing rule for that case makes an unconstrained Stack expand to
+    // the FULL available width, not shrink-wrap. The fan then painted
+    // from that box's own left edge instead of centering under the
+    // _SeatTag above it (which centers correctly, since Column's default
+    // crossAxisAlignment does the real work there). A real, computed
+    // width — mirroring _fannedCardBack's own `left: i * 14.0` placement
+    // plus one card's 32px width — fixes it in every 2-seat game (every
+    // vsPeer game, and any 2-seat vsCpu game).
+    final opponentFanWidth = opponentFanCount <= 0 ? 0.0 : (opponentFanCount - 1) * 14.0 + 32.0;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       _SeatTag(name: opponent.name, color: theme.colorScheme.tertiary,
         vulnerable: unoVulnerableSeatId == opponent.seatId),
       const SizedBox(height: 8),
-      SizedBox(height: 52, child: Stack(clipBehavior: Clip.none, children: [
-        for (var i = 0; i < opponent.handCount.clamp(0, 14); i++)
-          _fannedCardBack(i, opponent.handCount.clamp(0, 14)),
+      SizedBox(width: opponentFanWidth, height: 52, child: Stack(clipBehavior: Clip.none, children: [
+        for (var i = 0; i < opponentFanCount; i++) _fannedCardBack(i, opponentFanCount),
       ])),
       const SizedBox(height: 16),
       _pileRow(context, theme),
@@ -1247,7 +1296,29 @@ class _UnoBoard extends StatelessWidget {
     // it so it can never visually collide with the opponent seats above/
     // beside it or the status text this Stack sits above.
     final tableHeight = _pileScale > 1.0 ? 300 * _pileScale : 300.0;
+    // Real bug, found by review: this Stack's children are all Align,
+    // which counts as a NON-positioned Stack child — Flutter's own
+    // sizing rule for that case makes the Stack's width the max of every
+    // non-positioned child's own reported width, and an Align given
+    // loose-but-finite constraints reports the full incoming width. This
+    // Stack therefore stretched to the FULL available screen width at
+    // every posture, not just enough to hold a compact cluster — at
+    // tablet/desktop widths the topLeft/topRight/centerLeft opponent
+    // seats got pinned to the literal screen edges while the pile stayed
+    // centered, and the oval felt below stopped reading as an oval and
+    // became a wide banner. A real, bounded stage width instead — the
+    // same "compute from real content, don't just take the biggest
+    // number Stack will hand you" discipline _HandFan already uses one
+    // class over. Two 90px opponent seats (_MultiSeatOpponent's own
+    // fixed width) sit at this Stack's left/right edges via Align, with
+    // the pile row (draw pile + turn-direction ring, both scaled by
+    // _pileScale) centered between them — wide enough that neither seat
+    // crowds the pile, capped at whatever the real screen actually has
+    // (mirroring _HandFan's own -40 inset-for-outer-padding fudge).
+    final pileRowWidth = 64 * _pileScale + 24 + 140 * _pileScale;
+    final stageWidth = min(availableWidth - 40, 2 * 90 + 40 + pileRowWidth);
     return SizedBox(
+      width: stageWidth,
       height: tableHeight,
       child: Stack(clipBehavior: Clip.none, children: [
         for (var i = 0; i < opponents.length; i++)
