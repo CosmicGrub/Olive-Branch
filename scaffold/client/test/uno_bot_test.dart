@@ -67,7 +67,7 @@ void main() {
       expect(move.card, skip, reason: 'the opponent has only 2 cards left — Hard should press with the action card');
     });
 
-    test('Hard presses when ANY of several real opponents is close to going out, at a 3-4 seat table', () {
+    test('Hard presses the seat an action card can actually reach, at a 3-4 seat table', () {
       const top = UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5);
       const skip = UnoCard(type: UnoCardType.skip, color: UnoColor.red);
       const plainMatch = UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 2);
@@ -77,10 +77,56 @@ void main() {
         discardPile: [top], hands: {'a': const [plainMatch, skip], 'b': const [], 'c': const [], 'd': const []},
         turnSeatId: 'a', clockwise: true, currentColor: UnoColor.red, winner: null,
       );
-      // b and d are comfortable; c is the one seat close to going out —
-      // the bot must notice c specifically, not just check "the" opponent.
+      // b is the ONE seat a Skip from 'a' can mechanically reach
+      // (uno_session.dart's own seatAfter(), walking forward from the
+      // player) — c and d are untouchable by this card no matter how
+      // close either is. b is genuinely close here; c and d aren't.
+      final move = chooseUnoMove(session, 'a', UnoCpuDifficulty.hard, {'b': 1, 'c': 6, 'd': 7}, Random(1));
+      expect(move.card, skip, reason: 'b (the seat a Skip actually reaches) is down to 1 card — Hard must press');
+    });
+
+    test('Hard does not waste a press on a seat it cannot actually reach', () {
+      // Real bug, found by review, reproduced exactly: the OLD Hard logic
+      // targeted whichever opponent held the globally fewest cards, not
+      // the specific seat an action card can mechanically affect. Here c
+      // is down to 1 card, but a Skip from 'a' can only ever land on b
+      // (seatAfter — the seat immediately next in turn order), which is
+      // comfortable at 6. Playing Skip anyway would skip the uninvolved
+      // b and hand c — the real threat — its turn ONE SLOT SOONER: the
+      // opposite of pressing it.
+      const top = UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5);
+      const skip = UnoCard(type: UnoCardType.skip, color: UnoColor.red);
+      const red3 = UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 3);
+      // Matches top by NUMBER, not color — a real legal alternative to
+      // skip that isn't itself red, so the "thin the scarcest color"
+      // fallback below has an unambiguous, non-tied answer.
+      const blue5 = UnoCard(type: UnoCardType.number, color: UnoColor.blue, number: 5);
+      final session = UnoSession(
+        seatOrder: const ['a', 'b', 'c', 'd'],
+        drawPile: standardUnoDeck().where((c) => c != top && c != skip && c != red3 && c != blue5).toList(),
+        discardPile: [top], hands: {'a': const [skip, red3, blue5], 'b': const [], 'c': const [], 'd': const []},
+        turnSeatId: 'a', clockwise: true, currentColor: UnoColor.red, winner: null,
+      );
       final move = chooseUnoMove(session, 'a', UnoCpuDifficulty.hard, {'b': 6, 'c': 1, 'd': 7}, Random(1));
-      expect(move.card, skip, reason: 'c (one of three real opponents) is down to 1 card — Hard must still press');
+      expect(move.card, isNot(skip),
+        reason: "Skip can't reach c, the seat that's actually close — pressing the comfortable, uninvolved b would only help c");
+    });
+
+    test('Hard prefers Draw Two over Skip/Reverse when several action cards are legal and pressing', () {
+      // Draw Two actually grows the target's hand, not just costs them a
+      // turn — the more relevant lever when the whole point is to
+      // hinder someone genuinely close to winning.
+      const top = UnoCard(type: UnoCardType.number, color: UnoColor.red, number: 5);
+      const skip = UnoCard(type: UnoCardType.skip, color: UnoColor.red);
+      const drawTwo = UnoCard(type: UnoCardType.drawTwo, color: UnoColor.red);
+      final session = UnoSession(
+        seatOrder: const ['a', 'b'],
+        drawPile: standardUnoDeck().where((c) => c != top && c != skip && c != drawTwo).toList(),
+        discardPile: [top], hands: {'a': const [skip, drawTwo], 'b': const []},
+        turnSeatId: 'a', clockwise: true, currentColor: UnoColor.red, winner: null,
+      );
+      final move = chooseUnoMove(session, 'a', UnoCpuDifficulty.hard, {'b': 2}, Random(1));
+      expect(move.card, drawTwo, reason: 'both Skip and Draw Two are legal and b is close — prefer Draw Two');
     });
 
     test('never reaches into any other seat\'s real hand — only this session\'s own [bot] hand and public counts', () {
