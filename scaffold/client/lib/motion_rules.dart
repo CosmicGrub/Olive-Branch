@@ -49,16 +49,25 @@ const int maxDrivenMs = 0;
 enum Quietness { full, reduced, still }
 
 /// The subset of motion.ts's QUIET_SURFACES table this group's screens
-/// touch. `homework` (and by extension its capture/retake sub-screens) is
-/// the one surface here marked 'still'; doodle and colouring are absent from
+/// touch. `homework` (and by extension its capture/retake sub-screens) and
+/// `journal` are marked 'still'; doodle and colouring are absent from
 /// the source table, which defaults them to 'full' — exactly right, since
 /// both are built around driven, finger-following motion.
+///
+/// `journal` added by the UI/UX review's theme #6 motion-budget pass —
+/// journal_screen.dart is one of MASTERFILE §8.13.5's four real "still"
+/// surfaces (bedtime/homework/journal/emergency-card) but had never been
+/// wired into this file at all before this fix, instead hardcoding its own
+/// duration justified against §8.13.1's consequence budget alone — the
+/// wrong, looser rule for a surface this section explicitly governs.
 const Map<String, Quietness> _quietSurfaces = <String, Quietness>{
   'homework': Quietness.still,
+  'journal': Quietness.still,
 };
 
 const Map<String, String> _whyQuiet = <String, String>{
   'homework': 'This is the one surface in the product that asks her to concentrate.',
+  'journal': 'Somewhere to think. Nothing should move while she does.',
 };
 
 Quietness quietnessOf(String surface) => _quietSurfaces[surface] ?? Quietness.full;
