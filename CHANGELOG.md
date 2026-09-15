@@ -14,6 +14,129 @@ Silent deletion is a process failure.
 
 ---
 
+## [0.49.78] — 2026-09-14 — Parental controls information-architecture rework (UI/UX review theme #5)
+
+Full design spec: `docs/superpowers/specs/2026-09-15-parental-controls-ia-
+rework-design.md`. Fifth of seven themes a multi-agent UI/UX review
+surfaced; themes #1-4 (first-run boot polish, Revoke confirmation,
+hardcoded colors, design tokens & named migration) already shipped, and
+this one was explicitly named and deferred in theme #4's own spec at the
+time. Independent research confirmed and refined the review's numbers: the
+Visibility tab has 88 rows (6 ChildHome tiles + 21 games + 59 jokes + 2
+activities), the Pacing tab 79 (games + jokes only — tiles/activities have
+no `defaultMinAge`), both as one flat `ListView` of `ExpansionTile`s — the
+only two uses of that widget anywhere in this app, a pattern this screen
+introduced standalone with no house convention to follow.
+
+### Added
+- **Sub-grouping, both tabs.** Each per-category `ExpansionTile` gains a
+  nested sub-group `ExpansionTile` level for the two categories big enough
+  to need one: **Jokes** (59) → 5 sub-groups by `joke_logic.dart`'s own
+  `JokeCategory` enum (Dad jokes/Puns/Wordplay/Silly/Knock-knock), never
+  surfaced anywhere before this pass; **Games** (21) → 2 sub-groups,
+  "Games" (the 12 `game_logic.dart` catalogue entries — how the main game
+  picker already presents them) and "More games" (the 8 `hubGameMinAge`
+  entries plus the standalone "Find the thing" row) — matching
+  `games_hub.dart`'s own real framing of these items as a second door off
+  the same "Play together" tile, deliberately the coarser 2-way split
+  rather than `games_hub.dart`'s own finer 4-way HubSection split (Board &
+  strategy/Together/On her own/Playing fair), to avoid over-fragmenting a
+  controls screen. ChildHome tiles (6) and Drawing & activities (2) stay
+  single flat groups — too small to meaningfully sub-divide. The category
+  tiles keep their existing `initiallyExpanded` behavior unchanged
+  (ChildHome tiles on Visibility, Games on Pacing); the nested sub-group
+  tiles default to collapsed, so opening a category no longer dumps all 59
+  (or 21) of its rows at once — the actual fix, not just a cosmetic layer.
+- **Search, one field per tab.** `visibilitySearchField`/`pacingSearchField`
+  reuse `story_library.dart`'s `_SearchShelf` `TextField` shape directly
+  (`hintText`/`prefixIcon: Icons.search_rounded`, filled, rounded border).
+  An empty query shows the normal grouped view; a non-empty query flattens
+  to a single filtered `ListView` across every category/sub-group for that
+  tab, live case-insensitive substring match against each item's title,
+  with an honest "No matches — try a different search." empty state —
+  never a blank screen.
+
+### Fixed
+- **Joke titles collapsed to an indistinguishable truncated fragment** — 59
+  jokes, 25% starting with the literal "What do you call," 51% with "What"
+  generally, 50-62-character setups clipped to one line + ellipsis.
+  `maxLines: 1` → `2` on both `_visibilityRow`'s and `_pacingRow`'s title
+  `Text`; `dense: true` removed from both rows (two lines of real text need
+  the room `dense` trims — Flutter's own docs describe `dense` as meant for
+  compact single-line rows).
+- **The Pacing row's trailing controls, a real, confirmed overflow — not
+  assumed.** Verified BEFORE fixing, exactly as the design spec requires: a
+  new widget test (this screen's own test file had NONE of this app's
+  standard Fold5-cover/large-text-scale coverage before this pass —
+  confirmed by direct inspection) pumped the Pacing tab at `Size(344, …)` +
+  `TextScaler.linear(2.0)` and reproduced a genuine `RenderFlex overflowed
+  by 133 pixels` in the trailing `Row` (age-stepper trio + Reveal/Un-reveal
+  all in one unconstrained line) — a real failure, exactly what the review
+  called a "plausible, currently-unverified" risk. **A second real overflow
+  surfaced mid-fix**: the first attempt (keep the controls in
+  `ListTile.trailing`, split them across two lines there) failed the SAME
+  test with a DIFFERENT genuine overflow (`overflowed by 40 pixels on the
+  bottom`, at this suite's normal test size) — `ListTile.trailing` caps its
+  child's height to the tile's own title-driven height (56px for a
+  single-line title), too short for two stacked control rows regardless of
+  width. The fix that actually passes both: the whole controls cluster
+  (age-stepper trio, then Reveal/Un-reveal) moves OUT of `ListTile.trailing`
+  entirely, onto its own lines in a plain `Column` below the title/subtitle
+  — sidesteps the height cap altogether and gives the controls the tile's
+  full width instead of whatever's left beside an `Expanded` title.
+- **"Reveal now" had no visual separation from the age-stepper controls** —
+  resolved as a direct side effect of the overflow fix above: the
+  Reveal/Un-reveal button now sits on its own line, already visually
+  distinct from the age-stepper value-adjustment controls without a
+  separate divider.
+
+### Disclosed judgment calls
+- **Nested `ExpansionTile`s over a flat list with sub-group headers** — the
+  spec left this implementer's choice. Nested reuses the exact primitive
+  the category level already established (one real pattern, not two) and
+  each sub-group is independently collapsible, which a flat header row
+  can't offer without hand-rolled show/hide state.
+- **Sub-group tiles default to collapsed**, not expanded — an
+  initially-expanded sub-group would leave all 59 joke rows (or 21 game
+  rows) visible the instant the category opens, the exact flat-dump problem
+  this rework exists to fix. Anticipated by the spec's own Testing section:
+  several pre-existing tests now also open the new sub-group level to reach
+  a row they used to find immediately.
+- **The Reveal-now separation fix is the overflow fix's own side effect,
+  not a `VerticalDivider`** — a `VerticalDivider` was this pass's first
+  attempt (before the overflow test above proved the single-`Row` trailing
+  shape genuinely had to change regardless), grepped for and confirmed as
+  having zero precedent anywhere in this app; once the two control groups
+  landed on separate lines, adding a divider on top would be redundant.
+- **A "Games" sub-group nested inside a "Games" category** — the design
+  spec's own exact naming (matching the main game picker's real framing);
+  reads a little odd as "Games > Games / More games" but is what the spec
+  explicitly calls for, so it ships as specified rather than silently
+  renamed.
+
+### Verified
+`flutter analyze` clean. **2593/2593 Dart client assertions passing, 0
+failed** (native Windows Flutter 3.44.8, matching CI's own pin) — a real,
+full local `flutter test` run of the entire client suite, not estimated:
+2583 baseline (v0.49.77's own disclosed figure) + this pass's 10 new test
+cases (the Fold5-cover/large-text Pacing regression, 4 sub-grouping tests,
+4 search tests, 1 joke-title maxLines test), confirmed by the delta
+matching exactly. **NOT independently re-verified this pass**:
+`tools/verify.sh`'s JS/server/DB suites — this pass touches exactly two
+Dart files (`parental_controls_screen.dart`,
+`parental_controls_screen_test.dart`) and no server/TypeScript/JS file at
+all, and this sandbox has no WSL/Postgres access (`wsl` itself is refused
+by this worktree-isolated sandbox), so none of those sections could run
+here. **Assertion total: 7780** — MARKUP's own current, CI-confirmed
+`COMPUTED TOTAL` (7770) plus this pass's own +10 Dart-only delta, computed
+arithmetic rather than a fresh full `tools/verify.sh` run, disclosed as
+such — matching this repo's own established convention for exactly this
+situation (e.g. this file's own "6984 (placeholder) — HEAD's own real CI
+COMPUTED TOTAL (6979) plus this entry's own 5 new server-side assertions"
+entry); to be synced to CI's real number if it differs.
+
+---
+
 ## [0.49.77] — 2026-09-14 — Design tokens & named migration (UI/UX review theme #4)
 
 Full design spec: `docs/superpowers/specs/2026-09-15-design-tokens-named-
