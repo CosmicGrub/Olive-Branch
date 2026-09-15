@@ -410,9 +410,13 @@ class _Punchline extends StatelessWidget {
     key: const Key('jokePunchline'),
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: Colors.amber.withValues(alpha: 0.16),
+      // Real bug, found by review: `accent` was already threaded all the
+      // way into this constructor and never used — hardcoded amber instead,
+      // regardless of what accent color the joke's own card (and its
+      // sibling _RevealButton, right above this widget) actually uses.
+      color: accent.withValues(alpha: 0.16),
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.amber.shade400, width: 1.4),
+      border: Border.all(color: accent, width: 1.4),
     ),
     child: Text(text, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, height: 1.3)),
   );

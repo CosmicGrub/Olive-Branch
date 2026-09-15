@@ -152,8 +152,9 @@ class _ItemSection extends StatelessWidget {
       ]),
       const SizedBox(height: 8),
       if (items.isEmpty)
-        const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-          child: Text('Nothing on this list yet', style: TextStyle(color: Colors.black45)))
+        Padding(padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text('Nothing on this list yet', style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant)))
       else
         // index-keyed, not id-keyed — plain in-memory demo state, no backend.
         for (final entry in items.asMap().entries)
@@ -177,6 +178,6 @@ class _ItemRow extends StatelessWidget {
         Expanded(child: Text(item.text, style: TextStyle(
           fontSize: 15,
           decoration: item.done ? TextDecoration.lineThrough : TextDecoration.none,
-          color: item.done ? Colors.black45 : null))),
+          color: item.done ? Theme.of(context).colorScheme.onSurfaceVariant : null))),
       ])));
 }

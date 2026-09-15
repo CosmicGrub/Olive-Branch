@@ -374,13 +374,14 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
           icon: const Icon(Icons.videocam_outlined),
           label: const Text('Send one back')));
       case _SendState.busy:
-        return const SizedBox(width: double.infinity, height: 52, child: FilledButton(
+        return SizedBox(width: double.infinity, height: 52, child: FilledButton(
           onPressed: null,
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
             SizedBox(width: 18, height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
-            SizedBox(width: 12),
-            Text('Sending…'),
+              child: CircularProgressIndicator(strokeWidth: 2,
+                color: Theme.of(context).colorScheme.onPrimary)),
+            const SizedBox(width: 12),
+            const Text('Sending…'),
           ])));
       case _SendState.retrying:
         // The one honest sentence offline_outbox.dart's offlineChildView

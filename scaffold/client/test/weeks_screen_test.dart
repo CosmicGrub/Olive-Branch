@@ -60,6 +60,33 @@ void main() {
       }
     });
 
+    testWidgets('the rhythm-header card is not pale/near-white in dark mode — '
+        'real bug, UI/UX review theme #3', (tester) async {
+      // The old implementation lerped toward a literal Colors.white
+      // regardless of theme.brightness, producing a near-white card paired
+      // with theme-default (light-in-dark-mode) text — a real contrast
+      // failure. Asserting the OBSERVABLE property (low luminance in dark
+      // mode) rather than an exact color match, so this stays robust to
+      // future seed-color tuning.
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData(colorScheme: const ColorScheme.dark(), useMaterial3: true),
+        home: WeeksScreen(childName: 'Ivy', nights: _fourteenNights, guardianColors: demoGuardianColors)));
+      final container = tester.widget<Container>(find.byKey(const Key('rhythmHeaderCard')));
+      final bg = (container.decoration! as BoxDecoration).color!;
+      expect(bg.computeLuminance(), lessThan(0.5),
+        reason: 'card background should be dark-toned in a dark theme, not lerped toward literal white');
+    });
+
+    testWidgets('the rhythm-header card stays pale in light mode — light-mode '
+        'appearance is unchanged by the dark-mode fix', (tester) async {
+      await tester.pumpWidget(wrap(WeeksScreen(
+        childName: 'Ivy', nights: _fourteenNights, guardianColors: demoGuardianColors)));
+      final container = tester.widget<Container>(find.byKey(const Key('rhythmHeaderCard')));
+      final bg = (container.decoration! as BoxDecoration).color!;
+      expect(bg.computeLuminance(), greaterThan(0.5),
+        reason: 'card background should stay light-toned in a light theme, as it always has');
+    });
+
     testWidgets('NO settings affordance and no score/streak language — P2', (tester) async {
       await tester.pumpWidget(wrap(WeeksScreen(
         childName: 'Ivy', nights: _fourteenNights, guardianColors: demoGuardianColors)));

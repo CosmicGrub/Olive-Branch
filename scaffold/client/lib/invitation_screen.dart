@@ -245,8 +245,8 @@ class _InvitationScreenState extends State<InvitationScreen> {
               // TextStyle rather than one with Typography.material2021's
               // baked-in onSurface color.
               child: _accepting
-                ? const SizedBox(width: 22, height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                ? SizedBox(width: 22, height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4, color: scheme.onPrimary))
                 : const Text('Accept invitation',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
             if (_networkError != null) ...[

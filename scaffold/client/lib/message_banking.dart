@@ -106,9 +106,10 @@ class _MessageBankingScreenState extends State<MessageBankingScreen> {
       Text('Record tonight, deliver on her night',
           style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 4),
-      const Text(
+      Text(
           "Each message lands at her bedtime, in her timezone, on the night you pick below.",
-          style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+          style: TextStyle(fontSize: 12.5,
+            color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 16),
       TextField(
           controller: _controller,
