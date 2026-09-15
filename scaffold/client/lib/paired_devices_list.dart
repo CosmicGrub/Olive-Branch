@@ -68,6 +68,25 @@ class _PairedDevicesListScreenState extends State<PairedDevicesListScreen> {
     }
   }
 
+  /// Revoke is an immediate, hard-to-undo action — kicks a real device out —
+  /// so it gets the same confirm-first pattern deletion_screen.dart's own
+  /// `_confirmThenDelete` already establishes for this app's other
+  /// irreversible action, rather than firing on a bare tap.
+  Future<void> _confirmThenRevoke(BuildContext context, String deviceId, String label) async {
+    final bool? confirmed = await showDialog<bool>(context: context, builder: (BuildContext ctx) =>
+      AlertDialog(
+        title: const Text('Revoke this device?'),
+        content: Text('"$label" will be signed out immediately and will need to be '
+          "paired again to reconnect. This can't be undone from here."),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep it')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Revoke')),
+        ],
+      ));
+    if (confirmed != true || !context.mounted) return;
+    await _revoke(deviceId);
+  }
+
   Future<void> _revoke(String deviceId) async {
     setState(() => _revoking.add(deviceId));
     try {
@@ -78,15 +97,25 @@ class _PairedDevicesListScreenState extends State<PairedDevicesListScreen> {
       } finally {
         if (widget.httpClient == null) api.close();
       }
-      await _load();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Couldn't revoke that device. Check your connection and try again."),
         duration: Duration(seconds: 3)));
-    } finally {
       if (mounted) setState(() => _revoking.remove(deviceId));
+      return;
     }
+    // The revoke call itself already succeeded by this point — a failure
+    // refreshing the list afterward is a SEPARATE, honestly different
+    // problem (real bug this review found: both used to share one catch
+    // block above, so a refresh hiccup right after a successful revoke
+    // reported "couldn't revoke that device" even though it had).
+    // _load() never rethrows — a failed refresh already surfaces as this
+    // screen's own real "Couldn't load paired devices" + Try again state,
+    // never as a false revoke failure — so no extra try/catch is needed
+    // here, only that this call sits outside the block above.
+    await _load();
+    if (mounted) setState(() => _revoking.remove(deviceId));
   }
 
   @override
@@ -111,22 +140,30 @@ class _PairedDevicesListScreenState extends State<PairedDevicesListScreen> {
             itemBuilder: (context, i) {
               final d = _devices[i];
               final id = d['id'] as String;
+              final label = d['label'] as String? ?? 'Paired device';
               final revoked = d['revokedAt'] != null;
               return ListTile(
                 leading: Icon(d['role'] == 'child' ? Icons.child_care : Icons.person_outline),
-                title: Text(d['label'] as String? ?? 'Paired device'),
+                title: Text(label),
                 subtitle: Text(revoked
                   ? 'Revoked'
                   : (d['lastSeenAt'] != null ? 'Last seen ${d['lastSeenAt']}' : 'Never seen since pairing')),
                 trailing: revoked
                   ? null
-                  : TextButton(
-                      key: Key('revokeDeviceButton_$id'),
-                      onPressed: _revoking.contains(id) ? null : () => _revoke(id),
-                      child: _revoking.contains(id)
-                        ? const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Revoke')),
+                  : Semantics(
+                      // Without this, a screen-reader user hears "Revoke,
+                      // button" once per row with no way to tell which
+                      // device a given button acts on — the row's own
+                      // label is never announced together with it.
+                      label: 'Revoke $label',
+                      child: TextButton(
+                        key: Key('revokeDeviceButton_$id'),
+                        onPressed: _revoking.contains(id) ? null : () => _confirmThenRevoke(context, id, label),
+                        child: _revoking.contains(id)
+                          ? const SizedBox(width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Revoke')),
+                    ),
               );
             },
           ),
