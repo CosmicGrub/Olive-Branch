@@ -182,34 +182,57 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         onDone: () => Navigator.of(c).pop(),
       )));
 
+    // Real first-run (Automatic First-Run Detection, [onComplete] set):
+    // proceed straight into [onComplete] with NO intermediate setState —
+    // this screen must never rebuild and show itself again before the
+    // pre-KioskShell wrapper's own runApp() swap actually happens. Doing
+    // the setState below unconditionally was a real, confirmed bug: it
+    // briefly re-rendered this screen's own "Start"/"Last run finished for
+    // ..." body — a visible bounce back to what looks like a splash screen —
+    // for however long [onComplete]'s async theme-fetch/runApp() took, on
+    // every real first-run boot. The manual "Redo the welcome tour" demo
+    // path ([onComplete] null) keeps the original behavior: stay on this
+    // screen, show "Last run finished for ...", so it can be re-run again.
+    if (widget.onComplete != null) {
+      await widget.onComplete!.call();
+      return;
+    }
     if (mounted) {
       setState(() {
         _running = false;
         _lastChildName = childName;
       });
     }
-    // Fires AFTER the finishing-ceremony screen itself pops, and even when
-    // this widget is no longer mounted (the pre-KioskShell boot wrapper's
-    // own onComplete calls runApp() again, which does not need — and must
-    // not depend on — this widget's own BuildContext still being valid).
-    await widget.onComplete?.call();
   }
+
+  /// True on the real, automatic first-run path (main_live.dart's
+  /// `_OnboardingBootApp`, per [onComplete]'s own doc comment) — false on
+  /// the manual "Redo the welcome tour" demo re-run (ChildMoreScreen, which
+  /// never sets [onComplete]). Drives the copy below: a real first-run guardian/
+  /// child should never see "redo" or "demo" language describing something
+  /// that, for them, is happening for the first and only time.
+  bool get _isRealFirstRun => widget.onComplete != null;
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Redo the welcome tour')),
+    appBar: AppBar(title: Text(_isRealFirstRun ? 'Welcome' : 'Redo the welcome tour')),
     body: Center(child: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text(
-          'A demo walk through name, age, who, colour, and birthday — the '
-          'same screens a brand-new family sees. There is no real first-run '
-          'detector behind this preview build, so this is a re-run, not a '
-          'reset of anything real.',
+        Text(
+          _isRealFirstRun
+            ? "Let's get to know each other — a few quick questions about "
+              'name, age, and a couple of preferences, then straight into '
+              'the app.'
+            : 'A demo walk through name, age, who, colour, and birthday — the '
+              'same screens a brand-new family sees. There is no real first-run '
+              'detector behind this preview build, so this is a re-run, not a '
+              'reset of anything real.',
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 20),
-        FilledButton(onPressed: _running ? null : _run, child: const Text('Start')),
+        FilledButton(onPressed: _running ? null : _run,
+          child: Text(_isRealFirstRun ? "Let's begin" : 'Start')),
         if (_lastChildName != null) Padding(
           padding: const EdgeInsets.only(top: 16),
           child: Text('Last run finished for "$_lastChildName".',

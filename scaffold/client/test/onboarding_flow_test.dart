@@ -174,7 +174,10 @@ void main() {
       await tester.pumpWidget(wrap(OnboardingFlowScreen(
         onComplete: () async { completions++; },
       )));
-      await tester.tap(find.text('Start'));
+      // A real first-run (onComplete set) shows welcoming copy and "Let's
+      // begin" -- not the manual-redo "Start" this file's other,
+      // onComplete-less constructions still tap.
+      await tester.tap(find.text("Let's begin"));
       await tester.pumpAndSettle();
 
       // 1. Name.

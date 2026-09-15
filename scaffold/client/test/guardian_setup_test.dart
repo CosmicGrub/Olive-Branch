@@ -138,7 +138,7 @@ void main() {
       await tester.ensureVisible(find.text('Save PIN'));
       await tester.tap(find.text('Save PIN'));
       await tester.pumpAndSettle();
-      expect(find.text('Could not set your PIN.'), findsOneWidget);
+      expect(find.text('Could not set your PIN. Check your connection and try again.'), findsOneWidget);
     });
   });
 
@@ -211,7 +211,7 @@ void main() {
       await tester.tap(find.text('Save PIN'));
       await tester.pumpAndSettle();
       expect(callCount, 2, reason: 'the second submission must really reach setGuardianPin again');
-      expect(find.text('Could not set your PIN.'), findsOneWidget);
+      expect(find.text('Could not set your PIN. Check your connection and try again.'), findsOneWidget);
 
       button = tester.widget<FilledButton>(find.ancestor(
         of: find.text('Finish setup'), matching: find.byType(FilledButton)));
