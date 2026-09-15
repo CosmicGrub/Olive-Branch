@@ -1,0 +1,29 @@
+{
+  // The Flutter project (pubspec.yaml) lives at scaffold/client, two levels
+  // below this workspace root — Dart-Code's default search depth (2) sits
+  // right at that boundary, so this is bumped to make discovery reliable
+  // regardless of how deep any future nesting goes.
+  "dart.projectSearchDepth": 6,
+
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.rulers": [80],
+    "editor.selectionHighlight": false,
+    "editor.suggestSelection": "first",
+    "editor.tabCompletion": "onlySnippets",
+    "editor.wordBasedSuggestions": "off"
+  },
+
+  // This repo's own CRLF-churn gotcha (documented repeatedly in CHANGELOG.md
+  // and this session's own history): flutter build/test regenerates
+  // client/windows/flutter/generated_plugin_registrant.cc/.h and
+  // generated_plugins.cmake with LF, not the repo's committed CRLF. VS Code
+  // won't silently "fix" that on its own, but keeping these out of the
+  // editor's own file-watcher noise avoids confusing diffs while iterating.
+  "files.watcherExclude": {
+    "**/scaffold/client/windows/flutter/generated_plugin_registrant.*": true,
+    "**/scaffold/client/windows/flutter/generated_plugins.cmake": true,
+    "**/scaffold/packages/*/src/*.mjs": true
+  }
+}

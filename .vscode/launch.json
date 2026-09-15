@@ -1,0 +1,57 @@
+{
+  // Three real entry points this app ships (client/lib/main*.dart's own
+  // headers) — matching client/pubspec.yaml's environment pin and this
+  // session's established dart-define values (seed-dev.mjs's Ivy/Dad
+  // UUIDs). No fixed "deviceId" below — VS Code's device picker (bottom
+  // status bar) lets you switch between Windows desktop, an Android
+  // emulator/device, or Chrome per-launch without editing this file.
+  //
+  // OLIVE_API_BASE_URL defaults to http://localhost:8123, matching a
+  // WSL2-hosted server per docs/windows-dev-notes.md (WSL2 forwards
+  // localhost automatically) — override per-launch (F5 lets you edit args)
+  // if your server lives somewhere else, e.g. the Android-emulator
+  // host-loopback alias http://10.0.2.2:8123 the app itself defaults to.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Olive Branch — Demo (offline)",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/scaffold/client",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "Olive Branch — Live Child (Kiosk)",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/scaffold/client",
+      "program": "lib/main_live.dart",
+      "args": [
+        "--dart-define=OLIVE_API_BASE_URL=http://localhost:8123",
+        "--dart-define=OLIVE_CHILD_ID=aaaaaaaa-0000-4000-8000-000000000001"
+      ]
+    },
+    {
+      "name": "Olive Branch — Live Guardian",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/scaffold/client",
+      "program": "lib/main_live_guardian.dart",
+      "args": [
+        "--dart-define=OLIVE_API_BASE_URL=http://localhost:8123",
+        "--dart-define=OLIVE_CHILD_ID=aaaaaaaa-0000-4000-8000-000000000001",
+        "--dart-define=OLIVE_GUARDIAN_ID=aaaaaaaa-0000-4000-8000-000000000002"
+      ]
+    },
+    {
+      "name": "Olive Branch — Live Child, no dart-define (pairing screen)",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/scaffold/client",
+      "program": "lib/main_live.dart",
+      "args": [
+        "--dart-define=OLIVE_API_BASE_URL=http://localhost:8123"
+      ]
+    }
+  ]
+}
