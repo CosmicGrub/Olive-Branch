@@ -240,8 +240,9 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       key: const Key('addDeviceGenerateButton'),
       onPressed: _submitting ? null : _generate,
       child: _submitting
-        ? const SizedBox(width: 20, height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+        ? SizedBox(width: 20, height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2.4,
+              color: Theme.of(context).colorScheme.onPrimary))
         : const Text('Generate code'))),
     if (_errorMessage != null) ...[
       const SizedBox(height: 12),

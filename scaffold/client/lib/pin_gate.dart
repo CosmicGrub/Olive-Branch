@@ -22,6 +22,7 @@
 // attempts at all.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'kiosk_lock_colors.dart';
 
 class PinGate extends StatefulWidget {
   const PinGate({super.key, required this.digits, required this.onComplete,
@@ -57,38 +58,38 @@ class _PinGateState extends State<PinGate> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFF12172B),
+    backgroundColor: KioskLockColors.background,
     body: SafeArea(child: Center(child: Column(
       mainAxisAlignment: MainAxisAlignment.center, children: [
         const Text('Welcome back', style: TextStyle(
-          color: Colors.white, fontSize: 19, fontWeight: FontWeight.w600)),
+          color: KioskLockColors.primaryText, fontSize: 19, fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
         const Text('Type your code to keep going',
-          style: TextStyle(color: Colors.white70, fontSize: 12.5)),
+          style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 12.5)),
         const SizedBox(height: 10),
         // Persistent from frame one, never gated on a failed attempt — see
         // this file's own header for why. A grown-up who already knows the
         // code reads past it in half a second; that's the whole point.
         const Text("This needs a grown-up's code",
           key: Key('pinGateGrownUpNotice'),
-          style: TextStyle(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic)),
+          style: TextStyle(color: KioskLockColors.tertiaryText, fontSize: 11, fontStyle: FontStyle.italic)),
         const SizedBox(height: 18),
         Row(mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(widget.digits, (i) => Container(
             width: 11, height: 11, margin: const EdgeInsets.symmetric(horizontal: 4.5),
             decoration: BoxDecoration(shape: BoxShape.circle,
-              color: i < entered.length ? Colors.white : Colors.transparent,
-              border: Border.all(color: Colors.white54, width: 1.5))))),
+              color: i < entered.length ? KioskLockColors.primaryText : Colors.transparent,
+              border: Border.all(color: KioskLockColors.tertiaryText, width: 1.5))))),
         const SizedBox(height: 20),
         SizedBox(width: 188, child: Wrap(spacing: 9, runSpacing: 9,
           children: keys.map((d) => SizedBox(width: 52, height: 48,
             child: TextButton(onPressed: () => _tap(d),
               child: Text('$d', style: const TextStyle(
-                color: Colors.white, fontSize: 16)))))
+                color: KioskLockColors.primaryText, fontSize: 16)))))
             .toList())),
         const SizedBox(height: 14),
         const Text('keypad order changes every time',
-          style: TextStyle(color: Colors.white38, fontSize: 9)),
+          style: TextStyle(color: KioskLockColors.quaternaryText, fontSize: 9)),
       ]))),
   );
 }

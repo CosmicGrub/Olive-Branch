@@ -32,6 +32,31 @@ void main() {
       }
     });
 
+    testWidgets('the "current" day-part card is not pale/near-white in dark '
+        'mode — real bug, UI/UX review theme #3, same shape as weeks_screen', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData(colorScheme: const ColorScheme.dark(), useMaterial3: true),
+        home: const MyDayScreen(childName: 'Ivy', parts: demoDayParts, nowLocal: '07:15')));
+      // '07:15' -> 'before_school' ("get ready") is the current part, per
+      // this file's own "names the current day-part" test above.
+      final container = tester.widget<AnimatedContainer>(
+        find.byKey(const Key('dayPartCard_before_school')));
+      final bg = (container.decoration! as BoxDecoration).color!;
+      expect(bg.computeLuminance(), lessThan(0.5),
+        reason: 'the current-part card should be dark-toned in a dark theme, not lerped toward literal white');
+    });
+
+    testWidgets('the "current" day-part card stays pale in light mode — '
+        'light-mode appearance is unchanged by the dark-mode fix', (tester) async {
+      await tester.pumpWidget(wrap(const MyDayScreen(
+        childName: 'Ivy', parts: demoDayParts, nowLocal: '07:15')));
+      final container = tester.widget<AnimatedContainer>(
+        find.byKey(const Key('dayPartCard_before_school')));
+      final bg = (container.decoration! as BoxDecoration).color!;
+      expect(bg.computeLuminance(), greaterThan(0.5),
+        reason: 'the current-part card should stay light-toned in a light theme, as it always has');
+    });
+
     testWidgets('NO settings affordance exists at any depth', (tester) async {
       await tester.pumpWidget(wrap(const MyDayScreen(
         childName: 'Ivy', parts: demoDayParts, nowLocal: '07:15')));

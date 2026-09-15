@@ -81,6 +81,24 @@ void main() {
       expect(find.text('Tell me another!'), findsOneWidget);
     });
 
+    testWidgets('the punchline card uses the real accent color, not hardcoded '
+        'amber — real bug, UI/UX review theme #3', (tester) async {
+      // _Punchline's constructor already required `accent` before this fix
+      // — it was just silently never read in build(), hardcoding
+      // Colors.amber instead. This proves it's genuinely wired now, the
+      // same way its sibling _RevealButton already correctly used it.
+      await useNarrowSurface(tester);
+      await tester.pumpWidget(wrap(JokebookScreen(childName: 'Ivy', pick: () => 0)));
+      await tellMeOne(tester);
+      await reveal(tester);
+      final accent = Theme.of(tester.element(find.byKey(const Key('jokePunchline'))))
+        .colorScheme.primary;
+      final container = tester.widget<Container>(find.byKey(const Key('jokePunchline')));
+      final decoration = container.decoration! as BoxDecoration;
+      expect(decoration.border!.top.color, accent);
+      expect(decoration.border!.top.color, isNot(Colors.amber.shade400));
+    });
+
     testWidgets('"Tell me another!" never repeats the one she just heard', (tester) async {
       await useNarrowSurface(tester);
       // pick 0 always takes the first eligible joke — so the only way the

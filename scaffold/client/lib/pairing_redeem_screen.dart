@@ -175,8 +175,9 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
             key: const Key('pairingConnectButton'),
             onPressed: _submitting ? null : () => _submit(_codeController.text),
             child: _submitting
-              ? const SizedBox(width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+              ? SizedBox(width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2.4,
+                    color: Theme.of(context).colorScheme.onPrimary))
               : const Text('Connect'))),
           const SizedBox(height: 8),
           TextButton.icon(

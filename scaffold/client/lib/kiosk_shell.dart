@@ -38,6 +38,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'guardian_escalation_screen.dart';
+import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
 import 'pin_gate.dart';
@@ -240,8 +241,16 @@ class _EscalationTrigger extends StatelessWidget {
         child: IconButton(
           key: const Key('guardianEscalationTrigger'),
           onPressed: onTap,
+          // Real bug, found by review: this sits directly over `widget.child`
+          // (the real, variably-themed ChildHome below) — not a fixed
+          // backdrop — so a flat white-at-low-alpha only actually worked
+          // against a dark surface. onSurface is the token Material 3
+          // defines specifically to have real contrast against whatever
+          // surface/background color is actually showing, in either
+          // brightness — same low-key "barely visible, not a menu" intent,
+          // now correctly contrasted regardless of theme.
           icon: Icon(Icons.shield_outlined, size: 18,
-            color: Colors.white.withValues(alpha: 0.28)),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.28)),
           tooltip: 'Guardian',
         ),
       ),
@@ -256,29 +265,29 @@ class _LockedOutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFF12172B),
+    backgroundColor: KioskLockColors.background,
     body: SafeArea(
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.hourglass_bottom, color: Colors.white54, size: 32),
+            const Icon(Icons.hourglass_bottom, color: KioskLockColors.tertiaryText, size: 32),
             const SizedBox(height: 14),
             const Text(
               'Take a little break',
-              style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w600),
+              style: TextStyle(color: KioskLockColors.primaryText, fontSize: 19, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
             const Text(
               'Ask a grown-up if you need back in sooner',
-              style: TextStyle(color: Colors.white70, fontSize: 12.5),
+              style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 12.5),
             ),
             const SizedBox(height: 24),
             TextButton(
               onPressed: onBreakGlass,
               child: const Text(
                 "I'm the grown-up",
-                style: TextStyle(color: Colors.white38, fontSize: 12),
+                style: TextStyle(color: KioskLockColors.quaternaryText, fontSize: 12),
               ),
             ),
           ],

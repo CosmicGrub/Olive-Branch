@@ -197,8 +197,13 @@ class _DayPartCardState extends State<_DayPartCard> {
   Widget build(BuildContext context) {
     final StripSegment s = widget.segment;
     final Color bandColor = _colorFor(s.kind);
+    // Same real dark-mode bug weeks_screen.dart's _RhythmHeader had, and the
+    // same fix: lerp toward the theme's own surface token, not a literal
+    // Colors.white, so the "current" card doesn't stay pale/near-white
+    // (and its theme-default, dark-mode-light text unreadable on it)
+    // regardless of brightness.
     final Color background = s.current
-        ? Color.lerp(bandColor, Colors.white, 0.78)!
+        ? Color.lerp(bandColor, Theme.of(context).colorScheme.surface, 0.78)!
         : Theme.of(context).colorScheme.primaryContainer.withAlpha(80);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -206,6 +211,7 @@ class _DayPartCardState extends State<_DayPartCard> {
         borderRadius: BorderRadius.circular(16),
         onTap: () => setState(() => _expanded = !_expanded),
         child: AnimatedContainer(
+          key: Key('dayPartCard_${s.kind}'),
           duration: const Duration(milliseconds: 200),
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.all(16),

@@ -264,8 +264,14 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
                 key: const Key('shutterButton'),
                 onPressed: _checking ? null : _takePhoto,
                 child: _checking
-                    ? const SizedBox(width: 26, height: 26,
-                        child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
+                    ? SizedBox(width: 26, height: 26,
+                        child: CircularProgressIndicator(strokeWidth: 3,
+                          // This FloatingActionButton sets no explicit style,
+                          // so Material 3's own default applies:
+                          // primaryContainer background, onPrimaryContainer
+                          // foreground — the spinner now matches that,
+                          // instead of ignoring it.
+                          color: Theme.of(context).colorScheme.onPrimaryContainer))
                     : const Icon(Icons.camera_alt, size: 30),
               ),
             ),

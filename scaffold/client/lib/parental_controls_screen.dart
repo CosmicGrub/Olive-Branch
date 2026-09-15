@@ -315,10 +315,11 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
             key: const Key('parentalControlsVerifyButton'),
             onPressed: _submitting ? null : _verifyPin,
             child: _submitting
-                ? const SizedBox(
+                ? SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                    child: CircularProgressIndicator(strokeWidth: 2.4,
+                      color: Theme.of(context).colorScheme.onPrimary))
                 : const Text('Continue'),
           ),
         ),

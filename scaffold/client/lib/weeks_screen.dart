@@ -180,10 +180,19 @@ class _RhythmHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
+      key: const Key('rhythmHeaderCard'),
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Color.lerp(currentColor, Colors.white, 0.85),
+        // Real dark-mode bug, found by review: lerping toward a literal
+        // Colors.white left this card pale/near-white regardless of theme
+        // brightness, while the text on it (below) uses the theme's own
+        // default (light-colored in dark mode) — light text on a near-
+        // white card. Lerping toward scheme.surface instead keeps light
+        // mode looking exactly as before (surface is already near-white
+        // there) while producing a dark-toned card in dark mode, where
+        // theme-default light text has real contrast again.
+        color: Color.lerp(currentColor, scheme.surface, 0.85),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: currentColor, width: 2),
       ),
