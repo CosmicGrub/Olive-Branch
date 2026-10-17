@@ -114,6 +114,23 @@ const ELP = 'America/Denver';      // El Paso & Hudspeth counties, TX
   // Unknown instant falls back rather than throwing.
   check('F5 TX/NC handoff', 'empty timeline falls back to home_tz',
     resolveZone([], before, NYC), NYC);
+
+  // A bound in the WRONG SHAPE must fail loudly, never silently match nothing.
+  // Postgres's own `timestamptz::text` is '2026-06-01 00:00:00+00' (a space,
+  // a bare '+00') — Luxon's fromISO() rejects it, and `t >= NaN` is false, so
+  // this used to make the whole interval invisible and quietly return the
+  // fallback zone for essentially every real row. db/pool.ts's childCtxFor()
+  // did exactly that until it was fixed at the source.
+  const attempt = (iv) => { try { resolveZone([iv], after, NYC); return 'no error'; }
+    catch (e) { return e.message; } };
+  const badStart = attempt({ tz: CHI, start: '2026-06-01 00:00:00+00', end: null });
+  const badEnd   = attempt({ tz: CHI, start: null, end: '2026-08-15 00:00:00+00' });
+  check('F5 TX/NC handoff', 'a Postgres-shaped (non-ISO) start bound throws, not a silent home_tz fallback',
+    badStart.includes('unparsable tz interval start'), 'true');
+  check('F5 TX/NC handoff', 'a Postgres-shaped (non-ISO) end bound throws, naming the offending value',
+    badEnd.includes('unparsable tz interval end') && badEnd.includes('2026-08-15 00:00:00+00'), 'true');
+  check('F5 TX/NC handoff', 'a well-formed ISO bound still resolves normally',
+    attempt({ tz: CHI, start: '2026-06-01T00:00:00.000Z', end: null }), 'no error');
 }
 
 // ---------------------------------------------------------------------------
