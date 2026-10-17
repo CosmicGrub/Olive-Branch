@@ -10,6 +10,27 @@ export interface TzInterval {
 }
 
 /**
+ * An interval bound, as epoch millis — and a LOUD failure if it is not a
+ * parseable ISO-8601 instant. Luxon returns an invalid DateTime (NaN millis)
+ * for a malformed string, and `t >= NaN` is simply false, so without this
+ * check a bound in the wrong shape made its whole interval silently match
+ * nothing and resolveZone() quietly fall back to the home zone. That is the
+ * exact "silent corruption" this module exists to refuse (§6.2): a child's
+ * bedtime message resolved in the wrong zone, with nothing logged. It really
+ * happened — db/pool.ts's childCtxFor() once handed this function Postgres's
+ * '2026-06-01 00:00:00+00' text, which Luxon's fromISO() rejects. Throwing
+ * turns that whole class of data bug into an immediate, attributable error.
+ */
+function boundMillis(value: string, which: 'start' | 'end'): number {
+  const ms = DateTime.fromISO(value, { zone: 'utc' }).toMillis();
+  if (Number.isNaN(ms)) {
+    throw new Error(
+      `resolveZone: unparsable tz interval ${which} ${JSON.stringify(value)} — expected an ISO-8601 instant`);
+  }
+  return ms;
+}
+
+/**
  * MASTERFILE §4.2 — the child's zone is a lookup against a timeline, not a
  * field read. A child is in NC during the school year and TX for six weeks
  * each summer; that is the product, not an edge case.
@@ -24,8 +45,8 @@ export function resolveZone(
 ): string {
   const t = at.toMillis();
   const hits = intervals.filter(iv => {
-    const s = iv.start ? DateTime.fromISO(iv.start, { zone: 'utc' }).toMillis() : -Infinity;
-    const e = iv.end   ? DateTime.fromISO(iv.end,   { zone: 'utc' }).toMillis() :  Infinity;
+    const s = iv.start ? boundMillis(iv.start, 'start') : -Infinity;
+    const e = iv.end   ? boundMillis(iv.end,   'end')   :  Infinity;
     return t >= s && t < e;                        // [start, end)
   });
   if (hits.length === 0) return fallbackTz;

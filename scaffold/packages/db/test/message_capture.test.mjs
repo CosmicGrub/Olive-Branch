@@ -19,6 +19,7 @@ import {
   createPool, childCtxFor, persistCapturedMessage,
 } from '../src/pool.mjs';
 import { captureMessage } from '../../messaging/src/pipeline.mjs';
+import { resolveZone } from '../../time-engine/src/time.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? DATABASE_URL;
@@ -38,8 +39,13 @@ await admin.connect();
 const CHILD = '77777777-7777-7777-7777-777777777777';
 const NOCTX = '88888888-8888-8888-8888-888888888888';   // no tz/day-part rows at all
 const DAD = '99999999-9999-9999-9999-999999999999';
+// A child whose tz interval is BOUNDED at both ends (a six-week summer stay),
+// so section A2 exercises both the `start` and the `end` of a loaded interval.
+const BOUNDED = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 await admin.query('BEGIN');
+await admin.query(`DELETE FROM child_tz_interval WHERE child_id = $1`, [BOUNDED]);
+await admin.query(`DELETE FROM child WHERE id = $1`, [BOUNDED]);
 await admin.query(`DELETE FROM delivery_intent WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);
 await admin.query(`DELETE FROM media_artifact WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);
 await admin.query(`DELETE FROM intent_batch WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);
@@ -54,6 +60,13 @@ await admin.query(
   `INSERT INTO child (id, display_name, birth_date, home_tz) VALUES
      ($1,'Ivy','2016-04-02','America/New_York'),
      ($2,'NoCtx','2018-01-01','America/New_York')`, [CHILD, NOCTX]);
+await admin.query(
+  `INSERT INTO child (id, display_name, birth_date, home_tz)
+   VALUES ($1,'Bounded','2016-04-02','America/New_York')`, [BOUNDED]);
+await admin.query(
+  `INSERT INTO child_tz_interval (child_id, tz, valid, source)
+   VALUES ($1, 'America/Los_Angeles',
+           tstzrange('2026-06-01T00:00:00Z', '2026-08-15T00:00:00Z'), 'manual')`, [BOUNDED]);
 await admin.query(
   `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
    VALUES ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`,
@@ -99,6 +112,44 @@ const edge = (o = {}) => ({ childId: CHILD, userId: DAD, role: 'guardian', scope
   // Honest absence: not a real child at all.
   const missing = await childCtxFor(pool, '00000000-0000-0000-0000-000000000000');
   check('A childCtxFor', 'a nonexistent child gets null, never a guess', missing, 'null');
+}
+
+// ===========================================================================
+// A2 · the loaded interval bounds must be USABLE, not merely present
+//
+// Real bug, found by review and reproduced: childCtxFor() used to select
+// `lower(valid)::text`, which Postgres renders as '2026-06-01 00:00:00+00' —
+// a space instead of 'T', and a bare '+00' offset. Luxon's fromISO() rejects
+// that shape (invalid DateTime, NaN millis), so resolveZone() silently found
+// no matching interval and fell back to home_tz for essentially every real
+// row. Every assertion in section A above passed anyway, because they only
+// check that the tz string and a null end round-trip — never that the bounds
+// can actually be resolved against an instant, which is the one thing the
+// delivery gate, materialize() and the messaging pipeline all do with them.
+// ===========================================================================
+{
+  const ctx = await childCtxFor(pool, CHILD);
+  const parses = (s) => DateTime.fromISO(s, { zone: 'utc' }).isValid;
+  check('A2 zone resolution', 'an open interval\'s start is a parseable ISO instant',
+    parses(ctx?.tzIntervals[0]?.start), 'true');
+  check('A2 zone resolution', 'resolveZone() over the LOADED intervals picks the interval tz, not the home_tz fallback',
+    resolveZone(ctx.tzIntervals, DateTime.fromISO('2026-06-15T12:00:00Z', { zone: 'utc' }), ctx.homeTz),
+    'America/Chicago');
+
+  const b = await childCtxFor(pool, BOUNDED);
+  check('A2 zone resolution', 'a bounded interval\'s start is a parseable ISO instant',
+    parses(b?.tzIntervals[0]?.start), 'true');
+  check('A2 zone resolution', 'a bounded interval\'s end is a parseable ISO instant',
+    parses(b?.tzIntervals[0]?.end), 'true');
+  const at = (iso) => DateTime.fromISO(iso, { zone: 'utc' });
+  check('A2 zone resolution', 'inside the bounded stay, her zone is the interval tz',
+    resolveZone(b.tzIntervals, at('2026-07-01T12:00:00Z'), b.homeTz), 'America/Los_Angeles');
+  check('A2 zone resolution', 'after the bounded stay ends, she is back on home_tz',
+    resolveZone(b.tzIntervals, at('2026-09-01T12:00:00Z'), b.homeTz), 'America/New_York');
+  check('A2 zone resolution', 'the interval is half-open: its exact end instant is already outside it',
+    resolveZone(b.tzIntervals, at('2026-08-15T00:00:00Z'), b.homeTz), 'America/New_York');
+  check('A2 zone resolution', 'the interval\'s exact start instant is inside it',
+    resolveZone(b.tzIntervals, at('2026-06-01T00:00:00Z'), b.homeTz), 'America/Los_Angeles');
 }
 
 // ===========================================================================
@@ -312,6 +363,8 @@ await admin.query(`DELETE FROM day_part WHERE child_id IN ($1, $2)`, [CHILD, NOC
 await admin.query(`DELETE FROM child_tz_interval WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);
 await admin.query(`DELETE FROM guardianship WHERE child_id IN ($1, $2)`, [CHILD, NOCTX]);
 await admin.query(`DELETE FROM child WHERE id IN ($1, $2)`, [CHILD, NOCTX]);
+await admin.query(`DELETE FROM child_tz_interval WHERE child_id = $1`, [BOUNDED]);
+await admin.query(`DELETE FROM child WHERE id = $1`, [BOUNDED]);
 await admin.query(`DELETE FROM app_user WHERE id = $1`, [DAD]);
 await admin.end();
 await pool.end();
