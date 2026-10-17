@@ -1189,8 +1189,23 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
     const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [childId]);
     if (!child.length) return null;
 
+    // Bounds are formatted to strict UTC ISO-8601 HERE, in SQL — not left as
+    // a bare `::text` cast. Real bug, found by review and reproduced:
+    // `lower(valid)::text` renders '2026-06-01 00:00:00+00' (a space, not
+    // 'T', and a bare '+00' offset — or '-04' etc., depending on the
+    // session's TimeZone), which Luxon's fromISO() rejects as an invalid
+    // DateTime. resolveZone() then silently found NO matching interval and
+    // fell back to home_tz, so essentially every real child_tz_interval row
+    // was ignored by the delivery gate, materialize() and the messaging
+    // pipeline. A pg type parser would NOT fix this — the explicit ::text
+    // cast means the driver never sees a timestamptz — and AT TIME ZONE
+    // 'UTC' makes the output independent of the connection's TimeZone. A
+    // NULL (open) bound stays NULL, which is what TzInterval's `null =
+    // open` contract expects. Same idiom as loadMessageChain() below.
     const tzRows = await q(
-      `SELECT tz, lower(valid)::text AS start, upper(valid)::text AS "end"
+      `SELECT tz,
+              to_char(lower(valid) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS start,
+              to_char(upper(valid) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "end"
          FROM child_tz_interval WHERE child_id = $1 ORDER BY lower(valid)`,
       [childId],
     );
