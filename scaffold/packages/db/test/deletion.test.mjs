@@ -303,7 +303,11 @@ await insertFixtures();
   child.stdout.on('data', (d) => { out += d.toString(); });
   child.stderr.on('data', (d) => { out += d.toString(); });
 
-  const deadline = Date.now() + 8000;
+  // 60s is a ceiling, not a wait: the loop below exits the instant the server
+  // says "listening on". It was 8s, which a cold start on a slower disk
+  // (9.6s from a WSL-mounted drive; a busy or cache-cold CI runner would do the
+  // same) exceeds, turning a healthy server into a spurious failure here.
+  const deadline = Date.now() + 60_000;
   while (!out.includes('listening on') && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 50));
   }
