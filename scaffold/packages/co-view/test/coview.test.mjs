@@ -13,6 +13,8 @@ import {
   sampleFromPing, estimateOffset, correct, expectedPosition, followerStep,
   changeAllowance, budgetState, remainingSeconds, chooseTransport, reannounce,
 } from '../src/coview.mjs';
+import { readFileSync } from 'node:fs';
+import { generate } from '../../../tools/gen-coview-vectors.mjs';
 
 let pass = 0, fail = 0; const rows = [];
 function check(group, name, actual, expected) {
@@ -94,6 +96,11 @@ const CO_GUARDIAN = { kind: 'guardian', role: 'guardian' };
   check(g, 'child may NOT forge a budget stop', mayEmit(CHILD, { t: 'stop', seq: 1, by: 'budget' }), false);
   check(g, 'a sitter may not emit anything', mayEmit(SITTER, tick), false);
   check(g, 'null principal may not emit', mayEmit(null, tick), false);
+  check(g, 'child may answer an invitation (join)', mayEmit(CHILD, { t: 'join', seq: 1 }), true);
+  check(g, 'a sitter may not join', mayEmit(SITTER, { t: 'join', seq: 1 }), false);
+  check(g, 'a guardian may send join too (the engine does not forbid it)', mayEmit(GUARDIAN, { t: 'join', seq: 1 }), true);
+  check(g, 'join parses', parseCoViewMessage('{"t":"join","seq":4}').ok, true);
+  check(g, 'join without seq is refused', parseCoViewMessage('{"t":"join"}').ok, false);
 }
 
 // --------------------------------------------------------- C3 sequencing ---
@@ -285,6 +292,17 @@ const CO_GUARDIAN = { kind: 'guardian', role: 'guardian' };
   check(g, 'a late tick (seq 41) from the OLD transport is ignored after migration', acceptSeq(guard, 41), false);
   check(g, 'the re-announce (seq 42) is accepted', acceptSeq(guard, tick.seq), true);
   check(g, 're-announce preserves a paused leader', reannounce({ pos: 5, rate: 1, paused: true }, 0, 1).paused, true);
+}
+
+// ------------------------------------------- shared vectors (the Dart port) ---
+{
+  const g = 'golden vectors';
+  const onDisk = JSON.parse(readFileSync(new URL('./vectors.json', import.meta.url), 'utf8'));
+  const fresh = generate();
+  check(g, 'vectors.json equals a fresh generation (run: node tools/gen-coview-vectors.mjs)', JSON.stringify(onDisk) === JSON.stringify(fresh), true);
+  for (const k of ['parse', 'principals', 'seq', 'samples', 'estimates', 'correct', 'expected', 'followerStep', 'allowance', 'budget', 'transport', 'reannounce'])
+    check(g, `section "${k}" is present and non-empty`, Array.isArray(onDisk[k]) && onDisk[k].length > 0, true);
+  check(g, 'NaN and Infinity inputs are spelled as strings, never lost', onDisk.correct.some(c => c.err === 'NaN') && onDisk.correct.some(c => c.err === 'Infinity'), true);
 }
 
 // ---------------------------------------------------------------------------
