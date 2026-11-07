@@ -41,7 +41,15 @@ const NOCTX = '88888888-8888-8888-8888-888888888888';   // no tz/day-part rows a
 const DAD = '99999999-9999-9999-9999-999999999999';
 // A child whose tz interval is BOUNDED at both ends (a six-week summer stay),
 // so section A2 exercises both the `start` and the `end` of a loaded interval.
-const BOUNDED = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+//
+// NOT a repeating-digit UUID on purpose: 'aaaaaaaa-…' is the repo's canonical
+// seeded child (db/test/*.sql, live.test.mjs, table.test.mjs), and earlier
+// suites in verify.sh's shared database leave undeletable append-only
+// message_log rows against it (P8) — so this file's own `DELETE FROM child`
+// below died on message_log_child_id_fkey in CI, ran zero assertions, and
+// that cascaded into the C7/D2 assertion-count checks. A suite run alone on
+// a fresh database cannot see that collision; only verify.sh's real order can.
+const BOUNDED = '7c1e5b2a-4d3f-4a86-9b0e-5f2d8c6a1e34';
 
 await admin.query('BEGIN');
 await admin.query(`DELETE FROM child_tz_interval WHERE child_id = $1`, [BOUNDED]);
