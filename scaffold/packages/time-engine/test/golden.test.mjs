@@ -5,7 +5,7 @@
  * Zero-dependency runner so this executes anywhere node does.
  *   node test/golden.test.mjs
  */
-import { DateTime } from 'luxon';
+import { DateTime, Settings } from 'luxon';
 import {
   resolveZone, resolveWallClock, offsetBetween, enumerateLocalDates,
 } from '../src/time.mjs';
@@ -57,6 +57,51 @@ const ELP = 'America/Denver';      // El Paso & Hudspeth counties, TX
 
   const bed = resolveWallClock('2026-11-01', '20:30', NYC);
   check('F2 fall-back', 'bedtime unaffected', bed.anomaly, 'none');
+}
+
+// ---------------------------------------------------------------------------
+// F2b — The answer must not depend on what day it is RUN.
+//
+// Real bug: resolveWallClock used DateTime.fromISO(iso, {zone}), and Luxon seeds
+// that from the zone's offset at the CURRENT moment. For an ambiguous time that
+// picks which of the two instants comes back. F2 above passed all through
+// October (clock still EDT) and went red on 1 Nov 2026 (clock now EST) with no
+// code change — and in production `'first'` had silently been returning the
+// second occurrence, with the anomaly unreported, for every run in winter.
+// This pins Luxon's clock to a summer and a winter moment and demands the same
+// answer from both, so it cannot decay with the calendar the way F2 did.
+// ---------------------------------------------------------------------------
+{
+  const LORD_HOWE = 'Australia/Lord_Howe';   // a 30-MINUTE DST shift, not an hour
+  const cases = [
+    ['fall-back, first',  ['2026-11-01', '01:30', NYC, 'first'],  'ambiguous',   '2026-11-01T05:30:00.000Z'],
+    ['fall-back, last',   ['2026-11-01', '01:30', NYC, 'last'],   'ambiguous',   '2026-11-01T06:30:00.000Z'],
+    ['spring-forward gap',['2026-03-08', '02:30', NYC],           'nonexistent', '2026-03-08T07:30:00.000Z'],
+    ['ordinary bedtime',  ['2026-11-01', '20:30', NYC],           'none',        '2026-11-02T01:30:00.000Z'],
+    ['half-hour fall-back, first', ['2026-04-05', '01:45', LORD_HOWE, 'first'], 'ambiguous',   '2026-04-04T14:45:00.000Z'],
+    ['half-hour fall-back, last',  ['2026-04-05', '01:45', LORD_HOWE, 'last'],  'ambiguous',   '2026-04-04T15:15:00.000Z'],
+  ];
+  // Millis are computed BEFORE the fake clock goes in: Luxon's own parser reads
+  // Settings.now, so a clock built out of DateTime.fromISO recurses forever.
+  const clocks = {
+    summer: Date.UTC(2026, 6, 15, 12),
+    winter: Date.UTC(2026, 11, 15, 12),
+  };
+  const realNow = Settings.now;
+  try {
+    for (const [label, args, anomaly, utc] of cases) {
+      const seen = {};
+      for (const [season, ms] of Object.entries(clocks)) {
+        Settings.now = () => ms;
+        const r = resolveWallClock(...args);
+        seen[season] = `${r.anomaly} ${r.instant.toUTC().toISO()}`;
+      }
+      check('F2b clock-independent', `${label}: same answer with a summer clock and a winter clock`,
+        seen.summer === seen.winter, 'true');
+      check('F2b clock-independent', `${label}: reports ${anomaly} at ${utc}`,
+        seen.winter, `${anomaly} ${utc}`);
+    }
+  } finally { Settings.now = realNow; }
 }
 
 // ---------------------------------------------------------------------------
