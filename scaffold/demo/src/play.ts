@@ -697,6 +697,39 @@ export function budgetView(): Any {
 }
 export function budgetTier(t: string): Any { S.tier = t; return budgetView(); }
 export { Stream, Budget };
+// ------------------------------- co-viewing: read / watch together --------
+import * as CoView from '../../packages/co-view/src/coview.ts';
+
+/** Every value below is computed by the real engine — nothing is typed in. */
+export function coViewView(): Any {
+  const guardian = { kind: 'guardian', role: 'guardian' } as Any;
+  const child = { kind: 'child' } as Any;
+  const parse = (x: string) => { const r = CoView.parseCoViewMessage(x); return r.ok ? 'accepted' : r.reason; };
+  return {
+    zones: { dead: CoView.DEAD_ZONE_S, seek: CoView.HARD_SEEK_S, band: CoView.RATE_BAND, tick: CoView.TICK_S },
+    corrections: [0.05, 0.4, -0.4, 3].map(e => ({ err: e, ...CoView.correct(e) })),
+    parsed: {
+      valid: parse('{"t":"stop","seq":1,"by":"child"}'),
+      oversized: parse('x'.repeat(CoView.MAX_MESSAGE_BYTES + 1)),
+      traversal: parse('{"t":"start","seq":1,"at":1,"assetId":"../etc/passwd"}'),
+    },
+    childCanLead: CoView.canLead(child),
+    guardianCanLead: CoView.canLead(guardian),
+    childCanForgeGuardianStop: CoView.mayEmit(child, { t: 'stop', seq: 1, by: 'guardian' }),
+    defaultAllowance: CoView.DEFAULT_ALLOWANCE_MIN,
+    raise: CoView.changeAllowance(guardian, 120, 180),
+    lower: CoView.changeAllowance(guardian, 120, 90),
+    childChange: CoView.changeAllowance(child, 120, 480),
+    budget: [0, 600, 110 * 60, 120 * 60].map(used => ({ used, state: CoView.budgetState(120, used) })),
+    transports: [
+      CoView.chooseTransport({ callConnected: true, tableAvailable: true }),
+      CoView.chooseTransport({ callConnected: false, tableAvailable: true }),
+      CoView.chooseTransport({ callConnected: false, tableAvailable: false }),
+    ],
+  };
+}
+export { CoView };
+
 
 
 S.reducedMotion = false;
