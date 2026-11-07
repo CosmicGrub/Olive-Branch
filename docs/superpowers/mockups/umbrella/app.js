@@ -12,7 +12,9 @@ var SUITES={
  F:{n:"Care",b:"Health and hard seasons",d:"A care binder, hospital mode, gentle explanations of hard things."},
  G:{n:"Growing",b:"Memory and what she keeps",d:"Time capsules, firsts, a memory box, growing marks."},
  H:{n:"Circle",b:"Professionals and fairness",d:"A therapist’s view, fair swaps, a care summary for a clinic."},
- I:{n:"Compass",b:"How the app fits each family",d:"The setup and shelf that turn suites on, per child."}};
+ I:{n:"Compass",b:"How the app fits each family",d:"The setup and shelf that turn suites on, per child."},
+ J:{n:"Growing up",b:"An app that grows with her",d:"What changes at each age, what becomes hers, and how a birthday arrives."},
+ K:{n:"Family structure",b:"Built by a parent, synced to the child",d:"Describe the family as it is. What she sees follows, when a guardian says."}};
 var MAKEUPS={sep:"Two homes after a separation",mil:"A parent who is deployed",road:"A parent who travels for work",inc:"A parent who is incarcerated",hosp:"A parent or child in hospital",kin:"A grandparent or relative raising her",fost:"Foster care",blend:"Step-parents and blended family",loss:"A death in the family",vil:"A wide village of relatives and friends"};
 var NEEDS={neuro:"Neurodivergent or ADHD",sens:"Sensory sensitivities",anx:"Big worries or anxiety",deaf:"Deaf or hard of hearing",blind:"Blind or low vision",aac:"Little or no speech",bil:"Another language at home",ill:"Chronic illness",grief:"Grief",school:"Extra help with school",tod:"Very young (2 to 4)",teen:"Older (13 and up)"};
 var BOLD=[
@@ -30,6 +32,7 @@ var FAMILIES=[
  {n:"The Okafors",d:"Two homes and a step-parent. Leo, 9, has ADHD and half-sister Ivy lives across town.",on:["oneRoutine","firstThen","packingBuddy","sensoryProfile","stepWelcome","siblingSpace","swapRequest","schoolBridge","firstTimes"]},
  {n:"The Lins",d:"Grandma is raising Mei, 5, who is Deaf. Dad is in the next state, Mom is no longer here.",on:["childDeafHome","grandCorner","familyTree","memoryBox","timeCapsule","needHelp","myHelpers","buildAlong","careSummary"]}];
 
+var OBX=window.OBX=window.OBX||{};
 var G={tab:"umbrella",pickM:[],pickN:[],open:null};
 
 function renderBar(){
@@ -38,7 +41,7 @@ function renderBar(){
  $('[data-a="ann"]').setAttribute("aria-pressed",String(K.annotate));
  var n=K.screens.length,s=Object.keys(SUITES).length;
  $("#pills").innerHTML='<span class="pill acc">'+n+' concept screens</span><span class="pill">'+s+' suites</span><span class="pill">'+Object.keys(MAKEUPS).length+' family makeups · '+Object.keys(NEEDS).length+' child needs</span><span class="pill warn">Every idea is a proposal</span>';
- var T=[["umbrella","The umbrella"],["compass","Family Compass"],["suites","All suites"],["bold","Bold bets"],["roadmap","Order and guardrails"]];
+ var T=[["umbrella","The umbrella"],["ages","Growing up"],["family","Family builder"],["compass","Family Compass"],["suites","All suites"],["bold","Bold bets"],["roadmap","Order and guardrails"]];
  $("#tabs").innerHTML=T.map(function(t){return '<button role="tab" aria-selected="'+(G.tab===t[0])+'" data-a="tab" data-v="'+t[0]+'">'+t[1]+'</button>';}).join("");
  T.forEach(function(t){$("#p-"+t[0]).hidden=G.tab!==t[0];});
 }
@@ -47,7 +50,7 @@ function tagsOf(id){var m=K.meta?K.meta[id]:null;return m;}
 function card(s,why){var m=OB.meta[s.id];return '<div class="rcard" role="button" tabindex="0" data-a="open" data-v="'+s.id+'" aria-label="Open '+E(s.title)+'"><div style="display:grid;place-items:center">'+K.frame(s,"phone",.5)+'</div><div><b style="font:800 1rem var(--font-display)">'+E(s.title)+'</b><div><span class="tag2">'+SUITES[m.suite].n+'</span>'+eff(m.effort)+'</div></div>'+(why?'<div class="why">'+why+'</div>':'<div class="why">'+E(m.desc.split(". ")[0])+'.</div>')+'</div>';}
 
 function renderUmbrella(){
- var cells=Object.keys(SUITES).filter(function(k){return k!=="I";});
+ var cells=Object.keys(SUITES).filter(function(k){return k!=="I"&&k!=="J"&&k!=="K";});
  var grid="";cells.forEach(function(k,i){
   if(i===4)grid+='<div class="core"><b>Olive core</b><span>Today · Messages · Play · Memory</span><small style="opacity:.85">The same calm home for every family</small></div>';
   var n=K.screens.filter(function(s){return OB.meta[s.id].suite===k;}).length;
@@ -99,12 +102,13 @@ function openDetail(id){
  $("#detail").hidden=false;$("#detail").scrollTop=0;document.body.style.overflow="hidden";
 }
 function closeDetail(){$("#detail").hidden=true;document.body.style.overflow="";G.open=null;}
-function all(){renderBar();({umbrella:renderUmbrella,compass:renderCompass,suites:renderSuites,bold:renderBold,roadmap:renderRoadmap})[G.tab]();if(G.open&&!$("#detail").hidden)openDetail(G.open);}
+function all(){renderBar();({umbrella:renderUmbrella,ages:function(){OBX.renderAges(G);},family:function(){OBX.renderFamily(G);},compass:renderCompass,suites:renderSuites,bold:renderBold,roadmap:renderRoadmap})[G.tab]();if(G.open&&!$("#detail").hidden)openDetail(G.open);}
 document.addEventListener("click",function(e){
  var el=e.target.closest("[data-a]");if(!el)return;var a=el.dataset.a,v=el.dataset.v;
  if(a==="pal")K.palette=v;else if(a==="mode")K.mode=v;else if(a==="ann")K.annotate=!K.annotate;else if(a==="tab")G.tab=v;
  else if(a==="pm"){var i=G.pickM.indexOf(v);if(i>-1)G.pickM.splice(i,1);else G.pickM.push(v);}
  else if(a==="pn"){var j=G.pickN.indexOf(v);if(j>-1)G.pickN.splice(j,1);else G.pickN.push(v);}
+ else if(OBX.handle&&OBX.handle(a,v,G)){}
  else if(a==="suite"){G.tab="suites";all();var t=$("#su-"+v);if(t)t.scrollIntoView();return;}
  else if(a==="open"){openDetail(v);return;}else if(a==="close"){closeDetail();return;}
  all();
