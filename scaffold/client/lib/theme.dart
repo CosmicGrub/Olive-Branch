@@ -27,7 +27,12 @@ import 'package:flutter/material.dart';
 /// Hue identity. See the design spec's own palette table for the intended
 /// feel of each — exact seed colors are this file's implementation detail,
 /// deliberately left unlocked by the spec.
-enum ThemePalette { classic, calmModern, warmGrounded, softPlayful, deepCozy, brightBold }
+///
+/// `olive` is the brand palette and, as of the overhaul (docs/superpowers/
+/// mockups/overhaul), the app's own default. It sits FIRST so the picker lists
+/// the brand look first; the wire value is the enum `.name`, so ordering never
+/// matters to the server (see toWire's own note on why names, not indexes).
+enum ThemePalette { olive, classic, calmModern, warmGrounded, softPlayful, deepCozy, brightBold }
 
 enum ThemeBrightness { light, dark }
 
@@ -93,7 +98,13 @@ class AppTheme {
 /// yet, a 404, a timeout, a malformed body) — the same "fail-crash instead
 /// of fail-closed" hazard 0003_session_context.sql's own header warns
 /// against, avoided here the same way.
-const defaultAppTheme = AppTheme(palette: ThemePalette.classic, brightness: ThemeBrightness.light);
+///
+/// OVERHAUL: the default is now the brand palette, `olive`/`light`. The
+/// fail-closed property this comment describes is unchanged — it is still the
+/// one palette every device renders the instant something above this layer
+/// goes wrong — only which palette that is. `classic` (the old stock deep
+/// purple) stays available as an explicit, real option.
+const defaultAppTheme = AppTheme(palette: ThemePalette.olive, brightness: ThemeBrightness.light);
 
 /// One real seed color per palette — see the design spec's own table for
 /// the intended feel; exact hex values are this file's call, not locked by
@@ -101,6 +112,9 @@ const defaultAppTheme = AppTheme(palette: ThemePalette.classic, brightness: Them
 /// this whole catalog replaces, kept as an explicit, real option rather than
 /// deleted outright.
 Color _seedFor(ThemePalette palette) => switch (palette) {
+      // The brand colour: a calm olive green, the same #4A6B4F the product's
+      // documents and mockups already wear.
+      ThemePalette.olive => const Color(0xFF4A6B4F),
       ThemePalette.classic => Colors.deepPurple,
       // Muted teal, soft and neutral — the calm, low-arousal option; also
       // this catalog's own suggested starting point (see defaultAppTheme's
@@ -111,7 +125,9 @@ Color _seedFor(ThemePalette palette) => switch (palette) {
       // copy tone throughout (§4.1's "sleeps," the ribbon/handover language).
       ThemePalette.warmGrounded => const Color(0xFFB5651D),
       // Coral/peach — the most overtly "kid app" option in the catalog.
-      ThemePalette.softPlayful => const Color(0xFFFF7F50),
+      // Deepened from the original #FF7F50 so text on the primary passes
+      // WCAG AA (theme_data_test.dart asserts it for every palette).
+      ThemePalette.softPlayful => const Color(0xFFE8683F),
       // Forest green — richer and darker than calmModern's teal, meant to
       // read as lived-in and evening-friendly rather than as a screen.
       ThemePalette.deepCozy => const Color(0xFF2E5339),
@@ -143,6 +159,10 @@ class ThemePaletteMeta {
 }
 
 const Map<ThemePalette, ThemePaletteMeta> themePaletteCatalogue = {
+  ThemePalette.olive: ThemePaletteMeta(
+      title: 'Olive',
+      blurb: 'The brand look — calm olive green. The default.',
+      icon: Icons.eco_outlined),
   ThemePalette.classic: ThemePaletteMeta(
       title: 'Classic',
       blurb: 'The original look — a reset, not a downgrade.',

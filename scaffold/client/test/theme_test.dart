@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/theme.dart';
 
 void main() {
-  group('theme catalog — 12 real palette x brightness ColorSchemes', () {
+  group('theme catalog — 14 real palette x brightness ColorSchemes', () {
     test('every palette has a catalogue entry with a title and blurb', () {
       for (final palette in ThemePalette.values) {
         final meta = themePaletteCatalogue[palette];
@@ -17,7 +17,7 @@ void main() {
       }
     });
 
-    test('all 12 palette x brightness ColorSchemes are pairwise distinct',
+    test('all 14 palette x brightness ColorSchemes are pairwise distinct',
         () {
       final schemes = <String, ColorScheme>{};
       for (final palette in ThemePalette.values) {
@@ -26,7 +26,7 @@ void main() {
           schemes['${palette.name}/${brightness.name}'] = colorSchemeFor(theme);
         }
       }
-      expect(schemes.length, 12);
+      expect(schemes.length, 14);
       final entries = schemes.entries.toList();
       for (var i = 0; i < entries.length; i++) {
         for (var j = i + 1; j < entries.length; j++) {
@@ -36,7 +36,7 @@ void main() {
               a.value.brightness != b.value.brightness;
           expect(distinct, isTrue,
               reason: '${a.key} and ${b.key} produced an indistinguishable ColorScheme — '
-                  'colorSchemeFor() is not really deriving 12 real schemes');
+                  'colorSchemeFor() is not really deriving 14 real schemes');
         }
       }
     });
@@ -87,8 +87,8 @@ void main() {
       expect(AppTheme.fromWire({'themePalette': 'calmModern'}), defaultAppTheme);
     });
 
-    test('defaultAppTheme is classic/light — the app\'s own former stock look', () {
-      expect(defaultAppTheme.palette, ThemePalette.classic);
+    test('defaultAppTheme is olive/light — the brand look, the overhaul new default', () {
+      expect(defaultAppTheme.palette, ThemePalette.olive);
       expect(defaultAppTheme.brightness, ThemeBrightness.light);
     });
 

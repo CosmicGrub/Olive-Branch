@@ -22,6 +22,8 @@
 // stitched into the two reachable halves of one app, entered through the
 // same entry gate a real family would see.
 import 'package:flutter/material.dart';
+import 'theme.dart';
+import 'theme_data.dart';
 import 'child_home.dart';
 import 'entry_gate.dart';
 import 'guardian_home.dart';
@@ -51,10 +53,7 @@ class OliveDemo extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (demo)',
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      useMaterial3: true,
-    ),
+    theme: buildThemeData(defaultAppTheme),
     home: const EntryGate(
       childDestination: KioskShell(
         verifyPin: _demoVerifyGuardianPin,

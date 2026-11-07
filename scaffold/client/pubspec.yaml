@@ -120,3 +120,14 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  fonts:
+    # Bundled, so the kiosk never depends on the network for type. Both are
+    # SIL OFL 1.1 (licence texts beside the files in assets/fonts).
+    - family: AtkinsonHyperlegible
+      fonts:
+        - asset: assets/fonts/AtkinsonHyperlegible-Regular.ttf
+        - asset: assets/fonts/AtkinsonHyperlegible-Bold.ttf
+          weight: 700
+    - family: BricolageGrotesque
+      fonts:
+        - asset: assets/fonts/BricolageGrotesque.ttf

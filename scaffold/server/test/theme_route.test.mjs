@@ -147,6 +147,18 @@ const body = (o) => JSON.stringify(o);
   check('B round trip', 'themeBrightness round-trips through the real route', after.body.theme?.themeBrightness, 'light');
 }
 
+// B2 · the overhaul's seventh palette, `olive`, is accepted by the real route
+// and round-trips (0034 widened the CHECK; routes.mjs widened the validator).
+{
+  const put = await hit('PUT', path(CHILD_A), dadTok, body({ themePalette: 'olive', themeBrightness: 'dark' }));
+  check('B2 olive', 'PUT olive/dark -> 200', put.status, 200);
+  const after = await hit('GET', path(CHILD_A), dadTok);
+  check('B2 olive', 'olive round-trips through the real route', after.body.theme?.themePalette, 'olive');
+  check('B2 olive', 'brightness round-trips alongside it', after.body.theme?.themeBrightness, 'dark');
+  // Put the row back to what section B left it as, so C's untouched-row check stays honest.
+  await hit('PUT', path(CHILD_A), dadTok, body({ themePalette: 'calmModern', themeBrightness: 'light' }));
+}
+
 // C · invalidThemeBody() — the real gap: nothing anywhere exercised this
 // function through the actual route before this file. A specific 400
 // reason, not a bare Postgres CHECK-constraint 500, and no write happens.
