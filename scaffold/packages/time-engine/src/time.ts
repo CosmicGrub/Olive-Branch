@@ -41,6 +41,22 @@ export function resolveZone(
  *
  * Both are silent-corruption bugs if the library chooses for you. We choose,
  * and we report which pathology fired so the caller can log it.
+ *
+ * DELIBERATELY NOT `DateTime.fromISO(iso, { zone })`. Real bug, found by a
+ * golden fixture that went red the day the calendar passed 1 Nov 2026: Luxon
+ * seeds its guess for a local time from the zone's offset at the CURRENT
+ * moment (Settings.now), and for an ambiguous time that guess decides which of
+ * the two instants it returns. While "now" was still EDT it returned the first
+ * occurrence, which is what the old code assumed; once "now" was EST it
+ * returned the second — so `'first'` silently returned the wrong instant and
+ * the ambiguity test below it saw nothing wrong. A function that exists to
+ * refuse silent choices gave a different answer depending on the date it ran.
+ *
+ * So the instants are derived here, from the zone's offset table alone, with no
+ * reference to the clock: read the wall time as if it were UTC, collect the
+ * offsets in force a day either side (a zone changes offset at most once in
+ * that span), and keep each candidate whose offset really is in force at the
+ * instant it implies. Two survivors = the repeated hour; none = the gap.
  */
 export function resolveWallClock(
   localDate: string,                 // 'YYYY-MM-DD'
@@ -49,29 +65,35 @@ export function resolveWallClock(
   onAmbiguous: Ambiguity = 'first'
 ): { instant: DateTime; anomaly: 'none' | 'nonexistent' | 'ambiguous' } {
   const iso = `${localDate}T${localTime}`;
-  const dt = DateTime.fromISO(iso, { zone });
-
-  if (!dt.isValid) throw new Error(`unparsable local time: ${iso} @ ${zone}`);
-
-  // Luxon does NOT invalidate a nonexistent local time — it silently maps it
-  // forward across the gap. Relying on `isValid` here means the anomaly is
-  // never detected and never logged. Round-trip instead: if formatting the
-  // resulting instant back to local wall clock does not reproduce what we
-  // asked for, the requested time did not exist.
-  if (dt.toFormat('HH:mm') !== localTime) {
-    return { instant: dt, anomaly: 'nonexistent' };
+  const wall = DateTime.fromISO(iso, { zone: 'utc' });   // wall clock read as UTC
+  if (!wall.isValid || !DateTime.fromMillis(0, { zone }).isValid) {
+    throw new Error(`unparsable local time: ${iso} @ ${zone}`);
   }
 
-  // During the repeated hour, adding 1h to the INSTANT leaves the wall clock
-  // unchanged because the offset absorbs it. That is a reliable ambiguity test.
-  const later = dt.plus({ hours: 1 });
-  const ambiguous =
-    later.toFormat('yyyy-MM-dd HH:mm') === dt.toFormat('yyyy-MM-dd HH:mm');
+  const DAY = 86_400_000;
+  const wallMs = wall.toMillis();
+  const offsetAt = (ts: number) => DateTime.fromMillis(ts, { zone }).offset;   // minutes east of UTC
+  const before = offsetAt(wallMs - DAY);
+  const after = offsetAt(wallMs + DAY);
 
-  if (ambiguous) {
-    return { instant: onAmbiguous === 'last' ? later : dt, anomaly: 'ambiguous' };
+  // An instant is a real reading of this wall time only if the zone's offset AT
+  // that instant is the very offset we subtracted to get there.
+  const instants = [...new Set([before, after])]
+    .map(o => wallMs - o * 60_000)
+    .filter(ts => offsetAt(ts) === (wallMs - ts) / 60_000)
+    .sort((a, b) => a - b);
+
+  const at = (ts: number) => DateTime.fromMillis(ts, { zone });
+
+  if (instants.length === 0) {
+    // The gap. Shift FORWARD across it by reading the wall time with the offset
+    // that was in force just before the transition — 02:30 EST is 03:30 EDT.
+    return { instant: at(wallMs - before * 60_000), anomaly: 'nonexistent' };
   }
-  return { instant: dt, anomaly: 'none' };
+  if (instants.length === 2) {
+    return { instant: at(onAmbiguous === 'last' ? instants[1] : instants[0]), anomaly: 'ambiguous' };
+  }
+  return { instant: at(instants[0]), anomaly: 'none' };
 }
 
 /** Offset in hours between two zones AT A GIVEN INSTANT. Never cached. */
