@@ -537,7 +537,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 7807,
+  "assertions": 7956,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -3299,6 +3299,27 @@ budget: function(){ var v=T.budgetView(), st=T.streamView();
   + real('drop:restore asymmetry', '1:'+st.ratio)
   + real('and there is no connection meter', st.meter)); },
 
+coview: function(){ var v=T.coViewView();
+  return P_engine('Read together, and watch together',
+  '<p><strong>Only small control messages cross the network — never pixels.</strong> '
+  + 'The guardian\u2019s device leads; the child\u2019s device plays the same content and '
+  + 'nudges itself toward where the leader should be. That is what lets a bedtime story or a '
+  + 'show run for an hour without sharing a screen, and without the sound, DRM and '
+  + 'lock-screen limits that screen sharing has on Android.</p>'
+  + '<p><strong>The child can only ever end their own view.</strong> A child cannot lead, '
+  + 'cannot send a tick, and cannot forge a guardian\u2019s stop. The daily allowance starts at '
+  + 'two hours; a guardian can lower it freely, and a raise is shown to the other guardian.</p>'
+  + real('drift zones (seconds / fraction)', v.zones)
+  + real('what the follower does for 0.05, 0.4, -0.4 and 3 seconds of error', v.corrections)
+  + real('untrusted wire messages', v.parsed)
+  + real('can a child lead? can a guardian?', v.childCanLead + ' / ' + v.guardianCanLead)
+  + real('can a child forge a guardian stop?', v.childCanForgeGuardianStop)
+  + real('a guardian raises 120 to 180', v.raise)
+  + real('a guardian lowers 120 to 90', v.lower)
+  + real('a child tries to change the allowance', v.childChange)
+  + real('what the child sees as the allowance is used (0, 10 min, 110 min, 120 min)', v.budget)
+  + real('channel choice: in a call / no call / nothing available', v.transports)); },
+
 motion: function(){ var v=T.motionView();
   return P_engine('Motion',
   '<p>Everything on her side was static. A five-year-old reads a static interface '
@@ -4026,7 +4047,7 @@ var SCREENS = [
     ['observers','Observers'],['access','Accessibility'],
   ]],
   ['Engine room', [
-    ['engineroom','All engines, live'],['ninemore','Nine more'],['devices','Device matrix'],['theten','Ten from the audit'],['callfns','Call functions'],['pane','The pane'],['motion','Motion'],['budget','Stream & budget'],['signal','Come-back signal'],['a11ymatrix','A11y matrix'],
+    ['engineroom','All engines, live'],['ninemore','Nine more'],['devices','Device matrix'],['theten','Ten from the audit'],['callfns','Call functions'],['pane','The pane'],['motion','Motion'],['budget','Stream & budget'],['signal','Come-back signal'],['a11ymatrix','A11y matrix'],['coview','Read together'],
   ]],
   ['Show me', [
     ['asks','Dad asked you'],['hisworld','His world'],['gallery','The gallery'],

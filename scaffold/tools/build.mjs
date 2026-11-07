@@ -90,6 +90,7 @@ const ENTRIES = [
   ["--format=esm","--platform=node","packages/auth/src/attestation.ts","--outfile=packages/auth/src/attestation.mjs"],
   ["--format=esm","--platform=node","packages/jokes/src/jokes.ts","--outfile=packages/jokes/src/jokes.mjs"],
   ["--format=esm","--platform=node","packages/game-sync/src/table.ts","--outfile=packages/game-sync/src/table.mjs"],
+  ["--format=esm","--platform=node","packages/co-view/src/coview.ts","--outfile=packages/co-view/src/coview.mjs"],
 ];
 
 function toOptions(args) {
