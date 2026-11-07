@@ -282,8 +282,15 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
       _submitting = true;
       _errorMessage = null;
     });
-    final api = await _mintApi();
+    // The mint is INSIDE the try, not before it. Real bug, found by audit: it
+    // used to sit above, so a failure of that very first request (no route to
+    // host, the dev-login timeout) escaped before the `finally` that resets
+    // _submitting — stranding the Verify button on its spinner forever with
+    // no message. `api` is nullable for the same reason: the finally must
+    // still run when the mint itself is what failed.
+    OliveApi? api;
     try {
+      api = await _mintApi();
       await api.verifyControlsPin(pin);
       final overridesJson = await api.fetchActivityOverrides(widget.childId);
       if (!mounted) return;
@@ -298,7 +305,7 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
       if (!mounted) return;
       setState(() => _errorMessage = "Couldn't reach the server — try again.");
     } finally {
-      if (widget.httpClient == null) api.close();
+      if (widget.httpClient == null) api?.close();
       if (mounted) setState(() => _submitting = false);
     }
   }
@@ -310,8 +317,11 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
   /// live_game_picker.dart's own `_persistFavorites` already takes for
   /// favouriting.
   Future<void> _refresh() async {
-    final api = await _mintApi();
+    // Mint inside the try — see _verifyPin. Best-effort means a failed mint
+    // is swallowed like any other failure here, not an unhandled async error.
+    OliveApi? api;
     try {
+      api = await _mintApi();
       final overridesJson = await api.fetchActivityOverrides(widget.childId);
       if (!mounted) return;
       setState(() => _overrides = decodeActivityOverrides(overridesJson));
@@ -319,7 +329,7 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
       // Best-effort — the local, possibly-stale state stays as it is; the
       // snack bar the caller already showed is the honest signal here.
     } finally {
-      if (widget.httpClient == null) api.close();
+      if (widget.httpClient == null) api?.close();
     }
   }
 
@@ -330,8 +340,14 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
     bool? reveal,
     bool? unreveal,
   }) async {
-    final api = await _mintApi();
+    // Mint inside the try — see _verifyPin. Real bug, found by audit: with the
+    // mint above the try, a failed login on a toggle or stepper tap threw an
+    // unhandled async error AFTER the optimistic local change had already
+    // been applied — so the control looked saved, nothing was, and no
+    // snack bar said so.
+    OliveApi? api;
     try {
+      api = await _mintApi();
       await api.setActivityOverride(widget.childId, key,
           visible: visible, minAgeOverride: minAgeOverride, reveal: reveal, unreveal: unreveal);
     } catch (_) {
@@ -342,7 +358,7 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
       await _refresh();
       return;
     } finally {
-      if (widget.httpClient == null) api.close();
+      if (widget.httpClient == null) api?.close();
     }
   }
 

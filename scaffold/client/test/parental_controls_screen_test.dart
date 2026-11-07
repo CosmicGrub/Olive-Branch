@@ -332,6 +332,58 @@ void main() {
     expect(find.textContaining("Couldn't reach the server"), findsOneWidget);
   });
 
+  // Real bug, found by audit: _verifyPin set _submitting = true, THEN awaited
+  // the dev-login mint OUTSIDE its try block. If that very first request
+  // failed (no route to host, the 6s timeout), the exception escaped before
+  // the `finally` that resets _submitting — so the Verify button stayed
+  // disabled on its spinner forever, with no message, and the guardian could
+  // never retry without leaving the screen. The test above only exercises a
+  // failure AFTER login succeeded, which is the one path that was guarded.
+  testWidgets('a network failure on the very first (login) request never strands the Verify button',
+      (tester) async {
+    final client = MockClient((req) async => throw Exception('no route to host'));
+    await pump(tester, client: client);
+    await verifyPin(tester);
+    expect(find.textContaining("Couldn't reach the server"), findsOneWidget,
+        reason: 'the guardian must be told, not left staring at a spinner');
+    expect(tester.widget<FilledButton>(find.byKey(const Key('parentalControlsVerifyButton'))).onPressed,
+        isNotNull, reason: 'Verify must be tappable again so the guardian can retry');
+    expect(tester.takeException(), isNull);
+  });
+
+  // Same defect, second site (_persist): a toggle whose login request fails
+  // used to throw an unhandled async error after the optimistic change was
+  // already applied — the switch looked saved, nothing was, and no snack bar
+  // said so. Only the SECOND login (the toggle's) fails; the first (the PIN
+  // step's) succeeds so the controls are reachable.
+  testWidgets('a failed login on a toggle tells the guardian instead of failing silently',
+      (tester) async {
+    var logins = 0;
+    final client = MockClient((req) async {
+      if (req.url.path == '/v1/auth/dev-login') {
+        if (++logins > 1) throw Exception('no route to host');
+        return http.Response(jsonEncode({'token': 'dev-token'}), 200);
+      }
+      if (req.url.path == '/v1/me/verify-controls-pin') {
+        return http.Response(jsonEncode({'ok': true}), 200);
+      }
+      if (req.url.path == '/v1/children/child-1/activity-overrides' && req.method == 'GET') {
+        return http.Response(jsonEncode({'overrides': <Object>[]}), 200);
+      }
+      return http.Response('{}', 404);
+    });
+    await pump(tester, client: client);
+    await verifyPin(tester);
+
+    await tester.tap(find.byKey(const Key('visible_tile:messages')));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Couldn't save that change — try again."), findsOneWidget,
+        reason: 'a save that never happened must say so');
+    expect(tester.takeException(), isNull,
+        reason: 'a failed mint must be handled, not escape as an unhandled async error');
+  });
+
   // ==========================================================================
   // C · IA rework — sub-grouping. Both tabs' per-category ExpansionTiles now
   // carry a second grouping level for Jokes (5 sub-groups) and Games (2);
