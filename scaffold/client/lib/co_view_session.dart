@@ -1,3 +1,4 @@
+// No longer UNVERIFIED — verified by CI (co_view_session_test.dart).
 // OLIVE BRANCH — co-viewing sessions: the leader (a guardian) and the follower
 // (the child's device), as plain ChangeNotifiers over an abstract transport.
 // Design: docs/superpowers/specs/2026-11-07-co-viewing-design.md.

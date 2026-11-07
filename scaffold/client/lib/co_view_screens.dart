@@ -1,3 +1,4 @@
+// No longer UNVERIFIED — verified by CI (co_view_screens_test.dart).
 // OLIVE BRANCH — "Read together", the screens. Design: docs/superpowers/specs/
 // 2026-11-07-co-viewing-design.md and the mockups beside it. Three surfaces:
 //   * the CHILD's view: an invitation (one big yes, one quiet no), the story,

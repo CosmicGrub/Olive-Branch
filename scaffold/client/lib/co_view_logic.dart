@@ -1,4 +1,5 @@
 // OLIVE BRANCH — co-viewing ("Read together" / "Watch together"), pure logic.
+// No longer UNVERIFIED — verified by CI against the TypeScript engine's golden vectors.
 // A 1:1 semantic port of packages/co-view/src/coview.ts, kept close to the TS
 // original (same names, same shapes, same ordering) so the two stay auditable
 // side by side — the same discipline palette_logic.dart applies to palette.ts.

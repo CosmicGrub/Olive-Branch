@@ -1,3 +1,4 @@
+// No longer UNVERIFIED — verified by CI (theme_data_test.dart).
 // OLIVE BRANCH — the refined ThemeData. The overhaul's design foundation
 // (docs/superpowers/mockups/overhaul): one place that turns an [AppTheme]
 // (palette x brightness, theme.dart) into a complete, premium Material theme,
