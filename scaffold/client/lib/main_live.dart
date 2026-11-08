@@ -71,6 +71,7 @@ import 'local_family.dart';
 import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_repositories.dart';
 import 'local_services.dart';
+import 'my_people_entry.dart' show KidLabelsHost;
 import 'onboarding_draft.dart';
 import 'onboarding_flow.dart';
 import 'pairing_redeem_screen.dart';
@@ -707,7 +708,8 @@ class _OliveLiveState extends State<OliveLive> {
           duration: const Duration(milliseconds: 380),
           curve: Curves.easeInOut,
           // Accessibility settings and read-aloud (access_shell.dart).
-          child: withAccess(child!),
+          // The label scope: every child-facing screen says what SHE calls her grown-ups.
+          child: KidLabelsHost(childId: widget.childId, child: withAccess(child!)),
         ),
         home: KioskShell(
           verifyPin: (pin) => _verifyGuardianPin(pin, childId: widget.childId),
