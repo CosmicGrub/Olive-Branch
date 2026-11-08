@@ -2003,6 +2003,166 @@ superseded PR runs, npm and pub caches, a strict `npm ci`, and an `image` job
 that builds the Dockerfile and SIGTERMs the running container on every PR.
 `tools/verify.sh` runs a strict `npm ci` instead of swallowing install failure.
 
+### 7.12 Security round 2 — as shipped (audit `fix/security-round2`)
+
+A second adversarial audit of the server (findings S-B1 to S-B20) was verified
+against the code finding by finding. This section is what actually shipped; what
+did **not** is listed at the end, and none of it touches a prohibition in §2.1
+(P1–P11 are unchanged; several of these changes enforce P6, P7 and P8 in the
+database where they were enforced only in `can()` and the handlers before).
+Everything is offline-compatible: nothing here sends a notification (push stays
+parked) or needs a network call. Enforced by `server/test/security_round2.test.mjs`,
+`server/test/security_round2_route.test.mjs` and `packages/db/test/edge_rls.test.mjs`,
+all registered in `tools/verify.sh`.
+
+**Pairing codes (S-B1).** A typed 6-digit pairing code matches no row on a miss,
+so there is nothing to lock per code. The unauthenticated `POST
+/v1/device-pairing/redeem` and the invite routes now sit under the same per-IP
+limiter as `/v1/auth/*` (`server/index.mjs`), and `redeem` also spends a
+**global per-minute miss budget** (`MissBudget`, `PAIRING_MISS_BUDGET_PER_MIN`,
+default 20): once spent, every redeem (even with the real code) is `429
+pairing_rate_limited` until the minute rolls over. At 20 misses/min a live code
+survives a 10-minute attack with about 99.98 % probability; the price is that
+an attacker can make a real pairing wait up to a minute (visible, and no worse
+than a per-IP flood). *Chosen over 8-digit codes* because the client sends
+whatever the user typed but `PairingRedeemScreen` has `maxLength: 6`, the column
+and the printed QR/readout are 6 digits, and a global budget bounds the attack
+whatever the code length; moving to 8 digits remains an option for a later
+client release.
+
+**Step-up and the security trail (S-B3, S-B20).** Four actions now need the
+caller's own guardian PIN (`requireOwnPin`): adding a passkey (PIN in the
+`verify` body, waived only for the very first credential of an account that has
+neither a PIN nor a passkey, i.e. invite bootstrap), creating an invite (`pin`
+in the body), and both exports (`x-guardian-pin` header: a `GET` has no body and
+a secret never goes in a URL). Passkey registration also refuses an
+authenticator that did not verify the user (`authData` UV flag, `400
+user_verification_required`) and an account holds at most 10 passkeys (`409
+passkey_limit`). New routes: `GET /v1/me/passkeys` (id, created, sign count;
+never the credential id or key), `DELETE /v1/me/passkeys/:passkeyId` (PIN header;
+`409 last_passkey` — no self-lockout), and `GET /v1/children/:childId/security-events`.
+`security_event` (migration 0039) is an append-only table, one row per child the
+actor guards, with a fixed server-chosen summary (never request text) for:
+`passkey_added`, `passkey_removed`, `pin_changed`, `device_paired`
+(written in the redeem transaction itself), `export_taken` (raw/certified) and
+`invite_created`. Every live guardian of the child reads the feed (`action:
+'settings'` plus RLS `actor_has_edge`), so the *other* parent sees what the first
+one did; `?limit` (1–200) and `?before=<seq>` page it newest-first. `notified_at`
+is the hook a future notifier would stamp; nothing sends anything today.
+Only `system` writes the table and a trigger refuses every `UPDATE`/`DELETE`
+except stamping `notified_at`. `pin_lockout` is a reserved kind: lockout events
+ship with the PIN work in the follow-up list.
+
+**Cross-family isolation in the database (S-B4).** Migration 0040. The
+family-private tables (`message_log`, `expense`, `export_record`,
+`medical_record`, `medical_record_history`, `medication`, `medication_dose`,
+`exchange_bag_item`, `exchange_running_late_log`, `exchange_arrival_event`,
+`care_note`, and `custody_order`'s adult branch) used to ask only "is the caller
+not a child?". They now require `actor_is_adult_with_edge(child_id)` (a live,
+unrestricted edge, the predicate `media_artifact` already used) or the `system`
+role. `child` and `guardianship` have `ENABLE` + `FORCE` RLS: a guardian reads her
+own edges and every edge of a child she currently guards (so a co-guardian and a
+former guardian of the same family stay readable), a child reads her own row and
+edges, only `system` writes. `app_user_read_all` (`USING (true)`: every session
+saw every user's email and phone) is replaced by "yourself, or anyone holding an
+edge you can see", and `app_user_insert_open` by `system`-only. A policy on
+`guardianship` cannot subquery `guardianship`, so `actor_child_ids()` carries a
+function-level `SET app.edge_lookup = 'on'` that the family-read branch
+short-circuits on. `tools/healthcheck.mjs` and `tools/health-alert.mjs` now read
+`health_check` as `system` (they used to rely on the old "any non-child role"
+default and would have gone blind); the backup role is `BYPASSRLS` and
+unaffected. `packages/db/test/rls_coverage.test.mjs` now fails for any public
+table without `FORCE` RLS unless it is in an explicit, reasoned allow-list (nine
+tables today: bookkeeping and the child-keyed `child_tz_interval`, `day_part`,
+`contact_ladder`, `sibling_link`, which are follow-up).
+
+**IDOR (S-B5).** `recordDose` verified nothing about the medication id in the
+path: another family's id logged a dose against it, and on conflict returned that
+family's display name. It now requires the medication to belong to the path child
+(`404 medication_not_found`, indistinguishable from "no such medication"), the
+conflict lookup is child-scoped, and `medication_dose (medication_id, child_id)`
+has a composite FK to `medication (id, child_id)` (migration 0039; added `NOT
+VALID` and validated best-effort so an old mismatching row cannot block the
+migration). Every `:xId` path parameter was audited; the route test carries the
+audit table and fails if a new one is registered without an entry.
+
+**Resource limits (S-B6).** `decodeImage` reads the PNG IHDR / JPEG SOF header
+first and refuses more than 20 megapixels (`image_too_large`; a 249 KB file
+declaring 8000×8000 took the server to about 830 MB), on homework capture
+(`413`) and on image uploads. A per-principal in-flight cap (`InFlightLimiter`,
+`UPLOAD_MAX_IN_FLIGHT_PER_PRINCIPAL`, default 2) covers media upload and homework
+capture (`429 too_many_uploads_in_flight`, refused at once, never queued), and
+`Api` takes a `writeLimiter` (`WRITE_RATE_CAPACITY`/`WRITE_RATE_PER_MIN`, default
+burst 60 and 60/min per principal) applied to every authenticated non-`GET`
+(`429 rate_limited`).
+
+**Uploads (S-B8, S-B9).** Migration 0041 adds `media_upload`, the server's ledger
+of every blob it accepted (key, child, uploader, size, MIME). `POST .../media`
+sniffs the magic bytes (JPEG, PNG, WebM, MP4, M4A) and refuses anything else
+(`415`), records the MIME the bytes prove, reserves the ledger row under a
+per-child advisory lock **before** writing the blob and enforces a per-child byte
+quota (`MEDIA_CHILD_QUOTA_BYTES`, default 2 GiB; `413 media_quota_exceeded`).
+`POST .../messages` accepts a `storageKey` only if it is
+`children/<childId>/messages/<uuid>`, is in the ledger for that child, was
+uploaded by the same principal, still exists and is not already attached
+(`400 bad_storage_key` / `storage_key_unknown`, `403 storage_key_not_yours`, `409
+storage_key_in_use`). Signed `/media/` URLs serve the proven MIME (never one
+outside the servable set). The new scheduler job `sweep-orphan-media` adopts
+untracked legacy blobs (a 24 h clock starts) and deletes ledger blobs older than
+24 h that no `media_artifact` references, blob first and then the row.
+Uploads made before 0041 have no ledger row, so a message citing one is refused:
+the client uploads and posts in one sitting.
+
+**Boot secrets and signed URLs (S-B13).** `server/secrets.mjs`: outside
+`NODE_ENV=development|test`, `SESSION_SECRET` and `MEDIA_SIGNING_SECRET` must be
+valid hex of at least 32 bytes and not a repeated-block placeholder, or the
+process exits 2. `Buffer.from('not-hex', 'hex')` is a zero-length key; a
+`MEDIA_SIGNING_SECRET` that is set but malformed now stops `routes.mjs` from
+loading in every environment. Signed media URLs use HMAC-SHA256
+(`createHmac`) instead of `sha256(secret ‖ key ‖ exp)`. `docker-compose.dev.yml`
+sets `NODE_ENV=development`.
+
+**Unauthenticated surface (S-B14, S-B15).** `Api` has a `strictIds` option
+(on in `server/index.mjs`): a malformed uuid for any `:childId`, `:inviteId`,
+`:codeId`, `:deviceId`, `:sessionId`, `:messageId`, `:expenseId`,
+`:medicationId`, `:letterId`, `:artifactId` or `:passkeyId` is `400 bad_path`
+before auth or any query (it used to be a Postgres cast `500`); it is opt-in
+because the older fake-pool route tests use ids like `dad-1`. The login
+identifier bucket is keyed on (identifier, caller IP), so a third party can no
+longer hold a co-parent's bucket at zero. The WebAuthn login `verify` answers a
+deactivated account exactly like an unknown one or a spent challenge (`401
+challenge_expired`), no longer `403 account_deactivated`. *Not done:* exempting
+requests that present a device credential; with the IP in the key the attack it
+would have solved no longer exists, and an exemption would add an unauthenticated
+database lookup to a throttled path.
+
+**Tokens (S-B16, partial).** Session tokens carry a `kid`; `SESSION_SECRET_PREVIOUS`
+is a verify-only second key, so rotation does not sign everyone out (deploy with
+both, wait one TTL, drop the old). `readSession` accepts only the nine real
+roles (`bad_role` for a signed `system` or anything else). Tokens issued before
+the `kid` existed still verify. *Not done:* `jti` revocation and the 90-day idle
+expiry for device credentials.
+
+**Not shipped (follow-up).** S-B2 (a guardian can pair a child-role device: needs
+a design decision on binding the child credential to the child's own device),
+S-B7 (the account-deletion recovery window and pseudonymising purge), S-B10
+(an Ed25519 signature and timestamp on the certified export), S-B11 (a DML-only
+`app_runtime` login for the server; `app_owner` still both migrates and serves,
+so FORCE RLS does not yet bind the server's own connection against a compromised
+handler), S-B12 (PIN per-device backoff, six-digit minimum for new PINs with a
+blocklist, `PIN_PEPPER`, and scoping the kiosk attempt counter to the caller),
+the rest of S-B16, S-B17 to S-B20 (`RP_ID` is still the placeholder
+`olivebranch.local`; backup encryption off by default; privacy-law gaps; the
+two-guardian consent for roles that read the P8 log), and edge policies for the
+five child-keyed scheduling tables in the RLS allow-list. A residual in S-B3:
+`POST /v1/me/pin` still lets an account that has no PIN set its first one without
+proof, so a stolen session on an account that holds a passkey but no PIN can set a
+PIN and then add a passkey; closing it needs a fresh user-verified passkey assertion
+before the first PIN (follow-up). A client change is
+needed before the exports and invite creation work from the app: they now require
+the PIN (header or body), and `client/lib/api_client.dart` gained only the three
+new path constants.
+
 ---
 
 ## §8 UI architecture
