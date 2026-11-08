@@ -7631,14 +7631,14 @@ refusals in words, no network or launcher import in any of these files), `compas
 
 ---
 
-## §8.22 On-device performance pass — measured first, fixed only where shown
+## §8.23 On-device performance pass — measured first, fixed only where shown
 
 Offline and on this device only (owner direction): no server, no network. Written after an audit
 whose candidates were each checked in code before anything changed. No product behaviour or copy
 changes. Numbers are from the Dart VM test harness and the real Gradle release build on the
 development machine, not from the Fold5/Tab S9 FE; they show cost removed, not device frame times.
 
-### 8.22.1 Fixed, with the measurement
+### 8.23.1 Fixed, with the measurement
 
 | What | Before | After |
 |---|---|---|
@@ -7657,7 +7657,7 @@ development machine, not from the Fold5/Tab S9 FE; they show cost removed, not d
 - **Journal list** is a `SliverList.builder`. The old comment (sliver lists drop below-the-fold
   widgets from the tree) is the point for a list that can hold thousands of rows; the tests scroll
   to what they need. Tiles keep their old shape (`Align`, loose width).
-- **`put`** serialises once. The sealed figure is dominated by pure-Dart AES-GCM (see 8.22.2).
+- **`put`** serialises once. The sealed figure is dominated by pure-Dart AES-GCM (see 8.23.2).
 - **Room photo** (`RoomPhoto`) decodes once per photo; bad base64 shows the picture glyph.
 - **`LocalDiscovery`** keeps and cancels its event subscription.
 - **Release signing**: `assembleRelease`/`bundleRelease`/`packageRelease` fail with "Release build
@@ -7670,7 +7670,7 @@ development machine, not from the Fold5/Tab S9 FE; they show cost removed, not d
   the manifest attribute, and `third_party/jitsi_meet_flutter_sdk_patched/` (480 KB; referenced by
   nothing since the LiveKit migration). In git history if the kiosk-lock verification needs it.
 
-### 8.22.2 Checked and not changed
+### 8.23.2 Checked and not changed
 
 - **Startup reads every namespace** — no: namespaces are opened on demand and load on first use
   (`perf_local_store_test.dart` holds that). Opening ten areas reads nothing.

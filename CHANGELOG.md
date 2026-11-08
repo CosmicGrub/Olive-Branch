@@ -65,9 +65,9 @@ built.** No version bump and no new MARKUP screen row; MARKUP/DEMO totals update
 
 ## [Unreleased] — On-device performance pass (offline, evidence first)
 
-Described as shipped in MASTERFILE §8.22. **Owner direction: offline, on-device only** — no
+Described as shipped in MASTERFILE §8.23. **Owner direction: offline, on-device only** — no
 server route, no migration, no network call, no TypeScript. Every item below was measured or
-shown in code first (numbers in MASTERFILE §8.22 and the pull request); candidates that did not
+shown in code first (numbers in MASTERFILE §8.23 and the pull request); candidates that did not
 hold up are listed there as findings, not changed. No product behaviour or copy changes. No
 version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
 
