@@ -12,12 +12,27 @@
 // The newest specimen in each collection is tagged "new!", never dated or
 // timestamped — the same posture as the sleeps-not-hours rule elsewhere in
 // this app: a child's sense of "when" is relative, not a clock reading.
+//
+// KEPT ON THIS DEVICE. What she adds is stored by CollectionsRepository
+// (LocalStore area `collections`) and survives a restart. The example
+// specimens (Stegosaurus, T. Rex, ...) are DEMO SEEDS: shown only by the
+// offline preview build until she saves a collection of her own; a live build
+// starts with the two empty collections and no invented specimens.
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'local_repositories.dart';
+import 'local_services.dart';
 import 'showcase_logic.dart';
 
 class CollectionScreen extends StatefulWidget {
-  const CollectionScreen({super.key, this.childName = 'Ivy'});
+  const CollectionScreen({super.key, this.childName = 'Ivy', this.repository, this.seedDemoItems});
   final String childName;
+
+  /// Null means the app's on-device collections for this device's child.
+  final CollectionsRepository? repository;
+
+  /// Null follows [LocalServices.demoSeeds].
+  final bool? seedDemoItems;
 
   @override
   State<CollectionScreen> createState() => _CollectionScreenState();
@@ -27,26 +42,45 @@ class _CollectionScreenState extends State<CollectionScreen> {
   late DateTime _now;
   static const _interestLabels = <String, String>{'dino': 'Dinosaurs', 'rocks': 'Rocks'};
   late List<Collection> _collections;
-  int _nextEntryId = 100;
+  late final CollectionsRepository _repo =
+      widget.repository ?? CollectionsRepository(LocalServices.current.area('collections'));
 
   @override
   void initState() {
     super.initState();
     _now = DateTime.now();
-    _collections = [
-      Collection(interestId: 'dino', entries: [
-        CollectionEntry(id: 'e1', interestId: 'dino', name: 'Stegosaurus',
-          shownAt: _now.subtract(const Duration(days: 30))),
-        CollectionEntry(id: 'e2', interestId: 'dino', name: 'Triceratops',
-          shownAt: _now.subtract(const Duration(days: 12))),
-        CollectionEntry(id: 'e3', interestId: 'dino', name: 'T. Rex',
-          shownAt: _now.subtract(const Duration(days: 2))),
-      ]),
-      Collection(interestId: 'rocks', entries: [
-        CollectionEntry(id: 'e4', interestId: 'rocks', name: 'The sparkly one',
-          shownAt: _now.subtract(const Duration(days: 6))),
-      ]),
-    ];
+    final bool seed = widget.seedDemoItems ?? LocalServices.current.demoSeeds;
+    _collections = seed
+        ? [
+            Collection(interestId: 'dino', entries: [
+              CollectionEntry(id: 'e1', interestId: 'dino', name: 'Stegosaurus',
+                shownAt: _now.subtract(const Duration(days: 30))),
+              CollectionEntry(id: 'e2', interestId: 'dino', name: 'Triceratops',
+                shownAt: _now.subtract(const Duration(days: 12))),
+              CollectionEntry(id: 'e3', interestId: 'dino', name: 'T. Rex',
+                shownAt: _now.subtract(const Duration(days: 2))),
+            ]),
+            Collection(interestId: 'rocks', entries: [
+              CollectionEntry(id: 'e4', interestId: 'rocks', name: 'The sparkly one',
+                shownAt: _now.subtract(const Duration(days: 6))),
+            ]),
+          ]
+        : [
+            const Collection(interestId: 'dino', entries: []),
+            const Collection(interestId: 'rocks', entries: []),
+          ];
+    unawaited(_hydrate());
+  }
+
+  /// What she kept on this device replaces the starting collections.
+  Future<void> _hydrate() async {
+    try {
+      final stored = await _repo.load();
+      if (!mounted || stored == null) return;
+      setState(() => _collections = stored);
+    } catch (_) {
+      // Unreadable file: quarantined by the store; keep the starting state.
+    }
   }
 
   List<Collection> get _byRecency {
@@ -58,8 +92,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 
   void _addEntry(Collection c, String name, String? note) {
+    final stamp = DateTime.now();
     final entry = CollectionEntry(
-      id: 'e${_nextEntryId++}', interestId: c.interestId, name: name, shownAt: DateTime.now(), note: note);
+      id: 'e${stamp.microsecondsSinceEpoch}', interestId: c.interestId, name: name, shownAt: stamp, note: note);
     final result = addToCollection(c, entry);
     if (!result.ok) {
       // Warm, not an error — she didn't do anything wrong by showing a
@@ -75,6 +110,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
           existing.interestId == c.interestId ? result.collection! : existing,
       ];
     });
+    unawaited(() async {
+      try {
+        await _repo.save(_collections);
+      } catch (_) {
+        // Leaves the entry on screen for this visit.
+      }
+    }());
   }
 
   void _openAddSheet(Collection c, String label) {

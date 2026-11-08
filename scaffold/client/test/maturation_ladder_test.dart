@@ -142,9 +142,15 @@ void main() {
     Future<void> pump(WidgetTester tester, {int age = 12}) async {
       await tester.binding.setSurfaceSize(const Size(400, 4000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
+      // These tests are about the ladder's own tiles, so the proactive reveal
+      // is treated as already seen (it is exercised in its own group below).
+      // The reveal and the banners now wait for what the device remembers to
+      // be read (the ladder is durable), so one extra pump lets that settle.
+      childSeenRungReveals.addAll(Grant.values);
       await tester.pumpWidget(wrap(MaturationLadderScreen(
         childName: 'Ivy', childAgeYears: age, viewer: LadderViewer.child,
         now: DateTime(2026, 1, 1))));
+      await tester.pump();
     }
 
     testWidgets('renders the child by her own name, not an id', (tester) async {
@@ -232,6 +238,8 @@ void main() {
       await tester.pumpWidget(wrap(MaturationLadderScreen(
         childName: 'Ivy', childAgeYears: age, viewer: LadderViewer.guardian,
         now: DateTime(2026, 1, 1))));
+      // The banner waits for what the device remembers to be read (durable ladder).
+      await tester.pump();
     }
 
     testWidgets('a reached rung offers no move-later control', (tester) async {

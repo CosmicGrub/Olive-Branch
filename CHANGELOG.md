@@ -86,6 +86,89 @@ new MARKUP screen row and no version bump; described as shipped in MASTERFILE
 - Server persistence, cross-device sync and telling the other guardian about a
   lengthened play window: parked as online work.
 
+---
+
+## [Unreleased] — On-device data: the offline-first foundation (audit C-06; owner direction 2026-11-07)
+
+Client only; no server change, no new online feature, no new numbered screen (so
+no version bump and no MARKUP/DEMO row; `tools/check-markup.mjs` keys on numbered
+entries). Described as shipped in MASTERFILE §8.16.
+
+Owner direction: move away from online functions for now and build the
+on-device foundation. A code audit found the client had no durable storage at
+all (pubspec: only `flutter_secure_storage` and `path_provider`); sixteen shipped
+screens kept their data in memory and lost it on exit.
+
+### Added
+- **`LocalStore`** (`client/lib/local_store.dart`): atomic (write-to-temp then
+  rename), versioned (per-namespace schema + migration hooks), size-bounded,
+  corruption-safe (a damaged, newer-schema or un-migratable file is copied to
+  `quarantine/` and the namespace starts empty; nothing throws) JSON store, one
+  document per namespace, with `get`/`put`/`delete`/`list`, a typed `StoreCodec`
+  helper and a pluggable `StoreBackend` (directory for the app, memory for tests).
+- **Encryption at rest** (`store_cipher.dart`) for private namespaces: AES-256-GCM,
+  per-write nonce, namespace bound in as associated data, key generated per
+  install and kept in `flutter_secure_storage`. **New pinned dependency:
+  `cryptography` 2.9.0** (pure Dart, no native build step); chosen over a
+  hand-rolled cipher on `sha256.dart`, which is a hash. A private namespace never
+  falls back to plaintext.
+- **Per-child, per-guardian scoping** (`local_services.dart`): namespaces are
+  `child.<childId>.<area>` / `guardian.<guardianId>.<area>`; a live build refuses
+  the literal `demo-child` scope and turns demo seeds off. `localDataCatalogue`
+  is the single reviewable list of everything written to the device.
+- **Offline-first first run:** `hasOnboarded` is cached per child; the server's
+  answer always wins and the cache is only the fallback for an unreachable
+  server, so an onboarded child who boots offline no longer restarts onboarding.
+  A device that never heard a yes still fails closed to the welcome tour.
+- **No-signal child home:** the error screen with raw text is gone. From a cache
+  of her name, age and the grown-up's hide/pace choices she gets her own home with
+  a cloud-off picture and a refresh picture; with nothing cached, a cloud-off
+  picture and one large refresh button. No text either way.
+- **"Data on this device"** (`clear_local_data_screen.dart`), guardian hub, section
+  "This device": lists exactly what is kept and offers **Clear data on this
+  device**: PIN-gated (verify-controls-pin), fail closed, unavailable (and says so)
+  with no live session, one more confirmation; deletes every document, every
+  quarantined copy and the encryption key; does not unpair or sign out. Nothing in
+  it is added to the court export, and there is no export affordance (P7).
+
+### Changed (screens that now keep their data across a restart)
+- **Journal** (sealed/encrypted, P7), **wants and needs**, **story stars and
+  bookmarks**, **jokebook stars**, **teach me**, **collections**, **growing-up
+  ladder** (grants, moved rungs, seen reveals, dismissed announcements: "told
+  once" is now true across a restart), **Parent Learn** (`LocalStoreLearnStore`,
+  encrypted; saving reflections remains opt-in and defaults private; turning a
+  setting off deletes what it stored).
+- **"My saved pictures" is real.** Doodle desk and the colouring page have a Save
+  action (a `SnapshotButton` with `capture`) that keeps the strokes/fills on this
+  device; `SnapshotButton` gets its first honest callers; the gallery draws
+  thumbnails and lets her put a picture away (long-press, asks first). A full box
+  says so instead of silently dropping or evicting anything.
+- **Wants and needs** no longer pre-seeds toys in a live build: an empty list with
+  a gentle picture prompt. (The example items remain in the offline preview only.)
+- `main_live*.dart` open on-device storage at boot (in-memory fallback if the
+  platform storage is unavailable). `main.dart` (the offline preview) stays in
+  memory by owner decision: nothing it makes persists. The wipe's PIN stays
+  server-verified; no locally cached PIN verifier (short PINs hashed on-device are weak).
+
+- **Colour of the day, art style, play window** (#140's `ChildColourStore` / `GuardianColourStore`) and the **family structure** (#139's `FamilyStore`) are now durable: `LocalColourStore` (wraps the real-rules in-memory store; keeps two weeks of colour days) and `LocalStoreFamilyStore` (encrypted; a failed save throws). `sharedColourStore` and `localFamilyService` bind to the device's child.
+
+### Prohibitions
+- **P2** held: no score, streak, counter or ranking is stored. A story's
+  `timesRead` is dropped; a lesson's `askedAgain` is reduced to one bit; today's
+  colour keeps no history. **P7** held: the journal is encrypted on the device and
+  has no guardian read path. **P3/P4/P6** unchanged: no coordinates, no price, no
+  financial data stored. No prohibition weakened.
+
+### Left out, deliberately
+- Game favourites (the offline picker has no favouriting mechanism by design), the
+  guardian gallery and showcase (demo datasets / other-parent asks), siblings
+  (family-structure work), and wiring `receipt_screen.dart`'s in-memory outbox
+  (its payload is raw recorded bytes, which the store refuses to write; network
+  semantics untouched). The colour screens are untouched: only the store behind
+  `sharedColourStore` changed.
+
+---
+
 ## [Unreleased] — Server hardening (audit pass: P-01, P-04, P-05, P-07 server half, P-08, P-13 to P-19)
 
 Server, database, image and CI only; no client change, no new screen, so no

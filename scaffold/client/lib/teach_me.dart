@@ -15,7 +15,18 @@
 // the spec allows anywhere near it is binary and warm — whether the lesson
 // was asked for again — never a grade, level, or score. `auditLesson()`
 // below exists to keep that true in code, not just in a comment.
+//
+// KEPT ON THIS DEVICE. What she taught is stored by [LessonsRepository]
+// (LocalStore area `lessons`): the title, how, the date, and ONE bit — whether
+// it was asked for again (the only metric §9.14 allows). The running
+// askedAgain count is reduced to that bit on the way to disk, so no tally is
+// stored; no grade, level or score exists to store. The lesson's author is the
+// device's own child id ([LocalServices.childId]), never a literal demo id in
+// a live build.
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'local_services.dart';
+import 'local_store.dart';
 
 // ======== ported from packages/maturation/src/family.ts (teach me) =========
 enum TeachMedium { demonstrate, draw, record, doTogether }
@@ -133,6 +144,51 @@ LessonAudit auditLesson(Map<String, dynamic> v) {
 }
 // =============================================================================
 
+/// The lessons' on-device store. See the file header for what is (and is not)
+/// kept.
+class LessonsRepository {
+  LessonsRepository(this._ns);
+  factory LessonsRepository.forChild([String? childId]) =>
+      LessonsRepository(LocalServices.current.area('lessons', ownerId: childId));
+  final LocalNamespace _ns;
+  static const String _key = 'lessons';
+
+  /// Null means "never saved".
+  Future<List<Lesson>?> load() async {
+    final Object? raw = await _ns.get(_key);
+    if (raw is! List) return null;
+    final List<Lesson> out = <Lesson>[];
+    for (final Object? o in raw) {
+      if (o is! Map) continue;
+      final Object? id = o['id'], from = o['fromUserId'], title = o['title'], m = o['medium'], at = o['taughtAt'];
+      if (id is! String || from is! String || title is! String || m is! String || at is! String) continue;
+      TeachMedium? medium;
+      for (final TeachMedium v in TeachMedium.values) {
+        if (v.name == m) medium = v;
+      }
+      final DateTime? taught = DateTime.tryParse(at);
+      if (medium == null || taught == null) continue;
+      out.add(Lesson(
+          id: id, fromUserId: from, title: title, medium: medium, taughtAt: taught,
+          askedAgain: o['askedAgain'] == true ? 1 : 0));
+    }
+    return out;
+  }
+
+  Future<void> save(List<Lesson> lessons) => _ns.put(_key, <Object?>[
+        for (final Lesson l in lessons)
+          <String, Object?>{
+            'id': l.id,
+            'fromUserId': l.fromUserId,
+            'title': l.title,
+            'medium': l.medium.name,
+            'taughtAt': l.taughtAt.toIso8601String(),
+            // One bit, never the running count.
+            'askedAgain': l.askedAgain > 0,
+          },
+      ]);
+}
+
 class TeachMeScreen extends StatefulWidget {
   const TeachMeScreen({
     super.key,
@@ -140,12 +196,20 @@ class TeachMeScreen extends StatefulWidget {
     required this.childAge,
     this.parentName = 'Dad',
     this.initialLessons = const [],
+    this.repository,
+    this.childId,
   });
 
   final String childName;
   final int childAge;
   final String parentName;
   final List<Lesson> initialLessons;
+
+  /// Null means the app's on-device lessons for [childId].
+  final LessonsRepository? repository;
+
+  /// Null means this device's child ([LocalServices.childId]).
+  final String? childId;
 
   @override
   State<TeachMeScreen> createState() => _TeachMeScreenState();
@@ -155,13 +219,36 @@ class _TeachMeScreenState extends State<TeachMeScreen> {
   late List<Lesson> _lessons;
   final _controller = TextEditingController();
   TeachMedium _medium = TeachMedium.demonstrate;
-  int _nextId = 1;
+  late final String _childId = widget.childId ?? LocalServices.current.childId;
+  late final LessonsRepository _repo =
+      widget.repository ?? LessonsRepository.forChild(widget.childId);
 
   @override
   void initState() {
     super.initState();
     _lessons = List.of(widget.initialLessons);
     _controller.addListener(_onTextChanged);
+    unawaited(_hydrate());
+  }
+
+  Future<void> _hydrate() async {
+    try {
+      final stored = await _repo.load();
+      if (!mounted || stored == null) return;
+      setState(() => _lessons = stored);
+    } catch (_) {
+      // Unreadable lessons were quarantined by the store; start fresh.
+    }
+  }
+
+  void _persist() {
+    unawaited(() async {
+      try {
+        await _repo.save(_lessons);
+      } catch (_) {
+        // Leaves the list on screen for this visit.
+      }
+    }());
   }
 
   void _onTextChanged() => setState(() {});
@@ -176,9 +263,11 @@ class _TeachMeScreenState extends State<TeachMeScreen> {
   void _pickSeed(String seed) => setState(() => _controller.text = seed);
 
   void _sendLesson() {
-    final result = teach('local-${_nextId++}', 'demo-child', _controller.text, _medium, DateTime.now());
+    final now = DateTime.now();
+    final result = teach('lesson-${now.microsecondsSinceEpoch}', _childId, _controller.text, _medium, now);
     if (!result.ok) return;
     setState(() { _lessons.insert(0, result.lesson!); _controller.clear(); });
+    _persist();
   }
 
   // Demo-only affordance: in the real app this flips when the OTHER side's
@@ -186,7 +275,10 @@ class _TeachMeScreenState extends State<TeachMeScreen> {
   // lesson again — there is no live channel between two demo builds here, so
   // a small control on her own tile stands in for it honestly rather than
   // faking a notification that has nothing real behind it.
-  void _simulateAskedAgain(Lesson l) => setState(() => _lessons = askAgain(_lessons, l.id));
+  void _simulateAskedAgain(Lesson l) {
+    setState(() => _lessons = askAgain(_lessons, l.id));
+    _persist();
+  }
 
   @override
   Widget build(BuildContext context) {

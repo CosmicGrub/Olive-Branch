@@ -19,11 +19,18 @@
 // with twelve regions colourable in any order, any number of times, has no
 // natural finish line either, same posture as doodle_desk.dart takes for a
 // blank canvas.
+//
+// KEEPING A COLOURING. The app bar carries a Save action (a SnapshotButton with
+// `capture`): it keeps which colour each region has (twelve small numbers, not
+// a raster) in "My saved pictures", on this device only. Still no score, timer
+// or "finished" state: a picture can be kept at any point, half-coloured too.
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
+import 'shared_gallery.dart';
+import 'snapshot_button.dart';
 
 const List<Color> _kPalette = <Color>[
   Color(0xFFE74C3C), Color(0xFFF39C12), Color(0xFFF1C40F),
@@ -40,7 +47,11 @@ const List<String> _kRegionOrder = <String>[
 ];
 
 class ColouringScreen extends StatefulWidget {
-  const ColouringScreen({super.key});
+  const ColouringScreen({super.key, this.gallery});
+
+  /// Where a kept colouring goes. Null means the app's shared gallery, which
+  /// keeps it on this device.
+  final AppGallery? gallery;
 
   @override
   State<ColouringScreen> createState() => _ColouringScreenState();
@@ -119,9 +130,30 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
         _ticker.stop();
       });
 
+  /// Region -> colour, as plain JSON; null when nothing is coloured yet.
+  Map<String, Object?>? _capture() {
+    if (_filled.isEmpty) return null;
+    return <String, Object?>{
+      'fills': <String, Object?>{
+        for (final MapEntry<String, Color> e in _filled.entries) e.key: e.value.toARGB32(),
+      },
+    };
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Colouring'), actions: [
+          SnapshotButton(
+            currentSurface: 'colouring',
+            gallery: widget.gallery ?? demoAppGallery,
+            kind: 'colouring',
+            capture: _capture,
+            compact: true,
+            icon: Icons.save_outlined,
+            tooltip: 'Keep this picture',
+            savedMessage: 'Kept in your saved pictures.',
+            nothingToKeepMessage: 'Colour something first, then keep it.',
+          ),
           TextButton(onPressed: _startOver, child: const Text('Start over')),
         ]),
         body: SafeArea(
@@ -236,6 +268,33 @@ class _ColouringPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ColouringPainter oldDelegate) => true;
+}
+
+/// A kept colouring, drawn small from its stored region fills (see
+/// `_ColouringScreenState._capture`). Unknown regions and malformed colours are
+/// skipped; a damaged picture must not take the gallery down.
+class ColouringThumbnail extends StatelessWidget {
+  const ColouringThumbnail({super.key, required this.data});
+  final Map<String, Object?> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final Object? raw = data['fills'];
+    final Map<String, Color> filled = <String, Color>{};
+    if (raw is Map) {
+      for (final MapEntry<dynamic, dynamic> e in raw.entries) {
+        final Object? k = e.key, v = e.value;
+        if (k is String && _kRegionOrder.contains(k) && v is int) filled[k] = Color(v);
+      }
+    }
+    return ColoredBox(
+      color: const Color(0xFFF4FAFF),
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _ColouringPainter(filled: filled, animating: const <String, _RegionAnim>{}),
+      ),
+    );
+  }
 }
 
 Map<String, Path> _buildRegions(Size s) {

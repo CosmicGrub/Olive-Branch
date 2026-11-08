@@ -19,12 +19,17 @@
 // "the storyteller" — a character, not a parent — and _StorytellerAttribution
 // below is the one widget responsible for that being true everywhere this
 // screen renders a story. In-memory only: nothing here is backed by a real
-// server yet (see api_client.dart) — favourites/bookmarks reset on restart,
-// same honest-stub posture as message_banking.dart's seeded demo state.
+// server yet (see api_client.dart). Favourites and bookmarks are now kept on
+// this device (StoryShelfRepository, LocalStore area `stories`) and survive a
+// restart: a starred story's code, title and date, and a bookmark's place. No
+// read counts are stored (see local_repositories.dart).
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
 import 'hub_widgets.dart';
 import 'library_logic.dart';
+import 'local_repositories.dart';
+import 'local_services.dart';
 import 'storyteller_logic.dart' as story;
 import 'tabletop_split.dart';
 
@@ -37,7 +42,11 @@ class StorytellerScreen extends StatefulWidget {
     this.colourSeed,
     this.initialFavourites = const [],
     this.initialBookmarks = const [],
+    this.repository,
   });
+
+  /// Null means the app's on-device shelf for this device's child.
+  final StoryShelfRepository? repository;
 
   final String childName;
   /// Her colour's label (§8.6) — e.g. "teal". Used for the one line of light
@@ -55,6 +64,42 @@ class StorytellerScreen extends StatefulWidget {
 class _StorytellerScreenState extends State<StorytellerScreen> {
   late List<Favourite> _favourites = List.of(widget.initialFavourites);
   late List<Bookmark> _bookmarks = List.of(widget.initialBookmarks);
+  late final StoryShelfRepository _repo = widget.repository ??
+      StoryShelfRepository(LocalServices.current.area('stories'));
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_hydrate());
+  }
+
+  /// What she kept on this device replaces the starting shelf as soon as it is
+  /// read. A shelf that was never saved keeps whatever the caller passed in.
+  Future<void> _hydrate() async {
+    try {
+      final favs = await _repo.loadFavourites();
+      final marks = await _repo.loadBookmarks();
+      if (!mounted) return;
+      setState(() {
+        if (favs != null) _favourites = favs;
+        if (marks != null) _bookmarks = marks;
+      });
+    } catch (_) {
+      // Unreadable shelf: quarantined by the store; she starts a fresh one.
+    }
+  }
+
+  /// Fire-and-forget; her tap never waits on the disk.
+  void _persist() {
+    unawaited(() async {
+      try {
+        await _repo.save(favourites: _favourites, bookmarks: _bookmarks);
+      } catch (_) {
+        // A full or unwritable store leaves the shelf as-is for this visit.
+      }
+    }());
+  }
+
   story.Story? _current;
   int _index = 0;
   String? _recap;
@@ -109,6 +154,8 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         }
         _maybeNudgeReread(code, _current!);
       });
+  // (recordRead only moves the in-memory read counter, which is never
+  // stored, so reopening a story does not write to the device.)
 
   void _resumeBookmark(Bookmark b) => setState(() {
         final r = resume(b, _personal);
@@ -139,6 +186,7 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
         if (r.ok) _favourites = r.list!;
       }
     });
+    _persist();
   }
 
   void _bookmarkHere() {
@@ -147,9 +195,13 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
     final r = bookmark(s, _index, _nowIso);
     if (!r.ok) return; // last line — the affordance is hidden before this can fire
     setState(() => _bookmarks = saveBookmark(_bookmarks, r.bookmark!));
+    _persist();
   }
 
-  void _clearBookmark(String code) => setState(() => _bookmarks = clearBookmark(_bookmarks, code));
+  void _clearBookmark(String code) {
+    setState(() => _bookmarks = clearBookmark(_bookmarks, code));
+    _persist();
+  }
 
   @override
   Widget build(BuildContext context) {

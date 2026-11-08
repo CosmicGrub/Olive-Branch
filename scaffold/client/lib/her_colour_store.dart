@@ -5,9 +5,9 @@
 //
 // LOCAL-FIRST. Nothing in this file touches a network. State sits behind two
 // narrow interfaces; the implementation today is [MemoryColourStore], which is
-// in-process (it survives navigation, not an app restart). A durable on-device
-// store (client/lib's LocalStore) is being built separately and will implement
-// the same two interfaces; the screens do not change when it is swapped in.
+// in-process (it survives navigation, not an app restart). [LocalColourStore]
+// (below) is the durable on-device implementation of the same two interfaces,
+// over LocalStore; the screens did not change when it was swapped in.
 // THE SEAM, in full: every method below is a plain async read or write of one
 // small value (today's colour, the art settings, the play window). No method
 // takes or returns a socket, a token, a URL or a device id.
@@ -24,6 +24,8 @@
 // TypeScript module by golden vectors), so the offline build and every widget
 // test behave exactly as a durable store will.
 import 'colour_day_logic.dart';
+import 'local_services.dart';
+import 'local_store.dart';
 import 'palette_logic.dart';
 
 /// What today's colour is, from her point of view.
@@ -135,6 +137,11 @@ class MemoryColourStore implements ChildColourStore, GuardianColourStore {
   ArtSettings _art;
   PlayWindow? _window;
 
+  /// Read-only views of what this store holds, so a durable wrapper can write it down.
+  List<DayColour> get days => List<DayColour>.unmodifiable(_days);
+  ArtSettings get artSettings => _art;
+  PlayWindow? get window => _window;
+
   String get _date {
     final n = _now();
     String p(int v, int w) => v.toString().padLeft(w, '0');
@@ -237,7 +244,112 @@ class MemoryColourStore implements ChildColourStore, GuardianColourStore {
   }
 }
 
+// ================================================================ durable ===
+/// How many days of colour are kept on the device. The rules only need the last
+/// colour to carry it over; nothing older is ever shown, so nothing older is kept.
+const int keptColourDays = 14;
+
+/// The same real rules as [MemoryColourStore], made durable on this device
+/// (LocalStore area `colour`, scoped to the child): her colour days, the art
+/// style and the play window survive a restart. Reads and writes go through a
+/// [MemoryColourStore] rebuilt from what was stored, so the rules cannot differ;
+/// after every write the result is saved. A write that cannot be saved still
+/// takes effect for this run (the rules ran) and is retried by the next write.
+///
+/// Bound lazily to [LocalServices.current] when built with [LocalColourStore.shared]
+/// (rebinding if the device/child scope changes), or to one namespace for tests.
+class LocalColourStore implements ChildColourStore, GuardianColourStore {
+  LocalColourStore(LocalNamespace ns, {this.ageYears, this.now}) : _fixed = ns;
+  LocalColourStore.shared({this.ageYears})
+      : _fixed = null,
+        now = null;
+
+  final LocalNamespace? _fixed;
+  final int? ageYears;
+  /// Injectable clock for tests.
+  final DateTime Function()? now;
+  LocalNamespace? _boundTo;
+  Future<MemoryColourStore>? _pending;
+
+  Future<MemoryColourStore> _inner() {
+    final LocalNamespace ns = _fixed ?? LocalServices.current.area('colour');
+    if (_pending == null || !identical(ns, _boundTo)) {
+      _boundTo = ns;
+      _pending = _load(ns);
+    }
+    return _pending!;
+  }
+
+  Future<MemoryColourStore> _load(LocalNamespace ns) async {
+    List<DayColour> days = <DayColour>[];
+    ArtSettings? art;
+    PlayWindow? window;
+    try {
+      final Object? d = await ns.get('days');
+      if (d is List) {
+        for (final Object? o in d) {
+          try {
+            if (o is Map) days.add(DayColour.fromJson(o));
+          } catch (_) {}
+        }
+      }
+      art = ArtSettings.fromJson(await ns.get('art'));
+      window = PlayWindow.fromJson(await ns.get('window'));
+    } catch (_) {
+      days = <DayColour>[]; // unreadable: the store quarantined it; start fresh
+    }
+    return MemoryColourStore(ageYears: ageYears ?? 7, now: now, days: days, art: art, window: window);
+  }
+
+  Future<void> _save(MemoryColourStore m) async {
+    final LocalNamespace? ns = _boundTo;
+    if (ns == null) return;
+    try {
+      final List<DayColour> sorted = m.days.toList()
+        ..sort((DayColour a, DayColour b) => b.localDate.compareTo(a.localDate));
+      await ns.put('days', <Object?>[for (final DayColour d in sorted.take(keptColourDays)) d.toJson()]);
+      await ns.put('art', m.artSettings.toJson());
+      if (m.window == null) {
+        await ns.delete('window');
+      } else {
+        await ns.put('window', m.window!.toJson());
+      }
+    } catch (_) {
+      // Full or unwritable: this run is unaffected; the next write tries again.
+    }
+  }
+
+  Future<T> _write<T>(Future<T> Function(MemoryColourStore m) op) async {
+    final MemoryColourStore m = await _inner();
+    final T r = await op(m);
+    await _save(m);
+    return r;
+  }
+
+  @override
+  Future<TodayColour> today() async => (await _inner()).today();
+  @override
+  Future<TodayColour> answer(String colourId) => _write((MemoryColourStore m) => m.answer(colourId));
+  @override
+  Future<ArtSettings> artStyle() async => (await _inner()).artStyle();
+  @override
+  Future<PlayWindowInfo> playWindow() async => (await _inner()).playWindow();
+  @override
+  Future<GuardianColourView> view() async => (await _inner()).view();
+  @override
+  Future<TodayColour> setColourDay(String colourId) => _write((MemoryColourStore m) => m.setColourDay(colourId));
+  @override
+  Future<bool> clearColourDay() => _write((MemoryColourStore m) => m.clearColourDay());
+  @override
+  Future<ArtSettings> art() async => (await _inner()).art();
+  @override
+  Future<ArtSaveResult> saveArt(Map<String, dynamic> patch) => _write((MemoryColourStore m) => m.saveArt(patch));
+  @override
+  Future<WindowSaveResult> savePlayWindow(PlayWindow w) => _write((MemoryColourStore m) => m.savePlayWindow(w));
+}
+
 /// One store for the whole process, so the child’s shell and the guardian’s
-/// shell in the same build see the same colour. Replaced by the durable on-device
-/// store behind the same two interfaces when that lands; nothing else changes.
-final MemoryColourStore sharedColourStore = MemoryColourStore();
+/// shell in the same build see the same colour. Durable: it is bound to this
+/// device's child in [LocalServices] (in memory in the offline preview and in
+/// tests, so there nothing survives a restart).
+final LocalColourStore sharedColourStore = LocalColourStore.shared();

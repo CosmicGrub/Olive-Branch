@@ -66,6 +66,7 @@ import 'auth_session.dart';
 import 'device_identity.dart';
 import 'guardian_home_live.dart';
 import 'guardian_setup.dart';
+import 'local_services.dart';
 import 'pairing_redeem_screen.dart';
 import 'push_channel.dart';
 import 'theme.dart';
@@ -177,6 +178,18 @@ Future<void> _bootLiveApp({required String guardianId, required AuthSession sess
   // Installed BEFORE anything below calls apiFor() — every live screen under
   // OliveLiveGuardian reads the same process-wide session (audit G-02/G-06).
   AuthSession.use(session);
+  // On-device storage for this grown-up (Parent Learn, sealed, keyed by their
+  // own id). A guardian device holds no child profile of its own, so the child
+  // scope is a fixed placeholder no child screen on this build ever opens. If
+  // platform storage cannot be opened the app runs in memory (nothing persists
+  // that run) rather than failing to boot.
+  try {
+    await LocalServices.boot(childId: 'guardian-device', guardianId: guardianId, isLive: true);
+  } catch (e) {
+    debugPrint('[olive.localStore] on-device storage unavailable, running in memory: $e');
+    LocalServices.install(LocalServices.memory(
+        childId: 'guardian-device', guardianId: guardianId, isLive: true, demoSeeds: false));
+  }
   final initialTheme = await _fetchInitialTheme(guardianId);
   final hasPin = await _fetchHasPin(guardianId);
   runApp(OliveLiveGuardian(initialTheme: initialTheme,

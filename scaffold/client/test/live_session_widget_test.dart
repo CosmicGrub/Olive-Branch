@@ -131,10 +131,12 @@ void main() {
           baseUrl: 'http://api.test', childId: 'child-9', httpClient: client,
           pushChannel: _NoPush())));
       await t.pumpAndSettle();
-      expect(find.text("Couldn't reach the server"), findsOneWidget);
+      // Offline-first: the child sees PICTURES (a cloud-off picture and a
+      // refresh button), never a server sentence, a status code or a reason.
+      expect(find.byKey(const Key('childOfflineIcon')), findsOneWidget);
+      expect(find.byType(Text), findsNothing);
       expect(find.textContaining('device_revoked'), findsNothing);
       expect(find.textContaining('401'), findsNothing);
-      expect(find.text('This device needs to sign in again.'), findsOneWidget);
       expect(await store.load(), isNull);
       expect(signedOut, 1);
     });
@@ -146,7 +148,8 @@ void main() {
           baseUrl: 'http://api.test', childId: 'child-9', httpClient: client,
           pushChannel: _NoPush())));
       await t.pumpAndSettle();
-      expect(find.text("Couldn't reach the server"), findsOneWidget);
+      expect(find.byKey(const Key('childOfflineIcon')), findsOneWidget);
+      expect(find.byType(Text), findsNothing);
       expect(find.textContaining('not_signed_in'), findsNothing);
       expect(hits, isEmpty);
     });

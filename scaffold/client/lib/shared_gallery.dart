@@ -7,6 +7,11 @@
 // by the group that built AppGallery itself, so every screen offering a
 // SnapshotButton or reading AppGalleryScreen shares the same in-memory
 // store instead of each constructing (and instantly orphaning) its own.
+//
+// It is now backed by this device's own storage: [AppGallery.shared] binds to
+// the current child's `pictures` area the first time a screen opens it, so
+// what she keeps survives a restart (see snapshot_button.dart). The name
+// `demoAppGallery` predates that and is kept so existing call sites stay put.
 import 'snapshot_button.dart';
 
-final AppGallery demoAppGallery = AppGallery();
+final AppGallery demoAppGallery = AppGallery.shared();

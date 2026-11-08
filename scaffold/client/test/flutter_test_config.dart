@@ -8,12 +8,21 @@
 // once, for the test isolate — not per-file and not in app code. Tests that
 // exercise the production (device-credential) path, or the fail-closed default,
 // set the flag back to false themselves (see auth_session_test.dart).
+//
+// On-device storage (local_services.dart): every test starts with a FRESH
+// in-memory LocalServices, so what one test saves (a journal entry, a starred
+// story) can never leak into the next test's screen. Tests that exercise
+// persistence build their own LocalServices (or hand a screen its own
+// repository) instead.
 import 'dart:async';
 
+import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/auth_session.dart';
+import 'package:olive_client/local_services.dart';
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   AuthSession.devLoginEnabled = true;
   AuthSession.use(null);
+  setUp(LocalServices.resetForTest);
   await testMain();
 }

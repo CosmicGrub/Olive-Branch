@@ -19,8 +19,19 @@
 // saved appearing, timed via motion_rules.dart's durationFor(quietnessOf
 // ('journal'), ...) — which resolves to an instant (0ms) appearance, same
 // still-surface treatment as homework_screen.dart, not a timed fade.
+//
+// DURABLE, AND SEALED. Entries are kept on this device in LocalStore's
+// ENCRYPTED `child.<childId>.journal` namespace (AES-256-GCM, key in secure
+// storage), so a restart no longer loses them and a copy of the app's files
+// is not a readable journal. They are never uploaded, never part of any
+// export, and there is still no guardian read path (P7): the repository below
+// has no reader argument at all and the screen still goes through
+// readJournal() as role 'child'.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
+import 'local_services.dart';
+import 'local_store.dart';
 import 'motion_rules.dart';
 
 // ================= ported from packages/agency/src/agency.ts (readJournal) =
@@ -64,6 +75,46 @@ JournalReadResult readJournal(
 }
 // =============================================================================
 
+/// The journal's on-device store: one sealed document key per entry. There is
+/// no method that takes a reader, a role or a guardian — the only way to get
+/// entries out is to hold the child's own namespace, which only her screen
+/// opens (P7).
+class JournalRepository {
+  JournalRepository(this._ns);
+
+  /// The app's repository for [childId] (default: this device's child).
+  factory JournalRepository.forChild([String? childId]) =>
+      JournalRepository(LocalServices.current.area('journal', ownerId: childId));
+
+  final LocalNamespace _ns;
+
+  static String _key(String id) => 'e.${id.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '-')}';
+
+  /// Newest first.
+  Future<List<JournalEntry>> load() async {
+    final List<JournalEntry> out = <JournalEntry>[];
+    for (final String k in await _ns.list()) {
+      final Object? raw = await _ns.get(k);
+      if (raw is! Map) continue;
+      final Object? id = raw['id'], childId = raw['childId'], body = raw['body'], at = raw['createdAt'];
+      if (id is! String || childId is! String || body is! String || at is! String) continue;
+      final DateTime? created = DateTime.tryParse(at);
+      if (created == null) continue;
+      out.add(JournalEntry(id: id, childId: childId, body: body, createdAt: created));
+    }
+    out.sort((JournalEntry a, JournalEntry b) => b.createdAt.compareTo(a.createdAt));
+    return out;
+  }
+
+  /// Throws [LocalStoreFull] (nothing written) when the journal is at its limit.
+  Future<void> add(JournalEntry e) => _ns.put(_key(e.id), <String, Object?>{
+        'id': e.id,
+        'childId': e.childId,
+        'body': e.body,
+        'createdAt': e.createdAt.toIso8601String(),
+      });
+}
+
 const _weekdayNames = <String>[
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const _monthNames = <String>[
@@ -81,13 +132,20 @@ class JournalScreen extends StatefulWidget {
   const JournalScreen({
     super.key,
     required this.childName,
-    this.childId = 'demo-child',
+    this.childId,
     this.initialEntries = const [],
+    this.repository,
   });
 
   final String childName;
-  final String childId;
+
+  /// Null means this device's child ([LocalServices.childId]) — never a
+  /// hard-coded demo id in a live build.
+  final String? childId;
   final List<JournalEntry> initialEntries;
+
+  /// Null means the app's sealed on-device journal for [childId].
+  final JournalRepository? repository;
 
   @override
   State<JournalScreen> createState() => _JournalScreenState();
@@ -96,8 +154,10 @@ class JournalScreen extends StatefulWidget {
 class _JournalScreenState extends State<JournalScreen> {
   late List<JournalEntry> _entries;
   final _controller = TextEditingController();
-  int _nextId = 1;
   String? _justAddedId;
+  late final String _childId = widget.childId ?? LocalServices.current.childId;
+  late final JournalRepository _repo =
+      widget.repository ?? JournalRepository.forChild(widget.childId);
 
   @override
   void initState() {
@@ -105,9 +165,29 @@ class _JournalScreenState extends State<JournalScreen> {
     // Structural P7 exercise (see file header): always role 'child', always
     // her own id. This line means the refusal path is real code, not merely
     // a claim in a comment.
-    final result = readJournal(widget.initialEntries, 'child', widget.childId, widget.childId);
+    final result = readJournal(widget.initialEntries, 'child', _childId, _childId);
     _entries = List.of(result.entries ?? const <JournalEntry>[]);
     _controller.addListener(_onTextChanged);
+    unawaited(_hydrate());
+  }
+
+  /// Reads what was kept on this device. Anything this session already added
+  /// stays; stored entries fill in around it, newest first.
+  Future<void> _hydrate() async {
+    try {
+      final stored = await _repo.load();
+      if (!mounted) return;
+      // Same structural P7 gate as above, applied to what came off disk.
+      final mine = readJournal(stored, 'child', _childId, _childId).entries ?? const <JournalEntry>[];
+      final have = _entries.map((e) => e.id).toSet();
+      setState(() {
+        _entries = [..._entries, for (final e in mine) if (!have.contains(e.id)) e]
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      });
+    } catch (_) {
+      // An unreadable journal file was quarantined by the store; she simply
+      // starts a fresh page. Nothing to show, nothing to fear.
+    }
   }
 
   void _onTextChanged() => setState(() {});
@@ -122,13 +202,33 @@ class _JournalScreenState extends State<JournalScreen> {
   void _save() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+    final now = DateTime.now();
     final entry = JournalEntry(
-      id: 'local-${_nextId++}', childId: widget.childId, body: text, createdAt: DateTime.now());
+      id: 'j-${now.microsecondsSinceEpoch}', childId: _childId, body: text, createdAt: now);
     setState(() {
       _entries.insert(0, entry);
       _justAddedId = entry.id;
       _controller.clear();
     });
+    unawaited(_persist(entry, text));
+  }
+
+  /// The entry shows at once (her finger never waits on a disk). If the disk
+  /// refuses it, it comes back out of the list and into the box, with a gentle
+  /// line — never a silent loss.
+  Future<void> _persist(JournalEntry entry, String text) async {
+    try {
+      await _repo.add(entry);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _entries.removeWhere((e) => e.id == entry.id);
+        if (_controller.text.isEmpty) _controller.text = text;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("This page couldn't be kept just now. Your words are still in the box."),
+        duration: Duration(seconds: 4)));
+    }
   }
 
   @override

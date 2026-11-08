@@ -24,11 +24,21 @@
 // motion, capped at motion_rules.dart's maxConsequenceMs so placing a stamp
 // never makes her wait for a picture to finish. Nothing on this screen loops
 // or moves on its own.
+//
+// KEEPING A DOODLE. The app bar carries a Save action (a SnapshotButton with
+// `capture`): it keeps what is VISIBLE right now (undone strokes are not kept)
+// in "My saved pictures", on this device only (snapshot_button.dart,
+// local_store.dart). It stores the strokes and stamps, not a raster, and
+// nothing about how long she drew or how many strokes she made — there is
+// still no counter anywhere on this screen. An empty board has nothing to
+// keep and says so gently.
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'annotation_canvas.dart';
 import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
+import 'shared_gallery.dart';
+import 'snapshot_button.dart';
 
 enum _Tool { draw, stamp }
 
@@ -68,9 +78,13 @@ const List<Color> kBrushColors = <Color>[
 const List<double> kBrushWidths = <double>[4, 8, 14];
 
 class DoodleDesk extends StatefulWidget {
-  const DoodleDesk({super.key, this.childName = 'you', this.actorId = 'me'});
+  const DoodleDesk({super.key, this.childName = 'you', this.actorId = 'me', this.gallery});
 
   final String childName;
+
+  /// Where a kept doodle goes. Null means the app's shared gallery, which
+  /// keeps it on this device.
+  final AppGallery? gallery;
 
   /// Local actor id. Multi-actor (live pairing) undo scoping already works
   /// in annotation_canvas.dart — there is just one actor in this preview
@@ -91,8 +105,30 @@ class _DoodleDeskState extends State<DoodleDesk> {
   String _stampId = kStamps.first.id;
 
   List<StrokePoint> _liveStroke = <StrokePoint>[];
+  Size _boardSize = Size.zero;
 
   String _nextId() => '${widget.actorId}-${_idCounter++}';
+
+  /// The visible strokes and stamps as plain JSON, or null for an empty board.
+  /// Points are flattened [x, y, x, y, ...] and rounded to a tenth of a pixel.
+  Map<String, Object?>? _capture() {
+    final List<Stroke> visible = _canvas.visible();
+    if (visible.isEmpty) return null;
+    double r(double v) => (v * 10).roundToDouble() / 10;
+    return <String, Object?>{
+      'w': r(_boardSize.width),
+      'h': r(_boardSize.height),
+      'strokes': <Object?>[
+        for (final Stroke s in visible)
+          <String, Object?>{
+            'c': s.color,
+            'w': s.widthPx,
+            if (s.stampGlyph != null) 'g': s.stampGlyph,
+            'p': <double>[for (final StrokePoint p in s.points) ...<double>[r(p.x), r(p.y)]],
+          },
+      ],
+    };
+  }
 
   void _onPanStart(DragStartDetails d) {
     setState(() => _liveStroke = <StrokePoint>[StrokePoint(d.localPosition.dx, d.localPosition.dy)]);
@@ -151,7 +187,19 @@ class _DoodleDeskState extends State<DoodleDesk> {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Doodle desk')),
+      appBar: AppBar(title: const Text('Doodle desk'), actions: <Widget>[
+        SnapshotButton(
+          currentSurface: 'doodle',
+          gallery: widget.gallery ?? demoAppGallery,
+          kind: 'doodle',
+          capture: _capture,
+          compact: true,
+          icon: Icons.save_outlined,
+          tooltip: 'Keep this picture',
+          savedMessage: 'Kept in your saved pictures.',
+          nothingToKeepMessage: 'Draw something first, then keep it.',
+        ),
+      ]),
       body: SafeArea(
         child: LayoutBuilder(builder: (context, constraints) {
           // Fold5 cover (~344 CSS px) vs. its unfolded ~673x841 main screen:
@@ -166,17 +214,20 @@ class _DoodleDeskState extends State<DoodleDesk> {
               _ToolSwitch(tool: _tool, onChanged: (t) => setState(() => _tool = t)),
               SizedBox(height: narrow ? 8 : 12),
               Expanded(
-                child: _Board(
-                  visible: _canvas.visible(),
-                  liveStroke: _liveStroke,
-                  liveColor: _brushColor,
-                  liveWidth: _brushWidth,
-                  tool: _tool,
-                  onPanStart: _onPanStart,
-                  onPanUpdate: _onPanUpdate,
-                  onPanEnd: _onPanEnd,
-                  onStampTap: _onStampTap,
-                ),
+                child: LayoutBuilder(builder: (context, board) {
+                  _boardSize = Size(board.maxWidth, board.maxHeight);
+                  return _Board(
+                    visible: _canvas.visible(),
+                    liveStroke: _liveStroke,
+                    liveColor: _brushColor,
+                    liveWidth: _brushWidth,
+                    tool: _tool,
+                    onPanStart: _onPanStart,
+                    onPanUpdate: _onPanUpdate,
+                    onPanEnd: _onPanEnd,
+                    onStampTap: _onStampTap,
+                  );
+                }),
               ),
               SizedBox(height: narrow ? 8 : 12),
               AnimatedSize(
@@ -508,6 +559,64 @@ class _RoundIconButton extends StatelessWidget {
         height: 48,
         child: OutlinedButton.icon(onPressed: onTap, icon: Icon(icon), label: Text(label)),
       );
+}
+
+/// A kept doodle, drawn small from its stored strokes and stamps (see
+/// [DoodleDesk]'s `_capture` for the shape). Anything malformed draws nothing
+/// rather than throwing: a damaged picture must not take the gallery down.
+class DoodleThumbnail extends StatelessWidget {
+  const DoodleThumbnail({super.key, required this.data});
+  final Map<String, Object?> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final Object? w = data['w'], h = data['h'], raw = data['strokes'];
+    if (w is! num || h is! num || w <= 0 || h <= 0 || raw is! List) return const SizedBox.shrink();
+    final List<Stroke> ink = <Stroke>[];
+    final List<Stroke> stamps = <Stroke>[];
+    int seq = 0;
+    for (final Object? o in raw) {
+      if (o is! Map) continue;
+      final Object? c = o['c'], sw = o['w'], g = o['g'], p = o['p'];
+      if (c is! String || sw is! num || p is! List || p.length < 2) continue;
+      final List<StrokePoint> pts = <StrokePoint>[];
+      for (int i = 0; i + 1 < p.length; i += 2) {
+        final Object? x = p[i], y = p[i + 1];
+        if (x is num && y is num) pts.add(StrokePoint(x.toDouble(), y.toDouble()));
+      }
+      if (pts.isEmpty) continue;
+      try {
+        _hexToColor(c);
+      } catch (_) {
+        continue;
+      }
+      final Stroke s = Stroke(
+          id: 'k${seq++}', actorId: 'me', actorKind: ActorKind.child, seq: seq,
+          points: pts, color: c, widthPx: sw.toDouble(), stampGlyph: g is String ? g : null);
+      (s.stampGlyph == null ? ink : stamps).add(s);
+    }
+    return ColoredBox(
+      color: const Color(0xFFFFFDF6),
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: w.toDouble(), height: h.toDouble(),
+          child: Stack(children: <Widget>[
+            CustomPaint(
+              size: Size(w.toDouble(), h.toDouble()),
+              painter: _InkPainter(
+                  strokes: ink, live: const <StrokePoint>[],
+                  liveColor: const Color(0xFF000000), liveWidth: 1)),
+            for (final Stroke s in stamps)
+              Positioned(
+                left: s.points.first.x - s.widthPx / 2, top: s.points.first.y - s.widthPx / 2,
+                width: s.widthPx, height: s.widthPx,
+                child: _stampVisual(s.stampGlyph!, s.widthPx)),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 String _colorToHex(Color c) => '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';

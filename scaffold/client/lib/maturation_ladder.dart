@@ -30,8 +30,18 @@
 //      age later, never earlier, never alone, and never touches order.
 //      "Move this later" is therefore the only mutation this screen offers,
 //      and it is offered only for a rung that has not happened yet.
+//
+// DURABLE NOW (it was "disclosed-not-durable"). [LadderRepository] keeps, in
+// LocalStore area `ladder`: the grants recorded so far (append-only, exactly
+// like the in-memory list), any rung moved later, which reveals she has already
+// been shown, and which guardian announcements were already dismissed. That
+// makes "told once, warmly, never again" (§21.9 C) true across a restart. No
+// grant is ever removed from it: there is no inverse of the save.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
+import 'local_services.dart';
+import 'local_store.dart';
 
 // ============ ported from packages/maturation/src/maturation.ts (§21) ======
 enum Grant {
@@ -219,6 +229,88 @@ IconData grantIcon(Grant g) => switch (g) {
 /// [_MaturationLadderScreenState.initState].
 final Set<Grant> childSeenRungReveals = <Grant>{};
 
+/// Everything the ladder remembers on this device.
+class LadderState {
+  const LadderState({
+    this.grants = const <MaturationGrant>[],
+    this.agesLater = const <Grant, int>{},
+    this.revealsSeen = const <Grant>{},
+    this.announced = const <Grant>{},
+  });
+  final List<MaturationGrant> grants;
+
+  /// Rungs a guardian moved later: grant -> the new age.
+  final Map<Grant, int> agesLater;
+
+  /// Grants whose child-facing reveal she has already seen.
+  final Set<Grant> revealsSeen;
+
+  /// Grants whose guardian announcement was already dismissed.
+  final Set<Grant> announced;
+}
+
+class LadderRepository {
+  LadderRepository(this._ns);
+  factory LadderRepository.forChild([String? childId]) =>
+      LadderRepository(LocalServices.current.area('ladder', ownerId: childId));
+  final LocalNamespace _ns;
+  static const String _key = 'state';
+
+  static Grant? _grant(Object? name) {
+    for (final Grant g in Grant.values) {
+      if (g.name == name) return g;
+    }
+    return null;
+  }
+
+  /// Null means nothing was ever saved.
+  Future<LadderState?> load() async {
+    final Object? raw = await _ns.get(_key);
+    if (raw is! Map) return null;
+    final List<MaturationGrant> grants = <MaturationGrant>[];
+    final Object? gs = raw['grants'];
+    if (gs is List) {
+      for (final Object? o in gs) {
+        if (o is! Map) continue;
+        final Grant? g = _grant(o['grant']);
+        final Object? child = o['childId'], age = o['age'], at = o['reachedAt'], rung = o['rungAge'];
+        final DateTime? when = at is String ? DateTime.tryParse(at) : null;
+        if (g == null || child is! String || age is! int || when == null || rung is! int) continue;
+        grants.add(MaturationGrant(childId: child, grant: g, age: age, reachedAt: when, rungAge: rung));
+      }
+    }
+    final Map<Grant, int> later = <Grant, int>{};
+    final Object? ls = raw['agesLater'];
+    if (ls is Map) {
+      for (final MapEntry<dynamic, dynamic> e in ls.entries) {
+        final Grant? g = _grant(e.key);
+        if (g != null && e.value is int) later[g] = e.value as int;
+      }
+    }
+    Set<Grant> set(Object? v) => <Grant>{
+          if (v is List)
+            for (final Object? n in v)
+              if (_grant(n) != null) _grant(n)!,
+        };
+    return LadderState(
+        grants: grants, agesLater: later, revealsSeen: set(raw['revealsSeen']),
+        announced: set(raw['announced']));
+  }
+
+  Future<void> save(LadderState s) => _ns.put(_key, <String, Object?>{
+        'grants': <Object?>[
+          for (final MaturationGrant g in s.grants)
+            <String, Object?>{
+              'grant': g.grant.name, 'childId': g.childId, 'age': g.age,
+              'reachedAt': g.reachedAt.toIso8601String(), 'rungAge': g.rungAge,
+            },
+        ],
+        'agesLater': <String, Object?>{for (final MapEntry<Grant, int> e in s.agesLater.entries) e.key.name: e.value},
+        'revealsSeen': <Object?>[for (final Grant g in s.revealsSeen) g.name],
+        'announced': <Object?>[for (final Grant g in s.announced) g.name],
+      });
+}
+
 enum LadderViewer { child, guardian }
 
 /// MARKUP screen 'ladder'. One widget, two tones: [LadderViewer.child] is
@@ -234,11 +326,20 @@ class MaturationLadderScreen extends StatefulWidget {
     required this.childAgeYears,
     required this.viewer,
     this.now,
+    this.repository,
+    this.childId,
   });
 
   final String childName;
   final int childAgeYears;
   final LadderViewer viewer;
+
+  /// Null means the app's on-device ladder for [childId].
+  final LadderRepository? repository;
+
+  /// Null means this device's child ([LocalServices.childId]) — never a
+  /// hard-coded demo id in a live build.
+  final String? childId;
   /// Testing hook only — production call sites should omit this and let it
   /// default to the real clock.
   final DateTime? now;
@@ -248,56 +349,118 @@ class MaturationLadderScreen extends StatefulWidget {
 }
 
 class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
-  static const String _demoChildId = 'demo-child';
-
   late DateTime _now;
   late List<Rung> _ladder;
   late List<MaturationGrant> _grants;
   String? _announcement;
   final Set<Grant> _expanded = <Grant>{};
+  // Grants whose guardian announcement was already dismissed (persisted).
+  Set<Grant> _announced = <Grant>{};
+  late final String _childId = widget.childId ?? LocalServices.current.childId;
+  late final LadderRepository _repo =
+      widget.repository ?? LadderRepository.forChild(widget.childId);
 
   @override
   void initState() {
     super.initState();
     _now = widget.now ?? DateTime.now();
     _ladder = List<Rung>.of(kLadder);
-    // Freshly "synced" from a backend that does not exist yet (this whole
-    // app has none): every rung her age already qualifies for is treated as
-    // reached on first load, exactly as recordGrants() would report after a
-    // first sync from an empty grant table.
-    final RecordGrantsResult result = recordGrants(
-      const <MaturationGrant>[], _demoChildId, widget.childAgeYears, _now, ladder: _ladder);
-    _grants = result.grants;
-    final String? note = guardianAnnouncement(result.newly, ladder: _ladder);
-    // Demo-only: the real "told once, warmly, never again" guarantee (§21.9
-    // C) needs server-side state to survive a relaunch. In-memory here, it
-    // only survives this one dismiss — disclosed rather than faked durable.
-    _announcement = note == null ? null : withName(note, widget.childName);
+    // What she has reached is a pure function of her age and the ladder, so it
+    // is shown at once; what was REMEMBERED (moved-later rungs, announcements
+    // already dismissed, reveals already seen) is applied by _hydrate() as soon
+    // as it is read from the device — and only then does anything proactive
+    // (the reveal, the guardian banner) happen, so a restart can never repeat
+    // something she was already told.
+    _grants = recordGrants(
+      const <MaturationGrant>[], _childId, widget.childAgeYears, _now, ladder: _ladder).grants;
+    unawaited(_hydrate());
+  }
+
+  LadderState _state() => LadderState(
+        grants: _grants,
+        agesLater: <Grant, int>{
+          for (final Rung r in _ladder)
+            if (r.age != kLadder.firstWhere((Rung k) => k.grant == r.grant).age) r.grant: r.age,
+        },
+        revealsSeen: <Grant>{...childSeenRungReveals},
+        announced: _announced,
+      );
+
+  void _persist() {
+    unawaited(() async {
+      try {
+        await _repo.save(_state());
+      } catch (_) {
+        // Leaves this visit as-is; the next visit recomputes from age.
+      }
+    }());
+  }
+
+  Future<void> _hydrate() async {
+    LadderState? stored;
+    try {
+      stored = await _repo.load();
+    } catch (_) {
+      stored = null; // quarantined by the store: start from age alone
+    }
+    if (!mounted) return;
+    List<Rung> ladder = List<Rung>.of(kLadder);
+    List<MaturationGrant> existing = const <MaturationGrant>[];
+    if (stored != null) {
+      // A rung only ever moves LATER (adjustRung's rule): an earlier stored
+      // age is ignored rather than trusted.
+      ladder = <Rung>[
+        for (final Rung r in kLadder)
+          if ((stored.agesLater[r.grant] ?? r.age) > r.age) r.withAge(stored.agesLater[r.grant]!) else r,
+      ];
+      existing = stored.grants;
+      childSeenRungReveals.addAll(stored.revealsSeen);
+      _announced = <Grant>{...stored.announced};
+    }
+    final RecordGrantsResult result =
+        recordGrants(existing, _childId, widget.childAgeYears, _now, ladder: ladder);
+    // The guardian's "told once": every notifying grant she has reached that
+    // was not yet dismissed. (Stored grants are append-only, so a rung moved
+    // later after being reached stays reached.)
+    final List<MaturationGrant> unannounced = <MaturationGrant>[
+      for (final MaturationGrant g in result.grants)
+        if (!_announced.contains(g.grant)) g,
+    ];
+    final String? note = guardianAnnouncement(unannounced, ladder: ladder);
 
     // The child-facing counterpart to the guardian banner above — before
     // this pass, a rung she'd just reached was invisible to her unless she
     // navigated here herself and tapped the right tile open (three real
     // taps deep: More → Growing-up ladder → the tile). Proactive now,
     // mirroring the guardian's own one-time-announcement contract, not a
-    // second, drifting mechanism — same `result.newly` this initState
-    // already computed, filtered against the app-run-scoped `seen` set so
-    // it never resurfaces on a later visit to this same screen.
+    // second, drifting mechanism — filtered against the `seen` set (the
+    // module-level app-run set, seeded from what the device remembers) so it
+    // never resurfaces, in this run or after a restart.
+    List<Rung> toReveal = const <Rung>[];
     if (widget.viewer == LadderViewer.child) {
-      final List<Rung> toReveal = [
-        for (final MaturationGrant g in result.newly)
+      toReveal = <Rung>[
+        for (final MaturationGrant g in result.grants)
           if (!childSeenRungReveals.contains(g.grant))
-            _ladder.firstWhere((Rung r) => r.grant == g.grant),
+            ladder.firstWhere((Rung r) => r.grant == g.grant),
       ];
-      if (toReveal.isNotEmpty) {
-        for (final Rung r in toReveal) {
-          childSeenRungReveals.add(r.grant);
-        }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => _RungRevealScreen(rung: toReveal.first, childName: widget.childName)));
-        });
+      for (final Rung r in toReveal) {
+        childSeenRungReveals.add(r.grant);
       }
+    }
+    setState(() {
+      _ladder = ladder;
+      _grants = result.grants;
+      if (widget.viewer == LadderViewer.guardian) {
+        _announcement = note == null ? null : withName(note, widget.childName);
+      }
+    });
+    _persist();
+    if (toReveal.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => _RungRevealScreen(rung: toReveal.first, childName: widget.childName)));
+      });
     }
   }
 
@@ -312,8 +475,9 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
       // recordGrants() only ever adds — a rung's age moving later can never
       // un-grant something already recorded in _grants, which is exactly
       // the append-only guarantee §21.1 requires.
-      _grants = recordGrants(_grants, _demoChildId, widget.childAgeYears, _now, ladder: _ladder).grants;
+      _grants = recordGrants(_grants, _childId, widget.childAgeYears, _now, ladder: _ladder).grants;
     });
+    _persist();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
       'Moved to age $newAge. ${widget.childName} does not need to do anything.')));
@@ -354,7 +518,14 @@ class _MaturationLadderScreenState extends State<MaturationLadderScreen> {
               Padding(padding: const EdgeInsets.only(bottom: 16),
                 child: _AnnouncementBanner(
                   text: _announcement!,
-                  onDismiss: () => setState(() => _announcement = null))),
+                  onDismiss: () {
+                    // Dismissed = told once, never again, across restarts.
+                    setState(() {
+                      _announcement = null;
+                      _announced = <Grant>{..._announced, for (final MaturationGrant g in _grants) g.grant};
+                    });
+                    _persist();
+                  })),
             _PrincipleBanner(
               isChild: isChild,
               childName: widget.childName,
