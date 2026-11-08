@@ -27,6 +27,7 @@
 // P2: no read count, no "jokes told", no favourite tally. Favouriting is
 // binary — starred or not — and the shelf lists titles only.
 // No settings affordance anywhere on this child-facing screen (§8.1).
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -34,6 +35,8 @@ import 'activity_overrides.dart';
 import 'form_factors.dart' as ff;
 import 'hub_widgets.dart';
 import 'joke_logic.dart';
+import 'local_repositories.dart';
+import 'local_services.dart';
 
 /// The one extraSections block "Play together" adds for the jokebook —
 /// a titled hub section with a single door in, built from the same
@@ -123,7 +126,12 @@ class JokebookScreen extends StatefulWidget {
     this.initialFavourites = const [],
     this.pick,
     this.overrides,
+    this.repository,
   });
+
+  /// Null means the app's on-device favourites for this device's child
+  /// (LocalStore area `jokes`: joke id and date only, no tallies).
+  final JokeFavouritesRepository? repository;
 
   final String childName;
   /// Gates which jokes come up via joke_logic.dart's forAge(). Default of 7
@@ -148,6 +156,25 @@ class JokebookScreen extends StatefulWidget {
 
 class _JokebookScreenState extends State<JokebookScreen> {
   late List<JokeFavourite> _favourites = List.of(widget.initialFavourites);
+  late final JokeFavouritesRepository _repo = widget.repository ??
+      JokeFavouritesRepository(LocalServices.current.area('jokes'));
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_hydrate());
+  }
+
+  Future<void> _hydrate() async {
+    try {
+      final stored = await _repo.load();
+      if (!mounted || stored == null) return;
+      setState(() => _favourites = stored);
+    } catch (_) {
+      // Unreadable favourites were quarantined by the store; start fresh.
+    }
+  }
+
   Joke? _current;
   bool _revealed = false;
 
@@ -174,6 +201,13 @@ class _JokebookScreenState extends State<JokebookScreen> {
           ? unstar(_favourites, j.id)
           : star(_favourites, j.id, _nowIso);
     });
+    unawaited(() async {
+      try {
+        await _repo.save(_favourites);
+      } catch (_) {
+        // Leaves the star on screen for this visit; nothing useful to tell her.
+      }
+    }());
   }
 
   void _tellParent() {

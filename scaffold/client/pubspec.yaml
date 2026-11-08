@@ -101,6 +101,16 @@ dependencies:
   # listing, same posture image_picker/flutter_tts above already document
   # for their own federated-implementation packages.
   mobile_scanner: ^7.2.0
+  # LocalStore (lib/local_store.dart) encryption at rest for private
+  # namespaces: AES-256-GCM. Pure Dart (no native plugin, so it also runs under
+  # `flutter test`), dint-dev's `cryptography` (published by a long-standing
+  # maintainer, no native build step, no transitive native code). Pinned
+  # EXACTLY (no caret) because it guards the child's private data: an upgrade
+  # is a deliberate, reviewed change. Chosen over hand-rolling an HMAC-based
+  # stream cipher on top of sha256.dart (the only crypto already in this repo,
+  # which is a hash, not a cipher): an unaudited cipher is the one place not
+  # to be clever.
+  cryptography: 2.9.0
 
 dev_dependencies:
   flutter_test:

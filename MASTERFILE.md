@@ -5320,6 +5320,147 @@ synchronous and asynchronous form, and if so, do both already exist?**
 
 ---
 
+## §8.16 On-device data — the offline-first foundation
+
+*Owner direction, 2026-11-07: move away from online functions for now (calls,
+push, delivery, invites, networked play, server sync) and build the
+offline-first, on-device foundation.* Until this section the client had no
+durable storage at all: sixteen shipped screens kept their data in memory and
+lost it on exit. This is the storage they now use. **It adds no online
+feature and changes no network behaviour.**
+
+### 8.16.1 The store
+
+`client/lib/local_store.dart` (`LocalStore`) — small, dependency-light, atomic,
+versioned.
+
+- **Namespaces.** One JSON document file per namespace under the app's private
+  documents directory (`olive_store/<name>.json`), holding a map of key →
+  JSON value. `get` / `put` / `delete` / `list` / `clear` work within a
+  namespace; a typed `StoreCodec` helper sits on top. Names are a closed
+  alphabet (`[a-z0-9._-]`, no separators), so a name can never become a path.
+- **Atomic.** A write goes to `<name>.json.tmp`, is flushed, then renamed over
+  the live file. A crash mid-write leaves the previous complete document; a
+  stale `.tmp` is never read. Writes within a namespace are serialized.
+- **Versioned.** Each file records its schema version. A namespace declares its
+  current schema and a `migrations` map (N → N+1); older files are migrated on
+  load and rewritten.
+- **Corruption is safe, never fatal.** An unreadable file (bad JSON, wrong
+  shape, failed authentication, a **newer** schema than the app knows, a
+  missing migration step) is copied to `quarantine/` — kept, never deleted, so
+  it can be recovered by hand — and the namespace starts empty. The app keeps
+  running; nothing here throws on a damaged file.
+- **Bounded.** Each namespace has a byte ceiling; a write past it is refused
+  (`LocalStoreFull`) and the stored data is untouched. Nothing is ever silently
+  evicted to make room, and a single stored picture is capped separately so one
+  huge doodle cannot crowd out the rest.
+- **Pluggable backend.** `StoreBackend` is the only layer that touches a disk:
+  `DirectoryStoreBackend` for the app, `MemoryStoreBackend` for tests and for
+  the offline preview before storage is opened. If platform storage cannot be
+  opened at boot the app runs in memory (nothing persists that run) rather than
+  failing to start.
+
+### 8.16.2 Encryption at rest
+
+A namespace declared `encrypted` is sealed with **AES-256-GCM** (the pinned,
+pure-Dart `cryptography` 2.9.0 — chosen over hand-rolling a cipher on the
+repo's `sha256.dart`, which is a hash, not a cipher). Each write draws a fresh
+random nonce; the namespace name is bound in as associated data, so a sealed
+file moved to another namespace will not open, and a plaintext file planted in
+a private namespace is never read as data. The 256-bit key is generated once
+per install from the platform CSPRNG and kept in `flutter_secure_storage`
+(Keystore/Keychain) — never on disk beside the data. Opening a private
+namespace with no cipher is refused; it never falls back to plaintext.
+
+**Private namespaces:** the child's journal (P7) and all of Parent Learn.
+
+### 8.16.3 Scoping
+
+Every namespace is named for its owner: `child.<childId>.<area>`,
+`guardian.<guardianId>.<area>`. One device can hold more than one child profile
+later without their data touching, and forgetting one profile is a prefix
+delete. A **live** build refuses the literal `demo-child` as a scope (it throws
+at construction); only the offline preview and tests, which are not live, may
+use it. A live build also turns **demo seeds off**: no invented wishes, no
+invented collection specimens.
+
+### 8.16.4 What is stored, where, whether encrypted
+
+The single source of truth is `localDataCatalogue` in
+`client/lib/local_services.dart`: namespace specs are built from it, the
+guardian's "Data on this device" screen renders it, and a test fails if they
+drift. Nothing is written that is not in it.
+
+| Area (namespace) | What it holds | Encrypted |
+|---|---|---|
+| `child.<id>.journal` | Her private journal entries (text, date). No guardian read path (P7). | **Yes** |
+| `child.<id>.lists` | Wants and needs: the words she typed and whether she ticked them. No price (P4). | No |
+| `child.<id>.pictures` | Doodles and colourings she chose to keep (the strokes / region fills, not a raster) and bare photo-taps (where and when only). Never in the phone gallery, never uploaded. | No |
+| `child.<id>.stories` | Starred stories (code, title, date) and bookmarks. **No read counts.** | No |
+| `child.<id>.jokes` | Starred jokes (id, date). No tallies. | No |
+| `child.<id>.lessons` | What she taught: title, how, date, and one bit — asked again or not. **No running count**, no grade or score. | No |
+| `child.<id>.collections` | Specimens she added (name, date, optional note). No totals or targets. | No |
+| `child.<id>.ladder` | Growing-up grants reached (append-only), rungs a guardian moved later, reveals she has seen, announcements dismissed. Makes "told once" true across a restart. | No |
+| `child.<id>.colour` | Today's colour: one colour and one day, overwritten. The colour-of-the-day feature owns what it means; this only remembers it. | No |
+| `child.<id>.profile` | Offline start-up cache: her first name, age in whole years, that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
+| `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
+| `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
+
+Rules held in code and tests: **no scores, streaks, counters, rankings or
+completion states are stored (P2)**; no price (P4); no coordinates (P3); no
+financial data (P6). Where an in-memory model carries a counter it is dropped
+(a story's `timesRead`) or reduced to the one bit the product uses (a lesson's
+`askedAgain`).
+
+### 8.16.5 Offline-first first run
+
+`hasOnboarded` is cached (`child.<id>.profile`). The server's answer always
+wins: **yes** → remembered; **no** → false and the cache follows it;
+**unreachable** → the remembered answer, and a device that never heard a yes
+still fails **closed** to the welcome tour. So an onboarded child who boots
+offline does not restart onboarding (audit C-06). When the child home cannot
+load (no signal, or anything else) she is **never** shown an error screen or a
+sentence about servers or status codes: from the cache she gets her own home
+with a small cloud-off picture and a refresh picture in the corner; with
+nothing cached she gets a cloud-off picture and one large refresh button. No
+text either way; the cause goes to the debug log only.
+
+### 8.16.6 Data ownership: "Data on this device"
+
+A **guardian-only** screen (`clear_local_data_screen.dart`, reached from the
+guardian hub's "This device" section; not reachable from the child side). It
+lists exactly what the catalogue says is kept, and offers **Clear data on this
+device**:
+
+- **PIN-gated, fail closed.** The grown-up's PIN is checked
+  (`POST /v1/me/verify-controls-pin`); with no live session there is nothing to
+  check it against, so the action is **unavailable and says so** — it never
+  accepts a PIN it cannot verify, and a check that errors counts as wrong. A
+  correct PIN is followed by one plain confirmation.
+- **What a wipe does.** Deletes every on-device document, every quarantined
+  damaged copy, and the **encryption key** (so any copy of the sealed files
+  someone kept becomes unreadable), and resets the two in-process mirrors
+  (the saved-pictures list, the ladder's seen-reveals).
+- **What it does not do.** It does not unpair the device or sign anyone out
+  (that is the paired-devices screen), and it touches nothing on the server —
+  nothing here was ever uploaded.
+- **Export-free by design.** Nothing here is added to the court export, and
+  there is no "export this data" affordance: a child's journal and pictures
+  are not evidence this app hands to anyone (P7).
+
+### 8.16.7 What is not here
+
+Not built, and why: game favourites (the offline picker deliberately has no
+favouriting mechanism — a guardian-side server setting); the guardian gallery
+and showcase (demo datasets and other-parent asks, not on-device user data);
+siblings (the sibling set is demo data; real sibling editing belongs to the
+family-structure work); the offline outbox is persisted by a repository but
+`receipt_screen.dart` still holds its own list in memory (its payload carries
+raw recorded bytes, and network semantics are out of scope here). No sync,
+backup or cloud restore of on-device data exists or is implied.
+
+---
+
 ## §8.11 The device matrix
 
 Everything until now was designed against two viewports — a Galaxy Z Fold 5

@@ -49,6 +49,7 @@ import 'parental_controls_screen.dart';
 import 'jokebook_screen.dart';
 import 'live_game_picker.dart';
 import 'lock_advisory_screen.dart';
+import 'clear_local_data_screen.dart';
 import 'maturation_ladder.dart';
 import 'meds_care.dart';
 import 'palette_logic.dart';
@@ -139,7 +140,27 @@ Future<bool> Function()? _liveCheckExistingPin(
   };
 }
 
-final MemoryLearnStore _localLearnStore = MemoryLearnStore(principal: const LearnPrincipal('guardian', 'local-guardian'));
+/// The PIN check behind "Clear data on this device": POST
+/// /v1/me/verify-controls-pin (the same re-verification ParentalControlsScreen
+/// uses) when this hub has a live session, null otherwise. FAILS CLOSED: any
+/// error — wrong PIN, network, a lapsed session — is `false`, never a pass.
+Future<bool> Function(String pin)? _liveVerifyWipePin(
+    {required String? baseUrl, required String? guardianId, http.Client? httpClient}) {
+  if (baseUrl == null || guardianId == null) return null;
+  return (String pin) async {
+    try {
+      final api = await apiFor(baseUrl, userId: guardianId, client: httpClient);
+      try {
+        await api.verifyControlsPin(pin);
+        return true;
+      } finally {
+        if (httpClient == null) api.close();
+      }
+    } catch (_) {
+      return false;
+    }
+  };
+}
 
 class GuardianMoreScreen extends StatelessWidget {
   const GuardianMoreScreen({
@@ -609,7 +630,9 @@ class GuardianMoreScreen extends StatelessWidget {
             subtitle: 'Short, sourced parenting guides. Private to you.',
             onTap: () => _open(context, LearnHomeScreen(
               principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
-              store: learnStore ?? _localLearnStore,
+              // Parent Learn is kept on this device, sealed (LocalStore's
+              // encrypted `learn` area), unless a server-backed store is passed.
+              store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId),
               childAge: childAge))),
         ]),
         HubSection(title: 'Show me', children: [
@@ -877,6 +900,18 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.logout, title: 'Sign out',
             subtitle: 'Stops notifications on this device and returns to the start',
             onTap: () => _signOut(context)),
+        ]),
+        // Offline-first foundation: see exactly what this phone keeps and clear
+        // it (PIN-gated, fail closed). Always listed: it needs no session to
+        // SHOW the list; only the wipe needs a checkable PIN. Its own section,
+        // last, so no existing tile moves.
+        HubSection(title: 'This device', children: [
+          HubTile(key: const Key('moreDeviceData'), icon: Icons.phonelink_erase_outlined,
+            title: 'Data on this device',
+            subtitle: 'What this phone keeps, and clear it',
+            onTap: () => _open(context, ClearLocalDataScreen(
+              verifyPin: _liveVerifyWipePin(
+                baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient)))),
         ]),
       ]),
     )),

@@ -174,15 +174,19 @@ void main() {
         baseUrl: 'http://api.test', childId: 'nope', httpClient: mock)));
       await t.pumpAndSettle();
 
-      expect(find.text("Couldn't reach the server"), findsOneWidget);
-      expect(find.text('Try again'), findsOneWidget);
-      // A child reads this screen: the plain sentence, never "404: child_not_found".
-      expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
+      // No signal is PICTURES now, never an error screen (offline-first): a
+      // cloud-off picture and a refresh button, and no text at all — so no
+      // status code, no reason, no sentence about servers can ever reach her.
+      expect(find.byKey(const Key('childOfflineIcon')), findsOneWidget);
+      expect(find.byKey(const Key('childOfflineRetry')), findsOneWidget);
+      expect(find.byType(Text), findsNothing);
+      expect(find.text("Couldn't reach the server"), findsNothing);
+      expect(find.text('Something went wrong. Please try again.'), findsNothing);
       expect(find.textContaining('404'), findsNothing);
       expect(find.textContaining('child_not_found'), findsNothing);
     });
 
-    testWidgets('the error icon and message use the themed secondary color, '
+    testWidgets('the offline picture uses the themed secondary color, '
         'not a hardcoded black (design-token audit finding #1)', (t) async {
       final mock = MockClient((req) async => http.Response(
           jsonEncode({'error': 'child_not_found'}), 404));
@@ -190,8 +194,7 @@ void main() {
         baseUrl: 'http://api.test', childId: 'nope', httpClient: mock)));
       await t.pumpAndSettle();
 
-      final BuildContext context =
-          t.element(find.text("Couldn't reach the server"));
+      final BuildContext context = t.element(find.byKey(const Key('childOfflineIcon')));
       final Color onSurfaceVariant =
           Theme.of(context).colorScheme.onSurfaceVariant;
       final Icon icon = t.widget(find.byIcon(Icons.cloud_off));
@@ -222,9 +225,9 @@ void main() {
         baseUrl: 'http://api.test', childId: 'child-a', httpClient: mock,
         pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
-      expect(find.text("Couldn't reach the server"), findsOneWidget);
+      expect(find.byKey(const Key('childOfflineRetry')), findsOneWidget);
 
-      await t.tap(find.text('Try again'));
+      await t.tap(find.byKey(const Key('childOfflineRetry')));
       await t.pumpAndSettle();
       expect(find.text('Hi Ivy'), findsOneWidget);
     });

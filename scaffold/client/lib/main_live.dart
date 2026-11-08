@@ -52,6 +52,8 @@ import 'auth_session.dart';
 import 'child_home_live.dart';
 import 'device_identity.dart';
 import 'kiosk_shell.dart';
+import 'local_repositories.dart';
+import 'local_services.dart';
 import 'onboarding_flow.dart';
 import 'pairing_redeem_screen.dart';
 import 'push_channel.dart';
@@ -219,15 +221,37 @@ Future<String?> _resolveSessionToken(AuthSession session) async {
 /// onboarding"): a null [token] (resolution already failed), or a `/v1/me`
 /// call that throws for any reason, reports `false` — the pre-lock-task
 /// onboarding branch, never a silent pass into KioskShell.
+///
+/// OFFLINE-FIRST (audit C-06): this now THROWS when the server cannot be asked
+/// (no session token, or the call fails) instead of answering `false`, so
+/// [resolveHasOnboarded] (local_repositories.dart) can tell "the server said
+/// no" from "I could not ask". Only the former restarts onboarding: an
+/// onboarded child who boots with no signal is let through on the answer this
+/// device remembered the last time the server said yes; a device that never
+/// heard a yes still fails CLOSED to the welcome tour.
 Future<bool> _fetchHasOnboarded(String childId, String? token) async {
-  if (token == null) return false;
+  if (token == null) throw StateError('no session token: server not asked');
+  final api = await apiFor(_dartDefineBaseUrl, childId: childId);
   try {
-    final api = await apiFor(_dartDefineBaseUrl, childId: childId);
     final me = await api.fetchMe();
-    api.close();
     return me['hasOnboarded'] == true;
-  } catch (_) {
-    return false;
+  } finally {
+    api.close();
+  }
+}
+
+/// Opens this device's on-device storage for [childId] (LocalStore under the
+/// app documents directory, sealed namespaces keyed from secure storage) and
+/// installs it as [LocalServices.current]. A live build: the preview 'demo-child'
+/// scope is refused and demo seed content is off. If the platform storage
+/// cannot be opened at all, the app still runs on an in-memory store — nothing
+/// persists that run, which is the honest degraded mode, never a crash.
+Future<void> _openLocalStorage(String childId) async {
+  try {
+    await LocalServices.boot(childId: childId, isLive: true);
+  } catch (e) {
+    debugPrint('[olive.localStore] on-device storage unavailable, running in memory: $e');
+    LocalServices.install(LocalServices.memory(childId: childId, isLive: true, demoSeeds: false));
   }
 }
 
@@ -248,8 +272,12 @@ Future<void> _bootWithOnboardingGate({
 }) async {
   // Installed first: _fetchHasOnboarded below goes through apiFor().
   AuthSession.use(session);
+  // On-device storage first: the onboarding answer below is remembered there.
+  await _openLocalStorage(childId);
+  final profile = ProfileCacheRepository(LocalServices.current.area('profile', ownerId: childId));
   final token = await _resolveSessionToken(session);
-  final hasOnboarded = await _fetchHasOnboarded(childId, token);
+  final hasOnboarded = await resolveHasOnboarded(
+      fetch: () => _fetchHasOnboarded(childId, token), cache: profile);
   if (hasOnboarded) {
     await _bootLiveApp(childId: childId, session: session);
     return;
@@ -261,7 +289,14 @@ Future<void> _bootWithOnboardingGate({
     // The SESSION itself, not the locally-resolved [token] above: the token is
     // a one-hour snapshot for the onboarding screen's single write, while
     // _bootLiveApp installs the long-lived session every later screen uses.
-    onOnboarded: () => _bootLiveApp(childId: childId, session: session),
+    onOnboarded: () async {
+      // Remember on THIS device that the tour is done, so an offline restart
+      // goes straight to her home (best effort: a failed write must not strand her).
+      try {
+        await profile.markOnboarded();
+      } catch (_) {}
+      await _bootLiveApp(childId: childId, session: session);
+    },
   ));
 }
 

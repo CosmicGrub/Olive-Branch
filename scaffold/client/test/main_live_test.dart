@@ -126,9 +126,13 @@ void main() {
     });
 
     test('hasOnboarded is fetched fresh from GET /v1/me before deciding the '
-        'boot branch, re-checked every launch, never cached', () {
+        'boot branch and re-checked every launch; the server\'s answer always '
+        'wins, and the device\'s remembered answer is ONLY the fallback for an '
+        'unreachable server (audit C-06: an onboarded child who boots offline '
+        'does not restart onboarding)', () {
       expect(src, contains("me['hasOnboarded'] == true"));
-      expect(src, contains('final hasOnboarded = await _fetchHasOnboarded(childId, token);'));
+      expect(src, contains('fetch: () => _fetchHasOnboarded(childId, token), cache: profile);'));
+      expect(src, contains('final hasOnboarded = await resolveHasOnboarded('));
     });
 
     test('hasOnboarded true proceeds straight into _bootLiveApp (KioskShell/'
@@ -142,7 +146,11 @@ void main() {
         'branch (hasOnboarded false), never a silent pass into KioskShell -- '
         'the same "a broken network must never look like ..." discipline '
         '_verifyGuardianPin already documents, applied here', () {
-      expect(src, contains('if (token == null) return false;'));
+      // The fetch itself now THROWS when the server cannot be asked, so
+      // resolveHasOnboarded (local_repositories.dart, tested directly in
+      // local_repositories_test.dart) can fall back to the remembered answer —
+      // and with none remembered it returns false: still fail-closed.
+      expect(src, contains("if (token == null) throw StateError('no session token: server not asked');"));
     });
 
     test('_OnboardingBootApp runs the UNCHANGED OnboardingFlowScreen -- the '
@@ -151,8 +159,10 @@ void main() {
         'onComplete is exactly what proceeds into _bootLiveApp', () {
       expect(src, contains('home: OnboardingFlowScreen('));
       expect(src, contains('onComplete: onOnboarded,'));
-      expect(src, contains(
-        'onOnboarded: () => _bootLiveApp(childId: childId, session: session),'));
+      // Finishing the tour is remembered on this device, then proceeds into
+      // _bootLiveApp exactly as before.
+      expect(src, contains('await profile.markOnboarded();'));
+      expect(src, contains('await _bootLiveApp(childId: childId, session: session);'));
     });
 
     test('_OnboardingBootApp NEVER references KioskShell anywhere in its own '

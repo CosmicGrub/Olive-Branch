@@ -63,6 +63,18 @@
 // supplied, same posture as `_initPush`'s own `buildCallIncomingHandler`
 // wiring below -- null there is not a regression, it's the same honest gap
 // every build without a navigator key already had.
+//
+// NO SIGNAL (offline-first, audit C-06's companion). When the load fails — no
+// network, server down, anything — she is NEVER shown an error screen or a
+// sentence about servers or status codes (the cause goes to the debug log
+// only). If this device remembers her (the `profile` area of LocalStore:
+// her first name, her age and the grown-up's hide/pace choices from the last
+// good load), her own home opens from that, with a small cloud-off picture and
+// a refresh picture in the corner and nothing else different. If it has never
+// seen her, she gets a picture-only screen: a cloud-off picture and one big
+// refresh button. No text either way. Nothing on this path calls the network
+// beyond the same retry the old error screen had.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
@@ -76,6 +88,8 @@ import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'family_structure_store.dart';
 import 'tts_channel.dart' show buildSpeakCallback;
 import 'game_logic.dart' show neutralGrownUp;
+import 'local_repositories.dart';
+import 'local_services.dart';
 import 'push_channel.dart';
 import 'wear_sync_channel.dart';
 
@@ -129,7 +143,8 @@ class LiveChildHomeScreen extends StatefulWidget {
 
 class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   _LoadState _state = _LoadState.loading;
-  String _errorMessage = '';
+  // What this device remembers of her, for the no-signal home (see _load()).
+  ProfileCache? _cache;
   String _childName = '';
   int _unreadCount = 0;
   // C-05: her real age in whole years, from GET /v1/me's `yearsOld` (the
@@ -271,18 +286,49 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         _family = family;
         _state = _LoadState.ready;
       });
+      // Offline-first: remember what a no-signal start-up needs (her name, her
+      // age, the grown-up's hide/pace choices) so the next one is never blank.
+      unawaited(_rememberProfile(
+          displayName: me['displayName'] as String?,
+          yearsOld: (me['yearsOld'] as num?)?.toInt(),
+          overrides: overridesJson));
       await _syncWear();
       await _initPush(api.sessionToken);
     } catch (e) {
+      // No signal (or the server could not be asked). She never reads a status
+      // code or an error sentence: the cause goes to the debug log only, and
+      // the screen below is pictures. If this device remembers her, her own
+      // home opens from the cache.
+      debugPrint('[olive.childHome] load failed: $e');
+      final cached = await _readProfileCache();
       if (!mounted) return;
       setState(() {
-        // Never the raw status/reason ("401: expired") on a screen a child reads —
-        // ApiException.userMessage is the plain-language sentence; anything else
-        // (a socket error, a decode failure) gets the same generic line.
-        debugPrint('[olive.childHome] load failed: $e');
-        _errorMessage = e is ApiException ? e.userMessage : 'Something went wrong. Please try again.';
+        _cache = cached;
         _state = _LoadState.error;
       });
+    }
+  }
+
+  ProfileCacheRepository get _profile => ProfileCacheRepository(
+      LocalServices.current.area('profile', ownerId: widget.childId));
+
+  Future<ProfileCache?> _readProfileCache() async {
+    try {
+      return await _profile.load();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _rememberProfile(
+      {String? displayName, int? yearsOld, Map<String, dynamic>? overrides}) async {
+    try {
+      await _profile.rememberHome(
+          displayName: displayName, yearsOld: yearsOld,
+          overrides: overrides == null ? null : jsonSafe(overrides) as Map<String, Object?>?);
+    } catch (_) {
+      // A full or unwritable store only means the next offline start-up is
+      // blank again; it must never break a good online load.
     }
   }
 
@@ -372,30 +418,67 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     }
   }
 
+  /// The no-signal home. See the file header: pictures only, never raw text.
+  Widget _offlineHome(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cached = _cache;
+    final String? name = cached?.displayName;
+    if (name == null || name.isEmpty) {
+      // Nothing is remembered about her yet: one calm picture and one big
+      // button to try again.
+      return Scaffold(body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.cloud_off, key: const Key('childOfflineIcon'), size: 72,
+          color: scheme.onSurfaceVariant),
+        const SizedBox(height: 24),
+        IconButton.filledTonal(
+          key: const Key('childOfflineRetry'),
+          tooltip: 'Try again',
+          iconSize: 40,
+          constraints: const BoxConstraints(minWidth: 72, minHeight: 72),
+          onPressed: _load,
+          icon: const Icon(Icons.refresh)),
+      ])));
+    }
+    final overrides = cached?.overrides;
+    return Scaffold(body: SafeArea(child: Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+        child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+          Icon(Icons.cloud_off, key: const Key('childOfflineIcon'), size: 24,
+            color: scheme.onSurfaceVariant),
+          IconButton(
+            key: const Key('childOfflineRetry'),
+            tooltip: 'Try again',
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            onPressed: _load,
+            icon: const Icon(Icons.refresh)),
+        ]),
+      ),
+      Expanded(child: ChildHome(
+        childName: name,
+        presence: null,
+        sleepsUntilHandover: null,
+        unreadCount: 0,
+        baseUrl: widget.baseUrl,
+        childId: widget.childId,
+        sessionToken: null,
+        httpClient: widget.httpClient,
+        // The grown-up's last-known hide/pace choices, so being offline never
+        // unhides something they hid.
+        overrides: overrides == null ? null : decodeActivityOverrides(Map<String, dynamic>.from(overrides)),
+        childAge: cached?.yearsOld ?? _failClosedAge,
+        dayParts: const <DayPartLite>[],
+      )),
+    ])));
+  }
+
   @override
   Widget build(BuildContext context) {
     switch (_state) {
       case _LoadState.loading:
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       case _LoadState.error:
-        return Scaffold(body: Center(child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.cloud_off, size: 40,
-              color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text("Couldn't reach the server",
-              style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(_errorMessage,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _load, child: const Text('Try again')),
-          ]),
-        )));
+        return _offlineHome(context);
       case _LoadState.ready:
         // C-23: no development banner here any more ("Live: name and message
         // count are real..." was a build-time note aimed at the developer, shown
