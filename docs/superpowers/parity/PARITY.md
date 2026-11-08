@@ -194,5 +194,5 @@ Art regeneration: `node tools/gen-olive-icons.mjs` (reads `tools/design-referenc
 fails if `olive_art_data.dart` is stale. `kDesignIcons` / `kDesignSpots` in the tokens stay raw SVG data; `OliveIcon` draws
 the normalised geometry from the same snapshot, and a Dart test locks the two name sets together.
 
-Known gaps: `K.swipe` (swipe-to-reveal row) and the tab bar are not ported; no mono face is bundled, so `t-mono` and
-`t-label` use the body face with tabular figures.
+Known gaps: `K.swipe` (swipe-to-reveal row) and the tab bar are not ported; `t-mono` and
+`t-label` use the bundled JetBrains Mono (weight 500) with tabular figures.

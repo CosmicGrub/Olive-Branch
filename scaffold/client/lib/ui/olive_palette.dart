@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import '../access_scope.dart' show motionDuration;
 import '../design_tokens.dart';
 import '../design_tokens_generated.dart' show DesignRole;
+import '../olive_tokens.dart' show designTextStyle;
 import '../theme_data.dart';
 
 /// Palette tokens the generated art (olive_art_data.dart) refers to by name. The generator
@@ -249,12 +250,13 @@ abstract final class OliveText {
       _body(c, size, 1.25, color ?? OlivePalette.of(c).ink, w: FontWeight.w700);
   static TextStyle cap(BuildContext c, {Color? color}) =>
       _body(c, 12.5, 1.35, color ?? OlivePalette.of(c).ink3);
-  /// Small caps label (kit `.t-label`, a mono face). The app bundles no mono face, so this is the body
-  /// face with wide tracking and tabular figures.
-  static TextStyle label(BuildContext c, {Color? color}) => _body(c, 10.5, 1.2, color ?? OlivePalette.of(c).ink3,
-      w: FontWeight.w600).copyWith(letterSpacing: 0.9, fontFeatures: const [FontFeature.tabularFigures()]);
-  static TextStyle mono(BuildContext c, {Color? color, double size = 13}) => _body(c, size, 1.3, color ?? OlivePalette.of(c).ink,
-      w: FontWeight.w600).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+  /// Small caps label (kit `.t-label`): the bundled JetBrains Mono at weight 500, wide tracking and
+  /// tabular figures. Callers uppercase the text.
+  static TextStyle label(BuildContext c, {Color? color}) =>
+      designTextStyle('label', color: color ?? OlivePalette.of(c).ink3).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+  /// Kit `.t-mono`: JetBrains Mono, tabular figures.
+  static TextStyle mono(BuildContext c, {Color? color, double size = 13}) =>
+      designTextStyle('mono', color: color ?? OlivePalette.of(c).ink).copyWith(fontSize: size, fontFeatures: const [FontFeature.tabularFigures()]);
   static TextStyle tnum(TextStyle s) => s.copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
 }
 
