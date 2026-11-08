@@ -25,6 +25,11 @@ Silent deletion is a process failure.
 
 ### Tests
 - `label_adoption_test.dart`: each touched screen rendered with a nickname set (Dada), with none (the Daddy age default), and with no family (the neutral text), plus the catalogue-names test and the read-only provider.
+### Added: the Flutter component library for design parity (`client/lib/ui/`)
+- **Components** mirroring the kit helper for helper (OliveCard, OliveTile with a child picture variant, OliveRow, KeyValueRow, StatusPill, SegmentedControl, FilterChips, AvatarStack, OliveNotice, OfflineBanner, toasts, EmptyState, ErrorState, OliveSkeleton, PermissionPrompt, bottom sheet and dialog helpers, steppers, StatTile, Timeline, ScheduleGrid, MonthCalendar, RecordButton, Waveform, PlayerChrome, PinPad, QrCard, OliveFormField, toggle, radio, check and slider rows, OliveDivider). Light and dark, text scale 2.0 on 344dp without overflow, 48dp guardian and 64dp child targets, semantics, reduced motion through the existing `motionDuration`.
+- **Art**: the kit's icon set, fourteen scenes and the spot illustrations as CustomPainter data generated from the kit snapshot by `tools/gen-olive-icons.mjs`, with a drift guard (`tools/test/olive_art.test.mjs`, wired into `npm test` and `verify.sh`). The leaf is the celebration image; no stars, scores or trophies.
+- **Gallery**: `OliveUiGalleryScreen` shows everything in light and dark at text scale 1.0 and 2.0, as guardian or child, in all palettes. Guardian More hub "Design (demo)" tile (demo builds only) and `lib/main_ui_gallery.dart`.
+- No existing screen was converted; adoption is a later wave (`docs/superpowers/parity/PARITY.md`). MASTERFILE §8.26.
 
 ---
 ### Fixed (wave 1a: places the client broke the product's prohibitions)

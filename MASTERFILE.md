@@ -2156,6 +2156,20 @@ evidence is mixed; spacing is built instead), live caption translation, the SMS 
 
 ---
 
+### 8.26 The component library (design parity)
+
+Owner decision 2026-11-08: the live prototype and Round 3 mockups are the reference, and the Flutter app must match them.
+`client/lib/ui/` is the Flutter counterpart of the premium kit (`kit.js`, `overhaul.css`): OliveCard, OliveTile (hero, featured,
+standard, and a picture-first child tile with a dot badge, never a number), OliveRow, KeyValueRow, StatusPill (shape, icon and word,
+never colour alone), SegmentedControl, FilterChips, AvatarStack, notices, OfflineBanner, toasts, EmptyState and ErrorState (the child
+variants are pictures only, no words), skeletons, PermissionPrompt, bottom sheet and dialog, stepper and progress, StatTile, Timeline,
+ScheduleGrid, MonthCalendar, RecordButton, Waveform, PlayerChrome, PinPad, QrCard (a placeholder that cannot be scanned), form field and
+toggle, radio and slider rows. Icons, scenes and spot illustrations are CustomPainter art generated from the kit (no scores, streaks,
+trophies or stars among the illustrations, P2). Targets are 48dp (guardian) and 64dp (child); text is safe to scale 2.0; reduced motion
+collapses every animation. Colours come from the generated design tokens through one seam (`ui/olive_palette.dart`). The component
+gallery (`OliveUiGalleryScreen`, guardian More hub in demo builds and `lib/main_ui_gallery.dart`) is how the two are compared. Screens
+adopt the components in later waves; see `docs/superpowers/parity/PARITY.md`.
+
 ## §9 Feature specifications
 
 ### 9.1 Homework

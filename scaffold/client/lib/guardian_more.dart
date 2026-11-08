@@ -37,6 +37,7 @@ import 'expenses_screen.dart';
 import 'expiry_digest.dart';
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
+import 'ui/olive_ui_gallery.dart';
 import 'game_navigation.dart';
 import 'game_picker.dart';
 import 'games_hub.dart';
@@ -1015,6 +1016,14 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, ClearLocalDataScreen(
               verifyPin: _wipeVerifier(context)))),
         ]),
+        // Last, so it never moves the tiles above it. The design-parity component gallery: the owner's way to compare Flutter against the
+        // prototype. Demo/debug builds only (the same gate as the invented-content tiles above).
+        if (_showDemo)
+          HubSection(title: 'Design (demo)', children: [
+            HubTile(key: const Key('moreUiGallery'), icon: Icons.palette_outlined, title: 'UI gallery (demo)',
+              subtitle: 'Every component, scene and icon, light and dark, text scale 1 and 2',
+              onTap: () => _open(context, const OliveUiGalleryScreen())),
+          ]),
       ]),
     )),
   );

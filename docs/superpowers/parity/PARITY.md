@@ -124,15 +124,35 @@ Status: `built` = visually and behaviourally matches the prototype and has a tes
 | radii, spacing | `AppRadius`, `AppSpacing` | built | |
 | motion tokens | `OliveMotion` | built | |
 | focus ring | button `side` on focus, `OliveTokens.focusSide` | partial | halo on fields not drawn |
-| buttons (`K.btn`) | Filled/Elevated/Outlined/TextButton themes | partial | primary gradient and `lg` size not themed |
+| buttons (`K.btn`) | Filled/Elevated/Outlined/TextButton themes; `OliveButton`, `OliveIconButton` (lib/ui) | built | pri gradient, tonal, ghost, danger, sm/md/lg; 48dp/64dp hit area |
 | toggle, check, radio, slider | Switch/Checkbox/Radio/Slider themes | built | |
-| filter chips, segmented | `ChipTheme`, `SegmentedButtonTheme` | partial | `seg2` pill track not themed |
-| form field (`K.formField`) | `InputDecorationTheme` | partial | focus halo |
-| cards (`card`, `raised`, `sunk`, `outline`, `hero`) | `CardTheme` | partial | variants need an `OliveCard` |
-| state pills (`K.status`) | `kDesignStatePills` | missing | data only; no widget |
-| icons (`K.ico`) | `kDesignIcons` | missing | data only; no painter |
-| spot illustrations (`K.spot`) | `kDesignSpots` | missing | data only; no painter |
-| scenes (`K.scene`) | `kDesignScenes` | missing | names only |
-| bottom sheet, modal, toast | Sheet/Dialog/SnackBar themes | partial | radii and colours match; enter animation not |
+| filter chips, segmented | `FilterChips`, `SegmentedControl` (lib/ui) | built | pill track, counts, 48dp hit area |
+| form field (`K.formField`) | `OliveFormField` (lib/ui) | built | label, hint, error with icon and words, focus halo |
+| cards (`card`, `raised`, `sunk`, `outline`, `hero`) | `OliveCard` (lib/ui) | built | nine variants |
+| state pills (`K.status`) | `StatusPill` (lib/ui) | built | adds `delivering`; shape + icon + word |
+| icons (`K.ico`) | `OliveIcon` + generated `olive_art_data.dart` | built | CustomPainter; generated from the kit snapshot (`tools/gen-olive-icons.mjs`), drift-guarded |
+| spot illustrations (`K.spot`) | `OliveSpot` | built | palette-aware, plate optional |
+| scenes (`K.scene`) | `OliveScene` | built | all 14 kit scenes |
+| bottom sheet, modal, toast | `OliveBottomSheet`, `OliveDialog`, `OliveToast`/`showOliveToast` (lib/ui) | built | scrim, spring entrance via `OliveTiming`, reduced motion honoured |
 | tab bar | `NavigationBarTheme` | partial | blur not drawn |
-| the remaining helpers (`K.pinPad`, `K.calMonth`, `K.schedule`, `K.timeline`, `K.player`, `K.recordBtn`, `K.waveform`, `K.qrCard`, `K.swipe`, ...) | | missing | audit each |
+| the remaining helpers | `OliveTile`, `OliveRow`, `KeyValueRow`, `StatTile`, `AvatarStack`, `OliveNotice`, `OfflineBanner`, `EmptyState`, `ErrorState`, `OliveSkeleton`, `PermissionPrompt`, `OliveStepper`/`OliveSteps`, `Timeline`, `ScheduleGrid`, `MonthCalendar`, `RecordButton`, `Waveform`, `PlayerChrome`, `PinPad`, `QrCard`, toggle/radio/check/slider rows | built | lib/ui; `K.swipe` not ported yet |
+
+## The component library (lib/ui)
+
+`scaffold/client/lib/ui/` holds the Flutter counterpart of the kit's helpers, one import (`ui/olive_ui.dart`):
+primitives (`olive_base`), surfaces and identity (`olive_surfaces`), status and feedback (`olive_feedback`),
+controls (`olive_controls`), progress and time (`olive_flow`), layers (`olive_layers`), media (`olive_media`),
+art (`olive_art`, `olive_vector`, generated `olive_art_data`) and the token seam (`olive_palette`, which reads
+`OliveTokens` and falls back to the Material scheme). Each file header names the kit helper every widget mirrors.
+
+`OliveUiGalleryScreen` (`lib/ui/olive_ui_gallery.dart`) shows every component, scene, spot and icon in light and dark,
+at text scale 1.0 and 2.0, as guardian or child, in all seven palettes. Open it from the guardian More hub
+("Design (demo)", demo builds only) or `flutter run --target=lib/main_ui_gallery.dart`, next to
+`docs/superpowers/mockups/live/index.html`, to compare against the prototype.
+
+Art regeneration: `node tools/gen-olive-icons.mjs` (reads `tools/design-reference/kit.js`); `tools/test/olive_art.test.mjs`
+fails if `olive_art_data.dart` is stale. `kDesignIcons` / `kDesignSpots` in the tokens stay raw SVG data; `OliveIcon` draws
+the normalised geometry from the same snapshot, and a Dart test locks the two name sets together.
+
+Known gaps: `K.swipe` (swipe-to-reveal row) and the tab bar are not ported; no mono face is bundled, so `t-mono` and
+`t-label` use the body face with tabular figures.
