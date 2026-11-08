@@ -134,6 +134,10 @@ flutter:
     # The design tokens generated from the prototype's kit (tools/gen-design-tokens.mjs);
     # test/design_parity_test.dart loads this file to prove the theme matches it.
     - assets/design/
+    # Font licence texts, read by lib/font_licences.dart for the licences page.
+    - assets/fonts/OFL-AtkinsonHyperlegible.txt
+    - assets/fonts/OFL-Bricolage.txt
+    - assets/fonts/OFL-JetBrainsMono.txt
   fonts:
     # Bundled, so the kiosk never depends on the network for type. Both are
     # SIL OFL 1.1 (licence texts beside the files in assets/fonts).
@@ -145,3 +149,7 @@ flutter:
     - family: BricolageGrotesque
       fonts:
         - asset: assets/fonts/BricolageGrotesque.ttf
+    # Variable weight (100 to 800) in one file; the label and mono styles ask for wght 500.
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono.ttf

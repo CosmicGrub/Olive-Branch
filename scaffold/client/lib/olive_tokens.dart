@@ -18,8 +18,8 @@ import 'design_tokens_generated.dart';
 
 const String kBodyFont = 'AtkinsonHyperlegible';
 const String kDisplayFont = 'BricolageGrotesque';
-/// The prototype's label/mono face. NOT bundled yet (see PARITY.md, open decision): until the
-/// font asset is added the platform monospace is used via [kMonoFallback].
+/// The prototype's label/mono face, bundled (assets/fonts/JetBrainsMono.ttf, SIL OFL 1.1, a
+/// single variable-weight file). [kMonoFallback] only matters if the asset fails to load.
 const String kMonoFont = 'JetBrainsMono';
 const List<String> kMonoFallback = ['RobotoMono', 'Consolas', 'Menlo', 'monospace'];
 
@@ -50,8 +50,8 @@ TextStyle designTextStyle(String name, {Color? color}) {
     height: s.lineHeight,
     letterSpacing: s.letterSpacingEm * s.size,
     fontWeight: _weight(s.weight),
-    // Bricolage Grotesque is a variable font: ask for the exact weight, not the nearest bucket.
-    fontVariations: s.family == 'display' ? [FontVariation('wght', s.weight.toDouble())] : null,
+    // Bricolage Grotesque and JetBrains Mono are variable fonts: ask for the exact weight.
+    fontVariations: s.family != 'body' ? [FontVariation('wght', s.weight.toDouble())] : null,
     color: color,
   );
 }

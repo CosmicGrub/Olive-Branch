@@ -7,12 +7,16 @@
 // against the HTML prototype (docs/superpowers/mockups/live/index.html) without walking through the
 // guardian More hub. It is a development target: it is not the build the stores ship.
 import 'package:flutter/material.dart';
+import 'font_licences.dart';
 
 import 'theme.dart';
 import 'theme_data.dart';
 import 'ui/olive_ui_gallery.dart';
 
-void main() => runApp(const OliveUiGalleryApp());
+void main() {
+  registerFontLicences();
+  runApp(const OliveUiGalleryApp());
+}
 
 /// The gallery in a bare app shell.
 class OliveUiGalleryApp extends StatelessWidget {

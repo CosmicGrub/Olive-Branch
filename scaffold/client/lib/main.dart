@@ -22,6 +22,7 @@
 // stitched into the two reachable halves of one app, entered through the
 // same entry gate a real family would see.
 import 'package:flutter/material.dart';
+import 'font_licences.dart';
 import 'theme.dart';
 import 'theme_data.dart';
 import 'child_home.dart';
@@ -31,6 +32,7 @@ import 'access_shell.dart';
 import 'kiosk_shell.dart';
 
 void main() {
+  registerFontLicences();
   runApp(const OliveDemo());
 }
 

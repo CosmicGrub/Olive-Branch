@@ -53,6 +53,7 @@
 // account of the new pre-KioskShell onboarding branch this adds.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'font_licences.dart';
 import 'access_shell.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -362,6 +363,7 @@ Future<void> main() => runLive();
 
 Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerFontLicences();
   AuthSession.devLoginEnabled = _devLoginDartDefine;
   // MASTERFILE §11 -- registers the real top-level background handler before runApp(); wrapped in
   // try/catch inside (a missing google-services.json must never crash the build before its first
