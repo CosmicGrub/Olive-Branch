@@ -25,6 +25,7 @@
 // a live build.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'access_settings.dart' show kChildTarget;
 import 'access_scope.dart' show motionDuration;
 import 'local_services.dart';
@@ -196,7 +197,7 @@ class TeachMeScreen extends StatefulWidget {
     super.key,
     required this.childName,
     required this.childAge,
-    this.parentName = 'Dad',
+    this.parentName = neutralGrownUp,
     this.initialLessons = const [],
     this.repository,
     this.childId,
@@ -404,7 +405,7 @@ class _LessonTile extends StatelessWidget {
                   child: Row(children: [
                     Icon(Icons.favorite, size: 15, color: scheme.primary),
                     const SizedBox(width: 4),
-                    Expanded(child: Text('$parentName asked to hear this again — kept forever now.',
+                    Expanded(child: Text('${asSubject(parentName)} asked to hear this again — kept forever now.',
                       style: Theme.of(context).textTheme.labelMedium
                         ?.copyWith(color: scheme.primary, fontWeight: FontWeight.w600))),
                   ]))
@@ -413,7 +414,7 @@ class _LessonTile extends StatelessWidget {
           if (!askedAgain)
             Align(alignment: Alignment.centerLeft,
               child: TextButton(onPressed: onAskedAgain,
-                child: Text('$parentName asked for this again',
+                child: Text('${asSubject(parentName)} asked for this again',
                   style: Theme.of(context).textTheme.labelMedium))),
         ]),
       ));

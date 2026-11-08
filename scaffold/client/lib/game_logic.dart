@@ -319,7 +319,7 @@ String? handicapBanner(GameKind kind, String? handicapId, {String? parentName}) 
   for (final h in catalogueFor(kind).handicaps) {
     if (h.id == handicapId) {
       if (parentName == null) return "Dad's playing the hard way — ${h.label.toLowerCase()}";
-      return "$parentName's playing the hard way — ${_lowerKeepingName(h.label, parentName)}";
+      return "${asSubject(parentName)}'s playing the hard way — ${_lowerKeepingName(h.label, parentName)}";
     }
   }
   return null;
@@ -330,8 +330,16 @@ String? handicapBanner(GameKind kind, String? handicapId, {String? parentName}) 
 /// guessed "Dad" or "Mom".
 const String neutralGrownUp = 'your grown-up';
 
-/// Replaces the port's literal "Dad" with [parentName] in [text].
-String withParentName(String text, String parentName) => text.replaceAll('Dad', parentName);
+/// Upper-cases the first letter of a name that starts a sentence
+/// ('your grown-up' -> 'Your grown-up'). A name she typed is left as typed
+/// unless it begins with a lower-case letter.
+String asSubject(String name) => name.isEmpty ? name : name[0].toUpperCase() + name.substring(1);
+
+/// Replaces the port's literal "Dad" with [parentName] in [text]. A "Dad" at
+/// the very start of [text] becomes a sentence-start form of the name.
+String withParentName(String text, String parentName) => text.startsWith('Dad')
+    ? asSubject(parentName) + text.substring(3).replaceAll('Dad', parentName)
+    : text.replaceAll('Dad', parentName);
 
 String _lowerKeepingName(String label, String parentName) {
   const String marker = '@@dad@@';
@@ -376,6 +384,6 @@ class HandicapOffer {
 /// Mirrors games.ts's `handicapOffer`. Her choice, her framing — never
 /// "you keep losing".
 HandicapOffer handicapOffer(GameKind kind, {String? parentName}) => HandicapOffer(
-      'Want to make it harder for ${parentName ?? 'Dad'}?',
+      'Want to make it harder for ${parentName ?? neutralGrownUp}?',
       catalogueFor(kind).handicaps,
     );

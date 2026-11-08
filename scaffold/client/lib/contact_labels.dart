@@ -3,8 +3,8 @@
 // (client/test/contact_labels_test.dart). MASTERFILE §8.5.7.
 //
 // Pure logic plus one small repository. Nothing here touches a screen; the
-// first-run flow and the child screens ADOPT it (the repo-wide adoption of the
-// hard-coded 'Dad'/'Mom' strings is a listed follow-up, MASTERFILE §8.5.7).
+// first-run flow and the child screens ADOPT it through grownup_labels.dart
+// (an inherited scope; MASTERFILE §8.5.7 lists the adopted sites).
 //
 // THE NICKNAME LAYER. Every grown-up contact has a guardian-chosen label
 // ([GrownupContact.guardianLabel]) and an optional child-chosen nickname.

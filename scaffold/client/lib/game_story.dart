@@ -23,6 +23,7 @@
 // winner, ever" is structural here, not a UI choice: `addLine()` has no
 // concept of an outcome besides 'finished'.
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'access_scope.dart' show motionDuration;
 
 // =========================================================== ported logic ===
@@ -115,7 +116,7 @@ StoryArtifact? storyArtifact(StoryGame g) {
 // ================================================================= widget ===
 
 class GameStoryScreen extends StatefulWidget {
-  const GameStoryScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad'});
+  const GameStoryScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp});
   final String childName;
   final String parentName;
 
@@ -128,7 +129,7 @@ class _GameStoryScreenState extends State<GameStoryScreen> {
   final TextEditingController _controller = TextEditingController();
   bool _readingAsOne = false;
 
-  String _name(StorySide s) => s == StorySide.a ? widget.childName : widget.parentName;
+  String _name(StorySide s) => s == StorySide.a ? widget.childName : asSubject(widget.parentName);
 
   void _submit() {
     final String text = _controller.text.trim();

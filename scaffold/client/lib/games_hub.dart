@@ -33,6 +33,7 @@ import 'game_uno.dart';
 import 'game_war.dart';
 import 'game_kim.dart';
 import 'game_logic.dart';
+import 'grownup_labels.dart' show GrownupLabelScope;
 import 'game_story.dart';
 import 'game_wordsearch.dart';
 import 'handicap_screen.dart';
@@ -49,12 +50,14 @@ void _open(BuildContext context, Widget screen) =>
 /// just reachable by a second caller now.
 class MoreGamesSections extends StatelessWidget {
   const MoreGamesSections({
-    super.key, this.childName = 'Ivy', this.parentName = 'Dad',
+    super.key, this.childName = 'Ivy', this.parentName,
     this.childAge = 7, this.overrides,
     this.guardianSide = false, this.localRole = 'ivy',
   });
   final String childName;
-  final String parentName;
+  /// A fixed name for her grown-up; null reads it from a [GrownupLabelScope] (her nickname, then the
+  /// age default, then the guardian's label), else the neutral 'your grown-up'.
+  final String? parentName;
 
   // Parental controls, visibility & pacing (docs/superpowers/specs/2026-09-
   // 13-parental-controls-pacing-design.md) — the 8 games this pass gives a
@@ -95,6 +98,7 @@ class MoreGamesSections extends StatelessWidget {
   // checkers line is the one that really is two devices.
   @override
   Widget build(BuildContext context) {
+    final String parentName = this.parentName ?? GrownupLabelScope.of(context).nameFor();
     final String localName = localRole == 'ivy' ? childName : parentName;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     HubSection(title: 'Board games', children: [
@@ -187,12 +191,14 @@ class MoreGamesSections extends StatelessWidget {
 
 class GamesHubScreen extends StatelessWidget {
   const GamesHubScreen({
-    super.key, this.childName = 'Ivy', this.parentName = 'Dad',
+    super.key, this.childName = 'Ivy', this.parentName,
     this.childAge = 7, this.overrides,
     this.guardianSide = false, this.localRole = 'ivy',
   });
   final String childName;
-  final String parentName;
+  /// A fixed name for her grown-up; null reads it from a [GrownupLabelScope] (her nickname, then the
+  /// age default, then the guardian's label), else the neutral 'your grown-up'.
+  final String? parentName;
   final int childAge;
   final Map<String, ActivityOverride>? overrides;
   /// See [MoreGamesSections.guardianSide] / [MoreGamesSections.localRole].

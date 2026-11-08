@@ -49,6 +49,7 @@
 // convention — court_export.dart's wide/narrow Row-vs-Column split is the
 // precedent this follows.
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'annotation_canvas.dart';
 import 'annotation_canvas_view.dart';
 import 'doodle_desk.dart' show kBrushColors, kBrushWidths;
@@ -56,7 +57,7 @@ import 'form_factors.dart' as ff;
 
 // ================================================================ state ===
 class DrawTogetherScreen extends StatefulWidget {
-  const DrawTogetherScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad'});
+  const DrawTogetherScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp});
   final String childName;
   final String parentName;
 
@@ -332,7 +333,7 @@ class _ToolPanel extends StatelessWidget {
           style: SegmentedButton.styleFrom(minimumSize: const Size(64, 48)),
           segments: <ButtonSegment<String>>[
             ButtonSegment<String>(value: 'child', label: Text(childName)),
-            ButtonSegment<String>(value: 'parent', label: Text(parentName)),
+            ButtonSegment<String>(value: 'parent', label: Text(asSubject(parentName))),
           ],
           selected: <String>{activeActorId},
           onSelectionChanged: (s) => onActorChanged(s.first),

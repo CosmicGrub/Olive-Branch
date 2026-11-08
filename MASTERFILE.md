@@ -4338,8 +4338,10 @@ authority is not granted by anything she taps (§8.5.0).
 ### 8.5.7 What she calls her grown-ups, and the age lock (naming core)
 
 Owner addition, 2026-11-08. **Built:** the pure core, `contact_labels.dart`,
-with its tests. **Not built yet, listed in §22:** the role picker, the unified
-entry, the guardian onboarding and every screen's adoption (below).
+with its tests, and (label-adoption pass) its **adoption by every child-facing
+screen** through `grownup_labels.dart` (below). **Not built yet, listed in §22:**
+the role picker, the unified entry, the guardian onboarding, a rename-a-grown-up
+screen, and the one-line install of the label scope at the app root.
 
 - **Age lock.** The picker she sees offers **5 to 15** (`kKidAgeMin`/`Max`); a
   guardian sets **3 to 17** (`kGuardianAgeMin`/`Max`), as in the family screens.
@@ -4360,14 +4362,65 @@ entry, the guardian onboarding and every screen's adoption (below).
   writer; a guardian screen is handed a `NicknameReader`, which cannot write. A
   guardian editing their own label never changes a nickname.
 
-**Hard-coded "Dad"/"Mom" sites found, to adopt the resolver in a follow-up:**
-`a11y_speech.dart` ("Send this to Daddy"), `exchange_screen.dart` (`_sideNames`),
-`co_view_screens.dart` (`guardianName`), `degradation_banner.dart`
-(`callerName`), and the `parentName = 'Dad'` defaults in `game_battleship`,
-`game_chain`, `game_checkers`, `game_chess`, `game_dotsboxes`,
-`game_draw_together`, `game_guess_doodle`, `game_hunt` and `game_kim`, and more `Dad`/`Mom` text in `games_hub`, `weeks_screen`, `inbox_screen`, `jokebook_screen`, `teach_me`, `handicap_screen`, `game_silly_sentence`, `game_story`, `game_tictactoe`, `game_twenty_questions`, `game_two_truths` and `game_would_you_rather` (an audit by `grep` of `client/lib`, not a full read), plus the
-"Dad" wording in `game_logic.dart` handicap text and `onboarding_flow.dart`'s
-demo who-step (not shown before pairing any more).
+**How a screen asks (label adoption, done).** `grownup_labels.dart` is the
+plumbing, not a second resolver: `GrownupLabels` is an immutable snapshot (the
+grown-ups as `GrownupContact`s, her `AgeLockState`, her nicknames, which one is
+primary); `GrownupLabels.nameFor([id])` is **what any child-facing screen
+prints** (`ContactLabels.forChild` underneath: nickname, else age default, else
+the guardian's label) and answers the neutral **"your grown-up"**
+(`neutralGrownUp`) when no family is known or the id is not one of hers, never a
+guessed Dad or Mom. `GrownupLabelScope` is an `InheritedWidget` carrying a
+snapshot (`of` to watch it, `read` in a tap handler or route builder); with no
+scope installed it yields `GrownupLabels.none`, so every screen still builds with
+no setup. `GrownupLabelsProvider` loads her nicknames from
+`child.<id>.nicknames` (read only, through `LocalNicknameRepository`) and
+installs the scope; **nothing in this layer writes a nickname**, so a guardian can
+never overwrite one. A name a caller passes in (a `parentName`, a live
+`guardianName`) is used only when no family is in scope; where a scope knows her
+grown-up it wins, so her nickname beats the grown-up's own display name. A name
+that starts a sentence is raised with `asSubject` ("Your grown-up hid these
+around the house"); the TS-ported handicap wording is rewritten with
+`withParentName`. A guardian's own screens keep the guardian's labels
+(`GrownupLabels.forGuardian` gives "Dad (Ivy calls you Dada)" where a nickname
+exists; the exchange screen shows the guardians' own labels).
+
+**Sites adopted:** `a11y_speech.dart` (the read-aloud label is "Send this to your
+grown-up", or her word through `speakableText(..., grownUp:)`),
+`co_view_screens.dart`, `degradation_banner.dart`, `storyteller_screen.dart` ("Not Dada, not Mama, it's the storyteller"), `inbox_screen.dart` (a
+`senderId` is looked up; the demo fixture is neutral), `journal_screen.dart`
+(the privacy banner names her grown-ups in her words, "not your grown-ups" with
+none), `child_home.dart` (the presence card by `ParentPresence.userId`, and the
+Play-together doors), `child_more.dart`, `weeks_screen.dart` (two names in her
+words; neutral "Grown-up one"/"Grown-up two" by default), `exchange_screen.dart`
+(guardian side), `games_hub.dart`, `game_picker.dart` ("Play against ___"),
+`game_uno.dart` ("Waiting for ___ to deal"), `live_games.dart`, and the
+`parentName` defaults of `game_battleship`, `game_chain`, `game_checkers`,
+`game_chess`, `game_dotsboxes`, `game_draw_together`, `game_guess_doodle`,
+`game_hunt`, `game_kim` (the scene titles no longer say "Dad's"),
+`game_silly_sentence`, `game_story`, `game_tictactoe`,
+`game_twenty_questions`, `game_two_truths`, `game_would_you_rather`,
+`handicap_screen`, `jokebook_screen` and `teach_me`, all now defaulting to
+"your grown-up". `call_knock_screen.dart` and `receipt_screen.dart` never
+hard-coded a name (the caller supplies it).
+
+**What remains (none of it is child-facing copy in a shipped screen):** the
+scope is not installed at the app root yet (that lives in the role-led entry,
+not built), so a live run keeps passing its real `guardianName`/presence name
+until it is; the preview build's own demo fixtures (`main.dart`'s presence
+"Dad", `showcase_screen.dart`, `who_is_here_screen.dart`, `year_book.dart`'s zone
+labels, `emergency_card.dart`'s sample contacts, `court_export.dart`'s sample
+authors) and the guardian screens' own labels (`guardian_home.dart`,
+`guardian_more.dart`, `show_guardian.dart`, `invitation_screen.dart`,
+`onboarding_flow.dart`'s demo who-step, not shown before pairing any more); the
+"Dad jokes" joke category name (a genre, not a person); `game_logic.dart`'s
+catalogue keeps the TS-ported "Dad" wording, byte for byte, because the TS-parity
+tests pin it, and every screen rewrites it through `withParentName`.
+
+**Two audit notes for the owner (not changed here).** (1) War shows a card count
+under each pile, which sits uneasily with P2 (no scoring shown to the child).
+(2) "Where was today" shows its 0 to 100 slider values, which reads as a score.
+Both are shipped, working screens and are left exactly as they are for the
+owner's decision.
 
 ---
 
@@ -7051,7 +7104,7 @@ Each row is something this document or the product's own screens might lead a re
 
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
-| **Role-led first run** (owner addition 2026-11-08) | The pairing-last child flow (§8.5.6) and the naming core and age lock (§8.5.7). | The "Who is using this device?" picker (kid, Mom, Dad, and a fourth "Someone else", which is the coordinator's addition, not the owner's), the role stored per device, a unified live entry that routes to the child or guardian shell (today `main_live.dart` and `main_live_guardian.dart` are separate targets), the guardian onboarding, wiring the age lock and a rename-a-grown-up screen, and adopting the resolver in the hard-coded sites listed in §8.5.7. |
+| **Role-led first run** (owner addition 2026-11-08) | The pairing-last child flow (§8.5.6) and the naming core and age lock (§8.5.7). | The "Who is using this device?" picker (kid, Mom, Dad, and a fourth "Someone else", which is the coordinator's addition, not the owner's), the role stored per device, a unified live entry that routes to the child or guardian shell (today `main_live.dart` and `main_live_guardian.dart` are separate targets), the guardian onboarding, wiring the age lock and a rename-a-grown-up screen, and installing the label scope at the app root (the child-facing screens already read it, §8.5.7). |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |

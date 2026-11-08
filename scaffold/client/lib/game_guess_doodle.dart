@@ -46,6 +46,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'annotation_canvas.dart';
 import 'annotation_canvas_view.dart';
 import 'form_factors.dart' as ff;
@@ -104,7 +105,7 @@ const List<String> guessDoodleWords = <String>[
 // ================================================================ widget ===
 
 class GuessDoodleScreen extends StatefulWidget {
-  const GuessDoodleScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad', this.random});
+  const GuessDoodleScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp, this.random});
   final String childName;
   final String parentName;
 
@@ -385,7 +386,7 @@ class _RoundPanel extends StatelessWidget {
         style: SegmentedButton.styleFrom(minimumSize: const Size(64, 48)),
         segments: <ButtonSegment<String>>[
           ButtonSegment<String>(value: 'child', label: Text(childName)),
-          ButtonSegment<String>(value: 'parent', label: Text(parentName)),
+          ButtonSegment<String>(value: 'parent', label: Text(asSubject(parentName))),
         ],
         selected: <String>{artistId},
         onSelectionChanged: (s) => onArtistChanged(s.first),
@@ -401,7 +402,7 @@ class _RoundPanel extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onTertiaryContainer)),
               ])
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('$artistName is drawing:',
+                Text('${asSubject(artistName)} is drawing:',
                     style: TextStyle(fontSize: 12, color: scheme.onTertiaryContainer)),
                 const SizedBox(height: 2),
                 Text(word,

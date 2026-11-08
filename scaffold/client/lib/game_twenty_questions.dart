@@ -46,6 +46,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'game_curated_activity.dart';
 
 // ============================================================ secret bank ==
@@ -144,7 +145,7 @@ TwentyQuestionsRound newRound(TwentyQuestionsCategory category, Random random) =
 // ================================================================ widget ===
 
 class TwentyQuestionsScreen extends StatefulWidget {
-  const TwentyQuestionsScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad', this.random});
+  const TwentyQuestionsScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp, this.random});
   final String childName;
   final String parentName;
 
@@ -320,7 +321,7 @@ class _RoundView extends StatelessWidget {
         style: SegmentedButton.styleFrom(minimumSize: const Size(64, 48)),
         segments: <ButtonSegment<String>>[
           ButtonSegment<String>(value: 'child', label: Text(childName)),
-          ButtonSegment<String>(value: 'parent', label: Text(parentName)),
+          ButtonSegment<String>(value: 'parent', label: Text(asSubject(parentName))),
         ],
         selected: <String>{keeperId},
         onSelectionChanged: (Set<String> s) => onKeeperChanged(s.first),

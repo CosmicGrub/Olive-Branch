@@ -36,6 +36,7 @@ import 'local_services.dart';
 import 'local_store.dart';
 import 'access_settings.dart' show kChildTarget;
 import 'motion_rules.dart';
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels;
 import 'picture_bank.dart';
 
 // ================= ported from packages/agency/src/agency.ts (readJournal) =
@@ -350,6 +351,14 @@ class _JournalScreenState extends State<JournalScreen> {
   }
 }
 
+/// "not Mommy, not Daddy, not anyone", in HER words for the grown-ups she has (up to three),
+/// or "not your grown-ups, not anyone" when none is known. Never a guessed Mom and Dad.
+String _notLine(GrownupLabels labels) {
+  final List<String> names = <String>[for (final c in labels.contacts.take(3)) labels.nameFor(c.id)];
+  if (names.isEmpty) return 'not your grown-ups, not anyone.';
+  return '${names.map((String n) => 'not $n').join(', ')}, not anyone.';
+}
+
 class _PrivacyBanner extends StatelessWidget {
   const _PrivacyBanner({required this.childName, required this.scheme});
   final String childName;
@@ -369,8 +378,7 @@ class _PrivacyBanner extends StatelessWidget {
       Icon(Icons.shield_outlined, color: scheme.onSecondaryContainer),
       const SizedBox(width: 8),
       Expanded(child: Text(
-        "This is yours, $childName. Nobody else can open it — not your mom, "
-        'not your dad, not anyone.',
+        'This is yours, $childName. Nobody else can open it — ${_notLine(GrownupLabelScope.of(context))}',
         style: Theme.of(context).textTheme.bodyMedium
           ?.copyWith(color: scheme.onSecondaryContainer))),
     ]),

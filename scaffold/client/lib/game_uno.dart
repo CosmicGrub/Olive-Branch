@@ -65,6 +65,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'grownup_labels.dart' show GrownupLabelScope;
 import 'access_scope.dart' show motionDuration;
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
@@ -697,7 +698,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
           PairingPhase.searching => const _Status(message: 'Looking nearby…'),
           PairingPhase.found => _amDealer()
               ? FilledButton(onPressed: _dealForPeer, child: const Text('Deal the cards'))
-              : const _Status(message: 'Waiting for Dad to deal…'),
+              : _Status(message: 'Waiting for ${GrownupLabelScope.of(context).nameFor()} to deal…'),
           PairingPhase.peerLost =>
             _MessageView(message: _pairing.errorMessage!, icon: Icons.wifi_off_outlined),
           // Handled above, before this switch is ever reached — matches

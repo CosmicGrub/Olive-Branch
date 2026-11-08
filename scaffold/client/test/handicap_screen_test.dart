@@ -15,7 +15,7 @@ void main() {
   group('handicap screen — §9.2', () {
     testWidgets('offers exactly the ported catalogue handicaps for that game', (t) async {
       await t.pumpWidget(wrap(const HandicapScreen(kind: GameKind.tictactoe)));
-      expect(find.text("Dad can't use the middle square"), findsOneWidget);
+      expect(find.text("Your grown-up can't use the middle square"), findsOneWidget);
       expect(find.text('I always go first'), findsOneWidget);
       expect(find.text('Play it straight — no handicap'), findsOneWidget);
     });
@@ -46,7 +46,7 @@ void main() {
     testWidgets('choosing an option selects it and calls onChanged with its id', (t) async {
       String? changed = 'unset';
       await t.pumpWidget(wrap(HandicapScreen(kind: GameKind.tictactoe, onChanged: (id) => changed = id)));
-      await t.tap(find.text("Dad can't use the middle square"));
+      await t.tap(find.text("Your grown-up can't use the middle square"));
       await t.pumpAndSettle();
       expect(changed, 'no_centre');
       expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);

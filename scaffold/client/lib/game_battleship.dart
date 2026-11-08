@@ -42,6 +42,7 @@
 // disappear at "Good game."
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
@@ -289,7 +290,7 @@ class GameBattleship extends StatefulWidget {
   const GameBattleship({
     super.key,
     this.childName = 'Ivy',
-    this.parentName = 'Dad',
+    this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 500),
     this.random,
   });
@@ -368,8 +369,8 @@ class _GameBattleshipState extends State<GameBattleship> {
       setState(() {
         if (result.ok) {
           _shotNarration = result.sunk != null
-              ? '${widget.parentName} sank your ${result.sunk}.'
-              : result.hit ? '${widget.parentName} hit your fleet.' : '${widget.parentName} missed.';
+              ? '${asSubject(widget.parentName)} sank your ${result.sunk}.'
+              : result.hit ? '${asSubject(widget.parentName)} hit your fleet.' : '${asSubject(widget.parentName)} missed.';
         }
       });
       if (_host.state.outcome == null && _host.state.turn == BsSide.parent) {
@@ -511,7 +512,7 @@ class _StatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = finished ? 'Good game.'
         : placing ? 'Place your fleet'
-        : isChildTurn ? "$childName's turn" : parentThinking ? "$parentName is taking aim…" : "$parentName's turn";
+        : isChildTurn ? "$childName's turn" : parentThinking ? "${asSubject(parentName)} is taking aim…" : "${asSubject(parentName)}'s turn";
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: Theme.of(context).textTheme.titleLarge),
       if (narration != null && !finished) Padding(padding: const EdgeInsets.only(top: 4),
@@ -536,7 +537,7 @@ class _TallyRowBs extends StatelessWidget {
       Expanded(child: _TallyChipBs(label: '$childName\'s ships', count: childShips,
         color: Theme.of(context).colorScheme.primaryContainer)),
       const SizedBox(width: 12),
-      Expanded(child: _TallyChipBs(label: '$parentName\'s ships', count: parentShips,
+      Expanded(child: _TallyChipBs(label: '${asSubject(parentName)}\'s ships', count: parentShips,
         color: Theme.of(context).colorScheme.secondaryContainer)),
     ]),
   );

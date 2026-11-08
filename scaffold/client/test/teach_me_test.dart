@@ -85,8 +85,8 @@ void main() {
 
       await t.enterText(find.byType(TextField), 'A card trick');
       await t.pump();
-      await t.ensureVisible(find.widgetWithText(FilledButton, 'Teach Dad'));
-      await t.tap(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Teach your grown-up'));
+      await t.tap(find.widgetWithText(FilledButton, 'Teach your grown-up'));
       await t.pump();
       expect(find.byIcon(Icons.lightbulb_outline), findsNothing);
     });

@@ -15,6 +15,8 @@
 // the one gate that keeps every caller honest about that).
 library;
 
+import 'game_logic.dart' show neutralGrownUp;
+
 /// §8.8.4's screen-reader label table — the SAME string a screen reader
 /// already gets, never a second hand-maintained copy. Kept in sync with
 /// a11y.ts's own LABELS by hand (both are small, reviewed, hand-authored
@@ -26,7 +28,7 @@ const Map<String, String> labels = <String, String>{
   'turn_page': 'Next page',
   'back_page': 'Previous page',
   'colour_region': 'Colour this part of the picture',
-  'send_show': 'Send this to Daddy',
+  'send_show': 'Send this to your grown-up',
   'end_call': 'Finish the call',
   'pin_digit': 'Enter one digit of your PIN',
   'hide_work': 'Put this picture away',
@@ -35,8 +37,16 @@ const Map<String, String> labels = <String, String>{
 
 /// Reads the accessibility label, not a second copy of it, falling back to
 /// visible text only where no label has been written yet.
-String speakableText(String controlId, String visibleText) =>
-    labels[controlId] ?? visibleText;
+///
+/// A label that names her grown-up says the neutral 'your grown-up'; a caller
+/// that knows her word for them (nickname, age default: contact_labels.dart,
+/// through grownup_labels.dart) passes it as [grownUp] and it is read instead.
+/// The table itself never hard-codes a Mom or a Dad (MASTERFILE §8.5.7).
+String speakableText(String controlId, String visibleText, {String? grownUp}) {
+  final String? label = labels[controlId];
+  if (label == null) return visibleText;
+  return grownUp == null ? label : label.replaceAll(neutralGrownUp, grownUp);
+}
 
 enum SpeechTrigger { tap, autonomous }
 

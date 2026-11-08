@@ -22,11 +22,11 @@ import 'game_logic.dart';
 
 class HandicapScreen extends StatefulWidget {
   const HandicapScreen({super.key, required this.kind, this.currentHandicapId, this.onChanged,
-    this.parentName = 'Dad'});
+    this.parentName = neutralGrownUp});
 
-  /// The real grown-up's name (C-13). 'Dad' is only the legacy default the
-  /// TS-ported catalogue wording uses; the child shell always passes a real
-  /// name or [neutralGrownUp].
+  /// The grown-up's name as SHE says it (C-13; nickname, age default, then the guardian's label, via
+  /// grownup_labels.dart); the TS-ported catalogue wording says 'Dad' and is rewritten with this. The
+  /// default is [neutralGrownUp].
   final String parentName;
 
   final GameKind kind;
@@ -70,7 +70,7 @@ class _HandicapScreenState extends State<HandicapScreen> {
     final offer = handicapOffer(widget.kind, parentName: widget.parentName);
     final cs = Theme.of(context).colorScheme;
     final banner = handicapBanner(widget.kind, _selected,
-        parentName: widget.parentName == 'Dad' ? null : widget.parentName);
+        parentName: widget.parentName);
     return Scaffold(
       appBar: AppBar(title: Text('Make it fair · ${meta.title}')),
       body: SafeArea(

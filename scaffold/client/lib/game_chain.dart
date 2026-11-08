@@ -30,6 +30,7 @@
 // got to N together," never who broke it.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
@@ -182,7 +183,7 @@ ChainArtifact? chainArtifact(ChainGame g) {
 // ================================================================= widget ===
 
 class GameChainScreen extends StatefulWidget {
-  const GameChainScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad'});
+  const GameChainScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp});
   final String childName;
   final String parentName;
 
@@ -204,7 +205,7 @@ class _GameChainScreenState extends State<GameChainScreen> {
     _game = _seedAcrossWeeks();
   }
 
-  String _name(ChainSide s) => s == ChainSide.a ? widget.childName : widget.parentName;
+  String _name(ChainSide s) => s == ChainSide.a ? widget.childName : asSubject(widget.parentName);
 
   /// Builds a chain that already spans several turns, using ONLY the ported
   /// addStep()/recallStep() functions above — see the file header for why

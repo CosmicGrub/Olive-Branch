@@ -30,6 +30,7 @@
 //     game against the parent.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show neutralGrownUp;
 import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
@@ -48,7 +49,7 @@ class KimScene {
 
 /// Placeholder "tables" standing in for a parent's own photographed scene.
 const List<KimScene> kimDemoScenes = [
-  KimScene(title: "Dad's kitchen table", items: [
+  KimScene(title: 'The kitchen table', items: [
     KimItem(id: 'mug', icon: Icons.coffee, label: 'Mug'),
     KimItem(id: 'keys', icon: Icons.vpn_key, label: 'Keys'),
     KimItem(id: 'glasses', icon: Icons.visibility_outlined, label: 'Glasses'),
@@ -58,7 +59,7 @@ const List<KimScene> kimDemoScenes = [
     KimItem(id: 'phone', icon: Icons.smartphone, label: 'Phone'),
     KimItem(id: 'lamp', icon: Icons.emoji_objects, label: 'Lamp'),
   ]),
-  KimScene(title: "Dad's desk", items: [
+  KimScene(title: 'The desk', items: [
     KimItem(id: 'laptop', icon: Icons.laptop_mac, label: 'Laptop'),
     KimItem(id: 'pencil', icon: Icons.edit, label: 'Pencil'),
     KimItem(id: 'photo', icon: Icons.photo, label: 'Photo frame'),
@@ -81,7 +82,7 @@ class GameKim extends StatefulWidget {
   const GameKim({
     super.key,
     this.childName = 'Ivy',
-    this.parentName = 'Dad',
+    this.parentName = neutralGrownUp,
     this.scenes = kimDemoScenes,
     this.random,
   });

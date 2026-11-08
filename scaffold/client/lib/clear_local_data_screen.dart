@@ -33,6 +33,41 @@ import 'local_services.dart';
 import 'maturation_ladder.dart' show childSeenRungReveals;
 import 'shared_gallery.dart';
 
+/// The plain-words name shown for every catalogue area. A test fails if any
+/// area in [localDataCatalogue] is missing here, so a raw area id such as
+/// 'explainers' can never reach a grown-up's screen.
+const Map<String, String> kLocalDataAreaNames = <String, String>{
+  'journal': 'Private journal',
+  'lists': 'Wants and needs',
+  'pictures': 'Saved pictures',
+  'stories': 'Stories she kept',
+  'jokes': 'Jokes she starred',
+  'lessons': 'Things she taught',
+  'collections': 'Collections',
+  'ladder': 'Growing-up steps',
+  'colour': "Today's colour",
+  'profile': 'Offline start-up',
+  'outbox': 'Waiting to send',
+  'learn': 'Parent Learn',
+  'rhythm': 'Routine and rhythm',
+  'newplace': 'A new place',
+  'voice': 'Her helpers and symbols',
+  'feelings': 'Feelings weather',
+  'worries': 'Worry box',
+  'village': 'Village',
+  'passes': 'Sitter pass and school summary',
+  'compass': 'Family compass',
+  'emergencycard': 'Emergency card (grown-up side)',
+  'memorybox': 'Her memory box',
+  'family': 'Family and homes',
+  'growing': 'Growing (grown-up side)',
+  'care': 'Care binder (grown-up side)',
+  'explainers': 'Picture stories for her',
+  'access': 'Accessibility settings',
+  'onboarding': 'Welcome answers',
+  'nicknames': 'What she calls her grown-ups',
+};
+
 class ClearLocalDataScreen extends StatefulWidget {
   const ClearLocalDataScreen({
     super.key,
@@ -228,29 +263,5 @@ class _ClearLocalDataScreenState extends State<ClearLocalDataScreen> {
     );
   }
 
-  static String _label(LocalDataEntry e) => switch (e.area) {
-        'journal' => 'Private journal',
-        'lists' => 'Wants and needs',
-        'pictures' => 'Saved pictures',
-        'stories' => 'Stories she kept',
-        'jokes' => 'Jokes she starred',
-        'lessons' => 'Things she taught',
-        'collections' => 'Collections',
-        'ladder' => 'Growing-up steps',
-        'colour' => "Today's colour",
-        'profile' => 'Offline start-up',
-        'outbox' => 'Waiting to send',
-        'learn' => 'Parent Learn',
-        'rhythm' => 'Routine and rhythm',
-        'newplace' => 'A new place',
-        'voice' => 'Her helpers and symbols',
-        'feelings' => 'Feelings weather',
-        'worries' => 'Worry box',
-        'village' => 'Village',
-        'passes' => 'Sitter pass and school summary',
-        'compass' => 'Family compass',
-        'emergencycard' => 'Emergency card (grown-up side)',
-        'memorybox' => 'Her memory box',
-        _ => e.area,
-      };
+  static String _label(LocalDataEntry e) => kLocalDataAreaNames[e.area] ?? e.area;
 }

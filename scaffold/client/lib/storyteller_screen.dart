@@ -31,6 +31,7 @@ import 'form_factors.dart' as ff;
 import 'hub_widgets.dart';
 import 'library_logic.dart';
 import 'local_repositories.dart';
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels;
 import 'local_services.dart';
 import 'storyteller_logic.dart' as story;
 import 'tabletop_split.dart';
@@ -582,16 +583,26 @@ class _StorytellerAttribution extends StatelessWidget {
   );
 }
 
-void _showWhoTellsThese(BuildContext context) => showDialog<void>(
-  context: context,
-  builder: (context) => AlertDialog(
-    title: const Text('Who tells these stories?'),
-    content: const Text(
-      "Not Mum, not Dad — it's the storyteller! It makes up a brand new "
-      'story just for you, every single time.'),
-    actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Okay!'))],
-  ),
-);
+/// "Not Dada, not Mama" in HER words for her grown-ups (up to two), or "Not a grown-up" when none is
+/// known — never a guessed Mum and Dad.
+String _notTheseGrownups(GrownupLabels labels) {
+  final List<String> names = <String>[for (final c in labels.contacts.take(2)) labels.nameFor(c.id)];
+  return names.isEmpty ? 'Not a grown-up' : 'Not ${names.join(', not ')}';
+}
+
+void _showWhoTellsThese(BuildContext context) {
+  final String not = _notTheseGrownups(GrownupLabelScope.read(context));
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Who tells these stories?'),
+      content: Text(
+        "$not — it's the storyteller! It makes up a brand new "
+        'story just for you, every single time.'),
+      actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Okay!'))],
+    ),
+  );
+}
 
 // ==================================================================== shelf ==
 class _Shelf extends StatelessWidget {

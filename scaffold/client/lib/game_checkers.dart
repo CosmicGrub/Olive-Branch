@@ -27,6 +27,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
@@ -243,7 +244,7 @@ class GameCheckers extends StatefulWidget {
   const GameCheckers({
     super.key,
     this.childName = 'Ivy',
-    this.parentName = 'Dad',
+    this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 550),
     this.network,
   });
@@ -572,7 +573,7 @@ class _TurnBanner extends StatelessWidget {
     final text = finished
         ? 'Good game.'
         : isChildTurn ? "$childName's move" : parentThinking
-            ? "$parentName is thinking…" : "$parentName's move";
+            ? "${asSubject(parentName)} is thinking…" : "${asSubject(parentName)}'s move";
     return Text(text, style: Theme.of(context).textTheme.titleLarge);
   }
 }
@@ -588,7 +589,7 @@ class _TallyRow extends StatelessWidget {
     Expanded(child: _TallyChip(label: childName, count: childCount,
       color: Theme.of(context).colorScheme.primaryContainer)),
     const SizedBox(width: 12),
-    Expanded(child: _TallyChip(label: parentName, count: parentCount,
+    Expanded(child: _TallyChip(label: asSubject(parentName), count: parentCount,
       color: Theme.of(context).colorScheme.secondaryContainer)),
   ]);
 }
@@ -604,7 +605,8 @@ class _TallyChip extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600))),
       Text('$count', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
     ]),
   );

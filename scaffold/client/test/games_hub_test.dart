@@ -62,8 +62,8 @@ void main() {
 
     testWidgets('the child\'s "make it harder" tile opens tic-tac-toe\'s handicap offer', (t) async {
       await t.pumpWidget(wrap(const GamesHubScreen()));
-      await t.ensureVisible(find.text('Make it harder for Dad'));
-      await t.tap(find.text('Make it harder for Dad'));
+      await t.ensureVisible(find.text('Make it harder for your grown-up'));
+      await t.tap(find.text('Make it harder for your grown-up'));
       await t.pumpAndSettle();
       expect(find.byType(HandicapScreen), findsOneWidget);
     });

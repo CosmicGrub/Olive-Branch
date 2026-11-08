@@ -16,6 +16,7 @@
 import 'package:flutter/material.dart';
 import 'calendar_day_logic.dart';
 import 'form_factors.dart' as ff;
+import 'grownup_labels.dart' show kNeutralHomeNames;
 
 class CustodyNight {
   const CustodyNight({required this.dateIso, required this.withWhom});
@@ -28,19 +29,29 @@ class CustodyNight {
 /// but missing here falls back to `_fallbackBeadColor` rather than throwing —
 /// a third or renamed guardian must never crash this screen.
 const Map<String, Color> demoGuardianColors = <String, Color>{
-  'Mom': Color(0xFFAD1457),
-  'Dad': Color(0xFF00838F),
+  'Grown-up one': Color(0xFFAD1457),
+  'Grown-up two': Color(0xFF00838F),
 };
+
+/// The same two-colour palette keyed by whatever two names a family's rhythm
+/// uses (her own words for her grown-ups, via [GrownupLabels.twoNames]).
+Map<String, Color> demoGuardianColorsFor(List<String> names) => <String, Color>{
+      names[0]: const Color(0xFFAD1457),
+      if (names[1] != names[0]) names[1]: const Color(0xFF00838F),
+    };
 
 const Color _fallbackBeadColor = Color(0xFF6D4C41);
 
 /// Demo-only custody rhythm: a 4-nights/3-nights repeating pattern, 14 nights
 /// (two full cycles) starting tonight. No live scheduling backend exists yet
 /// (see api_client.dart) — this stands in for it, honestly, in one place.
-List<CustodyNight> demoCustodyNights({DateTime? today}) {
+///
+/// [names] are the two grown-ups' names as SHE says them (default: the neutral
+/// 'Grown-up one' / 'Grown-up two', never a guessed Mom and Dad).
+List<CustodyNight> demoCustodyNights({DateTime? today, List<String> names = kNeutralHomeNames}) {
   final DateTime now = today ?? DateTime.now();
   final DateTime startUtc = DateTime.utc(now.year, now.month, now.day);
-  const List<String> pattern = <String>['Mom', 'Mom', 'Mom', 'Mom', 'Dad', 'Dad', 'Dad'];
+  final List<String> pattern = <String>[names[0], names[0], names[0], names[0], names[1], names[1], names[1]];
   return <CustodyNight>[
     for (int i = 0; i < 14; i++)
       CustodyNight(

@@ -46,6 +46,7 @@ import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'form_factors.dart' as ff;
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels;
 
 // ============================================================ schedule.ts ===
 // §4, §9.4 — the custody rotation. A faithful port of the pure calendar-date
@@ -238,7 +239,8 @@ final Order _demoOrder = Order(
   orderTimeLabel: '6:00 PM Central, per the decree',
 );
 
-const Map<Side, String> _sideNames = <Side, String>{Side.a: 'Mom', Side.b: 'Dad'};
+/// The two sides of the order when nothing names them (no family known): neutral, never a guessed Mom and Dad.
+const Map<Side, String> _neutralSideNames = <Side, String>{Side.a: 'Grown-up one', Side.b: 'Grown-up two'};
 
 enum _LoadState { ready, loading, error }
 
@@ -250,9 +252,14 @@ class ExchangeScreen extends StatefulWidget {
     this.guardianId,
     this.childId,
     this.httpClient,
+    this.sideNames,
   });
   final String childName;
   final String? baseUrl;
+
+  /// What each side of the order is called on this guardian screen. Null: the first two grown-ups a
+  /// [GrownupLabelScope] knows (their own labels), else the neutral 'Grown-up one' and 'Grown-up two'.
+  final Map<Side, String>? sideNames;
   final String? guardianId;
   final String? childId;
   final http.Client? httpClient;
@@ -461,6 +468,11 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final GrownupLabels labels = GrownupLabelScope.of(context);
+    final Map<Side, String> sideNames = widget.sideNames ??
+        (labels.contacts.length >= 2
+            ? <Side, String>{Side.a: labels.contacts[0].guardianLabel, Side.b: labels.contacts[1].guardianLabel}
+            : _neutralSideNames);
     // Loading/error UI mirrors expenses_screen.dart/meds_care.dart's own
     // established shape — only ever reachable when this screen is
     // live-wired; the pure demo path never enters either state.
@@ -504,7 +516,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
             ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
         final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
           if (next != null) _HandoffCard(childName: widget.childName, sleeps: next.sleeps,
-            nextSideName: _sideNames[next.nextSide]!, orderTimeLabel: _demoOrder.orderTimeLabel),
+            nextSideName: sideNames[next.nextSide]!, orderTimeLabel: _demoOrder.orderTimeLabel),
           const SizedBox(height: 20),
           const _SectionHeader('Bag manifest'),
           const SizedBox(height: 8),
@@ -566,7 +578,7 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
             child: Column(children: [
               for (final Block b in upcoming.take(4))
                 ListTile(dense: true,
-                  title: Text(childCalendarLabel(b, _sideNames)),
+                  title: Text(childCalendarLabel(b, sideNames)),
                   subtitle: Text('${_date(b.startLocalDate)} – ${_date(b.endLocalDate)}')),
             ]))),
           const SizedBox(height: 12),

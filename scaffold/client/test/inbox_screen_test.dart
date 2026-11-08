@@ -310,7 +310,7 @@ void main() {
           childName: 'Ivy', messages: List<InboxMessage>.of(demoInboxMessages))));
         await tester.pump();
         expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(find.textContaining('Dad sent a video'), findsWidgets);
+        expect(find.textContaining('Your grown-up sent a video'), findsWidgets);
       });
     });
   });

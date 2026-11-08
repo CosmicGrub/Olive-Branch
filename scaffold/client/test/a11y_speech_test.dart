@@ -23,7 +23,7 @@ void main() {
         'turn_page': 'Next page',
         'back_page': 'Previous page',
         'colour_region': 'Colour this part of the picture',
-        'send_show': 'Send this to Daddy',
+        'send_show': 'Send this to your grown-up',
         'end_call': 'Finish the call',
         'pin_digit': 'Enter one digit of your PIN',
         'hide_work': 'Put this picture away',

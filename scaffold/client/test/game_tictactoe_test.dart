@@ -264,8 +264,8 @@ void main() {
       await t.pumpWidget(wrap(const GameTicTacToe()));
       await t.tap(find.byTooltip('Make it fair'));
       await t.pumpAndSettle();
-      expect(find.text('Want to make it harder for Dad?'), findsOneWidget);
-      await t.tap(find.text("Dad can't use the middle square"));
+      expect(find.text('Want to make it harder for your grown-up?'), findsOneWidget);
+      await t.tap(find.text("Your grown-up can't use the middle square"));
       await t.pumpAndSettle();
       await t.pageBack();
       await t.pumpAndSettle();
