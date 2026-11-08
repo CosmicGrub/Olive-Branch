@@ -18,11 +18,22 @@ const List<InboxMessage> _messages = <InboxMessage>[
 
 void main() {
   group('Inbox — §8.2, §9.5', () {
-    testWidgets('greets the child by name and states the unread count plainly',
+    testWidgets('greets the child by name with NO number (P2: a child never sees a count)',
         (tester) async {
       await tester.pumpWidget(wrap(const InboxScreen(childName: 'Ivy', messages: _messages)));
-      expect(find.textContaining('Hi Ivy'), findsOneWidget);
-      expect(find.textContaining('1 new message'), findsOneWidget);
+      expect(find.text('Hi Ivy, something new for you'), findsOneWidget);
+      expect(find.textContaining('1 new'), findsNothing);
+      expect(find.textContaining('got'), findsNothing);
+      // Many unread: still no count anywhere in the greeting.
+      const List<InboxMessage> many = <InboxMessage>[
+        InboxMessage(id: 'a', senderName: 'Dad', deliveredAtLabel: '7:04 AM'),
+        InboxMessage(id: 'b', senderName: 'Dad', deliveredAtLabel: '7:05 AM'),
+        InboxMessage(id: 'c', senderName: 'Dad', deliveredAtLabel: '7:06 AM'),
+      ];
+      await tester.pumpWidget(wrap(const InboxScreen(childName: 'Ivy', messages: many)));
+      expect(find.text('Hi Ivy, something new for you'), findsOneWidget);
+      expect(find.textContaining('3 new'), findsNothing);
+      expect(find.textContaining('messages'), findsNothing);
     });
 
     testWidgets('every message in the list renders a tile', (tester) async {

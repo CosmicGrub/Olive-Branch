@@ -191,7 +191,8 @@ List<_ControlItem> _buildCatalogue() => [
       // this same catalogue already controls item-by-item).
       const _ControlItem('tile:storyteller', 'Storyteller', 'ChildHome tiles'),
       const _ControlItem('tile:homework', 'Homework', 'ChildHome tiles'),
-      const _ControlItem('tile:messages', 'Messages', 'ChildHome tiles'),
+      // Messages is deliberately NOT listed: it can never be hidden (see
+      // activity_overrides.dart `neverHideable`).
       const _ControlItem('tile:showAndTell', 'Show & tell', 'ChildHome tiles'),
       const _ControlItem('tile:myList', 'My list', 'ChildHome tiles'),
       const _ControlItem('tile:more', 'More for you', 'ChildHome tiles'),
@@ -430,7 +431,15 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
   }) {
     final subGroupOrder = _subGroupOrderByCategory[category];
     if (subGroupOrder == null) {
-      return [for (final item in items) rowBuilder(item)];
+      return [
+        if (category == 'ChildHome tiles' && tabPrefix == 'visibility')
+          const Padding(
+            key: Key('messagesAlwaysOnNote'),
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text(neverHideableReason),
+          ),
+        for (final item in items) rowBuilder(item),
+      ];
     }
     return [
       for (final label in subGroupOrder)

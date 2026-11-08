@@ -114,4 +114,23 @@ bool effectiveVisibility({
 /// [effectiveVisibility] with `defaultMinAge: 0` would compute the exact
 /// same true/false either way.
 bool isTileVisible(Map<String, ActivityOverride>? overrides, String tileKey) =>
-    overrides?[tileKey]?.visible != false;
+    neverHideable.contains(tileKey) || overrides?[tileKey]?.visible != false;
+
+/// Activity keys a guardian can NEVER hide from a child. Messages is the
+/// child's one line to the people who love her: no parental control may
+/// switch it off (product prohibition; prototype rule). Applied on both
+/// sides: the settings screen does not list these keys, the write path
+/// ([refuseHide]) refuses them before any request is made, and
+/// [isTileVisible] ignores a stored `visible == false` (a legacy row
+/// written before this rule, or by an older client, can never take effect).
+/// The server route is unchanged.
+const Set<String> neverHideable = <String>{'tile:messages'};
+
+/// The plain-language reason shown to a guardian who tries to hide one.
+const String neverHideableReason =
+    "Messages can't be hidden. It is how family reaches her, so it always stays on her home screen.";
+
+/// Returns [neverHideableReason] when [activityKey] may not be hidden
+/// (`visible: false`), else null.
+String? refuseHide(String activityKey, {bool? visible}) =>
+    (visible == false && neverHideable.contains(activityKey)) ? neverHideableReason : null;

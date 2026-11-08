@@ -6,9 +6,11 @@
 // passing in isolation says nothing about whether two independent devices
 // running them actually stay consistent with each other over a real game.
 import 'dart:math';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/war_deck.dart';
 import 'package:olive_client/game_war.dart';
+import 'package:olive_client/live_games.dart' show Side;
 
 void main() {
   group('dealWar', () {
@@ -210,6 +212,25 @@ void main() {
       if (a.phase == WarPhase.won) expect(b.phase, WarPhase.lost);
       if (b.phase == WarPhase.won) expect(a.phase, WarPhase.lost);
       if (a.phase == WarPhase.drawnOut) expect(b.phase, WarPhase.drawnOut);
+    });
+  });
+
+  group('WarView — P2: a child never sees a count', () {
+    testWidgets('no numeral is shown under either pile or between them, at any pile size',
+        (tester) async {
+      for (final int n in <int>[26, 12, 3, 1]) {
+        final dealt = dealWar(Random(2));
+        final base = newWarFromDeal(dealt.forMe);
+        final s = WarState(
+            myPile: base.myPile.take(n).toList(), roundNumber: 7, pot: const [],
+            myPending: null, theirPending: null, phase: WarPhase.playing, lastRoundNote: null);
+        await tester.pumpWidget(MaterialApp(
+            home: Scaffold(body: WarView(
+                state: s, mySide: Side.a, peerName: 'Sam', onFlip: () {}))));
+        expect(find.textContaining(RegExp(r'\d')), findsNothing, reason: 'pile of $n');
+        expect(find.text('You'), findsOneWidget);
+        expect(find.text('Sam'), findsOneWidget);
+      }
     });
   });
 }

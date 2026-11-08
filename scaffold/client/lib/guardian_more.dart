@@ -611,10 +611,13 @@ class GuardianMoreScreen extends StatelessWidget {
           onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName,
             guardianId: guardianId ?? 'local-guardian', emergency: EmergencyCardService.forChild(childId),
             openEmergencyCard: _openEmergencyCard))),
-        SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Adults and helpers',
-          subtitle: 'Invite a co-parent',
+        // This opens the INVITEE-side accept screen, so it is labelled for what it
+        // is: a preview of what another adult would be asked. It sends nothing, and
+        // its wording uses no hard-coded Dad/Mom (it is a preview, not an invite).
+        SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Invitation (preview)',
+          subtitle: 'See what another adult would be asked to accept. Nothing is sent',
           onTap: () => _open(context, InvitationScreen(
-            childName: childName, inviterLabel: 'Dad', yourLabel: 'Mom',
+            childName: childName, inviterLabel: 'Your co-parent', yourLabel: 'Parent',
             onAccept: () => Navigator.of(context).pop(), onDecline: () => Navigator.of(context).pop()))),
         SettingsRow(id: 'devices', icon: Icons.devices_other_outlined, title: 'Devices',
           subtitle: live ? 'See and revoke paired devices' : 'Needs a live session',

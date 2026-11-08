@@ -110,6 +110,11 @@ void main() {
     testWidgets('shows cards with evidence labels and a privacy line', (WidgetTester t) async {
       await _pump(t, _home(MemoryLearnStore()));
       expect(find.byKey(const Key('learnPrivacyLine')), findsOneWidget);
+      // Truthful: rules added under Rules that match ARE shared with the other guardian.
+      expect(
+          find.text('Your reflections and choices stay on this phone. Rules you add under Rules that match are shared with the other guardian.'),
+          findsOneWidget);
+      expect(find.textContaining('Nothing here is shared'), findsNothing);
       expect(find.byKey(const Key('learnCard_warm-and-clear')), findsOneWidget);
       expect(find.text('Moderate evidence'), findsWidgets);
       expect(find.text('Contested'), findsWidgets);
@@ -189,6 +194,19 @@ void main() {
       await t.pumpAndSettle();
       expect(t.widget<Text>(find.byKey(const Key('mirrorHeadline'))).data, 'Firm today, with less warmth.');
     });
+    testWidgets('shows words (less / more), never the 0 to 100 slider values', (WidgetTester t) async {
+      await _pump(t, ReflectionScreen(principal: guardian, store: MemoryLearnStore()));
+      expect(find.text('Warmth'), findsOneWidget);
+      expect(find.text('Expectations'), findsOneWidget);
+      expect(find.text('less'), findsNWidgets(2));
+      expect(find.text('more'), findsNWidgets(2));
+      expect(find.textContaining('60'), findsNothing);
+      expect(find.textContaining('65'), findsNothing);
+      await t.drag(find.byKey(const Key('sliderWarmth')), const Offset(-600, 0));
+      await t.pumpAndSettle();
+      expect(find.textContaining(RegExp(r'\d')), findsNothing);
+      expect(t.widget<Slider>(find.byKey(const Key('sliderWarmth'))).label, isNull);
+    });
     testWidgets('session mode offers no save button and says it is cleared', (WidgetTester t) async {
       await _pump(t, ReflectionScreen(principal: guardian, store: MemoryLearnStore()));
       expect(find.byKey(const Key('reflectionSave')), findsNothing);
@@ -266,6 +284,10 @@ void main() {
       await t.enterText(find.byKey(const Key('ruleText')), 'No screens at dinner');
       await t.tap(find.byKey(const Key('ruleAdd')));
       await t.pumpAndSettle();
+      // The one-time confirmation comes before the first share.
+      expect(find.byKey(const Key('shareConfirmDialog')), findsOneWidget);
+      await t.tap(find.byKey(const Key('shareConfirmYes')));
+      await t.pumpAndSettle();
       expect(find.byKey(const Key('myRule_0')), findsOneWidget);
       expect((await s.myRules()).single.category, 'screens');
       await t.tap(find.byTooltip('Remove'));
@@ -282,6 +304,33 @@ void main() {
         expect(find.byKey(Key('ruleCat_$c')), findsOneWidget);
       }
       expect(find.byKey(const Key('ruleCat_style')), findsNothing);
+    });
+  });
+
+  group('rules: one-time share confirmation', () {
+    testWidgets('declining shares nothing and keeps the text; confirming shares once, then no re-ask',
+        (WidgetTester t) async {
+      final MemoryLearnStore s = MemoryLearnStore();
+      await s.saveSettings(const LearnSettings(rulesList: true));
+      await _pump(t, RulesScreen(principal: guardian, store: s));
+      await t.enterText(find.byKey(const Key('ruleText')), 'Phones off at 8');
+      await t.tap(find.byKey(const Key('ruleAdd')));
+      await t.pumpAndSettle();
+      expect(find.textContaining('shared with the other guardian'), findsWidgets);
+      await t.tap(find.byKey(const Key('shareConfirmNo')));
+      await t.pumpAndSettle();
+      expect(await s.myRules(), isEmpty);
+      expect(find.text('Phones off at 8'), findsOneWidget, reason: 'the typed text is kept');
+      await t.tap(find.byKey(const Key('ruleAdd')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('shareConfirmYes')));
+      await t.pumpAndSettle();
+      expect((await s.myRules()).length, 1);
+      await t.enterText(find.byKey(const Key('ruleText')), 'Shoes by the door');
+      await t.tap(find.byKey(const Key('ruleAdd')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('shareConfirmDialog')), findsNothing, reason: 'one-time');
+      expect((await s.myRules()).length, 2);
     });
   });
 

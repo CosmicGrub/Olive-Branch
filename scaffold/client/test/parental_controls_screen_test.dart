@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:olive_client/activity_overrides.dart';
+import 'package:olive_client/api_client.dart';
 import 'package:olive_client/game_logic.dart' as game_catalogue;
 import 'package:olive_client/joke_logic.dart' as joke_catalogue;
 import 'package:olive_client/parental_controls_screen.dart';
@@ -96,12 +97,49 @@ void main() {
     test('isTileVisible checks ONLY the visible column, ignoring an irrelevant minAgeOverride',
         () {
       final overrides = {
-        'tile:messages':
-            const ActivityOverride(activityKey: 'tile:messages', visible: false, minAgeOverride: 0),
+        'tile:homework':
+            const ActivityOverride(activityKey: 'tile:homework', visible: false, minAgeOverride: 0),
       };
-      expect(isTileVisible(overrides, 'tile:messages'), isFalse);
-      expect(isTileVisible(null, 'tile:messages'), isTrue);
-      expect(isTileVisible(const {}, 'tile:messages'), isTrue);
+      expect(isTileVisible(overrides, 'tile:homework'), isFalse);
+      expect(isTileVisible(null, 'tile:homework'), isTrue);
+      expect(isTileVisible(const {}, 'tile:homework'), isTrue);
+    });
+
+    test('Messages can never be hidden: a LEGACY stored hide on tile:messages is ignored', () {
+      final legacy = {
+        'tile:messages':
+            const ActivityOverride(activityKey: 'tile:messages', visible: false),
+      };
+      expect(isTileVisible(legacy, 'tile:messages'), isTrue);
+      expect(neverHideable, contains('tile:messages'));
+      expect(neverHideable, isNot(contains('tile:homework')));
+    });
+
+    test('refuseHide refuses Messages with a clear reason, and nothing else', () {
+      expect(refuseHide('tile:messages', visible: false), neverHideableReason);
+      expect(neverHideableReason, contains("can't be hidden"));
+      expect(refuseHide('tile:messages', visible: true), isNull);
+      expect(refuseHide('tile:messages'), isNull);
+      expect(refuseHide('tile:homework', visible: false), isNull);
+    });
+
+    test('the guardian-side service refuses a Messages hide BEFORE any request is sent',
+        () async {
+      int requests = 0;
+      final api = OliveApi('http://api.test', 'tok', client: MockClient((req) async {
+        requests++;
+        return http.Response('{}', 200);
+      }));
+      await expectLater(
+        api.setActivityOverride('child-1', 'tile:messages', visible: false),
+        throwsA(isA<ApiException>()
+            .having((e) => e.error, 'error', 'never_hideable')
+            .having((e) => e.message, 'message', neverHideableReason)),
+      );
+      expect(requests, 0, reason: 'the server route must never see a Messages hide');
+      // Everything else still goes out.
+      await api.setActivityOverride('child-1', 'tile:homework', visible: false);
+      expect(requests, 1);
     });
   });
 
@@ -227,7 +265,10 @@ void main() {
     // nothing else changes here.
     expect(find.byKey(const Key('visible_tile:storyteller')), findsOneWidget);
     expect(find.byKey(const Key('visible_tile:homework')), findsOneWidget);
-    expect(find.byKey(const Key('visible_tile:messages')), findsOneWidget);
+    // Messages is never listed (it can never be hidden): a note says so instead.
+    expect(find.byKey(const Key('visible_tile:messages')), findsNothing);
+    expect(find.byKey(const Key('messagesAlwaysOnNote')), findsOneWidget);
+    expect(find.textContaining("Messages can't be hidden"), findsOneWidget);
     expect(find.byKey(const Key('visible_tile:showAndTell')), findsOneWidget);
     expect(find.byKey(const Key('visible_tile:myList')), findsOneWidget);
     expect(find.byKey(const Key('visible_tile:more')), findsOneWidget);
@@ -240,12 +281,12 @@ void main() {
     await pump(tester, client: stubClient(calledPaths: calledPaths, calledBodies: calledBodies));
     await verifyPin(tester);
 
-    final switchFinder = find.byKey(const Key('visible_tile:messages'));
+    final switchFinder = find.byKey(const Key('visible_tile:homework'));
     expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
     await tester.tap(switchFinder);
     await tester.pumpAndSettle();
 
-    expect(calledPaths, contains('PUT /v1/children/child-1/activity-overrides/tile:messages'));
+    expect(calledPaths, contains('PUT /v1/children/child-1/activity-overrides/tile:homework'));
     expect(jsonDecode(calledBodies.last), {'visible': false});
     expect(tester.widget<SwitchListTile>(switchFinder).value, isFalse);
   });
@@ -375,7 +416,7 @@ void main() {
     await pump(tester, client: client);
     await verifyPin(tester);
 
-    await tester.tap(find.byKey(const Key('visible_tile:messages')));
+    await tester.tap(find.byKey(const Key('visible_tile:homework')));
     await tester.pumpAndSettle();
 
     expect(find.text("Couldn't save that change — try again."), findsOneWidget,
@@ -453,7 +494,7 @@ void main() {
       await pump(tester, client: stubClient());
       await verifyPin(tester);
       // ChildHome tiles is already expanded; its rows sit directly under it.
-      expect(find.byKey(const Key('visible_tile:messages')), findsOneWidget);
+      expect(find.byKey(const Key('visible_tile:homework')), findsOneWidget);
       expect(find.descendant(
         of: find.byKey(const Key('visibilitySection_ChildHome tiles')),
         matching: find.byType(ExpansionTile)), findsNothing);
@@ -516,13 +557,13 @@ void main() {
       // The grouped view's category sections are gone while searching.
       expect(find.byKey(const Key('visibilitySection_ChildHome tiles')), findsNothing);
       // A non-matching item is not present.
-      expect(find.byKey(const Key('visible_tile:messages')), findsNothing);
+      expect(find.byKey(const Key('visible_tile:homework')), findsNothing);
 
       await tester.enterText(find.byKey(const Key('visibilitySearchField')), '');
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('visibilitySearchResults')), findsNothing);
       expect(find.byKey(const Key('visibilitySection_ChildHome tiles')), findsOneWidget);
-      expect(find.byKey(const Key('visible_tile:messages')), findsOneWidget);
+      expect(find.byKey(const Key('visible_tile:homework')), findsOneWidget);
     });
 
     testWidgets('a Visibility search matching nothing shows the honest empty state, never '

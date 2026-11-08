@@ -284,7 +284,8 @@ void main() {
         },
       )));
       await t.pumpAndSettle();
-      expect(find.text('Messages'), findsNothing);
+      // Messages can NEVER be hidden: a stored hide (legacy row) is ignored.
+      expect(find.text('Messages'), findsOneWidget);
       expect(find.text('Homework'), findsNothing);
       // Unrelated tiles, AND the two deliberately-uncontrolled ones (My day,
       // Play together — see child_home.dart's own comment on why those two

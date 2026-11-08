@@ -289,8 +289,7 @@ class _InboxScreenState extends State<InboxScreen> {
             : ListView(padding: const EdgeInsets.all(16), children: <Widget>[
                 Text(unread == 0
                   ? 'Hi ${widget.childName}, all caught up'
-                  : "Hi ${widget.childName}, you've got $unread new "
-                    '${unread == 1 ? 'message' : 'messages'}',
+                  : 'Hi ${widget.childName}, something new for you',
                   style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 16),
                 for (final InboxMessage m in _messages) _InboxTile(message: m, onTap: () => _open(m)),
