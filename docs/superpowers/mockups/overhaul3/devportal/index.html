@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Olive Branch Developer Portal</title>
+<meta name="description" content="Mockup of the Olive Branch server developer portal. The route reference, data model and limits are generated from the source by script.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233f5a1a'/%3E%3Cpath d='M8 22c2-9 8-13 16-13-1 8-5 13-13 13z' fill='%23e6eed3'/%3E%3C/svg%3E">
+<script>
+  /* Apply a pinned theme before first paint so the page never flashes. */
+  try { var t = localStorage.getItem('ob-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top" role="banner">
+  <button class="iconbtn" id="menuBtn" aria-label="Open navigation" aria-expanded="false" aria-controls="side">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <a class="brand" href="#start" aria-label="Olive Branch developer portal, home">
+    <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M8 22c2-9 8-13 16-13-1 8-5 13-13 13z" fill="var(--accent-ink)" opacity=".92"/><path d="M8 24c4-4 7-7 12-10" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
+    Olive Branch <small>Developers</small>
+  </a>
+  <span class="grow"></span>
+  <span class="chip ver" title="Specification version from CHANGELOG.md"><span class="dot forced" aria-hidden="true"></span><span id="verChip">spec 0.50.0</span></span>
+  <button class="iconbtn searchbtn" id="searchBtn" aria-label="Search the portal" aria-haspopup="dialog">
+    <span style="display:inline-flex;gap:8px;align-items:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="lbl">Search endpoints, tables, errors</span></span><kbd>Ctrl K</kbd>
+  </button>
+  <button class="iconbtn" id="themeBtn" aria-label="Switch to dark theme" aria-pressed="false" title="Toggle light / dark">
+    <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+  </button>
+</header>
+
+<div class="layout">
+  <nav class="side" id="side" aria-label="Portal sections">
+    <h2>Build</h2>
+    <a href="#start" data-view="start"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Getting started</a>
+    <a href="#concepts" data-view="concepts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>Concepts</a>
+    <a href="#reference" data-view="reference"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6 3 12l5 6M16 6l5 6-5 6"/></svg>API reference <span class="n" id="navCount">88</span></a>
+    <a href="#try" data-view="try"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4v16l14-8z"/></svg>Try it (mock)</a>
+    <h2>Internals</h2>
+    <a href="#data" data-view="data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>Data model <span class="n" id="navTables">45</span></a>
+    <a href="#realtime" data-view="realtime"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Realtime</a>
+    <a href="#jobs" data-view="jobs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Jobs and scheduler</a>
+    <a href="#security" data-view="security"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg>Security model</a>
+    <h2>Operate</h2>
+    <a href="#changelog" data-view="changelog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 11h6M9 15h6"/></svg>Changelog and versioning</a>
+    <a href="#runbooks" data-view="runbooks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6M12 19h8"/></svg>Runbooks</a>
+    <a href="#roadmap" data-view="roadmap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v5h-4z"/></svg>Roadmap <span class="n" id="navRoad">37</span></a>
+    <p class="sidefoot" id="sideFoot">Generated from source by <code>gen-routes.mjs</code>.</p>
+  </nav>
+  <div class="scrim" id="scrim"></div>
+
+  <main id="main" tabindex="-1">
+
+<!-- ============================================================ START == -->
+<section class="view" id="v-start" aria-labelledby="h-start" hidden>
+  <div class="hero">
+    <div class="eyebrow">Developer portal / mockup</div>
+    <h1 id="h-start">Build against the Olive Branch server</h1>
+    <p class="lede">A small Node server in front of Postgres, where the database enforces the product's prohibitions and the API layer cannot forget to ask. This portal is generated from the source, so the numbers below are counted, not typed.</p>
+    <div class="grid" id="statGrid" aria-label="Key numbers"></div>
+  </div>
+
+  <header>
+    <div class="eyebrow">Getting started</div>
+    <h2 style="margin-top:0">Auth in five minutes</h2>
+    <p class="lede">Every request carries a signed session token. There are two ways to get one: the real path, which is a device pairing, and a development shortcut that only exists when you start the server with <code>DEV_LOGIN=1</code>.</p>
+  </header>
+
+  <div class="callout warn"><strong class="t">Development only</strong>
+    <p><code>POST /v1/auth/dev-login</code> mints a session for any user or child id with no credential. It answers <code>404</code> unless <code>DEV_LOGIN=1</code>, and the process refuses to start if <code>DEV_LOGIN=1</code> and <code>NODE_ENV=production</code> are both set. Production compose pins <code>DEV_LOGIN: "0"</code>.</p></div>
+
+  <h3 id="s-base">Base URL and a first call <a class="anchor" href="#start/s-base" aria-label="Link to this heading">#</a></h3>
+  <div class="tabs" data-tabs>
+    <div role="tablist" aria-label="Environment">
+      <button role="tab" aria-selected="true">Local dev stack</button>
+      <button role="tab" aria-selected="false">Production</button>
+    </div>
+    <div role="tabpanel">
+      <p>The dev compose file publishes the server on loopback only: <code>127.0.0.1:8123</code>. Devices reach it through <code>adb reverse tcp:8123 tcp:8123</code>.</p>
+      <div data-code="bash" data-title="Liveness">curl -s http://127.0.0.1:8123/healthz
+# {"status":"ok"}   (503 {"status":"db_unreachable"} after a 3 s timeout)</div>
+    </div>
+    <div role="tabpanel" hidden>
+      <p>The prod compose file publishes <code>127.0.0.1:${SERVER_HOST_PORT:-8123}</code> as well; TLS and a public hostname are yours to put in front. The WebAuthn relying party in <code>routes.mjs</code> is still the placeholder <code>olivebranch.local</code> and must become the deployed domain first (see <a href="#security">Security</a>).</p>
+      <div data-code="bash" data-title="Liveness">curl -s https://api.example.invalid/healthz</div>
+    </div>
+  </div>
+
+  <h3 id="s-pair">The real path: pair, refresh, sign out <a class="anchor" href="#start/s-pair" aria-label="Link to this heading">#</a></h3>
+  <p>A guardian on a device that is already signed in generates a short-lived code. The new device redeems it once and receives a one-hour session token plus a long-lived <em>device credential</em>, shown exactly once. The device then keeps itself signed in by refreshing with that credential. Signing out revokes the device on the server.</p>
+  <div class="diagram" tabindex="0" role="group" aria-label="Sequence diagram: device pairing, refresh and sign-out (scrollable)">
+    <svg viewBox="0 0 900 640" role="img" aria-labelledby="seqT seqD">
+      <title id="seqT">Device pairing, refresh and sign-out</title>
+      <desc id="seqD">A guardian phone asks the server for a pairing code, a new device redeems it and receives a session and a device credential, later refreshes it with the credential, and finally signs out which revokes the device.</desc>
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="var(--text-2)"/></marker></defs>
+      <g font-size="13">
+        <rect class="act" x="40" y="14" width="200" height="40" rx="9"/><text x="140" y="39" text-anchor="middle" font-weight="700">Guardian phone</text>
+        <rect class="act" x="350" y="14" width="200" height="40" rx="9"/><text x="450" y="39" text-anchor="middle" font-weight="700">Olive server</text>
+        <rect class="act" x="660" y="14" width="200" height="40" rx="9"/><text x="760" y="39" text-anchor="middle" font-weight="700">New device (kiosk)</text>
+        <line class="lane" x1="140" y1="54" x2="140" y2="628"/><line class="lane" x1="450" y1="54" x2="450" y2="628"/><line class="lane" x1="760" y1="54" x2="760" y2="628"/>
+
+        <text x="40" y="86" font-weight="700" class="mut">1  Generate a code (needs the guardian's own PIN)</text>
+        <path class="msg" d="M140 108 H446"/><text x="150" y="102" class="mono" font-size="11.5">POST /v1/children/:childId/device-pairing-codes {pin}</text>
+        <path class="msg back" d="M446 136 H144"/><text x="156" y="130" class="mono" font-size="11.5">201 {id, numericCode (6 digits), expiresAt}</text>
+        <rect class="note" x="22" y="146" width="236" height="24" rx="6"/><text x="30" y="162" font-size="11.5" class="noteT">Shown as a QR or typed. Valid ~10 min.</text>
+
+        <text x="40" y="206" font-weight="700" class="mut">2  Redeem it on the new device (no session yet)</text>
+        <path class="msg" d="M760 228 H454"/><text x="468" y="222" class="mono" font-size="11.5">POST /v1/device-pairing/redeem {code, role}</text>
+        <path class="msg back" d="M454 258 H756"/><text x="466" y="252" class="mono" font-size="11.5">201 {sessionToken, expiresAt, deviceId, deviceCredential, role, targetId}</text>
+        <rect class="note" x="610" y="268" width="270" height="40" rx="6"/><text x="618" y="284" font-size="11.5" class="noteT">deviceCredential is shown once.</text><text x="618" y="300" font-size="11.5" class="noteT">Store it in secure storage.</text>
+
+        <text x="40" y="344" font-weight="700" class="mut">3  Call the API for up to one hour</text>
+        <path class="msg" d="M760 366 H454"/><text x="468" y="360" class="mono" font-size="11.5">GET /v1/me   Authorization: Bearer &lt;sessionToken&gt;</text>
+        <path class="msg back" d="M454 392 H756"/><text x="466" y="386" class="mono" font-size="11.5">200 {userId, childId, roleName, ...}</text>
+
+        <text x="40" y="428" font-weight="700" class="mut">4  Refresh 60 s before expiry (the old token is probably gone)</text>
+        <path class="msg" d="M760 450 H454"/><text x="468" y="444" class="mono" font-size="11.5">POST /v1/auth/session/refresh {deviceId, deviceCredential}</text>
+        <path class="msg back" d="M454 476 H756"/><text x="466" y="470" class="mono" font-size="11.5">200 {sessionToken, expiresAt, deviceId, role, targetId}</text>
+
+        <text x="40" y="512" font-weight="700" class="mut">5  Sign out (revokes this device server-side)</text>
+        <path class="msg" d="M760 534 H454"/><text x="468" y="528" class="mono" font-size="11.5">POST /v1/auth/session/sign-out</text>
+        <path class="msg back" d="M454 560 H756"/><text x="466" y="554" class="mono" font-size="11.5">200 {ok: true, revoked: true}</text>
+        <rect class="badf" x="500" y="574" width="360" height="40" rx="7"/><text x="510" y="590" font-size="11.5" class="mono">next request with the old token: 401 device_revoked</text><text x="510" y="606" font-size="11.5" class="mono">refresh with the credential: 401 device_revoked</text>
+        <rect class="okf" x="22" y="574" width="236" height="40" rx="7"/><text x="30" y="590" font-size="11.5">Or revoke from here:</text><text x="30" y="606" font-size="11.5" class="mono">POST .../paired-devices/:id/revoke</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="callout info"><strong class="t">What the code guarantees</strong>
+    <ul>
+      <li>Refresh answers <code>401 invalid_device_credential</code> identically for an unknown id, a wrong credential, another device's credential and a pre-<code>0038</code> device, so it is not a device-id oracle.</li>
+      <li>The credential is 256 random bits. Only its SHA-256 is stored. It is <strong>not rotated on use</strong>, on purpose: rotation would strand a kiosk whose response was lost in transit.</li>
+      <li>A revoked device is refused on its very next request, because <code>handle()</code> checks <code>paired_device</code> for every session carrying a <code>deviceId</code> claim.</li>
+    </ul></div>
+
+  <h3 id="s-dev">The development shortcut <a class="anchor" href="#start/s-dev" aria-label="Link to this heading">#</a></h3>
+  <p>Start the dev stack with <code>DEV_LOGIN=1</code> in <code>scaffold/.env</code>, seed it, then mint a token for a seeded id. The seed (<code>server/seed-dev.mjs</code>) creates Ivy (child), Dad and Mom (guardians).</p>
+  <div data-code="bash" data-title="Dev login (404 unless DEV_LOGIN=1)">curl -s -X POST http://127.0.0.1:8123/v1/auth/dev-login \
+  -H 'content-type: application/json' \
+  -d '{"userId":"aaaaaaaa-0000-4000-8000-000000000002"}'
+# {"token":"eyJ1c2VySWQiOi...&lt;mac&gt;"}   (guardian: Dad)
+
+curl -s -X POST http://127.0.0.1:8123/v1/auth/dev-login \
+  -H 'content-type: application/json' \
+  -d '{"childId":"aaaaaaaa-0000-4000-8000-000000000001"}'
+# a child session for Ivy</div>
+
+  <h3 id="s-token">Token inspector <a class="anchor" href="#start/s-token" aria-label="Link to this heading">#</a></h3>
+  <p>A session token is <code>base64url(JSON payload) + "." + base64url(HMAC-SHA256)</code>. The payload is readable by anyone holding the token; the MAC is what makes it trustworthy. This decodes locally in your browser, verifies nothing, and sends nothing.</p>
+  <div class="card">
+    <label for="tokIn" class="sr-only">Session token</label>
+    <textarea class="input" id="tokIn" rows="3" spellcheck="false" aria-describedby="tokOut"></textarea>
+    <div class="frow"><button class="btn ghost" id="tokSample">Load a sample</button><span class="badge info">decoded locally</span></div>
+    <div id="tokOut" aria-live="polite" style="margin-top:10px"></div>
+  </div>
+
+  <h3 id="s-next">Where next <a class="anchor" href="#start/s-next" aria-label="Link to this heading">#</a></h3>
+  <div class="grid">
+    <a class="card" href="#concepts"><h3>Concepts</h3><p>Principals, actions and <code>can()</code>, RLS, the child-payload sweep, errors, limits.</p></a>
+    <a class="card" href="#reference"><h3>API reference</h3><p>Every endpoint, searchable, with who may call it and example calls.</p></a>
+    <a class="card" href="#try"><h3>Try it (mock)</h3><p>A safe playground that replays canned responses. No network.</p></a>
+    <a class="card" href="#runbooks"><h3>Runbooks</h3><p>Start the stack, migrate, seed, back up, restore, rotate secrets.</p></a>
+  </div>
+</section>
+
+<!-- ======================================================== CONCEPTS ==== -->
+<section class="view" id="v-concepts" aria-labelledby="h-concepts" hidden>
+  <header><div class="eyebrow">Concepts</div><h1 id="h-concepts">How the server decides</h1>
+  <p class="lede">Five locks sit between a request and a row. Each is enforced somewhere that does not depend on a route author remembering it.</p></header>
+
+  <nav class="chips" aria-label="On this page" id="conceptToc" style="margin-bottom:8px"></nav>
+
+  <h2 id="c-principals">Principals and roles <a class="anchor" href="#concepts/c-principals" aria-label="Link to this heading">#</a></h2>
+  <p>A verified session produces one principal: <code>{userId, roleName, childId, escalated, deviceId}</code>. A child principal has <code>userId: null</code> and a <code>childId</code>. An adult principal has a <code>userId</code> and no <code>childId</code>; what they may do for a given child comes from their <em>guardianship edges</em>, re-read on every request, so a revoked edge takes effect immediately even though the token is stateless.</p>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Role to action matrix"><table id="roleMatrix"></table></div>
+  <p class="note-src">Generated from <code>ROLE_CAPS</code> in <code>packages/family-graph/src/authorize.ts</code>. The child column is not a role in that table: the API gate lets a child act only on her own <code>childId</code>, and denies <code>expense.*</code> (P6) and <code>journal.read</code> (P7) outright. <code>letter</code> is held by no adult role at all.</p>
+
+  <h2 id="c-can">Actions and <code>can()</code> <a class="anchor" href="#concepts/c-can" aria-label="Link to this heading">#</a></h2>
+  <p>Each route declares an <code>Action</code> (or <code>null</code> for identity-only). <code>register()</code> throws if a route has no declared action, and also if a <code>:childId</code> route says <code>null</code> without the explicit <code>identityScopedByHandler</code> escape hatch. The <code>childId</code> is read from the <strong>path only</strong>, never from a body, query or header.</p>
+  <ol class="steps">
+    <li><strong>P7 first, for everyone.</strong> <code>journal.read</code> returns <code>P7_journal_never</code>. No role, tier, escalation or court order changes that.</li>
+    <li><strong>P6 for children.</strong> A child actor asking for any <code>expense.*</code> action gets <code>P6_child_financial</code>.</li>
+    <li><strong>Edges for this child.</strong> No edge: <code>no_edge</code>. Then every edge is tried; the most specific denial wins.</li>
+    <li><strong>Per edge:</strong> closed, expired, outside its validity window, <code>restricted</code>, contact blocked by ladder step <code>none</code>, write blocked by <code>observerOnly</code>, role lacks the action, an explicit scope of <code>false</code>.</li>
+    <li><strong>Court tier.</strong> <code>export.certified</code> additionally requires the tier flag, else <code>tier_required</code>.</li>
+  </ol>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Deny reasons"><table id="denyTable"></table></div>
+
+  <h2 id="c-rls">RLS and FORCE <a class="anchor" href="#concepts/c-rls" aria-label="Link to this heading">#</a></h2>
+  <p>The API check is the second lock. The first is Postgres. Each request that touches data runs inside a transaction whose <code>app.role</code>, <code>app.child_id</code> and <code>app.user_id</code> settings are set from the verified principal and never from input. An unconfigured session sees <strong>zero</strong> rows, not all of them.</p>
+  <div class="callout bad"><strong class="t">Why FORCE matters</strong>
+    <p>A table's owner bypasses row-level security unless <code>FORCE ROW LEVEL SECURITY</code> is also set, and most applications connect as the owner. <code>db/test/0001_constraints.test.sql</code> measured it: with <code>ENABLE</code> only, the owner read 1 row of the journal; with <code>ENABLE</code> plus <code>FORCE</code>, 0. The application role must also be <code>NOSUPERUSER NOBYPASSRLS</code>, because superusers bypass RLS even with FORCE.</p></div>
+  <div class="grid" id="rlsStats"></div>
+  <p>See <a href="#data">Data model</a> for the per-table status. The <code>health_check</code> view's <code>rls_unforced</code> row watches a hand-maintained list of tables; the generator confirmed that list matches the forced tables in the migrations today.</p>
+
+  <h2 id="c-sweep">Child-payload sweep and banned keys <a class="anchor" href="#concepts/c-sweep" aria-label="Link to this heading">#</a></h2>
+  <p>Every response to a <em>child</em> principal passes through one choke point in <code>handle()</code>: a recursive walk that fails the request with <code>500 child_payload_leak</code> (listing the offending paths) if any key, case-insensitively, is on <code>GLOBAL_CHILD_FORBIDDEN</code>. It fails closed. The one exception is a route flagged <code>skipChildPayloadSweep</code>; today that is only <code>POST .../handover</code> (take-and-go), a deliberately complete self-export.</p>
+  <p>Naming has consequences: <code>GET /v1/me</code> returns <code>yearsOld</code>, not <code>age</code>, because <code>age</code> is banned and the sweep would 500 the route.</p>
+  <details class="card"><summary style="cursor:pointer;font-weight:600">All <span id="bannedN">157</span> banned keys, by theme</summary><div id="bannedList" class="chips" style="margin-top:12px"></div></details>
+
+  <h2 id="c-prules">The P-rules as API constraints <a class="anchor" href="#concepts/c-prules" aria-label="Link to this heading">#</a></h2>
+  <p>The prohibitions in MASTERFILE §2.1 are product rules. These are the places they surface as contract.</p>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="P-rules"><table>
+    <thead><tr><th>Rule</th><th>What it means for a client</th><th>Enforced by</th></tr></thead>
+    <tbody>
+      <tr><td><strong>P2</strong></td><td>No scores, streaks, rankings or completion pressure in any child response.</td><td>Child-payload sweep (banned keys)</td></tr>
+      <tr><td><strong>P3</strong></td><td>Arrival <em>events</em> only. No coordinates are accepted, stored or returned.</td><td>Schema (<code>exchange_arrival_event</code> has no location columns); no route takes one</td></tr>
+      <tr><td><strong>P6</strong></td><td>A child principal gets <code>403 P6_child_financial</code> from every <code>expense</code> route and may not read the table.</td><td><code>can()</code>, the API gate, and an RLS policy on <code>expense</code> with no child path</td></tr>
+      <tr><td><strong>P7</strong></td><td>There is <strong>no route</strong> that reads a child's journal for an adult. <code>journal.read</code> always denies.</td><td><code>can()</code> first line, RLS on <code>child_journal_entry</code>, and the absence of a route</td></tr>
+      <tr><td><strong>P8</strong></td><td>Parent-to-parent log entries cannot be edited or deleted. There is no <code>PATCH</code> or <code>DELETE</code> for handover notes.</td><td>Triggers on <code>message_log</code> raise on UPDATE and DELETE; a chain trigger enforces linkage</td></tr>
+      <tr><td><strong>P9</strong></td><td>Resurfacing old material is opt-in. Do not build "on this day" pushes that default on.</td><td>Product rule; no server route exists yet</td></tr>
+      <tr><td><strong>P10, P11</strong></td><td>No appearance filters on a child's video; no remote control of a child's device.</td><td>Client and call layer; the server mints call tokens only</td></tr>
+    </tbody></table></div>
+
+  <h2 id="c-ids">Request ids <a class="anchor" href="#concepts/c-ids" aria-label="Link to this heading">#</a></h2>
+  <p>Every response carries <code>x-request-id</code>. If you send one that matches <code>^[A-Za-z0-9._-]{8,64}$</code> it is reused; anything else is replaced with a fresh UUID. The access log is one JSON line per request with the <em>route template</em> (never the concrete URL, so no child id and no query string leaks into logs).</p>
+  <div data-code="json" data-title="Access log line (stdout)">{"ts":"2026-11-08T14:02:11.402Z","level":"info","msg":"request","id":"4f1c2d7e-9b0a-4c55-8d0e-2a6f0c1b7e11","method":"GET","route":"/v1/children/:childId/now","status":200,"ms":12.4}</div>
+
+  <h2 id="c-errors">Errors <a class="anchor" href="#concepts/c-errors" aria-label="Link to this heading">#</a></h2>
+  <p>The envelope today is deliberately minimal: <code>{"error": "snake_case_code"}</code>, plus a few routes that add a field (<code>stale_version</code> adds <code>currentVersion</code>; <code>child_payload_leak</code> adds <code>fields</code>). There is no human message and no request id in the body. Branch on the status and the code. Anything unexpected is <code>500 {"error":"internal"}</code> with details only in the log.</p>
+  <div class="callout proposed"><strong class="t">Proposed</strong><p>A versioned envelope <code>{error, message, requestId, details?}</code> so a client can show the id to a support person. Additive, so it can ship under <code>/v1</code>. Tracked as <code>API-04</code> on the roadmap.</p></div>
+  <div id="errorCatalog"></div>
+
+  <h2 id="c-limits">Rate limits and size caps <a class="anchor" href="#concepts/c-limits" aria-label="Link to this heading">#</a></h2>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Rate limits"><table id="limitsTable"></table></div>
+  <div class="callout warn"><strong class="t">Coverage gap, read from the code</strong><p>Only <code>/v1/auth/*</code> (by IP and by identifier) and the two game-table routes are rate limited. <code>POST /v1/device-pairing/redeem</code> is not under <code>/v1/auth/</code>, so it falls outside the limiter; see finding <code>SEC-01</code> on the roadmap. Limits are in process memory, so they are per replica.</p></div>
+
+  <h2 id="c-idem">Idempotency <span class="badge proposed">proposed</span> <a class="anchor" href="#concepts/c-idem" aria-label="Link to this heading">#</a></h2>
+  <div class="callout proposed"><strong class="t">Not built</strong>
+    <p>No route accepts an idempotency key today (the generator found none). A retried <code>POST .../messages</code>, <code>.../expenses</code> or <code>.../care-notes</code> creates a second row. Some routes are naturally idempotent (<code>calls/:id/end</code>, <code>inbox/:id/opened</code>, sign-out, <code>DELETE /v1/me/device-tokens</code>). The offline-first client will retry, so this is the first thing to add.</p></div>
+  <div data-code="http" data-title="Proposed contract">POST /v1/children/:childId/care-notes
+Idempotency-Key: 0b9f6a52-3c1d-4f0e-9d51-6a2a2d6c1e77
+# Same key + same body within 24 h  -> the original 201, replayed, with  Idempotent-Replayed: true
+# Same key + different body         -> 422 idempotency_key_reused
+# In flight                         -> 409 idempotency_in_progress</div>
+
+  <h2 id="c-page">Pagination <span class="badge proposed">proposed</span> <a class="anchor" href="#concepts/c-page" aria-label="Link to this heading">#</a></h2>
+  <div class="callout proposed"><strong class="t">Not built</strong><p>No list route takes <code>limit</code> or a cursor. The only query parameter on any built route is <code>kind</code> on <code>GET .../export</code>. Lists such as the inbox, expenses, care notes and handover notes return everything the caller may see.</p></div>
+  <div data-code="http" data-title="Proposed contract (cursor, not offset)">GET /v1/children/:childId/handover-notes?limit=50&amp;after=eyJzZXEiOjQyfQ
+# 200 {"items":[...], "next":"eyJzZXEiOjkyfQ"}      (next is null on the last page)
+# Handover notes already have a gapless per-child "seq", which makes a stable cursor free.</div>
+
+  <h2 id="c-ifmatch">If-Match <span class="badge built">built, one route</span> <a class="anchor" href="#concepts/c-ifmatch" aria-label="Link to this heading">#</a></h2>
+  <p>The emergency card is the one resource with optimistic concurrency, added after an audit found it was last-write-wins between two guardians. It is a <strong>body field</strong>, not the HTTP header: <code>PUT .../emergency-card</code> requires an integer <code>ifMatch</code> equal to the version you read. Missing: <code>428 if_match_required</code>. Stale: <code>409 stale_version</code> with <code>currentVersion</code>. Each write appends the replaced values to the append-only <code>medical_record_history</code>.</p>
+  <div data-code="json" data-title="PUT /v1/children/:childId/emergency-card">{ "ifMatch": 3, "bloodType": "O+", "allergies": ["penicillin"], "conditions": [],
+  "pediatricianName": "Dr. Rao", "pediatricianPhone": "+1 555 0100" }
+// 409 {"error":"stale_version","currentVersion":4}   -> refetch, merge, resend with ifMatch: 4</div>
+</section>
+
+<!-- ===================================================== REFERENCE ====== -->
+<section class="view wide" id="v-reference" aria-labelledby="h-reference" hidden>
+  <header><div class="eyebrow">API reference</div><h1 id="h-reference">Every endpoint</h1>
+  <p class="lede">Generated by statically parsing <code>server/routes.mjs</code>, <code>server/game_tables.mjs</code> and the raw routes in <code>server/index.mjs</code>. Request and response shapes are what the handler code shows, not a hand-written schema.</p></header>
+  <div class="filters" role="search" aria-label="Filter endpoints">
+    <div class="frow">
+      <label class="sr-only" for="fq">Search endpoints</label>
+      <input class="input finput" id="fq" type="search" placeholder="Search path, action, error code, note (press / to focus)" autocomplete="off">
+      <label class="sr-only" for="farea">Area</label>
+      <select class="input" id="farea"><option value="">All areas</option></select>
+      <label class="sr-only" for="frole">Who may call</label>
+      <select class="input" id="frole"><option value="">Any caller</option></select>
+      <label class="sr-only" for="fstatus">Status</label>
+      <select class="input" id="fstatus"><option value="">Built and proposed</option><option value="built">Built</option><option value="proposed">Proposed</option></select>
+    </div>
+    <div class="frow" id="fmethods" role="group" aria-label="HTTP method"></div>
+    <div class="frow"><button class="pill" id="fsession" aria-pressed="false">No session needed</button><button class="pill" id="fnotest" aria-pressed="false">No linked test</button><button class="pill" id="fnoclient" aria-pressed="false">Not called by client</button><span class="count" id="fcount" aria-live="polite"></span></div>
+  </div>
+  <div id="epList"></div>
+  <div class="callout info" id="docsGap"></div>
+</section>
+
+<!-- =========================================================== TRY ====== -->
+<section class="view wide" id="v-try" aria-labelledby="h-try" hidden>
+  <header><div class="eyebrow">Playground</div><h1 id="h-try">Try it, safely</h1>
+  <p class="lede">Pick an endpoint and a caller, edit the request, send. The portal answers from a local replay of the shapes and errors the code shows.</p></header>
+  <div class="mockbanner" role="note"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>MOCK. No network calls are made. Responses are replayed locally; nothing here touched a server.</div>
+  <div class="try">
+    <div class="card">
+      <label for="tEp">Endpoint</label><select class="input" id="tEp"></select>
+      <label for="tWho">Calling as</label>
+      <select class="input" id="tWho">
+        <option value="dad">Dad (guardian, live edge)</option>
+        <option value="mom">Mom (guardian)</option>
+        <option value="sitter">A sitter (time-boxed edge)</option>
+        <option value="stepparent">A step-parent</option>
+        <option value="ivy">Ivy (child, own id)</option>
+        <option value="ivy-other">Ivy, wrong child id in the path</option>
+        <option value="none">No Authorization header</option>
+        <option value="expired">Expired token</option>
+        <option value="revoked">Token of a revoked device</option>
+      </select>
+      <div id="tParams"></div>
+      <label for="tBody">JSON body</label><textarea class="input" id="tBody" rows="8" spellcheck="false"></textarea>
+      <label for="tForce">Replay a specific documented outcome</label><select class="input" id="tForce"><option value="">Natural (decided by caller and body)</option></select>
+      <div class="frow" style="margin-top:14px"><button class="btn" id="tSend">Send (mock)</button><button class="btn ghost" id="tReset">Reset</button></div>
+    </div>
+    <div class="card" aria-live="polite">
+      <div class="resp-head"><span class="badge info">replayed locally</span><span id="tStatus"></span><span id="tTime" class="mono" style="color:var(--text-2)"></span></div>
+      <div id="tCurl"></div>
+      <div id="tOut"><p style="color:var(--text-2)">Send a request to see the replayed response.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== DATA MODEL ===== -->
+<section class="view wide" id="v-data" aria-labelledby="h-data" hidden>
+  <header><div class="eyebrow">Data model</div><h1 id="h-data">The tables</h1>
+  <p class="lede" id="dataLede"></p></header>
+  <div class="frow" style="margin-bottom:14px">
+    <label class="sr-only" for="dq">Filter tables</label><input class="input finput" id="dq" type="search" placeholder="Filter tables by name or column" autocomplete="off">
+    <button class="pill" id="dforced" aria-pressed="false">FORCE RLS only</button><button class="pill" id="dnorls" aria-pressed="false">No RLS</button>
+  </div>
+  <div class="dm">
+    <div id="dmap"></div>
+    <div class="sticky" id="dpane" aria-live="polite"></div>
+  </div>
+
+  <h2 id="d-chain">The append-only message log and its hash chain <a class="anchor" href="#data/d-chain" aria-label="Link to this heading">#</a></h2>
+  <p><code>message_log</code> is the parents' channel and the backbone of the certified court export. Entries are never edited or deleted (P8). Each row stores the hash of the previous row, so a change anywhere breaks everything after it.</p>
+  <div class="diagram" tabindex="0" role="group" aria-label="Hash chain diagram (scrollable)">
+    <svg viewBox="0 0 900 250" role="img" aria-label="Three log entries linked by prev_hash, starting from a genesis of 64 zeros">
+      <g font-size="12">
+        <rect class="box" x="10" y="80" width="130" height="60" rx="8"/><text x="75" y="106" text-anchor="middle" font-weight="700">genesis</text><text x="75" y="126" text-anchor="middle" class="mono mut" font-size="11">0 x 64</text>
+        <path class="edgec" d="M140 110 H190"/>
+        <g><rect class="boxc" x="190" y="30" width="210" height="160" rx="10"/><text x="205" y="54" font-weight="700">seq 0</text>
+          <text x="205" y="78" class="mono" font-size="11">prev_hash = genesis</text><text x="205" y="98" class="mono" font-size="11">author, at, body</text><text x="205" y="124" class="mono" font-size="11">hash = H(0, child, author,</text><text x="205" y="140" class="mono" font-size="11">         at, body, prev)</text></g>
+        <path class="edgec" d="M400 110 H450"/>
+        <g><rect class="boxc" x="450" y="30" width="210" height="160" rx="10"/><text x="465" y="54" font-weight="700">seq 1</text>
+          <text x="465" y="78" class="mono" font-size="11">prev_hash = hash(seq 0)</text><text x="465" y="98" class="mono" font-size="11">author, at, body</text><text x="465" y="124" class="mono" font-size="11">hash = H(1, child, author,</text><text x="465" y="140" class="mono" font-size="11">         at, body, prev)</text></g>
+        <path class="edgec" d="M660 110 H700"/>
+        <rect class="box" x="700" y="80" width="190" height="60" rx="8" stroke-dasharray="5 4"/><text x="795" y="106" text-anchor="middle" font-weight="700">seq 2 ...</text><text x="795" y="126" text-anchor="middle" class="mono mut" font-size="11">next must link to seq 1</text>
+        <text x="10" y="226" class="mut" font-size="12">H frames each field as  length:value  so bytes cannot be moved across a field boundary ("ab"+"c" is not "a"+"bc").</text>
+      </g>
+    </svg>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>The database enforces</h3><p>Primary key <code>(child_id, seq)</code>. Hash columns match <code>^[0-9a-f]{64}$</code>. A BEFORE INSERT trigger requires the first row to be seq 0 linked to genesis, and every later row to link to the current head with a contiguous seq. BEFORE UPDATE and BEFORE DELETE triggers raise, so a row can neither be changed nor removed.</p></div>
+    <div class="card"><h3>Only the app recomputes</h3><p>The trigger checks <em>linkage</em>, not that <code>hash</code> equals the hash of the row's content. That recomputation lives in <code>packages/ledger</code> and runs when a certified export is built (<code>chain_broken</code> refuses the export). A writer with insert rights could store a self-consistent but wrong hash. See finding <code>DATA-02</code>.</p></div>
+    <div class="card"><h3>Monitored</h3><p>The <code>log_sequence_gap</code> health check flags any non-contiguous sequence, and <code>rls_unforced</code> watches the table's FORCE flag.</p></div>
+  </div>
+</section>
+
+<!-- ======================================================== REALTIME ==== -->
+<section class="view" id="v-realtime" aria-labelledby="h-realtime" hidden>
+  <header><div class="eyebrow">Realtime</div><h1 id="h-realtime">Game tables over WebSocket</h1>
+  <p class="lede">Live checkers is the only realtime channel the server owns. It is an in-memory relay on the same HTTP server and port: no Postgres rows, no disk, no second listener. A dropped connection ends the game.</p></header>
+  <div class="callout info"><strong class="t">Scope</strong><p>Calls run on LiveKit (the server only mints tokens, see <code>POST .../calls</code>). Co-viewing has no server transport yet. Tables hold at most <span class="mono" id="wsGames">checkers</span> today.</p></div>
+
+  <h2 id="r-flow">Open, join, connect <a class="anchor" href="#realtime/r-flow" aria-label="Link to this heading">#</a></h2>
+  <ol class="steps">
+    <li><strong><code>POST /v1/game-tables</code></strong> with <code>{game, partnerChildId | partnerUserId}</code>. Authorized by <code>canOpenTable</code>: guardian to child uses the same <code>can('call')</code> gate as calls; sibling to sibling needs a <code>sibling_link</code> with contact allowed. Returns <code>{tableId, seat, token, ttlSeconds, wsPath}</code>. A child caller takes seat 0 and moves first.</li>
+    <li><strong>The partner calls <code>POST /v1/game-tables/:tableId/join</code></strong> from their own session and gets their own seat token. Authorization is re-run for both sides.</li>
+    <li><strong>Each side opens <code>wss://host/v1/game-tables/:tableId/socket?token=&lt;token&gt;</code></strong>. The token is verified <em>before</em> the upgrade completes; any failure destroys the socket at TCP level with no HTTP response. A token is single-use: replaying it, or a third party presenting a copy while the real device is connected, is refused.</li>
+  </ol>
+  <div data-code="js" data-title="Client sketch">const { tableId, token, wsPath } = await post('/v1/game-tables', { game: 'checkers', partnerUserId });
+const ws = new WebSocket(`wss://api.example.invalid${wsPath}?token=${encodeURIComponent(token)}`);
+ws.onmessage = (e) => {
+  const m = JSON.parse(e.data);
+  if (m.type === 'welcome')      { /* { seat, status, turnSeat } */ }
+  if (m.type === 'peer_joined')  { /* both seats are connected; status is now 'active' */ }
+  if (m.type === 'move')         { /* the other seat's move: { seat, from, to, continues } */ }
+  if (m.type === 'table_closed') { /* { reason } - the table is gone for good */ }
+};
+ws.send(JSON.stringify({ type: 'move', from: [5, 0], to: [4, 1], continues: false }));</div>
+
+  <h2 id="r-frames">Frames <a class="anchor" href="#realtime/r-frames" aria-label="Link to this heading">#</a></h2>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="WebSocket frames"><table>
+    <thead><tr><th>Direction</th><th>Frame</th><th>Fields</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td>client to server</td><td><code>move</code></td><td><code>from: [r,c]</code>, <code>to: [r,c]</code>, <code>continues: boolean</code></td><td>Your turn. The server checks turn order, rate and continuation chaining, <strong>not</strong> checkers legality.</td></tr>
+      <tr><td>server to client</td><td><code>welcome</code></td><td><code>seat</code>, <code>status</code>, <code>turnSeat</code></td><td>Right after connect.</td></tr>
+      <tr><td>server to client</td><td><code>peer_joined</code></td><td>none</td><td>Both seats connected.</td></tr>
+      <tr><td>server to client</td><td><code>move</code></td><td><code>seat</code>, <code>from</code>, <code>to</code>, <code>continues</code></td><td>Relayed to the other seat only.</td></tr>
+      <tr><td>server to client</td><td><code>error</code></td><td><code>reason</code></td><td>Then the socket closes with 1008.</td></tr>
+      <tr><td>server to client</td><td><code>table_closed</code></td><td><code>reason</code></td><td>Peer left, timed out, or join failed.</td></tr>
+    </tbody></table></div>
+
+  <h2 id="r-limits">Limits and close codes <a class="anchor" href="#realtime/r-limits" aria-label="Link to this heading">#</a></h2>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Realtime limits"><table id="wsLimits"></table></div>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Deny reasons and close codes"><table id="wsReasons"></table></div>
+  <div class="callout warn"><strong class="t">Single replica</strong><p>Tables, tokens' bookkeeping and the HTTP rate buckets live in one process's memory. Two replicas could not see each other's tables. The signing key is derived from <code>SESSION_SECRET</code> by HMAC with the label <code>olive-branch:game-table-v1</code>, which is key separation, not new cryptography.</p></div>
+</section>
+
+<!-- ============================================================ JOBS ==== -->
+<section class="view" id="v-jobs" aria-labelledby="h-jobs" hidden>
+  <header><div class="eyebrow">Jobs and scheduler</div><h1 id="h-jobs">What runs when</h1>
+  <p class="lede">There is no cron and no queue. One process, <code>tools/scheduler.mjs loop</code>, wakes once a day and runs five jobs in order. A few timers live inside the server itself.</p></header>
+  <h2 id="j-sched">The scheduler <a class="anchor" href="#jobs/j-sched" aria-label="Link to this heading">#</a></h2>
+  <p>Default schedule: once daily at <code>SCHEDULER_HOUR_UTC</code> (default <strong>3</strong>), or every <code>SCHEDULER_INTERVAL_MS</code> if set. In production compose it is on by default; in dev it sits behind <code>--profile scheduler</code> so it cannot rewrite rows under a developer mid-debug. <code>node tools/scheduler.mjs run &lt;job|all&gt;</code> runs one job by hand.</p>
+  <div class="bar24" aria-hidden="true"><i style="left:12.5%"></i></div>
+  <div class="ticks" aria-hidden="true"><span>00:00</span><span>03:00 UTC: all five jobs, in order</span><span>12:00</span><span>24:00</span></div>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Scheduler jobs"><table id="jobTable"></table></div>
+  <h2 id="j-inproc">Timers inside the server <a class="anchor" href="#jobs/j-inproc" aria-label="Link to this heading">#</a></h2>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="In-process timers"><table id="timerTable"></table></div>
+  <h2 id="j-sql">SQL job functions <a class="anchor" href="#jobs/j-sql" aria-label="Link to this heading">#</a></h2>
+  <div class="callout warn"><strong class="t">Not wired</strong><p><code>claim_due_intents()</code> and <code>expire_stale_intents()</code> (migration 0002) have no production caller. The scheduler's <code>rematerialize</code> moves intents from <code>pending</code> to <code>ready</code>, but nothing yet claims <code>ready</code> rows and pushes them to a device. This is stated in the scheduler's own header and <code>docs/scheduler.md</code>; the generator confirmed no caller in <code>server/</code> or <code>tools/</code>. Delivery also depends on push credentials that do not exist yet.</p></div>
+  <h2 id="j-health">Health checks <a class="anchor" href="#jobs/j-health" aria-label="Link to this heading">#</a></h2>
+  <p>The <code>health_check</code> view has eight rows; any breach makes <code>npm run health</code> exit non-zero and <code>health-alert</code> print an <code>ALERT check_name=...</code> line. It adds <code>backup_stale</code> when <code>BACKUP_DIR</code> is set. There is no pager or email integration.</p>
+  <div class="chips" id="healthChips"></div>
+</section>
+
+<!-- ========================================================= SECURITY === -->
+<section class="view" id="v-security" aria-labelledby="h-security" hidden>
+  <header><div class="eyebrow">Security model</div><h1 id="h-security">What protects a family's data</h1>
+  <p class="lede">A summary for developers. The threat model assumes a controlling ex-partner using the product for surveillance, contact in violation of a court order, and a curious child holding an unlocked guardian phone.</p></header>
+  <h2 id="x-threat">Threat model in one table <a class="anchor" href="#security/x-threat" aria-label="Link to this heading">#</a></h2>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Threats and mitigations"><table>
+    <thead><tr><th>Threat</th><th>Mitigation in code</th><th>Residual</th></tr></thead>
+    <tbody>
+      <tr><td>A parent reads the child's private journal</td><td>P7: <code>can()</code> denies <code>journal.read</code> first; RLS on <code>child_journal_entry</code>; no route exists</td><td>Backups taken by <code>backup_reader</code> (BYPASSRLS) contain it</td></tr>
+      <tr><td>Location surveillance</td><td>P3: no coordinates anywhere in the schema or API</td><td>None at the API; device-level apps are out of scope</td></tr>
+      <tr><td>A child sees money</td><td>P6 in <code>can()</code>, the API gate and RLS</td><td>None known</td></tr>
+      <tr><td>Editing the evidence</td><td>Append-only triggers and hash chain on <code>message_log</code></td><td>Hash recomputation happens at export, not insert</td></tr>
+      <tr><td>Stolen session token</td><td>1 hour TTL; edges re-read per request; device revoke cuts a paired device off immediately</td><td>No server-side revocation for sessions with no device claim (dev-login, passkey)</td></tr>
+      <tr><td>Stolen device credential</td><td>256-bit, stored hashed; revoke by guardian or sign-out</td><td>Not rotated on use, by decision</td></tr>
+      <tr><td>Guessing a PIN</td><td>scrypt; 5 attempts then 15 minute lockout, recorded in the database</td><td>Lockout is shared across guardians (see <code>SEC-04</code>)</td></tr>
+      <tr><td>Guessing a pairing code</td><td>6 digits, ~10 minute life, locks after 5 wrong-role attempts on a known code</td><td>No per-IP throttle on redeem (see <code>SEC-01</code>)</td></tr>
+      <tr><td>Account enumeration</td><td>Uniform passkey challenge response; <code>invalid_device_credential</code> is indistinguishable</td><td><code>dev-login</code> names <code>user_not_found</code> (dev only)</td></tr>
+      <tr><td>Oversized or malformed bodies</td><td>Byte-counted caps: 16 KiB unauthenticated, 40 MiB with a verified token; bad percent-escapes are 400</td><td>No per-principal request-rate limit outside auth</td></tr>
+    </tbody></table></div>
+
+  <h2 id="x-secrets">Secrets <a class="anchor" href="#security/x-secrets" aria-label="Link to this heading">#</a></h2>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Secrets"><table>
+    <thead><tr><th>Name</th><th>Used for</th><th>If it leaks</th><th>If you rotate it</th></tr></thead>
+    <tbody>
+      <tr><td><code>SESSION_SECRET</code></td><td>HMAC-SHA256 over session tokens; also the root of the game-table key</td><td>Anyone can mint any session</td><td>Every session fails <code>bad_signature</code> (no key id). Paired devices recover by refresh; passkey and dev sessions must sign in again. Live tables end.</td></tr>
+      <tr><td><code>MEDIA_SIGNING_SECRET</code></td><td>Signed media URLs (5 minute TTL), hex</td><td>Anyone can mint a media URL for any key</td><td>Outstanding URLs die; clients re-request. Unset means a random key per start, which also forbids more than one replica.</td></tr>
+      <tr><td><code>INTERNAL_METRICS_TOKEN</code></td><td>Lets a scraper reach <code>/internal/metrics</code></td><td>Counters exposed</td><td>Update the scraper</td></tr>
+      <tr><td><code>BACKUP_ENCRYPTION_PASSPHRASE</code></td><td>AES-256-GCM on backup files (off unless set)</td><td>Backups readable</td><td>Old backups need the <em>old</em> passphrase to restore. Keep it.</td></tr>
+      <tr><td><code>LIVEKIT_API_KEY / _SECRET</code></td><td>Minting call room tokens</td><td>Free rooms on your project</td><td>Rotate in LiveKit, then update env</td></tr>
+      <tr><td>Device credential</td><td>One per paired device</td><td>That device can mint sessions</td><td>Revoke the device and re-pair</td></tr>
+    </tbody></table></div>
+
+  <h2 id="x-pass">Passkeys <a class="anchor" href="#security/x-pass" aria-label="Link to this heading">#</a></h2>
+  <ul>
+    <li>Guardians sign in with WebAuthn, ES256. The challenge is stored per user, single-use and valid <span id="chalTtl">5</span> minutes; it is consumed <em>before</em> the signature is checked, so a failed attempt still spends it.</li>
+    <li>The sign counter is advanced with a compare-and-swap. Losing the race returns <code>401 signcount_replay</code>, which is what a cloned authenticator used at the same moment produces.</li>
+    <li>A deactivated account is refused at login even with an older credential (<code>403 account_deactivated</code>).</li>
+    <li class="warn-li">The relying party id is the placeholder <code>olivebranch.local</code> and the origin <code>https://olivebranch.local</code>. Until they become the deployed domain, no real ceremony can pass its own origin check.</li>
+  </ul>
+
+  <h2 id="x-pin">PIN <a class="anchor" href="#security/x-pin" aria-label="Link to this heading">#</a></h2>
+  <p>A guardian PIN gates the kiosk lock, pairing-code creation and the parental-controls screen. It is hashed with scrypt (<span class="mono" id="scryptP">N=32768, r=8, p=1</span>) with a per-PIN salt, because a 4 to 8 digit secret has a tiny keyspace and the only defence against an offline attack is making each guess expensive. After <span id="pinMax">5</span> wrong attempts the credential locks for 15 minutes, in the database, so it survives a restart. Changing a PIN that exists requires the current one through the same lockout path (<code>current_pin_required</code>).</p>
+
+  <h2 id="x-dev">Device credentials <a class="anchor" href="#security/x-dev" aria-label="Link to this heading">#</a></h2>
+  <p>A paired device is a row in <code>paired_device</code> with a <code>credential_hash</code> (migration 0038). Identity always comes from that row, never from the refresh body. A device paired before 0038 has a NULL hash, never matches anything, and must re-pair when its last session lapses.</p>
+
+  <h2 id="x-unused">Machinery that exists but is not connected <a class="anchor" href="#security/x-unused" aria-label="Link to this heading">#</a></h2>
+  <div class="callout warn"><strong class="t">Escalation</strong><p><code>escalateSession()</code> (PIN and biometric, 15 minute session) and the <code>escalated</code> route flag in <code>api.ts</code> exist and are unit tested, but no route sets <code>escalated: true</code> and nothing outside tests calls <code>escalateSession()</code>. <code>POST .../kiosk-pin/verify</code> returns only <code>{ok: boolean}</code>. Treat escalation as designed, not shipped. Finding <code>SEC-02</code>.</p></div>
+</section>
+
+<!-- ====================================================== CHANGELOG ===== -->
+<section class="view" id="v-changelog" aria-labelledby="h-changelog" hidden>
+  <header><div class="eyebrow">Changelog and versioning</div><h1 id="h-changelog">What changed, and how it will</h1>
+  <p class="lede" id="clLede"></p></header>
+  <h2 id="v-now">0.50.0 at a glance <a class="anchor" href="#changelog/v-now" aria-label="Link to this heading">#</a></h2>
+  <div class="callout info"><strong class="t">What this release was</strong><p>A release cut gathering eleven <code>[Unreleased]</code> entries (PRs #119 to #147) and bringing MASTERFILE, MARKUP and DEMO to parity with the code. It records that the client changes were <strong>not</strong> run on a Fold5 or Tab S9 FE, and that nothing involving calls, push or delivery has run against a live LiveKit, FCM or APNs endpoint.</p></div>
+  <ul>
+    <li><strong>Server surface:</strong> a real authenticated session (device credential, refresh, sign-out), server hardening (pool limits, byte-exact bodies, auth rate limits, request ids, metrics, graceful shutdown, backups), emergency card versioning, Parent Learn routes (<code>/v1/learn/...</code>), activity overrides and device pairing.</li>
+    <li><strong>Migrations 0030 to 0038</strong> added game favorites, child profile, device pairing, activity overrides, theme palette, Parent Learn, card versioning, FK indexes and the paired-device credential.</li>
+    <li><strong>Not consumed yet:</strong> the client keeps Parent Learn data on the device and does not call <code>/v1/learn</code>.</li>
+  </ul>
+  <h2 id="v-timeline">History <a class="anchor" href="#changelog/v-timeline" aria-label="Link to this heading">#</a></h2>
+  <div class="frow"><label class="sr-only" for="clq">Filter versions</label><input class="input finput" id="clq" type="search" placeholder="Filter by version or words in the title" autocomplete="off"><span class="count" id="clcount"></span></div>
+  <div class="timeline" id="clList"></div>
+  <button class="btn ghost" id="clMore">Show more</button>
+
+  <h2 id="v-policy">Versioning policy <span class="badge proposed">proposed</span> <a class="anchor" href="#changelog/v-policy" aria-label="Link to this heading">#</a></h2>
+  <p>Today every path starts with <code>/v1</code>, but that prefix is a convention, not a policy. The CHANGELOG applies Semantic Versioning to the <strong>specification</strong>, not to shipped software, and the server sends no version header. A proposal that keeps both honest:</p>
+  <div class="tablewrap" tabindex="0" role="region" aria-label="Versioning rules"><table>
+    <thead><tr><th>Change</th><th>Allowed within /v1</th><th>How clients find out</th></tr></thead>
+    <tbody>
+      <tr><td>New route, new optional request field, new response field</td><td class="yes">Yes</td><td>Changelog; clients must ignore unknown fields</td></tr>
+      <tr><td>New error code on an existing status</td><td class="yes">Yes</td><td>Changelog; clients must treat unknown codes by status class</td></tr>
+      <tr><td>New value in an enum the client sends</td><td class="yes">Yes</td><td>Changelog</td></tr>
+      <tr><td>Remove or rename a field, tighten validation, change a status</td><td class="no">No: needs <code>/v2</code> of that route</td><td><code>Deprecation</code>, <code>Sunset</code> and <code>Link: rel="successor-version"</code> on the old route for at least one release train</td></tr>
+      <tr><td>Remove a route</td><td class="no">No</td><td>Same headers, then <code>410 gone</code> after the sunset date</td></tr>
+    </tbody></table></div>
+  <div data-code="http" data-title="Proposed deprecation headers">HTTP/1.1 200 OK
+x-olive-api: v1; spec=0.50.0
+Deprecation: @1792000000
+Sunset: Wed, 31 Jan 2027 00:00:00 GMT
+Link: &lt;/v1/children/{childId}/inbox&gt;; rel="successor-version"</div>
+</section>
+
+<!-- ====================================================== RUNBOOKS ====== -->
+<section class="view" id="v-runbooks" aria-labelledby="h-runbooks" hidden>
+  <header><div class="eyebrow">Runbooks</div><h1 id="h-runbooks">Do the thing, now</h1>
+  <p class="lede">Commands are copied from the repo's own documentation and compose files. Rotation notes marked <span class="badge proposed">derived</span> are reasoned from the code and have not been drilled.</p></header>
+  <div id="runbookList"></div>
+</section>
+
+<!-- ======================================================== ROADMAP ===== -->
+<section class="view wide" id="v-roadmap" aria-labelledby="h-roadmap" hidden>
+  <header><div class="eyebrow">Roadmap</div><h1 id="h-roadmap">What is built, proposed or parked</h1>
+  <p class="lede">API enhancements and security or data findings, prioritised. Labels are strict: <span class="badge built">built</span> exists in code today, <span class="badge proposed">proposed</span> does not, <span class="badge parked">parked: online</span> waits on the owner's offline-first direction or on credentials that do not exist.</p></header>
+  <div class="callout warn" id="roadProv"></div>
+  <div class="frow" id="roadFilters" style="margin-bottom:14px"></div>
+  <div class="board" id="board"></div>
+</section>
+
+  </main>
+</div>
+
+<div class="pal" id="pal" data-open="false" role="dialog" aria-modal="true" aria-label="Search the portal">
+  <div class="palbox">
+    <input id="palIn" type="text" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" placeholder="Search endpoints, tables, error codes, sections" autocomplete="off" spellcheck="false">
+    <ul class="pallist" id="palList" role="listbox"></ul>
+    <div class="palhint">Arrow keys to move, Enter to open, Esc to close</div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="routes.js"></script>
+<script src="content.js"></script>
+<script src="portal.js"></script>
+</body>
+</html>
