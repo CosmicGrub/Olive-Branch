@@ -462,14 +462,21 @@ class LocalStore {
   /// same JSON the old build wrote, key order included.
   Future<Uint8List> _encode(NamespaceSpec spec, Map<String, Object?> data, {String? json}) async {
     final String dataJson = json ?? jsonEncode(data);
-    final String head =
-        '{"olive_store":$_envelopeVersion,"schema":${spec.schema},"enc":${spec.encrypted},';
+    // The header object, serialised by jsonEncode; its closing brace is split
+    // off and put back after the spliced field, so no brace is hand-written.
+    final String header = jsonEncode(<String, Object?>{
+      'olive_store': _envelopeVersion,
+      'schema': spec.schema,
+      'enc': spec.encrypted,
+    });
+    final String open = header.substring(0, header.length - 1);
+    final String close = header.substring(header.length - 1);
     if (spec.encrypted) {
       final Uint8List plain = Uint8List.fromList(utf8.encode(dataJson));
       final Uint8List box = await cipher!.seal(plain, utf8.encode(spec.name));
-      return Uint8List.fromList(utf8.encode('$head"box":"${base64Encode(box)}"}'));
+      return Uint8List.fromList(utf8.encode('$open,"box":"${base64Encode(box)}"$close'));
     }
-    return Uint8List.fromList(utf8.encode('$head"data":$dataJson}'));
+    return Uint8List.fromList(utf8.encode('$open,"data":$dataJson$close'));
   }
 
   Future<_Loaded> _decode(NamespaceSpec spec, Uint8List raw) async {
