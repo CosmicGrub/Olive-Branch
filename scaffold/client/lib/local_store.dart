@@ -300,8 +300,11 @@ class LocalNamespace {
     return _cache!;
   }
 
-  Future<void> _flush(Map<String, Object?> data) async {
-    final Uint8List bytes = await _store._encode(spec, data);
+  /// [json] is [data] already serialised, when the caller has just done it (a
+  /// put measures the document against its ceiling, and must not serialise a
+  /// multi-hundred-KB document a second time to write it).
+  Future<void> _flush(Map<String, Object?> data, {String? json}) async {
+    final Uint8List bytes = await _store._encode(spec, data, json: json);
     await _store.backend.writeAtomic(spec.name, bytes);
   }
 
@@ -319,10 +322,11 @@ class LocalNamespace {
         final Object? plain = _plainJson(key, value);
         final Map<String, Object?> data = await _load();
         final Map<String, Object?> next = <String, Object?>{...data, key: plain};
-        if (utf8.encode(jsonEncode(next)).length > spec.maxBytes) {
+        final String json = jsonEncode(next);
+        if (utf8.encode(json).length > spec.maxBytes) {
           throw LocalStoreFull(spec.name, spec.maxBytes);
         }
-        await _flush(next);
+        await _flush(next, json: json);
         _cache = next;
       });
 
@@ -452,20 +456,27 @@ class LocalStore {
     }
   }
 
-  Future<Uint8List> _encode(NamespaceSpec spec, Map<String, Object?> data) async {
-    final Map<String, Object?> envelope = <String, Object?>{
+  /// The file bytes for [data]. The document is serialised once (or not at all
+  /// when the caller passes [json], its own serialisation of [data]) and the
+  /// small envelope header is spliced around it as text; the result is the
+  /// same JSON the old build wrote, key order included.
+  Future<Uint8List> _encode(NamespaceSpec spec, Map<String, Object?> data, {String? json}) async {
+    final String dataJson = json ?? jsonEncode(data);
+    // The header object, serialised by jsonEncode; its closing brace is split
+    // off and put back after the spliced field, so no brace is hand-written.
+    final String header = jsonEncode(<String, Object?>{
       'olive_store': _envelopeVersion,
       'schema': spec.schema,
       'enc': spec.encrypted,
-    };
+    });
+    final String open = header.substring(0, header.length - 1);
+    final String close = header.substring(header.length - 1);
     if (spec.encrypted) {
-      final Uint8List plain = Uint8List.fromList(utf8.encode(jsonEncode(data)));
+      final Uint8List plain = Uint8List.fromList(utf8.encode(dataJson));
       final Uint8List box = await cipher!.seal(plain, utf8.encode(spec.name));
-      envelope['box'] = base64Encode(box);
-    } else {
-      envelope['data'] = data;
+      return Uint8List.fromList(utf8.encode('$open,"box":"${base64Encode(box)}"$close'));
     }
-    return Uint8List.fromList(utf8.encode(jsonEncode(envelope)));
+    return Uint8List.fromList(utf8.encode('$open,"data":$dataJson$close'));
   }
 
   Future<_Loaded> _decode(NamespaceSpec spec, Uint8List raw) async {

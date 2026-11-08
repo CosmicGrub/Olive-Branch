@@ -260,14 +260,18 @@ class _JournalScreenState extends State<JournalScreen> {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool capWidth = ff.columnsAt(
             ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
-        // SingleChildScrollView + Column, NOT ListView: a ListView's sliver
-        // list only realizes children near the current viewport, so entries
-        // scrolled below the fold would not exist in the widget/element tree
-        // at all — see message_banking.dart's identical note for the same
-        // fix on the same class of bug.
-        final Widget content = SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // A CustomScrollView: the compose area is one box sliver and the
+        // entries are a lazy SliverList.builder. This used to be a
+        // SingleChildScrollView + Column (so every entry was always built, and
+        // every keystroke in the text box rebuilt all of them); the note
+        // about sliver lists only realising children near the viewport is the
+        // point now, not a pitfall. A journal can hold thousands of entries
+        // (see test/perf_journal_lazy_test.dart for the measured difference).
+        final Widget content = CustomScrollView(slivers: <Widget>[
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, _entries.isEmpty ? 16 : 0),
+            sliver: SliverToBoxAdapter(child:
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _PrivacyBanner(childName: widget.childName, scheme: scheme),
             const SizedBox(height: 16),
             Card(child: Padding(
@@ -307,12 +311,33 @@ class _JournalScreenState extends State<JournalScreen> {
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium
                       ?.copyWith(color: scheme.onSurfaceVariant)),
-                ])))
-            else
-              for (final e in _entries)
-                _JournalTile(key: ValueKey(e.id), entry: e, justAdded: e.id == _justAddedId),
+                ]))),
           ]),
-        );
+            ),
+          ),
+          if (_entries.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              sliver: SliverList.builder(
+                itemCount: _entries.length,
+                findChildIndexCallback: (Key key) {
+                  final int i = _entries.indexWhere((JournalEntry e) => ValueKey<String>(e.id) == key);
+                  return i < 0 ? null : i;
+                },
+                itemBuilder: (BuildContext context, int i) {
+                  final JournalEntry e = _entries[i];
+                  // Align, so a tile still hugs its text (loose width) exactly
+                  // as it did inside the old Column, instead of being forced to
+                  // the full width a sliver gives its children.
+                  return Align(
+                    key: ValueKey<String>(e.id),
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _JournalTile(entry: e, justAdded: e.id == _justAddedId),
+                  );
+                },
+              ),
+            ),
+        ]);
         return capWidth
             ? Center(
                 child: ConstrainedBox(
@@ -352,7 +377,7 @@ class _PrivacyBanner extends StatelessWidget {
 }
 
 class _JournalTile extends StatelessWidget {
-  const _JournalTile({super.key, required this.entry, required this.justAdded});
+  const _JournalTile({required this.entry, required this.justAdded});
   final JournalEntry entry;
   final bool justAdded;
 

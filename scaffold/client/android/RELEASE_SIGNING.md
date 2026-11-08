@@ -1,19 +1,20 @@
 # Android release signing
 
-Right now, a `flutter build apk --release` (or `--release` of anything)
-produces an APK signed with Flutter's shared **debug** key. That's fine for
-local testing, but it is not acceptable for a real release:
+A release build signed with Flutter's shared **debug** key is not acceptable
+for a real release:
 
 - The Play Store will not accept a debug-signed upload.
 - Every device install of a debug-signed build trusts the same public debug
   key that ships with every Flutter SDK on every developer's machine
   everywhere -- it proves nothing about who actually built the app.
 
-This document is about creating and wiring in a **real** signing key. Doing
-this is optional until you're actually ready to cut a real release -- with
-no `key.properties` file present, `build.gradle.kts` falls back to the debug
-keystore automatically, exactly like today, and nothing else in this repo
-changes behavior.
+So `build.gradle.kts` no longer produces one by accident: with no
+`key.properties` file present, `flutter build apk --release` (or
+`appbundle`) **fails** with a message saying so. Debug builds, `flutter run`
+and CI's debug compile are unaffected. This document is about creating and
+wiring in a **real** signing key, and about producing a small, per-device
+release (a 96 MB "fat" APK carries four CPU architectures; both target
+devices are arm64).
 
 ## Before you start: the one irreversible part
 
@@ -88,7 +89,7 @@ neither should ever be committed.
 
 ```bash
 cd scaffold/client
-flutter build apk --release --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
+flutter build apk --release --split-per-abi --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
 ```
 
 **The `--target` flag is not optional — get it wrong and this ships the demo's
@@ -117,9 +118,48 @@ The printed certificate fingerprint should match `keytool -list -v
 -keystore olive-branch-release.jks`'s output for your key, not Flutter's
 well-known shared debug certificate.
 
+## Size: one APK per CPU architecture, or an app bundle
+
+`--split-per-abi` (in the command above) writes one APK per architecture
+instead of one fat APK holding all four:
+
+```
+build/app/outputs/flutter-apk/app-arm64-v8a-release.apk     <- Galaxy Z Fold5, Tab S9 FE
+build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+build/app/outputs/flutter-apk/app-x86_64-release.apk
+```
+
+Both target devices are arm64, so `app-arm64-v8a-release.apk` is the only file
+to install on them. To build only that one (fastest, smallest output), add
+`--target-platform android-arm64` to the same command.
+
+For a Play Store upload use an app bundle instead; Play then serves each
+device only its own architecture and resources:
+
+```bash
+flutter build appbundle --release --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
+```
+
+No `splits {}` block is needed in `build.gradle.kts`; Flutter's own
+`--split-per-abi` flag configures it per invocation, and leaving it out of the
+file keeps debug builds for emulators (x86_64) working.
+
 ## If key.properties is missing
 
-Nothing breaks. `build.gradle.kts` falls back to the debug keystore, same
-as it did before this document existed. This is intentional -- CI and
-`flutter run --release` should keep working with zero setup for anyone who
-isn't cutting a real release build.
+The release build **fails on purpose** with "Release build refused:
+android/key.properties is missing". Debug builds and `flutter run` are
+unaffected, and so is CI (it only compiles debug Kotlin).
+
+If you only want to smoke-test the release pipeline locally (R8, APK size) and
+are certain the output will never be distributed, opt in explicitly for that
+one invocation:
+
+```bash
+cd scaffold/client
+flutter build apk --release --split-per-abi --target=lib/main_live.dart --android-project-arg=olive.allowDebugSignedRelease=true
+# or, straight through Gradle:
+cd android && ./gradlew assembleRelease -Polive.allowDebugSignedRelease=true
+```
+
+That artifact is signed with the public debug key. Never put the property in the
+repo's `gradle.properties`.

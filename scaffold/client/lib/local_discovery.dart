@@ -35,6 +35,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'package:bonsoir/bonsoir.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 /// RFC 6763: ASCII letters/digits/hyphens only, 1-15 chars, no leading/
 /// trailing/doubled hyphen. "olivebranch" (11) fits with room to spare.
@@ -70,6 +71,7 @@ class LocalDiscovery {
 
   BonsoirBroadcast? _broadcast;
   BonsoirDiscovery? _discovery;
+  StreamSubscription<BonsoirDiscoveryEvent>? _eventSub;
   final _peers = StreamController<LocalPeer>.broadcast();
   final _lost = StreamController<String>.broadcast();
 
@@ -101,8 +103,20 @@ class LocalDiscovery {
     final discovery = BonsoirDiscovery(type: localServiceType);
     _discovery = discovery;
     await discovery.ready;
-    discovery.eventStream?.listen(_handleDiscoveryEvent);
+    listenToEvents(discovery.eventStream);
     await discovery.start();
+  }
+
+  /// Subscribes to a discovery event stream and KEEPS the subscription so
+  /// [stop] can cancel it. (It used to be dropped on the floor: bonsoir's
+  /// stream is an EventChannel broadcast, so every pairing session left a live
+  /// listener behind that still held this object, and an event arriving after
+  /// [stop] closed the controllers would have thrown "Cannot add event after
+  /// closing".) Public only so a test can feed it a fake stream.
+  @visibleForTesting
+  void listenToEvents(Stream<BonsoirDiscoveryEvent>? events) {
+    unawaited(_eventSub?.cancel());
+    _eventSub = events?.listen(_handleDiscoveryEvent);
   }
 
   void _handleDiscoveryEvent(BonsoirDiscoveryEvent event) {
@@ -143,6 +157,10 @@ class LocalDiscovery {
   BonsoirDiscovery? get discovery => _discovery;
 
   Future<void> stop() async {
+    // First: nothing may deliver into the controllers closed below.
+    final StreamSubscription<BonsoirDiscoveryEvent>? sub = _eventSub;
+    _eventSub = null;
+    await sub?.cancel();
     await _broadcast?.stop();
     await _discovery?.stop();
     await _peers.close();

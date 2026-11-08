@@ -38,6 +38,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
+import 'capture_downscale.dart';
 import 'homework_quality_gate.dart';
 import 'retake_screen.dart';
 
@@ -116,8 +117,13 @@ class CaptureGateScreen extends StatefulWidget {
   final Future<Uint8List?> Function() takePhoto;
 
   static Future<Uint8List?> _defaultTakePhoto() async {
-    final XFile? file =
-        await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 90);
+    // Scaled by the platform to at most kCaptureMaxEdge on the longest side
+    // (capture_downscale.dart says why); the EXIF orientation tag is kept.
+    final XFile? file = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: kCaptureMaxEdge.toDouble(),
+        maxHeight: kCaptureMaxEdge.toDouble(),
+        imageQuality: kCaptureJpegQuality);
     if (file == null) return null;
     return file.readAsBytes();
   }

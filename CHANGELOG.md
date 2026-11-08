@@ -63,6 +63,54 @@ built.** No version bump and no new MARKUP screen row; MARKUP/DEMO totals update
   Clinical and child-development review is still required before any pre-written text about a
   partner, a family change or a role.
 
+## [Unreleased] — On-device performance pass (offline, evidence first)
+
+Described as shipped in MASTERFILE §8.23. **Owner direction: offline, on-device only** — no
+server route, no migration, no network call, no TypeScript. Every item below was measured or
+shown in code first (numbers in MASTERFILE §8.23 and the pull request); candidates that did not
+hold up are listed there as findings, not changed. No product behaviour or copy changes. No
+version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+
+### Changed
+- **Homework photo is scaled before it is held** — `capture_downscale.dart`
+  (`kCaptureMaxEdge` 1600, `fitWithin`, pure Dart); `capture_gate.dart` asks the camera for at
+  most 1600 px on the long edge (quality stays 90, EXIF kept by the plugin). A 12 MP photo
+  (48 MB decoded) becomes 1.92 MP (7.7 MB).
+- **Journal list is lazy** — `journal_screen.dart` is a `CustomScrollView` with a
+  `SliverList.builder` instead of a `SingleChildScrollView` + `Column`: 300 entries built 301
+  cards and rebuilt 300 tiles on every keystroke; now 5 and 6.
+- **`LocalNamespace.put` serialises the document once** (it did it twice, plus the envelope):
+  a ~900 KB namespace put drops from about 14 ms to 5.5 ms; the file bytes are the same envelope.
+- **Release builds refuse to be debug-signed** — `android/app/build.gradle.kts` fails
+  `assembleRelease`/`bundleRelease`/`packageRelease` with a clear message when
+  `android/key.properties` is absent; the only escape hatch is an explicit
+  `-Polive.allowDebugSignedRelease=true` for a local smoke build. Debug builds and CI's debug
+  compile are unaffected.
+- `RELEASE_SIGNING.md` documents per-ABI APKs (`--split-per-abi`, arm64 for the Fold5 and Tab S9
+  FE) and `appbundle`. The release command still targets `lib/main_live.dart`.
+
+### Fixed
+- **Room photo decoded on every rebuild** — the "new place" walk called `base64Decode` in
+  `build()`, giving the framework a new image key each rebuild (re-decode, dropped cache). Now a
+  `RoomPhoto` widget decodes once per photo and shows the picture glyph for bad text.
+- **`LocalDiscovery` leaked its event subscription** — `start()` dropped the `listen()` result,
+  so `stop()` could not cancel it (a live platform-channel listener per pairing session, and an
+  event after `stop()` would add to a closed controller). It is kept and cancelled first.
+
+### Removed
+- Jitsi-era leftovers: `network_security_config.xml` (cleartext exception and dev trust anchor;
+  Dart's `dart:io` traffic never read it), `res/raw/jitsi_dev_cert.pem`, the manifest attribute,
+  and `client/third_party/jitsi_meet_flutter_sdk_patched/` (480 KB, referenced by nothing since
+  the LiveKit migration) with its analyzer exclude. Still in git history.
+
+### Added
+- Tests `perf_*` (38): downscale arithmetic and a source guard that the picker passes it;
+  journal laziness, rebuild count and scrolling; LocalStore lazy start and unchanged envelope;
+  discovery disposal; room-photo decode count; release-config guards (assets under 1 MiB, no
+  debug-signed release, per-ABI documented, Jitsi leftovers gone). `perf_support.dart`
+  (`RebuildCounter`). Five journal tests now `pump()` after `ensureVisible` (a sliver lays out
+  the scrolled position on the next frame) and one finds `CustomScrollView`.
+
 ## [Unreleased] — Growing and Care (suites G and F), on-device only
 
 Time capsule, first times, memory box and growing marks (G); care binder, hospital mode,

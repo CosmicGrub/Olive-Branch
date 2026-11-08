@@ -10,11 +10,22 @@ plugins {
 // Real release signing, when a keystore is provided. See
 // android/key.properties.example and android/RELEASE_SIGNING.md for how to
 // generate one -- neither the keystore file nor key.properties itself is
-// ever committed (see android/.gitignore). Absent a real key.properties,
-// this falls back to the debug keystore exactly as before, so
-// `flutter run --release` and CI keep working without a real keystore.
+// ever committed (see android/.gitignore).
+//
+// Absent a real key.properties a RELEASE build (assembleRelease,
+// bundleRelease, packageRelease) now FAILS with a clear message instead of
+// silently signing with the shared Flutter debug key (an APK nobody should
+// ship, and one the Play Store refuses). The one deliberate escape hatch is
+// an explicit, per-invocation opt-in for a local smoke test of the release
+// pipeline (R8, size measurement) that will never be distributed:
+//     gradlew assembleRelease -Polive.allowDebugSignedRelease=true
+// Through Flutter: `flutter build apk --release
+// --android-project-arg=olive.allowDebugSignedRelease=true`. Debug builds are
+// unaffected: they always use the debug key.
 val keystorePropertiesFile = rootProject.file("key.properties")
 val hasRealSigningConfig = keystorePropertiesFile.exists()
+val allowDebugSignedRelease =
+    providers.gradleProperty("olive.allowDebugSignedRelease").orNull == "true"
 val keystoreProperties = Properties()
 if (hasRealSigningConfig) {
     FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
@@ -81,16 +92,15 @@ android {
     buildTypes {
         release {
             // Real signing when android/key.properties exists (see
-            // key.properties.example and RELEASE_SIGNING.md); otherwise
-            // falls back to the debug keystore so `flutter run --release`
-            // and CI keep working without a real keystore. This is the
-            // only thing that decides which key signs a release build --
-            // there is no separate "is this a real release" flag that
-            // could get out of sync with it.
-            signingConfig = if (hasRealSigningConfig) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // key.properties.example and RELEASE_SIGNING.md). Without it the
+            // task-graph check below stops the build before anything is
+            // produced, unless -Polive.allowDebugSignedRelease=true was
+            // passed explicitly -- then (and only then) the debug key signs
+            // an artifact meant for local measurement, never distribution.
+            signingConfig = when {
+                hasRealSigningConfig -> signingConfigs.getByName("release")
+                allowDebugSignedRelease -> signingConfigs.getByName("debug")
+                else -> null
             }
             // R8 minification runs on release by default and, without this,
             // fails outright on a Giphy SDK class (transitive via
@@ -103,6 +113,24 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+}
+
+// Refuse to build a release artifact that would be signed with nothing, or
+// (silently) with the debug key. Checked once the task graph is known, so
+// `flutter build apk --debug`, `compileDebugKotlin` and the wear module's own
+// tasks are never affected -- only an actual release packaging task is.
+gradle.taskGraph.whenReady {
+    val releasing = allTasks.any {
+        it.project == project && it.name in setOf("assembleRelease", "bundleRelease", "packageRelease")
+    }
+    if (releasing && !hasRealSigningConfig && !allowDebugSignedRelease) {
+        throw GradleException(
+            "Release build refused: android/key.properties is missing, so this would be " +
+                "signed with the shared Flutter DEBUG key. Create a real keystore and " +
+                "key.properties (see android/RELEASE_SIGNING.md). For a local, never-" +
+                "distributed smoke build only, pass -Polive.allowDebugSignedRelease=true."
+        )
     }
 }
 

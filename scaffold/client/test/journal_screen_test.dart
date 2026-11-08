@@ -47,6 +47,7 @@ void main() {
       await t.pump(); // let the listener-driven setState enable the button first
       // The picture banks sit above the button now, so on a short viewport it is scrolled to.
       await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await t.pump(); // a sliver list lays out the scrolled position on the next frame
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
 
@@ -63,6 +64,7 @@ void main() {
       await t.enterText(find.byType(TextField), '   ');
       // The picture banks sit above the button now, so on a short viewport it is scrolled to.
       await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await t.pump(); // a sliver list lays out the scrolled position on the next frame
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
       expect(find.text('Nothing written yet. Whenever you feel like it.'), findsOneWidget);
@@ -77,6 +79,7 @@ void main() {
       await t.pump();
       // The picture banks sit above the button now, so on a short viewport it is scrolled to.
       await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await t.pump(); // a sliver list lays out the scrolled position on the next frame
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
       expect(find.byIcon(Icons.edit_note_outlined), findsNothing);
@@ -88,12 +91,14 @@ void main() {
       await t.pump();
       // The picture banks sit above the button now, so on a short viewport it is scrolled to.
       await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await t.pump(); // a sliver list lays out the scrolled position on the next frame
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
       await t.enterText(find.byType(TextField), 'Second entry');
       await t.pump();
       // The picture banks sit above the button now, so on a short viewport it is scrolled to.
       await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
+      await t.pump(); // a sliver list lays out the scrolled position on the next frame
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
 
@@ -193,6 +198,8 @@ void main() {
           JournalEntry(id: 'j2', childId: 'someone-else', body: 'not mine', createdAt: DateTime(2026, 1, 1)),
         ],
       )));
+      // The entry sits below the compose card; a lazy list builds it once scrolled near.
+      await t.scrollUntilVisible(find.text('mine'), 300, scrollable: find.byType(Scrollable).first);
       expect(find.text('mine'), findsOneWidget);
       expect(find.text('not mine'), findsNothing);
     });
@@ -214,13 +221,13 @@ void main() {
         addTearDown(() => t.binding.setSurfaceSize(null));
 
         await pumpAt(const Size(1100, 900));
-        expect(t.getSize(find.byType(SingleChildScrollView)).width, ff.comfortableReadingWidth);
+        expect(t.getSize(find.byType(CustomScrollView)).width, ff.comfortableReadingWidth);
 
         await pumpAt(const Size(344, 820)); // Fold5 cover
-        expect(t.getSize(find.byType(SingleChildScrollView)).width, 344);
+        expect(t.getSize(find.byType(CustomScrollView)).width, 344);
 
         await pumpAt(const Size(390, 844)); // standard phone
-        expect(t.getSize(find.byType(SingleChildScrollView)).width, 390);
+        expect(t.getSize(find.byType(CustomScrollView)).width, 390);
       });
     });
   });
