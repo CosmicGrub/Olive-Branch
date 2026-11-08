@@ -1,0 +1,73 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>The Olive Umbrella</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="overhaul.css">
+<style>
+.ob.gal{height:auto}
+.umb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:760px){.umb{grid-template-columns:1fr}}
+.umb .su{background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:14px;display:grid;gap:6px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.umb .su:hover{border-color:var(--accent)}
+.umb .su .k{font:500 .7rem/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.umb .su b{font:800 1.1rem var(--font-display)}
+.umb .su small{color:var(--muted)}
+.umb .core{background:linear-gradient(155deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#000));color:var(--accent-ink);border-radius:18px;padding:16px;display:grid;gap:6px;align-content:center;text-align:center}
+.umb .core b{font:800 1.3rem var(--font-display)}
+.chipset{display:flex;flex-wrap:wrap;gap:6px}
+.tg{font:700 .8rem var(--font-body);padding:8px 11px;border-radius:99px;border:1px solid var(--rule);background:var(--panel-2);color:var(--ink);cursor:pointer}
+.tg[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.tag2{font:500 .66rem/1 var(--font-mono);padding:4px 6px;border-radius:5px;background:var(--accent-soft);color:var(--accent);margin-right:4px;display:inline-block}
+.tag2.s{background:var(--ok-bg);color:var(--ok)}.tag2.m{background:var(--warn-bg);color:var(--warn)}.tag2.l{background:var(--bad-bg);color:var(--bad)}
+.res{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-top:14px}
+.rcard{background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:12px;display:grid;gap:8px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.rcard:hover{border-color:var(--accent)}
+.rcard .why{font-size:.84rem;color:var(--muted)}
+.fam{background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:16px;display:grid;gap:8px}
+.bold{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px}
+.bold .b{background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:14px;display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.bold .b:hover{border-color:var(--accent)}
+.refuse{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}
+.refuse div{background:var(--bad-bg);border-radius:14px;padding:12px}
+.refuse b{display:block;margin-bottom:2px}
+.det h4{font:700 .72rem/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
+.det ul{margin:0;padding-left:1.1em}
+.rm{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px}
+.rm .col{background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:14px}
+.rm .col h3{margin-bottom:6px}
+.rm .it{display:flex;gap:8px;align-items:baseline;padding:6px 0;border-bottom:1px dashed var(--rule);cursor:pointer}
+.rm .it:last-child{border-bottom:0}
+</style>
+
+<div class="wrap">
+<header class="top0">
+  <div class="eyebrow">Olive Branch · what could come next · proposals</div>
+  <h1>The Olive umbrella</h1>
+  <p class="lede">One app, one calm shell, and a shelf of suites underneath. Each family switches on what fits it: a parent far away, two homes, a grandparent raising her, a Deaf child, a long stay in hospital. Every idea here is a proposal, drawn as it could look in the app, with what it builds on, the rules it must keep, and the question still open.</p>
+  <div class="pills" id="pills"></div>
+</header>
+<div class="bar" role="group" aria-label="Preview controls">
+  <div class="grp"><span class="lbl">Palette</span><div class="pal" id="pal"></div></div>
+  <div class="grp"><span class="lbl">Mode</span><button class="btn0" data-a="mode" data-v="light" aria-pressed="true">Light</button><button class="btn0" data-a="mode" data-v="dark" aria-pressed="false">Dark</button></div>
+  <div class="grp"><span class="lbl">Markup</span><button class="btn0" data-a="ann" aria-pressed="false">Numbered notes</button></div>
+</div>
+<nav class="tabs" role="tablist" id="tabs" aria-label="Sections"></nav>
+<section class="pane" id="p-umbrella" role="tabpanel"></section>
+<section class="pane" id="p-ages" role="tabpanel" hidden></section>
+<section class="pane" id="p-family" role="tabpanel" hidden></section>
+<section class="pane" id="p-compass" role="tabpanel" hidden></section>
+<section class="pane" id="p-suites" role="tabpanel" hidden></section>
+<section class="pane" id="p-bold" role="tabpanel" hidden></section>
+<section class="pane" id="p-roadmap" role="tabpanel" hidden></section>
+<div class="detail" id="detail" hidden role="dialog" aria-modal="true" aria-label="Concept detail"></div>
+<footer>Design draft, 2026-11-07. Concepts, not specifications. Each is checked against the product’s permanent bans (MASTERFILE §2.1, P1 to P11) and its standing rules, and each lists what it would build on. Several touch health, safety or legal ground and are marked as needing expert review before any build.</footer>
+</div>
+
+<script src="kit.js"></script>
+<script src="concepts-a.js"></script>
+<script src="concepts-b.js"></script>
+<script src="concepts-c.js"></script>
+<script src="extra.js"></script>
+<script src="app.js"></script>
