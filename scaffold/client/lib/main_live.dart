@@ -15,6 +15,14 @@
 // file's own header for why). childId defaults to the seed data in
 // server/seed-dev.mjs ("Ivy").
 //
+// PAIRING LAST (owner request 2026-11-08, first_run_flow.dart, MASTERFILE
+// §8.5.6): with no OLIVE_CHILD_ID define and no stored identity, this build now
+// opens on the welcome questions (offline, into a local draft) and ENDS on
+// "Connect this device". After a successful redeem the identity is stored
+// first, then the draft is delivered through the new session (the server's own
+// profile wins; a failed delivery keeps the draft and retries), then her home
+// opens. The dev paths (OLIVE_CHILD_ID / OLIVE_DEV_LOGIN) are unchanged.
+//
 // Device pairing & provisioning (docs/superpowers/specs/2026-09-12-device
 // -pairing-provisioning-design.md): when NO `OLIVE_CHILD_ID` dart-define is
 // set AND no identity is stored on-device (flutter_secure_storage — the
@@ -52,9 +60,11 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'child_home_live.dart';
 import 'device_identity.dart';
+import 'first_run_flow.dart';
 import 'kiosk_shell.dart';
 import 'local_repositories.dart';
 import 'local_services.dart';
+import 'onboarding_draft.dart';
 import 'onboarding_flow.dart';
 import 'pairing_redeem_screen.dart';
 import 'push_channel.dart';
@@ -256,6 +266,24 @@ Future<void> _openLocalStorage(String childId) async {
   }
 }
 
+/// One try at delivering the pairing-last draft: ask the server first (its own
+/// profile wins), then send the one answer the child session can write.
+Future<DraftSyncOutcome> _attemptDraftSync(
+    String childId, AuthSession session, OnboardingDraftRepository repo) =>
+  syncOnboardingDraft(
+    repo: repo,
+    fetchHasOnboarded: () async =>
+        _fetchHasOnboarded(childId, await _resolveSessionToken(session)),
+    putGender: (String? gender) async {
+      final api = await apiFor(_dartDefineBaseUrl, childId: childId);
+      try {
+        await api.putChildGender(childId, gender);
+      } finally {
+        api.close();
+      }
+    },
+  );
+
 /// The Automatic First-Run Detection boot gate itself (docs/superpowers/
 /// specs/2026-09-14-automatic-first-run-detection-design.md) — sits between
 /// identity resolution and [_bootLiveApp], now the ONLY path either `main()`
@@ -276,6 +304,21 @@ Future<void> _bootWithOnboardingGate({
   // On-device storage first: the onboarding answer below is remembered there.
   await _openLocalStorage(childId);
   final profile = ProfileCacheRepository(LocalServices.current.area('profile', ownerId: childId));
+  // Pairing-last first run (owner request 2026-11-08): a device that answered
+  // the welcome questions BEFORE it was connected left them in a local draft.
+  // Deliver it now, through this new session; the server's own profile wins if
+  // it has one. A draft being there means the tour is already done, so it
+  // never runs again, and a failed delivery keeps the draft and retries.
+  final draftRepo = LocalOnboardingDraftRepository(
+      LocalServices.current.area('onboarding', ownerId: kPendingDeviceScope));
+  final delivery = await deliverPendingDraft(
+    attempt: () => _attemptDraftSync(childId, session, draftRepo),
+    onDelivered: profile.markOnboarded,
+  );
+  if (delivery.first != DraftSyncOutcome.nothingPending) {
+    await _bootLiveApp(childId: childId, session: session);
+    return;
+  }
   final token = await _resolveSessionToken(session);
   final hasOnboarded = await resolveHasOnboarded(
       fetch: () => _fetchHasOnboarded(childId, token), cache: profile);
@@ -336,7 +379,15 @@ Future<void> main() async {
   if (!_hasChildIdDartDefine) {
     final stored = await DeviceIdentityStore().load();
     if (stored == null) {
-      runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl));
+      // Pairing LAST: a fresh device opens on the welcome questions, offline,
+      // and ends on "Connect this device". Answers wait in a local draft under
+      // the 'pending-device' owner (never the literal 'demo-child').
+      await _openLocalStorage(kPendingDeviceScope);
+      runApp(_FirstRunApp(
+        baseUrl: _dartDefineBaseUrl,
+        draftRepository: LocalOnboardingDraftRepository(
+            LocalServices.current.area('onboarding', ownerId: kPendingDeviceScope)),
+      ));
       return;
     }
     await _bootWithOnboardingGate(childId: stored.targetId, session: _deviceSession(stored));
@@ -359,11 +410,49 @@ Future<void> main() async {
 AuthSession _devSession() => AuthSession.dev(
     baseUrl: _dartDefineBaseUrl, childId: _dartDefineChildId, refreshable: true);
 
-/// Shown at boot when there's no dart-define AND no stored identity — see
-/// this file's own header. A minimal MaterialApp wrapper (this build's real
-/// theme/kiosk tree doesn't exist yet at this point — there is no identity
-/// to fetch a theme FOR), matching invitation_screen.dart's own convention
-/// of a screen owning its own Scaffold with no assumed ancestor chrome.
+/// A successful redeem, from either first-run layout: store the identity, THEN
+/// go through the boot gate, which delivers any waiting draft through the new
+/// session and opens her home.
+Future<void> _completeRedeem(Map<String, dynamic> result) async {
+  final identity = DeviceIdentity(
+    sessionToken: result['sessionToken'] as String,
+    deviceId: result['deviceId'] as String,
+    role: result['role'] as String? ?? 'child',
+    targetId: result['targetId'] as String,
+    deviceCredential: result['deviceCredential'] as String?,
+  );
+  await DeviceIdentityStore().save(identity);
+  await _bootWithOnboardingGate(childId: identity.targetId, session: _deviceSession(identity));
+}
+
+/// Shown at boot when there's no dart-define AND no stored identity: the
+/// welcome questions, then "Connect this device" as the LAST step
+/// ([FirstRunFlow]). Same bare-MaterialApp shape as [_PairingBootApp].
+class _FirstRunApp extends StatelessWidget {
+  const _FirstRunApp({required this.baseUrl, required this.draftRepository});
+  final String baseUrl;
+  final OnboardingDraftRepository draftRepository;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Olive (welcome)',
+    theme: buildThemeData(defaultAppTheme),
+    home: FirstRunFlow(
+      baseUrl: baseUrl,
+      draftRepository: draftRepository,
+      onRedeemed: (result) => unawaited(_completeRedeem(result)),
+    ),
+  );
+}
+
+/// The code screen alone, for a device that WAS connected and has been cut off
+/// ([_returnToPairing]): it has already been through the welcome questions, so
+/// they are not asked again.
+///
+/// A minimal MaterialApp wrapper (this build's real theme/kiosk tree doesn't
+/// exist yet at this point — there is no identity to fetch a theme FOR),
+/// matching invitation_screen.dart's own convention of a screen owning its own
+/// Scaffold with no assumed ancestor chrome.
 class _PairingBootApp extends StatelessWidget {
   const _PairingBootApp({required this.baseUrl});
   final String baseUrl;
@@ -376,17 +465,7 @@ class _PairingBootApp extends StatelessWidget {
   /// root widget, not a workaround; there is no `OliveLive`/
   /// `_OnboardingBootApp` instance yet at this point for a callback to hand
   /// state to instead.
-  Future<void> _onRedeemed(Map<String, dynamic> result) async {
-    final identity = DeviceIdentity(
-      sessionToken: result['sessionToken'] as String,
-      deviceId: result['deviceId'] as String,
-      role: result['role'] as String? ?? 'child',
-      targetId: result['targetId'] as String,
-      deviceCredential: result['deviceCredential'] as String?,
-    );
-    await DeviceIdentityStore().save(identity);
-    await _bootWithOnboardingGate(childId: identity.targetId, session: _deviceSession(identity));
-  }
+  Future<void> _onRedeemed(Map<String, dynamic> result) => _completeRedeem(result);
 
   @override
   Widget build(BuildContext context) => MaterialApp(

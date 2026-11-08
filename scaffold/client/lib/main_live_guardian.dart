@@ -58,6 +58,13 @@
 // `GET /v1/me` is fetched, `hasPin === false` renders GuardianSetupScreen in
 // place of GuardianHome (see `OliveLiveGuardian.hasPin`'s own doc comment) —
 // applies identically to both boot paths, driven purely by identity state.
+//
+// PAIRING STAYS FIRST HERE (owner request 2026-11-08 asked for the child build
+// to end on "Connect this device"; main_live.dart does that). A guardian's PIN
+// is set through POST /v1/me/pin, a server route that needs a session (and
+// `hasPin` is read from GET /v1/me), so there is nothing honest to ask before a
+// device is connected: a local-only PIN would be faked, and is deliberately not
+// built. The pairing screen says so in plain words instead (MASTERFILE §8.5.6).
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';

@@ -55,6 +55,7 @@ import 'birthday_month.dart';
 import 'calendar_logic.dart';
 import 'colour_pick.dart';
 import 'onboarding_age.dart';
+import 'onboarding_draft.dart';
 import 'onboarding_gender.dart';
 import 'onboarding_logic.dart';
 import 'onboarding_name.dart';
@@ -69,6 +70,9 @@ class OnboardingFlowScreen extends StatefulWidget {
     this.sessionToken,
     this.httpClient,
     this.onComplete,
+    this.onDraft,
+    this.includeWho = true,
+    this.introLine,
   });
 
   /// What the guardian entered at setup — used only if she skips the name
@@ -93,6 +97,15 @@ class OnboardingFlowScreen extends StatefulWidget {
   /// screen's file header) and boot may proceed — see that class's own
   /// header for the full account.
   final Future<void> Function()? onComplete;
+  /// Pairing-last first run (main_live.dart, [FirstRunFlow]): receives every
+  /// answer just before [onComplete] fires, so a device with no session yet can
+  /// keep them in a local draft. Optional and additive.
+  final Future<void> Function(OnboardingDraft draft)? onDraft;
+  /// False before a device is connected: nobody is known yet, and the who step
+  /// would have to invent "Dad" and "Mom" (see MASTERFILE §8.5.6).
+  final bool includeWho;
+  /// Replaces the welcome sentence on the first card (real first-run only).
+  final String? introLine;
 
   @override
   State<OnboardingFlowScreen> createState() => _OnboardingFlowScreenState();
@@ -136,16 +149,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (!mounted) return;
     if (genderStep == null) return setState(() => _running = false);
 
-    final WhoStep? whoStepResult = await nav.push<WhoStep>(MaterialPageRoute<WhoStep>(
-      builder: (c) => ObWhoScreen(
-        grownups: const <Grownup>[
-          Grownup(userId: 'dad', label: 'Dad', joined: true),
-          Grownup(userId: 'mom', label: 'Mom', joined: false),
-        ],
-        onContinue: (step) => Navigator.of(c).pop(step),
-      )));
-    if (!mounted) return;
-    if (whoStepResult == null) return setState(() => _running = false);
+    if (widget.includeWho) {
+      final WhoStep? whoStepResult = await nav.push<WhoStep>(MaterialPageRoute<WhoStep>(
+        builder: (c) => ObWhoScreen(
+          grownups: const <Grownup>[
+            Grownup(userId: 'dad', label: 'Dad', joined: true),
+            Grownup(userId: 'mom', label: 'Mom', joined: false),
+          ],
+          onContinue: (step) => Navigator.of(c).pop(step),
+        )));
+      if (!mounted) return;
+      if (whoStepResult == null) return setState(() => _running = false);
+    }
 
     final String? colourId = await nav.push<String?>(MaterialPageRoute<String?>(
       builder: (c) => ColourPickScreen(
@@ -154,34 +169,57 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       )));
     if (!mounted) return;
 
+    // Pairing-last first run (onDraft set): skipping the birthday is allowed
+    // like every other step, and just means "no birthday given" -- it must not
+    // bounce her back to the first card. 0 is the month screen's skip sentinel.
+    final bool draftMode = widget.onDraft != null;
     final int? month = await nav.push<int>(MaterialPageRoute<int>(
       builder: (c) => BirthdayMonthScreen(
         birthDate: null,
         age: age,
         onMonthPicked: (m) => Navigator.of(c).pop(m),
+        onSkip: draftMode ? () => Navigator.of(c).pop(0) : null,
       )));
     if (!mounted) return;
     if (month == null) return setState(() => _running = false);
 
-    final BirthdayPicker? picker = await nav.push<BirthdayPicker>(MaterialPageRoute<BirthdayPicker>(
-      builder: (c) => BirthdayDayScreen(
-        month: month,
-        authoritative: null,
-        age: age,
-        onComplete: (p) => Navigator.of(c).pop(p),
-        onSkip: () => Navigator.of(c).pop(),
-      )));
-    if (!mounted) return;
-    if (picker == null) return setState(() => _running = false);
+    BirthdayPicker? picker;
+    if (month != 0) {
+      picker = await nav.push<BirthdayPicker>(MaterialPageRoute<BirthdayPicker>(
+        builder: (c) => BirthdayDayScreen(
+          month: month,
+          authoritative: null,
+          age: age,
+          onComplete: (p) => Navigator.of(c).pop(p),
+          onSkip: () => Navigator.of(c).pop(),
+        )));
+      if (!mounted) return;
+      if (picker == null && !draftMode) return setState(() => _running = false);
+    }
 
-    await nav.push(MaterialPageRoute<void>(
-      builder: (c) => BirthdayMarkedScreen(
-        childId: 'demo-child',
-        childName: childName,
-        picker: picker,
+    if (picker != null) {
+      await nav.push(MaterialPageRoute<void>(
+        builder: (c) => BirthdayMarkedScreen(
+          childId: widget.childId ?? 'demo-child',
+          childName: childName,
+          picker: picker!,
+          colourId: colourId,
+          onDone: () => Navigator.of(c).pop(),
+        )));
+    }
+
+    final Future<void> Function(OnboardingDraft)? onDraft = widget.onDraft;
+    if (onDraft != null) {
+      await onDraft(OnboardingDraft(
+        name: nameStep.skipped ? null : nameStep.spelled,
+        age: ageStep.selfReported,
+        gender: genderStep.selected,
         colourId: colourId,
-        onDone: () => Navigator.of(c).pop(),
-      )));
+        birthdayMonth: picker?.month,
+        birthdayDay: picker?.day,
+        complete: true,
+      ));
+    }
 
     // Real first-run (Automatic First-Run Detection, [onComplete] set):
     // proceed straight into [onComplete] with NO intermediate setState —
@@ -222,7 +260,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text(
           _isRealFirstRun
-            ? "Let's get to know each other — a few quick questions about "
+            ? widget.introLine ??
+              "Let's get to know each other — a few quick questions about "
               'name, age, and a couple of preferences, then straight into '
               'the app.'
             : 'A demo walk through name, age, who, colour, and birthday — the '
