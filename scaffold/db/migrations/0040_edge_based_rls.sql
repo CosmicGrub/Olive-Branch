@@ -31,7 +31,8 @@
 --
 --  RECURSION: a policy on guardianship cannot subquery guardianship (Postgres
 --  raises "infinite recursion detected in policy"). actor_child_ids() reads the
---  caller's live edges with a function-level `SET app.edge_lookup = 'on'`, and
+--  caller's live edges with app.edge_lookup raised to 'on' for the duration of
+--  the read (see the function for how, and why not a function-level SET), and
 --  the co-guardian branch of the guardianship policy short-circuits to false
 --  while that setting is on, so the function sees only the caller's own rows
 --  (the own-row branch) and the recursion bottoms out. The setting is a plain
@@ -60,9 +61,34 @@ $$ LANGUAGE sql STABLE;
 -- The children the current actor LIVE-guards (restricted/ladder 'none' edges
 -- are left in on purpose: this is "whose family am I in", used only to widen
 -- READ visibility of names and edges, never to authorize a write).
+--
+-- HOW the flag is raised matters. The obvious form is a function-level
+-- `... SET app.edge_lookup = 'on'` clause, and it is WRONG for us: on
+-- PostgreSQL 15+ storing a placeholder (unregistered, custom-prefix) GUC in
+-- pg_proc.proconfig requires the creating role to be a superuser or to hold
+-- SET ON PARAMETER, so CREATE FUNCTION fails with `permission denied to set
+-- parameter "app.edge_lookup"` for our migrator, app_owner (NOSUPERUSER, see
+-- tools/docker-dev/init-db*.{sql,sh}). CI never noticed because its database
+-- suites migrated as a superuser (tools/test/migrate_nonsuper.test.mjs now
+-- migrates as a plain login role). A plain set_config() on a placeholder GUC
+-- needs no privilege, so the function raises the flag itself, transaction-
+-- locally, and puts back whatever it found (it may be re-entered, or the
+-- caller may already be inside a lookup) once the rows are materialised.
+-- RETURN QUERY runs the query to completion before the restore, so the policy
+-- check on guardianship sees 'on' for exactly the duration of this read.
+-- SECURITY DEFINER was considered and rejected: FORCE RLS applies to the
+-- table owner too, so a definer-owned function would still be policy-filtered.
 CREATE OR REPLACE FUNCTION actor_child_ids() RETURNS SETOF uuid AS $$
-  SELECT g.child_id FROM effective_guardianship g WHERE g.user_id = current_actor();
-$$ LANGUAGE sql STABLE SET app.edge_lookup = 'on';
+DECLARE
+  v_prev text := coalesce(current_setting('app.edge_lookup', true), '');
+BEGIN
+  PERFORM set_config('app.edge_lookup', 'on', true);
+  RETURN QUERY
+    SELECT g.child_id FROM effective_guardianship g WHERE g.user_id = current_actor();
+  PERFORM set_config('app.edge_lookup', v_prev, true);
+  RETURN;
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- ---- guardianship + child --------------------------------------------------
 ALTER TABLE guardianship ENABLE ROW LEVEL SECURITY;

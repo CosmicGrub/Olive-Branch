@@ -2290,6 +2290,34 @@ it); the game referee (S-D24); the tesseract language data (S-D25); the family
 tenant (S-D26); property and mutation testing (S-D27); and the reliability
 findings S-C1 to S-C7 and S-C9 to S-C19.
 
+**Migrating as the real, unprivileged migrator (follow-up to §7.12).** Migration 0040
+created `actor_child_ids()` with a function-level `SET app.edge_lookup = 'on'`. On
+PostgreSQL 15+ a role that is not a superuser and holds no `SET ON PARAMETER` grant
+cannot store a placeholder (custom-prefix) setting in a function's `proconfig`:
+`CREATE FUNCTION` fails with `permission denied to set parameter "app.edge_lookup"`.
+`app_owner`, the identity `tools/migrate.mjs` runs as in `docker-compose.dev.yml`
+and `docker-compose.prod.yml`, is `NOSUPERUSER`, so the first fresh dev database
+stopped at 0040. CI did not see it because every database suite migrated as the
+`postgres` superuser. The helper is now plpgsql: it raises `app.edge_lookup` with
+`set_config(..., true)` (transaction-local, no privilege needed), reads the
+caller's live edges, and restores the value it found, so it is re-entrant and
+the recursion guard in the guardianship policy behaves exactly as before.
+`SECURITY DEFINER` was rejected because `FORCE ROW LEVEL SECURITY` applies to a
+table's owner too. Because 0040 had failed on the only persistent database and CI
+databases are ephemeral, it was corrected in place rather than superseded by a
+0045; any database that already recorded the old 0040 checksum (migrated as a
+superuser by hand) must be rebuilt or have that `schema_migration` row updated.
+The rest of 0041 to 0044 was audited for other constructs a plain owner cannot
+run and needs nothing else: `CREATE EXTENSION intarray` (0042) and `pgcrypto`
+(0043) are *trusted* extensions in PostgreSQL 13+, so the database owner may create
+them with no extra grant. What a production init script must provide is exactly
+what `init-db.prod.sh` already does: `app_owner` as `NOSUPERUSER NOBYPASSRLS`, the
+**owner** of the database, and `backup_reader` created beforehand (0022 grants to
+it and `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner`, so the migrator must be named
+`app_owner`). `tools/test/migrate_nonsuper.test.mjs` (wired into `verify.sh`) now
+applies the whole set as `app_owner` on a brand-new database it owns, and also
+fails if any public function stores a dotted setting in `proconfig`.
+
 ---
 
 ## §8 UI architecture

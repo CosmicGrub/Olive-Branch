@@ -432,6 +432,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db fk indexes, migration 0036 (real DB)|packages/db/test/fk_indexes.test.mjs" \
             "scheduler backup job: real pg_dump, prune, alarm (real DB)|packages/db/test/backup_job.test.mjs" \
             "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" \
+            "migrate as the NON-superuser app_owner: full set, trusted extensions, no custom-GUC proconfig (real DB)|tools/test/migrate_nonsuper.test.mjs" \
             "db domain constraints: day-parts, time zones, enums (0042, real DB)|packages/db/test/domain_constraints.test.mjs" \
             "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
@@ -453,7 +454,9 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
   # PGBIN/PG_DUMP_BIN: backup_job.test.mjs takes a REAL pg_dump and
   # migrate_lock.test.mjs drives migrate.mjs in psql mode; both need the
   # version-matched client binaries this script already locates above.
-  out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" \
+  # APP_OWNER_PASSWORD: migrate_nonsuper.test.mjs sets app_owner's password for its own
+  # connections; handing it the one provisioned above keeps every sibling suite connectable.
+  out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" APP_OWNER_PASSWORD="$APP_OWNER_PW" \
         PGBIN="$PGBIN" PG_DUMP_BIN="$PGBIN/pg_dump" \
         LIVEKIT_URL="wss://verify-sh.invalid" LIVEKIT_API_KEY="devkey" \
         LIVEKIT_API_SECRET="devsecret_at_least_32_chars_long_xx" \
