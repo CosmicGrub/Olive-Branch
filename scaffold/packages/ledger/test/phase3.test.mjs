@@ -4,8 +4,11 @@
  */
 import { DateTime } from 'luxon';
 import { append, verifyChain, entryHash, GENESIS, allocate, owedTo,
-  authorizeExport, certify, verifyExport, FREE_CERTIFIED_PER_YEAR }
+  authorizeExport, certify, verifyExport, FREE_CERTIFIED_PER_YEAR,
+  canonicalJson, bundleHashOf, verifyCertifiedBundle, splitFromPayerShare }
   from '../src/ledger.mjs';
+import { readFileSync } from 'node:fs';
+import { generate as generateLedgerVectors } from '../../../tools/gen-ledger-vectors.mjs';
 import { compileYearBook, handover, onThisDay, guardianCanReadAfterHandover }
   from '../../archive/src/archive.mjs';
 import { newGame, drop, turnExpired, scheduleStrip, buildSms, auditSms,
@@ -306,6 +309,124 @@ const chainOf=(n)=>{let c=[];for(let i=0;i<n;i++)
   check('R sms','every template is audit-clean',
     ['message_waiting','exchange_reminder','call_missed','dose_reminder','schedule_change']
       .every(k=>auditSms(buildSms(k,'+1')).ok), 'true');
+}
+
+
+// S · S-D19 -- integer allocation, canonical JSON, the v2 certified bundle.
+{
+  // --- allocate: integer remainders, no floats ---------------------------------
+  const three = {a:3333,b:3333,c:3334};
+  check('S allocate','1 cent over three near-equal shares goes to the largest exact remainder (c), not float noise',
+    JSON.stringify(allocate(1,three)), '{"a":0,"b":0,"c":1}');
+  check('S allocate','100 cents over 3333/3333/3334 conserves the total',
+    Object.values(allocate(100,three)).reduce((x,y)=>x+y,0), 100);
+  check('S allocate','an exact tie breaks on participant id (reproducible from the export)',
+    JSON.stringify(allocate(1,{zed:5000,amy:5000})), '{"zed":0,"amy":1}');
+  check('S allocate','a large amount stays exact: 1 000 000 007 cents at 3333/3333/3334 sums exactly',
+    Object.values(allocate(1000000007,three)).reduce((x,y)=>x+y,0), 1000000007);
+  let allSum=true, allNonNeg=true;
+  for(let c=0;c<=400;c++){
+    for(const rule of [{a:3333,b:3333,c:3334},{a:1,b:9999},{a:5000,b:2500,c:2500},{a:10000},{x:3333,y:3333,z:3333,w:1}]){
+      const o=allocate(c,rule);
+      if(Object.values(o).reduce((s,v)=>s+v,0)!==c) allSum=false;
+      if(Object.values(o).some(v=>!Number.isInteger(v)||v<0)) allNonNeg=false;
+    }
+  }
+  check('S allocate','for every amount 0..400 over five rules the parts are non-negative integers that sum to the whole', `${allSum}|${allNonNeg}`, 'true|true');
+  check('S allocate','no participant is ever off the exact share by a full cent or more',
+    (()=>{for(let c=1;c<=300;c++){const o=allocate(c,{a:3333,b:3333,c:3334});
+      for(const [k,bp] of Object.entries({a:3333,b:3333,c:3334})) if(Math.abs(o[k]-c*bp/10000)>=1) return false;}return true;})(), 'true');
+  const bad=(f)=>{try{f();return 'accepted';}catch{return 'refused';}};
+  check('S allocate','a fractional cent amount is refused', bad(()=>allocate(10.5,{a:5000,b:5000})), 'refused');
+  check('S allocate','a negative amount is refused', bad(()=>allocate(-1,{a:5000,b:5000})), 'refused');
+  check('S allocate','a fractional basis-point share is refused', bad(()=>allocate(10,{a:5000.5,b:4999.5})), 'refused');
+  check('S allocate','a negative share is refused', bad(()=>allocate(10,{a:11000,b:-1000})), 'refused');
+  check('S allocate','an empty split is refused', bad(()=>allocate(10,{})), 'refused');
+  check('S allocate','shares that do not total 10000 are refused', bad(()=>allocate(10,{a:5000,b:4000})), 'refused');
+  check('S allocate','zero cents allocates zero to everyone', JSON.stringify(allocate(0,{a:5000,b:5000})), '{"a":0,"b":0}');
+
+  // --- splitFromPayerShare: the legacy two-party percent, in basis points -------
+  check('S split','payer 50% with one other: 5000/5000', JSON.stringify(splitFromPayerShare('dad',['mom'],50)), '{"dad":5000,"mom":5000}');
+  check('S split','payer 60%: 6000/4000', JSON.stringify(splitFromPayerShare('dad',['mom'],60)), '{"dad":6000,"mom":4000}');
+  check('S split','payer 0%: the other party owes it all', JSON.stringify(splitFromPayerShare('dad',['mom'],0)), '{"dad":0,"mom":10000}');
+  check('S split','payer 100%: nobody else owes', JSON.stringify(splitFromPayerShare('dad',['mom'],100)), '{"dad":10000,"mom":0}');
+  check('S split','a lone payer owes nobody (10000bp)', JSON.stringify(splitFromPayerShare('dad',[],50)), '{"dad":10000}');
+  check('S split','three parties: the rest splits with integer remainder to the lowest ids',
+    JSON.stringify(splitFromPayerShare('dad',['zoe','amy'],50)), '{"dad":5000,"amy":2500,"zoe":2500}');
+  check('S split','an uneven remainder never loses a basis point (payer 33%, two others)',
+    Object.values(splitFromPayerShare('dad',['b','a'],33)).reduce((s,v)=>s+v,0), 10000);
+  check('S split','the payer listed among the others is not counted twice',
+    JSON.stringify(splitFromPayerShare('dad',['dad','mom'],50)), '{"dad":5000,"mom":5000}');
+  check('S split','a fractional percent is refused', bad(()=>splitFromPayerShare('dad',['mom'],33.3)), 'refused');
+  check('S split','the result is always a valid allocate() rule',
+    (()=>{for(let p=0;p<=100;p++){allocate(777,splitFromPayerShare('d',['m','a','z'],p));}return 'ok';})(), 'ok');
+
+  // --- canonicalJson -----------------------------------------------------------
+  check('S canonical','keys are sorted at every depth', canonicalJson({b:1,a:{d:1,c:2}}), '{"a":{"c":2,"d":1},"b":1}');
+  check('S canonical','insertion order does not matter', canonicalJson({b:1,a:2})===canonicalJson({a:2,b:1}), 'true');
+  check('S canonical','arrays keep their order', canonicalJson([3,1,2]), '[3,1,2]');
+  check('S canonical','no whitespace', canonicalJson({a:[1,{b:2}]}), '{"a":[1,{"b":2}]}');
+  check('S canonical','-0 is written as 0', canonicalJson([-0,0]), '[0,0]');
+  check('S canonical','numbers use the shortest round-trip form', canonicalJson([1.5,1e21,0.1,100]), '[1.5,1e+21,0.1,100]');
+  check('S canonical','strings are escaped like JSON.stringify (quotes, control, unicode kept)', canonicalJson('a"b\né\u{1F600}'), '"a\\"b\\né\u{1F600}"');
+  check('S canonical','undefined members are omitted, undefined array elements are null', canonicalJson({a:undefined,b:[undefined]}), '{"b":[null]}');
+  check('S canonical','null and booleans', canonicalJson([null,true,false]), '[null,true,false]');
+  check('S canonical','NaN is a hard error, not a silent null', bad(()=>canonicalJson({a:NaN})), 'refused');
+  check('S canonical','Infinity is a hard error', bad(()=>canonicalJson([Infinity])), 'refused');
+  check('S canonical','a function is a hard error', bad(()=>canonicalJson({f(){}})), 'refused');
+  check('S canonical','keys sort by UTF-16 code unit, not locale', canonicalJson({'é':1,z:2,a:3,B:4}), '{"B":4,"a":3,"z":2,"é":1}');
+  check('S canonical','certify() now hashes the canonical chain, and verifyExport agrees',
+    (()=>{let c=[];c.push(append(c,{childId:'c',authorId:'a',at:'2026-01-01T00:00:00.000Z',body:'x'}));
+      const att=certify(c,'c','2026-01-02T00:00:00.000Z'); return verifyExport(c,att).ok;})(), 'true');
+
+  // --- verifyCertifiedBundle ---------------------------------------------------
+  const U1='11111111-1111-4111-8111-111111111111', U2='22222222-2222-4222-8222-222222222222', CH='33333333-3333-4333-8333-333333333333';
+  let chain=[]; chain.push(append(chain,{childId:CH,authorId:U1,at:'2026-01-01T00:00:00.000Z',body:'first'}));
+  chain.push(append(chain,{childId:CH,authorId:U2,at:'2026-01-01T00:01:00.000Z',body:'second'}));
+  const mk=(ch)=>{const v=verifyChain(ch); const att=certify(ch,CH,'2026-02-01T00:00:00.000Z');
+    return {v:2,childId:CH,generatedAt:'2026-02-01T00:00:00.000Z',requestedBy:U1,
+      roster:[{id:U1,name:'Dad',role:'guardian'},{id:U2,name:'Mom',role:'guardian'}],
+      chain:ch,attestation:att,faultReport:{chainVerified:v.ok,faults:v.ok?[]:v.faults},
+      callLog:[],custodyOrders:[],expenses:[],expenseEvents:[],exchangeArrivals:[],exchangeRunningLate:[],doses:[],careNotes:[]};};
+  const good=mk(chain); const goodHash=bundleHashOf(good);
+  check('S bundle','a consistent bundle verifies against its own hash', verifyCertifiedBundle(good,goodHash).ok, true);
+  check('S bundle','and reports the chain intact', verifyCertifiedBundle(good,goodHash).chainIntact, true);
+  check('S bundle','the hash is a 64-char hex', /^[0-9a-f]{64}$/.test(goodHash), true);
+  check('S bundle','an altered section changes the hash and is refused',
+    verifyCertifiedBundle({...good,expenses:[{amount_cents:1}]},goodHash).ok, false);
+  check('S bundle','a missing roster entry for a chain author is refused',
+    verifyCertifiedBundle({...good,roster:good.roster.slice(0,1)}).ok, false);
+  check('S bundle','duplicate roster ids are refused', verifyCertifiedBundle({...good,roster:[...good.roster,good.roster[0]]}).ok, false);
+  check('S bundle','a malformed roster id is refused', verifyCertifiedBundle({...good,roster:[{id:'not-a-uuid',name:'x',role:'y'},...good.roster]}).ok, false);
+  const tam=chain.map((e,i)=>i===0?{...e,body:'edited'}:e);
+  const faulty=mk(tam);
+  const fv=verifyCertifiedBundle(faulty,bundleHashOf(faulty));
+  check('S bundle','a truthfully-faulted bundle is a valid DOCUMENT', fv.ok, true);
+  check('S bundle','...that says the chain is not intact', fv.chainIntact, false);
+  check('S bundle','...and names the fault', JSON.stringify(fv.faults), '[{"kind":"content_altered","seq":0}]');
+  const hidden={...faulty,faultReport:{chainVerified:true,faults:[]}};
+  check('S bundle','hiding the fault is refused', verifyCertifiedBundle(hidden).ok, false);
+  check('S bundle','inventing a fault is refused', verifyCertifiedBundle({...good,faultReport:{chainVerified:false,faults:[{kind:'chain_broken',seq:1}]}}).ok, false);
+  check('S bundle','a lying attestation head is refused', verifyCertifiedBundle({...good,attestation:{...good.attestation,headHash:'f'.repeat(64)}}).ok, false);
+  check('S bundle','an entry-count lie is refused', verifyCertifiedBundle({...good,attestation:{...good.attestation,entryCount:5}}).ok, false);
+  check('S bundle','an unknown version is refused', verifyCertifiedBundle({...good,v:9}).ok, false);
+  check('S bundle','an empty chain is a valid, intact bundle',
+    (()=>{const e=mk([]);return verifyCertifiedBundle(e,bundleHashOf(e)).chainIntact;})(), true);
+  check('S bundle','the hash is independent of key insertion order in the file',
+    (()=>{const rev=(v)=>Array.isArray(v)?v.map(rev):(v&&typeof v==='object')?Object.fromEntries(Object.keys(v).reverse().map(k=>[k,rev(v[k])])):v;
+      return bundleHashOf(rev(JSON.parse(JSON.stringify(good))))===goodHash;})(), true);
+}
+
+
+// T · golden vectors shared with the Dart port (client/test/ledger_vectors_test.dart)
+{
+  const onDisk = JSON.parse(readFileSync(new URL('./vectors.json', import.meta.url), 'utf8'));
+  check('T golden vectors','vectors.json equals a fresh generation (run: node tools/gen-ledger-vectors.mjs)',
+    JSON.stringify(onDisk)===JSON.stringify(generateLedgerVectors()), 'true');
+  check('T golden vectors','the vectors cover every fault kind',
+    [...new Set(Object.values(onDisk.chains).flatMap(c=>c.verify.faults.map(f=>f.kind)))].sort().join(','),
+    'bad_genesis,chain_broken,content_altered,sequence_gap,time_travel');
+  check('T golden vectors','and an emoji/CJK chain (UTF-16 framing)', onDisk.chains.unicode.verify.ok, true);
 }
 
 let g='';

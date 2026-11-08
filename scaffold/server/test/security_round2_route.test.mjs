@@ -96,9 +96,9 @@ for (const u of [GA1, GA2, GB]) {
 }
 // Family B's private objects, owned by GB.
 const medB = (await admin.query(
-  `INSERT INTO medication (child_id, name, dose) VALUES ($1,'BMed','1 tab') RETURNING id`, [CB])).rows[0].id;
+  `INSERT INTO medication (child_id, name, dose, slots) VALUES ($1,'BMed','1 tab','["am"]'::jsonb) RETURNING id`, [CB])).rows[0].id;
 const medA = (await admin.query(
-  `INSERT INTO medication (child_id, name, dose) VALUES ($1,'AMed','1 tab') RETURNING id`, [CA])).rows[0].id;
+  `INSERT INTO medication (child_id, name, dose, slots) VALUES ($1,'AMed','1 tab','["am"]'::jsonb) RETURNING id`, [CA])).rows[0].id;
 const expB = (await admin.query(
   `INSERT INTO expense (child_id, paid_by, amount_cents, category, incurred_on, split_rule, description)
    VALUES ($1,$2,500,'other',current_date,'{}'::jsonb,'b-expense') RETURNING id`, [CB, GB])).rows[0].id;

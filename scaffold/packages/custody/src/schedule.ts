@@ -95,7 +95,6 @@ export function patternSideOn(order: Order, localDate: string): Side {
 export function holidayOn(order: Order, localDate: string): { rule: HolidayRule; side: Side } | null {
   const d = DateTime.fromISO(localDate, { zone: 'utc' });
   const md = d.toFormat('MM-dd');
-  const year = d.year;
 
   const matches = order.holidays.filter(h => {
     // A window that wraps the new year (e.g. 12-24 → 01-02).
@@ -108,8 +107,15 @@ export function holidayOn(order: Order, localDate: string): { rule: HolidayRule;
   matches.sort((x, y) =>
     y.priority - x.priority || y.startMonthDay.localeCompare(x.startMonthDay));
   const rule = matches[0];
-  // Even/odd is on the child-local year of the date itself.
-  const side = year % 2 === 0
+  // Even/odd is keyed on the child-local year the WINDOW STARTS in, not the
+  // year of the date itself (S-D7). A 12-24 -> 01-02 window is ONE holiday:
+  // keyed on each date's own year, 31 Dec 2026 (even) and 1 Jan 2027 (odd)
+  // landed on opposite parents inside a single window. For a wrapped window
+  // the days from 01-01 through endMonthDay belong to the window that began
+  // the previous December.
+  const wraps = rule.startMonthDay > rule.endMonthDay;
+  const startYear = wraps && md <= rule.endMonthDay ? d.year - 1 : d.year;
+  const side = startYear % 2 === 0
     ? rule.evenYearSide
     : (rule.evenYearSide === 'A' ? 'B' : 'A');
   return { rule, side };
@@ -196,16 +202,66 @@ export function exchanges(
  */
 export function sleepsUntilSideChange(
   order: Order, nowLocalDate: string, maxLookahead = 60,
+  successor: Order | null = null,
 ): { sleeps: number; nextSide: Side; onLocalDate: string } | null {
   const today = sideOn(order, nowLocalDate).side;
   let d = DateTime.fromISO(nowLocalDate, { zone: 'utc' });
   for (let i = 1; i <= maxLookahead; i++) {
     d = d.plus({ days: 1 });
     const iso = d.toISODate()!;
-    const s = sideOn(order, iso).side;
+    // S-D9 — an order stops governing the child the day after `effectiveTo`.
+    // Reading its rotation past that point told a child "3 sleeps until Dad"
+    // for a handover that the expiring order will never perform. The day
+    // after the end belongs to the SUCCESSOR order when one is on file
+    // (its side is what she will actually wake up to); with no successor
+    // the honest answer is "unknown", never a guess.
+    let s: Side;
+    if (order.effectiveTo && iso > order.effectiveTo) {
+      if (!successor || iso < successor.effectiveFrom ||
+          (successor.effectiveTo && iso > successor.effectiveTo)) return null;
+      s = sideOn(successor, iso).side;
+    } else {
+      s = sideOn(order, iso).side;
+    }
     if (s !== today) return { sleeps: i, nextSide: s, onLocalDate: iso };
   }
   return null;
+}
+
+/**
+ * S-D8 — which side holds the child at a WALL-CLOCK moment of the order's
+ * zone. `sideOn` is date-granular, but a handover happens at `exchangeTime`
+ * (18:00 on the decree): at 10:00 on exchange day she is still with the side
+ * that held the day before, and only from 18:00 with the side that holds the
+ * day. Using `sideOn` for "who is on duty right now" was wrong for the whole
+ * day of every handover.
+ *
+ * Pure and zone-free so the Dart port (which has no tz database) runs the
+ * same function over `orderLocalDate` + `orderLocalHHMM`. Comparison is on
+ * wall-clock strings, so a nonexistent spring-forward exchange time and a
+ * repeated autumn hour both behave deterministically.
+ *
+ * Returns null when `orderLocalDate` lies outside the order's effective
+ * range. On the first effective day before the exchange time there is no
+ * "day before" under this order, so the day's own side applies.
+ */
+export function sideAtOrderLocal(
+  order: Order, orderLocalDate: string, orderLocalHHMM: string,
+): { side: Side; source: 'pattern' | 'holiday'; holidayName?: string } | null {
+  if (orderLocalDate < order.effectiveFrom ||
+      (order.effectiveTo && orderLocalDate > order.effectiveTo)) return null;
+  if (orderLocalHHMM >= order.exchangeTime) return sideOn(order, orderLocalDate);
+  const prev = DateTime.fromISO(orderLocalDate, { zone: 'utc' })
+    .minus({ days: 1 }).toISODate()!;
+  return sideOn(order, prev < order.effectiveFrom ? orderLocalDate : prev);
+}
+
+/** S-D8 — the same, from an absolute instant (read in `order.orderTz`). */
+export function sideAtInstant(
+  order: Order, instant: DateTime,
+): { side: Side; source: 'pattern' | 'holiday'; holidayName?: string } | null {
+  const l = instant.setZone(order.orderTz);
+  return sideAtOrderLocal(order, l.toISODate()!, l.toFormat('HH:mm'));
 }
 
 /** §9.4 child view — friendly language, never legal terms. */

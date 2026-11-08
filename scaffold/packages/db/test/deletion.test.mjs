@@ -82,6 +82,7 @@ const LOGIN_CONTROL   = randomUUID(); // section D, never deactivated
 
 const GENESIS = '0'.repeat(64);
 const fakeHash = (n) => n.toString(16).padStart(64, '0');
+let REAL_HASH;
 
 async function insertFixtures() {
   await admin.query('BEGIN');
@@ -105,9 +106,13 @@ async function insertFixtures() {
   // §2.10/P8 — the parent-to-parent log. A real (though not cryptographically
   // meaningful) genesis-linked entry authored by GUARDIAN_A.
   await admin.query(
-    `INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash)
-     VALUES ($1, 0, $2, 'exchange confirmed for Friday', $3, $4)`,
-    [CHILD, GUARDIAN_A, GENESIS, fakeHash(1)]);
+    `INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+     VALUES ($1, 0, $2, '2026-01-01T00:00:00Z', 'exchange confirmed for Friday', $3,
+             message_log_hash_v1(0, $1::uuid, $2::uuid, '2026-01-01T00:00:00Z', 'exchange confirmed for Friday', $3))`,
+    [CHILD, GUARDIAN_A, GENESIS]);
+  // 0043: the chain trigger recomputes the hash, so the fixture's hash is the
+  // REAL one; read it back for the "untouched" assertions below.
+  REAL_HASH = (await admin.query(`SELECT hash FROM message_log WHERE child_id = $1 AND seq = 0`, [CHILD])).rows[0].hash;
 
   // §9.8 — her preserved archive: a media_artifact authored by GUARDIAN_A but
   // owned by the CHILD, and a child_journal_entry that belongs to no guardian
@@ -229,7 +234,7 @@ await insertFixtures();
   check('A survives', 'the message_log entry still exists', log.rows.length, 1);
   check('A survives', 'authored by GUARDIAN_A, untouched', log.rows[0].author_id, GUARDIAN_A);
   check('A survives', 'body untouched', log.rows[0].body, 'exchange confirmed for Friday');
-  check('A survives', 'hash chain untouched', log.rows[0].hash, fakeHash(1));
+  check('A survives', 'hash chain untouched', log.rows[0].hash, REAL_HASH);
 
   const delivered = await admin.query(
     `SELECT state FROM delivery_intent WHERE child_id = $1 AND state IN ('delivered','opened')

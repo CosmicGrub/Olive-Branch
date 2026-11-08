@@ -63,10 +63,20 @@ const CHILD = '55555555-5555-4555-9555-000000000006';
 const NOORDER_CHILD = '66666666-6666-4666-9666-000000000006';
 
 async function cleanup() {
-  await admin.query(
-    `DELETE FROM exchange_arrival_event WHERE child_id = ANY($1::uuid[])`, [[CHILD, NOORDER_CHILD]]);
-  await admin.query(
-    `DELETE FROM exchange_running_late_log WHERE child_id = ANY($1::uuid[])`, [[CHILD, NOORDER_CHILD]]);
+  // S-D14 (migration 0043): both logs are append-only. A fixture that has to
+  // clear them disables the DELETE guard explicitly -- the same pattern
+  // court_export.test.mjs uses for message_log -- and puts it back.
+  await admin.query('ALTER TABLE exchange_arrival_event DISABLE TRIGGER exchange_arrival_event_no_delete');
+  await admin.query('ALTER TABLE exchange_running_late_log DISABLE TRIGGER exchange_running_late_log_no_delete');
+  try {
+    await admin.query(
+      `DELETE FROM exchange_arrival_event WHERE child_id = ANY($1::uuid[])`, [[CHILD, NOORDER_CHILD]]);
+    await admin.query(
+      `DELETE FROM exchange_running_late_log WHERE child_id = ANY($1::uuid[])`, [[CHILD, NOORDER_CHILD]]);
+  } finally {
+    await admin.query('ALTER TABLE exchange_arrival_event ENABLE TRIGGER exchange_arrival_event_no_delete');
+    await admin.query('ALTER TABLE exchange_running_late_log ENABLE TRIGGER exchange_running_late_log_no_delete');
+  }
   await admin.query(
     `DELETE FROM exchange_bag_item WHERE child_id = ANY($1::uuid[])`, [[CHILD, NOORDER_CHILD]]);
   await admin.query(`DELETE FROM custody_order WHERE child_id = ANY($1::uuid[])`, [[CHILD, NOORDER_CHILD]]);
@@ -349,6 +359,33 @@ const postArrival = (childId, tok) => api.handle(
     (await getArrival(CHILD, childTok)).status, 403);
   check('L child refused', 'POST .../arrival refused',
     (await postArrival(CHILD, childTok)).status, 403);
+}
+
+// ===========================================================================
+// M · S-D14 -- the arrival and running-late logs are append-only evidence.
+// ===========================================================================
+{
+  const refused = async (sql, params = []) => {
+    await admin.query('SAVEPOINT m');
+    try { await admin.query(sql, params); await admin.query('RELEASE SAVEPOINT m'); return null; }
+    catch (e) { await admin.query('ROLLBACK TO SAVEPOINT m'); return e.message; }
+  };
+  await admin.query('BEGIN');
+  check('M append-only', 'an arrival event cannot be UPDATEd (even by the superuser)',
+    (await refused(`UPDATE exchange_arrival_event SET delay_minutes = 0 WHERE child_id = $1`, [CHILD]))?.includes('append-only'), true);
+  check('M append-only', 'an arrival event cannot be DELETEd',
+    (await refused(`DELETE FROM exchange_arrival_event WHERE child_id = $1`, [CHILD]))?.includes('append-only'), true);
+  check('M append-only', 'the arrival log cannot be TRUNCATEd',
+    (await refused(`TRUNCATE exchange_arrival_event`))?.includes('append-only'), true);
+  check('M append-only', 'a running-late entry cannot be UPDATEd',
+    (await refused(`UPDATE exchange_running_late_log SET eta_minutes = 1 WHERE child_id = $1`, [CHILD]))?.includes('append-only'), true);
+  check('M append-only', 'a running-late entry cannot be DELETEd',
+    (await refused(`DELETE FROM exchange_running_late_log WHERE child_id = $1`, [CHILD]))?.includes('append-only'), true);
+  check('M append-only', 'the running-late log cannot be TRUNCATEd',
+    (await refused(`TRUNCATE exchange_running_late_log`))?.includes('append-only'), true);
+  await admin.query('ROLLBACK');
+  check('M append-only', 'the rows are all still there',
+    Number((await admin.query(`SELECT count(*) AS n FROM exchange_arrival_event WHERE child_id = $1`, [CHILD])).rows[0].n) > 0, true);
 }
 
 await cleanup();

@@ -1,0 +1,1048 @@
+{
+ "checkDose": [
+  {
+   "label": "unknown slot",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "lunch",
+   "status": "given",
+   "at": "2026-03-10T12:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [],
+   "expect": {
+    "ok": false,
+    "reason": "unknown_slot",
+    "allowed": [
+     "morning",
+     "evening"
+    ]
+   }
+  },
+  {
+   "label": "empty slot",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "   ",
+   "status": "given",
+   "at": "2026-03-10T12:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [],
+   "expect": {
+    "ok": false,
+    "reason": "unknown_slot",
+    "allowed": [
+     "morning",
+     "evening"
+    ]
+   }
+  },
+  {
+   "label": "unknown slot, skipped",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "lunch",
+   "status": "skipped",
+   "at": "2026-03-10T12:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [],
+   "expect": {
+    "ok": false,
+    "reason": "unknown_slot",
+    "allowed": [
+     "morning",
+     "evening"
+    ]
+   }
+  },
+  {
+   "label": "case normalised",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "Morning",
+   "status": "given",
+   "at": "2026-03-10T12:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [],
+   "expect": {
+    "ok": true,
+    "slot": "morning"
+   }
+  },
+  {
+   "label": "space trimmed",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "  EVENING ",
+   "status": "given",
+   "at": "2026-03-10T12:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [],
+   "expect": {
+    "ok": true,
+    "slot": "evening"
+   }
+  },
+  {
+   "label": "no slots",
+   "med": {
+    "slots": [],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "morning",
+   "status": "given",
+   "at": "2026-03-10T12:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [],
+   "expect": {
+    "ok": false,
+    "reason": "unknown_slot",
+    "allowed": []
+   }
+  },
+  {
+   "label": "double dose, odd case",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "MORNING",
+   "status": "given",
+   "at": "2026-03-10T13:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "morning",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": false,
+    "reason": "already_administered",
+    "by": "Dad",
+    "atLocal": "8:00 AM EDT"
+   }
+  },
+  {
+   "label": "other slot free",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "evening",
+   "status": "given",
+   "at": "2026-03-10T22:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "morning",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "evening"
+   }
+  },
+  {
+   "label": "next day free",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "morning",
+   "status": "given",
+   "at": "2026-03-11T12:00:00.000Z",
+   "localDate": "2026-03-11",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "morning",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "morning"
+   }
+  },
+  {
+   "label": "skipped does not consume",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "morning",
+   "status": "given",
+   "at": "2026-03-10T12:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "morning",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "skipped"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "morning"
+   }
+  },
+  {
+   "label": "refused after given",
+   "med": {
+    "slots": [
+     "morning",
+     "evening"
+    ],
+    "isPrn": false,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "morning",
+   "status": "refused",
+   "at": "2026-03-10T13:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "morning",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "morning"
+   }
+  },
+  {
+   "label": "prn inside gap",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T15:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": false,
+    "reason": "too_soon",
+    "minGapHours": 4,
+    "nextAllowedAt": "2026-03-10T16:00:00.000Z"
+   }
+  },
+  {
+   "label": "prn at gap",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T16:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn one minute short",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T15:59:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": false,
+    "reason": "too_soon",
+    "minGapHours": 4,
+    "nextAllowedAt": "2026-03-10T16:00:00.000Z"
+   }
+  },
+  {
+   "label": "prn after gap",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T17:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn back-dated inside gap",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T10:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": false,
+    "reason": "too_soon",
+    "minGapHours": 4,
+    "nextAllowedAt": "2026-03-10T16:00:00.000Z"
+   }
+  },
+  {
+   "label": "prn skipped no clock",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T13:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "skipped"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn no gap configured",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": null,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T12:01:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn refused never trips gap",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "refused",
+   "at": "2026-03-10T13:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn latest dose in the way",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": null
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T17:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T16:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": false,
+    "reason": "too_soon",
+    "minGapHours": 4,
+    "nextAllowedAt": "2026-03-10T20:00:00.000Z"
+   }
+  },
+  {
+   "label": "prn fifth of five",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": 5
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-11T04:00:00.000Z",
+   "localDate": "2026-03-11",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T16:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T20:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T00:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn sixth refused",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": 5
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-11T08:00:00.000Z",
+   "localDate": "2026-03-11",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T16:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T20:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T00:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-11",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T04:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": false,
+    "reason": "daily_max",
+    "max": 5
+   }
+  },
+  {
+   "label": "prn window rolled",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 4,
+    "maxPer24h": 5
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-11T12:00:00.000Z",
+   "localDate": "2026-03-11",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T16:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T20:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T00:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-11",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T04:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn back-dated overfills later window",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 1,
+    "maxPer24h": 5
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T10:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T16:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T20:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T00:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-11",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T04:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": false,
+    "reason": "daily_max",
+    "max": 5
+   }
+  },
+  {
+   "label": "prn old violation not a lock",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": 1,
+    "maxPer24h": 2
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-13T12:00:00.000Z",
+   "localDate": "2026-03-13",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T16:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T20:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T00:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    },
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-11",
+     "slot": "prn",
+     "administeredAt": "2026-03-11T04:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  },
+  {
+   "label": "prn skipped not counted",
+   "med": {
+    "slots": [
+     "prn"
+    ],
+    "isPrn": true,
+    "minGapHours": null,
+    "maxPer24h": 1
+   },
+   "slot": "prn",
+   "status": "given",
+   "at": "2026-03-10T13:00:00.000Z",
+   "localDate": "2026-03-10",
+   "history": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "skipped"
+    }
+   ],
+   "expect": {
+    "ok": true,
+    "slot": "prn"
+   }
+  }
+ ],
+ "prnAllowed": [
+  {
+   "existing": [],
+   "medicationId": "m",
+   "at": "2026-03-10T12:00:00.000Z",
+   "minGapHours": 4,
+   "expect": true
+  },
+  {
+   "existing": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "medicationId": "m",
+   "at": "2026-03-10T14:00:00.000Z",
+   "minGapHours": 4,
+   "expect": false
+  },
+  {
+   "existing": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "medicationId": "m",
+   "at": "2026-03-10T17:00:00.000Z",
+   "minGapHours": 4,
+   "expect": true
+  },
+  {
+   "existing": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "refused"
+    }
+   ],
+   "medicationId": "m",
+   "at": "2026-03-10T13:00:00.000Z",
+   "minGapHours": 4,
+   "expect": true
+  },
+  {
+   "existing": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T13:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "medicationId": "m",
+   "at": "2026-03-10T12:00:00.000Z",
+   "minGapHours": 4,
+   "expect": false
+  },
+  {
+   "existing": [
+    {
+     "medicationId": "other",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "medicationId": "m",
+   "at": "2026-03-10T12:00:00.000Z",
+   "minGapHours": 4,
+   "expect": true
+  },
+  {
+   "existing": [
+    {
+     "medicationId": "m",
+     "localDate": "2026-03-10",
+     "slot": "prn",
+     "administeredAt": "2026-03-10T12:00:00.000Z",
+     "localTz": "America/New_York",
+     "byUserName": "Dad",
+     "status": "given"
+    }
+   ],
+   "medicationId": "m",
+   "at": "2026-03-10T16:00:00.000Z",
+   "minGapHours": 4,
+   "expect": true
+  }
+ ]
+}

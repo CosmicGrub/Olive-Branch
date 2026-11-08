@@ -61,8 +61,8 @@
  *     a time-past one.
  *
  * ---------------------------------------------------------------- LOCKING --
- * Five named jobs (`rematerialize`, `reap-media`, `purge-challenges`,
- * `backup`, `health-alert` -- see JOB_NAMES) can each
+ * Six named jobs (`rematerialize`, `reap-media`, `purge-challenges`,
+ * `expiry-digest`, `backup`, `health-alert` -- see JOB_NAMES) can each
  * run at most once at a time, enforced with a real Postgres SESSION-level
  * advisory lock
  * (`pg_try_advisory_lock`), one dedicated connection held for the whole job,
@@ -108,6 +108,7 @@ import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges,
   from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
 import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
+import { digestRecordFor, DIGEST_LEAD_DAYS } from '../packages/storage/src/retention.mjs';
 import { encryptFile, pruneBackups, DEFAULT_DAILY_KEEP, DEFAULT_WEEKLY_KEEP } from './backup_lib.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -234,10 +235,18 @@ export async function runRematerializeSweep(pool, opts = {}) {
     [batchLimit],
   ));
 
-  let materialized = 0, expired = 0, stillPending = 0, skippedRows = 0;
+  let materialized = 0, expired = 0, stillPending = 0, skippedRows = 0, errored = 0;
   const ctxCache = new Map();
 
   for (const row of pendingRows) {
+    // S-D20 -- ONE bad row must never abort the sweep for every other family.
+    // An invalid time-zone name used to throw inside resolveWallClock and the
+    // exception unwound the whole loop: nothing after that row was
+    // materialised, on this run or any later one, until someone found it. Each
+    // row is now isolated; a failure is counted, logged with the row's ids and
+    // left `pending` (a retry next sweep, never expired -- the cause is data,
+    // not time), and the job reports `errored` so it cannot go unnoticed.
+    try {
     let ctx = ctxCache.get(row.child_id);
     if (ctx === undefined) {
       ctx = await childCtxFor(pool, row.child_id);
@@ -290,10 +299,16 @@ export async function runRematerializeSweep(pool, opts = {}) {
     }
 
     stillPending++;
+    } catch (e) {
+      errored++;
+      errLine({ event: 'row_error', job: 'rematerialize', intent_id: row.id,
+        child_id: row.child_id, error: String(e?.message ?? e).slice(0, 300),
+        at: DateTime.utc().toISO() });
+    }
   }
 
   return {
-    scanned: pendingRows.length, materialized, expired, stillPending, skippedRows,
+    scanned: pendingRows.length, materialized, expired, stillPending, skippedRows, errored,
     batchLimitHit: pendingRows.length === batchLimit,
   };
 }
@@ -441,6 +456,88 @@ export async function runPurgeChallengesJob(pool, opts = {}) {
   return { removed: await purgeExpiredChallenges(pool, opts.graceMs) };
 }
 
+// ---------------------------------------------------------- expiry-digest ---
+export const DEFAULT_DIGEST_BATCH = 5000;
+export const DIGEST_KEEP_DAYS = 30;
+
+/**
+ * S-D2 -- MASTERFILE §16.2 #5: material that is NOT covered by the standing
+ * preservation rule (a child's incidental capture, a call clip, a message a
+ * guardian explicitly sent unpreserved) must surface to a guardian BEFORE it
+ * is deleted. packages/storage's expiringSoon()/DIGEST_LEAD_DAYS (14 days)
+ * had no consumer at all; this is the consumer.
+ *
+ * It ONLY RECORDS. Per child it builds the pure digest (retention.ts
+ * digestRecordFor) from the unpreserved artifacts expiring inside the lead
+ * window and inserts one expiry_digest row (migration 0044) when that exact set
+ * has not been recorded before -- so the nightly run is idempotent and an
+ * unchanged set is not re-recorded every night. Nothing is pushed or sent: a
+ * notifier or a guardian screen reads the rows; wiring a push is separate,
+ * parked work. Rows older than DIGEST_KEEP_DAYS past their last expiry are
+ * purged (the artifacts they describe are gone by then).
+ *
+ * One child's failure is counted and logged, never allowed to stop the others
+ * (S-D20).
+ */
+export async function runExpiryDigestJob(pool, opts = {}) {
+  const now = opts.now ?? new Date();
+  const leadDays = opts.leadDays ?? DIGEST_LEAD_DAYS;
+  const limit = opts.batchLimit ?? DEFAULT_DIGEST_BATCH;
+
+  const arts = await withSystemSession(pool, (q) => q(
+    `SELECT id, child_id, kind,
+            to_char(captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS captured_at,
+            preserved,
+            to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at
+       FROM media_artifact
+      WHERE NOT preserved AND expires_at IS NOT NULL
+        AND expires_at > $1::timestamptz
+        AND expires_at <= $1::timestamptz + make_interval(days => $2::int)
+      ORDER BY child_id, expires_at
+      LIMIT $3`,
+    [now.toISOString(), leadDays, limit],
+  ));
+
+  const byChild = new Map();
+  for (const a of arts) {
+    if (!byChild.has(a.child_id)) byChild.set(a.child_id, []);
+    byChild.get(a.child_id).push({ id: a.id, kind: a.kind, capturedAt: a.captured_at,
+      preserved: a.preserved, expiresAt: a.expires_at });
+  }
+
+  let recorded = 0, unchanged = 0, errored = 0;
+  for (const [childId, list] of byChild) {
+    try {
+      const rec = digestRecordFor(childId, list, now, leadDays);
+      if (!rec) { unchanged++; continue; }
+      const inserted = await withSystemSession(pool, (q) => q(
+        `INSERT INTO expiry_digest
+           (child_id, lead_days, item_count, earliest_expiry, latest_expiry, digest_key, digest)
+         VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7::jsonb)
+         ON CONFLICT (child_id, digest_key) DO NOTHING
+         RETURNING id`,
+        [childId, rec.leadDays, rec.itemCount, rec.earliestExpiry, rec.latestExpiry,
+         rec.key, JSON.stringify(rec.digest)],
+      ));
+      if (inserted.length) recorded++; else unchanged++;
+    } catch (e) {
+      errored++;
+      errLine({ event: 'row_error', job: 'expiry-digest', child_id: childId,
+        error: String(e?.message ?? e).slice(0, 300), at: DateTime.utc().toISO() });
+    }
+  }
+
+  const purged = await withSystemSession(pool, (q) => q(
+    `DELETE FROM expiry_digest
+      WHERE latest_expiry < $1::timestamptz - make_interval(days => $2::int)
+      RETURNING id`,
+    [now.toISOString(), DIGEST_KEEP_DAYS],
+  ));
+
+  return { scanned: arts.length, children: byChild.size, recorded, unchanged, errored,
+    purged: purged.length, batchLimitHit: arts.length === limit };
+}
+
 // ----------------------------------------------------------------- backup ---
 const BACKUP_DB_SCRIPT = join(REPO_ROOT, 'tools', 'backup-db.sh');
 const BACKUP_MEDIA_SCRIPT = join(REPO_ROOT, 'tools', 'backup-media.sh');
@@ -553,7 +650,7 @@ export async function runBackupJob(env = process.env, opts = {}) {
 }
 
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'backup', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
 
 // One real FilesystemStorage instance, constructed once — same convention
 // as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
@@ -580,6 +677,7 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
       if (jobName === 'sweep-orphan-media') return runOrphanMediaSweep(pool, storage, {});
       if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
+      if (jobName === 'expiry-digest') return runExpiryDigestJob(pool, {});
       if (jobName === 'backup') return runBackupJob(process.env, {});
       if (jobName === 'health-alert') return runHealthAlertSubprocess(databaseUrl);
       throw new Error(`unknown job: ${jobName}`);
@@ -607,10 +705,12 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     logLine({
       event: 'end', job: jobName, status: 'ok', duration_ms: durationMs,
       scanned: r.scanned, materialized: r.materialized, expired: r.expired,
-      still_pending: r.stillPending, skipped_rows: r.skippedRows,
+      still_pending: r.stillPending, skipped_rows: r.skippedRows, errored: r.errored,
       batch_limit_hit: r.batchLimitHit, at: DateTime.utc().toISO(),
     });
-    return { ok: true, skipped: false };
+    // A sweep that isolated one or more bad rows still did everything it
+    // could, but it is not "ok": the exit code must say a row needs a human.
+    return { ok: r.errored === 0, skipped: false };
   }
 
   if (jobName === 'reap-media') {
@@ -658,6 +758,17 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
       removed: lockResult.result.removed, at: DateTime.utc().toISO(),
     });
     return { ok: true, skipped: false };
+  }
+
+  if (jobName === 'expiry-digest') {
+    const r = lockResult.result;
+    logLine({
+      event: 'end', job: jobName, status: r.errored ? 'partial' : 'ok', duration_ms: durationMs,
+      scanned: r.scanned, children: r.children, recorded: r.recorded, unchanged: r.unchanged,
+      errored: r.errored, purged: r.purged, batch_limit_hit: r.batchLimitHit,
+      at: DateTime.utc().toISO(),
+    });
+    return { ok: r.errored === 0, skipped: false };
   }
 
   if (jobName === 'backup') {

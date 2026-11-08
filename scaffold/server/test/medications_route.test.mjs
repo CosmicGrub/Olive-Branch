@@ -85,11 +85,11 @@ await admin.query(
   [CHILD, DAD, MOM, SITTER, STEP]);
 const med = (await admin.query(
   `INSERT INTO medication (child_id, name, dose, slots, is_prn, min_gap_hours)
-   VALUES ($1, 'Methylphenidate', '10 mg', '["morning"]'::jsonb, false, null)
+   VALUES ($1, 'Methylphenidate', '10 mg', '["morning","evening"]'::jsonb, false, null)
    RETURNING id`, [CHILD])).rows[0];
 const prnMed = (await admin.query(
-  `INSERT INTO medication (child_id, name, dose, slots, is_prn, min_gap_hours)
-   VALUES ($1, 'Albuterol inhaler', '2 puffs', '["prn"]'::jsonb, true, 4)
+  `INSERT INTO medication (child_id, name, dose, slots, is_prn, min_gap_hours, max_doses_per_24h)
+   VALUES ($1, 'Albuterol inhaler', '2 puffs', '["prn"]'::jsonb, true, 4, 3)
    RETURNING id`, [CHILD])).rows[0];
 await admin.query('COMMIT');
 const MED_ID = med.id, PRN_MED_ID = prnMed.id;
@@ -136,7 +136,7 @@ const putCard = (childId, tok, body) => api.handle(
   check('A list', 'both real seeded medications present', res.body.medications.length, 2);
   const m = res.body.medications.find(x => x.id === MED_ID);
   check('A list', 'real name round-trips', m?.name, 'Methylphenidate');
-  check('A list', 'real slots jsonb round-trips', JSON.stringify(m?.slots), '["morning"]');
+  check('A list', 'real slots jsonb round-trips', JSON.stringify(m?.slots), '["morning","evening"]');
   check('A list', 'no doses logged yet today', res.body.doses.length, 0);
   check('A list', 'a real localDate is present (child-local, not server-local)',
     /^\d{4}-\d{2}-\d{2}$/.test(res.body.localDate), true);
@@ -335,6 +335,124 @@ const putCard = (childId, tok, body) => api.handle(
   check('I append-only', 'a direct DELETE on the history table is refused', delRefused, true);
   const cnt = await admin.query(`SELECT count(*)::int AS n FROM medical_record_history WHERE child_id = $1`, [CHILD]);
   check('I append-only', 'all three rows are still there', cnt.rows[0].n, 3);
+}
+
+// ===========================================================================
+// K · S-D6 -- the medication safety rules are enforced by the SERVER.
+// ===========================================================================
+{
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+
+  // slot validation + canonicalisation
+  const unknown = await postDose(CHILD, MED_ID, momTok, { slot: 'lunch' });
+  check('K slot validation', 'a slot the medication does not have is refused 400', unknown.status, 400);
+  check('K slot validation', 'with the reason unknown_slot', unknown.body.error, 'unknown_slot');
+  check('K slot validation', 'and the real slots listed', JSON.stringify(unknown.body.allowed), '["morning","evening"]');
+  const upper = await postDose(CHILD, MED_ID, momTok, { slot: '  MORNING ' });
+  check('K slot validation', "a differently-cased slot hits the SAME double-dose guard (Dad already gave 'morning')",
+    upper.status, 409);
+  check('K slot validation', 'naming Dad', upper.body.by, 'Dad');
+  const morningRows = (await admin.query(
+    `SELECT count(*) AS n FROM medication_dose WHERE medication_id = $1 AND slot = 'morning'`, [MED_ID])).rows[0].n;
+  check('K slot validation', "no second 'morning' row, and no stray 'MORNING' row either", morningRows, '1');
+  const strays = (await admin.query(
+    `SELECT count(*) AS n FROM medication_dose WHERE medication_id = $1 AND slot <> lower(slot)`, [MED_ID])).rows[0].n;
+  check('K slot validation', 'every stored slot is a canonical slot spelling', strays, '0');
+  const noSlot = await postDose(CHILD, MED_ID, momTok, {});
+  check('K slot validation', 'a missing slot is still 400 slot_required', noSlot.body.error, 'slot_required');
+
+  // medication ownership
+  const ghost = await postDose(CHILD, '00000000-0000-4000-8000-00000000dead', momTok, { slot: 'morning' });
+  check('K ownership', 'a medication id that does not exist is 404', ghost.status, 404);
+  const OTHER_CHILD = '55555555-5555-4555-9555-0000000000c2';
+  await admin.query(`INSERT INTO child (id, display_name, birth_date, home_tz) VALUES ($1,'Other','2015-01-01','America/Chicago')`, [OTHER_CHILD]);
+  const otherMed = (await admin.query(
+    `INSERT INTO medication (child_id, name, dose, slots, is_prn) VALUES ($1,'Other med','1','["morning"]'::jsonb,false) RETURNING id`,
+    [OTHER_CHILD])).rows[0].id;
+  const cross = await postDose(CHILD, otherMed, momTok, { slot: 'morning' });
+  check('K ownership', "ANOTHER child's medication cannot be logged under this child's path", cross.status, 404);
+  check('K ownership', 'and nothing was written for it',
+    (await admin.query(`SELECT count(*) AS n FROM medication_dose WHERE medication_id = $1`, [otherMed])).rows[0].n, '0');
+  await admin.query(`DELETE FROM medication WHERE id = $1`, [otherMed]);
+  await admin.query(`DELETE FROM child WHERE id = $1`, [OTHER_CHILD]);
+
+  // PRN minimum gap (a PRN dose by Mom was logged in section D)
+  const tooSoon = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn' });
+  check('K prn gap', 'a second PRN dose inside the 4h minimum gap is refused 409', tooSoon.status, 409);
+  check('K prn gap', 'reason too_soon', tooSoon.body.error, 'too_soon');
+  check('K prn gap', 'the refusal says when the next dose may stand (about 4h out)',
+    Math.abs(Date.parse(tooSoon.body.nextAllowedAt) - (Date.now() + 4 * 3600_000)) < 120_000, true);
+  check('K prn gap', 'and the gap', tooSoon.body.minGapHours, 4);
+
+  // audited back-dating
+  const back5 = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: hoursAgo(5) });
+  check('K backdated', 'a dose given 5h ago (outside the gap on both sides) is accepted', back5.status, 201);
+  check('K backdated', 'the response is flagged backdated', back5.body.backdated, true);
+  check('K backdated', 'administeredAt is the CLAIMED time (about 5h ago)',
+    Math.abs(Date.parse(back5.body.administeredAt) - (Date.now() - 5 * 3600_000)) < 120_000, true);
+  check('K backdated', 'recordedAt is the REAL time (about now)',
+    Math.abs(Date.parse(back5.body.recordedAt) - Date.now()) < 120_000, true);
+  const audit = (await admin.query(
+    `SELECT backdated, recorded_at - administered_at AS lag, is_prn FROM medication_dose WHERE id = $1`, [back5.body.id])).rows[0];
+  check('K backdated', 'the row is stored backdated, with the lag between claim and record', audit.backdated, true);
+  check('K backdated', 'and marked PRN', audit.is_prn, true);
+  const live = (await admin.query(
+    `SELECT backdated, recorded_at = administered_at AS same FROM medication_dose WHERE medication_id = $1 AND by_user_id = $2 AND NOT backdated LIMIT 1`,
+    [PRN_MED_ID, MOM])).rows[0];
+  check('K backdated', 'a live dose is not backdated and recorded == administered', `${live.backdated}|${live.same}`, 'false|true');
+  const listed = await getMeds(CHILD, dadTok);
+  check('K backdated', 'GET exposes the audit flag on every dose', listed.body.doses.length > 0 && listed.body.doses.every(d => typeof d.backdated === 'boolean'), true);
+  const tooSoonBack = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: hoursAgo(6) });
+  check('K backdated', 'a back-dated dose too close to ANOTHER earlier dose is refused too (gap both sides)',
+    `${tooSoonBack.status}:${tooSoonBack.body.error}`, '409:too_soon');
+  let violated = false;
+  try { await admin.query(`UPDATE medication_dose SET backdated = false WHERE id = $1`, [back5.body.id]); }
+  catch { violated = true; }
+  check('K backdated', 'the database refuses to relabel a backdated row as live (CHECK)', violated, true);
+
+  // rolling 24h cap (medication seeded with max_doses_per_24h = 3)
+  const back10 = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: hoursAgo(10) });
+  check('K prn cap', 'the third dose in 24h (now, -5h, -10h) is accepted', back10.status, 201);
+  const back15 = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: hoursAgo(15) });
+  check('K prn cap', 'a fourth inside the same rolling 24h is refused 409', back15.status, 409);
+  check('K prn cap', 'reason daily_max', back15.body.error, 'daily_max');
+  check('K prn cap', 'with the cap', back15.body.max, 3);
+  const back30 = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: hoursAgo(30) });
+  check('K prn cap', 'a dose from 30h ago does not touch the current window', back30.status, 201);
+
+  // given_at validation
+  const future = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: new Date(Date.now() + 3600_000).toISOString() });
+  check('K given_at', 'a time in the future is 400 bad_given_at', `${future.status}:${future.body.error}:${future.body.detail}`, '400:bad_given_at:in_the_future');
+  const old = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: hoursAgo(100) });
+  check('K given_at', 'more than 72h ago is 400 too_old', `${old.status}:${old.body.detail}`, '400:too_old');
+  const naive = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: '2026-01-01T08:00:00' });
+  check('K given_at', 'a bare local time with no offset is refused (ambiguous across two zones)',
+    `${naive.status}:${naive.body.detail}`, '400:iso_with_offset_required');
+  const junk = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: 'yesterday' });
+  check('K given_at', 'junk is refused', junk.status, 400);
+  const numeric = await postDose(CHILD, PRN_MED_ID, dadTok, { slot: 'prn', given_at: 12345 });
+  check('K given_at', 'a non-string is refused', numeric.status, 400);
+
+  // the unique index now covers scheduled doses only
+  let prnTwice = true;
+  try {
+    for (let i = 0; i < 2; i++) {
+      await admin.query(
+        `INSERT INTO medication_dose (medication_id, child_id, local_date, slot, administered_at, by_user_id, status, is_prn, backdated)
+         VALUES ($1,$2,'2020-01-01','prn', now() - interval '30 days' - ($3 || ' hours')::interval, $4, 'given', true, true)`,
+        [PRN_MED_ID, CHILD, String(i * 6), MOM]);
+    }
+  } catch { prnTwice = false; }
+  check('K unique index', 'two PRN doses on one local date + slot are now possible', prnTwice, true);
+  let schedTwice = false;
+  try {
+    for (let i = 0; i < 2; i++) {
+      await admin.query(
+        `INSERT INTO medication_dose (medication_id, child_id, local_date, slot, administered_at, by_user_id, status, is_prn, backdated)
+         VALUES ($1,$2,'2020-01-02','morning', now() - interval '40 days', $3, 'given', false, true)`, [MED_ID, CHILD, MOM]);
+    }
+  } catch { schedTwice = true; }   // the second insert must violate the partial unique index
+  check('K unique index', 'two SCHEDULED doses on one local date + slot still collide', schedTwice, true);
 }
 
 await cleanup();

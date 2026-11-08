@@ -8,6 +8,8 @@
  * question "is this about to be lost?" gets asked.
  */
 
+import { sha256Hex } from '../../ledger/src/sha256.ts';
+
 // ------------------------------------------------- expiry digest (§16.2 #5) --
 /**
  * §16.2 #5, SETTLED v0.23.0 — **preservation is a standing rule, not an
@@ -73,6 +75,42 @@ export function expiringSoon(
     headline: items.length === 0 ? 'Nothing is due to be cleared.'
       : items.length === 1 ? 'One thing will be cleared soon unless you keep it.'
       : `${items.length} things will be cleared soon unless you keep them.` };
+}
+
+/**
+ * S-D2 — the pure half of the expiry-digest JOB (tools/scheduler.mjs
+ * `expiry-digest`). One digest per child, built from the unpreserved artifacts
+ * inside the lead window, plus a stable `key` over exactly WHICH artifacts and
+ * WHEN they expire. The job records a row only when the key is new, so an
+ * unchanged set is recorded once, not once per nightly run.
+ *
+ * What is recorded is deliberately thin: artifact id, kind, expiry and days
+ * left. NO caption or other content — the digest row would otherwise outlive
+ * the artifact the reaper deletes (§10.1), keeping text the product has
+ * promised to delete. Returns null when there is nothing to warn about.
+ *
+ * Pure: no clock (the caller passes \`now\`), no I/O, no push. Notifying a
+ * guardian is a separate, parked concern; this only produces the record that a
+ * notifier or a screen can read.
+ */
+export function digestRecordFor(
+  childId: string,
+  artifacts: { id: string; kind: string; capturedAt: string; preserved: boolean;
+    expiresAt: string | null }[],
+  now: Date, leadDays = DIGEST_LEAD_DAYS,
+): { childId: string; key: string; leadDays: number; itemCount: number;
+     earliestExpiry: string; latestExpiry: string; digest: ExpiryDigest } | null {
+  const d = expiringSoon(artifacts, now, leadDays);
+  if (!d.items.length) return null;
+  const items = d.items.map(i => ({ ...i, caption: null }));
+  const key = sha256Hex(items.map(i => `${i.artifactId}@${i.expiresAt}`).sort().join('|'));
+  const times = items.map(i => Date.parse(i.expiresAt));
+  return {
+    childId, key, leadDays, itemCount: items.length,
+    earliestExpiry: new Date(Math.min(...times)).toISOString(),
+    latestExpiry: new Date(Math.max(...times)).toISOString(),
+    digest: { ...d, items },
+  };
 }
 
 /**

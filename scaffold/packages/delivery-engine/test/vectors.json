@@ -1,0 +1,1333 @@
+{
+ "ctxs": {
+  "nyc": {
+   "homeTz": "America/New_York",
+   "tzIntervals": [],
+   "dayParts": [
+    {
+     "kind": "asleep",
+     "startsLocal": "21:00",
+     "endsLocal": "06:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": false
+    },
+    {
+     "kind": "wake",
+     "startsLocal": "06:30",
+     "endsLocal": "08:00",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "school",
+     "startsLocal": "08:00",
+     "endsLocal": "15:00",
+     "daysOfWeek": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ],
+     "reachable": false
+    },
+    {
+     "kind": "after_school",
+     "startsLocal": "15:00",
+     "endsLocal": "18:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "dinner",
+     "startsLocal": "18:30",
+     "endsLocal": "19:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "bedtime",
+     "startsLocal": "20:30",
+     "endsLocal": "21:00",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    }
+   ]
+  },
+  "summerInTexas": {
+   "homeTz": "America/New_York",
+   "dayParts": [
+    {
+     "kind": "asleep",
+     "startsLocal": "21:00",
+     "endsLocal": "06:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": false
+    },
+    {
+     "kind": "wake",
+     "startsLocal": "06:30",
+     "endsLocal": "08:00",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "school",
+     "startsLocal": "08:00",
+     "endsLocal": "15:00",
+     "daysOfWeek": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ],
+     "reachable": false
+    },
+    {
+     "kind": "after_school",
+     "startsLocal": "15:00",
+     "endsLocal": "18:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "dinner",
+     "startsLocal": "18:30",
+     "endsLocal": "19:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "bedtime",
+     "startsLocal": "20:30",
+     "endsLocal": "21:00",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    }
+   ],
+   "tzIntervals": [
+    {
+     "tz": "America/New_York",
+     "start": null,
+     "end": "2026-06-12T22:00:00Z"
+    },
+    {
+     "tz": "America/Chicago",
+     "start": "2026-06-12T22:00:00Z",
+     "end": "2026-07-25T22:00:00Z"
+    },
+    {
+     "tz": "America/New_York",
+     "start": "2026-07-25T22:00:00Z",
+     "end": null
+    }
+   ]
+  },
+  "sameDayFlight": {
+   "homeTz": "America/New_York",
+   "dayParts": [
+    {
+     "kind": "asleep",
+     "startsLocal": "21:00",
+     "endsLocal": "06:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": false
+    },
+    {
+     "kind": "wake",
+     "startsLocal": "06:30",
+     "endsLocal": "08:00",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "school",
+     "startsLocal": "08:00",
+     "endsLocal": "15:00",
+     "daysOfWeek": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ],
+     "reachable": false
+    },
+    {
+     "kind": "after_school",
+     "startsLocal": "15:00",
+     "endsLocal": "18:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "dinner",
+     "startsLocal": "18:30",
+     "endsLocal": "19:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    },
+    {
+     "kind": "bedtime",
+     "startsLocal": "20:30",
+     "endsLocal": "21:00",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true
+    }
+   ],
+   "tzIntervals": [
+    {
+     "tz": "America/Chicago",
+     "start": null,
+     "end": "2026-06-12T19:00:00Z"
+    },
+    {
+     "tz": "America/New_York",
+     "start": "2026-06-12T19:00:00Z",
+     "end": null
+    }
+   ]
+  },
+  "scheduleChange": {
+   "homeTz": "America/New_York",
+   "tzIntervals": [],
+   "dayParts": [
+    {
+     "kind": "bedtime",
+     "startsLocal": "20:00",
+     "endsLocal": "20:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true,
+     "effectiveFrom": null,
+     "effectiveTo": "2026-08-31"
+    },
+    {
+     "kind": "bedtime",
+     "startsLocal": "21:00",
+     "endsLocal": "21:30",
+     "daysOfWeek": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+     ],
+     "reachable": true,
+     "effectiveFrom": "2026-09-01",
+     "effectiveTo": null
+    }
+   ]
+  },
+  "asleepFridayOnly": {
+   "homeTz": "America/New_York",
+   "tzIntervals": [],
+   "dayParts": [
+    {
+     "kind": "asleep",
+     "startsLocal": "21:00",
+     "endsLocal": "06:30",
+     "daysOfWeek": [
+      5
+     ],
+     "reachable": false
+    }
+   ]
+  }
+ },
+ "gate": [
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T10:00:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": false,
+    "reason": "school",
+    "deferTo": "2026-06-10T19:00:00.000Z",
+    "deferCount": 1
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T10:00:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T16:00:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T16:00:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T22:00:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": false,
+    "reason": "asleep",
+    "deferTo": "2026-06-11T10:30:00.000Z",
+    "deferCount": 1
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T22:00:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-13T10:00:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-13T10:00:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T06:29:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": false,
+    "reason": "asleep",
+    "deferTo": "2026-06-10T10:30:00.000Z",
+    "deferCount": 1
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T06:29:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T06:30:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "nyc",
+   "local": "2026-06-10T06:30:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-12T21:30:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": false,
+    "reason": "asleep",
+    "deferTo": null,
+    "deferCount": 1
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-12T21:30:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-13T02:00:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": false,
+    "reason": "asleep",
+    "deferTo": null,
+    "deferCount": 1
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-13T02:00:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-13T06:30:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-13T06:30:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-13T21:30:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-13T21:30:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-12T02:00:00",
+   "zone": "America/New_York",
+   "priority": "normal",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "local": "2026-06-12T02:00:00",
+   "zone": "America/New_York",
+   "priority": "emergency",
+   "expect": {
+    "allow": true,
+    "reason": null,
+    "deferTo": null,
+    "deferCount": null
+   }
+  }
+ ],
+ "gateDeferCap": [
+  {
+   "deferCount": 0,
+   "expect": {
+    "allow": false,
+    "reason": "school",
+    "deferCount": 1
+   }
+  },
+  {
+   "deferCount": 1,
+   "expect": {
+    "allow": false,
+    "reason": "school",
+    "deferCount": 2
+   }
+  },
+  {
+   "deferCount": 2,
+   "expect": {
+    "allow": false,
+    "reason": "school",
+    "deferCount": 3
+   }
+  },
+  {
+   "deferCount": 3,
+   "expect": {
+    "allow": true,
+    "reason": "max_defers_exceeded",
+    "deferCount": 3
+   }
+  },
+  {
+   "deferCount": 4,
+   "expect": {
+    "allow": true,
+    "reason": "max_defers_exceeded",
+    "deferCount": 4
+   }
+  }
+ ],
+ "materialize": [
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "immediate"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-05-01T12:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_instant",
+    "targetInstant": "2026-06-01T12:00:00Z"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-01T12:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_instant",
+    "targetInstant": "2026-04-01T12:00:00Z"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": false,
+    "reason": "target_in_past"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_instant",
+    "targetInstant": "2026-05-01T10:30:00Z"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-05-01T10:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_daypart",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-06-10T14:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-11T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_daypart",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-06-11T03:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-12T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": true
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_daypart",
+    "targetDaypart": "bedtime",
+    "targetLocalDate": "2026-06-01"
+   },
+   "now": "2026-06-10T14:00:00Z",
+   "expect": {
+    "ok": false,
+    "reason": "target_in_past"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_daypart",
+    "targetDaypart": "nonexistent_kind"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": false,
+    "reason": "daypart_undefined"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-06-01",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-02T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-04-01",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": false,
+    "reason": "target_in_past"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-11-01",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-11-02T01:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-03-08",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-02-01T00:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-03-09T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-06-01",
+    "targetDaypart": "nope"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-02T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "when_reachable"
+   },
+   "now": "2026-06-10T20:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-10T20:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "when_reachable"
+   },
+   "now": "2026-06-10T14:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-10T19:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "when_reachable"
+   },
+   "now": "2026-06-11T02:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-11T10:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_event",
+    "targetEventId": "x"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": false,
+    "reason": "unresolvable_event"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "delivered",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "immediate"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": false,
+    "reason": "terminal_state"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2026-04-30T00:00:00Z",
+    "policy": "immediate"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": false,
+    "reason": "already_expired"
+   }
+  },
+  {
+   "ctx": "summerInTexas",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-06-01",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-02T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "summerInTexas",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-07-01",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-07-02T01:30:00.000Z",
+    "tz": "America/Chicago",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "summerInTexas",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-08-01",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-08-02T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "sameDayFlight",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-06-11",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-06-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-12T01:30:00.000Z",
+    "tz": "America/Chicago",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "sameDayFlight",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-06-12",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-06-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-13T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "sameDayFlight",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-06-13",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-06-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-06-14T00:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "scheduleChange",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-08-31",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-09-01T00:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "scheduleChange",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-09-01",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-09-02T01:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "scheduleChange",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "on_local_date",
+    "targetLocalDate": "2026-12-25",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-05-01T12:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-12-26T02:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "scheduleChange",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_daypart",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-08-31T02:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-08-31T00:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  },
+  {
+   "ctx": "scheduleChange",
+   "intent": {
+    "id": "i",
+    "childId": "c",
+    "state": "pending",
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "policy": "at_daypart",
+    "targetDaypart": "bedtime"
+   },
+   "now": "2026-09-01T02:00:00Z",
+   "expect": {
+    "ok": true,
+    "scheduledAt": "2026-09-01T00:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none",
+    "rolled": false
+   }
+  }
+ ],
+ "nextReachableWindow": [
+  {
+   "ctx": "nyc",
+   "from": "2026-06-10T20:00:00.000Z",
+   "expect": {
+    "start": "2026-06-10T20:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "from": "2026-06-10T14:00:00.000Z",
+   "expect": {
+    "start": "2026-06-10T19:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "from": "2026-06-11T02:00:00.000Z",
+   "expect": {
+    "start": "2026-06-11T10:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "from": "2026-06-11T03:30:00.000Z",
+   "expect": {
+    "start": "2026-06-11T10:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "from": "2026-06-12T20:00:00.000Z",
+   "expect": {
+    "start": "2026-06-12T20:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "from": "2026-06-13T14:00:00.000Z",
+   "expect": {
+    "start": "2026-06-13T19:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "from": "2026-11-01T06:30:00.000Z",
+   "expect": {
+    "start": "2026-11-01T11:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "nyc",
+   "from": "2026-03-08T06:59:00.000Z",
+   "expect": {
+    "start": "2026-03-08T10:30:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "summerInTexas",
+   "from": "2026-06-20T15:00:00.000Z",
+   "expect": {
+    "start": "2026-06-20T20:00:00.000Z",
+    "tz": "America/Chicago",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "sameDayFlight",
+   "from": "2026-06-12T13:00:00.000Z",
+   "expect": {
+    "start": "2026-06-12T19:00:00.000Z",
+    "tz": "America/New_York",
+    "anomaly": "none"
+   }
+  },
+  {
+   "ctx": "asleepFridayOnly",
+   "from": "2026-06-13T06:00:00.000Z",
+   "expect": null
+  }
+ ]
+}

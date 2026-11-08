@@ -1,38 +1,34 @@
 /**
  * packages/db/test/rls_coverage.test.mjs — the automated backstop for a real,
- * recurring failure mode: `health_check`'s own `rls_unforced` sub-check
- * (db/migrations/0028_care_note_letter.sql) is a hand-maintained
- * `c.relname IN (...)` list, and that list has silently fallen behind THREE
- * times so far, per 0028's own header — medication/medical_record (0026) and
- * exchange_bag_item/exchange_running_late_log/exchange_arrival_event (0027)
- * both shipped with real `ENABLE`+`FORCE ROW LEVEL SECURITY` and were never
- * added to the monitor's list, so the health-check that exists specifically
- * to catch "a table lost its RLS" had a blind spot for every one of them
- * from the day they shipped until 0028 finally caught up.
+ * recurring failure mode: `health_check`'s `rls_unforced` sub-check used to be a
+ * hand-maintained `c.relname IN (...)` list that fell behind THREE times
+ * (medication/medical_record 0026, the exchange tables 0027, ...) and never
+ * named the core tables from 0001 at all, so a new table with no policy was
+ * never flagged.
  *
- * This test closes that at the SOURCE rather than waiting for the next
- * migration author to remember: it derives the real, current set of
- * RLS-enabled tables directly from `pg_class` (the same catalog
- * `health_check`'s own SQL already reads), and asserts the view's list
- * covers every one of them. Add a table, run `ALTER TABLE x ENABLE ROW
- * LEVEL SECURITY`, forget to touch the view — this test fails, in CI, on
- * that PR, instead of waiting for the fourth accidental discovery.
+ * Since migration 0044 (data-model audit S-D21) the view reads the CATALOG:
+ * any ordinary table in the public schema that does not ENABLE and FORCE
+ * row-level security is a critical breach unless it is named, with a reason,
+ * in `rls_allow_list`. This suite proves that mechanism rather than a list:
  *
- * Deliberately scoped to tables someone ALREADY decided need RLS (i.e.
- * `relrowsecurity = true`), not "every table in the schema" — several
- * tables from 0001_phase0_init.sql (household, sibling_link,
- * succession_directive, child_ping, webauthn_challenge — the last
- * explicitly superseded by auth_challenge, per pool.ts's own comment) have
- * no real query call site anywhere in the app at all today and no RLS
- * either; whether they need RLS, or are dead schema that should be
- * dropped, is a real, separate architectural question this test does not
- * decide unilaterally. What it DOES guarantee: a table that has real RLS
- * enabled is never silently missing from the one view that watches for RLS
- * regressing.
+ *   A. the catalog and the allow-list agree: every table without RLS is
+ *      allow-listed (no blind spot), and every allow-list entry names a table
+ *      that exists and really lacks RLS (the list cannot rot — whoever adds RLS
+ *      to a table must delete its row).
+ *   B. every RLS-enabled table also has RLS FORCED (the table owner bypasses a
+ *      non-forced policy outright, db/DEPLOYMENT.md point #1).
+ *   C. the view really flags a NEW public table with no RLS, stops flagging it
+ *      once it is allow-listed, and stops again once it has FORCEd RLS — the
+ *      behaviour the old list could not have.
+ *   D. the view no longer carries a hard-coded table list.
+ *
+ * Needs ADMIN_DATABASE_URL (falls back to DATABASE_URL) to create a scratch
+ * table for section C.
  */
 import pg from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL;
+const ADMIN_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? DATABASE_URL;
 if (!DATABASE_URL) {
   console.error('DATABASE_URL required — this suite needs a real Postgres, not a fake.');
   process.exit(2);
@@ -42,67 +38,66 @@ let pass = 0, fail = 0; const rows = [];
 const check = (g, n, a, e) => { const ok = String(a) === String(e); ok ? pass++ : fail++;
   rows.push({ g, n, ok, a: String(a), e: String(e) }); };
 
-const client = new pg.Client({ connectionString: DATABASE_URL });
+const client = new pg.Client({ connectionString: ADMIN_DATABASE_URL });
 await client.connect();
 
-// The real, current set of RLS-enabled tables — independent of anything
-// health_check's own view text claims, read straight from the catalog.
-const { rows: rlsTables } = await client.query(`
-  SELECT c.relname,
-         c.relrowsecurity  AS enabled,
-         c.relforcerowsecurity AS forced
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-   WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = true
-   ORDER BY c.relname`);
+const { rows: tables } = await client.query(`
+  SELECT c.relname, c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY c.relname`);
+const { rows: allow } = await client.query(`SELECT table_name, reason FROM rls_allow_list ORDER BY table_name`);
+const allowed = new Set(allow.map(a => a.table_name));
+const byName = new Map(tables.map(t => [t.relname, t]));
 
-check('A coverage', 'at least one real RLS-enabled table exists to check against '
-  + '(a suspiciously-empty result usually means the wrong database/role)',
-  rlsTables.length > 0, true);
+check('A catalog vs allow-list', 'the catalog returned real tables (a suspiciously empty result means the wrong database)',
+  tables.length > 30, true);
+check('A catalog vs allow-list', 'a good number of tables DO enforce RLS (so the check is not vacuous)',
+  tables.filter(t => t.enabled && t.forced).length > 20, true);
 
-// The view's own SQL text — parsed for its rls_unforced sub-check's
-// `c.relname IN (...)` list, the exact same way a human reviewing a diff
-// would read it. Regex against the view definition itself (not a copy of
-// the list retyped here) so this test can never silently drift from what
-// the view actually checks — if the view's own SQL shape changes enough
-// to break this regex, THAT failure is itself the signal to look.
-const { rows: viewRows } = await client.query(
-  `SELECT pg_get_viewdef('health_check'::regclass, true) AS def`);
-const viewDef = viewRows[0].def;
-const listMatch = viewDef.match(/relname\s*=\s*ANY\s*\(\s*ARRAY\[([\s\S]*?)\]\)|relname\s+IN\s*\(([\s\S]*?)\)/i);
-check('B view readable', 'health_check’s own rls_unforced table list is present and parseable',
-  listMatch !== null, true);
+const blindSpots = tables.filter(t => !(t.enabled && t.forced) && !allowed.has(t.relname)).map(t => t.relname);
+check('A catalog vs allow-list', 'every table without ENABLE+FORCE RLS is on the allow-list (no blind spot)',
+  blindSpots.length ? `not allow-listed: ${blindSpots.join(', ')}` : 'none', 'none');
 
-const listText = listMatch ? (listMatch[1] ?? listMatch[2] ?? '') : '';
-const trackedTables = new Set(
-  [...listText.matchAll(/'([a-z_][a-z0-9_]*)'/g)].map(m => m[1]));
+const stale = allow.filter(a => !byName.has(a.table_name) || (byName.get(a.table_name).enabled && byName.get(a.table_name).forced))
+  .map(a => a.table_name);
+check('A catalog vs allow-list', 'every allow-list entry names a table that exists and genuinely lacks RLS (delete the row when you add RLS)',
+  stale.length ? `stale: ${stale.join(', ')}` : 'none', 'none');
+check('A catalog vs allow-list', 'every allow-list entry carries a reason',
+  allow.every(a => a.reason && a.reason.trim().length > 10), true);
+check('A catalog vs allow-list', 'the sensitive tables are NOT quietly allow-listed (message_log, expense, medication_dose, expiry_digest)',
+  ['message_log', 'expense', 'medication_dose', 'expiry_digest', 'delivery_intent', 'media_artifact'].some(t => allowed.has(t)), false);
 
-check('C list non-empty', 'the parsed rls_unforced list actually contains real table names',
-  trackedTables.size >= 15, true);
-
-// The real assertion: every table with RLS actually enabled must appear in
-// the monitor's own list. A table present in the list but not currently
-// RLS-enabled is a DIFFERENT, already-covered case (health_check's own
-// `relrowsecurity=false OR relforcerowsecurity=false` clause reports that
-// live, at runtime, every time the view is queried) — this test's job is
-// only the direction that clause structurally cannot catch: a table the
-// list has never heard of at all.
-const untracked = rlsTables
-  .filter(t => !trackedTables.has(t.relname))
-  .map(t => t.relname);
-check('D no blind spot', 'every RLS-enabled table is named in health_check’s rls_unforced list',
-  untracked.length ? `untracked: ${untracked.join(', ')}` : 'none', 'none');
-
-// The regression this test exists to catch structurally, not just via the
-// list: a tracked table that has RLS ENABLED but not FORCED is still a real
-// gap (the table owner — every role every migration in this repo runs
-// as — bypasses a non-forced policy outright, per db/DEPLOYMENT.md's own
-// point #1), and health_check's live query already reports it. Proven here
-// too, directly against the catalog, so this suite doesn't just trust the
-// view's own SQL is correct.
-const enabledNotForced = rlsTables.filter(t => t.enabled && !t.forced).map(t => t.relname);
-check('E forced too', 'every RLS-enabled table also has RLS FORCED, not merely enabled',
+const enabledNotForced = tables.filter(t => t.enabled && !t.forced).map(t => t.relname);
+check('B forced too', 'every RLS-enabled table also has RLS FORCED, not merely enabled',
   enabledNotForced.length ? `enabled-not-forced: ${enabledNotForced.join(', ')}` : 'none', 'none');
+
+const observed = async () => Number((await client.query(
+  `SELECT observed FROM health_check WHERE check_name = 'rls_unforced'`)).rows[0].observed);
+check('C the view reads the catalog', 'health_check.rls_unforced is clean on the migrated schema', await observed(), 0);
+
+await client.query('DROP TABLE IF EXISTS rls_probe_table');
+await client.query('CREATE TABLE rls_probe_table (id int)');
+try {
+  check('C the view reads the catalog', 'a brand-new public table with no RLS is flagged immediately', await observed(), 1);
+  await client.query(`INSERT INTO rls_allow_list (table_name, reason) VALUES ('rls_probe_table', 'scratch table for the coverage test')`);
+  check('C the view reads the catalog', 'allow-listing it (with a reason) silences exactly that table', await observed(), 0);
+  await client.query(`DELETE FROM rls_allow_list WHERE table_name = 'rls_probe_table'`);
+  check('C the view reads the catalog', 'removing the entry flags it again', await observed(), 1);
+  await client.query('ALTER TABLE rls_probe_table ENABLE ROW LEVEL SECURITY');
+  check('C the view reads the catalog', 'ENABLE without FORCE is still a breach', await observed(), 1);
+  await client.query('ALTER TABLE rls_probe_table FORCE ROW LEVEL SECURITY');
+  check('C the view reads the catalog', 'ENABLE + FORCE clears it with no list to update', await observed(), 0);
+} finally {
+  await client.query(`DELETE FROM rls_allow_list WHERE table_name = 'rls_probe_table'`);
+  await client.query('DROP TABLE IF EXISTS rls_probe_table');
+}
+check('C the view reads the catalog', 'and the view is clean again after the scratch table is gone', await observed(), 0);
+
+const { rows: viewRows } = await client.query(`SELECT pg_get_viewdef('health_check'::regclass, true) AS def`);
+const def = viewRows[0].def;
+check('D no hard-coded list', "the view no longer carries a 'relname IN (...)' table list",
+  /relname\s+IN\s*\(|relname\s*=\s*ANY\s*\(\s*ARRAY/i.test(def), false);
+check('D no hard-coded list', 'it consults rls_allow_list', /rls_allow_list/.test(def), true);
 
 // ---------------------------------------------------------------------------
 // F · S-B4 -- the allow-list direction. D/E above only look at tables that
@@ -117,6 +112,7 @@ check('E forced too', 'every RLS-enabled table also has RLS FORCED, not merely e
 // isolation pass (the sensitive tables were done in migration 0040).
 const NO_RLS_ALLOWED = {
   schema_migration: 'migration-runner bookkeeping; no tenant data',
+  rls_allow_list: 'the catalog-driven health check\'s own configuration table (migration 0044); no tenant data',
   reap_tombstone: 'retention-reaper bookkeeping (storage keys + errors); system-only access, no UI path',
   household: 'dead schema: no query call site anywhere in the app (see the header above)',
   succession_directive: 'dead schema: no query call site anywhere in the app',

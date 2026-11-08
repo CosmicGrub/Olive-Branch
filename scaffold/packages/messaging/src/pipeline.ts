@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { can, type Edge } from '../../family-graph/src/authorize.ts';
 import { materialize, type Intent, type ChildCtx } from '../../delivery-engine/src/materialize.ts';
+import { resolveZone } from '../../time-engine/src/time.ts';
 
 /**
  * MASTERFILE §9.5, §5.3, §5.6 — the async video message, end to end.
@@ -16,10 +17,17 @@ export type CaptureDenial =
   | 'retention_shorter_than_delivery'
   | 'empty_recording'
   | 'target_date_in_past'
+  /** S-D12 — no day-part of the requested kind (e.g. no bedtime) exists for
+   *  the target date: a configuration gap a guardian can fix, not a denial. */
+  | 'daypart_undefined'
+  /** S-D12 — the delivery window is already behind the retention clock. */
+  | 'already_expired'
+  /** S-D12 — materialise could not resolve the delivery for any other reason. */
+  | 'delivery_unresolvable'
   /**
    * §9.5/§9.8.1 — a CHILD-originated capture (senderRole 'child') whose
    * `senderChildId` is missing or names a DIFFERENT child than `childId`.
-   * The schema (0019_child_message_sender.sql) can only ever attribute a
+   * The schema (0021_child_message_sender.sql) can only ever attribute a
    * child-sent artifact/intent to the child it is FOR — see that
    * migration's own header on why this is checked here too, not only at
    * the database's CHECK constraints, and not only by the caller trusting
@@ -53,7 +61,7 @@ export interface CaptureInput {
    * this message about herself (§9.5's "she has just drawn something for
    * her father", extended to video). Must equal `childId` — a child can
    * only ever be recorded as the sender of HER OWN artifact, never another
-   * child's, even on a shared/kiosk device (0019_child_message_sender.sql).
+   * child's, even on a shared/kiosk device (0021_child_message_sender.sql).
    */
   senderChildId?: string | null;
   storageKey: string;
@@ -72,7 +80,7 @@ export interface CaptureInput {
 export interface ArtifactRow {
   childId: string;
   /** Exactly one of authorId/authorChildId is non-null when the sender is
-   * known at all — see 0019_child_message_sender.sql's `author_is_one_kind`.
+   * known at all — see 0021_child_message_sender.sql's `author_is_one_kind`.
    * Both null still means "unknown/system", unchanged from before that
    * migration. */
   authorId: string | null; authorChildId: string | null; kind: 'video_msg';
@@ -85,7 +93,7 @@ export interface ArtifactRow {
 export interface IntentRow {
   childId: string;
   /** Exactly one of senderId/senderChildId is non-null on every row — see
-   * 0019_child_message_sender.sql's `sender_is_exactly_one_kind`. Unlike
+   * 0021_child_message_sender.sql's `sender_is_exactly_one_kind`. Unlike
    * ArtifactRow's author fields, a delivery_intent has never been allowed
    * an unattributed sender, and still is not. */
   senderId: string | null; senderChildId: string | null;
@@ -139,7 +147,7 @@ export function captureMessage(
     // pin/verify and handover routes already use for "is this session
     // literally this child" — she may always send about herself; the only
     // thing to check is that she isn't (or a caller bug isn't) attributing
-    // the send to a DIFFERENT child (0019_child_message_sender.sql).
+    // the send to a DIFFERENT child (0021_child_message_sender.sql).
     if (!input.senderChildId || input.senderChildId !== input.childId) {
       return { ok: false, reason: 'child_sender_mismatch' };
     }
@@ -149,7 +157,7 @@ export function captureMessage(
     if (!d.allow) return { ok: false, reason: 'not_authorized' };
   }
 
-  const zone = ctxZone(ctx, now);
+  const zone = resolveZone(ctx.tzIntervals, now, ctx.homeTz);
 
   // Resolve the delivery instant FIRST, so the artifact's retention can be
   // derived from it rather than guessed.
@@ -162,8 +170,14 @@ export function captureMessage(
   };
   const m = materialize(probe, ctx, now);
   if (!m.ok) {
-    return { ok: false, reason: m.reason === 'target_in_past'
-      ? 'target_date_in_past' : 'not_authorized' };
+    // S-D12 — a scheduling failure is not a permission failure. Every reason
+    // except target_in_past used to read as 'not_authorized', so a family with
+    // no bedtime day-part configured was told it was not allowed to send.
+    return { ok: false, reason:
+      m.reason === 'target_in_past' ? 'target_date_in_past'
+      : m.reason === 'daypart_undefined' ? 'daypart_undefined'
+      : m.reason === 'already_expired' ? 'already_expired'
+      : 'delivery_unresolvable' };
   }
 
   const intentExpiry = m.scheduledAt.plus({ days: UNOPENED_RETENTION_DAYS });
@@ -178,7 +192,7 @@ export function captureMessage(
   }
 
   // Exactly one of {authorId, authorChildId} / {senderId, senderChildId} is
-  // populated — see 0019_child_message_sender.sql. `preserve` is already
+  // populated — see 0021_child_message_sender.sql. `preserve` is already
   // refused above for a child sender, so `preservedBy` (which must name a
   // real app_user, media_artifact's own `preservation_is_attributed` CHECK)
   // is never asked to hold a child's id here.
@@ -216,16 +230,6 @@ export function captureMessage(
   };
 }
 
-function ctxZone(ctx: ChildCtx, at: DateTime): string {
-  const t = at.toMillis();
-  const hit = ctx.tzIntervals.find(iv => {
-    const s = iv.start ? DateTime.fromISO(iv.start, { zone: 'utc' }).toMillis() : -Infinity;
-    const e = iv.end ? DateTime.fromISO(iv.end, { zone: 'utc' }).toMillis() : Infinity;
-    return t >= s && t < e;
-  });
-  return hit?.tz ?? ctx.homeTz;
-}
-
 /**
  * §8.2.4 — a receipt renders in HER frame, at the zone she was in when she
  * opened it. Not the capture zone: a message recorded while she was in Texas and
@@ -235,7 +239,7 @@ function ctxZone(ctx: ChildCtx, at: DateTime): string {
 export function openReceipt(
   ctx: ChildCtx, openedAt: DateTime, dayPartKind: string | null,
 ): { localTime: string; zone: string; phrase: string } {
-  const zone = ctxZone(ctx, openedAt);
+  const zone = resolveZone(ctx.tzIntervals, openedAt, ctx.homeTz);
   const local = openedAt.setZone(zone);
   const t = local.toFormat('h:mm a');
   const context: Record<string, string> = {

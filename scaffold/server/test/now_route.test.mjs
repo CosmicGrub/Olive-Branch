@@ -216,6 +216,58 @@ const get = (childId, tok) => api.handle(
     JSON.stringify(none.body.dayParts), '[]');
 }
 
+
+// ===========================================================================
+// H · S-D9 -- "N sleeps" must not read past where the order ends, and is
+//     answered from the successor order when one is on file. Plus S-D10: the
+//     day-part list is resolved by the child-local date's effective range.
+// ===========================================================================
+{
+  const today = DateTime.fromMillis(NOW, { zone: 'utc' }).setZone('America/Los_Angeles').startOf('day');
+  const d = (n) => today.plus({ days: n }).toISODate();
+  await admin.query(`DELETE FROM custody_order WHERE child_id = $1`, [CHILD_REAL_TZ]);
+  // alternating weeks, anchored so TODAY is day-index 3 of Side A's week: the
+  // rotation would hand over to B in 4 sleeps. The order ENDS tomorrow.
+  await admin.query(
+    `INSERT INTO custody_order (child_id, order_tz, pattern, anchor_local_date, exchange_time, effective_from, effective_to)
+     VALUES ($1,'America/Los_Angeles','alternating_weeks',$2,'18:00',$3,$4)`,
+    [CHILD_REAL_TZ, d(-3), d(-30), d(1)]);
+  const ends = await get(CHILD_REAL_TZ, dadTok);
+  check('H sleeps vs end', 'the order ends before its next handover: no countdown to a handover it will never perform',
+    ends.body.sleepsUntilHandover, 'null');
+
+  // a successor starting the day after, on Side B for its first week
+  await admin.query(
+    `INSERT INTO custody_order (child_id, order_tz, pattern, anchor_local_date, exchange_time, effective_from)
+     VALUES ($1,'America/Los_Angeles','alternating_weeks',$2,'18:00',$3)`,
+    [CHILD_REAL_TZ, d(2 - 7), d(2)]);
+  const succ = await get(CHILD_REAL_TZ, dadTok);
+  check('H sleeps vs end', "with a successor on file the answer is the successor's first day: 2 sleeps", succ.body.sleepsUntilHandover, 2);
+
+  // an order with no end date is unaffected (4 sleeps)
+  await admin.query(`DELETE FROM custody_order WHERE child_id = $1`, [CHILD_REAL_TZ]);
+  await admin.query(
+    `INSERT INTO custody_order (child_id, order_tz, pattern, anchor_local_date, exchange_time, effective_from)
+     VALUES ($1,'America/Los_Angeles','alternating_weeks',$2,'18:00',$3)`,
+    [CHILD_REAL_TZ, d(-3), d(-30)]);
+  const open = await get(CHILD_REAL_TZ, dadTok);
+  check('H sleeps vs end', 'an open-ended order still counts 4 sleeps', open.body.sleepsUntilHandover, 4);
+  await admin.query(`DELETE FROM custody_order WHERE child_id = $1`, [CHILD_REAL_TZ]);
+
+  // S-D10: a day-part whose effective range has ENDED, and one that starts tomorrow, are not today's schedule
+  const wd = today.weekday % 7;
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD_REAL_TZ]);
+  await admin.query(
+    `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective) VALUES
+       ($1,'free','10:00','11:00',$2::smallint[],true,daterange($3::date,$4::date)),
+       ($1,'dinner','17:30','18:30',$2::smallint[],true,daterange($4::date,$5::date)),
+       ($1,'school','08:30','15:00',$2::smallint[],false,daterange($6::date,$3::date))`,
+    [CHILD_REAL_TZ, `{${wd}}`, d(-5), d(0), d(5), d(-40)]);
+  const eff = await get(CHILD_REAL_TZ, dadTok);
+  check('H effective range', "only the part in force on the child's local date is listed (ended and not-yet-started parts are not)",
+    eff.body.dayParts.map(p => p.kind).join(','), 'dinner');
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD_REAL_TZ]);
+}
 await cleanup();
 await admin.end();
 await pool.end();

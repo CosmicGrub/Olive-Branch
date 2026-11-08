@@ -3,8 +3,10 @@
  * MASTERFILE §6.3–6.5. Run: node test/delivery.test.mjs
  */
 import { DateTime } from 'luxon';
+import { readFileSync } from 'node:fs';
+import { generate as generateDeliveryVectors } from '../../../tools/gen-delivery-vectors.mjs';
 import {
-  materialize, nextReachableWindow, PAST_GRACE_MINUTES,
+  materialize, nextReachableWindow, PAST_GRACE_MINUTES, partsOn, activeDayPart, zonedWallClock,
 } from '../src/materialize.mjs';
 import { gate, recipientContext, MAX_DEFERS } from '../src/gate.mjs';
 
@@ -275,6 +277,137 @@ const intent = (o) => ({
 }
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// G8 — S-D10: day-parts resolve by the TARGET date's effective range, not one
+//      context frozen at "today". A batch crossing a schedule change must use
+//      the bedtime that is in force on EACH night.
+// ---------------------------------------------------------------------------
+{
+  const now = DateTime.fromISO('2026-05-01T12:00:00Z');
+  const OLD_BEDTIME = { kind: 'bedtime', startsLocal: '20:00', endsLocal: '20:30', daysOfWeek: ALL,
+    reachable: true, effectiveFrom: null, effectiveTo: '2026-08-31' };
+  const NEW_BEDTIME = { kind: 'bedtime', startsLocal: '21:00', endsLocal: '21:30', daysOfWeek: ALL,
+    reachable: true, effectiveFrom: '2026-09-01', effectiveTo: null };
+  const ctx = { homeTz: NYC, tzIntervals: [], dayParts: [OLD_BEDTIME, NEW_BEDTIME] };
+  const night = (d) => materialize(
+    intent({ policy: 'on_local_date', targetLocalDate: d, targetDaypart: 'bedtime' }), ctx, now);
+  check('G8 effective range', 'the last night of the old schedule uses the OLD bedtime (20:00)',
+    night('2026-08-31').scheduledAt.setZone(NYC).toFormat('HH:mm'), '20:00');
+  check('G8 effective range', 'the first night of the new schedule uses the NEW bedtime (21:00)',
+    night('2026-09-01').scheduledAt.setZone(NYC).toFormat('HH:mm'), '21:00');
+  check('G8 effective range', 'a night long after the change keeps the new bedtime',
+    night('2026-12-01').scheduledAt.setZone(NYC).toFormat('HH:mm'), '21:00');
+  check('G8 effective range', 'a night before any part is in force falls back to the 20:30 default',
+    materialize(intent({ policy: 'on_local_date', targetLocalDate: '2026-08-01', targetDaypart: 'bedtime' }),
+      { ...ctx, dayParts: [NEW_BEDTIME] }, now).scheduledAt.setZone(NYC).toFormat('HH:mm'), '20:30');
+  check('G8 effective range', 'partsOn() lists only the parts in force on the date',
+    `${partsOn(ctx, '2026-08-31').length}${partsOn(ctx, '2026-09-01').length}`, '11');
+  check('G8 effective range', 'at_daypart rolling forward uses the part in force on the night it lands on',
+    materialize(intent({ policy: 'at_daypart', targetDaypart: 'bedtime' },),
+      ctx, DateTime.fromISO('2026-08-31T02:00:00Z')).scheduledAt.setZone(NYC).toFormat('HH:mm'), '20:00');
+  // Two overlapping legacy rows resolve deterministically (earliest start), not by row order.
+  const A = { kind: 'bedtime', startsLocal: '20:45', endsLocal: '21:00', daysOfWeek: ALL, reachable: true };
+  const B = { kind: 'bedtime', startsLocal: '20:00', endsLocal: '20:45', daysOfWeek: ALL, reachable: true };
+  const pick = (parts) => materialize(
+    intent({ policy: 'on_local_date', targetLocalDate: '2026-09-01', targetDaypart: 'bedtime' }),
+    { homeTz: NYC, tzIntervals: [], dayParts: parts }, now).scheduledAt.setZone(NYC).toFormat('HH:mm');
+  check('G8 effective range', 'overlapping rows: result does not depend on row order',
+    `${pick([A, B])}|${pick([B, A])}`, '20:00|20:00');
+}
+
+// ---------------------------------------------------------------------------
+// G9 — S-D10: the zone is resolved at the candidate INSTANT, not at 12:00 UTC.
+//      She flies Austin -> Charlotte at 14:00 Central; the 20:30 bedtime that
+//      evening is an Eastern wall clock.
+// ---------------------------------------------------------------------------
+{
+  const FLIGHT = '2026-06-12T19:00:00Z';                        // 14:00 CDT
+  const ctx = { homeTz: NYC, dayParts: DAYPARTS, tzIntervals: [
+    { tz: CHI, start: null, end: FLIGHT }, { tz: NYC, start: FLIGHT, end: null }] };
+  const r = materialize(
+    intent({ policy: 'on_local_date', targetLocalDate: '2026-06-12', targetDaypart: 'bedtime' }),
+    ctx, DateTime.fromISO('2026-06-01T12:00:00Z'));
+  check('G9 same-day travel', 'bedtime on the travel day is 20:30 EASTERN (arrival zone)',
+    r.scheduledAt.setZone(NYC).toFormat('HH:mm'), '20:30');
+  check('G9 same-day travel', 'and the reported zone is Eastern', r.tz, NYC);
+  const r2 = materialize(
+    intent({ policy: 'on_local_date', targetLocalDate: '2026-06-11', targetDaypart: 'bedtime' }),
+    ctx, DateTime.fromISO('2026-06-01T12:00:00Z'));
+  check('G9 same-day travel', 'the day before the flight is still 20:30 Central', r2.tz, CHI);
+  check('G9 same-day travel', 'zonedWallClock agrees', zonedWallClock(ctx, '2026-06-12', '20:30').tz, NYC);
+  check('G9 same-day travel', 'a morning wall clock on the travel day is still Central',
+    zonedWallClock(ctx, '2026-06-12', '07:00').tz, CHI);
+  const gap = zonedWallClock(ctx, '2026-06-12', '14:30');       // skipped by the flight (14:00 CDT -> 15:00 EDT)
+  check('G9 same-day travel', 'a wall clock the flight skipped resolves to the LATER instant, in the zone she is in then',
+    `${gap.tz}|${gap.instant.toUTC().toFormat('HH:mm')}`, `${NYC}|19:30`);
+}
+
+// ---------------------------------------------------------------------------
+// G10 — S-D11: wrapped day-parts use START-day semantics.
+// ---------------------------------------------------------------------------
+{
+  const FRI = 5;
+  const ASLEEP_FRI = { kind: 'asleep', startsLocal: '21:00', endsLocal: '06:30', daysOfWeek: [FRI], reachable: false };
+  const ctx = { homeTz: NYC, tzIntervals: [], dayParts: [ASLEEP_FRI] };
+  const at = (iso) => gate(ctx, DateTime.fromISO(iso, { zone: NYC }));
+  // 2026-06-12 is a Friday.
+  check('G10 wrapped part', "Friday 21:30 is inside Friday's asleep part", at('2026-06-12T21:30:00').allow, 'false');
+  check('G10 wrapped part', 'Saturday 02:00 is STILL inside it (started Friday)', at('2026-06-13T02:00:00').allow, 'false');
+  check('G10 wrapped part', 'the reason names the part', at('2026-06-13T02:00:00').reason, 'asleep');
+  check('G10 wrapped part', 'Saturday 06:30 is the first free minute', at('2026-06-13T06:30:00').allow, 'true');
+  check('G10 wrapped part', 'Saturday 21:30 is NOT asleep (days is [Fri] only)', at('2026-06-13T21:30:00').allow, 'true');
+  check('G10 wrapped part', 'Friday 02:00 is NOT asleep (Thursday is not listed)',
+    at('2026-06-12T02:00:00').allow, 'true');
+  check('G10 wrapped part', "activeDayPart finds yesterday's wrapped part",
+    activeDayPart(ctx, DateTime.fromISO('2026-06-13T03:00:00', { zone: NYC }))?.kind, 'asleep');
+  const ctxEnds = { homeTz: NYC, tzIntervals: [], dayParts: [{ ...ASLEEP_FRI, effectiveTo: '2026-06-12' }] };
+  check('G10 wrapped part', 'a part whose range ends Friday still runs until Saturday 06:30',
+    gate(ctxEnds, DateTime.fromISO('2026-06-13T02:00:00', { zone: NYC })).allow, 'false');
+  check('G10 wrapped part', 'but not after Saturday 06:30',
+    gate(ctxEnds, DateTime.fromISO('2026-06-13T07:00:00', { zone: NYC })).allow, 'true');
+}
+
+// ---------------------------------------------------------------------------
+// G11 — S-D11: a when_reachable message sent INSIDE a reachable window is "now".
+// ---------------------------------------------------------------------------
+{
+  const sent = DateTime.fromISO('2026-06-10T16:00:00', { zone: NYC });   // Wed, after_school 15:00-18:30
+  const w = nextReachableWindow(NYC_CTX, sent);
+  check('G11 reachable now', 'sent at 16:00 during after_school: the window is NOW', w.start.toMillis(), sent.toMillis());
+  check('G11 reachable now', 'materialize schedules it at that instant',
+    materialize(intent({ policy: 'when_reachable' }), NYC_CTX, sent).scheduledAt.toMillis(), sent.toMillis());
+  const w2 = nextReachableWindow(NYC_CTX, DateTime.fromISO('2026-06-10T10:00:00', { zone: NYC }));
+  check('G11 reachable now', 'during school (unreachable) it still waits for after_school',
+    w2.start.setZone(NYC).toFormat('HH:mm'), '15:00');
+  const w3 = nextReachableWindow(NYC_CTX, DateTime.fromISO('2026-06-10T22:00:00', { zone: NYC }));
+  check('G11 reachable now', "asleep: it waits for the next morning's wake window",
+    w3.start.setZone(NYC).toFormat('ccc HH:mm'), 'Thu 06:30');
+  check('G11 reachable now', "the gate's deferTo is a later window, never now",
+    gate(NYC_CTX, DateTime.fromISO('2026-06-10T10:00:00', { zone: NYC })).deferTo
+      .setZone(NYC).toFormat('HH:mm'), '15:00');
+  const late = nextReachableWindow(NYC_CTX, DateTime.fromISO('2026-06-10T23:30:00', { zone: NYC }).toUTC());
+  check('G11 reachable now', "walks the child's calendar, not UTC's",
+    late.start.setZone(NYC).toFormat('ccc HH:mm'), 'Thu 06:30');
+  const ctx = { homeTz: NYC, dayParts: DAYPARTS, tzIntervals: [
+    { tz: CHI, start: null, end: '2026-06-10T20:00:00Z' }, { tz: NYC, start: '2026-06-10T20:00:00Z', end: null }] };
+  const tw = nextReachableWindow(ctx, DateTime.fromISO('2026-06-10T13:00:00Z'));   // 08:00 CDT: school
+  check('G11 reachable now', 'a window start is resolved in the zone she is in at that instant (after the flight)',
+    tw.tz, NYC);
+}
+
+
+// ---------------------------------------------------------------------------
+// G12 — golden vectors (no Dart port exists; a contract for any future one)
+// ---------------------------------------------------------------------------
+{
+  const onDisk = JSON.parse(readFileSync(new URL('./vectors.json', import.meta.url), 'utf8'));
+  check('G12 vectors', 'vectors.json equals a fresh generation (run: node tools/gen-delivery-vectors.mjs)',
+    JSON.stringify(onDisk) === JSON.stringify(generateDeliveryVectors()), true);
+  check('G12 vectors', 'they cover the gate, materialize and nextReachableWindow',
+    onDisk.gate.length > 10 && onDisk.materialize.length > 25 && onDisk.nextReachableWindow.length > 8, true);
+}
+
 let g = '';
 for (const r of rows) {
   if (r.group !== g) { g = r.group; console.log(`\n${g}`); }

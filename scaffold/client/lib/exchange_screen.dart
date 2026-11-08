@@ -66,7 +66,8 @@ class HolidayRule {
 
 class Order {
   const Order({required this.pattern, required this.anchorLocalDate,
-    required this.holidays, required this.orderTimeLabel});
+    required this.holidays, required this.orderTimeLabel,
+    this.exchangeTime = '18:00', this.effectiveFrom, this.effectiveTo});
   /// '2-2-3' is the only pattern this demo ports; the TS module also defines
   /// '2-2-5-5', 'alternating_weeks' and 'week_on_week_off' over the same
   /// 14-day cycle shape — omitted here because this screen's demo family
@@ -76,6 +77,11 @@ class Order {
   final List<HolidayRule> holidays;
   /// Pre-rendered, verbatim, in the decree's own zone — see file header.
   final String orderTimeLabel;
+  /// Wall clock 'HH:mm' in the decree's zone (schedule.ts `exchangeTime`).
+  final String exchangeTime;
+  /// 'YYYY-MM-DD' child-local, inclusive; null = unbounded (schedule.ts).
+  final String? effectiveFrom;
+  final String? effectiveTo;
 }
 
 class Block {
@@ -107,7 +113,6 @@ String _monthDay(DateTime d) =>
 
 ({HolidayRule rule, Side side})? holidayOn(Order order, DateTime localDate) {
   final String md = _monthDay(localDate);
-  final int year = localDate.year;
   final List<HolidayRule> matches = order.holidays.where((HolidayRule h) =>
     h.startMonthDay.compareTo(h.endMonthDay) <= 0
       ? md.compareTo(h.startMonthDay) >= 0 && md.compareTo(h.endMonthDay) <= 0
@@ -118,7 +123,12 @@ String _monthDay(DateTime d) =>
     ? y.priority - x.priority
     : y.startMonthDay.compareTo(x.startMonthDay));
   final HolidayRule rule = matches.first;
-  final Side side = year.isEven
+  // S-D7 — even/odd is keyed on the year the WINDOW STARTS in (schedule.ts):
+  // a 12-24 -> 01-02 window is one holiday, not two.
+  final bool wraps = rule.startMonthDay.compareTo(rule.endMonthDay) > 0;
+  final int startYear =
+    wraps && md.compareTo(rule.endMonthDay) <= 0 ? localDate.year - 1 : localDate.year;
+  final Side side = startYear.isEven
     ? rule.evenYearSide
     : (rule.evenYearSide == Side.a ? Side.b : Side.a);
   return (rule: rule, side: side);
@@ -136,6 +146,12 @@ List<Block> blocks(Order order, DateTime fromLocal, DateTime toLocal) {
   Block? cur;
   DateTime d = fromLocal;
   while (!d.isAfter(toLocal)) {
+    final String iso = _iso(d);
+    if ((order.effectiveFrom != null && iso.compareTo(order.effectiveFrom!) < 0) ||
+        (order.effectiveTo != null && iso.compareTo(order.effectiveTo!) > 0)) {
+      d = d.add(const Duration(days: 1));
+      continue;
+    }
     final ({Side side, String source, String? holidayName}) s = sideOn(order, d);
     if (cur != null && cur.side == s.side && cur.source == s.source &&
         cur.holidayName == s.holidayName) {
@@ -151,17 +167,54 @@ List<Block> blocks(Order order, DateTime fromLocal, DateTime toLocal) {
   return out;
 }
 
+String _iso(DateTime d) =>
+  '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-'
+  '${d.day.toString().padLeft(2, '0')}';
+
 /// §8.2.5 — "N sleeps until Dad's week." Counts child-local day boundaries.
+/// S-D9 — stops where the order ends (`effectiveTo`): the day after belongs to
+/// [successor] when one is on file, otherwise the answer is null (unknown).
 ({int sleeps, Side nextSide, DateTime onLocalDate})? sleepsUntilSideChange(
-  Order order, DateTime nowLocalDate, {int maxLookahead = 60}) {
+  Order order, DateTime nowLocalDate, {int maxLookahead = 60, Order? successor}) {
   final Side today = sideOn(order, nowLocalDate).side;
   DateTime d = nowLocalDate;
   for (int i = 1; i <= maxLookahead; i++) {
     d = d.add(const Duration(days: 1));
-    final Side s = sideOn(order, d).side;
+    final String iso = _iso(d);
+    final Side s;
+    if (order.effectiveTo != null && iso.compareTo(order.effectiveTo!) > 0) {
+      if (successor == null ||
+          (successor.effectiveFrom != null && iso.compareTo(successor.effectiveFrom!) < 0) ||
+          (successor.effectiveTo != null && iso.compareTo(successor.effectiveTo!) > 0)) {
+        return null;
+      }
+      s = sideOn(successor, d).side;
+    } else {
+      s = sideOn(order, d).side;
+    }
     if (s != today) return (sleeps: i, nextSide: s, onLocalDate: d);
   }
   return null;
+}
+
+/// S-D8 — which side holds her at a wall-clock moment of the order's zone
+/// (schedule.ts `sideAtOrderLocal`): before the exchange time on a handover
+/// day she is still with the previous day's side. Null outside the order's
+/// effective range.
+({Side side, String source, String? holidayName})? sideAtOrderLocal(
+  Order order, DateTime orderLocalDate, String orderLocalHHMM) {
+  final String iso = _iso(orderLocalDate);
+  if ((order.effectiveFrom != null && iso.compareTo(order.effectiveFrom!) < 0) ||
+      (order.effectiveTo != null && iso.compareTo(order.effectiveTo!) > 0)) {
+    return null;
+  }
+  if (orderLocalHHMM.compareTo(order.exchangeTime) >= 0) {
+    return sideOn(order, orderLocalDate);
+  }
+  final DateTime prev = orderLocalDate.subtract(const Duration(days: 1));
+  final bool beforeStart = order.effectiveFrom != null &&
+    _iso(prev).compareTo(order.effectiveFrom!) < 0;
+  return sideOn(order, beforeStart ? orderLocalDate : prev);
 }
 
 /// §9.4 — friendly language only, never legal terms, for what the child sees

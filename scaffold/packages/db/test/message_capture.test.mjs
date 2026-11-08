@@ -249,7 +249,7 @@ const edge = (o = {}) => ({ childId: CHILD, userId: DAD, role: 'guardian', scope
 }
 
 // ===========================================================================
-// D · a CHILD sender — db/migrations/0019_child_message_sender.sql. Proves
+// D · a CHILD sender — db/migrations/0021_child_message_sender.sql. Proves
 //     the identity is correctly RECORDED (real rows, real columns, via the
 //     real NOSUPERUSER NOBYPASSRLS `pool` role — the same connection every
 //     write above already used, not a superuser standing in for it) and

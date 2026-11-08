@@ -19,21 +19,34 @@ DELETE FROM expense WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 \echo ''
 \echo '=== P8 — the log is append-only ============================='
-SELECT must_pass('genesis entry accepted', $q$
-  INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash)
-  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',0,
-          '11111111-1111-1111-1111-111111111111','first',
+-- 0043 (S-D15): the trigger RECOMPUTES the hash, so a fixture must carry the
+-- real one. message_log_hash_v1 is the SQL twin of packages/ledger entryHash().
+SELECT must_fail('a genesis entry with a well-formed but WRONG hash is rejected (0043)', $q$
+  INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',0,'11111111-1111-1111-1111-111111111111','2026-01-01 00:00:00+00','first',
           repeat('0',64), repeat('a',64)) $q$);
+SELECT must_pass('genesis entry accepted', $q$
+  INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',0,'11111111-1111-1111-1111-111111111111','2026-01-01 00:00:00+00','first', repeat('0',64),
+          message_log_hash_v1(0,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,'11111111-1111-1111-1111-111111111111'::uuid,'2026-01-01 00:00:00+00','first',repeat('0',64))) $q$);
 SELECT must_fail('a second genesis is rejected', $q$
   INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',0,
           '11111111-1111-1111-1111-111111111111','again',
           repeat('0',64), repeat('b',64)) $q$);
+SELECT must_fail('a linked entry whose body was changed after hashing is rejected (0043)', $q$
+  INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+  SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',1,'11111111-1111-1111-1111-111111111111','2026-01-02 00:00:00+00','second EDITED', h,
+         message_log_hash_v1(1,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,'11111111-1111-1111-1111-111111111111'::uuid,'2026-01-02 00:00:00+00','second',h)
+    FROM (SELECT hash AS h FROM message_log WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND seq=0) x $q$);
 SELECT must_pass('a linked entry is accepted', $q$
-  INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash)
-  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',1,
-          '11111111-1111-1111-1111-111111111111','second',
-          repeat('a',64), repeat('b',64)) $q$);
+  INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+  SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',1,'11111111-1111-1111-1111-111111111111','2026-01-02 00:00:00+00','second', h,
+         message_log_hash_v1(1,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,'11111111-1111-1111-1111-111111111111'::uuid,'2026-01-02 00:00:00+00','second',h)
+    FROM (SELECT hash AS h FROM message_log WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND seq=0) x $q$);
+SELECT must_fail('an unknown hash_version is rejected (0043)', $q$
+  UPDATE message_log SET hash_version = 2 WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND seq=0 $q$);
+SELECT must_fail('TRUNCATE of the log is rejected (0043)', $q$ TRUNCATE message_log $q$);
 SELECT must_fail('an entry that does not link to the head', $q$
   INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',2,

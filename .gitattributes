@@ -13,3 +13,9 @@ scaffold/client/**/gradlew.bat text eol=crlf
 
 # Binary, never touch line endings.
 scaffold/client/**/gradle-wrapper.jar binary
+
+# S-C8 -- SQL migrations must be byte-identical on every checkout. The migration
+# runner (scaffold/tools/migrate.mjs) also hashes CRLF-insensitively, but a
+# Windows checkout that rewrites a migration to CRLF should not be possible in
+# the first place; psql and the checksum both see the repository form.
+*.sql text eol=lf

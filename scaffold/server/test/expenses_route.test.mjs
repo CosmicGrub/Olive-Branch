@@ -207,6 +207,12 @@ let disputeId;
 {
   const res = await post(CHILD, dadTok, { description: 'Soccer camp',
     amountCents: 2000, category: 'activity', incurredOn: '2026-07-23', payerSharePercent: 50 });
+  // S-D14: reimbursing is only legal from 'accepted' -- an unaccepted expense
+  // cannot be marked reimbursed (it used to flip straight from 'proposed').
+  const early = await resolve(CHILD, res.body.id, 'reimburse', dadTok);
+  check('E reimburse', 'reimbursing a still-PROPOSED expense is refused 409', early.status, 409);
+  const acc = await resolve(CHILD, res.body.id, 'accept', momTok);
+  check('E reimburse', 'the co-guardian accepts it first', acc.status, 200);
   const reimburseRes = await resolve(CHILD, res.body.id, 'reimburse', dadTok);
   check('E reimburse', 'reimburse -> 200', reimburseRes.status, 200);
   check('E reimburse', 'status flips to reimbursed', reimburseRes.body.status, 'reimbursed');
@@ -311,6 +317,166 @@ let disputeId;
   check('K not found', 'a real UUID that names no row is 404, never a 500', res.status, 404);
 }
 
+// ===========================================================================
+// L · S-D14 -- status changes are guarded, attributed and append-only.
+// ===========================================================================
+{
+  const mk = async () => (await post(CHILD, dadTok, { description: 'Guarded transitions',
+    amountCents: 1234, category: 'other', incurredOn: '2026-07-24', payerSharePercent: 50 })).body.id;
+  const id = await mk();
+
+  const own = await resolve(CHILD, id, 'accept', dadTok);
+  check('L own expense', 'the proposer cannot accept their own expense (403)', own.status, 403);
+  check('L own expense', 'with a plain reason', own.body.error, 'cannot_resolve_own_expense');
+  const ownDispute = await resolve(CHILD, id, 'dispute', dadTok);
+  check('L own expense', 'nor dispute it', ownDispute.status, 403);
+  check('L own expense', 'the row is still proposed after both attempts',
+    (await admin.query('SELECT status FROM expense WHERE id = $1', [id])).rows[0].status, 'proposed');
+
+  const ok = await resolve(CHILD, id, 'accept', momTok);
+  check('L transitions', 'the other guardian accepts -> 200', ok.status, 200);
+  const again = await resolve(CHILD, id, 'accept', momTok);
+  check('L transitions', 'accepting twice is 409 invalid_transition', `${again.status}:${again.body.error}`, '409:invalid_transition');
+  check('L transitions', 'and says what state it is in', again.body.status, 'accepted');
+  const flip = await resolve(CHILD, id, 'dispute', momTok);
+  check('L transitions', 'an accepted expense cannot be disputed afterwards', flip.status, 409);
+  const reim = await resolve(CHILD, id, 'reimburse', momTok);
+  check('L transitions', 'accepted -> reimbursed is allowed', reim.status, 200);
+  const reimAgain = await resolve(CHILD, id, 'reimburse', dadTok);
+  check('L transitions', 'reimbursed is terminal', reimAgain.status, 409);
+  const disputed = await mk();
+  await resolve(CHILD, disputed, 'dispute', momTok);
+  const fromDisputed = await resolve(CHILD, disputed, 'accept', momTok);
+  check('L transitions', 'a disputed expense cannot be quietly accepted later', fromDisputed.status, 409);
+
+  const ev = (await admin.query(
+    `SELECT seq, from_status, to_status, actor_id, at, backfilled FROM expense_event WHERE expense_id = $1 ORDER BY seq`, [id])).rows;
+  check('L history', 'one event per change: proposed, accepted, reimbursed', ev.map(e => e.to_status).join(','), 'proposed,accepted,reimbursed');
+  check('L history', 'seq is contiguous from 1', ev.map(e => e.seq).join(','), '1,2,3');
+  check('L history', 'each event records the from-status', ev.map(e => e.from_status ?? 'null').join(','), 'null,proposed,accepted');
+  check('L history', 'the actors are who really did it (Dad proposed, Mom accepted, Mom reimbursed)',
+    ev.map(e => e.actor_id).join(','), [DAD, MOM, MOM].join(','));
+  check('L history', 'every event carries a timestamp, in order',
+    ev.every((e, i) => e.at && (i === 0 || e.at >= ev[i - 1].at)), true);
+  check('L history', 'none of this history is a backfill', ev.some(e => e.backfilled), false);
+  check('L history', 'a refused attempt leaves NO event behind',
+    (await admin.query(`SELECT count(*)::int AS n FROM expense_event WHERE expense_id = $1`, [disputed])).rows[0].n, 2);
+
+  // the database is the real enforcement, whatever the application does
+  const run = async (sql, params = [], actor = null) => {
+    await admin.query('BEGIN');
+    try {
+      if (actor) await admin.query(`SELECT set_config('app.user_id', $1, true)`, [actor]);
+      await admin.query(sql, params);
+      await admin.query('COMMIT'); return null;
+    } catch (e) { await admin.query('ROLLBACK'); return e.message; }
+  };
+  const fresh = await mk();
+  check('L db guard', 'a direct UPDATE by the proposer is refused by the trigger',
+    (await run(`UPDATE expense SET status = 'accepted' WHERE id = $1`, [fresh], DAD))?.includes('expense_own_proposal'), true);
+  check('L db guard', 'a direct UPDATE with no actor at all is refused',
+    (await run(`UPDATE expense SET status = 'accepted' WHERE id = $1`, [fresh]))?.includes('expense_actor_required'), true);
+  check('L db guard', 'a skipped step (proposed -> reimbursed) is refused',
+    (await run(`UPDATE expense SET status = 'reimbursed' WHERE id = $1`, [fresh], MOM))?.includes('expense_invalid_transition'), true);
+  check('L db guard', 'the amount cannot be rewritten',
+    (await run(`UPDATE expense SET amount_cents = 1 WHERE id = $1`, [fresh], MOM))?.includes('expense_immutable'), true);
+  check('L db guard', 'nor who paid',
+    (await run(`UPDATE expense SET paid_by = $2 WHERE id = $1`, [fresh, MOM], MOM))?.includes('expense_immutable'), true);
+  check('L db guard', 'a legal change by another user goes through',
+    await run(`UPDATE expense SET status = 'accepted' WHERE id = $1`, [fresh], MOM), null);
+  check('L append-only', 'expense_event cannot be UPDATEd',
+    (await run(`UPDATE expense_event SET actor_id = $1 WHERE expense_id = $2`, [DAD, id]))?.includes('append-only'), true);
+  check('L append-only', 'expense_event cannot be DELETEd',
+    (await run(`DELETE FROM expense_event WHERE expense_id = $1`, [id]))?.includes('append-only'), true);
+  check('L append-only', 'expense_event cannot be TRUNCATEd',
+    (await run(`TRUNCATE expense_event`))?.includes('append-only'), true);
+  check('L append-only', 'the history survived all of that',
+    (await admin.query(`SELECT count(*)::int AS n FROM expense_event WHERE expense_id = $1`, [id])).rows[0].n, 3);
+  check('L history', 'a status skipped in the CHECK cannot be recorded even by a direct insert',
+    (await run(`INSERT INTO expense_event (expense_id, child_id, seq, from_status, to_status) VALUES ($1,$2,99,'proposed','reimbursed')`, [id, CHILD]))
+      ?.includes('expense_event_transition'), true);
+}
+
+
+// ===========================================================================
+// M · S-D19 -- basis points per participant, a currency, and two-party
+//     requests still working exactly as before.
+// ===========================================================================
+{
+  const body = (o = {}) => ({ description: 'Split test', amountCents: 10001, category: 'other',
+    incurredOn: '2026-07-25', payerSharePercent: 50, ...o });
+  const row = async (id) => (await admin.query('SELECT currency, split_bp, split_rule FROM expense WHERE id = $1', [id])).rows[0];
+
+  const legacy = await post(CHILD, dadTok, body());
+  check('M split', 'the legacy two-party request still returns 201', legacy.status, 201);
+  const l = await row(legacy.body.id);
+  check('M split', 'it is stored as basis points over the two live guardians (50% -> 5000/5000)',
+    JSON.stringify(l.split_bp), JSON.stringify({ [DAD]: 5000, [MOM]: 5000 }));
+  check('M split', 'the legacy payerSharePercent is still stored and returned', `${l.split_rule.payerSharePercent}|${legacy.body.payerSharePercent}`, '50|50');
+  check('M split', 'currency defaults to USD', `${l.currency}|${legacy.body.currency}`, 'USD|USD');
+  check('M split', 'the wire carries participants, sorted by id',
+    JSON.stringify(legacy.body.participants), JSON.stringify([{ userId: DAD, bp: 5000 }, { userId: MOM, bp: 5000 }]));
+  const sixty = await post(CHILD, dadTok, body({ payerSharePercent: 60 }));
+  check('M split', '60% payer share -> 6000/4000', JSON.stringify((await row(sixty.body.id)).split_bp), JSON.stringify({ [DAD]: 6000, [MOM]: 4000 }));
+  check('M split', 'the coordinator is not on the split (only parent guardians are)',
+    Object.keys((await row(sixty.body.id)).split_bp).includes(COORDINATOR), false);
+
+  const explicit = await post(CHILD, momTok, body({ participants: [{ userId: MOM, bp: 2500 }, { userId: DAD, bp: 7500 }] }));
+  check('M split', 'an explicit basis-point split is accepted', explicit.status, 201);
+  check('M split', 'and stored as given', JSON.stringify((await row(explicit.body.id)).split_bp), JSON.stringify({ [DAD]: 7500, [MOM]: 2500 }));
+
+  const badSum = await post(CHILD, dadTok, body({ participants: [{ userId: DAD, bp: 5000 }, { userId: MOM, bp: 4000 }] }));
+  check('M split', 'shares that do not total 10000 are 400 bad_participants', `${badSum.status}:${badSum.body.error}`, '400:bad_participants');
+  const frac = await post(CHILD, dadTok, body({ participants: [{ userId: DAD, bp: 5000.5 }, { userId: MOM, bp: 4999.5 }] }));
+  check('M split', 'fractional basis points are refused', frac.status, 400);
+  const stranger = await post(CHILD, dadTok, body({ participants: [{ userId: DAD, bp: 5000 }, { userId: STRANGER, bp: 5000 }] }));
+  check('M split', 'a participant who is not a live guardian of THIS child is refused', `${stranger.status}:${stranger.body.error}`, '400:bad_participants');
+  const noPayer = await post(CHILD, dadTok, body({ participants: [{ userId: MOM, bp: 10000 }] }));
+  check('M split', 'the payer must be one of the participants', `${noPayer.status}:${noPayer.body.error}`, '400:bad_participants');
+  const dup = await post(CHILD, dadTok, body({ participants: [{ userId: DAD, bp: 5000 }, { userId: DAD, bp: 5000 }] }));
+  check('M split', 'a participant listed twice is refused', dup.status, 400);
+  const empty = await post(CHILD, dadTok, body({ participants: [] }));
+  check('M split', 'an empty participant list is refused', empty.status, 400);
+  const solo = await post(CHILD, dadTok, body({ participants: [{ userId: DAD, bp: 10000 }] }));
+  check('M split', 'a payer who bears it all (10000bp) is valid', solo.status, 201);
+
+  const eur = await post(CHILD, dadTok, body({ currency: 'EUR' }));
+  check('M currency', 'a currency code is accepted and stored', `${eur.status}|${(await row(eur.body.id)).currency}|${eur.body.currency}`, '201|EUR|EUR');
+  check('M currency', 'lower case is refused', (await post(CHILD, dadTok, body({ currency: 'usd' }))).body.error, 'bad_currency');
+  check('M currency', 'a two-letter code is refused', (await post(CHILD, dadTok, body({ currency: 'US' }))).body.error, 'bad_currency');
+  check('M currency', 'a non-string is refused', (await post(CHILD, dadTok, body({ currency: 5 }))).body.error, 'bad_currency');
+
+  const listed = await get(CHILD, dadTok);
+  const found = listed.body.entries.find(e => e.id === explicit.body.id);
+  check('M wire', 'GET returns currency and participants for a new-style row', `${found.currency}|${found.participants.length}`, 'USD|2');
+
+  // legacy rows (written before 0044) have no split_bp: honest null, never an invented split
+  const old = (await admin.query(
+    `INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on, split_rule)
+     VALUES ($1,$2,'legacy row',500,'other','2026-01-01','{"payerSharePercent":70}') RETURNING id`, [CHILD, DAD])).rows[0].id;
+  const listed2 = await get(CHILD, dadTok);
+  const oldWire = listed2.body.entries.find(e => e.id === old);
+  check('M wire', 'a legacy row reports participants: null and keeps its payerSharePercent', `${oldWire.participants}|${oldWire.payerSharePercent}|${oldWire.currency}`, 'null|70|USD');
+
+  // the database refuses a malformed split whatever the application does
+  const ins = async (split, cur = 'USD') => {
+    await admin.query('SAVEPOINT s');
+    try {
+      await admin.query(`INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on, split_rule, split_bp, currency)
+                         VALUES ($1,$2,'x',1,'other','2026-01-01','{"payerSharePercent":50}',$3::jsonb,$4)`, [CHILD, DAD, split, cur]);
+      await admin.query('RELEASE SAVEPOINT s'); return null;
+    } catch (e) { await admin.query('ROLLBACK TO SAVEPOINT s'); return e.constraint ?? e.message; }
+  };
+  await admin.query('BEGIN');
+  check('M db checks', 'split_bp that does not total 10000 is refused', await ins(JSON.stringify({ [DAD]: 5000, [MOM]: 4000 })), 'expense_split_bp_valid');
+  check('M db checks', 'split_bp over 10000 for one party is refused', await ins(JSON.stringify({ [DAD]: 12000, [MOM]: -2000 })), 'expense_split_bp_valid');
+  check('M db checks', 'a non-uuid participant key is refused', await ins(JSON.stringify({ nobody: 10000 })), 'expense_split_bp_valid');
+  check('M db checks', 'a fractional share is refused', await ins('{"' + DAD + '": 5000.5, "' + MOM + '": 4999.5}'), 'expense_split_bp_valid');
+  check('M db checks', 'an array is refused', await ins('[10000]'), 'expense_split_bp_valid');
+  check('M db checks', 'a valid split is accepted', await ins(JSON.stringify({ [DAD]: 3333, [MOM]: 6667 })), null);
+  check('M db checks', 'a bad currency code is refused', await ins(null, 'usd'), 'expense_currency_iso4217');
+  await admin.query('ROLLBACK');
+}
 await cleanup();
 await admin.end();
 await pool.end();

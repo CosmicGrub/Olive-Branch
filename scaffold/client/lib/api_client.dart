@@ -748,15 +748,27 @@ class OliveApi {
   /// that body directly instead of throwing, mirroring [captureHomework]'s
   /// own posture for its own normal-but-non-2xx outcome, and only throws
   /// [ApiException] for a genuinely unexpected status.
+  ///
+  /// S-D6 — [givenAt] (optional) records a dose given EARLIER; it is sent as a
+  /// UTC ISO instant and audited server-side (the row keeps the real recording
+  /// time and a `backdated` flag). The server also refuses, with a 409 body
+  /// this method returns like `already_administered`: `too_soon` (PRN minimum
+  /// gap, carries `nextAllowedAt`/`minGapHours`) and `daily_max`; a slot the
+  /// medication does not have is a 400 `unknown_slot` [ApiException].
   Future<Map<String, dynamic>> recordMedicationDose(
     String childId, String medicationId, String slot, {
     String status = 'given',
+    DateTime? givenAt,
   }) async {
     final res = await _authed((t) => _client.post(
       _uri(medicationDoses.replaceFirst(':childId', childId)
           .replaceFirst(':medicationId', medicationId)),
       headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
-      body: jsonEncode({'slot': slot, 'status': status}),
+      body: jsonEncode({
+        'slot': slot,
+        'status': status,
+        'given_at': ?givenAt?.toUtc().toIso8601String(),
+      }),
     ));
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
@@ -1446,7 +1458,7 @@ class OliveApi {
     String? captionKey,
     String? targetLocalDate,
     String daypart = 'bedtime',
-    bool preserve = false,
+    bool? preserve,
   }) =>
       _post(messages, {
         'storageKey': storageKey,
@@ -1454,7 +1466,12 @@ class OliveApi {
         'captionKey': ?captionKey,
         'targetLocalDate': ?targetLocalDate,
         'daypart': daypart,
-        'preserve': preserve,
+        // S-D2 -- null (the default) is OMITTED so the server applies the
+        // standing rule by sender: anything a GUARDIAN sends is preserved
+        // (MASTERFILE §16.2 #5, "preservation is a standing rule"); a CHILD's
+        // reply is not. Pass false only to deliberately send a guardian
+        // message unpreserved; true from a child is refused by the server.
+        'preserve': ?preserve,
       }, childId: childId);
 
   /// POST .../media — server/routes.mjs's real upload route, the other real
@@ -1749,7 +1766,7 @@ Future<void> revokeGuardianInvite(
 /// a passwordless account get created at all") WITHOUT touching WebAuthn
 /// registration itself: the token this returns is an ordinary guardian
 /// session with no guardianship edge to any child yet (none is created
-/// here -- see 0014/0019_guardian_invite_bootstrap.sql's own headers), meant
+/// here -- see 0014/0020_guardian_invite_bootstrap.sql's own headers), meant
 /// to be handed straight to [OliveApi.webauthnRegisterChallenge]/[Verify]
 /// (unchanged, already-existing routes), the same handoff
 /// [GuardianSetupScreen.registerPasskey]'s own real caller would make. Only
