@@ -181,7 +181,18 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
             savedMessage: 'Kept in your saved pictures.',
             nothingToKeepMessage: 'Colour something first, then keep it.',
           ),
-          TextButton(onPressed: _startOver, child: const Text('Start over')),
+          // At large text the words alone are wider than the app bar's actions
+          // area on a 344dp cover screen, so the same action becomes a 64dp icon
+          // (its tooltip and semantic label keep the words).
+          if (MediaQuery.textScalerOf(context).scale(1) >= 1.3)
+            IconButton(
+              onPressed: _startOver,
+              icon: const Icon(Icons.restart_alt),
+              tooltip: 'Start over',
+              constraints: const BoxConstraints(minWidth: kChildTarget, minHeight: kChildTarget),
+            )
+          else
+            TextButton(onPressed: _startOver, child: const Text('Start over')),
         ]),
         body: SafeArea(
           child: LayoutBuilder(builder: (context, constraints) {

@@ -14,6 +14,39 @@ Silent deletion is a process failure.
 
 ---
 
+## [Unreleased] — a time-of-day test flake and 2.0x text-scale overflows at 344 dp
+
+No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+
+### Fixed
+- **`server/test/presence_route.test.mjs` failed for about 40 minutes after local midnight**
+  (CI at 08:04 UTC = 00:04 America/Los_Angeles). Root cause: the suite built its availability
+  windows from the real wall clock ("started 45 / 15 / 40 / 10 minutes ago"), clamped to the
+  same calendar day because `guardian_availability_window` forbids a window that crosses
+  midnight; near 00:00 the two guardians' clamped starts both became 00:00, so section (c)'s
+  "the earlier-starting window wins" turned into a tie that fell back to the guardianId sort.
+  Also, the route reads luxon's clock (`DateTime.utc()`), not the `Api`'s injected clock, so the
+  frozen `NOW` never actually reached it. The test now pins both (`Settings.now` plus the Api
+  clock) to today's date at a fixed 12:00 in the child's zone, keeps the two starts distinct
+  at any time of day, and takes `PRESENCE_TEST_LOCAL_HHMM` to prove other times (green at
+  00:01, 00:05, 04:30, 12:00, 23:55 and 23:58). No product code changed for this.
+- **`TieredTile`'s `height` is now a minimum, not a fixed size.** Rhythm, Voice and Village tiles
+  on the child's More hub estimated a height from the text scale; at 2.0x on a 344 dp cover
+  screen a label that wraps to one more line than the estimate overflowed (10 px for the
+  eight Rhythm/Voice tiles, 50 px for a long Village story title). The tile now grows to fit,
+  keeps its 64 dp floor and its read-aloud speaker, and is unchanged where the estimate holds.
+- **Colouring** app bar (the "Start over" words are wider than the action area at large text on
+  344 dp: a 64 dp icon with the same tooltip from 1.3x) and **Doodle desk** (Undo / Redo wrap
+  instead of overflowing) no longer overflow at 2.0x on 344 dp.
+- **CI:** the `fetch livekit-server` step used `curl -sL` with no `-f`, so a transient HTTP
+  error from the releases CDN was saved as the "tarball" and `tar` died with "not in gzip
+  format" (run 42466446343). It now uses `curl -fsSL --retry 5 --retry-all-errors`.
+
+### Changed
+- `client/test/child_text_scale_test.dart` covers every main child screen (and the child More
+  hub at ages 7 and 12) at 2.0x on a 344 dp surface too; the Rhythm/Voice and Village More-hub
+  tests moved from 1.6x to 2.0x on 344 dp.
+
 ## [Unreleased] — Village and Compass (umbrella suites D and I), offline and on this device
 
 Grandparent corner, her people in pictures, a story a guardian releases, the sibling shelf, the

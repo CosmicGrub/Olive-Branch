@@ -44,9 +44,9 @@ void _notBuiltYet(BuildContext context, String what) {
 /// ever true for a single Hero tile per screen — `hero` alone does not bump
 /// icon/text size, callers wanting the full Hero look pass both flags (see
 /// either screen's own Hero tile construction). `height`, when supplied,
-/// replaces the InkWell child's own intrinsic sizing with an explicit
-/// height — used outside a GridView, where there is no gridDelegate-driven
-/// mainAxisExtent to size a tile.
+/// is the tile's MINIMUM height — used outside a GridView, where there is no
+/// gridDelegate-driven mainAxisExtent to size a tile. The tile grows past it
+/// when a label wraps to more lines than the caller allowed for.
 class TieredTile extends StatefulWidget {
   const TieredTile({super.key, required this.icon, required this.label, this.onTap,
     this.badgeCount, this.unreadDot = false, this.featured = false, this.hero = false, this.height,
@@ -128,11 +128,20 @@ class _TieredTileState extends State<TieredTile> {
         // clears this floor by construction (Standard's own base height is
         // already above it even before text-scale growth); this stays the
         // hard backstop regardless of tier or the `height` override above.
+        // `height` is a MINIMUM, never a fixed size: callers outside a grid
+        // estimate it from the text scale, and a label that wraps to more
+        // lines than the estimate (a 344dp cover screen at 2.0x text) must
+        // make the tile taller, not overflow it. Inside a GridView cell the
+        // cell's own tight constraints still decide the size, as before.
         constraints: BoxConstraints(minHeight: height ?? floor),
-        height: height,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: fill),
-        child: _withSpeaker(ra, label, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: _withSpeaker(ra, label, Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          // Icon at the top, label at the bottom, whatever height the tile ends
+          // up with (spaceBetween also copes with the tile growing to fit text).
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
           Row(children: [
             Icon(icon, size: featured ? 36 : 28, color: onFill),
             if (unreadDot) ...[
@@ -143,7 +152,6 @@ class _TieredTileState extends State<TieredTile> {
               _UnreadBadge(count: badgeCount),
             ],
           ]),
-          const Spacer(),
           Padding(
             // Room for the speaker, so the label never runs under it.
             padding: EdgeInsets.only(right: ra == null ? 0 : 44),

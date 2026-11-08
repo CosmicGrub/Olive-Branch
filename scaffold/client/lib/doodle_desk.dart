@@ -246,9 +246,10 @@ class _DoodleDeskState extends State<DoodleDesk> {
                         onSelect: (id) => setState(() => _stampId = id)),
               ),
               SizedBox(height: narrow ? 4 : 8),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              // A Wrap, not a Row: at 2.0x text on a 344dp cover screen the two
+              // labelled buttons no longer fit side by side and drop to two lines.
+              Wrap(alignment: WrapAlignment.center, spacing: 16, runSpacing: 4, children: [
                 _RoundIconButton(icon: Icons.undo, label: 'Undo', onTap: _undo),
-                const SizedBox(width: 16),
                 _RoundIconButton(icon: Icons.redo, label: 'Redo', onTap: _redo),
               ]),
             ]),
