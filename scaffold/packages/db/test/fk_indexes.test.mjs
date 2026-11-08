@@ -1,5 +1,5 @@
 /**
- * Migration 0036 (audit P-17): the foreign-key columns that had no index now
+ * Migration 0037 (audit P-17): the foreign-key columns that had no index now
  * have one, the planner can actually use each, and nothing about row-level
  * security moved. Real Postgres.
  */
@@ -60,9 +60,9 @@ for (const [table, col] of TARGETS) {
 // ---- C · RLS untouched ----------------------------------------------------------------
 {
   const sql = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..',
-    'db', 'migrations', '0036_fk_indexes.sql'), 'utf8')
+    'db', 'migrations', '0037_fk_indexes.sql'), 'utf8')
     .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
-  check('C RLS untouched', '0036 contains only CREATE INDEX statements (no policy, RLS, grant, revoke, alter or drop)',
+  check('C RLS untouched', '0037 contains only CREATE INDEX statements (no policy, RLS, grant, revoke, alter or drop)',
     /\b(POLICY|ROW\s+LEVEL|GRANT|REVOKE|ALTER|DROP|DISABLE|NO\s+FORCE)\b/i.test(sql), false);
   check('C RLS untouched', '...and uses IF NOT EXISTS so a hand-patched database re-runs cleanly',
     (sql.match(/CREATE INDEX IF NOT EXISTS/g) ?? []).length, 7);

@@ -1885,7 +1885,7 @@ automatic is stated, command by command, in `scaffold/docs/backup-and-restore.md
 Not built: a restore drill on a schedule, and any default off-host destination —
 no credential is invented.
 
-**Schema and tooling (P-17, P-18, P-19).** Migration `0036_fk_indexes.sql`
+**Schema and tooling (P-17, P-18, P-19).** Migration `0037_fk_indexes.sql`
 indexes `guardianship(user_id)`, `call_log(child_id)`,
 `medication_dose(child_id)`, `media_artifact(author_id)`,
 `intent_batch(child_id)`, `export_record(child_id)` and

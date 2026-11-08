@@ -3019,6 +3019,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // Same capability as reading the card; a child session is refused.
   api.register({
     method: 'GET', path: '/v1/children/:childId/emergency-card/history', action: 'emergency_card.view',
+    // Reaches Postgres only through its pool-scoped accessor (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };

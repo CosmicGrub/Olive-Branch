@@ -53,7 +53,7 @@ suite registered in `tools/verify.sh`.
   returned 500; now 400.
 - **Migration races (P-18).** `tools/migrate.mjs` holds a Postgres advisory lock
   for the run (pg and psql modes).
-- **Missing foreign-key indexes (P-17).** Migration `0036_fk_indexes.sql`
+- **Missing foreign-key indexes (P-17).** Migration `0037_fk_indexes.sql`
   (six FK columns plus `auth_challenge.issued_at`); RLS untouched.
 - **`livekit-server-sdk` was a devDependency** although `routes.mjs` imports it
   at runtime; it only worked because the image installed everything.
