@@ -114,7 +114,8 @@ function installTrace(P) {
   nested('tap', tapOp);
   nested('run', tapOp);
   nested('setOnline', (dev, on) => ({ op: 'net', dev, online: !!on }));
-  nested('setAge', (n) => ({ op: 'age', age: n }));
+  // The birthday on file (month, day) rides along, so the Flutter replay can move her age at local midnight too.
+  nested('setAge', (n) => { const b = L.S.family.child.birthday; return { op: 'age', age: n, ...(b ? { birthday: { month: b.m, day: b.d } } : {}) }; });
   const origJump = L.jumpTo;
   L.jumpTo = function (t) { rec({ op: 'clock', to: new Date(t).toISOString(), advanceMs: Math.max(0, t - L.S.clock.t) }); trace.depth++; try { return origJump.call(this, t); } finally { trace.depth--; } };
   P.trace = trace;

@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/add_device_screen.dart';
+import 'package:olive_client/child_home_growth.dart' show ageAtLocalDay;
 import 'package:olive_client/contact_labels.dart';
 import 'package:olive_client/family_structure_logic.dart';
 import 'package:olive_client/family_structure_store.dart';
@@ -68,6 +69,8 @@ class ParityWorld {
   String? kidName;
   String? colourId;
   int? birthdayMonth, birthdayDay;
+  /// The local day her age was last known to be right for (the birthday rule counts from it).
+  DateTime? ageDay;
   final MemoryNicknameRepository nicknames = MemoryNicknameRepository();
   bool kidPaired = false;
   Map<String, dynamic>? redeemed;
@@ -183,13 +186,30 @@ final Map<String, _Driver> _drivers = <String, _Driver>{
   'op:clock': (ParityWorld w, _Act a) async {
     // To the prototype's ABSOLUTE virtual instant (the replay may already be later; it never goes back).
     final Duration d = DateTime.parse(a.raw['to']! as String).difference(w.clock.nowUtc);
+    final DateTime before = w.clock.herLocal;
     await w.advance(d);
+    // Her age moves by itself at local midnight on her birthday: the SAME rule the live shell runs at every
+    // local midnight (child_home_growth.dart ageAtLocalDay), applied to the days the clock just crossed.
+    final int? years = w.age.age;
+    if (years != null && w.birthdayMonth != null && w.birthdayDay != null) {
+      final DateTime after = w.clock.herLocal;
+      w.age = AgeLockState(
+          age: ageAtLocalDay(age: years, month: w.birthdayMonth!, day: w.birthdayDay!, lastDay: w.ageDay ?? before, today: after),
+          locked: w.age.locked);
+      w.ageDay = after;
+    }
     return const Res.ok();
   },
   'op:age': (ParityWorld w, _Act a) async {
     // A guardian (through the PIN gate) may set 3 to 17 on a locked age.
     final AgeLockState locked = AgeLockState(age: w.age.age, locked: true);
     w.age = changeAge(locked, a.raw['age']! as int, guardianPinOk: true);
+    final Object? b = a.raw['birthday']; // the birthday on file, when the prototype had one
+    if (b is Map<String, Object?>) {
+      w.birthdayMonth = b['month']! as int;
+      w.birthdayDay = b['day']! as int;
+    }
+    w.ageDay = w.clock.herLocal;
     return const Res.ok();
   },
 

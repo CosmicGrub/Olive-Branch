@@ -12,9 +12,12 @@
 // chose). No scores, no streaks, no counters at her (P2): the birthday is information, not a task.
 import 'package:flutter/material.dart';
 
+import 'access_scope.dart' show childTargetOf;
+import 'contact_labels.dart';
 import 'design_tokens.dart';
 import 'family_structure_logic.dart';
 import 'family_structure_store.dart';
+import 'my_people_screen.dart' show NicknamePick, NicknameSheet;
 
 const String syncLaterNote =
     'These choices live on this device. Syncing between devices comes later.';
@@ -965,10 +968,27 @@ String _buttonLabel(String b, String name) => switch (b) {
     };
 
 /// Her family as she knows it: the names she uses, nothing else (no role words, F5).
+///
+/// Wave 2a ('My people', prototype k.people / kid.person): tap a face and a sheet offers Call, Message and
+/// "Change what I call them". Every name goes through [ContactLabels.forChild] (her word, else the age
+/// default, else the grown-up's label), so a kid nickname always wins. The sheet's buttons exist only when
+/// the person can be reached that way (the family's own contact switches) and a callback is supplied; the
+/// rename exists only when [nicknames] (hers, the only writer) is supplied. With neither, a face is just a face.
 class MyPeopleScreen extends StatefulWidget {
-  const MyPeopleScreen({super.key, required this.snapshot, this.childName = 'Ivy'});
+  const MyPeopleScreen({
+    super.key, required this.snapshot, this.childName = 'Ivy', this.nicknames,
+    this.age = const AgeLockState(), this.onCall, this.onMessage,
+  });
   final FamilyChildSnapshot snapshot;
   final String childName;
+
+  /// Hers. Null = no rename.
+  final NicknameRepository? nicknames;
+
+  /// Her locked age (picks Mommy / Daddy for a Mom or a Dad).
+  final AgeLockState age;
+  final void Function(BuildContext context, String personId, String name)? onCall;
+  final void Function(BuildContext context, String personId, String name)? onMessage;
   @override
   State<MyPeopleScreen> createState() => _MyPeopleState();
 }
@@ -976,6 +996,94 @@ class MyPeopleScreen extends StatefulWidget {
 class _MyPeopleState extends State<MyPeopleScreen> {
   bool _storyClosed = false;
   int _page = 0;
+  Map<String, String> _nicks = const <String, String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNicks();
+  }
+
+  Future<void> _loadNicks() async {
+    Map<String, String> m;
+    try {
+      m = await widget.nicknames?.load() ?? const <String, String>{};
+    } catch (_) {
+      m = const <String, String>{};
+    }
+    if (mounted) setState(() => _nicks = m);
+  }
+
+  /// A guardian label of exactly Mom or Dad takes her age's default word; any other label is kept as it is.
+  static GrownupKind _kindOf(String label) {
+    final String l = label.trim().toLowerCase();
+    return l == 'mom' ? GrownupKind.mom : l == 'dad' ? GrownupKind.dad : GrownupKind.other;
+  }
+
+  String _nameOf(ChildPerson p) => ContactLabels.forChild(
+      GrownupContact(id: p.id, guardianLabel: p.name, kind: _kindOf(p.name)), age: widget.age, nicknames: _nicks);
+
+  Future<void> _openSheet(ChildPerson p) async {
+    final bool canCall = widget.onCall != null && (p.buttons.contains('call') || p.buttons.contains('visit'));
+    final bool canMsg = widget.onMessage != null && p.buttons.contains('chat');
+    final bool canRename = widget.nicknames != null;
+    if (!canCall && !canMsg && !canRename) return;
+    final String name = _nameOf(p);
+    final String? action = await showModalBottomSheet<String>(
+      context: context, showDragHandle: true, isScrollControlled: true,
+      builder: (BuildContext ctx) => SafeArea(child: SingleChildScrollView(child: Padding(
+        key: const Key('personSheet'),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+          Center(child: CircleAvatar(radius: 42, child: Text(name.characters.first.toUpperCase(), style: const TextStyle(fontSize: 32)))),
+          _gap(AppSpacing.sm),
+          Text(name, key: const Key('personSheetName'), textAlign: TextAlign.center, style: Theme.of(ctx).textTheme.headlineSmall),
+          _gap(),
+          if (canCall) FilledButton.icon(
+            key: const Key('personCall'), style: _bigButton(ctx), onPressed: () => Navigator.of(ctx).pop('call'),
+            icon: const Icon(Icons.videocam_outlined), label: const Text('Call')),
+          if (canCall && canMsg) _gap(AppSpacing.sm),
+          if (canMsg) FilledButton.tonalIcon(
+            key: const Key('personMessage'), style: _bigButton(ctx), onPressed: () => Navigator.of(ctx).pop('message'),
+            icon: const Icon(Icons.chat_bubble_outline), label: const Text('Message')),
+          if (canRename) ...<Widget>[
+            _gap(AppSpacing.sm),
+            TextButton.icon(
+              key: const Key('personRename'), style: _bigButton(ctx), onPressed: () => Navigator.of(ctx).pop('rename'),
+              icon: const Icon(Icons.edit_outlined), label: const Text('Change what I call them')),
+          ],
+        ]),
+      ))),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'call') {
+      widget.onCall!(context, p.id, name);
+    } else if (action == 'message') {
+      widget.onMessage!(context, p.id, name);
+    } else if (action == 'rename') {
+      await _rename(p);
+    }
+  }
+
+  static ButtonStyle _bigButton(BuildContext c) =>
+      ButtonStyle(minimumSize: WidgetStatePropertyAll<Size>(Size.fromHeight(childTargetOf(c))));
+
+  Future<void> _rename(ChildPerson p) async {
+    final NicknamePick? picked = await showModalBottomSheet<NicknamePick>(
+      context: context, isScrollControlled: true, showDragHandle: true,
+      builder: (BuildContext ctx) => NicknameSheet(
+          shown: _nameOf(p), hasNickname: ContactLabels.cleanNickname(_nicks[p.id]) != null),
+    );
+    if (picked == null) return;
+    try {
+      await widget.nicknames!.set(p.id, picked.name);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That did not save. Try again.')));
+      return;
+    }
+    await _loadNicks();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -997,17 +1105,22 @@ class _MyPeopleState extends State<MyPeopleScreen> {
               ]),
               _gap(AppSpacing.sm),
               for (final ChildPerson person in p.people)
-                Padding(
+                InkWell(
                   key: Key('person_${person.id}'),
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                  child: Row(children: <Widget>[
-                    CircleAvatar(radius: 26, child: Text(person.name.characters.first.toUpperCase())),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(child: Text(person.name, style: Theme.of(context).textTheme.titleMedium)),
-                    for (final String b in person.buttons)
-                      Semantics(container: true, label: _buttonLabel(b, person.name), child: Padding(
-                          padding: const EdgeInsets.only(left: 8), child: ExcludeSemantics(child: Icon(_buttonIcon(b), size: 24)))),
-                  ])),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  onTap: () => _openSheet(person),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: childTargetOf(context)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                      child: Row(children: <Widget>[
+                        CircleAvatar(radius: 26, child: Text(_nameOf(person).characters.first.toUpperCase())),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(child: Text(_nameOf(person), key: Key('personName_${person.id}'), style: Theme.of(context).textTheme.titleMedium)),
+                        for (final String b in person.buttons)
+                          Semantics(container: true, label: _buttonLabel(b, _nameOf(person)), child: Padding(
+                              padding: const EdgeInsets.only(left: 8), child: ExcludeSemantics(child: Icon(_buttonIcon(b), size: 24)))),
+                      ])))),
             ])),
           ),
       ])),

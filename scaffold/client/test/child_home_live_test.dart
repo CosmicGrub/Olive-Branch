@@ -115,7 +115,7 @@ void main() {
         pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       // The unread signal is a dot (C-24: no number for a child): 2 delivered
       // and 1 already opened -> there IS something new, and no count is
       // ever painted at her. The opened-excluded count itself is
@@ -160,7 +160,7 @@ void main() {
         httpClient: mock, wearSync: fakeWear, pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(find.text('5'), findsOneWidget);
       expect(find.textContaining('sleeps until'), findsOneWidget);
       expect(fakeWear.calls, [5]);
@@ -229,7 +229,7 @@ void main() {
 
       await t.tap(find.byKey(const Key('childOfflineRetry')));
       await t.pumpAndSettle();
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
     });
 
     testWidgets(
@@ -269,7 +269,7 @@ void main() {
         pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(fakeWear.calls, isEmpty);
     });
   });
@@ -312,7 +312,7 @@ void main() {
         pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(find.text('Dad is free right now'), findsOneWidget);
       expect(find.textContaining('9:00 PM her time'), findsOneWidget);
       expect(find.textContaining("6:42 PM"), findsOneWidget);
@@ -329,7 +329,7 @@ void main() {
         pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(find.textContaining('is free right now'), findsNothing);
     });
 
@@ -345,7 +345,7 @@ void main() {
         pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(find.text("Couldn't reach the server"), findsNothing);
       expect(find.textContaining('is free right now'), findsNothing);
     });
@@ -406,7 +406,7 @@ void main() {
         ),
       ));
       await t.pumpAndSettle();
-      expect(find.text('Hi Ruth'), findsOneWidget);
+      expect(find.text('Hi, Ruth'), findsOneWidget);
 
       // Simulates exactly what LiveChildHomeScreen receives once
       // WearSyncBridge.kt's real Kotlin -> Dart invokeMethod() call has
@@ -441,13 +441,13 @@ void main() {
         httpClient: readyMock(), wearSync: fakeWear,
         pushChannel: _FakePushChannel())));
       await t.pumpAndSettle();
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
 
       fakeWear.capturedCallDadHandler!();
       await t.pumpAndSettle();
 
       expect(find.byType(CallScreen), findsNothing);
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
     });
   });
 
@@ -482,7 +482,7 @@ void main() {
         httpClient: readyMock(), pushChannel: fakePush)));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(fakePush.calls, ['initialize']);
     });
 
@@ -512,7 +512,7 @@ void main() {
         baseUrl: 'http://api.test', childId: 'child-a', httpClient: readyMock())));
       await t.pumpAndSettle();
 
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(find.text("Couldn't reach the server"), findsNothing);
     });
   });

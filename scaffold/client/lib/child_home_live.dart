@@ -84,6 +84,8 @@ import 'call_knock_screen.dart' show buildCallIncomingHandler;
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
+import 'child_home_bands_ui.dart' show LocalMidnightWatch;
+import 'child_home_growth.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'family_structure_store.dart';
 import 'access_settings.dart' show kChildTarget, sharedAccess;
@@ -106,6 +108,8 @@ class LiveChildHomeScreen extends StatefulWidget {
     this.pushChannel,
     this.navigatorKey,
     this.familyService,
+    this.clock,
+    this.growthRepository,
   });
 
   final String baseUrl;
@@ -137,6 +141,12 @@ class LiveChildHomeScreen extends StatefulWidget {
   /// and released on THIS device. Null = the shared in-process [localFamilyService]. Nothing here
   /// touches the network; syncing between devices comes later.
   final FamilyService? familyService;
+
+  /// Her local clock (null = the device clock). Drives the local-midnight birthday tick; tests inject it.
+  final DateTime Function()? clock;
+
+  /// Where 'your home grows' is kept. Null = this device's own store for this child.
+  final GrowthRepository? growthRepository;
 
   @override
   State<LiveChildHomeScreen> createState() => _LiveChildHomeScreenState();
@@ -187,6 +197,47 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // Her derived home (age band, My people, birthday line) from the local family structure.
   // Null (never loaded, or the local read failed) renders the home exactly as before.
   FamilyChildSnapshot? _family;
+  // Wave 2a: 'your home grows' after a birthday, and the local-midnight age. Nothing here asks a server.
+  late final ChildGrowth _growth = ChildGrowth(repository: widget.growthRepository ?? _defaultGrowthRepo());
+  DateTime? _ageDay; // the local day _childAge was last known to be right for
+  int? _ageFloor; // an age this device moved to at midnight today; a stale server answer never lowers it
+
+  GrowthRepository _defaultGrowthRepo() {
+    try {
+      return LocalGrowthRepository(LocalServices.current.area('homegrowth', ownerId: widget.childId));
+    } catch (_) {
+      return MemoryGrowthRepository();
+    }
+  }
+
+  DateTime _now() => (widget.clock ?? DateTime.now)();
+
+  /// At every local midnight: if it is her birthday, she is a year older. The new age re-derives her home on this
+  /// device (the band can change), and the growth page is readied if the age crossed a key.
+  Future<void> _onMidnight(DateTime now) async {
+    final String? md = _family?.birthday?.monthDay;
+    final DateTime last = _ageDay ?? now.subtract(const Duration(days: 1));
+    _ageDay = now;
+    if (md == null) return;
+    final int month = int.parse(md.substring(0, 2)), day = int.parse(md.substring(3));
+    final int next = ageAtLocalDay(age: _childAge, month: month, day: day, lastDay: last, today: now);
+    if (next == _childAge) return;
+    FamilyChildSnapshot? family;
+    try {
+      family = await (widget.familyService ?? localFamilyService).childSnapshot(
+          FamilyPrincipal(roleName: 'child', childId: widget.childId), childId: widget.childId, yearsOld: next);
+    } catch (e) {
+      debugPrint('[olive.family] not re-derived at midnight: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _childAge = next;
+      _ageFloor = next;
+      _family = family ?? _family;
+    });
+    sharedAccess.setAge(next);
+    await _growth.observe(next);
+  }
   // Through the shared read-aloud controller, so this screen's readings obey the
   // same rules as every tile's: tap-started only, one at a time, ended by a route change.
   Future<void> _speak(String text) async {
@@ -269,7 +320,14 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         // server/routes.mjs's own query, `state IN ('delivered','opened')`),
         // so counting the raw list length double-counted every message
         // she had already watched as still unread. See file header.
-        _childAge = (me['yearsOld'] as num?)?.toInt() ?? _failClosedAge;
+        final int served = (me['yearsOld'] as num?)?.toInt() ?? _failClosedAge;
+        final DateTime today = _now();
+        // A birthday this device already applied today is not undone by an answer that was computed before it.
+        _childAge = (_ageFloor != null && _ageDay != null && _ageDay!.year == today.year && _ageDay!.month == today.month &&
+                _ageDay!.day == today.day && _ageFloor! > served)
+            ? _ageFloor!
+            : served;
+        _ageDay = today;
         sharedAccess.setAge(_childAge);
         _dayParts = _decodeDayParts(now['dayParts']);
         _unreadCount = messages.where(
@@ -291,6 +349,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         _family = family;
         _state = _LoadState.ready;
       });
+      unawaited(_growth.observe(_childAge));
       // Offline-first: remember what a no-signal start-up needs (her name, her
       // age, the grown-up's hide/pace choices) so the next one is never blank.
       unawaited(_rememberProfile(
@@ -489,7 +548,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         // count are real..." was a build-time note aimed at the developer, shown
         // to the child on every launch).
         return Scaffold(body: SafeArea(child: Column(children: [
-          Expanded(child: ChildHome(
+          Expanded(child: LocalMidnightWatch(clock: widget.clock, onMidnight: (DateTime n) => unawaited(_onMidnight(n)), child: ChildHome(
             childName: _childName,
             presence: _presence, // real, from GET .../presence
             sleepsUntilHandover: _sleepsUntilHandover, // still null -- see header and _load()
@@ -507,7 +566,9 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             guardianName: _presence?.name,
             family: _family,
             speak: _speak,
-          )),
+            growth: _growth,
+            clock: widget.clock,
+          ))),
         ])));
     }
   }

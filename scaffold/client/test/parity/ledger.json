@@ -1,19 +1,19 @@
 {
  "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
  "totals": {
-  "implemented": 58,
-  "pending": 132,
-  "differs": 9
+  "implemented": 59,
+  "pending": 130,
+  "differs": 10
  },
  "groups": {
   "birthday": {
-   "implemented": 3,
-   "pending": 2,
-   "differs": 0,
+   "implemented": 4,
+   "pending": 0,
+   "differs": 1,
    "steps": {
     "implemented": 1,
-    "pending": 1,
-    "differs": 0
+    "pending": 0,
+    "differs": 1
    }
   },
   "call": {
@@ -115,23 +115,22 @@
    "group": "birthday",
    "kind": "assert",
    "label": "band = t1317",
-   "status": "pending",
+   "status": "differs",
    "rows": [
     "action:ob.kid.pickAge / askLock / lockAge",
     "sub:age bands bandOf"
    ],
-   "note": "the band does not follow the birthday because the age does not (see child.age)"
+   "note": "same boundary (13) but the band id is t13, and the 18+ handover band is an open owner decision"
   },
   "birthday.02#e:child.age": {
    "group": "birthday",
    "kind": "assert",
    "label": "child.age = 13",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "action:ob.kid.pickAge / askLock / lockAge",
     "sub:age bands bandOf"
-   ],
-   "note": "Flutter does not move the age on her birthday (matrix: sub:birthday auto-increments age at local midnight)"
+   ]
   },
   "call.01#a0": {
    "group": "call",

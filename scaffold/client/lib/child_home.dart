@@ -51,14 +51,21 @@
 // migration onto it is a pure rename plus move — no behavior change,
 // proven by this file's full existing test suite passing with zero
 // test-file edits.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'access_scope.dart';
 import 'activity_overrides.dart';
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
+import 'child_home_bands.dart';
+import 'child_home_bands_ui.dart';
+import 'child_home_growth.dart';
 import 'child_more.dart';
 import 'colouring_screen.dart';
+import 'contact_labels.dart';
+import 'doodle_desk.dart';
 import 'cover_collapse.dart';
 import 'family_structure_screens.dart';
 import 'family_structure_store.dart';
@@ -68,23 +75,32 @@ import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, asSubject;
 import 'game_navigation.dart';
 import 'game_picker.dart';
 import 'games_hub.dart';
+import 'growing_care_logic.dart';
+import 'growing_care_store.dart';
+import 'growing_screens.dart';
+import 'her_colour_home.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
 import 'jokebook_screen.dart';
+import 'journal_screen.dart';
+import 'letters_screen.dart';
 import 'live_game_picker.dart';
+import 'local_services.dart';
+import 'maturation_ladder.dart';
 import 'my_day.dart';
 import 'play_window_gate.dart';
 import 'showcase_screen.dart';
 import 'storyteller_screen.dart';
 import 'tiered_tile.dart';
 import 'wants_needs.dart';
+import 'weeks_screen.dart';
 
 class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
     required this.sleepsUntilHandover, required this.unreadCount,
     this.baseUrl, this.childId, this.sessionToken, this.httpClient,
     this.childAge = 7, this.overrides, this.dayParts, this.guardianName,
-    this.family, this.speak});
+    this.family, this.speak, this.growth, this.clock, this.nicknames});
 
   final String childName;
   final ParentPresence? presence;
@@ -143,11 +159,232 @@ class ChildHome extends StatelessWidget {
   final FamilyChildSnapshot? family;
   /// Read-aloud for the youngest band's icon-only home. Null = no spoken names.
   final Future<void> Function(String)? speak;
+
+  /// Wave 2a: the 'your home grows' state (birthday growth page and the Later card). Null = never shown.
+  final ChildGrowth? growth;
+
+  /// Her local clock for greetings (null = the device clock). Injected by tests and the parity replay.
+  final DateTime Function()? clock;
+
+  /// Hers (the only writer of what she calls her grown-ups). Null = this device's own store.
+  final NicknameRepository? nicknames;
   bool _fam(String tile) => family == null || family!.view.hasTile(tile);
   String get _greeting => family?.view.plainGreeting == true ? 'Hey $childName' : 'Hi $childName';
 
+  /// ONE door onto every real choice she has — the age-gated Play Together grid AND the rest of the catalogue
+  /// (checkers, chess, battleship, word search…), see game_navigation.dart's header for why onPlay is one shared
+  /// function. Used by the plain home's Play together tile and by the band homes' Play / Games / Downtime tile.
+  Widget _playScreen(BuildContext context) {
+    final gameSections = [
+      MoreGamesSections(childName: childName, parentName: _grownUpIn(context),
+        childAge: childAge, overrides: overrides),
+      JokebookSection(childName: childName, parentName: _grownUpIn(context),
+        childAge: childAge, overrides: overrides),
+    ];
+    final onPlay = buildGameNavigator(childName, parentName: _grownUpIn(context));
+    // Intuitivism pass, sub-project 3a (docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended-design.md)
+    // — her own Recommended row/Surprise-me button need a real session (baseUrl/childId/sessionToken, exactly the
+    // same trio InboxScreen's own call site also threads through); without one, this renders exactly as it always
+    // has. NEVER onToggleFavorite here — she sees the result of a favorite, never the mechanism.
+    if (baseUrl != null && childId != null && sessionToken != null) {
+      return PlayWindowGate(child: LiveGamePickerScreen(
+        baseUrl: baseUrl!, childId: childId!, sessionToken: sessionToken!,
+        childName: childName, childAge: childAge, httpClient: httpClient,
+        onPlay: onPlay, extraSections: gameSections, overrides: overrides,
+      ));
+    }
+    return PlayWindowGate(child: GamePickerScreen(
+      childName: childName, childAge: childAge, onPlay: onPlay,
+      extraSections: gameSections, overrides: overrides,
+    ));
+  }
+
+  // ===================================================== wave 2a: the per-age homes ==
+  /// The band whose home is drawn from the table (child_home_bands.dart), or null for every other case. Only with
+  /// a family snapshot (a guardian built and released this home); with none the plain home above is what she gets.
+  String? get _bandHomeBand {
+    final FamilyChildSnapshot? f = family;
+    if (f == null) return null;
+    return kBandsDrawnHere.contains(f.view.band) ? f.view.band : null;
+  }
+
+  /// Tile ids a guardian hid with a switch (Messages is never one of them).
+  Set<String> get _hiddenIds => <String>{
+        for (final MapEntry<String, String> e in kTileOverrideKey.entries)
+          if (!isTileVisible(overrides, e.value) && tileHideable(e.key)) e.key,
+      };
+
+  NicknameRepository _nicknameRepo() {
+    final NicknameRepository? given = nicknames;
+    if (given != null) return given;
+    try {
+      return LocalNicknameRepository(LocalServices.current.area('nicknames'));
+    } catch (_) {
+      return MemoryNicknameRepository();
+    }
+  }
+
+  Widget _inbox() => InboxScreen(
+        childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
+        baseUrl: baseUrl, childId: childId, sessionToken: sessionToken, httpClient: httpClient);
+
+  /// Where each band-home tile goes. Null = no destination (the tile is not drawn anywhere).
+  Widget? _bandDestination(BuildContext context, String id, FamilyChildSnapshot f, String band) {
+    switch (id) {
+      case 'day':
+        return MyDayScreen(
+            childName: childName,
+            parts: dayParts ?? (baseUrl == null ? demoDayParts : const <DayPartLite>[]),
+            nowLocal: hhmmNow());
+      case 'play':
+        return _playScreen(context);
+      case 'msgs':
+        return _inbox();
+      case 'stories':
+      case 'storyteller':
+        return StorytellerScreen(childName: childName);
+      case 'showtell':
+        return ShowcaseScreen(childName: childName);
+      case 'people':
+        final GrownupLabels labels = GrownupLabelScope.read(context);
+        return MyPeopleScreen(
+          snapshot: f, childName: childName, nicknames: _nicknameRepo(),
+          age: labels.age.age == null ? AgeLockState(age: childAge) : labels.age,
+          onCall: (BuildContext c, String personId, String name) => Navigator.of(c).push(MaterialPageRoute<void>(
+              builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
+          onMessage: (BuildContext c, String personId, String name) =>
+              Navigator.of(c).push(MaterialPageRoute<void>(builder: (_) => _inbox())),
+        );
+      case 'colour':
+        return HerColourScreen(childName: childName, childAge: childAge);
+      case 'more':
+        return _bandMore(context, f, band);
+      case 'list':
+        return const WantsNeedsScreen();
+      case 'weeks':
+        final List<String> names = GrownupLabelScope.read(context).twoNames();
+        return WeeksScreen(
+            childName: childName, nights: demoCustodyNights(names: names), guardianColors: demoGuardianColorsFor(names));
+      case 'journal':
+        return JournalScreen(childName: childName);
+      case 'memory':
+        return MemoryBoxScreen(childName: childName);
+      case 'capsule':
+        return LettersScreen(
+            childName: childName, currentAge: childAge, childId: childId ?? 'demo-child',
+            baseUrl: baseUrl, sessionToken: sessionToken, httpClient: httpClient);
+      case 'growth':
+        return GrowthPictureScreen(childName: childName);
+      case 'jokes':
+        return JokebookScreen(
+            childName: childName, childAge: childAge, parentName: _grownUpIn(context), overrides: overrides);
+      case 'draw':
+        return DrawChoiceScreen(
+            title: bandTileTitle('draw', band), doodle: DoodleDesk(childName: childName), colouring: const ColouringScreen());
+      case 'birthday':
+        final ChildBirthday? b = f.birthday;
+        return b == null ? null : BirthdayScreen(birthday: b);
+      case 'ladder':
+        return MaturationLadderScreen(childName: childName, childAgeYears: childAge, viewer: LadderViewer.child);
+    }
+    return null;
+  }
+
+  Future<Set<String>> _suiteHidden() async {
+    try {
+      final GrowingCareStores s = GrowingCareStores.forChild();
+      final ChildSuites suites =
+          childSuitesFor(view: family?.view, yearsOld: childAge, switches: await s.switches.load());
+      final bool marks = suites.pencilMarks && (await s.childLens().growth()).isNotEmpty;
+      return <String>{if (!suites.memoryBox) 'memory', if (!marks) 'growth'};
+    } catch (_) {
+      return <String>{'memory', 'growth'}; // fail closed: an unreadable store shows neither
+    }
+  }
+
+  Widget _bandMore(BuildContext context, FamilyChildSnapshot f, String band) => ChildBandMoreScreen(
+        band: band, age: childAge, hasBirthday: f.birthday != null, hidden: _hiddenIds,
+        loadHidden: _suiteHidden,
+        destination: (BuildContext c, String id) => _bandDestination(c, id, f, band),
+        speak: null,
+        extras: <BandMoreExtra>[
+          // The prototype's 8-12 home has no My day tile (it has the weeks strip), but My day shipped and carries her
+          // real day parts: it stays one tap away, here.
+          if (band == 't812' && _fam('myDay'))
+            BandMoreExtra(
+              key: 'moreMyDay', icon: Icons.wb_sunny_outlined, label: 'My day',
+              build: (BuildContext c) => _bandDestination(c, 'day', f, band)!),
+          if (isTileVisible(overrides, 'tile:homework') && _fam('homework'))
+            BandMoreExtra(
+              key: 'moreHomework', icon: Icons.edit, label: 'Homework',
+              build: (BuildContext c) => HomeworkScreen(childName: childName,
+                  baseUrl: baseUrl, childId: childId, sessionToken: sessionToken, httpClient: httpClient)),
+          BandMoreExtra(
+            key: 'moreEverything', icon: Icons.apps_outlined, label: 'Everything else',
+            build: (BuildContext c) => ChildMoreScreen(childName: childName,
+                baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
+                httpClient: httpClient, childAge: childAge, overrides: overrides,
+                guardianName: _grownUpIn(c), family: family, speak: speak)),
+        ],
+      );
+
+  Widget _bandHome(BuildContext context, FamilyChildSnapshot f, String band) {
+    final ChildGrowth? gr = growth;
+    return BandHome(
+      band: band, age: childAge, childName: childName,
+      tileIds: visibleHomeIds(band, childAge, viewTiles: f.view.tiles, hidden: _hiddenIds),
+      destination: (BuildContext x, String id) => _bandDestination(x, id, f, band),
+      unreadDot: unreadCount > 0, clock: clock,
+      presence: presence == null ? null : _PresenceCard(presence!, childName: childName),
+      footer: sleepsUntilHandover == null ? null : _Sleeps(sleepsUntilHandover!),
+      birthdayLine: (f.birthday?.lineShown ?? false) ? birthdayLine(f.birthday!) : null,
+      onBirthday: f.birthday == null ? null : () => unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => BirthdayScreen(birthday: f.birthday!)))),
+      onGrewTap: gr != null && gr.laterCard ? () => unawaited(gr.reopen()) : null,
+    );
+  }
+
+  /// The quiet 'Your home grew' row on a home that is not drawn from the table (13 and up, until wave 2b).
+  Widget? _grewRow() {
+    final ChildGrowth? gr = growth;
+    if (gr == null || !gr.laterCard) return null;
+    return Padding(padding: const EdgeInsets.only(bottom: 10), child: GrewCard(onTap: () => unawaited(gr.reopen())));
+  }
+
+  Widget _growPage(BuildContext context, FamilyChildSnapshot f, String band, ChildGrowth g, GrowthMark m) {
+    final GrowPage page = kGrowPages[m.key]!;
+    final String? tileId = kGrowDestTile[page.dest];
+    final bool exists = tileId != null && kTilesWithDestination.contains(tileId) && _bandDestination(context, tileId, f, band) != null;
+    final GrownupLabels labels = GrownupLabelScope.read(context);
+    return ChildGrowScreen(
+      page: page, destinationExists: exists, speak: speak,
+      fromName: labels.hasPrimary ? labels.nameFor() : null,
+      onLater: () => unawaited(g.markLater()),
+      onShow: () async {
+        await g.markSeen();
+        if (!context.mounted || !exists) return;
+        final Widget? to = _bandDestination(context, tileId, f, band);
+        if (to != null) unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => to)));
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final FamilyChildSnapshot? f = family;
+    final ChildGrowth? g = growth;
+    // Wave 2a, render order (prototype renderHome): the 'your home grows' page, when it is ready, comes before
+    // any band's home, and a home with none ready is drawn as it always was.
+    if (f != null && g != null) {
+      return ListenableBuilder(listenable: g, builder: (BuildContext c, Widget? _) {
+        final GrowthMark? m = g.pageReady;
+        return m != null ? _growPage(c, f, protoBand(f.view.band), g, m) : _home(c);
+      });
+    }
+    return _home(context);
+  }
+
+  Widget _home(BuildContext context) {
     final FamilyChildSnapshot? f = family;
     if (f != null && f.view.homeVariant == 'icons3') {
       return AgeHome34(
@@ -160,6 +397,8 @@ class ChildHome extends StatelessWidget {
             builder: (_) => const ColouringScreen())),
       );
     }
+    final String? band = _bandHomeBand;
+    if (band != null) return _bandHome(context, f!, band);
     return _standard(context);
   }
 
@@ -237,6 +476,7 @@ class ChildHome extends StatelessWidget {
         const SizedBox(height: 12),
         if (presence != null) _PresenceCard(presence!, childName: childName),
         const SizedBox(height: 12),
+        ?_grewRow(),
 
         // ================================================== Hero — My day
         // Not inside any GridView — a plain full-width band, always
@@ -267,35 +507,7 @@ class ChildHome extends StatelessWidget {
             // uses the exact same one).
             if (_fam('play')) TieredTile(icon: Icons.extension, label: 'Play together', featured: true,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) {
-                  final gameSections = [
-                    MoreGamesSections(childName: childName, parentName: _grownUpIn(context),
-                      childAge: childAge, overrides: overrides),
-                    JokebookSection(childName: childName, parentName: _grownUpIn(context),
-                      childAge: childAge, overrides: overrides),
-                  ];
-                  final onPlay = buildGameNavigator(childName, parentName: _grownUpIn(context));
-                  // Intuitivism pass, sub-project 3a (docs/superpowers/specs/
-                  // 2026-09-12-intuitivism-gamepicker-recommended-design.md)
-                  // — her own Recommended row/Surprise-me button need a real
-                  // session (baseUrl/childId/sessionToken, exactly the same
-                  // trio InboxScreen's own call site above already threads
-                  // through); without one, this renders exactly as it always
-                  // has. NEVER onToggleFavorite here — she sees the result
-                  // of a favorite, never the mechanism (the design spec's
-                  // own "Where favoriting happens").
-                  if (baseUrl != null && childId != null && sessionToken != null) {
-                    return PlayWindowGate(child: LiveGamePickerScreen(
-                      baseUrl: baseUrl!, childId: childId!, sessionToken: sessionToken!,
-                      childName: childName, childAge: childAge, httpClient: httpClient,
-                      onPlay: onPlay, extraSections: gameSections, overrides: overrides,
-                    ));
-                  }
-                  return PlayWindowGate(child: GamePickerScreen(
-                    childName: childName, childAge: childAge, onPlay: onPlay,
-                    extraSections: gameSections, overrides: overrides,
-                  ));
-                }))),
+                builder: (_) => _playScreen(context)))),
             if (isTileVisible(overrides, 'tile:messages') && _fam('messages'))
               TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,
                 unreadDot: unreadCount > 0,
@@ -386,6 +598,7 @@ class ChildHome extends StatelessWidget {
         const SizedBox(height: 12),
         if (presence != null) _PresenceCard(presence!, childName: childName),
         const SizedBox(height: 12),
+        ?_grewRow(),
         heroTile,
         const SizedBox(height: 10),
         // Standard tier's own un-scaled height (84), not Hero's — this

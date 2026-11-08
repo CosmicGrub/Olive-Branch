@@ -389,7 +389,8 @@ void main() {
       await seed(s);
       await t.pumpWidget(wrap(ChildHome(childName: 'Ivy', presence: null, sleepsUntilHandover: null, unreadCount: 0, family: await kid(s))));
       await t.pumpAndSettle();
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      // Wave 2a: the 5-7 home is drawn from the prototype's table ('Hi, Ivy' with a greeting above it).
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(find.text('Play together'), findsOneWidget);
       expect(find.byKey(const Key('childHomeMyPeople')), findsOneWidget);
       await t.tap(find.byKey(const Key('childHomeMyPeople')));
@@ -404,18 +405,19 @@ void main() {
       await t.pumpWidget(wrap(ChildHome(childName: 'Ivy', presence: null, sleepsUntilHandover: null, unreadCount: 0, family: await kid(s))));
       await t.pumpAndSettle();
       expect(find.byKey(const Key('childHomeMyPeople')), findsNothing);
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
     });
 
-    testWidgets('8-12: a plain greeting', (WidgetTester t) async {
+    testWidgets('8-12: a plain greeting (good-part-of-day line, no Hi)', (WidgetTester t) async {
       await t.binding.setSurfaceSize(const Size(673, 1600));
       addTearDown(() => t.binding.setSurfaceSize(null));
       final FamilyService s = svc();
       await seed(s, years: 9);
-      await t.pumpWidget(wrap(ChildHome(childName: 'Ivy', presence: null, sleepsUntilHandover: null, unreadCount: 0, family: await kid(s, years: 9))));
+      await t.pumpWidget(wrap(ChildHome(childName: 'Ivy', presence: null, sleepsUntilHandover: null, unreadCount: 0,
+          clock: () => DateTime(2026, 11, 9, 9), family: await kid(s, years: 9))));
       await t.pumpAndSettle();
-      expect(find.text('Hey Ivy'), findsOneWidget);
-      expect(find.text('Hi Ivy'), findsNothing);
+      expect(find.text('Good morning, Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsNothing);
     });
 
     testWidgets('a guardian holding games at the youngest level removes Play together on her real home', (WidgetTester t) async {

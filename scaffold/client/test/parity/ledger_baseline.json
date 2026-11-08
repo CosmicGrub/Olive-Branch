@@ -1,16 +1,16 @@
 {
- "note": "The parity ratchet. A unit that is implemented here may never regress; pending and differs counts may never rise. When progress lowers them, regenerate with PARITY_UPDATE_BASELINE=1 flutter test test/parity/ledger_ratchet_test.dart and commit.",
+ "note": "The parity ratchet. A unit that is implemented here may never regress; pending and differs counts may never rise. When progress lowers them, regenerate with PARITY_UPDATE_BASELINE=1 flutter test test/parity/scenario_parity_test.dart and commit.",
  "totals": {
-  "implemented": 57,
-  "pending": 132,
+  "implemented": 59,
+  "pending": 130,
   "differs": 10
  },
  "units": {
   "birthday.01#a0": "implemented",
   "birthday.01#e:child.age": "implemented",
   "birthday.02#a0": "implemented",
-  "birthday.02#e:band": "pending",
-  "birthday.02#e:child.age": "pending",
+  "birthday.02#e:band": "differs",
+  "birthday.02#e:child.age": "implemented",
   "call.01#a0": "pending",
   "call.01#e:call.state": "pending",
   "call.01#e:screen.g": "pending",
@@ -188,7 +188,7 @@
   "rules#ageLock.pickerRange": "differs",
   "rules#bands.boundaries": "differs",
   "rules#calls.onlyGuardiansRingOnlyChildKnocks": "pending",
-  "rules#controls.messagesNotHideable": "differs",
+  "rules#controls.messagesNotHideable": "implemented",
   "rules#deletion.recoveryWindow": "pending",
   "rules#emergencyCard.staleVersion": "implemented",
   "rules#expiry.fourteenDays": "implemented",

@@ -112,7 +112,7 @@ void main() {
           baseUrl: 'http://api.test', childId: 'child-9', httpClient: client,
           pushChannel: _NoPush())));
       await t.pumpAndSettle();
-      expect(find.text('Hi Ivy'), findsOneWidget);
+      expect(find.text('Hi, Ivy'), findsOneWidget);
       expect(hits.where((h) => h.endsWith('/v1/auth/dev-login')), isEmpty);
       expect(hits.where((h) => h.endsWith('/v1/auth/session/refresh')), hasLength(1));
     });

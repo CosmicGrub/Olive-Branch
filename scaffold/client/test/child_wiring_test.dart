@@ -92,11 +92,33 @@ Future<void> pumpLive(WidgetTester t, MockClient server) async {
   await t.pumpAndSettle();
 }
 
+/// The band homes (wave 2a) put the older More for you hub behind More > Everything else.
+Future<void> openMoreForYou(WidgetTester t) async {
+  if (find.byKey(const Key('bandTile.more')).evaluate().isEmpty) {
+    await openMoreForYou(t); // the plain home (no family structure) still has its own tile
+    return;
+  }
+  await t.tap(find.byKey(const Key('bandTile.more')));
+  await t.pumpAndSettle();
+  await t.tap(find.byKey(const Key('moreEverything')));
+}
+
+/// My day: the 5-7 hero, or (8-12, where the home has the weeks strip instead) More > My day.
+Future<void> openMyDay(WidgetTester t) async {
+  if (find.byKey(const Key('childHomeHero')).evaluate().isNotEmpty) {
+    await t.tap(find.byKey(const Key('childHomeHero')));
+    return;
+  }
+  await t.tap(find.byKey(const Key('bandTile.more')));
+  await t.pumpAndSettle();
+  await t.tap(find.byKey(const Key('moreMyDay')));
+}
+
 void main() {
   group('C-05 — the age gate is real: the live child home passes her real age', () {
     testWidgets('a 5-year-old live session never sees the ladder tiles in More for you', (t) async {
       await pumpLive(t, liveServer(yearsOld: 5));
-      await t.tap(find.text('More for you'));
+      await openMoreForYou(t);
       await t.pumpAndSettle();
       expect(find.text('My journal'), findsOneWidget);
       expect(find.text('Growing up'), findsNothing);
@@ -107,7 +129,7 @@ void main() {
 
     testWidgets('an 11-year-old live session does see them', (t) async {
       await pumpLive(t, liveServer(yearsOld: 11));
-      await t.tap(find.text('More for you'));
+      await openMoreForYou(t);
       await t.pumpAndSettle();
       expect(find.text('Growing up'), findsOneWidget);
       expect(find.text('The quiet corner'), findsOneWidget);
@@ -125,14 +147,14 @@ void main() {
 
     testWidgets('a missing yearsOld fails CLOSED to the youngest catalogue, never open', (t) async {
       await pumpLive(t, liveServer(yearsOld: null));
-      await t.tap(find.text('More for you'));
+      await openMoreForYou(t);
       await t.pumpAndSettle();
       expect(find.text('Growing up'), findsNothing);
     });
 
     testWidgets('a live older child sees chess in the picker', (t) async {
       await pumpLive(t, liveServer(yearsOld: 11));
-      await t.tap(find.text('Play together'));
+      await t.tap(find.text('Games'));
       await t.pumpAndSettle();
       expect(find.text('Chess'), findsOneWidget);
     });
@@ -146,7 +168,7 @@ void main() {
         {'kind': 'school', 'startsLocal': '08:15', 'endsLocal': '15:10', 'reachable': false},
         {'kind': 'dinner', 'startsLocal': '17:30', 'endsLocal': '18:30', 'reachable': true},
       ]));
-      await t.tap(find.byKey(const Key('childHomeHero')));
+      await openMyDay(t);
       await t.pumpAndSettle();
       expect(myDay(t).parts.map((p) => p.kind).toList(), ['school', 'dinner']);
       expect(myDay(t).parts.first.startsLocal, '08:15');
@@ -155,14 +177,14 @@ void main() {
 
     testWidgets('live with no schedule: an honest empty day, never invented hours', (t) async {
       await pumpLive(t, liveServer(dayParts: <Map<String, dynamic>>[]));
-      await t.tap(find.byKey(const Key('childHomeHero')));
+      await openMyDay(t);
       await t.pumpAndSettle();
       expect(myDay(t).parts, isEmpty);
     });
 
     testWidgets('live with a server that predates dayParts: still empty, never the demo', (t) async {
       await pumpLive(t, liveServer());
-      await t.tap(find.byKey(const Key('childHomeHero')));
+      await openMyDay(t);
       await t.pumpAndSettle();
       expect(myDay(t).parts, isEmpty);
     });
@@ -172,7 +194,7 @@ void main() {
       addTearDown(() => t.binding.setSurfaceSize(null));
       await t.pumpWidget(wrap(const ChildHome(
         childName: 'Ivy', presence: null, sleepsUntilHandover: null, unreadCount: 0)));
-      await t.tap(find.byKey(const Key('childHomeHero')));
+      await openMyDay(t);
       await t.pumpAndSettle();
       expect(myDay(t).parts.length, demoDayParts.length);
     });
@@ -230,7 +252,7 @@ void main() {
     testWidgets('the live home threads the real free parent through to More', (t) async {
       await pumpLive(t, liveServer(presenceFree: {
         'name': 'Marcus', 'theirLocalTime': '6:40 PM', 'freeUntilHerTime': '9:00 PM'}));
-      await t.tap(find.text('More for you'));
+      await openMoreForYou(t);
       await t.pumpAndSettle();
       expect(find.text('Teach Marcus something'), findsOneWidget);
     });
