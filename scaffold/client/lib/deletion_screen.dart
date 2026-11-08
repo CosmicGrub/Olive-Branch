@@ -66,6 +66,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'sha256.dart';
 
 /// Same convention as main_live.dart's own `_defaultBaseUrl` — the Android
@@ -206,7 +207,7 @@ class _DeletionScreenState extends State<DeletionScreen> {
   Future<void> _confirm(BuildContext context) async {
     setState(() => _deleting = true);
     final OliveApi api =
-        OliveApi(widget.baseUrl, widget.sessionToken, client: widget.httpClient);
+        OliveApi(widget.baseUrl, widget.sessionToken, client: widget.httpClient, session: AuthSession.current);
     try {
       final Map<String, dynamic> result = await api.deleteAccount();
       if (widget.httpClient == null) api.close();
@@ -248,9 +249,8 @@ class _DeletionScreenState extends State<DeletionScreen> {
     setState(() => _exporting = true);
     OliveApi? api;
     try {
-      final String token = await devLoginFor(widget.baseUrl,
+      api = await apiFor(widget.baseUrl,
           userId: widget.guardianUserId, client: widget.httpClient);
-      api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final Map<String, dynamic> result = await api.fetchRawExport(widget.childId);
 
       // `bundleJson` is the EXACT string the server hashed (see api_client

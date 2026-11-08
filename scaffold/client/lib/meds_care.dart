@@ -37,6 +37,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
@@ -185,9 +186,8 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
   Future<void> _load() async {
     setState(() => _loadState = _LoadState.loading);
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final results = await Future.wait([
         api.fetchMedications(widget.childId!),
         api.fetchEmergencyCard(widget.childId!),
@@ -270,9 +270,8 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
     // $atLocal" shape the demo path already renders (see this file's own
     // LIVE WIRING header).
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final Map<String, dynamic> row =
           await api.recordMedicationDose(widget.childId!, med.id, slot, status: status.name);
       if (widget.httpClient == null) api.close();

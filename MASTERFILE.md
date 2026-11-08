@@ -1500,7 +1500,9 @@ actually exists, real and RLS-backed against `db/migrations/0008_auth_credential
 POST   /v1/children/:childId/kiosk-pin/verify   child kiosk unlock — tries the
                                                  PIN against every LIVE guardian
                                                  of that child (server/routes.mjs)
-POST   /v1/me/pin                               guardian sets/replaces her own PIN
+POST   /v1/me/pin                               guardian sets her first PIN (no proof), or replaces it (needs `currentPin`) — §7.1c
+POST   /v1/auth/session/refresh                 paired device's credential -> a fresh 1 h session; no session required — §7.1c
+POST   /v1/auth/session/sign-out                a guardian's device revokes ITSELF — §7.1c
 POST   /v1/auth/webauthn/register/challenge     guardian passkey enrollment, step 1
 POST   /v1/auth/webauthn/register/verify        guardian passkey enrollment, step 2
 POST   /v1/auth/webauthn/login/challenge        guardian passkey sign-in, step 1 (server/index.mjs — pre-session, cannot go through api.register())
@@ -1599,6 +1601,102 @@ permanent, not a future decision: per **P7** (§2.1), that action must never
 be reading the child's journal — P7 names "guardian escalation" by name as a
 forbidden override, and no future route may make escalation the exception
 graduated privacy was built to have none of.
+
+### 7.1c The authenticated session — one real session for every live screen
+
+*Shipped in the change recorded under `[Unreleased]` in CHANGELOG.md (audit
+findings G-02, G-06, C-03, G-13, G-14). Migration `0038_paired_device_
+credential.sql`; client `client/lib/auth_session.dart`.*
+
+**What was wrong.** Production compose pins `DEV_LOGIN=0`, so the credential-
+free `POST /v1/auth/dev-login` 404s there — yet every guardian and child live
+screen (27 call sites) minted its token with it, on every load. A paired
+device's real session token (from `POST /v1/device-pairing/redeem`) was stored
+and then ignored by those screens; sessions last one hour
+(`SESSION_TTL_MS`) with no way to get another; "Sign out" cleared nothing; and
+`POST /v1/me/pin` let any holder of a guardian session overwrite the PIN every
+kiosk lock and pairing-code gate checks.
+
+**The model.**
+
+1. *A device credential.* `redeem` now also returns `deviceCredential` — 256
+   random bits, shown **once**; `paired_device.credential_hash` stores only its
+   SHA-256 (a fast hash is correct for a 256-bit secret; the 4–8 digit PIN is
+   what needs scrypt). The redeem body is `{sessionToken, expiresAt, deviceId,
+   deviceCredential, role, targetId}`. A device paired before migration 0038 has
+   a NULL hash: it keeps working until its last session lapses, then must
+   re-pair. It never matches anything (fail closed).
+2. *Refresh.* `POST /v1/auth/session/refresh {deviceId, deviceCredential}` — no
+   session required (the old one is probably expired). Identity comes from the
+   `paired_device` **row**, never from the body: a guardian device gets a
+   guardian session for `target_id`, a child device a child session for its
+   child, both carrying the same `deviceId` claim, so a revoke still cuts the
+   new session off on its very next request (`device_revoked`, §7.1 /
+   `api.ts` `handle()`). Outcomes: `200 {sessionToken, expiresAt, deviceId, role,
+   targetId}`; `400 device_credential_required`; `401 invalid_device_credential`
+   (unknown id, wrong credential, a credential belonging to a different device,
+   a session token presented as a credential, a pre-0038 device — all
+   deliberately indistinguishable, so the route is not a device-id oracle);
+   `401 device_revoked` (only to a caller who proved the credential);
+   `403 account_deactivated` (a deactivated guardian's device stops minting
+   sessions, same gate as dev-login and WebAuthn login). The credential is
+   long-lived and **not rotated on use**: rotation strands a household kiosk
+   whose response was lost in transit, a worse failure than the replay window it
+   closes. A stolen credential is cut off by revoking the device
+   (`POST .../paired-devices/:deviceId/revoke`, or sign-out below).
+3. *Sign-out.* `POST /v1/auth/session/sign-out` — needs a live guardian session
+   with a `deviceId` claim; revokes exactly that one device (idempotent, keeps
+   the original `revoked_at`). A session with no device claim (dev-login,
+   WebAuthn) gets `{ok: true, revoked: false}`. A child session gets 403: a
+   kiosk is revoked by a guardian, not by one tap on the kiosk.
+4. *PIN change needs proof (G-13).* `POST /v1/me/pin {pin}` with **no PIN set
+   yet** succeeds without proof (the required first-run gate) as one atomic
+   insert-if-absent; two racing first-PIN calls cannot both win (the loser gets
+   409 `current_pin_required`). With a PIN set, `{pin, currentPin}` is required
+   and checked through `attemptPinFor()` — the same 5-attempt / 15-minute
+   lockout as every other PIN check — so a borrowed unlocked phone cannot guess
+   the current PIN here. Errors: 403 `current_pin_required`, `pin_incorrect`,
+   `pin_locked`. A recent passkey assertion is **not** accepted as the proof:
+   no helper exists that binds a WebAuthn assertion to a later request, so PIN
+   is the only proof (a follow-up, not a silent gap).
+
+**Dev login stays where it was, and fails closed.** `POST /v1/auth/dev-login`
+works only with `DEV_LOGIN=1` (tests, the hardware dev flow). New: a server
+started with `DEV_LOGIN=1` **and** `NODE_ENV=production` refuses to boot, and
+`docker-compose.prod.yml` sets both `DEV_LOGIN: "0"` and `NODE_ENV: production`.
+On the client, `AuthSession.devLoginEnabled` defaults to **false**; it is turned
+on only by a build provisioned with the dev dart-defines (`OLIVE_CHILD_ID`,
+`OLIVE_GUARDIAN_ID`, or `OLIVE_DEV_LOGIN=1`), by the hardware dev entry points
+(`main_live_*_test.dart`), and by `test/flutter_test_config.dart`. With the flag
+off and no session installed, `apiFor()` throws `UnauthorizedException`
+(`not_signed_in`) without a network call, and `devLoginFor()` refuses
+(`dev_login_disabled`).
+
+**The client.** `AuthSession` (`auth_session.dart`) holds the token and its
+expiry (read from the token's own signed `exp`), refreshes it 60 s before it
+lapses, and shares one in-flight refresh between concurrent callers. The
+paired device's `{deviceId, deviceCredential}` live in `flutter_secure_storage`
+through `DeviceIdentityStore`. `OliveApi(…, session:)` asks the session for its
+current token on every request and retries a `401` **exactly once** after a
+refresh; a second `401` surfaces. Errors are typed: `401` ->
+`UnauthorizedException` (`DeviceRevokedException` for `device_revoked`), `403`
+-> `ForbiddenException`, both `ApiException`. A revoked/unknown device or a
+deactivated account ends the session — stored identity cleared, `onSignedOut`
+fired — and the live shells (`main_live.dart`, `main_live_guardian.dart`)
+respond by returning to the pairing screen. Sign-out (`guardian_more.dart`)
+unregisters push, revokes the device server-side, clears secure storage, and
+returns to pairing; if the server is unreachable it still signs out locally and
+the device stays authorized server-side until a guardian revokes it from another
+device. The child home no longer shows `401: expired`-style strings: a failed
+load reads "Something went wrong. Please try again." or "This device needs to
+sign in again." (`ApiException.userMessage`). Changing a PIN from the guardian
+setup screen collects the current PIN first.
+
+**Not in this change (open, deliberately).** Guardian *sign-in* on a fresh
+device still begins at pairing (a guardian pairs with a code from another
+device); a passkey-based sign-in that mints a device credential is not built.
+`LiveChildHomeScreen`'s "Live: name and message count are real" banner, and
+the networked-checkers lobby's own dev login, are untouched.
 
 ### 7.2 Time engine
 
@@ -1885,7 +1983,7 @@ automatic is stated, command by command, in `scaffold/docs/backup-and-restore.md
 Not built: a restore drill on a schedule, and any default off-host destination —
 no credential is invented.
 
-**Schema and tooling (P-17, P-18, P-19).** Migration `0037_fk_indexes.sql`
+**Schema and tooling (P-17, P-18, P-19).** Migration `0038_fk_indexes.sql`
 indexes `guardianship(user_id)`, `call_log(child_id)`,
 `medication_dose(child_id)`, `media_artifact(author_id)`,
 `intent_batch(child_id)`, `export_record(child_id)` and

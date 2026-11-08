@@ -37,6 +37,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'homework_quality_gate.dart';
 import 'retake_screen.dart';
 
@@ -181,7 +182,7 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
         return;
       }
       final OliveApi api =
-          OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+          OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
       Map<String, dynamic> result;
       try {
         result = await api.captureHomework(widget.childId!, bytes);

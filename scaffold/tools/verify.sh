@@ -69,6 +69,7 @@ for spec in \
   "route contract: game favorites|server/test/game_favorites_route.test.mjs" \
   "route contract: child profile|server/test/child_profile_route.test.mjs" \
   "route contract: device pairing & provisioning|server/test/device_pairing_route_test.mjs" \
+  "route contract: auth session (refresh, sign-out, PIN change)|server/test/auth_session_route_test.mjs" \
   "route contract: parental controls (visibility & pacing)|server/test/guardian_activity_override_route_test.mjs" \
   "device-tokens route contract|server/test/device_tokens_route.test.mjs" \
   "route contract: me/delete|server/test/me_delete_route.test.mjs" \
@@ -386,6 +387,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db child profile (real RLS)|packages/db/test/child_profile.test.mjs" \
             "seed-dev.mjs satisfies both first-run gates out of the box (real DB)|server/test/seed_dev.test.mjs" \
             "db device pairing & provisioning (real RLS)|packages/db/test/device_pairing.test.mjs" \
+            "db device credential & session refresh (real RLS)|packages/db/test/device_credential.test.mjs" \
             "db parental controls: guardian_activity_override (real RLS)|packages/db/test/guardian_activity_override.test.mjs" \
             "db parent learn: settings, private reflections, house rules (real RLS)|packages/db/test/parent_learn.test.mjs" \
             "route contract: parent learn (real DB, real RLS)|server/test/parent_learn_route.test.mjs" \

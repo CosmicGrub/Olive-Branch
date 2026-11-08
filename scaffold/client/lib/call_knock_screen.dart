@@ -53,6 +53,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'call_knock.dart';
 import 'call_modes.dart' show CallMode;
 import 'call_screen.dart';
@@ -218,7 +219,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
 
     setState(() => _outcome = _KnockOutcome.answering);
     try {
-      final api = OliveApi(widget.baseUrl!, widget.sessionToken!);
+      final api = OliveApi(widget.baseUrl!, widget.sessionToken!, session: AuthSession.current);
       final joined = await api.joinCall(widget.childId!, widget.sessionId!);
       api.close();
       if (!mounted) return;

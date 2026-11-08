@@ -53,6 +53,7 @@ class DeviceIdentity {
     required this.deviceId,
     required this.role,
     required this.targetId,
+    this.deviceCredential,
   });
 
   final String sessionToken;
@@ -65,6 +66,17 @@ class DeviceIdentity {
   /// The child.id (role == 'child') or app_user.id (role == 'guardian')
   /// this device's sessions are bound to.
   final String targetId;
+  /// The device's long-lived credential (returned once by the redeem call;
+  /// the server keeps only its SHA-256). [AuthSession] trades it for a fresh
+  /// short session when the stored [sessionToken] lapses. Null only for an
+  /// identity paired before the credential existed — such a device keeps
+  /// working until its last token expires, then must re-pair.
+  final String? deviceCredential;
+
+  /// The same identity with a freshly minted [sessionToken].
+  DeviceIdentity withSessionToken(String token) => DeviceIdentity(
+      sessionToken: token, deviceId: deviceId, role: role, targetId: targetId,
+      deviceCredential: deviceCredential);
 }
 
 class DeviceIdentityStore {
@@ -77,12 +89,19 @@ class DeviceIdentityStore {
   static const _kDeviceId = 'olive_paired_device_id';
   static const _kRole = 'olive_paired_device_role';
   static const _kTargetId = 'olive_paired_device_target_id';
+  static const _kDeviceCredential = 'olive_paired_device_credential';
 
   Future<void> save(DeviceIdentity identity) async {
     await _storage.write(_kSessionToken, identity.sessionToken);
     await _storage.write(_kDeviceId, identity.deviceId);
     await _storage.write(_kRole, identity.role);
     await _storage.write(_kTargetId, identity.targetId);
+    final cred = identity.deviceCredential;
+    if (cred != null) {
+      await _storage.write(_kDeviceCredential, cred);
+    } else {
+      await _storage.delete(_kDeviceCredential);
+    }
   }
 
   /// An honest absence (no identity ever paired, or storage was cleared) is
@@ -98,11 +117,13 @@ class DeviceIdentityStore {
     final role = await _storage.read(_kRole);
     final targetId = await _storage.read(_kTargetId);
     if (token == null || deviceId == null || role == null || targetId == null) return null;
-    return DeviceIdentity(sessionToken: token, deviceId: deviceId, role: role, targetId: targetId);
+    final cred = await _storage.read(_kDeviceCredential);
+    return DeviceIdentity(sessionToken: token, deviceId: deviceId, role: role, targetId: targetId,
+        deviceCredential: cred);
   }
 
   /// Called on a real `device_revoked` response (api_client.dart's
-  /// [DeviceRevokedException]) and from add_device_screen.dart's own
+  /// [DeviceRevokedException]), on sign-out ([AuthSession.signOut]), and from add_device_screen.dart's own
   /// Cancel-before-use path is NOT this -- cancelling an unredeemed CODE
   /// never touches a stored identity, because generating a code never writes
   /// one. This is only ever called once a device has actually redeemed one
@@ -112,5 +133,6 @@ class DeviceIdentityStore {
     await _storage.delete(_kDeviceId);
     await _storage.delete(_kRole);
     await _storage.delete(_kTargetId);
+    await _storage.delete(_kDeviceCredential);
   }
 }

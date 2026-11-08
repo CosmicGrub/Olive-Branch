@@ -39,6 +39,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
@@ -134,9 +135,8 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
   Future<void> _load() async {
     setState(() => _loadState = _LoadState.loading);
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final Map<String, dynamic> result = await api.fetchEmergencyCard(widget.childId!);
       if (widget.httpClient == null) api.close();
       final List<dynamic> rawMeds = result['medications'] as List<dynamic>? ?? <dynamic>[];

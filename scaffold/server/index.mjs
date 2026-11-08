@@ -33,6 +33,16 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const SESSION_SECRET = process.env.SESSION_SECRET;
 const DEV_LOGIN = process.env.DEV_LOGIN === '1';
 
+// Audit G-02/G-06 — dev-login is the credential-free shortcut this file's header
+// describes; the real session path is POST /v1/auth/session/refresh (routes.mjs).
+// Fail CLOSED: a process that says it is production but was started with
+// DEV_LOGIN=1 (a copy-pasted dev env file, a compose override) refuses to boot
+// rather than serve a route that mints a session for any user id with no
+// credential at all.
+if (DEV_LOGIN && process.env.NODE_ENV === 'production') {
+  console.error('DEV_LOGIN=1 is not allowed with NODE_ENV=production');
+  process.exit(2);
+}
 if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
 if (!SESSION_SECRET) { console.error('SESSION_SECRET required'); process.exit(2); }
 

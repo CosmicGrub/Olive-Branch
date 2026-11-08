@@ -13,7 +13,7 @@
 // does not apply here either.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'api_client.dart' show OliveApi, devLoginFor;
+import 'auth_session.dart';
 
 class PairedDevicesListScreen extends StatefulWidget {
   const PairedDevicesListScreen({
@@ -49,8 +49,7 @@ class _PairedDevicesListScreenState extends State<PairedDevicesListScreen> {
   Future<void> _load() async {
     setState(() => _state = _LoadState.loading);
     try {
-      final token = await devLoginFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+      final api = await apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
       try {
         final body = await api.fetchPairedDevices(widget.childId);
         if (!mounted) return;
@@ -90,8 +89,7 @@ class _PairedDevicesListScreenState extends State<PairedDevicesListScreen> {
   Future<void> _revoke(String deviceId) async {
     setState(() => _revoking.add(deviceId));
     try {
-      final token = await devLoginFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+      final api = await apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
       try {
         await api.revokePairedDevice(widget.childId, deviceId);
       } finally {

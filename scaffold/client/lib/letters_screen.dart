@@ -54,6 +54,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
@@ -226,7 +227,7 @@ class _LettersScreenState extends State<LettersScreen> {
   Future<void> _load() async {
     setState(() => _loadState = _LoadState.loading);
     try {
-      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
       final Map<String, dynamic> result = await api.fetchLetters(widget.childId);
       if (widget.httpClient == null) api.close();
       final List<dynamic> raw = result['letters'] as List<dynamic>? ?? <dynamic>[];
@@ -277,7 +278,7 @@ class _LettersScreenState extends State<LettersScreen> {
   Future<void> _sealLive(String text) async {
     setState(() => _sealing = true);
     try {
-      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
       final Map<String, dynamic> row =
           await api.sealLetter(widget.childId, text, _selectedOpenAge);
       if (widget.httpClient == null) api.close();
@@ -317,7 +318,7 @@ class _LettersScreenState extends State<LettersScreen> {
   Future<void> _openLive(Letter l) async {
     setState(() => _busyIds.add(l.id));
     try {
-      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
       final Map<String, dynamic> row = await api.openLetter(widget.childId, l.id);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
@@ -362,7 +363,7 @@ class _LettersScreenState extends State<LettersScreen> {
     }
     setState(() => _busyIds.add(l.id));
     try {
-      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+      final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
       await api.deleteLetter(widget.childId, l.id);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;

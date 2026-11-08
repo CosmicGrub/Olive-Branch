@@ -168,6 +168,9 @@ services:
       # interpolation. Nothing in .env.prod, no override, no shell export
       # can make this anything other than "0" through this file.
       DEV_LOGIN: "0"
+      # server/index.mjs refuses to boot with DEV_LOGIN=1 under this value
+      # (audit G-02/G-06) — a second, independent lock behind the literal above.
+      NODE_ENV: production
       LIVEKIT_URL: ${LIVEKIT_URL:?LIVEKIT_URL must be set — see .env.prod.example, a real LiveKit Cloud project, no LAN-IP dev default here}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set — see .env.prod.example}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set — see .env.prod.example}

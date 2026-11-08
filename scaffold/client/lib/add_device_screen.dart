@@ -20,7 +20,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:pretty_qr_code/pretty_qr_code.dart';
-import 'api_client.dart' show ApiException, OliveApi, devLoginFor;
+import 'api_client.dart' show ApiException;
+import 'auth_session.dart';
 
 /// One selectable child target — [AddDeviceScreen.children] supplies the
 /// real list ("which child if more than one", per the design spec's own
@@ -101,8 +102,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     if (pin.isEmpty || _submitting) return;
     setState(() { _submitting = true; _errorMessage = null; });
     try {
-      final token = await devLoginFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+      final api = await apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
       try {
         final result = _role == 'child'
           ? await api.createChildDevicePairingCode(_selectedChild!.id, pin)
@@ -142,8 +142,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     _ticker?.cancel();
     if (code != null) {
       try {
-        final token = await devLoginFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
-        final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
+        final api = await apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
         try {
           await api.cancelDevicePairingCode(code['id'] as String);
         } finally {

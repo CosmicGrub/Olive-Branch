@@ -30,7 +30,10 @@
 //
 // `flutter run --target=lib/main_live_guardian.dart
 //   --dart-define=OLIVE_API_BASE_URL=http://<host>:8123`
-// against a running server/index.mjs (DEV_LOGIN=1 required). guardianId
+// against a running server/index.mjs. With NO identity define a build boots
+// into pairing and runs on a real AuthSession (device credential -> short
+// sessions, auth_session.dart). The dev path (OLIVE_GUARDIAN_ID, or
+// OLIVE_DEV_LOGIN=1) additionally needs the server's DEV_LOGIN=1; guardianId
 // defaults to the seed data in server/seed-dev.mjs ("Dad").
 //
 // Device pairing & provisioning (docs/superpowers/specs/2026-09-12-device
@@ -59,6 +62,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'device_identity.dart';
 import 'guardian_home_live.dart';
 import 'guardian_setup.dart';
@@ -76,6 +80,17 @@ const _dartDefineGuardianId = String.fromEnvironment('OLIVE_GUARDIAN_ID',
 // `bool.hasEnvironment`, not a defaultValue comparison — see main_live.dart's
 // own header for why the two are not the same question.
 const _hasGuardianIdDartDefine = bool.hasEnvironment('OLIVE_GUARDIAN_ID');
+// Explicit opt-in to the credential-free dev login for a build NOT provisioned
+// through OLIVE_GUARDIAN_ID. Off by default — see main_live.dart.
+const _devLoginDartDefine = bool.fromEnvironment('OLIVE_DEV_LOGIN');
+
+/// The one session for a paired guardian device — see main_live.dart's
+/// [_deviceSession]. When it ends (sign-out, revoked, deactivated) the shell
+/// returns to pairing.
+AuthSession _deviceSession(DeviceIdentity identity) => AuthSession.device(
+    baseUrl: _dartDefineBaseUrl, identity: identity, onSignedOut: _returnToPairing);
+
+void _returnToPairing() => runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl));
 
 /// The theme half of session bootstrap — same posture and same fail-closed
 /// discipline as main_live.dart's own [_fetchInitialTheme] (that file's own
@@ -85,19 +100,17 @@ const _hasGuardianIdDartDefine = bool.hasEnvironment('OLIVE_GUARDIAN_ID');
 /// sharing a helper would mean a fourth file just for two nine-line
 /// functions, more indirection than the duplication it would remove).
 ///
-/// [sessionToken], when non-null (a redeemed, paired device), is used
-/// DIRECTLY instead of a fresh `devLoginFor()` call — same reasoning
-/// main_live.dart's own [_fetchInitialTheme] already documents, including
-/// its [DeviceRevokedException] reaction.
-Future<AppTheme> _fetchInitialTheme(String guardianId, String? sessionToken) async {
+/// Runs on the installed [AuthSession] (see [_bootLiveApp]) — same reasoning
+/// main_live.dart's own [_fetchInitialTheme] documents, including its
+/// [DeviceRevokedException] reaction (the session has already cleared the
+/// stored identity and sent the shell back to pairing).
+Future<AppTheme> _fetchInitialTheme(String guardianId) async {
   try {
-    final token = sessionToken ?? await devLoginFor(_dartDefineBaseUrl, userId: guardianId);
-    final api = OliveApi(_dartDefineBaseUrl, token);
+    final api = await apiFor(_dartDefineBaseUrl, userId: guardianId);
     final wire = await api.fetchTheme(_dartDefineChildId);
     api.close();
     return AppTheme.fromWire(wire['theme'] as Map<String, dynamic>?);
   } on DeviceRevokedException {
-    await DeviceIdentityStore().clear();
     return defaultAppTheme;
   } catch (_) {
     return defaultAppTheme;
@@ -110,19 +123,15 @@ Future<AppTheme> _fetchInitialTheme(String guardianId, String? sessionToken) asy
 /// (a broken network must never look like a guardian who has already
 /// finished setup), applied here: any failure to resolve a token or to
 /// reach `/v1/me` at all reports `false`, the GuardianSetupScreen branch,
-/// never a silent pass into GuardianHome. [sessionToken], when non-null, is
-/// used directly instead of a fresh `devLoginFor()` call — the identical
-/// preference [_fetchInitialTheme] already gives a redeemed/paired device's
-/// own real credential.
-Future<bool> _fetchHasPin(String guardianId, String? sessionToken) async {
+/// never a silent pass into GuardianHome. Runs on the installed
+/// [AuthSession], like [_fetchInitialTheme].
+Future<bool> _fetchHasPin(String guardianId) async {
   try {
-    final token = sessionToken ?? await devLoginFor(_dartDefineBaseUrl, userId: guardianId);
-    final api = OliveApi(_dartDefineBaseUrl, token);
+    final api = await apiFor(_dartDefineBaseUrl, userId: guardianId);
     final me = await api.fetchMe();
     api.close();
     return me['hasPin'] == true;
   } on DeviceRevokedException {
-    await DeviceIdentityStore().clear();
     return false;
   } catch (_) {
     return false;
@@ -132,14 +141,12 @@ Future<bool> _fetchHasPin(String guardianId, String? sessionToken) async {
 /// Real POST /v1/me/pin (OliveApi.setGuardianPin) for the boot-time gate
 /// below — same shape guardian_more.dart's own `_liveSetGuardianPin`
 /// already establishes for GuardianSetupScreen reached from the hub,
-/// adapted here to prefer [sessionToken] over a fresh devLoginFor() call,
-/// the identical preference [_fetchInitialTheme]/[_fetchHasPin] above
-/// already give a redeemed/paired device's own real credential.
-Future<void> Function(String pin) _liveSetGuardianPin(
-    {required String guardianId, required String? sessionToken}) {
+/// on the installed [AuthSession] like [_fetchInitialTheme]/[_fetchHasPin]
+/// above. First-PIN only: the server needs no proof when no PIN exists yet
+/// (the boot gate only shows when hasPin is false).
+Future<void> Function(String pin) _liveSetGuardianPin({required String guardianId}) {
   return (String pin) async {
-    final token = sessionToken ?? await devLoginFor(_dartDefineBaseUrl, userId: guardianId);
-    final api = OliveApi(_dartDefineBaseUrl, token);
+    final api = await apiFor(_dartDefineBaseUrl, userId: guardianId);
     try {
       await api.setGuardianPin(pin);
     } finally {
@@ -151,9 +158,8 @@ Future<void> Function(String pin) _liveSetGuardianPin(
 /// GuardianSetupScreen.checkExistingPin for the boot-time gate below —
 /// reuses [_fetchHasPin] directly rather than a second implementation of
 /// the identical `GET /v1/me` call.
-Future<bool> Function() _liveCheckExistingPin(
-    {required String guardianId, required String? sessionToken}) {
-  return () => _fetchHasPin(guardianId, sessionToken);
+Future<bool> Function() _liveCheckExistingPin({required String guardianId}) {
+  return () => _fetchHasPin(guardianId);
 }
 
 /// Boots the real guardian shell for [guardianId] — the common tail of both
@@ -167,15 +173,19 @@ Future<bool> Function() _liveCheckExistingPin(
 /// GuardianHome normally" (the design spec's own line) is implemented
 /// literally: completing setup re-runs this exact boot, which re-resolves
 /// `hasPin` fresh and this time finds it true.
-Future<void> _bootLiveApp({required String guardianId, required String? sessionToken}) async {
-  final initialTheme = await _fetchInitialTheme(guardianId, sessionToken);
-  final hasPin = await _fetchHasPin(guardianId, sessionToken);
+Future<void> _bootLiveApp({required String guardianId, required AuthSession session}) async {
+  // Installed BEFORE anything below calls apiFor() — every live screen under
+  // OliveLiveGuardian reads the same process-wide session (audit G-02/G-06).
+  AuthSession.use(session);
+  final initialTheme = await _fetchInitialTheme(guardianId);
+  final hasPin = await _fetchHasPin(guardianId);
   runApp(OliveLiveGuardian(initialTheme: initialTheme,
-    guardianId: guardianId, sessionToken: sessionToken, hasPin: hasPin));
+    guardianId: guardianId, session: session, hasPin: hasPin));
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AuthSession.devLoginEnabled = _devLoginDartDefine;
   // Same try/catch, same reasoning, as main_live.dart's own `main()` — see
   // that file's header comment on why a missing google-services.json must
   // never crash this build before its first frame.
@@ -193,10 +203,16 @@ Future<void> main() async {
       runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl));
       return;
     }
-    await _bootLiveApp(guardianId: stored.targetId, sessionToken: stored.sessionToken);
+    await _bootLiveApp(guardianId: stored.targetId, session: _deviceSession(stored));
     return;
   }
-  await _bootLiveApp(guardianId: _dartDefineGuardianId, sessionToken: null);
+  // The explicit dev path: this build was provisioned with OLIVE_GUARDIAN_ID,
+  // so dev login is allowed (and refreshable — it is the whole app's session).
+  AuthSession.devLoginEnabled = true;
+  await _bootLiveApp(
+    guardianId: _dartDefineGuardianId,
+    session: AuthSession.dev(
+        baseUrl: _dartDefineBaseUrl, userId: _dartDefineGuardianId, refreshable: true));
 }
 
 /// Shown at boot when there's no dart-define AND no stored identity — see
@@ -212,9 +228,10 @@ class _PairingBootApp extends StatelessWidget {
       deviceId: result['deviceId'] as String,
       role: result['role'] as String? ?? 'guardian',
       targetId: result['targetId'] as String,
+      deviceCredential: result['deviceCredential'] as String?,
     );
     await DeviceIdentityStore().save(identity);
-    await _bootLiveApp(guardianId: identity.targetId, sessionToken: identity.sessionToken);
+    await _bootLiveApp(guardianId: identity.targetId, session: _deviceSession(identity));
   }
 
   @override
@@ -227,15 +244,18 @@ class _PairingBootApp extends StatelessWidget {
 
 class OliveLiveGuardian extends StatefulWidget {
   const OliveLiveGuardian({super.key, this.initialTheme = defaultAppTheme,
-    required this.guardianId, required this.sessionToken, required this.hasPin});
+    required this.guardianId, required this.session, required this.hasPin});
   final AppTheme initialTheme;
 
   /// Resolved BEFORE this widget is constructed — either the dart-define
   /// value, or a redeemed/stored identity's own targetId.
   final String guardianId;
 
-  /// Non-null only for a redeemed, paired device.
-  final String? sessionToken;
+  /// The installed [AuthSession] ([_bootLiveApp] installs it process-wide
+  /// BEFORE constructing this widget, which is what every live screen's
+  /// apiFor() reads) — real for a paired device and for the explicit dev path;
+  /// null only in a widget test that supplies its own transport.
+  final AuthSession? session;
 
   /// GET /v1/me's `hasPin` field, resolved BEFORE this widget is
   /// constructed (`_bootLiveApp`, mirroring [initialTheme]'s own
@@ -311,12 +331,10 @@ class _OliveLiveGuardianState extends State<OliveLiveGuardian> {
               childId: _dartDefineChildId,
             )
           : GuardianSetupScreen(
-              setGuardianPin: _liveSetGuardianPin(
-                guardianId: widget.guardianId, sessionToken: widget.sessionToken),
-              checkExistingPin: _liveCheckExistingPin(
-                guardianId: widget.guardianId, sessionToken: widget.sessionToken),
+              setGuardianPin: _liveSetGuardianPin(guardianId: widget.guardianId),
+              checkExistingPin: _liveCheckExistingPin(guardianId: widget.guardianId),
               onComplete: () => _bootLiveApp(
-                guardianId: widget.guardianId, sessionToken: widget.sessionToken),
+                guardianId: widget.guardianId, session: widget.session!),
             ),
       );
     },

@@ -115,6 +115,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'game_logic.dart' as game_catalogue;
 import 'joke_logic.dart' as joke_catalogue;
 
@@ -264,9 +265,7 @@ class _ParentalControlsScreenState extends State<ParentalControlsScreen> {
   }
 
   Future<OliveApi> _mintApi() async {
-    final token =
-        await devLoginFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
-    return OliveApi(widget.baseUrl, token, client: widget.httpClient);
+    return apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
   }
 
   String _messageFor(String error) => switch (error) {

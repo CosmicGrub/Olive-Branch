@@ -67,6 +67,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'call_knock_screen.dart' show buildCallIncomingHandler;
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
@@ -177,9 +178,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   Future<void> _load() async {
     setState(() => _state = _LoadState.loading);
     try {
-      final token = await devLoginFor(widget.baseUrl,
+      final api = await apiFor(widget.baseUrl,
           childId: widget.childId, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final me = await api.fetchMe();
       final inbox = await api.fetchInbox(widget.childId);
       final now = await api.fetchNow(widget.childId);
@@ -245,15 +245,19 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           free['freeUntilHerTime'] as String,
         );
         _overrides = overridesJson == null ? null : decodeActivityOverrides(overridesJson);
-        _sessionToken = token;
+        _sessionToken = api.sessionToken;
         _state = _LoadState.ready;
       });
       await _syncWear();
-      await _initPush(token);
+      await _initPush(api.sessionToken);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e is ApiException ? '${e.statusCode}: ${e.error}' : '$e';
+        // Never the raw status/reason ("401: expired") on a screen a child reads —
+        // ApiException.userMessage is the plain-language sentence; anything else
+        // (a socket error, a decode failure) gets the same generic line.
+        debugPrint('[olive.childHome] load failed: $e');
+        _errorMessage = e is ApiException ? e.userMessage : 'Something went wrong. Please try again.';
         _state = _LoadState.error;
       });
     }
@@ -321,7 +325,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   Future<void> _initPush(String token) async {
     final channel = widget.pushChannel ??
         PushChannel(
-          OliveApi(widget.baseUrl, token, client: widget.httpClient),
+          OliveApi(widget.baseUrl, token,
+              client: widget.httpClient, session: AuthSession.current),
           onForegroundPointer: widget.navigatorKey == null ? null : buildCallIncomingHandler(
             navigatorKey: widget.navigatorKey!,
             // Hardcoded, matching every other call site in this client

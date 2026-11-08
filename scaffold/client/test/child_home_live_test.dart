@@ -176,7 +176,10 @@ void main() {
 
       expect(find.text("Couldn't reach the server"), findsOneWidget);
       expect(find.text('Try again'), findsOneWidget);
-      expect(find.textContaining('404'), findsOneWidget);
+      // A child reads this screen: the plain sentence, never "404: child_not_found".
+      expect(find.text('Something went wrong. Please try again.'), findsOneWidget);
+      expect(find.textContaining('404'), findsNothing);
+      expect(find.textContaining('child_not_found'), findsNothing);
     });
 
     testWidgets('the error icon and message use the themed secondary color, '

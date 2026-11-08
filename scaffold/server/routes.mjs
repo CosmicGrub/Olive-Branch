@@ -46,6 +46,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          setChildGender, pinCredentialFor,
          createDevicePairingCode, cancelDevicePairingCode, redeemDevicePairingCode,
          pairedDevicesForChild, revokePairedDevice,
+         refreshPairedDeviceSession, revokeOwnPairedDevice,
          activityOverridesFor, setActivityOverride, deleteActivityOverride,
          learnSettingsFor, setLearnSettings, saveReflection, listReflections,
          deleteReflection, clearReflections, setHouseRules, houseRulesFor,
@@ -810,6 +811,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         escalated: false,
         deviceId: result.deviceId,
       });
+      const expiresAt = api.sessionExpiresAt();
       // role/targetId included alongside the Routes section's own minimal
       // {sessionToken, deviceId} pair — a necessary, disclosed judgment
       // call: the design spec's own Flow section says the client "stores
@@ -819,8 +821,79 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // is not derivable from anything the client already has — without it
       // a redeeming device would have no way to know which childId to boot
       // into. See this PR's own description.
-      return { status: 201, body: { sessionToken, deviceId: result.deviceId,
+      //
+      // deviceCredential / expiresAt (audit G-02/G-06/C-03, migration 0038):
+      // the session above lives 1 hour (SESSION_TTL_MS) and this device had
+      // no way to get another — every request after that hour was a 401. The
+      // credential is the device's long-lived proof of "I am this paired
+      // device", shown here ONCE (only its SHA-256 is stored) and traded at
+      // POST /v1/auth/session/refresh for a fresh short session.
+      return { status: 201, body: { sessionToken, expiresAt, deviceId: result.deviceId,
+                                     deviceCredential: result.deviceCredential,
                                      role: result.role, targetId: result.targetId } };
+    },
+  });
+
+  // POST /v1/auth/session/refresh — NO SESSION REQUIRED (the device's last
+  // session may be long expired; the device credential is the authority).
+  // Audit G-02/G-06/C-03: this is the production replacement for the
+  // dev-only dev-login every guardian/child screen used to call. A device
+  // presents {deviceId, deviceCredential}; it gets a fresh 1-hour session
+  // carrying the SAME deviceId claim, so revoking the device still cuts the
+  // new session off on its very next request (api.ts's handle()). The
+  // identity in the new session comes from the paired_device ROW, never from
+  // anything the caller sent. Failure shapes: 400 bad_request (malformed
+  // body), 401 invalid_device_credential (unknown id / wrong credential /
+  // pre-0038 device — deliberately indistinguishable), 401 device_revoked
+  // (proved credential, device was revoked — the same code every other
+  // request from a revoked device gets), 403 account_deactivated.
+  api.register({
+    method: 'POST', path: '/v1/auth/session/refresh', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const deviceId = c.body?.deviceId;
+      const deviceCredential = c.body?.deviceCredential;
+      if (typeof deviceId !== 'string' || !deviceId ||
+          typeof deviceCredential !== 'string' || !deviceCredential) {
+        return { status: 400, body: { error: 'device_credential_required' } };
+      }
+      const result = await refreshPairedDeviceSession(
+        pool, deviceId, deviceCredential, new Date());
+      if (!result.ok) {
+        const status = result.reason === 'account_deactivated' ? 403 : 401;
+        return { status, body: { error: result.reason } };
+      }
+      const sessionToken = api.issueSessionToken({
+        userId: result.role === 'guardian' ? result.targetId : null,
+        roleName: result.role,
+        childId: result.role === 'child' ? result.targetId : null,
+        escalated: false,
+        deviceId: result.deviceId,
+      });
+      return { status: 200, body: { sessionToken, expiresAt: api.sessionExpiresAt(),
+                                     deviceId: result.deviceId, role: result.role,
+                                     targetId: result.targetId } };
+    },
+  });
+
+  // POST /v1/auth/session/sign-out — the signed-in guardian's device revokes
+  // ITSELF ("Sign out" in guardian_more.dart). Needs a live session, and the
+  // device named is the one in that session's signed deviceId claim, never a
+  // body field. A session with no deviceId claim (dev-login, WebAuthn login)
+  // has no device to revoke: 200 {revoked:false} — the client still clears its
+  // own storage. Guardian-only: a child's kiosk must not be one tap from
+  // unpairing itself; a guardian revokes a child device through
+  // .../paired-devices/:deviceId/revoke above.
+  api.register({
+    method: 'POST', path: '/v1/auth/session/sign-out', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      if (!c.principal.deviceId) return { status: 200, body: { ok: true, revoked: false } };
+      const r = await revokeOwnPairedDevice(pool, c.principal.deviceId, new Date());
+      return { status: 200, body: { ok: true, revoked: r.ok } };
     },
   });
 
@@ -2030,6 +2103,35 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // — a malformed PIN is caller error, not server error.
       catch { return { status: 400, body: { error: 'invalid_pin_format' } }; }
       try {
+        // Audit G-13 — this route used to overwrite the PIN for anyone
+        // holding a guardian session, no questions asked: a stolen or
+        // borrowed unlocked phone could silently replace the PIN every
+        // kiosk lock and every pairing-code gate checks. Now:
+        //   - NO PIN SET YET (first-run setup, GuardianSetupScreen's required
+        //     gate): allowed without proof, as one atomic insert-if-absent so
+        //     two racing first-PIN calls cannot both win;
+        //   - A PIN EXISTS: `currentPin` is required and checked through the
+        //     same attemptPinFor() requireOwnPin() already uses, so wrong
+        //     guesses here count toward — and are stopped by — the same
+        //     5-attempt/15-minute lockout every other PIN check shares.
+        // (A recent passkey assertion would be the other acceptable proof;
+        // no helper exists that ties an assertion to a later request, so PIN
+        // is the only proof accepted — see MASTERFILE.)
+        const existing = await pinCredentialFor(pool, c.principal.userId);
+        if (!existing) {
+          const created = await setPinCredential(pool, c.principal.userId, hash,
+            { onlyIfAbsent: true });
+          // A concurrent first-PIN call won between the check and the insert:
+          // that caller's PIN stands, ours must prove the current one.
+          if (!created) return { status: 409, body: { error: 'current_pin_required' } };
+          return { body: { ok: true } };
+        }
+        const currentPin = c.body?.currentPin;
+        if (typeof currentPin !== 'string') {
+          return { status: 403, body: { error: 'current_pin_required' } };
+        }
+        const proof = await requireOwnPin(c.principal.userId, currentPin);
+        if (!proof.ok) return { status: proof.status, body: { error: proof.error } };
         await setPinCredential(pool, c.principal.userId, hash);
         return { body: { ok: true } };
       } catch (e) {

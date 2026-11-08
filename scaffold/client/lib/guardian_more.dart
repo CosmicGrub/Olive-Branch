@@ -14,6 +14,7 @@ import 'parent_learn_logic.dart';
 import 'parent_learn_screens.dart';
 import 'parent_learn_store.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
 import 'call_screen.dart';
@@ -85,10 +86,24 @@ Future<void> Function(String pin)? _liveSetGuardianPin(
     {required String? baseUrl, required String? guardianId, http.Client? httpClient}) {
   if (baseUrl == null || guardianId == null) return null;
   return (String pin) async {
-    final token = await devLoginFor(baseUrl, userId: guardianId, client: httpClient);
-    final api = OliveApi(baseUrl, token, client: httpClient);
+    final api = await apiFor(baseUrl, userId: guardianId, client: httpClient);
     try {
       await api.setGuardianPin(pin);
+    } finally {
+      if (httpClient == null) api.close();
+    }
+  };
+}
+
+/// POST /v1/me/pin with currentPin (OliveApi.changeGuardianPin) — the proved
+/// replacement of an existing PIN (audit G-13); null with no live session.
+Future<void> Function(String currentPin, String newPin)? _liveChangeGuardianPin(
+    {required String? baseUrl, required String? guardianId, http.Client? httpClient}) {
+  if (baseUrl == null || guardianId == null) return null;
+  return (String currentPin, String newPin) async {
+    final api = await apiFor(baseUrl, userId: guardianId, client: httpClient);
+    try {
+      await api.changeGuardianPin(currentPin, newPin);
     } finally {
       if (httpClient == null) api.close();
     }
@@ -108,8 +123,7 @@ Future<bool> Function()? _liveCheckExistingPin(
     {required String? baseUrl, required String? guardianId, http.Client? httpClient}) {
   if (baseUrl == null || guardianId == null) return null;
   return () async {
-    final token = await devLoginFor(baseUrl, userId: guardianId, client: httpClient);
-    final api = OliveApi(baseUrl, token, client: httpClient);
+    final api = await apiFor(baseUrl, userId: guardianId, client: httpClient);
     try {
       final me = await api.fetchMe();
       return me['hasPin'] == true;
@@ -225,16 +239,17 @@ class GuardianMoreScreen extends StatelessWidget {
       return;
     }
     try {
-      final token = await devLoginFor(url, userId: gid, client: availabilityHttpClient);
+      final api = await apiFor(url, userId: gid, client: availabilityHttpClient);
+      if (availabilityHttpClient == null) api.close();
       if (context.mounted) {
         _open(context, DeletionScreen(
-          childName: childName, baseUrl: url, sessionToken: token,
+          childName: childName, baseUrl: url, sessionToken: api.sessionToken,
           childId: childId, guardianUserId: gid));
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Could not reach the server: $e'), duration: const Duration(seconds: 3)));
+          content: Text('Could not reach the server. ${userMessageFor(e)}'), duration: const Duration(seconds: 3)));
       }
     }
   }
@@ -253,8 +268,7 @@ class GuardianMoreScreen extends StatelessWidget {
     final url = baseUrl, gid = guardianId;
     if (url == null || gid == null) return; // onTap's own gate already prevents this; defensive only.
     try {
-      final token = await devLoginFor(url, userId: gid, client: availabilityHttpClient);
-      final api = OliveApi(url, token, client: availabilityHttpClient);
+      final api = await apiFor(url, userId: gid, client: availabilityHttpClient);
       final Map<String, dynamic> started;
       try {
         started = await api.startCall(childId);
@@ -271,7 +285,7 @@ class GuardianMoreScreen extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Could not start the call: $e'), duration: const Duration(seconds: 3)));
+          content: Text('Could not start the call: ${e is ApiException ? e.error : userMessageFor(e)}'), duration: const Duration(seconds: 3)));
       }
     }
   }
@@ -287,8 +301,7 @@ class GuardianMoreScreen extends StatelessWidget {
   /// already, correctly, just ended from her point of view.
   Future<void> _endRealCall(String baseUrl, String guardianId, String childId, String sessionId) async {
     try {
-      final token = await devLoginFor(baseUrl, userId: guardianId, client: availabilityHttpClient);
-      final api = OliveApi(baseUrl, token, client: availabilityHttpClient);
+      final api = await apiFor(baseUrl, userId: guardianId, client: availabilityHttpClient);
       try {
         await api.endCall(childId, sessionId);
       } finally {
@@ -440,17 +453,14 @@ class GuardianMoreScreen extends StatelessWidget {
     ));
   }
 
-  /// There is no persisted client-side session anywhere in this codebase to
-  /// clear (every screen calls devLoginFor() fresh — see push_channel.dart's
-  /// own "no sign-out/log-out flow anywhere in lib/" note, which this tile
-  /// closes). So the real, honest actions a sign-out can take here are: (1)
-  /// stop this device from receiving push (PushChannel.unregister(), real
-  /// and already tested, with no caller anywhere until now), and (2) leave
-  /// the guardian shell — popUntil(isFirst) rather than a hardcoded target,
-  /// since which screen is actually first differs by entry point
-  /// (main.dart's EntryGate in the offline demo build; GuardianMoreScreen
-  /// itself in main_live_guardian.dart's live build, where this is already
-  /// the root and popUntil is a harmless no-op).
+  /// Sign-out, for real (audit G-14): (1) stop this device receiving push
+  /// (PushChannel.unregister(), best effort), (2) revoke THIS device on the
+  /// server, clear the stored identity from secure storage and hand control
+  /// back to the shell, which returns to pairing (AuthSession.signOut ->
+  /// onSignedOut), and (3) leave the guardian shell — popUntil(isFirst) rather
+  /// than a hardcoded target, since which screen is first differs by entry
+  /// point (main.dart's EntryGate in the offline demo build, where there is no
+  /// AuthSession and this is just the pop it always was).
   ///
   /// Step 1 is best-effort — same posture [_endRealCall] already holds
   /// itself to: a network hiccup unregistering push must never get in the
@@ -460,8 +470,7 @@ class GuardianMoreScreen extends StatelessWidget {
     final url = baseUrl, gid = guardianId;
     if (url != null && gid != null) {
       try {
-        final token = await devLoginFor(url, userId: gid, client: availabilityHttpClient);
-        final api = OliveApi(url, token, client: availabilityHttpClient);
+        final api = await apiFor(url, userId: gid, client: availabilityHttpClient);
         try {
           await PushChannel(api).unregister();
         } finally {
@@ -471,6 +480,14 @@ class GuardianMoreScreen extends StatelessWidget {
         // Best-effort — see this method's own doc comment.
       }
     }
+    // Audit G-14 — sign-out used to clear nothing: the paired identity stayed in
+    // secure storage and the device stayed authorized. Now the installed
+    // AuthSession revokes this device server-side (best effort — offline must
+    // still sign out), clears the stored identity, and fires its onSignedOut
+    // hook, which the live shell uses to return to pairing. With no session
+    // installed (the offline demo build, a dev-login run) there is nothing
+    // stored to clear and this stays the pop it always was.
+    await AuthSession.current?.signOut();
     if (context.mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
@@ -682,6 +699,10 @@ class GuardianMoreScreen extends StatelessWidget {
               checkExistingPin: _liveCheckExistingPin(
                 baseUrl: baseUrl, guardianId: guardianId,
                 httpClient: availabilityHttpClient),
+              // Changing an EXISTING PIN needs the current one (audit G-13).
+              changeGuardianPin: _liveChangeGuardianPin(
+                baseUrl: baseUrl, guardianId: guardianId,
+                httpClient: availabilityHttpClient),
             ))),
           HubTile(icon: Icons.fingerprint_outlined,
             title: 'Guardian setup — passkey (dev verification)',
@@ -692,6 +713,10 @@ class GuardianMoreScreen extends StatelessWidget {
                 baseUrl: baseUrl, guardianId: guardianId,
                 httpClient: availabilityHttpClient),
               checkExistingPin: _liveCheckExistingPin(
+                baseUrl: baseUrl, guardianId: guardianId,
+                httpClient: availabilityHttpClient),
+              // Changing an EXISTING PIN needs the current one (audit G-13).
+              changeGuardianPin: _liveChangeGuardianPin(
                 baseUrl: baseUrl, guardianId: guardianId,
                 httpClient: availabilityHttpClient),
             ))),

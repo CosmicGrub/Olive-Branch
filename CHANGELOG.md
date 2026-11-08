@@ -53,7 +53,7 @@ suite registered in `tools/verify.sh`.
   returned 500; now 400.
 - **Migration races (P-18).** `tools/migrate.mjs` holds a Postgres advisory lock
   for the run (pg and psql modes).
-- **Missing foreign-key indexes (P-17).** Migration `0037_fk_indexes.sql`
+- **Missing foreign-key indexes (P-17).** Migration `0038_fk_indexes.sql`
   (six FK columns plus `auth_challenge.issued_at`); RLS untouched.
 - **`livekit-server-sdk` was a devDependency** although `routes.mjs` imports it
   at runtime; it only worked because the image installed everything.
@@ -90,6 +90,70 @@ suite registered in `tools/verify.sh`.
 - Not fixed here, disclosed: `dev-login` and the login `verify` still name
   `user_not_found` / `account_deactivated` respectively (the latter is asserted
   by an existing suite); no metrics exporter; no scheduled restore drill.
+
+---
+
+## [Unreleased] — The real authenticated session (audit G-02, G-06, C-03, G-13, G-14)
+
+Spec: MASTERFILE §7.1c. Replaces the dev-only login every guardian and child
+live screen depended on with one real session, backed by the paired device's
+own credential. Production compose has always pinned `DEV_LOGIN=0`, so before
+this change every guardian and child call from a paired device 404'd there.
+(No version number is claimed here: other in-flight changes also edit this
+file, and the version is cut when they merge — `check-markup`'s C1 reads the
+newest *numbered* entry.)
+
+### Added
+- **Device credential + session refresh (server).** Migration
+  `0038_paired_device_credential.sql` adds `paired_device.credential_hash`
+  (SHA-256 of a 256-bit CSPRNG credential; the credential itself is returned
+  once, by `POST /v1/device-pairing/redeem`, which also now returns
+  `expiresAt`). New `POST /v1/auth/session/refresh {deviceId,
+  deviceCredential}` (no session required) returns a fresh 1-hour session for
+  the identity in the `paired_device` row, carrying the same `deviceId` claim.
+  `401 invalid_device_credential` for an unknown id / wrong credential / another
+  device's credential / a pre-0038 device (indistinguishable by design),
+  `401 device_revoked` for a proven credential on a revoked device,
+  `403 account_deactivated`. `Api.sessionExpiresAt()` exposes the signed TTL.
+- **Sign-out (server).** `POST /v1/auth/session/sign-out` revokes the calling
+  guardian device itself; child sessions get 403.
+- **`AuthSession` (client, `client/lib/auth_session.dart`).** Token + expiry,
+  refresh through the device credential 60 s before expiry, one shared
+  in-flight refresh, storage through `DeviceIdentityStore` (now also holding
+  `deviceCredential`), `signOut()`. `OliveApi(…, session:)` retries a 401
+  exactly once after refreshing. `apiFor()` replaces every `devLoginFor()` +
+  `OliveApi(…)` pair in the guardian and child live paths (32 files touched).
+  `main_live.dart` / `main_live_guardian.dart` build the session from the stored
+  identity, install it process-wide, and return to pairing when it ends.
+- **Typed errors.** `UnauthorizedException` (401; `DeviceRevokedException` now
+  extends it) and `ForbiddenException` (403), plus `ApiException.userMessage`
+  and `userMessageFor()` — plain-language text safe to show anyone.
+- **Tests.** `server/test/auth_session_route_test.mjs` (97, fake pg),
+  `packages/db/test/device_credential.test.mjs` (44, real Postgres/RLS),
+  `client/test/auth_session_test.dart`, `client/test/live_session_widget_test.dart`.
+
+### Changed
+- **`POST /v1/me/pin` needs proof to change a PIN (G-13).** First PIN (none set)
+  needs none, as an atomic insert-if-absent; replacing one requires
+  `currentPin`, checked through the shared 5-attempt/15-minute lockout. The
+  guardian setup screen collects the current PIN when one exists.
+- **Dev login fails closed.** `DEV_LOGIN=1` with `NODE_ENV=production` refuses to
+  boot; `docker-compose.prod.yml` sets `NODE_ENV: production`. In the client,
+  `AuthSession.devLoginEnabled` defaults to false and `devLoginFor()` /
+  `apiFor()` fail closed (`dev_login_disabled` / `not_signed_in`) unless the
+  build opted in (dev dart-defines, the hardware dev entry points, or the test
+  config). Existing widget tests opt in once, in `test/flutter_test_config.dart`.
+- **Sign out now signs out (G-14).** Revokes the device server-side, clears
+  secure storage, returns to pairing. Offline, it still signs out locally and
+  the device stays authorized server-side until a guardian revokes it elsewhere.
+- **The child home no longer prints `401: expired`.** A failed load shows a
+  plain sentence.
+
+### Not done (deliberate)
+- The device credential is **not rotated** on use (see MASTERFILE §7.1c for why).
+- A recent passkey assertion is not accepted as proof for a PIN change (no
+  helper binds an assertion to a later request).
+- A fresh device cannot sign a guardian in without pairing first.
 
 ---
 
@@ -6923,7 +6987,7 @@ only.
   rather than opening demo data. The live guardian More hub hides the tiles that
   render invented content unless `showDemoTiles` is set.
 - **Emergency card last-write-wins.** `medical_record.version` + `ifMatch`
-  (428/409) and an append-only `medical_record_history` table (migration 0036);
+  (428/409) and an append-only `medical_record_history` table (migration 0038);
   the card shows "Last changed by X".
 - **Not done:** co-viewing screens (no real transport/route yet), an
   emergency-card edit screen (the 409 UX needs one), and the child "My weeks"

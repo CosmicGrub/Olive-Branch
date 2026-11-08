@@ -13,6 +13,7 @@
 // real router, not a fake one.
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'auth_session.dart';
 
 class ApiException implements Exception {
   ApiException(this.statusCode, this.error, {this.message, this.faults});
@@ -28,8 +29,49 @@ class ApiException implements Exception {
   /// `certifiedExportBundleFor()` returns one (packages/db/src/pool.ts).
   /// Null for every other denial/error, which never sends this key.
   final List<dynamic>? faults;
+  /// The typed subclass for [statusCode]: 401 -> [UnauthorizedException],
+  /// 403 -> [ForbiddenException], anything else a plain [ApiException].
+  /// Every `>= 400` response in this file goes through here so a caller can
+  /// `on UnauthorizedException` instead of comparing status codes.
+  factory ApiException.fromStatus(int statusCode, String error,
+      {String? message, List<dynamic>? faults}) {
+    if (statusCode == 401) return UnauthorizedException(error, message: message);
+    if (statusCode == 403) return ForbiddenException(error, message: message, faults: faults);
+    return ApiException(statusCode, error, message: message, faults: faults);
+  }
+
+  /// A sentence safe to show ANYONE, a child included — never the raw
+  /// `401: expired` / server reason code. The reason stays on [error] for
+  /// logs and for guardian-facing screens that map specific codes themselves.
+  String get userMessage {
+    if (statusCode == 401) return 'This device needs to sign in again.';
+    if (statusCode == 403) return "That isn't available right now.";
+    return 'Something went wrong. Please try again.';
+  }
+
   @override
   String toString() => 'ApiException($statusCode, $error)';
+}
+
+/// [ApiException.userMessage] for an [ApiException], a generic connection line
+/// for anything else (a socket error, a timeout, a decode failure) — the one
+/// place a screen turns an arbitrary caught error into words it may show.
+String userMessageFor(Object e) =>
+    e is ApiException ? e.userMessage : 'Something went wrong. Check your connection and try again.';
+
+/// The server refused the session itself (401): no/expired/forged token,
+/// `device_revoked`, or — from [AuthSession] — `not_signed_in` (no session was
+/// ever installed). [OliveApi] already retried once after refreshing before
+/// surfacing one of these.
+class UnauthorizedException extends ApiException {
+  UnauthorizedException(String error, {String? message}) : super(401, error, message: message);
+}
+
+/// The session is valid but not allowed to do this (403): a role/edge check,
+/// `pin_incorrect`, `account_deactivated`, ... Never retried.
+class ForbiddenException extends ApiException {
+  ForbiddenException(String error, {String? message, List<dynamic>? faults})
+      : super(403, error, message: message, faults: faults);
 }
 
 /// device-pairing-provisioning design spec's own explicit requirement:
@@ -45,8 +87,8 @@ class ApiException implements Exception {
 /// "catch the specific thing, not a string compare buried in a generic
 /// catch" discipline [ApiException] itself already models for every other
 /// distinguishable server reason in this file.
-class DeviceRevokedException extends ApiException {
-  DeviceRevokedException() : super(401, 'device_revoked');
+class DeviceRevokedException extends UnauthorizedException {
+  DeviceRevokedException() : super('device_revoked');
 }
 
 /// One recognized homework problem, as returned by POST
@@ -82,12 +124,59 @@ class HomeworkProblemResult {
 }
 
 class OliveApi {
-  OliveApi(this.baseUrl, this.sessionToken, {http.Client? client})
+  /// [sessionToken] is the bearer this api starts with. With a [session]
+  /// (audit G-02/G-06: the real authenticated session, see auth_session.dart)
+  /// every request asks the session for its CURRENT token instead, and a 401 is
+  /// retried exactly once after the session refreshes; without one the token is
+  /// used verbatim, exactly as before (tests, the explicit dev path, the
+  /// pre-session invite/pairing calls).
+  OliveApi(this.baseUrl, this.sessionToken, {http.Client? client, this.session})
       : _client = client ?? http.Client();
 
   final String baseUrl;
   final String sessionToken;
+  final AuthSession? session;
   final http.Client _client;
+
+  // --- session (audit G-02/G-06/C-03) ------------------------------------
+  // POST: a paired device trades {deviceId, deviceCredential} for a fresh
+  // short session; no session required. See auth_session.dart.
+  static const sessionRefreshPath = '/v1/auth/session/refresh';
+  // POST: the signed-in guardian's device revokes itself ("Sign out").
+  static const sessionSignOutPath = '/v1/auth/session/sign-out';
+
+  /// Sends one authenticated request, with the session's CURRENT token, and —
+  /// when a [session] is present and able to refresh — retries ONCE on a 401
+  /// (an expired session) with a freshly refreshed token. A second 401 is
+  /// returned as-is for [_decode] to surface. `device_revoked` is never
+  /// retried: it ends the session (clearing the stored identity) instead.
+  /// [send] must build the whole request from the token it is given, so the
+  /// retry is a true re-send, not a replay of stale headers.
+  Future<http.Response> _authed(Future<http.Response> Function(String token) send) async {
+    final s = session;
+    if (s == null) return send(sessionToken);
+    var res = await send(await s.token());
+    if (res.statusCode == 401) {
+      if (_isDeviceRevoked(res)) {
+        await s.handleRevoked();
+        return res;
+      }
+      if (s.canRefresh) {
+        res = await send(await s.refresh());
+        if (res.statusCode == 401 && _isDeviceRevoked(res)) await s.handleRevoked();
+      }
+    }
+    return res;
+  }
+
+  static bool _isDeviceRevoked(http.Response res) {
+    try {
+      final b = jsonDecode(res.body);
+      return b is Map && b['error'] == 'device_revoked';
+    } catch (_) {
+      return false;
+    }
+  }
 
   // --- identity -----------------------------------------------------------
   static const mePath = '/v1/me';
@@ -401,34 +490,34 @@ class OliveApi {
     String? childId,
     Map<String, String>? query,
   }) async {
-    final res = await _client.get(_uri(path, childId, query),
-        headers: {'authorization': 'Bearer $sessionToken'});
+    final res = await _authed((t) => _client.get(_uri(path, childId, query),
+        headers: {'authorization': 'Bearer $t'}));
     return _decode(res);
   }
 
   /// Mirrors [_get]'s header/decode conventions for a JSON-body POST.
   Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body,
       {String? childId}) async {
-    final res = await _client.post(
+    final res = await _authed((t) => _client.post(
       _uri(path, childId),
       headers: {
-        'authorization': 'Bearer $sessionToken',
+        'authorization': 'Bearer $t',
         'content-type': 'application/json',
       },
       body: jsonEncode(body),
-    );
+    ));
     return _decode(res);
   }
 
   /// Mirrors [_post]'s header/decode conventions for a JSON-body PUT
   /// (replace-all semantics — see [setAvailability]).
   Future<Map<String, dynamic>> _put(String path, {String? childId, required Object body}) async {
-    final res = await _client.put(_uri(path, childId),
+    final res = await _authed((t) => _client.put(_uri(path, childId),
         headers: {
-          'authorization': 'Bearer $sessionToken',
+          'authorization': 'Bearer $t',
           'content-type': 'application/json',
         },
-        body: jsonEncode(body));
+        body: jsonEncode(body)));
     return _decode(res);
   }
 
@@ -436,12 +525,12 @@ class OliveApi {
   /// MASTERFILE §11's `DELETE /v1/me/device-tokens` (unregistering a device
   /// on sign-out/uninstall), the one caller that needs it.
   Future<Map<String, dynamic>> _delete(String path, Map<String, dynamic> body) async {
-    final res = await _client.delete(_uri(path),
+    final res = await _authed((t) => _client.delete(_uri(path),
         headers: {
-          'authorization': 'Bearer $sessionToken',
+          'authorization': 'Bearer $t',
           'content-type': 'application/json',
         },
-        body: jsonEncode(body));
+        body: jsonEncode(body)));
     return _decode(res);
   }
 
@@ -457,7 +546,7 @@ class OliveApi {
       if (res.statusCode == 401 && body['error'] == 'device_revoked') {
         throw DeviceRevokedException();
       }
-      throw ApiException(res.statusCode, body['error'] as String? ?? 'error',
+      throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error',
           message: body['message'] as String?, faults: body['faults'] as List<dynamic>?);
     }
     return body;
@@ -653,16 +742,16 @@ class OliveApi {
     String childId, String medicationId, String slot, {
     String status = 'given',
   }) async {
-    final res = await _client.post(
+    final res = await _authed((t) => _client.post(
       _uri(medicationDoses.replaceFirst(':childId', childId)
           .replaceFirst(':medicationId', medicationId)),
-      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode({'slot': slot, 'status': status}),
-    );
+    ));
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 201 || res.statusCode == 409) return body;
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
 
   /// `{bloodType, allergies, conditions, pediatricianName,
@@ -801,15 +890,15 @@ class OliveApi {
   /// outcome, and only throws [ApiException] for a genuinely unexpected
   /// status.
   Future<Map<String, dynamic>> recordExchangeArrival(String childId) async {
-    final res = await _client.post(
+    final res = await _authed((t) => _client.post(
       _uri(exchangeArrival, childId),
-      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode(const {}),
-    );
+    ));
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 201 || res.statusCode == 409) return body;
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
 
   /// `{entries: [{id, fromUserId, fromUserName, items: [{kind, note}, ...],
@@ -832,19 +921,19 @@ class OliveApi {
   /// `{kind, note}` pair this client's own one real call site sends
   /// (care_note.dart never batches).
   Future<Map<String, dynamic>> writeCareNote(String childId, String kind, String note) async {
-    final res = await _client.post(
+    final res = await _authed((t) => _client.post(
       _uri(careNotes, childId),
-      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode({
         'items': [
           {'kind': kind, 'note': note},
         ],
       }),
-    );
+    ));
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 201 || res.statusCode == 400) return body;
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
 
   /// `{letters: [{id, writtenAtAge, openAtAge, writtenAt, openedAt,
@@ -883,15 +972,15 @@ class OliveApi {
   /// [ApiException] only for a genuinely unexpected status, notably 404
   /// `letter_not_found`.
   Future<Map<String, dynamic>> openLetter(String childId, String letterId) async {
-    final res = await _client.post(
+    final res = await _authed((t) => _client.post(
       _uri(letterOpen.replaceFirst(':childId', childId).replaceFirst(':letterId', letterId)),
-      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode(const {}),
-    );
+    ));
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 200 || res.statusCode == 409) return body;
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
 
   /// Deletes ONE real letter, read or not -- DELETE [letterDelete],
@@ -939,6 +1028,23 @@ class OliveApi {
   /// response, exactly like [fetchMe]/[fetchNow]/[fetchInbox] above.
   Future<void> setGuardianPin(String pin) async {
     await _post(guardianPinPath, {'pin': pin});
+  }
+
+  /// REPLACES an existing PIN. Since audit G-13 the server refuses to change a
+  /// PIN without proof of the current one (403 `current_pin_required` /
+  /// `pin_incorrect` / `pin_locked`, all [ForbiddenException]); the first PIN
+  /// ever set goes through [setGuardianPin], which needs no proof.
+  Future<void> changeGuardianPin(String currentPin, String newPin) async {
+    await _post(guardianPinPath, {'pin': newPin, 'currentPin': currentPin});
+  }
+
+  /// POST sessionSignOutPath — revokes THIS device server-side. Needs a
+  /// guardian session carrying a deviceId claim; returns whether a device was
+  /// actually revoked (false for a dev-login session, which has none).
+  /// [AuthSession.signOut] is the normal caller.
+  Future<bool> signOutDevice() async {
+    final body = await _post(sessionSignOutPath, const {});
+    return body['revoked'] == true;
   }
 
   /// Starts a real call for [childId] — POST [calls], server/routes.mjs's
@@ -1234,15 +1340,15 @@ class OliveApi {
   /// directly instead of throwing, and only throws [ApiException] for a
   /// genuinely unexpected status.
   Future<Map<String, dynamic>> captureHomework(String childId, List<int> imageBytes) async {
-    final res = await _client.post(
+    final res = await _authed((t) => _client.post(
       _uri(homeworkCapture, childId),
-      headers: {'authorization': 'Bearer $sessionToken', 'content-type': 'application/json'},
+      headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode({'image': base64Encode(imageBytes)}),
-    );
+    ));
     final body =
         res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 200 || res.statusCode == 422) return body;
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
 
   /// `{ order: {...} }` for a real custody order, or `{ order: null }` when
@@ -1504,7 +1610,7 @@ Future<Map<String, dynamic>> webauthnLoginChallenge(
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body;
 }
@@ -1538,7 +1644,7 @@ Future<String> webauthnLoginVerify(
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body['token'] as String;
 }
@@ -1562,7 +1668,7 @@ Future<Map<String, dynamic>?> fetchGuardianInvite(
   if (res.statusCode == 404) return null;
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body['invite'] as Map<String, dynamic>;
 }
@@ -1585,7 +1691,7 @@ Future<Map<String, dynamic>> acceptGuardianInvite(
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body['invite'] as Map<String, dynamic>;
 }
@@ -1614,7 +1720,7 @@ Future<void> revokeGuardianInvite(
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
 }
 
@@ -1650,7 +1756,7 @@ Future<Map<String, dynamic>> bootstrapGuardianInvite(
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body;
 }
@@ -1686,7 +1792,7 @@ Future<Map<String, dynamic>> redeemDevicePairingCode(
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body;
 }
@@ -1695,12 +1801,19 @@ Future<Map<String, dynamic>> redeemDevicePairingCode(
 /// server/index.mjs's own header for why this exists and its limits: no
 /// credential is checked, and the server refuses this route entirely unless
 /// started with DEV_LOGIN=1.
+///
+/// Audit G-02/G-06: no production screen calls this any more (they go through
+/// [apiFor]/[AuthSession], which use a paired device's credential). It stays
+/// callable ONLY behind the explicit [AuthSession.devLoginEnabled] flag — off
+/// by default — and fails closed (401 `dev_login_disabled`) otherwise, rather
+/// than quietly hitting a route that 404s in production.
 Future<String> devLoginFor(
   String baseUrl, {
   String? userId,
   String? childId,
   http.Client? client,
 }) async {
+  if (!AuthSession.devLoginEnabled) throw UnauthorizedException('dev_login_disabled');
   final c = client ?? http.Client();
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.devLoginPath}'),
@@ -1709,7 +1822,7 @@ Future<String> devLoginFor(
   ).timeout(const Duration(seconds: 6));
   final body = jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
-    throw ApiException(res.statusCode, body['error'] as String? ?? 'error');
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body['token'] as String;
 }

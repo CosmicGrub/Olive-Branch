@@ -46,20 +46,20 @@ void main() {
           .setMockStreamHandler(eventChannel, null);
     });
 
-    testWidgets('a redeemed device (non-null sessionToken) builds the real kiosk tree '
+    testWidgets('a redeemed device builds the real kiosk tree '
         'for its OWN childId, not the seed default', (tester) async {
       await tester.pumpWidget(const OliveLive(
-        initialTheme: defaultAppTheme, childId: 'redeemed-child-42', sessionToken: 'real-token'));
+        initialTheme: defaultAppTheme, childId: 'redeemed-child-42', session: null));
       await tester.pump();
       expect(find.byType(KioskShell), findsOneWidget);
       final home = tester.widget<LiveChildHomeScreen>(find.byType(LiveChildHomeScreen));
       expect(home.childId, 'redeemed-child-42');
     });
 
-    testWidgets('the dart-define path (null sessionToken) builds the identical tree shape',
+    testWidgets('the dart-define path builds the identical tree shape',
         (tester) async {
       await tester.pumpWidget(const OliveLive(
-        initialTheme: defaultAppTheme, childId: 'dart-define-child', sessionToken: null));
+        initialTheme: defaultAppTheme, childId: 'dart-define-child', session: null));
       await tester.pump();
       expect(find.byType(KioskShell), findsOneWidget);
       final home = tester.widget<LiveChildHomeScreen>(find.byType(LiveChildHomeScreen));
@@ -93,10 +93,19 @@ void main() {
       expect(src, contains('DeviceIdentityStore().save(identity)'));
     });
 
-    test('device_revoked is recognized distinctly and clears the stored identity '
-        '(not folded into the generic catch)', () {
+    test('device_revoked is recognized distinctly (not folded into the generic catch); '
+        'the AuthSession clears the stored identity and the shell returns to pairing', () {
       expect(src, contains('on DeviceRevokedException'));
-      expect(src, contains('DeviceIdentityStore().clear()'));
+      expect(src, contains('onSignedOut: _returnToPairing'));
+      expect(src, isNot(contains('DeviceIdentityStore().clear()')));
+    });
+
+    test('a paired device boots on a real AuthSession built from its stored identity; '
+        'the dev path is opt-in and devLoginFor is never called here', () {
+      expect(src, contains('session: _deviceSession(identity)'));
+      expect(src, contains("deviceCredential: result['deviceCredential'] as String?"));
+      expect(src, contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+      expect(RegExp(r'await devLoginFor\(').hasMatch(src), isFalse);
     });
   });
 
@@ -109,11 +118,11 @@ void main() {
         '_bootLiveApp directly -- applies identically regardless of how '
         'identity was resolved', () {
       expect(src, contains(
-        'await _bootWithOnboardingGate(childId: stored.targetId, sessionToken: stored.sessionToken);'));
+        'await _bootWithOnboardingGate(childId: stored.targetId, session: _deviceSession(stored));'));
       expect(src, contains(
-        'await _bootWithOnboardingGate(childId: _dartDefineChildId, sessionToken: null);'));
+        'await _bootWithOnboardingGate(childId: _dartDefineChildId, session: _devSession());'));
       expect(src, contains(
-        'await _bootWithOnboardingGate(childId: identity.targetId, sessionToken: identity.sessionToken);'));
+        'await _bootWithOnboardingGate(childId: identity.targetId, session: _deviceSession(identity));'));
     });
 
     test('hasOnboarded is fetched fresh from GET /v1/me before deciding the '
@@ -125,7 +134,7 @@ void main() {
     test('hasOnboarded true proceeds straight into _bootLiveApp (KioskShell/'
         'ChildHome); false runs _OnboardingBootApp instead', () {
       expect(src, contains('if (hasOnboarded) {'));
-      expect(src, contains('await _bootLiveApp(childId: childId, sessionToken: sessionToken);'));
+      expect(src, contains('await _bootLiveApp(childId: childId, session: session);'));
       expect(src, contains('runApp(_OnboardingBootApp('));
     });
 
@@ -143,7 +152,7 @@ void main() {
       expect(src, contains('home: OnboardingFlowScreen('));
       expect(src, contains('onComplete: onOnboarded,'));
       expect(src, contains(
-        'onOnboarded: () => _bootLiveApp(childId: childId, sessionToken: sessionToken),'));
+        'onOnboarded: () => _bootLiveApp(childId: childId, session: session),'));
     });
 
     test('_OnboardingBootApp NEVER references KioskShell anywhere in its own '
