@@ -23,6 +23,8 @@
 // to reach this — see child_home.dart's own header; nothing in this file is
 // imported there.
 import 'package:flutter/material.dart';
+import 'design_tokens_generated.dart';
+import 'olive_tokens.dart' show designColor, designSemantic;
 
 /// Hue identity. See the design spec's own palette table for the intended
 /// feel of each — exact seed colors are this file's implementation detail,
@@ -106,46 +108,53 @@ class AppTheme {
 /// purple) stays available as an explicit, real option.
 const defaultAppTheme = AppTheme(palette: ThemePalette.olive, brightness: ThemeBrightness.light);
 
-/// One real seed color per palette — see the design spec's own table for
-/// the intended feel; exact hex values are this file's call, not locked by
-/// the spec. `classic` is `Colors.deepPurple` verbatim: the stock default
-/// this whole catalog replaces, kept as an explicit, real option rather than
-/// deleted outright.
-Color _seedFor(ThemePalette palette) => switch (palette) {
-      // The brand colour: a calm olive green, the same #4A6B4F the product's
-      // documents and mockups already wear.
-      ThemePalette.olive => const Color(0xFF4A6B4F),
-      ThemePalette.classic => Colors.deepPurple,
-      // Muted teal, soft and neutral — the calm, low-arousal option; also
-      // this catalog's own suggested starting point (see defaultAppTheme's
-      // own comment on why that is a picker-only opinion, not this file's
-      // fail-closed fallback).
-      ThemePalette.calmModern => const Color(0xFF4A7C74),
-      // Terracotta/amber — a warm earth tone matching MASTERFILE's own warm
-      // copy tone throughout (§4.1's "sleeps," the ribbon/handover language).
-      ThemePalette.warmGrounded => const Color(0xFFB5651D),
-      // Coral/peach — the most overtly "kid app" option in the catalog.
-      // Deepened from the original #FF7F50 so text on the primary passes
-      // WCAG AA (theme_data_test.dart asserts it for every palette).
-      ThemePalette.softPlayful => const Color(0xFFE8683F),
-      // Forest green — richer and darker than calmModern's teal, meant to
-      // read as lived-in and evening-friendly rather than as a screen.
-      ThemePalette.deepCozy => const Color(0xFF2E5339),
-      // A confident, more saturated blue — energetic without being pastel,
-      // for an older kid who does not want "cute."
-      ThemePalette.brightBold => const Color(0xFF1565C0),
-    };
+/// The palette's generated name (design_tokens_generated.dart). The enum NAMES match 1:1; the
+/// wire value (`.name`) is unchanged.
+DesignPalette designPaletteOf(ThemePalette p) => DesignPalette.values.byName(p.name);
+DesignMode designModeOf(ThemeBrightness b) => b == ThemeBrightness.dark ? DesignMode.dark : DesignMode.light;
 
-/// THE real catalog function — 12 real `ColorScheme`s (6 palettes × 2
-/// brightnesses), each one `ColorScheme.fromSeed()` deriving a full,
-/// materially distinct scheme from its own real seed color, never 12
-/// hand-tuned constants and never a broken seed function silently producing
-/// near-identical results (see theme_test.dart's own assertion of exactly
-/// that).
-ColorScheme colorSchemeFor(AppTheme theme) => ColorScheme.fromSeed(
-      seedColor: _seedFor(theme.palette),
-      brightness: theme.brightness == ThemeBrightness.dark ? Brightness.dark : Brightness.light,
-    );
+/// The prototype's seed colour per palette (kit.js SEEDS), generated. `classic` is
+/// `Colors.deepPurple` verbatim: the stock default this whole catalog replaces, kept as an
+/// explicit, real option rather than deleted outright.
+Color seedFor(ThemePalette palette) => Color(kDesignSeeds[designPaletteOf(palette)]!);
+
+/// THE real catalog function: 14 `ColorScheme`s (7 palettes x 2 brightnesses).
+///
+/// PARITY (docs/superpowers/parity/PARITY.md): the prototype is the reference. These are NOT
+/// `ColorScheme.fromSeed` derivations any more; every slot is a role of the prototype's own
+/// `OB.theme(palette, mode)`, read from the generated tokens, so the real app and the live
+/// prototype are the same colours by construction (test/design_parity_test.dart proves it).
+///
+/// Role -> slot: bg -> surface (the page), surface -> surfaceContainerLowest (cards), surface2 ->
+/// surfaceContainer, surface3 -> surfaceContainerHigh/Highest, ink -> onSurface, ink2 ->
+/// onSurfaceVariant, edge -> outline (control borders, 3:1), line -> outlineVariant (hairlines),
+/// pri/onPri, priC/onPriC -> primary/primaryContainer, accent/accentC -> secondary/
+/// secondaryContainer, priD/priC2 -> tertiary/tertiaryContainer, bad/badC -> error/errorContainer.
+/// Roles with no slot (ink3, line, track, focus, hero stops, shadows) are on [OliveTokens].
+ColorScheme colorSchemeFor(AppTheme theme) {
+  final p = designPaletteOf(theme.palette), m = designModeOf(theme.brightness);
+  Color r(DesignRole role) => designColor(p, m, role);
+  Color sem(DesignSemantic s) => designSemantic(m, s);
+  return ColorScheme(
+    brightness: m == DesignMode.dark ? Brightness.dark : Brightness.light,
+    primary: r(DesignRole.pri), onPrimary: r(DesignRole.onPri),
+    primaryContainer: r(DesignRole.priC), onPrimaryContainer: r(DesignRole.onPriC),
+    secondary: r(DesignRole.accent), onSecondary: r(DesignRole.onAccent),
+    secondaryContainer: r(DesignRole.accentC), onSecondaryContainer: r(DesignRole.ink),
+    tertiary: r(DesignRole.priD), onTertiary: r(DesignRole.onPri),
+    tertiaryContainer: r(DesignRole.priC2), onTertiaryContainer: r(DesignRole.onPriC),
+    error: sem(DesignSemantic.bad), onError: r(DesignRole.onBad),
+    errorContainer: sem(DesignSemantic.badC), onErrorContainer: sem(DesignSemantic.bad),
+    surface: r(DesignRole.bg), onSurface: r(DesignRole.ink), onSurfaceVariant: r(DesignRole.ink2),
+    surfaceDim: r(DesignRole.surface3), surfaceBright: r(DesignRole.surface),
+    surfaceContainerLowest: r(DesignRole.surface), surfaceContainerLow: r(DesignRole.bg),
+    surfaceContainer: r(DesignRole.surface2), surfaceContainerHigh: r(DesignRole.surface3),
+    surfaceContainerHighest: r(DesignRole.surface3),
+    outline: r(DesignRole.edge), outlineVariant: r(DesignRole.line),
+    shadow: Colors.black, scrim: Colors.black, surfaceTint: r(DesignRole.pri),
+    inverseSurface: r(DesignRole.ink), onInverseSurface: r(DesignRole.bg), inversePrimary: r(DesignRole.priC2),
+  );
+}
 
 /// Human-facing title + one-line blurb per palette — theme_picker_screen.dart's
 /// own card content, kept here alongside the catalog itself rather than

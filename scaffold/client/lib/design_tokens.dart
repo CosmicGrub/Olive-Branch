@@ -42,4 +42,7 @@ class AppRadius {
   // Overhaul additions: cards and tiles (xl), sheets and dialogs (sheet).
   static const xl = 22.0;
   static const sheet = 28.0;
+  // Parity additions (the prototype's --r5, and its button/field corner).
+  static const hero = 34.0;
+  static const field = 15.0;
 }

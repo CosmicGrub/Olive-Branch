@@ -130,6 +130,10 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  assets:
+    # The design tokens generated from the prototype's kit (tools/gen-design-tokens.mjs);
+    # test/design_parity_test.dart loads this file to prove the theme matches it.
+    - assets/design/
   fonts:
     # Bundled, so the kiosk never depends on the network for type. Both are
     # SIL OFL 1.1 (licence texts beside the files in assets/fonts).
