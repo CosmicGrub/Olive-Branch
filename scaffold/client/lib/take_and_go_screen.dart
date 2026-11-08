@@ -65,6 +65,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'sha256.dart';
 
 /// Same convention as deletion_screen.dart's own `_defaultBaseUrl`/
@@ -183,9 +184,8 @@ class _TakeAndGoScreenState extends State<TakeAndGoScreen> {
     if (_working || _done) return;
     setState(() => _working = true);
     try {
-      final String token = await devLoginFor(widget.baseUrl,
+      final OliveApi api = await apiFor(widget.baseUrl,
           childId: widget.childId, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final Map<String, dynamic> result = await api.takeAndGo(widget.childId);
       if (widget.httpClient == null) api.close();
 

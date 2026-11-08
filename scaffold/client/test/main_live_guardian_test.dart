@@ -5,7 +5,7 @@
 // Mirrors main_live_test.dart's own two-part shape exactly (see that file's
 // own header for why `main()` itself isn't directly testable, and what IS):
 //  A. WIDGET — [OliveLiveGuardian] threads its resolved guardianId/
-//     sessionToken into the real LiveGuardianHomeScreen.
+//     session into the real LiveGuardianHomeScreen.
 //  B. SOURCE STRUCTURE — the boot-branch decision, asserted against this
 //     file's own source (bool.hasEnvironment('OLIVE_GUARDIAN_ID'), the
 //     PairingRedeemScreen wired for role: 'guardian', DeviceRevokedException
@@ -19,20 +19,20 @@ import 'package:olive_client/theme.dart';
 
 void main() {
   group('A — OliveLiveGuardian widget threads the resolved boot identity through', () {
-    testWidgets('a redeemed device (non-null sessionToken) builds the real guardian home '
+    testWidgets('a redeemed device builds the real guardian home '
         'for its OWN guardianId, not the seed default', (tester) async {
       await tester.pumpWidget(const OliveLiveGuardian(
-        initialTheme: defaultAppTheme, guardianId: 'redeemed-guardian-42', sessionToken: 'real-token',
+        initialTheme: defaultAppTheme, guardianId: 'redeemed-guardian-42', session: null,
         hasPin: true));
       await tester.pump();
       final home = tester.widget<LiveGuardianHomeScreen>(find.byType(LiveGuardianHomeScreen));
       expect(home.guardianId, 'redeemed-guardian-42');
     });
 
-    testWidgets('the dart-define path (null sessionToken) builds the identical tree shape',
+    testWidgets('the dart-define path builds the identical tree shape',
         (tester) async {
       await tester.pumpWidget(const OliveLiveGuardian(
-        initialTheme: defaultAppTheme, guardianId: 'dart-define-guardian', sessionToken: null,
+        initialTheme: defaultAppTheme, guardianId: 'dart-define-guardian', session: null,
         hasPin: true));
       await tester.pump();
       final home = tester.widget<LiveGuardianHomeScreen>(find.byType(LiveGuardianHomeScreen));
@@ -46,7 +46,7 @@ void main() {
     testWidgets('hasPin: false renders GuardianSetupScreen instead of '
         'LiveGuardianHomeScreen — no dismiss action, no way back to Home', (tester) async {
       await tester.pumpWidget(const OliveLiveGuardian(
-        initialTheme: defaultAppTheme, guardianId: 'g-1', sessionToken: null, hasPin: false));
+        initialTheme: defaultAppTheme, guardianId: 'g-1', session: null, hasPin: false));
       await tester.pump();
       expect(find.byType(LiveGuardianHomeScreen), findsNothing);
       expect(find.text('Set up your account'), findsOneWidget);
@@ -55,17 +55,17 @@ void main() {
     testWidgets('hasPin: true renders LiveGuardianHomeScreen directly, no setup '
         'screen anywhere in the tree', (tester) async {
       await tester.pumpWidget(const OliveLiveGuardian(
-        initialTheme: defaultAppTheme, guardianId: 'g-1', sessionToken: null, hasPin: true));
+        initialTheme: defaultAppTheme, guardianId: 'g-1', session: null, hasPin: true));
       await tester.pump();
       expect(find.byType(LiveGuardianHomeScreen), findsOneWidget);
       expect(find.text('Set up your account'), findsNothing);
     });
 
-    testWidgets('applies identically to a redeemed pairing (non-null sessionToken) — '
+    testWidgets('applies identically to a redeemed pairing — '
         'the gate is driven purely by identity state, not how identity was resolved',
         (tester) async {
       await tester.pumpWidget(const OliveLiveGuardian(
-        initialTheme: defaultAppTheme, guardianId: 'paired-g', sessionToken: 'real-token',
+        initialTheme: defaultAppTheme, guardianId: 'paired-g', session: null,
         hasPin: false));
       await tester.pump();
       expect(find.byType(LiveGuardianHomeScreen), findsNothing);
@@ -98,9 +98,20 @@ void main() {
       expect(src, contains('DeviceIdentityStore().save(identity)'));
     });
 
-    test('device_revoked is recognized distinctly and clears the stored identity', () {
+    test('device_revoked is recognized distinctly; the AuthSession clears the stored '
+        'identity and the shell returns to pairing (no raw clear() in this file)', () {
       expect(src, contains('on DeviceRevokedException'));
-      expect(src, contains('DeviceIdentityStore().clear()'));
+      expect(src, contains('onSignedOut: _returnToPairing'));
+      expect(src, isNot(contains('DeviceIdentityStore().clear()')));
+    });
+
+    test('a paired device boots on a real AuthSession built from its stored identity; '
+        'the dev path is opt-in and devLoginFor is never called here', () {
+      expect(src, contains('session: _deviceSession(stored)'));
+      expect(src, contains('session: _deviceSession(identity)'));
+      expect(src, contains("deviceCredential: result['deviceCredential'] as String?"));
+      expect(src, contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+      expect(RegExp(r'await devLoginFor\(').hasMatch(src), isFalse);
     });
 
     test('a guardian-role redeem never invents a childId — this build keeps the '
@@ -114,7 +125,7 @@ void main() {
         'OliveLiveGuardian, on both boot paths -- Automatic First-Run Detection is '
         're-checked every launch, never cached across boots', () {
       expect(src, contains("me['hasPin'] == true"));
-      expect(src, contains('final hasPin = await _fetchHasPin(guardianId, sessionToken);'));
+      expect(src, contains('final hasPin = await _fetchHasPin(guardianId);'));
       expect(src, contains('hasPin: hasPin'));
     });
 

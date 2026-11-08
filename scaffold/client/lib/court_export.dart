@@ -50,6 +50,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'form_factors.dart' as ff;
 import 'sha256.dart';
 
@@ -977,9 +978,8 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
     setState(() => _rawExporting = true);
     OliveApi? api;
     try {
-      final String token = await devLoginFor(widget.baseUrl,
+      api = await apiFor(widget.baseUrl,
           userId: widget.guardianId, client: widget.httpClient);
-      api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final Map<String, dynamic> result = await api.fetchRawExport(widget.childId);
       // Same "hash the exact string the server hashed" ethos as
       // deletion_screen.dart's own _export() — see that method's doc
@@ -1038,9 +1038,8 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
   Future<void> _load() async {
     setState(() => _state = _LiveExportState.loading);
     try {
-      final token = await devLoginFor(widget.baseUrl,
+      final api = await apiFor(widget.baseUrl,
           userId: widget.guardianId, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final result = await api.fetchCertifiedExport(widget.childId);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;

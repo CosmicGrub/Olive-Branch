@@ -44,6 +44,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'form_factors.dart' as ff;
 
 // ============================================================ schedule.ts ===
@@ -299,9 +300,8 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
   Future<void> _load() async {
     setState(() => _loadState = _LoadState.loading);
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final results = await Future.wait([
         api.fetchExchangeBagItems(widget.childId!),
         api.fetchExchangeRunningLate(widget.childId!),
@@ -362,9 +362,8 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
   Future<void> _toggleLive(BagItem item, {bool? sent, bool? returned}) async {
     setState(() => _togglingItemIds.add(item.id));
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final Map<String, dynamic> row = await api.setExchangeBagItemStatus(
         widget.childId!, item.id, sent: sent, returned: returned);
       if (widget.httpClient == null) api.close();
@@ -395,9 +394,8 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
   Future<void> _logRunningLateLive(int minutes) async {
     setState(() => _loggingLate = true);
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final Map<String, dynamic> row = await api.logExchangeRunningLate(widget.childId!, minutes);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
@@ -438,9 +436,8 @@ class _ExchangeScreenState extends State<ExchangeScreen> {
   Future<void> _logArrivalLive() async {
     setState(() => _loggingArrival = true);
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final Map<String, dynamic> row = await api.recordExchangeArrival(widget.childId!);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;

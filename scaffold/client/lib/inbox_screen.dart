@@ -37,6 +37,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'calendar_day_logic.dart';
 import 'form_factors.dart' as ff;
 import 'receipt_screen.dart';
@@ -127,7 +128,7 @@ class _InboxScreenState extends State<InboxScreen> {
   Future<void> _load() async {
     setState(() => _loadState = _LoadState.loading);
     final OliveApi api =
-        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
     try {
       final Map<String, dynamic> result = await api.fetchInbox(widget.childId!);
       final List<dynamic> raw = result['entries'] as List<dynamic>? ?? <dynamic>[];
@@ -173,7 +174,7 @@ class _InboxScreenState extends State<InboxScreen> {
   /// previously-watched message as "New."
   Future<void> _markOpenedRemote(String messageId) async {
     final OliveApi api =
-        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
     try {
       await api.markInboxOpened(widget.childId!, messageId);
     } catch (e) {

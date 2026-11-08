@@ -36,6 +36,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'form_factors.dart' as ff;
 import 'theme.dart';
 
@@ -107,9 +108,8 @@ class _ThemePickerScreenState extends State<ThemePickerScreen> {
     }
     setState(() => _applying = true);
     try {
-      final token = await devLoginFor(widget.baseUrl!,
+      final api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       try {
         await api.putTheme(widget.childId!,
             themePalette: _pending.palette.name, themeBrightness: _pending.brightness.name);

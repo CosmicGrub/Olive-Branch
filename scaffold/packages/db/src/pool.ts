@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { randomInt } from 'node:crypto';
+import { randomInt, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { DateTime } from 'luxon';
 import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
 import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
@@ -451,8 +451,9 @@ export async function pinCredentialFor(
  * gets the same treatment rather than the narrower accepted-race one. */
 export async function setPinCredential(
   pool: pg.Pool, userId: string, pinHash: string,
-): Promise<void> {
-  await withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+  opts: { onlyIfAbsent?: boolean } = {},
+): Promise<boolean> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
     const [row] = await q(
       `SELECT deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`, [userId]);
     if (row?.deactivated_at) {
@@ -460,6 +461,21 @@ export async function setPinCredential(
         new Error('setPinCredential: account is deactivated'),
         { code: 'account_deactivated' },
       );
+    }
+    if (opts.onlyIfAbsent) {
+      // First-PIN path (POST /v1/me/pin with no currentPin): one atomic
+      // INSERT that does nothing when a credential already exists, so two
+      // racing "first PIN" requests cannot both win, and a request that lost
+      // the race cannot silently overwrite the winner's PIN without proving
+      // the current one. `false` = a PIN already existed.
+      const inserted = await q(
+        `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
+         VALUES ($1, $2, 0, NULL, now())
+         ON CONFLICT (user_id) DO NOTHING
+         RETURNING user_id`,
+        [userId, pinHash],
+      );
+      return inserted.length > 0;
     }
     await q(
       `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
@@ -469,6 +485,7 @@ export async function setPinCredential(
              locked_until = NULL, updated_at = now()`,
       [userId, pinHash],
     );
+    return true;
   });
 }
 
@@ -2864,7 +2881,7 @@ export interface MedicalRecord {
   guardians: { userId: string; name: string; phone: string | null }[];
   medications: Medication[];
   /**
-   * G-11 (migration 0036) — optimistic-concurrency token. 0 when no card has
+   * G-11 (migration 0037) — optimistic-concurrency token. 0 when no card has
    * ever been written; otherwise the medical_record.version this read saw.
    * setMedicalRecord() requires it back.
    */
@@ -2941,7 +2958,7 @@ export class StaleMedicalRecordError extends Error {
   constructor(currentVersion: number) { super('stale_version'); this.currentVersion = currentVersion; }
 }
 
-/** One append-only history row (medical_record_history, migration 0036). */
+/** One append-only history row (medical_record_history, migration 0037). */
 export interface MedicalRecordHistoryEntry {
   version: number;
   changedById: string;
@@ -4076,6 +4093,21 @@ export async function cancelDevicePairingCode(
  */
 export const DEVICE_CODE_MAX_ATTEMPTS = 5;
 
+/**
+ * The paired device's long-lived credential (migration 0037). 32 CSPRNG bytes,
+ * base64url. Handed to the device once, at redeem; only [deviceCredentialDigest]
+ * of it is ever stored.
+ */
+export function newDeviceCredential(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/** SHA-256 hex. A fast hash is correct here: the input is 256 random bits, so
+ *  there is no low-entropy secret for an offline attacker to enumerate. */
+export function deviceCredentialDigest(credential: string): string {
+  return createHash('sha256').update(credential, 'utf8').digest('hex');
+}
+
 export type RedeemPairingCodeError =
   | 'not_found' | 'expired' | 'revoked' | 'already_redeemed' | 'role_mismatch' | 'locked';
 
@@ -4099,7 +4131,11 @@ export type RedeemPairingCodeError =
 export async function redeemDevicePairingCode(
   pool: pg.Pool, code: string, role: PairableRole, now: Date,
 ): Promise<
-  | { ok: true; deviceId: string; targetId: string; role: PairableRole }
+  | { ok: true; deviceId: string; targetId: string; role: PairableRole;
+      /** The device's long-lived credential — returned here, exactly once,
+       *  and never stored in the clear (only its SHA-256, see
+       *  [deviceCredentialDigest]). */
+      deviceCredential: string }
   | { ok: false; reason: RedeemPairingCodeError }
 > {
   return withSystemSession(pool, async (q) => {
@@ -4123,14 +4159,16 @@ export async function redeemDevicePairingCode(
 
     const label = `Paired ${now.toLocaleDateString('en-US',
       { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
+    const deviceCredential = newDeviceCredential();
     const inserted = await q(
-      `INSERT INTO paired_device (role, target_id, label, paired_via, paired_at)
-       VALUES ($1, $2, $3, $4, now())
+      `INSERT INTO paired_device (role, target_id, label, paired_via, paired_at, credential_hash)
+       VALUES ($1, $2, $3, $4, now(), $5)
        RETURNING id`,
-      [row.role, row.target_id, label, row.id],
+      [row.role, row.target_id, label, row.id, deviceCredentialDigest(deviceCredential)],
     );
     await q(`UPDATE device_pairing_code SET redeemed_at = now() WHERE id = $1`, [row.id]);
-    return { ok: true, deviceId: inserted[0].id, targetId: row.target_id, role: row.role };
+    return { ok: true, deviceId: inserted[0].id, targetId: row.target_id, role: row.role,
+             deviceCredential };
   });
 }
 
@@ -4194,6 +4232,91 @@ export async function revokePairedDevice(
         [deviceId, now.toISOString()]);
     }
     return { ok: true };
+  });
+}
+
+export type RefreshDeviceSessionError =
+  | 'invalid_device_credential' | 'device_revoked' | 'account_deactivated';
+
+/**
+ * POST /v1/auth/session/refresh's real work — the device trades its long-lived
+ * credential for the identity a fresh short session should carry. Runs as
+ * `system` (the calling device has no session; the credential is what
+ * authorizes it, the same posture redeemDevicePairingCode() has for the code).
+ *
+ * Order matters, and each branch is deliberate:
+ *   1. Unknown id, NULL stored hash (a pre-0037 device) and wrong credential
+ *      are ONE outcome, invalid_device_credential — an unauthenticated caller
+ *      learns nothing about which device ids exist, and one device's id paired
+ *      with another's credential ("wrong device") is just a wrong credential.
+ *      The digest compare is constant-time and runs even when the row is
+ *      missing (against a dummy digest) so latency does not reveal existence.
+ *   2. Only a caller who PROVED the credential learns the device was revoked
+ *      (device_revoked). A revoked device's credential is dead for good:
+ *      nothing here ever clears revoked_at.
+ *   3. A guardian-role device whose account has since been deactivated
+ *      (MASTERFILE section 2.10) gets account_deactivated, the same gate
+ *      dev-login and WebAuthn login already apply — a deactivated guardian's
+ *      long-lived device must not quietly keep minting sessions.
+ * Success stamps last_seen_at. The credential is NOT rotated: rotating a
+ * refresh credential on every use strands a device whose response was lost in
+ * transit (it would have to re-pair), which for a household kiosk is a worse
+ * failure than the replay window rotation closes; a stolen credential is cut
+ * off by a guardian revoking the device (checked on every request via the
+ * session's deviceId claim) — disclosed in MASTERFILE.
+ */
+export async function refreshPairedDeviceSession(
+  pool: pg.Pool, deviceId: string, deviceCredential: string, now: Date,
+): Promise<
+  | { ok: true; deviceId: string; role: PairableRole; targetId: string }
+  | { ok: false; reason: RefreshDeviceSessionError }
+> {
+  return withSystemSession(pool, async (q) => {
+    // `id::text = $1`, never casting the input to uuid: a garbage id must be a
+    // clean not-found, not a Postgres cast error that surfaces as a 500.
+    const rows = await q(
+      `SELECT id, role, target_id, revoked_at, credential_hash
+         FROM paired_device WHERE id::text = $1`,
+      [deviceId],
+    );
+    const row = rows[0];
+    const presented = Buffer.from(deviceCredentialDigest(deviceCredential), 'utf8');
+    const stored = Buffer.from(
+      typeof row?.credential_hash === 'string' ? row.credential_hash : '0'.repeat(64), 'utf8');
+    const credentialOk = Boolean(row) && typeof row.credential_hash === 'string' &&
+      presented.length === stored.length && timingSafeEqual(presented, stored);
+    if (!credentialOk) return { ok: false, reason: 'invalid_device_credential' };
+    if (row.revoked_at) return { ok: false, reason: 'device_revoked' };
+    if (row.role === 'guardian') {
+      const u = await q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [row.target_id]);
+      if (!u.length || u[0].deactivated_at) return { ok: false, reason: 'account_deactivated' };
+    }
+    await q(`UPDATE paired_device SET last_seen_at = $2 WHERE id = $1`,
+      [row.id, now.toISOString()]);
+    return { ok: true, deviceId: row.id, role: row.role, targetId: row.target_id };
+  });
+}
+
+/**
+ * POST /v1/auth/session/sign-out — a device revoking ITSELF. The authorization
+ * is the verified, signed `deviceId` claim on the caller's own session (the
+ * route passes `c.principal.deviceId`, never a body field), so system scope is
+ * not a widening: it can only ever name the one row the session was minted for.
+ * The existing guardian-driven revoke (revokePairedDevice) needs a family edge
+ * to a child, which a device signing out of its own guardian account has no
+ * reason to prove. Idempotent — an already-revoked row keeps its original
+ * revoked_at.
+ */
+export async function revokeOwnPairedDevice(
+  pool: pg.Pool, deviceId: string, now: Date,
+): Promise<{ ok: boolean }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE paired_device SET revoked_at = COALESCE(revoked_at, $2)
+        WHERE id = $1 RETURNING id`,
+      [deviceId, now.toISOString()],
+    );
+    return { ok: rows.length > 0 };
   });
 }
 

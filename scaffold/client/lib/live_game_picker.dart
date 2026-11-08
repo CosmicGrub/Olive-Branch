@@ -40,6 +40,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'game_favorites_logic.dart' as fav;
 import 'game_logic.dart';
 import 'game_picker.dart';
@@ -107,10 +108,10 @@ class _LiveGamePickerScreenState extends State<LiveGamePickerScreen> {
 
   Future<OliveApi> _mintApi() async {
     if (widget.sessionToken != null) {
-      return OliveApi(widget.baseUrl, widget.sessionToken!, client: widget.httpClient);
+      return OliveApi(widget.baseUrl, widget.sessionToken!,
+          client: widget.httpClient, session: AuthSession.current);
     }
-    final token = await devLoginFor(widget.baseUrl, userId: widget.guardianId!, client: widget.httpClient);
-    return OliveApi(widget.baseUrl, token, client: widget.httpClient);
+    return apiFor(widget.baseUrl, userId: widget.guardianId!, client: widget.httpClient);
   }
 
   Future<void> _load() async {

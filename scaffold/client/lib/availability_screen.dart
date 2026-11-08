@@ -42,6 +42,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'form_factors.dart' as ff;
 
 const List<String> _weekdayNames = <String>[
@@ -170,9 +171,8 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
     }
     _noteControllers.clear();
     try {
-      final token = await devLoginFor(widget.baseUrl,
+      final api = await apiFor(widget.baseUrl,
           userId: widget.guardianId, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final res = await api.getAvailability(widget.childId);
       final windows = (res['windows'] as List).cast<Map<String, dynamic>>();
 

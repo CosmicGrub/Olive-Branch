@@ -34,6 +34,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
 
@@ -158,9 +159,8 @@ class _CareNoteScreenState extends State<CareNoteScreen> {
   Future<void> _load() async {
     setState(() => _loadState = _LoadState.loading);
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final Map<String, dynamic> result = await api.fetchCareNotes(widget.childId!);
       if (widget.httpClient == null) api.close();
       final List<dynamic> raw = result['entries'] as List<dynamic>? ?? <dynamic>[];
@@ -224,9 +224,8 @@ class _CareNoteScreenState extends State<CareNoteScreen> {
   Future<void> _sendLive(String text) async {
     setState(() => _sending = true);
     try {
-      final String token = await devLoginFor(widget.baseUrl!,
+      final OliveApi api = await apiFor(widget.baseUrl!,
           userId: widget.guardianId!, client: widget.httpClient);
-      final OliveApi api = OliveApi(widget.baseUrl!, token, client: widget.httpClient);
       final Map<String, dynamic> row =
           await api.writeCareNote(widget.childId!, _kind.name, text);
       if (widget.httpClient == null) api.close();

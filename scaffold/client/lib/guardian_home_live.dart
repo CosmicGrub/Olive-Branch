@@ -61,6 +61,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'calendar_day_logic.dart';
 import 'guardian_home.dart';
 
@@ -111,9 +112,8 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
   Future<void> _load() async {
     setState(() => _state = _LoadState.loading);
     try {
-      final token = await devLoginFor(widget.baseUrl,
+      final api = await apiFor(widget.baseUrl,
           userId: widget.guardianId, client: widget.httpClient);
-      final api = OliveApi(widget.baseUrl, token, client: widget.httpClient);
       final now = await api.fetchNow(widget.childId);
       final ribbon = await api.fetchRibbon(widget.childId);
       if (widget.httpClient == null) api.close();

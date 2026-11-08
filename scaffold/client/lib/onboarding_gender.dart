@@ -45,6 +45,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'onboarding_logic.dart';
 import 'onboarding_shared.dart';
 
@@ -96,7 +97,7 @@ class _ObGenderScreenState extends State<ObGenderScreen> {
     if (widget._isLive) {
       setState(() => _saving = true);
       try {
-        final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+        final OliveApi api = OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
         await api.putChildGender(widget.childId, step.selected);
         if (widget.httpClient == null) api.close();
       } catch (_) {

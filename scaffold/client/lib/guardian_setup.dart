@@ -60,6 +60,7 @@ class GuardianSetupScreen extends StatefulWidget {
     this.onOpenAgreement,
     this.setGuardianPin,
     this.checkExistingPin,
+    this.changeGuardianPin,
   });
 
   /// Null in every build today — see file header. Supplying this is the
@@ -83,6 +84,12 @@ class GuardianSetupScreen extends StatefulWidget {
   /// [registerPasskey]/[setGuardianPin]'s own null-means-unwired convention;
   /// "Finish setup" then depends solely on a fresh success this session.
   final Future<bool> Function()? checkExistingPin;
+  /// Replaces an EXISTING PIN, proving the current one first (audit G-13: the
+  /// server refuses a PIN change without it). Real implementation:
+  /// [OliveApi.changeGuardianPin]. Used instead of [setGuardianPin] once a PIN is
+  /// known to exist (or was just set this session), and when non-null it adds a
+  /// Current PIN field. Null keeps the first-PIN-only behaviour above.
+  final Future<void> Function(String currentPin, String newPin)? changeGuardianPin;
 
   @override
   State<GuardianSetupScreen> createState() => _GuardianSetupScreenState();
@@ -97,6 +104,7 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
   String _pinError = '';
   final _pinController = TextEditingController();
   final _pinConfirmController = TextEditingController();
+  final _currentPinController = TextEditingController();
   /// "Succeeded at least once THIS SESSION" — deliberately separate from
   /// [_pinPhase], which only reflects the MOST RECENT submission: a later
   /// failed resubmission (e.g. a mistyped confirmation while changing an
@@ -109,6 +117,12 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
   bool? _hasExistingPin;
 
   bool get _canFinish => _pinSetThisSession || (_hasExistingPin ?? false);
+
+  /// A PIN exists (reported by [GuardianSetupScreen.checkExistingPin], just set
+  /// this session, or the server said so) and a change callback is wired: the
+  /// form must collect the CURRENT PIN as proof.
+  bool get _mustProveCurrent =>
+      widget.changeGuardianPin != null && (_hasExistingPin == true || _pinSetThisSession);
 
   @override
   void initState() {
@@ -123,6 +137,7 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
   void dispose() {
     _pinController.dispose();
     _pinConfirmController.dispose();
+    _currentPinController.dispose();
     super.dispose();
   }
 
@@ -170,16 +185,31 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
       setState(() { _pinPhase = _PinPhase.failed; _pinError = "The two PINs don't match."; });
       return;
     }
+    final changer = widget.changeGuardianPin;
+    final proving = _mustProveCurrent && changer != null;
+    final current = _currentPinController.text;
+    if (proving && !RegExp(r'^\d{4,8}$').hasMatch(current)) {
+      setState(() { _pinPhase = _PinPhase.failed; _pinError = 'Enter your current PIN.'; });
+      return;
+    }
     setState(() { _pinPhase = _PinPhase.working; _pinError = ''; });
     try {
-      await setter(pin);
+      if (proving) {
+        await changer(current, pin);
+      } else {
+        await setter(pin);
+      }
       if (!mounted) return;
       _pinController.clear();
       _pinConfirmController.clear();
+      _currentPinController.clear();
       setState(() { _pinPhase = _PinPhase.success; _pinSetThisSession = true; });
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        // The server says a PIN already exists though we did not know: show the
+        // current-PIN field instead of looping on the same refusal.
+        if (e is ApiException && e.error == 'current_pin_required') _hasExistingPin = true;
         _pinPhase = _PinPhase.failed;
         _pinError = _pinErrorMessage(e);
       });
@@ -200,6 +230,9 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
     return switch (e.error) {
       'pin_required' || 'invalid_pin_format' => 'Enter a 4-8 digit PIN.',
       'account_deactivated' => 'This account is no longer active.',
+      'current_pin_required' => 'Enter your current PIN to change it.',
+      'pin_incorrect' => 'That is not your current PIN.',
+      'pin_locked' => 'Too many wrong tries. Try again in 15 minutes.',
       _ => 'Could not set your PIN. Check your connection and try again.',
     };
   }
@@ -309,6 +342,18 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
                   ]),
                 )
               else ...[
+                if (_mustProveCurrent) ...[
+                  TextField(
+                    controller: _currentPinController,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    maxLength: 8,
+                    decoration: const InputDecoration(
+                      labelText: 'Current PIN', counterText: '', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
                   controller: _pinController,
                   obscureText: true,

@@ -107,6 +107,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'calendar_day_logic.dart';
 import 'offline_outbox.dart' as outbox;
 
@@ -279,7 +280,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
   /// because there are now two round trips.
   Future<void> _attemptSend(outbox.OutboxItem item) async {
     final OliveApi api =
-        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient);
+        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
     final Map<String, Object> payload = item.payload! as Map<String, Object>;
     try {
       // A cached key (see below) means an earlier attempt already uploaded

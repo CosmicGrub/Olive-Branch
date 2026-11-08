@@ -68,6 +68,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'api_client.dart';
+import 'auth_session.dart';
 import 'call_knock_screen.dart' show buildCallIncomingHandler;
 import 'call_screen.dart' show CallScreen, devRoomServerBase;
 import 'child_home_live.dart';
@@ -178,6 +179,9 @@ Future<_Bootstrap> _bootstrap() async {
 }
 
 Future<void> main() async {
+  // Explicit dev/hardware entry point: opts in to the credential-free dev login
+  // (audit G-02/G-06 — it is off by default in every other build).
+  AuthSession.devLoginEnabled = true;
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await Firebase.initializeApp();

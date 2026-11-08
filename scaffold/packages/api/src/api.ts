@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readSession, issueSession, type VerifiedPrincipal } from '../../auth/src/auth.ts';
+import { readSession, issueSession, SESSION_TTL_MS, type VerifiedPrincipal } from '../../auth/src/auth.ts';
 import { can, type Edge, type Action } from '../../family-graph/src/authorize.ts';
 import { sweep } from '../../globalaudit/src/globalaudit.ts';
 
@@ -522,6 +522,18 @@ export class Api {
     ttlMs?: number,
   ): string {
     return issueSession(this.secret, p, this.now(), ttlMs);
+  }
+
+  /**
+   * The expiry (epoch ms) a session issued RIGHT NOW would carry — exposed so a
+   * route that mints a session can tell its client when it lapses
+   * (`expiresAt` in the device-pairing redeem / session-refresh bodies) from
+   * the same clock and TTL `issueSessionToken` signs, rather than every route
+   * re-deriving `Date.now() + SESSION_TTL_MS` and drifting from a test's
+   * injected clock.
+   */
+  sessionExpiresAt(ttlMs: number = SESSION_TTL_MS): number {
+    return this.now() + ttlMs;
   }
 
   listen(port: number) {
