@@ -25,7 +25,7 @@
 --     is allowed — pg_trigger_depth() >= 2 — so deleting a child still
 --     erases their history; nothing else can.)
 --
---  health_check's rls_unforced list is carried forward in FULL from 0033,
+--  health_check's rls_unforced list is carried forward in FULL from 0035,
 --  plus medical_record_history — packages/db/test/rls_coverage.test.mjs
 --  fails outright on a real Postgres if it is missing.
 -- ============================================================================
@@ -103,7 +103,7 @@ SELECT * FROM (
          'Tables that must enforce RLS but do not FORCE it.'
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
    WHERE n.nspname='public'
-     -- Carried forward from 0032, plus guardian_activity_override
+     -- Carried forward from 0035 (Parent Learn), plus medical_record_history
      -- (this migration).
      AND c.relname IN ('child_journal_entry','pin_credential','expense','message_log',
                         'custody_order','webauthn_credential','auth_challenge',
@@ -116,7 +116,9 @@ SELECT * FROM (
                         'care_note','letter',
                         'guardian_game_favorite','child_game_picker_state',
                         'child_profile','device_pairing_code','paired_device',
-                        'guardian_activity_override','medical_record_history')
+                        'guardian_activity_override',
+                        'guardian_learn_settings','guardian_reflection',
+                        'guardian_house_rule','medical_record_history')
      AND (c.relrowsecurity=false OR c.relforcerowsecurity=false)
   UNION ALL
   SELECT 'log_sequence_gap','critical',count(*),0,

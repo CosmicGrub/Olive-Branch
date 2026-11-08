@@ -6844,14 +6844,14 @@ only.
   rather than opening demo data. The live guardian More hub hides the tiles that
   render invented content unless `showDemoTiles` is set.
 - **Emergency card last-write-wins.** `medical_record.version` + `ifMatch`
-  (428/409) and an append-only `medical_record_history` table (migration 0035);
+  (428/409) and an append-only `medical_record_history` table (migration 0036);
   the card shows "Last changed by X".
 - **Not done:** co-viewing screens (no real transport/route yet), an
   emergency-card edit screen (the 409 UX needs one), and the child "My weeks"
   / "Story library" / "Saved pictures" demo fixtures in a live build, and the
   catalogue card blurbs in `game_logic.dart` (TS-parity wording, still partly
   third-person).
-  Assertions: Dart 2907 → 2957, server/DB +33; total 8397 → 8480.
+  Assertions: Dart 2907 → 2957, server/DB +33 (computed total 8668 at the time of writing).
 
 ### Added
 - **Secure network play (checkers, live) — `packages/game-sync`.** Every

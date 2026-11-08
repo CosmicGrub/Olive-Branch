@@ -2756,7 +2756,7 @@ export interface MedicalRecord {
   guardians: { userId: string; name: string; phone: string | null }[];
   medications: Medication[];
   /**
-   * G-11 (migration 0035) — optimistic-concurrency token. 0 when no card has
+   * G-11 (migration 0036) — optimistic-concurrency token. 0 when no card has
    * ever been written; otherwise the medical_record.version this read saw.
    * setMedicalRecord() requires it back.
    */
@@ -2828,7 +2828,7 @@ export class StaleMedicalRecordError extends Error {
   constructor(currentVersion: number) { super('stale_version'); this.currentVersion = currentVersion; }
 }
 
-/** One append-only history row (medical_record_history, migration 0035). */
+/** One append-only history row (medical_record_history, migration 0036). */
 export interface MedicalRecordHistoryEntry {
   version: number;
   changedById: string;

@@ -2442,7 +2442,7 @@ another. `GET .../emergency-card` now returns `version` (0 = never written) and
 is `428 if_match_required`; a stale one is `409 stale_version` with
 `currentVersion`, and writes lock the row so two concurrent writers get exactly
 one 200. Every successful write appends the previous values to the append-only
-`medical_record_history` table (migration `0035_emergency_card_versioning.sql`:
+`medical_record_history` table (migration `0036_emergency_card_versioning.sql`:
 RLS enabled and forced, SELECT/INSERT policies only, a trigger refuses UPDATE
 and direct DELETE; cascade deletion of a child still works), readable at
 `GET .../emergency-card/history` (newest first; a child session is refused).

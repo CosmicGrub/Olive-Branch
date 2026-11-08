@@ -275,7 +275,7 @@ const putCard = (childId, tok, body) => api.handle(
 }
 
 // ===========================================================================
-// I · G-11 — optimistic concurrency + append-only history (migration 0035).
+// I · G-11 — optimistic concurrency + append-only history (migration 0036).
 // ===========================================================================
 {
   const first = await getCard(CHILD, dadTok);
