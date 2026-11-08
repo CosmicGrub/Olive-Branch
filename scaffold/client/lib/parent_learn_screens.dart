@@ -121,7 +121,7 @@ class _LearnHomeState extends State<LearnHomeScreen> {
                   Text('Short, sourced, and honest about what is known.',
                       style: Theme.of(context).textTheme.bodyMedium),
                   const SizedBox(height: AppSpacing.sm),
-                  const Text('Only you can see this. Nothing here is shared with your co-parent or your child.',
+                  const Text('Your reflections and choices stay on this phone. Rules you add under Rules that match are shared with the other guardian.',
                       key: Key('learnPrivacyLine')),
                   const SizedBox(height: AppSpacing.md),
                   HubSection(title: 'Your tools', children: <Widget>[
@@ -335,6 +335,22 @@ class ReflectionScreen extends StatefulWidget {
   State<ReflectionScreen> createState() => _ReflectionState();
 }
 
+/// Spoken value for a reflection slider: words, never the 0-100 number.
+String _lessMore(double v) => v < 34 ? 'less' : (v > 66 ? 'more' : 'in the middle');
+
+/// The ends of a reflection slider, in words. The sliders show no number.
+class _LessMore extends StatelessWidget {
+  const _LessMore();
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <Widget>[
+          Text('less', style: Theme.of(context).textTheme.bodySmall),
+          Text('more', style: Theme.of(context).textTheme.bodySmall),
+        ]),
+      );
+}
+
 class _ReflectionState extends State<ReflectionScreen> {
   double _w = 60;
   double _e = 65;
@@ -376,22 +392,24 @@ class _ReflectionState extends State<ReflectionScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                   const Text('Two sliders. No grade. Just a mirror.'),
                   const SizedBox(height: AppSpacing.md),
-                  Text('Warmth ${_w.round()}', style: Theme.of(context).textTheme.labelLarge),
+                  Text('Warmth', style: Theme.of(context).textTheme.labelLarge),
                   Slider(
                       key: const Key('sliderWarmth'),
                       value: _w,
                       min: 0,
                       max: 100,
-                      label: _w.round().toString(),
+                      semanticFormatterCallback: _lessMore,
                       onChanged: (double v) => setState(() { _w = v; _note = null; })),
-                  Text('Expectations ${_e.round()}', style: Theme.of(context).textTheme.labelLarge),
+                  const _LessMore(),
+                  Text('Expectations', style: Theme.of(context).textTheme.labelLarge),
                   Slider(
                       key: const Key('sliderExpectations'),
                       value: _e,
                       min: 0,
                       max: 100,
-                      label: _e.round().toString(),
+                      semanticFormatterCallback: _lessMore,
                       onChanged: (double v) => setState(() { _e = v; _note = null; })),
+                  const _LessMore(),
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
@@ -517,6 +535,7 @@ class _RulesState extends State<RulesScreen> {
   String _category = ruleCategories.first;
   final TextEditingController _text = TextEditingController();
   String? _note;
+  bool _shareConfirmed = false;
 
   @override
   void initState() {
@@ -591,6 +610,30 @@ class _RulesState extends State<RulesScreen> {
                         onPressed: () async {
                           final String t = _text.text.trim();
                           if (t.isEmpty) return;
+                          // One-time confirmation before anything is first shared
+                          // (asked again only if the shared list was emptied).
+                          if (_mine.isEmpty && !_shareConfirmed) {
+                            final bool? ok = await showDialog<bool>(
+                                context: context,
+                                builder: (BuildContext ctx) => AlertDialog(
+                                      key: const Key('shareConfirmDialog'),
+                                      title: const Text('Share this rule?'),
+                                      content: const Text(
+                                          'Rules you add here are shared with the other guardian. Your reflections and choices stay on this phone.'),
+                                      actions: <Widget>[
+                                        TextButton(
+                                            key: const Key('shareConfirmNo'),
+                                            onPressed: () => Navigator.of(ctx).pop(false),
+                                            child: const Text('Not now')),
+                                        FilledButton(
+                                            key: const Key('shareConfirmYes'),
+                                            onPressed: () => Navigator.of(ctx).pop(true),
+                                            child: const Text('Share')),
+                                      ],
+                                    ));
+                            if (ok != true) return;
+                            _shareConfirmed = true;
+                          }
                           _text.clear();
                           await _commit(<RuleItem>[..._mine, RuleItem(_category, t)]);
                           if (mounted) setState(() => _note = 'Added. The other guardian can now see it.');

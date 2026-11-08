@@ -524,8 +524,8 @@ class WarView extends StatelessWidget {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, crossAxisAlignment: CrossAxisAlignment.center, children: [
         _PileWithCount(label: 'You', count: state.myPile.length + (state.myPending?.length ?? 0), scale: cardScale),
-        Text('${state.roundNumber}', style: theme.textTheme.labelLarge
-          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        // No round number between the piles either: a tally a child could read as a score (P2).
+        const SizedBox(width: 8),
         _PileWithCount(label: peerName, count: theirCount.clamp(0, 52), scale: cardScale),
       ]),
       const SizedBox(height: 20),
@@ -576,6 +576,10 @@ class WarView extends StatelessWidget {
   }
 }
 
+/// How many card backs the pile picture shows: 0 for empty, 1 for a few, up to 4
+/// for a deep pile. A picture of size, not a number.
+int _layers(int count) => count <= 0 ? 0 : count < 8 ? 1 : count < 18 ? 2 : count < 32 ? 3 : 4;
+
 class _PileWithCount extends StatelessWidget {
   const _PileWithCount({required this.label, required this.count, this.scale = 1.0});
   final String label;
@@ -588,12 +592,15 @@ class _PileWithCount extends StatelessWidget {
     // a tally, and nothing is announced that ranks the two of them (P2).
     return Semantics(label: label == 'You' ? 'Your pile' : "$label's pile", container: true, excludeSemantics: true,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
+      // Size only, never a numeral (P2): the stack is a little taller when the
+      // pile is bigger. Layers step at coarse thresholds, so it reads as a
+      // picture of "more" or "less", not a tally that could be counted.
       Stack(clipBehavior: Clip.none, children: [
-        if (count > 1) Positioned(left: 3, top: 3, child: _PlayingCardBack(width: w, height: h)),
+        for (int i = _layers(count) - 1; i >= 1; i--)
+          Positioned(left: 3.0 * i, top: 3.0 * i, child: _PlayingCardBack(width: w, height: h)),
         count > 0 ? _PlayingCardBack(width: w, height: h) : SizedBox(width: w, height: h),
       ]),
-      const SizedBox(height: 6),
-      Text('$count', style: Theme.of(context).textTheme.titleMedium),
+      SizedBox(height: 6 + 3.0 * (_layers(count) > 0 ? _layers(count) - 1 : 0)),
       Text(label, style: Theme.of(context).textTheme.bodySmall),
     ]));
   }

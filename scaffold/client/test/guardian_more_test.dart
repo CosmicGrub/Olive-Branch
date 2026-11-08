@@ -18,6 +18,7 @@ import 'package:olive_client/expenses_screen.dart';
 import 'package:olive_client/family_agreement_screen.dart';
 import 'package:olive_client/game_picker.dart';
 import 'package:olive_client/guardian_more.dart';
+import 'package:olive_client/invitation_screen.dart';
 import 'package:olive_client/guardian_setup.dart';
 import 'package:olive_client/handover_notes.dart';
 import 'package:olive_client/live_game_picker.dart';
@@ -44,6 +45,23 @@ void main() {
       await t.tap(find.text('Invite a co-parent'));
       await t.pumpAndSettle();
       expect(find.byType(GuardianMoreScreen), findsNothing);
+    });
+
+    testWidgets('Settings: the adults row is honestly a preview of the invitee screen, '
+        'with no hard-coded Dad/Mom', (t) async {
+      await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      await t.ensureVisible(find.byKey(const Key('moreSettings')));
+      await t.tap(find.byKey(const Key('moreSettings')));
+      await t.pumpAndSettle();
+      expect(find.text('Adults and helpers'), findsNothing);
+      expect(find.text('Invitation (preview)'), findsOneWidget);
+      expect(find.textContaining('Nothing is sent'), findsOneWidget);
+      await t.ensureVisible(find.byKey(const Key('settingsRow_adults')));
+      await t.tap(find.byKey(const Key('settingsRow_adults')));
+      await t.pumpAndSettle();
+      expect(find.byType(InvitationScreen), findsOneWidget);
+      expect(find.textContaining('Dad'), findsNothing);
+      expect(find.textContaining('Mom'), findsNothing);
     });
 
     testWidgets('childName threads through to a pushed destination, not '

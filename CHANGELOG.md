@@ -27,6 +27,13 @@ Silent deletion is a process failure.
 - `label_adoption_test.dart`: each touched screen rendered with a nickname set (Dada), with none (the Daddy age default), and with no family (the neutral text), plus the catalogue-names test and the read-only provider.
 
 ---
+### Fixed (wave 1a: places the client broke the product's prohibitions)
+- **Messages can never be hidden (MASTERFILE §8.1).** Removed from the parental-controls catalogue; the write path refuses it (`never_hideable`) before any request; the child shell ignores a stored hide. Server route unchanged. Tests include a legacy stored hide being ignored.
+- **A child never sees a count (P2, §8.1, §8.2).** Inbox greeting has no number; War piles show a stack picture, with no card count and no round number.
+- **Where was today (§8.17):** no 0 to 100 values; "less" and "more" only.
+- **Rules that match (§8.17):** the Learn home privacy line is truthful and the first share is confirmed once.
+- **Settings hub:** "Adults and helpers" is now "Invitation (preview)" (it opened the invitee accept screen with hard-coded Dad/Mom).
+- No prohibition in §2.1 is removed or weakened.
 
 ## [0.50.0] — 2026-11-08 — Release cut: the offline-first on-device client, a real authenticated session, server hardening, co-viewing and Parent Learn; MASTERFILE, MARKUP and DEMO brought to parity with the code
 

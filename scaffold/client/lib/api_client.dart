@@ -14,6 +14,7 @@
 // real router, not a fake one.
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'activity_overrides.dart' show refuseHide;
 import 'auth_session.dart';
 
 class ApiException implements Exception {
@@ -1197,18 +1198,25 @@ class OliveApi {
     bool resetMinAge = false,
     bool? reveal,
     bool? unreveal,
-  }) =>
-      _put(
-        childActivityOverride
-            .replaceFirst(':childId', childId)
-            .replaceFirst(':activityKey', activityKey),
-        body: {
-          'visible': ?visible,
-          if (resetMinAge) 'minAgeOverride': null else 'minAgeOverride': ?minAgeOverride,
-          'reveal': ?reveal,
-          'unreveal': ?unreveal,
-        },
-      );
+  }) {
+    // Messages can never be hidden by a parental control: refuse before any
+    // request is made (the server route is unchanged and never sees it).
+    final String? refusal = refuseHide(activityKey, visible: visible);
+    if (refusal != null) {
+      return Future<void>.error(ApiException(400, 'never_hideable', message: refusal));
+    }
+    return _put(
+      childActivityOverride
+          .replaceFirst(':childId', childId)
+          .replaceFirst(':activityKey', activityKey),
+      body: {
+        'visible': ?visible,
+        if (resetMinAge) 'minAgeOverride': null else 'minAgeOverride': ?minAgeOverride,
+        'reveal': ?reveal,
+        'unreveal': ?unreveal,
+      },
+    );
+  }
 
   /// Guardian-only -- clears an activity's override entirely (back to the
   /// catalogue default in every column) -- DELETE [childActivityOverride],
