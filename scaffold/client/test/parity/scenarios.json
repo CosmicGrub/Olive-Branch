@@ -1,0 +1,3401 @@
+{
+ "generatedBy": "tools/gen-parity-scenarios.mjs",
+ "note": "GENERATED from docs/superpowers/mockups/live. Do not edit; run node tools/gen-parity-scenarios.mjs.",
+ "scenarios": [
+  {
+   "id": "golden",
+   "title": "Golden path",
+   "source": "prototype",
+   "desc": "From a blank state: onboard both devices, pair the tablet, bank a message, jump to bedtime, watch it arrive and play, see 'watched' on the guardian phone.",
+   "fresh": true,
+   "initial": [
+    {
+     "probe": "screen.g",
+     "value": "ob.role"
+    },
+    {
+     "probe": "screen.k",
+     "value": "ob.role"
+    },
+    {
+     "probe": "family.created",
+     "value": false
+    },
+    {
+     "probe": "dev.g.role",
+     "value": null
+    },
+    {
+     "probe": "dev.k.role",
+     "value": null
+    },
+    {
+     "probe": "dev.k.paired",
+     "value": false
+    },
+    {
+     "probe": "dev.g.signedIn",
+     "value": false
+    },
+    {
+     "probe": "child.name",
+     "value": ""
+    },
+    {
+     "probe": "child.age",
+     "value": null
+    },
+    {
+     "probe": "child.ageLocked",
+     "value": false
+    },
+    {
+     "probe": "child.color",
+     "value": ""
+    },
+    {
+     "probe": "band",
+     "value": "t812"
+    },
+    {
+     "probe": "label.mom",
+     "value": "Mom"
+    },
+    {
+     "probe": "label.dad",
+     "value": "Dad"
+    },
+    {
+     "probe": "net.k.online",
+     "value": true
+    },
+    {
+     "probe": "net.g.online",
+     "value": true
+    },
+    {
+     "probe": "msg.count",
+     "value": 0
+    },
+    {
+     "probe": "call.state",
+     "value": "none"
+    }
+   ],
+   "steps": [
+    {
+     "id": "golden.01",
+     "cap": "Both devices start blank. The first question on each is role first: who is using this device?",
+     "dev": "both",
+     "acts": [
+      {
+       "t": "wait",
+       "ms": 900
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "scenario:golden"
+     ]
+    },
+    {
+     "id": "golden.02",
+     "cap": "On Jess’s phone, pick Mom.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pickRole",
+       "arg": "mom"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "dev.g.role",
+       "value": "mom"
+      },
+      {
+       "probe": "screen.g",
+       "value": "ob.g.you"
+      }
+     ],
+     "rows": [
+      "action:ob.pickRole"
+     ]
+    },
+    {
+     "id": "golden.03",
+     "cap": "She confirms her name and label.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "type",
+       "dev": "g",
+       "path": "dev.g.draft.gname",
+       "value": "Jess"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.g.label",
+       "arg": "Mom"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "ob.g.child"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "ob.g.child"
+      }
+     ],
+     "rows": [
+      "action:ob.g.label / pickAge / zone"
+     ]
+    },
+    {
+     "id": "golden.04",
+     "cap": "Next, the child: name and age. The age locks once setup finishes.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "type",
+       "dev": "g",
+       "path": "dev.g.draft.cname",
+       "value": "Ivy"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.g.pickAge",
+       "arg": "9"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "ob.g.zone"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "ob.g.zone"
+      }
+     ],
+     "rows": [
+      "action:ob.g.label / pickAge / zone"
+     ]
+    },
+    {
+     "id": "golden.05",
+     "cap": "Home time zone, so the app can show “hers” and “yours” side by side.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.g.zone",
+       "arg": "America/Chicago"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "ob.g.pin"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "ob.g.pin"
+      }
+     ],
+     "rows": [
+      "action:ob.g.label / pickAge / zone"
+     ]
+    },
+    {
+     "id": "golden.06",
+     "cap": "A four-digit PIN, typed twice. It guards pairing codes.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "2"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "4"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "6"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "8"
+      },
+      {
+       "t": "wait",
+       "ms": 300
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "2"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "4"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "6"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "8"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "ob.g.connect"
+      }
+     ],
+     "rows": [
+      "action:ob.pad / ob.join.go / ob.other.join"
+     ]
+    },
+    {
+     "id": "golden.07",
+     "cap": "Connect this device is the last step, because it needs the internet. This creates the family on the (simulated) server.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.g.create"
+      },
+      {
+       "t": "until",
+       "ms": 9000
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "child.age",
+       "value": 9
+      },
+      {
+       "probe": "child.ageLocked",
+       "value": true
+      },
+      {
+       "probe": "child.name",
+       "value": "Ivy"
+      },
+      {
+       "probe": "dev.g.signedIn",
+       "value": true
+      },
+      {
+       "probe": "family.created",
+       "value": true
+      },
+      {
+       "probe": "label.dad",
+       "value": "Daddy"
+      },
+      {
+       "probe": "label.mom",
+       "value": "Mommy"
+      },
+      {
+       "probe": "screen.g",
+       "value": "ob.g.done"
+      }
+     ],
+     "rows": [
+      "action:ob.g.pinNext / create / finish",
+      "action:ob.kid.pickAge / askLock / lockAge",
+      "action:ob.pickRole",
+      "labels.age-defaults"
+     ]
+    },
+    {
+     "id": "golden.08",
+     "cap": "Now the tablet. A grown-up makes a pairing code; the PIN is required and a child can never make one.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "ob.addDevice"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "2"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "4"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "6"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.pad",
+       "arg": "8"
+      },
+      {
+       "t": "until",
+       "ms": 6000
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "ob.addDevice"
+      }
+     ],
+     "rows": [
+      "action:ob.pad / ob.join.go / ob.other.join"
+     ]
+    },
+    {
+     "id": "golden.09",
+     "cap": "On Ivy’s tablet the same question comes first. She picks Kid.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.pickRole",
+       "arg": "kid"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "dev.k.role",
+       "value": "kid"
+      },
+      {
+       "probe": "screen.k",
+       "value": "ob.kid.name"
+      }
+     ],
+     "rows": [
+      "action:ob.pickRole"
+     ]
+    },
+    {
+     "id": "golden.10",
+     "cap": "She types her name.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "type",
+       "dev": "k",
+       "path": "dev.k.draft.name",
+       "value": "Ivy"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "go",
+       "arg": "ob.kid.age"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.k",
+       "value": "ob.kid.age"
+      }
+     ],
+     "rows": [
+      "action:ob.kid.submit / retry / finish"
+     ]
+    },
+    {
+     "id": "golden.11",
+     "cap": "She picks her age, then locks it. It cannot be changed from the tablet.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.kid.pickAge",
+       "arg": "9"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.kid.askLock"
+      },
+      {
+       "t": "wait",
+       "ms": 700
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.kid.lockAge"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "go",
+       "arg": "ob.kid.color"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.k",
+       "value": "ob.kid.color"
+      }
+     ],
+     "rows": [
+      "action:ob.kid.pickAge / askLock / lockAge"
+     ]
+    },
+    {
+     "id": "golden.12",
+     "cap": "A colour and a birthday.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.kid.pickColor",
+       "arg": "warm"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "go",
+       "arg": "ob.kid.birthday"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.kid.setBM",
+       "arg": "3"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.kid.setBD",
+       "arg": "14"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "go",
+       "arg": "ob.kid.names"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.k",
+       "value": "ob.kid.names"
+      }
+     ],
+     "rows": [
+      "action:ob.kid.pickColor / setBM / setBD"
+     ]
+    },
+    {
+     "id": "golden.13",
+     "cap": "What does she call her grown-ups? Like contacts. This belongs to her; a guardian can never overwrite it.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "type",
+       "dev": "k",
+       "path": "dev.k.draft.nick.mom",
+       "value": "Mama"
+      },
+      {
+       "t": "type",
+       "dev": "k",
+       "path": "dev.k.draft.nick.dad",
+       "value": "Dada"
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "kid.rename"
+     ]
+    },
+    {
+     "id": "golden.14",
+     "cap": "Connect this device is LAST. Her answers are already saved on the tablet. She types the 6-digit code from the phone.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "go",
+       "arg": "ob.kid.connect"
+      },
+      {
+       "t": "call"
+      },
+      {
+       "t": "until",
+       "ms": 9000
+      }
+     ],
+     "ops": [
+      {
+       "op": "tap",
+       "dev": "k",
+       "name": "ob.pad",
+       "arg": "7"
+      },
+      {
+       "op": "tap",
+       "dev": "k",
+       "name": "ob.pad",
+       "arg": "9"
+      },
+      {
+       "op": "tap",
+       "dev": "k",
+       "name": "ob.pad",
+       "arg": "1"
+      },
+      {
+       "op": "tap",
+       "dev": "k",
+       "name": "ob.pad",
+       "arg": "3"
+      },
+      {
+       "op": "tap",
+       "dev": "k",
+       "name": "ob.pad",
+       "arg": "1"
+      },
+      {
+       "op": "tap",
+       "dev": "k",
+       "name": "ob.pad",
+       "arg": "5"
+      }
+     ],
+     "expect": [
+      {
+       "probe": "child.color",
+       "value": "warm"
+      },
+      {
+       "probe": "dev.k.paired",
+       "value": true
+      },
+      {
+       "probe": "label.dad",
+       "value": "Dada"
+      },
+      {
+       "probe": "label.mom",
+       "value": "Mama"
+      },
+      {
+       "probe": "screen.k",
+       "value": "ob.kid.welcome"
+      }
+     ],
+     "rows": [
+      "action:ob.add.make / again / done",
+      "action:ob.kid.pickAge / askLock / lockAge",
+      "labels.age-defaults"
+     ]
+    },
+    {
+     "id": "golden.15",
+     "cap": "Paired. Her draft answers upload now, and the tablet is locked in to the app.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "until",
+       "ms": 9000
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "ob.kid.finish"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.k",
+       "value": "home"
+      }
+     ],
+     "rows": [
+      "action:ob.kid.submit / retry / finish"
+     ]
+    },
+    {
+     "id": "golden.16",
+     "cap": "Back on the guardian phone, Home now shows one sentence about her state and the two clocks.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "ob.add.done"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "acct.state",
+       "value": "active"
+      },
+      {
+       "probe": "fam.hist",
+       "value": ""
+      },
+      {
+       "probe": "fam.people",
+       "value": 4
+      },
+      {
+       "probe": "screen.g",
+       "value": "home"
+      }
+     ],
+     "rows": [
+      "action:ob.add.make / again / done",
+      "row:Account/Account on hold",
+      "row:Family/Family structure"
+     ]
+    },
+    {
+     "id": "golden.17",
+     "cap": "Jess banks a goodnight message. Banking means: recorded now, delivered later, when Ivy can actually receive it.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.gStart"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.gSample"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.gBankIt"
+      },
+      {
+       "t": "until",
+       "ms": 3500
+      },
+      {
+       "t": "call"
+      },
+      {
+       "t": "until",
+       "ms": 4000
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "msg.0.attempts",
+       "value": 0
+      },
+      {
+       "probe": "msg.0.onTablet",
+       "value": false
+      },
+      {
+       "probe": "msg.0.state",
+       "value": "pending"
+      },
+      {
+       "probe": "msg.count",
+       "value": 1
+      },
+      {
+       "probe": "screen.g",
+       "value": "msg.gQueue"
+      }
+     ],
+     "rows": [
+      "k-msgs",
+      "msg-bank"
+     ]
+    },
+    {
+     "id": "golden.18",
+     "cap": "Nothing reaches the tablet yet. The delivery worker waits for bedtime on Ivy’s side of the clock. Let us jump the virtual clock to her bedtime.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 700
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.worker"
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "msg.kidSync"
+      }
+     ],
+     "ops": [
+      {
+       "op": "clock",
+       "to": "2026-11-10T01:30:00.000Z",
+       "advanceMs": 7155000
+      }
+     ],
+     "expect": [
+      {
+       "probe": "msg.0.attempts",
+       "value": 1
+      },
+      {
+       "probe": "msg.0.onTablet",
+       "value": true
+      },
+      {
+       "probe": "msg.0.state",
+       "value": "delivered"
+      }
+     ],
+     "rows": [
+      "k-msgs",
+      "rule:delivery-worker"
+     ]
+    },
+    {
+     "id": "golden.19",
+     "cap": "It arrives on the tablet as a picture, not a number. She opens it.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "msg.kOpenNewest"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.k",
+       "value": "msg.kPlay"
+      }
+     ],
+     "rows": [
+      "k-msgs"
+     ]
+    },
+    {
+     "id": "golden.20",
+     "cap": "She watches it all the way through. Only a full play counts as “watched”.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 1200
+      }
+     ],
+     "ops": [
+      {
+       "op": "tap",
+       "dev": "k",
+       "name": "msg.playTo",
+       "arg": "end"
+      }
+     ],
+     "expect": [
+      {
+       "probe": "msg.0.state",
+       "value": "watched"
+      }
+     ],
+     "rows": [
+      "k-msgs"
+     ]
+    },
+    {
+     "id": "golden.21",
+     "cap": "Back on the guardian phone: Watched. Delivered, opened and watched are three different facts.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "msg.gQueue"
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "msg-bank"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "offline",
+   "title": "Offline night",
+   "source": "prototype",
+   "desc": "The tablet loses its network at night. The message is safe on the server and arrives when the tablet is back.",
+   "fresh": false,
+   "initial": [
+    {
+     "probe": "screen.g",
+     "value": "home"
+    },
+    {
+     "probe": "screen.k",
+     "value": "home"
+    },
+    {
+     "probe": "family.created",
+     "value": true
+    },
+    {
+     "probe": "dev.g.role",
+     "value": "mom"
+    },
+    {
+     "probe": "dev.k.role",
+     "value": "kid"
+    },
+    {
+     "probe": "dev.k.paired",
+     "value": true
+    },
+    {
+     "probe": "dev.g.signedIn",
+     "value": true
+    },
+    {
+     "probe": "child.name",
+     "value": "Ivy"
+    },
+    {
+     "probe": "child.age",
+     "value": 9
+    },
+    {
+     "probe": "child.ageLocked",
+     "value": true
+    },
+    {
+     "probe": "child.color",
+     "value": "warm"
+    },
+    {
+     "probe": "band",
+     "value": "t812"
+    },
+    {
+     "probe": "label.mom",
+     "value": "Mama"
+    },
+    {
+     "probe": "label.dad",
+     "value": "Dada"
+    },
+    {
+     "probe": "net.k.online",
+     "value": true
+    },
+    {
+     "probe": "net.g.online",
+     "value": true
+    },
+    {
+     "probe": "msg.count",
+     "value": 0
+    },
+    {
+     "probe": "call.state",
+     "value": "none"
+    },
+    {
+     "probe": "acct.state",
+     "value": "active"
+    },
+    {
+     "probe": "fam.people",
+     "value": 4
+    },
+    {
+     "probe": "fam.hist",
+     "value": ""
+    }
+   ],
+   "steps": [
+    {
+     "id": "offline.01",
+     "cap": "A ready family. Jess banks a message for tonight.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.gStart"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.gSample"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.gBankIt"
+      },
+      {
+       "t": "until",
+       "ms": 3500
+      },
+      {
+       "t": "call"
+      },
+      {
+       "t": "until",
+       "ms": 4000
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "msg.0.attempts",
+       "value": 0
+      },
+      {
+       "probe": "msg.0.onTablet",
+       "value": false
+      },
+      {
+       "probe": "msg.0.state",
+       "value": "pending"
+      },
+      {
+       "probe": "msg.count",
+       "value": 1
+      },
+      {
+       "probe": "screen.g",
+       "value": "msg.gQueue"
+      }
+     ],
+     "rows": [
+      "k-msgs",
+      "msg-bank"
+     ]
+    },
+    {
+     "id": "offline.02",
+     "cap": "Ivy’s tablet goes offline (flat battery, bad wifi, a road trip). The guardian phone stays online.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [
+      {
+       "op": "net",
+       "dev": "k",
+       "online": false
+      }
+     ],
+     "expect": [
+      {
+       "probe": "net.k.online",
+       "value": false
+      }
+     ],
+     "rows": [
+      "sub:offline/online as a feature (status 0)"
+     ]
+    },
+    {
+     "id": "offline.03",
+     "cap": "Bedtime arrives. The server tries to deliver; the tablet cannot receive it. The guardian sees an honest status, not a false “delivered”.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 600
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "msg.worker"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "msg.gQueue"
+      }
+     ],
+     "ops": [
+      {
+       "op": "clock",
+       "to": "2026-11-10T01:30:00.000Z",
+       "advanceMs": 7193500
+      }
+     ],
+     "expect": [
+      {
+       "probe": "msg.0.attempts",
+       "value": 1
+      },
+      {
+       "probe": "msg.0.state",
+       "value": "delivering"
+      }
+     ],
+     "rows": [
+      "k-msgs",
+      "msg-bank",
+      "rule:delivery-worker"
+     ]
+    },
+    {
+     "id": "offline.04",
+     "cap": "On the tablet the offline state is a picture, with no error code and no counts.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "go",
+       "arg": "msg.kOffline"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.k",
+       "value": "msg.kOffline"
+      }
+     ],
+     "rows": [
+      "msg-bank"
+     ]
+    },
+    {
+     "id": "offline.05",
+     "cap": "The network returns. The tablet checks in and the message arrives.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 500
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "msg.kidSync"
+      },
+      {
+       "t": "wait",
+       "ms": 900
+      },
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "go",
+       "arg": "msg.kMessages"
+      }
+     ],
+     "ops": [
+      {
+       "op": "net",
+       "dev": "k",
+       "online": true
+      }
+     ],
+     "expect": [
+      {
+       "probe": "msg.0.onTablet",
+       "value": true
+      },
+      {
+       "probe": "msg.0.state",
+       "value": "delivered"
+      },
+      {
+       "probe": "net.k.online",
+       "value": true
+      },
+      {
+       "probe": "screen.k",
+       "value": "msg.kMessages"
+      }
+     ],
+     "rows": [
+      "k-msgs",
+      "msg-bank",
+      "sub:offline/online as a feature (status 0)"
+     ]
+    },
+    {
+     "id": "offline.06",
+     "cap": "Nothing was lost and nothing was sent twice.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "msg.gQueue"
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "msg-bank"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "birthday",
+   "title": "Birthday band change",
+   "source": "prototype",
+   "desc": "Ivy turns 13 at local midnight. The age increments and the child home changes shape.",
+   "fresh": false,
+   "initial": [
+    {
+     "probe": "screen.g",
+     "value": "home"
+    },
+    {
+     "probe": "screen.k",
+     "value": "home"
+    },
+    {
+     "probe": "family.created",
+     "value": true
+    },
+    {
+     "probe": "dev.g.role",
+     "value": "mom"
+    },
+    {
+     "probe": "dev.k.role",
+     "value": "kid"
+    },
+    {
+     "probe": "dev.k.paired",
+     "value": true
+    },
+    {
+     "probe": "dev.g.signedIn",
+     "value": true
+    },
+    {
+     "probe": "child.name",
+     "value": "Ivy"
+    },
+    {
+     "probe": "child.age",
+     "value": 9
+    },
+    {
+     "probe": "child.ageLocked",
+     "value": true
+    },
+    {
+     "probe": "child.color",
+     "value": "warm"
+    },
+    {
+     "probe": "band",
+     "value": "t812"
+    },
+    {
+     "probe": "label.mom",
+     "value": "Mama"
+    },
+    {
+     "probe": "label.dad",
+     "value": "Dada"
+    },
+    {
+     "probe": "net.k.online",
+     "value": true
+    },
+    {
+     "probe": "net.g.online",
+     "value": true
+    },
+    {
+     "probe": "msg.count",
+     "value": 0
+    },
+    {
+     "probe": "call.state",
+     "value": "none"
+    },
+    {
+     "probe": "acct.state",
+     "value": "active"
+    },
+    {
+     "probe": "fam.people",
+     "value": 4
+    },
+    {
+     "probe": "fam.hist",
+     "value": ""
+    }
+   ],
+   "steps": [
+    {
+     "id": "birthday.01",
+     "cap": "Ivy is 12. The tablet shows the 8 to 12 layout.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [
+      {
+       "op": "age",
+       "age": 12
+      }
+     ],
+     "expect": [
+      {
+       "probe": "child.age",
+       "value": 12
+      }
+     ],
+     "rows": [
+      "action:ob.kid.pickAge / askLock / lockAge"
+     ]
+    },
+    {
+     "id": "birthday.02",
+     "cap": "Her birthday is tomorrow. Let us jump the virtual clock to local midnight.",
+     "dev": "both",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [
+      {
+       "op": "clock",
+       "to": "2026-11-10T06:00:00.000Z",
+       "advanceMs": 23397000
+      }
+     ],
+     "expect": [
+      {
+       "probe": "band",
+       "value": "t1317"
+      },
+      {
+       "probe": "child.age",
+       "value": 13
+      }
+     ],
+     "rows": [
+      "action:ob.kid.pickAge / askLock / lockAge",
+      "sub:age bands bandOf"
+     ]
+    },
+    {
+     "id": "birthday.03",
+     "cap": "She is 13. The age band moved to 13 to 17, and the home re-lays itself out on its own. No badge, no reward, no confetti count (prohibitions P1 to P3).",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 600
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "scenario:birthday"
+     ]
+    },
+    {
+     "id": "birthday.04",
+     "cap": "The console slider shows the derived band. Drag it to see every band live.",
+     "dev": "both",
+     "acts": [
+      {
+       "t": "wait",
+       "ms": 400
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "scenario:birthday"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "call",
+   "title": "Call knock",
+   "source": "prototype",
+   "desc": "Ivy knocks to call a grown-up; the guardian phone rings and answers. A child can never start a call the other way round.",
+   "fresh": false,
+   "initial": [
+    {
+     "probe": "screen.g",
+     "value": "home"
+    },
+    {
+     "probe": "screen.k",
+     "value": "home"
+    },
+    {
+     "probe": "family.created",
+     "value": true
+    },
+    {
+     "probe": "dev.g.role",
+     "value": "mom"
+    },
+    {
+     "probe": "dev.k.role",
+     "value": "kid"
+    },
+    {
+     "probe": "dev.k.paired",
+     "value": true
+    },
+    {
+     "probe": "dev.g.signedIn",
+     "value": true
+    },
+    {
+     "probe": "child.name",
+     "value": "Ivy"
+    },
+    {
+     "probe": "child.age",
+     "value": 9
+    },
+    {
+     "probe": "child.ageLocked",
+     "value": true
+    },
+    {
+     "probe": "child.color",
+     "value": "warm"
+    },
+    {
+     "probe": "band",
+     "value": "t812"
+    },
+    {
+     "probe": "label.mom",
+     "value": "Mama"
+    },
+    {
+     "probe": "label.dad",
+     "value": "Dada"
+    },
+    {
+     "probe": "net.k.online",
+     "value": true
+    },
+    {
+     "probe": "net.g.online",
+     "value": true
+    },
+    {
+     "probe": "msg.count",
+     "value": 0
+    },
+    {
+     "probe": "call.state",
+     "value": "none"
+    },
+    {
+     "probe": "acct.state",
+     "value": "active"
+    },
+    {
+     "probe": "fam.people",
+     "value": 4
+    },
+    {
+     "probe": "fam.hist",
+     "value": ""
+    }
+   ],
+   "steps": [
+    {
+     "id": "call.01",
+     "cap": "Ivy taps the picture of Mom to knock. A knock is not a call: it asks, it does not ring.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "call.knock",
+       "arg": "mom"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "call.state",
+       "value": "ringing"
+      },
+      {
+       "probe": "screen.g",
+       "value": "msg.gCall"
+      },
+      {
+       "probe": "screen.k",
+       "value": "msg.kCall"
+      }
+     ],
+     "rows": [
+      "rule:knock-only-child"
+     ]
+    },
+    {
+     "id": "call.02",
+     "cap": "On Jess’s phone the knock shows up and it rings.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "wait",
+       "ms": 900
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "scenario:call"
+     ]
+    },
+    {
+     "id": "call.03",
+     "cap": "Jess answers.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "call.answer"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "call.state",
+       "value": "connecting"
+      }
+     ],
+     "rows": [
+      "rule:knock-only-child"
+     ]
+    },
+    {
+     "id": "call.04",
+     "cap": "They talk. A child tablet has no way to place a call at the guardian; guardians call, children knock.",
+     "dev": "both",
+     "acts": [
+      {
+       "t": "wait",
+       "ms": 1500
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "call.state",
+       "value": "live"
+      }
+     ],
+     "rows": [
+      "rule:knock-only-child"
+     ]
+    },
+    {
+     "id": "call.05",
+     "cap": "Jess ends the call.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "call.end"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "call.state",
+       "value": "none"
+      },
+      {
+       "probe": "screen.k",
+       "value": "home"
+      }
+     ],
+     "rows": [
+      "rule:knock-only-child"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "play",
+   "title": "Play window",
+   "source": "prototype",
+   "desc": "A guardian sets a play window; the tablet's games wind down and rest on schedule, then open again in the morning.",
+   "fresh": false,
+   "initial": [
+    {
+     "probe": "screen.g",
+     "value": "home"
+    },
+    {
+     "probe": "screen.k",
+     "value": "home"
+    },
+    {
+     "probe": "family.created",
+     "value": true
+    },
+    {
+     "probe": "dev.g.role",
+     "value": "mom"
+    },
+    {
+     "probe": "dev.k.role",
+     "value": "kid"
+    },
+    {
+     "probe": "dev.k.paired",
+     "value": true
+    },
+    {
+     "probe": "dev.g.signedIn",
+     "value": true
+    },
+    {
+     "probe": "child.name",
+     "value": "Ivy"
+    },
+    {
+     "probe": "child.age",
+     "value": 9
+    },
+    {
+     "probe": "child.ageLocked",
+     "value": true
+    },
+    {
+     "probe": "child.color",
+     "value": "warm"
+    },
+    {
+     "probe": "band",
+     "value": "t812"
+    },
+    {
+     "probe": "label.mom",
+     "value": "Mama"
+    },
+    {
+     "probe": "label.dad",
+     "value": "Dada"
+    },
+    {
+     "probe": "net.k.online",
+     "value": true
+    },
+    {
+     "probe": "net.g.online",
+     "value": true
+    },
+    {
+     "probe": "msg.count",
+     "value": 0
+    },
+    {
+     "probe": "call.state",
+     "value": "none"
+    },
+    {
+     "probe": "play.state",
+     "value": "open"
+    },
+    {
+     "probe": "play.config",
+     "value": {
+      "on": true,
+      "open": "15:30",
+      "rest": "19:00",
+      "wind": 30
+     }
+    },
+    {
+     "probe": "acct.state",
+     "value": "active"
+    },
+    {
+     "probe": "fam.people",
+     "value": 4
+    },
+    {
+     "probe": "fam.hist",
+     "value": ""
+    }
+   ],
+   "steps": [
+    {
+     "id": "play.01",
+     "cap": "Jess opens Play window and daily time. Times are in Ivy’s time zone, not hers.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "g-play"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "g-play"
+      }
+     ],
+     "rows": [
+      "play.window"
+     ]
+    },
+    {
+     "id": "play.02",
+     "cap": "She turns the window on and picks when games open and rest, with a gentle wind-down.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "type",
+       "dev": "g",
+       "path": "grd.play.open",
+       "value": "07:30"
+      },
+      {
+       "t": "type",
+       "dev": "g",
+       "path": "grd.play.rest",
+       "value": "19:30"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gWind",
+       "arg": "15"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "play.config",
+       "value": {
+        "on": true,
+        "open": "07:30",
+        "rest": "19:30",
+        "wind": 15
+       }
+      }
+     ],
+     "rows": [
+      "play.window"
+     ]
+    },
+    {
+     "id": "play.03",
+     "cap": "Saved. A longer window would tell the other guardian; a shorter one never does.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gPlaySave"
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "play.window"
+     ]
+    },
+    {
+     "id": "play.04",
+     "cap": "On the tablet the games are open right now. Nothing counts down, and there is no timer on screen.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "scenario:play"
+     ]
+    },
+    {
+     "id": "play.05",
+     "cap": "Jump to the start of the wind-down (15 minutes before rest). A game in progress can finish; new ones wait.",
+     "dev": "both",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 500
+      }
+     ],
+     "ops": [
+      {
+       "op": "clock",
+       "to": "2026-11-10T01:15:00.000Z",
+       "advanceMs": 6290000
+      }
+     ],
+     "expect": [],
+     "rows": [
+      "scenario:play"
+     ]
+    },
+    {
+     "id": "play.06",
+     "cap": "Rest time. The games tile goes quiet, with a moon, and a plain picture tells her why.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 500
+      }
+     ],
+     "ops": [
+      {
+       "op": "clock",
+       "to": "2026-11-10T01:30:01.000Z",
+       "advanceMs": 898750
+      }
+     ],
+     "expect": [
+      {
+       "probe": "play.state",
+       "value": "winding"
+      }
+     ],
+     "rows": [
+      "play.window"
+     ]
+    },
+    {
+     "id": "play.07",
+     "cap": "Next morning, at 7:30, the window opens again by itself.",
+     "dev": "both",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "wait",
+       "ms": 500
+      }
+     ],
+     "ops": [
+      {
+       "op": "clock",
+       "to": "2026-11-10T13:31:00.000Z",
+       "advanceMs": 43256500
+      }
+     ],
+     "expect": [
+      {
+       "probe": "play.state",
+       "value": "open"
+      }
+     ],
+     "rows": [
+      "play.window"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "family",
+   "title": "Family change released",
+   "source": "prototype",
+   "desc": "A guardian saves a change to Ivy's people but holds it until she has been told; releasing it updates her tablet.",
+   "fresh": false,
+   "initial": [
+    {
+     "probe": "screen.g",
+     "value": "home"
+    },
+    {
+     "probe": "screen.k",
+     "value": "home"
+    },
+    {
+     "probe": "family.created",
+     "value": true
+    },
+    {
+     "probe": "dev.g.role",
+     "value": "mom"
+    },
+    {
+     "probe": "dev.k.role",
+     "value": "kid"
+    },
+    {
+     "probe": "dev.k.paired",
+     "value": true
+    },
+    {
+     "probe": "dev.g.signedIn",
+     "value": true
+    },
+    {
+     "probe": "child.name",
+     "value": "Ivy"
+    },
+    {
+     "probe": "child.age",
+     "value": 9
+    },
+    {
+     "probe": "child.ageLocked",
+     "value": true
+    },
+    {
+     "probe": "child.color",
+     "value": "warm"
+    },
+    {
+     "probe": "band",
+     "value": "t812"
+    },
+    {
+     "probe": "label.mom",
+     "value": "Mama"
+    },
+    {
+     "probe": "label.dad",
+     "value": "Dada"
+    },
+    {
+     "probe": "net.k.online",
+     "value": true
+    },
+    {
+     "probe": "net.g.online",
+     "value": true
+    },
+    {
+     "probe": "msg.count",
+     "value": 0
+    },
+    {
+     "probe": "call.state",
+     "value": "none"
+    },
+    {
+     "probe": "acct.state",
+     "value": "active"
+    },
+    {
+     "probe": "fam.people",
+     "value": 4
+    },
+    {
+     "probe": "fam.hist",
+     "value": ""
+    }
+   ],
+   "steps": [
+    {
+     "id": "family.01",
+     "cap": "Jess opens Family structure: Ivy’s people and homes.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "g-family"
+      },
+      {
+       "t": "wait",
+       "ms": 400
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "g-family"
+      }
+     ],
+     "rows": [
+      "row:Family/Family structure"
+     ]
+    },
+    {
+     "id": "family.02",
+     "cap": "She adds Grandma Rose and chooses to HOLD the change until she has told Ivy. Nothing reaches the tablet yet.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      },
+      {
+       "t": "until",
+       "ms": 3000
+      }
+     ],
+     "ops": [
+      {
+       "op": "api",
+       "dev": "g",
+       "method": "POST",
+       "path": "/v1/family-changes",
+       "mode": "hold",
+       "status": 200
+      }
+     ],
+     "expect": [
+      {
+       "probe": "fam.hist",
+       "value": "held"
+      }
+     ],
+     "rows": [
+      "row:Family/Family structure"
+     ]
+    },
+    {
+     "id": "family.03",
+     "cap": "The history shows the change as held. Marcus is told the same day. Nothing has changed on Ivy’s side.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "g-history"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "g-history"
+      }
+     ],
+     "rows": [
+      "row:Family/Family history"
+     ]
+    },
+    {
+     "id": "family.04",
+     "cap": "Ivy’s tablet is unchanged: no badge, no surprise.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "scenario:family"
+     ]
+    },
+    {
+     "id": "family.05",
+     "cap": "Jess has had the talk with Ivy. She releases the change.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [
+      {
+       "op": "tap",
+       "dev": "g",
+       "name": "gRelease",
+       "arg": "h2"
+      }
+     ],
+     "expect": [
+      {
+       "probe": "fam.people",
+       "value": 5
+      }
+     ],
+     "rows": [
+      "row:Family/Family structure"
+     ]
+    },
+    {
+     "id": "family.06",
+     "cap": "On the tablet, My people now includes Grandma Rose, as a picture, in her own words.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "k",
+       "name": "kid.openMyPeople"
+      },
+      {
+       "t": "wait",
+       "ms": 500
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.k",
+       "value": "k.people"
+      }
+     ],
+     "rows": [
+      "kid.openMyPeople+kid.callSheet+kid.msgTo"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "deletion",
+   "title": "Account deletion hold",
+   "source": "prototype",
+   "desc": "Deleting an account pauses sign-in and starts a 6 to 12 month recovery window. Ivy's tablet keeps working.",
+   "fresh": false,
+   "initial": [
+    {
+     "probe": "screen.g",
+     "value": "home"
+    },
+    {
+     "probe": "screen.k",
+     "value": "home"
+    },
+    {
+     "probe": "family.created",
+     "value": true
+    },
+    {
+     "probe": "dev.g.role",
+     "value": "mom"
+    },
+    {
+     "probe": "dev.k.role",
+     "value": "kid"
+    },
+    {
+     "probe": "dev.k.paired",
+     "value": true
+    },
+    {
+     "probe": "dev.g.signedIn",
+     "value": true
+    },
+    {
+     "probe": "child.name",
+     "value": "Ivy"
+    },
+    {
+     "probe": "child.age",
+     "value": 9
+    },
+    {
+     "probe": "child.ageLocked",
+     "value": true
+    },
+    {
+     "probe": "child.color",
+     "value": "warm"
+    },
+    {
+     "probe": "band",
+     "value": "t812"
+    },
+    {
+     "probe": "label.mom",
+     "value": "Mama"
+    },
+    {
+     "probe": "label.dad",
+     "value": "Dada"
+    },
+    {
+     "probe": "net.k.online",
+     "value": true
+    },
+    {
+     "probe": "net.g.online",
+     "value": true
+    },
+    {
+     "probe": "msg.count",
+     "value": 0
+    },
+    {
+     "probe": "call.state",
+     "value": "none"
+    },
+    {
+     "probe": "acct.state",
+     "value": "active"
+    },
+    {
+     "probe": "fam.people",
+     "value": 4
+    },
+    {
+     "probe": "fam.hist",
+     "value": ""
+    }
+   ],
+   "steps": [
+    {
+     "id": "deletion.01",
+     "cap": "Jess opens Delete my account. The screen says what will happen before anything does.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "go",
+       "arg": "g-delete"
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "screen.g",
+       "value": "g-delete"
+      }
+     ],
+     "rows": [
+      "row:Account/Delete my account"
+     ]
+    },
+    {
+     "id": "deletion.02",
+     "cap": "She taps Delete and must enter her PIN.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gDelAsk"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gPinKey",
+       "arg": "2"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gPinKey",
+       "arg": "4"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gPinKey",
+       "arg": "6"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gPinKey",
+       "arg": "8"
+      }
+     ],
+     "ops": [],
+     "expect": [],
+     "rows": [
+      "row:Account/Delete my account"
+     ]
+    },
+    {
+     "id": "deletion.03",
+     "cap": "A last confirmation. Deleting does not erase: it starts the recovery window.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gDelGo"
+      },
+      {
+       "t": "wait",
+       "ms": 900
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "acct.state",
+       "value": "pending"
+      },
+      {
+       "probe": "dev.g.signedIn",
+       "value": false
+      },
+      {
+       "probe": "screen.g",
+       "value": "g-hold"
+      }
+     ],
+     "rows": [
+      "action:ob.pickRole",
+      "row:Account/Account on hold",
+      "row:Account/Delete my account"
+     ]
+    },
+    {
+     "id": "deletion.04",
+     "cap": "Her sign-in is paused. Ivy’s tablet keeps working, and the shared log stays.",
+     "dev": "k",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [
+      {
+       "op": "api",
+       "dev": "k",
+       "method": "GET",
+       "path": "/v1/me",
+       "status": 200
+      }
+     ],
+     "expect": [],
+     "rows": [
+      "scenario:deletion"
+     ]
+    },
+    {
+     "id": "deletion.05",
+     "cap": "Seven months later the guaranteed part of the window has ended but recovery is still possible.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "call"
+      }
+     ],
+     "ops": [
+      {
+       "op": "clock",
+       "to": "2027-06-07T23:30:11.000Z",
+       "advanceMs": 18144000000
+      }
+     ],
+     "expect": [
+      {
+       "probe": "child.age",
+       "value": 10
+      }
+     ],
+     "rows": [
+      "action:ob.kid.pickAge / askLock / lockAge"
+     ]
+    },
+    {
+     "id": "deletion.06",
+     "cap": "She enters her PIN on the hold screen and everything comes back.",
+     "dev": "g",
+     "acts": [
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gRecKey",
+       "arg": "2"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gRecKey",
+       "arg": "4"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gRecKey",
+       "arg": "6"
+      },
+      {
+       "t": "tap",
+       "dev": "g",
+       "name": "gRecKey",
+       "arg": "8"
+      },
+      {
+       "t": "until",
+       "ms": 4000
+      }
+     ],
+     "ops": [],
+     "expect": [
+      {
+       "probe": "acct.state",
+       "value": "active"
+      },
+      {
+       "probe": "dev.g.signedIn",
+       "value": true
+      },
+      {
+       "probe": "screen.g",
+       "value": "home"
+      }
+     ],
+     "rows": [
+      "action:ob.pickRole",
+      "row:Account/Account on hold"
+     ]
+    }
+   ]
+  }
+ ],
+ "rules": {
+  "labels": {
+   "table": {
+    "unlocked": {
+     "3": [
+      "Mom",
+      "Dad"
+     ],
+     "4": [
+      "Mom",
+      "Dad"
+     ],
+     "5": [
+      "Mom",
+      "Dad"
+     ],
+     "6": [
+      "Mom",
+      "Dad"
+     ],
+     "7": [
+      "Mom",
+      "Dad"
+     ],
+     "8": [
+      "Mom",
+      "Dad"
+     ],
+     "9": [
+      "Mom",
+      "Dad"
+     ],
+     "10": [
+      "Mom",
+      "Dad"
+     ],
+     "11": [
+      "Mom",
+      "Dad"
+     ],
+     "12": [
+      "Mom",
+      "Dad"
+     ],
+     "13": [
+      "Mom",
+      "Dad"
+     ],
+     "14": [
+      "Mom",
+      "Dad"
+     ],
+     "15": [
+      "Mom",
+      "Dad"
+     ],
+     "16": [
+      "Mom",
+      "Dad"
+     ],
+     "17": [
+      "Mom",
+      "Dad"
+     ]
+    },
+    "locked": {
+     "3": [
+      "Mommy",
+      "Daddy"
+     ],
+     "4": [
+      "Mommy",
+      "Daddy"
+     ],
+     "5": [
+      "Mommy",
+      "Daddy"
+     ],
+     "6": [
+      "Mommy",
+      "Daddy"
+     ],
+     "7": [
+      "Mommy",
+      "Daddy"
+     ],
+     "8": [
+      "Mommy",
+      "Daddy"
+     ],
+     "9": [
+      "Mommy",
+      "Daddy"
+     ],
+     "10": [
+      "Mommy",
+      "Daddy"
+     ],
+     "11": [
+      "Mommy",
+      "Daddy"
+     ],
+     "12": [
+      "Mommy",
+      "Daddy"
+     ],
+     "13": [
+      "Mommy",
+      "Daddy"
+     ],
+     "14": [
+      "Mommy",
+      "Daddy"
+     ],
+     "15": [
+      "Mommy",
+      "Daddy"
+     ],
+     "16": [
+      "Mom",
+      "Dad"
+     ],
+     "17": [
+      "Mom",
+      "Dad"
+     ]
+    }
+   },
+   "nicknameWins": true,
+   "guardianCannotRename": true
+  },
+  "bands": {
+   "byAge": {
+    "3": "t34",
+    "4": "t34",
+    "5": "t57",
+    "6": "t57",
+    "7": "t57",
+    "8": "t812",
+    "9": "t812",
+    "10": "t812",
+    "11": "t812",
+    "12": "t812",
+    "13": "t1317",
+    "14": "t1317",
+    "15": "t1317",
+    "16": "t1317",
+    "17": "t1317"
+   },
+   "firstAgeOfBand": {
+    "t34": 3,
+    "t57": 5,
+    "t812": 8,
+    "t1317": 13
+   }
+  },
+  "pinLockout": {
+   "wrongTriesToLock": 5,
+   "lockMinutes": 15,
+   "windowMinutes": 15,
+   "attempts": [
+    {
+     "try": 1,
+     "status": 403,
+     "code": "invalid_pin",
+     "attemptsLeft": 4
+    },
+    {
+     "try": 2,
+     "status": 403,
+     "code": "invalid_pin",
+     "attemptsLeft": 3
+    },
+    {
+     "try": 3,
+     "status": 403,
+     "code": "invalid_pin",
+     "attemptsLeft": 2
+    },
+    {
+     "try": 4,
+     "status": 403,
+     "code": "invalid_pin",
+     "attemptsLeft": 1
+    },
+    {
+     "try": 5,
+     "status": 423,
+     "code": "pin_locked"
+    },
+    {
+     "try": 6,
+     "status": 423,
+     "code": "pin_locked"
+    }
+   ],
+   "correctPinWhileLocked": {
+    "status": 423,
+    "code": "pin_locked"
+   },
+   "correctPinAfterLock": {
+    "status": 201
+   },
+   "fourWrongThenRight": {
+    "status": 201
+   },
+   "childMayNotMakeCode": {
+    "status": 403,
+    "code": "forbidden"
+   }
+  },
+  "pairing": {
+   "codeLength": 6,
+   "alphabet": "1-9",
+   "ttlMinutes": 10,
+   "newCodeRevokesOlder": true,
+   "redeemLockoutTries": [
+    {
+     "try": 1,
+     "status": 404,
+     "code": "not_found"
+    },
+    {
+     "try": 2,
+     "status": 404,
+     "code": "not_found"
+    },
+    {
+     "try": 3,
+     "status": 404,
+     "code": "not_found"
+    },
+    {
+     "try": 4,
+     "status": 404,
+     "code": "not_found"
+    },
+    {
+     "try": 5,
+     "status": 404,
+     "code": "not_found"
+    },
+    {
+     "try": 6,
+     "status": 429,
+     "code": "rate_limited"
+    }
+   ],
+   "redeemLockoutMinutes": 5
+  },
+  "messages": {
+   "minMs": 3000,
+   "maxMs": 600000,
+   "tooShort": {
+    "status": 422,
+    "code": "message_too_short"
+   },
+   "tooLong": {
+    "status": 422,
+    "code": "message_too_long"
+   },
+   "badRule": {
+    "status": 422,
+    "code": "invalid_rule"
+   },
+   "deliveredOnBedtime": "delivered",
+   "watchedToleranceMs": 1500,
+   "playedMsBelowToleranceRefused": {
+    "status": 409,
+    "code": "not_played_through"
+   },
+   "playedMsAtToleranceAccepted": {
+    "status": 200
+   },
+   "notPlayedThroughCode": "not_played_through"
+  },
+  "retryCadence": {
+   "firstRetryAfterMinutes": 10,
+   "laterRetryAfterMinutes": 60,
+   "maxAttempts": 8,
+   "finalState": "failed",
+   "gapsMinutes": [
+    10,
+    60,
+    60,
+    60,
+    60,
+    60,
+    60
+   ]
+  },
+  "expiry": {
+   "replyKeptDays": 14,
+   "guardianSentMessagesPreserved": true
+  },
+  "calls": {
+   "childStartsCall": {
+    "status": 403,
+    "code": "child_cannot_start_call"
+   },
+   "guardianKnocks": {
+    "status": 403,
+    "code": "not_a_child_surface"
+   },
+   "knockTimeoutSeconds": 30
+  },
+  "playWindow": {
+   "states": {
+    "07:29": "closed",
+    "07:30": "open",
+    "19:29": "open",
+    "19:30": "winding",
+    "19:44": "winding",
+    "19:45": "closed",
+    "23:00": "closed"
+   },
+   "windDownMinutes": [
+    0,
+    15,
+    30
+   ],
+   "badTimes": {
+    "status": 422,
+    "code": "validation_failed"
+   },
+   "neverClosesCallsOrMessages": true,
+   "longerWindowNotifiesPartner": true
+  },
+  "parentalControls": {
+   "hideMessages": {
+    "status": 403,
+    "code": "cannot_hide_messages"
+   },
+   "hideGames": {
+    "status": 200
+   },
+   "unknownTile": {
+    "status": 404,
+    "code": "not_found"
+   },
+   "paceChoicesMinutes": [
+    0,
+    30,
+    60,
+    120
+   ]
+  },
+  "emergencyCard": {
+   "staleBase": {
+    "status": 409,
+    "code": "stale_version"
+   },
+   "staleReturnsCurrentVersion": true,
+   "savedAtCurrentVersion": {
+    "status": 200
+   }
+  },
+  "medications": {
+   "doubleDose": {
+    "first": {
+     "status": 200
+    },
+    "second": {
+     "status": 409,
+     "code": "already_given"
+    },
+    "prnGapMinutes": 240,
+    "kind": "prn"
+   }
+  },
+  "deletion": {
+   "minDays": 182,
+   "maxDays": 365,
+   "minMonthsApprox": 6,
+   "maxMonthsApprox": 12,
+   "recoverNeedsPin": true,
+   "signInPausedAtOnce": true,
+   "deleteOk": {
+    "status": 200
+   }
+  },
+  "familyChanges": {
+   "staleBase": {
+    "status": 409,
+    "code": "stale_version"
+   },
+   "nothingChanged": {
+    "status": 422,
+    "code": "nothing_to_release"
+   },
+   "badTiming": {
+    "status": 422,
+    "code": "validation_failed"
+   },
+   "held": {
+    "status": 200,
+    "result": "held"
+   },
+   "peopleBeforeRelease": 4,
+   "peopleAfterRelease": 5,
+   "release": {
+    "status": 200
+   },
+   "maxDateAheadDays": 730,
+   "maxHomes": 4
+  },
+  "session": {
+   "childGetsNotAChildSurface": {
+    "status": 403,
+    "code": "not_a_child_surface"
+   },
+   "lockedAgeNeverOverwritten": true,
+   "sessionDaysGuardian": 14,
+   "sessionDaysChildDevice": 3650
+  }
+ },
+ "routes": [
+  {
+   "method": "POST",
+   "path": "/v1/account/delete",
+   "who": "guardian",
+   "errors": [
+    "409 already_pending"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/account/recover",
+   "who": "public",
+   "errors": [
+    "403 invalid_pin",
+    "409 not_pending",
+    "410 erased",
+    "423 pin_locked"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/auth/session/refresh",
+   "who": "public",
+   "errors": [
+    "401 device_revoked",
+    "401 invalid_device_credential"
+   ],
+   "file": "live-core.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/auth/session/sign-out",
+   "who": "any",
+   "errors": [],
+   "file": "live-core.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/auth/session",
+   "who": "public",
+   "errors": [
+    "401 invalid_device_credential",
+    "403 invalid_pin",
+    "423 pin_locked"
+   ],
+   "file": "live-core.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/child-content/:key",
+   "who": "guardian",
+   "errors": [
+    "400 bad_key"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/calls/:callId/",
+   "who": "any",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/calls/knock",
+   "who": "child",
+   "errors": [
+    "403 not_a_child_surface",
+    "409 call_in_progress",
+    "422 unknown_recipient"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "GET",
+   "path": "/v1/children/:childId/calls",
+   "who": "guardian",
+   "errors": [],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/calls",
+   "who": "any",
+   "errors": [
+    "403 child_cannot_start_call",
+    "403 forbidden",
+    "404 not_found",
+    "409 call_in_progress"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/device-pairing-codes",
+   "who": "any",
+   "errors": [
+    "403 forbidden",
+    "403 invalid_pin",
+    "404 not_found",
+    "409 pin_not_set",
+    "423 pin_locked"
+   ],
+   "file": "live-core.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/inbox/:messageId/opened",
+   "who": "child",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/inbox/:messageId/progress",
+   "who": "child",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/inbox/:messageId/watched",
+   "who": "child",
+   "errors": [
+    "404 not_found",
+    "409 not_played_through"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "GET",
+   "path": "/v1/children/:childId/inbox",
+   "who": "child",
+   "errors": [],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/messages/:messageId/cancel",
+   "who": "guardian",
+   "errors": [
+    "404 not_found",
+    "409 already_delivered"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/messages/:messageId/reschedule",
+   "who": "guardian",
+   "errors": [
+    "404 not_found",
+    "409 already_delivered",
+    "422 night_in_past"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/messages/:messageId/retry",
+   "who": "guardian",
+   "errors": [
+    "404 not_found",
+    "409 not_retryable"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "GET",
+   "path": "/v1/children/:childId/messages/:messageId",
+   "who": "guardian",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "GET",
+   "path": "/v1/children/:childId/messages",
+   "who": "guardian",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/messages",
+   "who": "guardian",
+   "errors": [
+    "404 not_found",
+    "422 invalid_rule",
+    "422 message_too_long",
+    "422 message_too_short",
+    "422 night_in_past"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/children/:childId/profile",
+   "who": "child",
+   "errors": [
+    "403 not_a_child_surface"
+   ],
+   "file": "live-core.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/replies/:replyId/preserve",
+   "who": "guardian",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/children/:childId/replies",
+   "who": "child",
+   "errors": [
+    "422 invalid_mode",
+    "422 reply_too_short",
+    "422 unknown_recipient"
+   ],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/colour-of-day",
+   "who": "guardian,child",
+   "errors": [],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/daily-time",
+   "who": "guardian",
+   "errors": [],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/device-pairing/redeem",
+   "who": "public",
+   "errors": [
+    "404 not_found",
+    "409 role_mismatch",
+    "429 rate_limited"
+   ],
+   "file": "live-core.js"
+  },
+  {
+   "method": "DELETE",
+   "path": "/v1/devices/:deviceId",
+   "who": "guardian",
+   "errors": [],
+   "file": "live-core.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/emergency-card",
+   "who": "guardian",
+   "errors": [
+    "409 stale_version"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/expenses/:id/accept",
+   "who": "guardian",
+   "errors": [
+    "403 cannot_accept_own",
+    "403 cannot_dispute_own",
+    "403 forbidden",
+    "404 not_found",
+    "409 not_pending",
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/expenses/:id/dispute",
+   "who": "guardian",
+   "errors": [
+    "403 cannot_accept_own",
+    "403 cannot_dispute_own",
+    "403 forbidden",
+    "404 not_found",
+    "409 not_pending",
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/expenses/:id/reimburse",
+   "who": "guardian",
+   "errors": [
+    "403 cannot_accept_own",
+    "403 cannot_dispute_own",
+    "403 forbidden",
+    "404 not_found",
+    "409 not_pending",
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/expenses",
+   "who": "guardian",
+   "errors": [
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/families",
+   "who": "public",
+   "errors": [
+    "422 invalid_pin",
+    "422 validation_failed"
+   ],
+   "file": "live-core.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/family-changes/:id/release",
+   "who": "guardian",
+   "errors": [
+    "404 not_found",
+    "409 not_pending",
+    "409 stale_version"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/family-changes/:id/undo",
+   "who": "guardian",
+   "errors": [
+    "404 not_found",
+    "409 not_latest",
+    "409 not_undoable"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/family-changes",
+   "who": "guardian",
+   "errors": [
+    "409 locked_by_order",
+    "409 stale_version",
+    "422 date_out_of_range",
+    "422 nothing_to_release",
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/guardian/devices/:id/revoke",
+   "who": "guardian",
+   "errors": [
+    "403 not_your_device",
+    "404 not_found"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/guardian/pin",
+   "who": "guardian",
+   "errors": [
+    "403 invalid_pin",
+    "422 invalid_pin",
+    "423 pin_locked"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/guardians/me/notification-preferences",
+   "who": "guardian",
+   "errors": [],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/guardians/me/push-registration",
+   "who": "guardian",
+   "errors": [],
+   "file": "mod-messages.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/handover-notes",
+   "who": "guardian",
+   "errors": [
+    "422 too_long",
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/medications/:id/doses",
+   "who": "guardian",
+   "errors": [
+    "404 not_found",
+    "409 already_given",
+    "409 retired"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/medications/:id/retire",
+   "who": "guardian",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "PATCH",
+   "path": "/v1/medications/:id",
+   "who": "guardian",
+   "errors": [
+    "404 not_found"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/medications",
+   "who": "guardian",
+   "errors": [
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "GET",
+   "path": "/v1/me",
+   "who": "any",
+   "errors": [],
+   "file": "live-core.js"
+  },
+  {
+   "method": "GET",
+   "path": "/v1/now",
+   "who": "public",
+   "errors": [],
+   "file": "live-core.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/parental-controls",
+   "who": "guardian",
+   "errors": [
+    "403 cannot_hide_messages",
+    "404 not_found"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "PUT",
+   "path": "/v1/play-window",
+   "who": "guardian",
+   "errors": [
+    "422 validation_failed"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/swaps/:id/respond",
+   "who": "guardian",
+   "errors": [
+    "403 cannot_respond_own",
+    "403 forbidden",
+    "404 not_found",
+    "409 not_pending"
+   ],
+   "file": "mod-guardian.js"
+  },
+  {
+   "method": "POST",
+   "path": "/v1/swaps",
+   "who": "guardian",
+   "errors": [
+    "409 conflict",
+    "422 date_in_past",
+    "422 date_out_of_range"
+   ],
+   "file": "mod-guardian.js"
+  }
+ ]
+}

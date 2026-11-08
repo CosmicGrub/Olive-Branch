@@ -86,6 +86,46 @@ Together: kit -> tokens is guarded by the first, tokens -> real theme by the sec
   component task (an `OliveIcon` painter or an SVG package); until it lands screens keep Material icons.
 - **Scenes** (full illustrations) are listed by name only.
 
+## The behaviour harness and the parity ledger (Wave P)
+
+Tokens prove the look; the harness proves the behaviour. The prototype's scenarios and rules become data, the real client is replayed
+against that data, and the gap is counted.
+
+```
+docs/superpowers/mockups/live/*.js                       (the reference)
+   |  scaffold/tools/proto-headless.mjs                   DOM-less node:vm host: fake timers, seeded Math.random, virtual clock
+   |  scaffold/tools/gen-parity-scenarios.mjs             runs L.scenarios step by step, records state, probes the rules
+   v
+scaffold/client/test/parity/scenarios.json               { scenarios[7], rules{}, routes[] }  GENERATED, drift-guarded
+   |  scenario_runner.dart                                 actions -> drivers on the REAL screens; probes -> checkers
+   |  fake_server.dart + virtual_clock.dart                the routes the client calls, the prototype's semantics, tester.pump time
+   |  rule_checks.dart                                     the rule table vs the Flutter rules
+   v
+test/parity/ledger.json (every run)  +  ledger_baseline.json (committed ratchet)
+```
+
+**A unit** is one action to perform or one state to assert (plus one per rule). It is exactly one of: `implemented` (a Flutter driver exists
+and the prototype's expectation holds), `pending` (the Flutter feature is missing; the unit names the parity-matrix row ids that own it) or
+`differs` (Flutter has it and behaves differently; the note says how). An assertion is evaluated only when every action in its step ran;
+otherwise it is `pending: blocked`. After a step with a pending action the world adopts the prototype's expected state for the few facts
+later drivers need, so one missing screen does not hide the rest of the scenario.
+
+**The ratchet.** `scenario_parity_test.dart` fails if a unit that is `implemented` in `ledger_baseline.json` is not implemented now, or if the
+pending or differs count rises. Progress lowers the counts and is allowed; lock it in with
+`PARITY_UPDATE_BASELINE=1 flutter test test/parity/scenario_parity_test.dart` and commit the baseline. A wave that builds a screen adds its
+driver to `scenario_runner.dart` (key `tap:<prototype action>`, `type:<path>`, `go:<screen>` or `op:...`) and its checker, and the pending
+units for that screen flip to implemented. `rules_parity_test.dart` declares today's verdict for every rule, so a silent change on either
+side fails until it is recorded.
+
+**Regenerate** after the prototype changes: `cd scaffold && node tools/gen-parity-scenarios.mjs` (`--check` exits 1 if stale; `--print` prints).
+The generator refuses a step whose matrix row is not in `matrix.json`.
+
+**What the harness cannot cover** (see also SCREENSHOT-HARNESS.md): pixels and layout (separate proposal); real device behaviour (camera, push,
+audio, the kiosk lock, the fold); timing that depends on real I/O; the `call` closures in scenarios are captured by what they did (clock,
+network, age, API, taps), not replayed as code; the fixed UTC-6 wall clock (a play-window assertion across a daylight-saving change would be
+an hour out); Flutter's own server is not the prototype's, so server-side rules are compared by reading the server source (PIN lockout) or
+through the FakeServer, which is only as true as `fake_server_test.dart`.
+
 ## Checklist: adding a component or screen
 
 1. Find it in the prototype (`live/` modules or the Round 2/3 mockups). Note the prototype screen id.

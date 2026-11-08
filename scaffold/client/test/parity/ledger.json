@@ -1,0 +1,2145 @@
+{
+ "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
+ "totals": {
+  "implemented": 57,
+  "pending": 132,
+  "differs": 10
+ },
+ "groups": {
+  "birthday": {
+   "implemented": 3,
+   "pending": 2,
+   "differs": 0,
+   "steps": {
+    "implemented": 1,
+    "pending": 1,
+    "differs": 0
+   }
+  },
+  "call": {
+   "implemented": 0,
+   "pending": 10,
+   "differs": 0,
+   "steps": {
+    "implemented": 0,
+    "pending": 4,
+    "differs": 0
+   }
+  },
+  "deletion": {
+   "implemented": 1,
+   "pending": 20,
+   "differs": 0,
+   "steps": {
+    "implemented": 0,
+    "pending": 6,
+    "differs": 0
+   }
+  },
+  "family": {
+   "implemented": 4,
+   "pending": 6,
+   "differs": 0,
+   "steps": {
+    "implemented": 2,
+    "pending": 3,
+    "differs": 0
+   }
+  },
+  "golden": {
+   "implemented": 28,
+   "pending": 67,
+   "differs": 0,
+   "steps": {
+    "implemented": 3,
+    "pending": 17,
+    "differs": 0
+   }
+  },
+  "offline": {
+   "implemented": 4,
+   "pending": 21,
+   "differs": 0,
+   "steps": {
+    "implemented": 1,
+    "pending": 5,
+    "differs": 0
+   }
+  },
+  "play": {
+   "implemented": 9,
+   "pending": 2,
+   "differs": 1,
+   "steps": {
+    "implemented": 4,
+    "pending": 1,
+    "differs": 1
+   }
+  },
+  "rules": {
+   "implemented": 8,
+   "pending": 4,
+   "differs": 9
+  }
+ },
+ "units": {
+  "birthday.01#a0": {
+   "group": "birthday",
+   "kind": "act",
+   "label": "call: set age 12",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ]
+  },
+  "birthday.01#e:child.age": {
+   "group": "birthday",
+   "kind": "assert",
+   "label": "child.age = 12",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ]
+  },
+  "birthday.02#a0": {
+   "group": "birthday",
+   "kind": "act",
+   "label": "call: clock +390 min",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "sub:age bands bandOf"
+   ]
+  },
+  "birthday.02#e:band": {
+   "group": "birthday",
+   "kind": "assert",
+   "label": "band = t1317",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "sub:age bands bandOf"
+   ],
+   "note": "the band does not follow the birthday because the age does not (see child.age)"
+  },
+  "birthday.02#e:child.age": {
+   "group": "birthday",
+   "kind": "assert",
+   "label": "child.age = 13",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "sub:age bands bandOf"
+   ],
+   "note": "Flutter does not move the age on her birthday (matrix: sub:birthday auto-increments age at local midnight)"
+  },
+  "call.01#a0": {
+   "group": "call",
+   "kind": "act",
+   "label": "tap call.knock mom",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "no Flutter driver for \"tap call.knock mom\""
+  },
+  "call.01#e:call.state": {
+   "group": "call",
+   "kind": "assert",
+   "label": "call.state = ringing",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "no Flutter counterpart for \"call.state\""
+  },
+  "call.01#e:screen.g": {
+   "group": "call",
+   "kind": "assert",
+   "label": "screen.g = msg.gCall",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "blocked: an action in call.01 is pending"
+  },
+  "call.01#e:screen.k": {
+   "group": "call",
+   "kind": "assert",
+   "label": "screen.k = msg.kCall",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "blocked: an action in call.01 is pending"
+  },
+  "call.03#a0": {
+   "group": "call",
+   "kind": "act",
+   "label": "tap call.answer",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "no Flutter driver for \"tap call.answer\""
+  },
+  "call.03#e:call.state": {
+   "group": "call",
+   "kind": "assert",
+   "label": "call.state = connecting",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "no Flutter counterpart for \"call.state\""
+  },
+  "call.04#e:call.state": {
+   "group": "call",
+   "kind": "assert",
+   "label": "call.state = live",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "no Flutter counterpart for \"call.state\""
+  },
+  "call.05#a0": {
+   "group": "call",
+   "kind": "act",
+   "label": "tap call.end",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "no Flutter driver for \"tap call.end\""
+  },
+  "call.05#e:call.state": {
+   "group": "call",
+   "kind": "assert",
+   "label": "call.state = none",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "no Flutter counterpart for \"call.state\""
+  },
+  "call.05#e:screen.k": {
+   "group": "call",
+   "kind": "assert",
+   "label": "screen.k = home",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "blocked: an action in call.05 is pending"
+  },
+  "deletion.01#a0": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "go g-delete",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter driver for \"go g-delete\""
+  },
+  "deletion.01#e:screen.g": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "screen.g = g-delete",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "blocked: an action in deletion.01 is pending"
+  },
+  "deletion.02#a0": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gDelAsk",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter driver for \"tap gDelAsk\""
+  },
+  "deletion.02#a1": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gPinKey 2",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter driver for \"tap gPinKey 2\""
+  },
+  "deletion.02#a2": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gPinKey 4",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter driver for \"tap gPinKey 4\""
+  },
+  "deletion.02#a3": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gPinKey 6",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter driver for \"tap gPinKey 6\""
+  },
+  "deletion.02#a4": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gPinKey 8",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter driver for \"tap gPinKey 8\""
+  },
+  "deletion.03#a0": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gDelGo",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold",
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter driver for \"tap gDelGo\""
+  },
+  "deletion.03#e:acct.state": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "acct.state = pending",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold",
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter counterpart for \"acct.state\""
+  },
+  "deletion.03#e:dev.g.signedIn": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "dev.g.signedIn = false",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold",
+    "row:Account/Delete my account"
+   ],
+   "note": "no Flutter counterpart for \"dev.g.signedIn\""
+  },
+  "deletion.03#e:screen.g": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "screen.g = g-hold",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold",
+    "row:Account/Delete my account"
+   ],
+   "note": "blocked: an action in deletion.03 is pending"
+  },
+  "deletion.04#a0": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "call: GET /v1/me",
+   "status": "pending",
+   "rows": [
+    "scenario:deletion"
+   ],
+   "note": "no Flutter driver for \"call: GET /v1/me\""
+  },
+  "deletion.05#a0": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "call: clock +302400 min",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ]
+  },
+  "deletion.05#e:child.age": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "child.age = 10",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ],
+   "note": "Flutter does not move the age on her birthday (matrix: sub:birthday auto-increments age at local midnight)"
+  },
+  "deletion.06#a0": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gRecKey 2",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold"
+   ],
+   "note": "no Flutter driver for \"tap gRecKey 2\""
+  },
+  "deletion.06#a1": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gRecKey 4",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold"
+   ],
+   "note": "no Flutter driver for \"tap gRecKey 4\""
+  },
+  "deletion.06#a2": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gRecKey 6",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold"
+   ],
+   "note": "no Flutter driver for \"tap gRecKey 6\""
+  },
+  "deletion.06#a3": {
+   "group": "deletion",
+   "kind": "act",
+   "label": "tap gRecKey 8",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold"
+   ],
+   "note": "no Flutter driver for \"tap gRecKey 8\""
+  },
+  "deletion.06#e:acct.state": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "acct.state = active",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold"
+   ],
+   "note": "no Flutter counterpart for \"acct.state\""
+  },
+  "deletion.06#e:dev.g.signedIn": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "dev.g.signedIn = true",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold"
+   ],
+   "note": "no Flutter counterpart for \"dev.g.signedIn\""
+  },
+  "deletion.06#e:screen.g": {
+   "group": "deletion",
+   "kind": "assert",
+   "label": "screen.g = home",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole",
+    "row:Account/Account on hold"
+   ],
+   "note": "blocked: an action in deletion.06 is pending"
+  },
+  "family.01#a0": {
+   "group": "family",
+   "kind": "act",
+   "label": "go g-family",
+   "status": "pending",
+   "rows": [
+    "row:Family/Family structure"
+   ],
+   "note": "no Flutter driver for \"go g-family\""
+  },
+  "family.01#e:screen.g": {
+   "group": "family",
+   "kind": "assert",
+   "label": "screen.g = g-family",
+   "status": "pending",
+   "rows": [
+    "row:Family/Family structure"
+   ],
+   "note": "blocked: an action in family.01 is pending"
+  },
+  "family.02#a0": {
+   "group": "family",
+   "kind": "act",
+   "label": "call: POST /v1/family-changes",
+   "status": "implemented",
+   "rows": [
+    "row:Family/Family structure"
+   ]
+  },
+  "family.02#e:fam.hist": {
+   "group": "family",
+   "kind": "assert",
+   "label": "fam.hist = held",
+   "status": "implemented",
+   "rows": [
+    "row:Family/Family structure"
+   ]
+  },
+  "family.03#a0": {
+   "group": "family",
+   "kind": "act",
+   "label": "go g-history",
+   "status": "pending",
+   "rows": [
+    "row:Family/Family history"
+   ],
+   "note": "no Flutter driver for \"go g-history\""
+  },
+  "family.03#e:screen.g": {
+   "group": "family",
+   "kind": "assert",
+   "label": "screen.g = g-history",
+   "status": "pending",
+   "rows": [
+    "row:Family/Family history"
+   ],
+   "note": "blocked: an action in family.03 is pending"
+  },
+  "family.05#a0": {
+   "group": "family",
+   "kind": "act",
+   "label": "call: tap gRelease h2",
+   "status": "implemented",
+   "rows": [
+    "row:Family/Family structure"
+   ]
+  },
+  "family.05#e:fam.people": {
+   "group": "family",
+   "kind": "assert",
+   "label": "fam.people = 5",
+   "status": "implemented",
+   "rows": [
+    "row:Family/Family structure"
+   ]
+  },
+  "family.06#a0": {
+   "group": "family",
+   "kind": "act",
+   "label": "tap kid.openMyPeople",
+   "status": "pending",
+   "rows": [
+    "kid.openMyPeople+kid.callSheet+kid.msgTo"
+   ],
+   "note": "no Flutter driver for \"tap kid.openMyPeople\""
+  },
+  "family.06#e:screen.k": {
+   "group": "family",
+   "kind": "assert",
+   "label": "screen.k = k.people",
+   "status": "pending",
+   "rows": [
+    "kid.openMyPeople+kid.callSheet+kid.msgTo"
+   ],
+   "note": "blocked: an action in family.06 is pending"
+  },
+  "golden.02#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pickRole mom",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole"
+   ],
+   "note": "no Flutter driver for \"tap ob.pickRole mom\""
+  },
+  "golden.02#e:dev.g.role": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "dev.g.role = mom",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole"
+   ],
+   "note": "no Flutter counterpart for \"dev.g.role\""
+  },
+  "golden.02#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = ob.g.you",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole"
+   ],
+   "note": "blocked: an action in golden.02 is pending"
+  },
+  "golden.03#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "type dev.g.draft.gname",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"type dev.g.draft.gname\""
+  },
+  "golden.03#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.g.label Mom",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"tap ob.g.label Mom\""
+  },
+  "golden.03#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.g.child",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"go ob.g.child\""
+  },
+  "golden.03#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = ob.g.child",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "blocked: an action in golden.03 is pending"
+  },
+  "golden.04#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "type dev.g.draft.cname",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"type dev.g.draft.cname\""
+  },
+  "golden.04#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.g.pickAge 9",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"tap ob.g.pickAge 9\""
+  },
+  "golden.04#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.g.zone",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"go ob.g.zone\""
+  },
+  "golden.04#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = ob.g.zone",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "blocked: an action in golden.04 is pending"
+  },
+  "golden.05#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.g.zone America/Chicago",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"tap ob.g.zone America/Chicago\""
+  },
+  "golden.05#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.g.pin",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "no Flutter driver for \"go ob.g.pin\""
+  },
+  "golden.05#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = ob.g.pin",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.label / pickAge / zone"
+   ],
+   "note": "blocked: an action in golden.05 is pending"
+  },
+  "golden.06#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 2",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 4",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 6",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#a3": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 8",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#a4": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 2",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#a5": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 4",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#a6": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 6",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#a7": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 8",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)"
+  },
+  "golden.06#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = ob.g.connect",
+   "status": "pending",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ],
+   "note": "blocked: an action in golden.06 is pending"
+  },
+  "golden.07#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.g.create",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "no Flutter driver for \"tap ob.g.create\""
+  },
+  "golden.07#e:child.age": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "child.age = 9",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "blocked: an action in golden.07 is pending"
+  },
+  "golden.07#e:child.ageLocked": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "child.ageLocked = true",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "blocked: an action in golden.07 is pending"
+  },
+  "golden.07#e:child.name": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "child.name = Ivy",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "no Flutter counterpart for \"child.name\""
+  },
+  "golden.07#e:dev.g.signedIn": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "dev.g.signedIn = true",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "no Flutter counterpart for \"dev.g.signedIn\""
+  },
+  "golden.07#e:family.created": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "family.created = true",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "no Flutter counterpart for \"family.created\""
+  },
+  "golden.07#e:label.dad": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "label.dad = Daddy",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "blocked: an action in golden.07 is pending"
+  },
+  "golden.07#e:label.mom": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "label.mom = Mommy",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "blocked: an action in golden.07 is pending"
+  },
+  "golden.07#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = ob.g.done",
+   "status": "pending",
+   "rows": [
+    "action:ob.g.pinNext / create / finish",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "action:ob.pickRole",
+    "labels.age-defaults"
+   ],
+   "note": "blocked: an action in golden.07 is pending"
+  },
+  "golden.08#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.addDevice",
+   "status": "implemented",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ]
+  },
+  "golden.08#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 2",
+   "status": "implemented",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ]
+  },
+  "golden.08#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 4",
+   "status": "implemented",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ]
+  },
+  "golden.08#a3": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 6",
+   "status": "implemented",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ]
+  },
+  "golden.08#a4": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pad 8",
+   "status": "implemented",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ]
+  },
+  "golden.08#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = ob.addDevice",
+   "status": "implemented",
+   "rows": [
+    "action:ob.pad / ob.join.go / ob.other.join"
+   ]
+  },
+  "golden.09#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.pickRole kid",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole"
+   ],
+   "note": "no Flutter driver for \"tap ob.pickRole kid\""
+  },
+  "golden.09#e:dev.k.role": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "dev.k.role = kid",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole"
+   ],
+   "note": "no Flutter counterpart for \"dev.k.role\""
+  },
+  "golden.09#e:screen.k": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.k = ob.kid.name",
+   "status": "pending",
+   "rows": [
+    "action:ob.pickRole"
+   ],
+   "note": "blocked: an action in golden.09 is pending"
+  },
+  "golden.10#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "type dev.k.draft.name",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.submit / retry / finish"
+   ]
+  },
+  "golden.10#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.kid.age",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.submit / retry / finish"
+   ]
+  },
+  "golden.10#e:screen.k": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.k = ob.kid.age",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.submit / retry / finish"
+   ]
+  },
+  "golden.11#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.kid.pickAge 9",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ]
+  },
+  "golden.11#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.kid.askLock",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ],
+   "note": "Flutter has no \"are you sure, this locks\" confirmation between tapping an age and locking it"
+  },
+  "golden.11#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.kid.lockAge",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ]
+  },
+  "golden.11#a3": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.kid.color",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ],
+   "note": "no Flutter driver for \"go ob.kid.color\""
+  },
+  "golden.11#e:screen.k": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.k = ob.kid.color",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ],
+   "note": "blocked: an action in golden.11 is pending"
+  },
+  "golden.12#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.kid.pickColor warm",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickColor / setBM / setBD"
+   ]
+  },
+  "golden.12#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.kid.birthday",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickColor / setBM / setBD"
+   ],
+   "note": "no Flutter driver for \"go ob.kid.birthday\""
+  },
+  "golden.12#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.kid.setBM 3",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickColor / setBM / setBD"
+   ]
+  },
+  "golden.12#a3": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.kid.setBD 14",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickColor / setBM / setBD"
+   ]
+  },
+  "golden.12#a4": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.kid.names",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickColor / setBM / setBD"
+   ],
+   "note": "no Flutter driver for \"go ob.kid.names\""
+  },
+  "golden.12#e:screen.k": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.k = ob.kid.names",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.pickColor / setBM / setBD"
+   ],
+   "note": "blocked: an action in golden.12 is pending"
+  },
+  "golden.13#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "type dev.k.draft.nick.mom",
+   "status": "implemented",
+   "rows": [
+    "kid.rename"
+   ]
+  },
+  "golden.13#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "type dev.k.draft.nick.dad",
+   "status": "implemented",
+   "rows": [
+    "kid.rename"
+   ]
+  },
+  "golden.14#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go ob.kid.connect",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: tap ob.pad 7",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: tap ob.pad 9",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#a3": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: tap ob.pad 1",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#a4": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: tap ob.pad 3",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#a5": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: tap ob.pad 1",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#a6": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: tap ob.pad 5",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#e:child.color": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "child.color = warm",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#e:dev.k.paired": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "dev.k.paired = true",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#e:label.dad": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "label.dad = Dada",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#e:label.mom": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "label.mom = Mama",
+   "status": "implemented",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ]
+  },
+  "golden.14#e:screen.k": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.k = ob.kid.welcome",
+   "status": "pending",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "action:ob.kid.pickAge / askLock / lockAge",
+    "labels.age-defaults"
+   ],
+   "note": "no Flutter screen for the prototype screen \"ob.kid.welcome\""
+  },
+  "golden.15#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.kid.finish",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.submit / retry / finish"
+   ],
+   "note": "no Flutter driver for \"tap ob.kid.finish\""
+  },
+  "golden.15#e:screen.k": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.k = home",
+   "status": "pending",
+   "rows": [
+    "action:ob.kid.submit / retry / finish"
+   ],
+   "note": "blocked: an action in golden.15 is pending"
+  },
+  "golden.16#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap ob.add.done",
+   "status": "pending",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "row:Account/Account on hold",
+    "row:Family/Family structure"
+   ],
+   "note": "no Flutter driver for \"tap ob.add.done\""
+  },
+  "golden.16#e:acct.state": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "acct.state = active",
+   "status": "pending",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "row:Account/Account on hold",
+    "row:Family/Family structure"
+   ],
+   "note": "no Flutter counterpart for \"acct.state\""
+  },
+  "golden.16#e:fam.hist": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "fam.hist = ",
+   "status": "pending",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "row:Account/Account on hold",
+    "row:Family/Family structure"
+   ],
+   "note": "blocked: an action in golden.16 is pending"
+  },
+  "golden.16#e:fam.people": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "fam.people = 4",
+   "status": "pending",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "row:Account/Account on hold",
+    "row:Family/Family structure"
+   ],
+   "note": "blocked: an action in golden.16 is pending"
+  },
+  "golden.16#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = home",
+   "status": "pending",
+   "rows": [
+    "action:ob.add.make / again / done",
+    "row:Account/Account on hold",
+    "row:Family/Family structure"
+   ],
+   "note": "blocked: an action in golden.16 is pending"
+  },
+  "golden.17#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap msg.gStart",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"tap msg.gStart\""
+  },
+  "golden.17#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap msg.gSample",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"tap msg.gSample\""
+  },
+  "golden.17#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap msg.gBankIt",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"tap msg.gBankIt\""
+  },
+  "golden.17#e:msg.0.attempts": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.0.attempts = 0",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.attempts\""
+  },
+  "golden.17#e:msg.0.onTablet": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.0.onTablet = false",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.onTablet\""
+  },
+  "golden.17#e:msg.0.state": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.0.state = pending",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.state\""
+  },
+  "golden.17#e:msg.count": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.count = 1",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.count\""
+  },
+  "golden.17#e:screen.g": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.g = msg.gQueue",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "blocked: an action in golden.17 is pending"
+  },
+  "golden.18#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap msg.worker",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter driver for \"tap msg.worker\""
+  },
+  "golden.18#a1": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap msg.kidSync",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter driver for \"tap msg.kidSync\""
+  },
+  "golden.18#a2": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: clock +119 min",
+   "status": "implemented",
+   "rows": [
+    "k-msgs",
+    "rule:delivery-worker"
+   ]
+  },
+  "golden.18#e:msg.0.attempts": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.0.attempts = 1",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.attempts\""
+  },
+  "golden.18#e:msg.0.onTablet": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.0.onTablet = true",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.onTablet\""
+  },
+  "golden.18#e:msg.0.state": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.0.state = delivered",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.state\""
+  },
+  "golden.19#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "tap msg.kOpenNewest",
+   "status": "pending",
+   "rows": [
+    "k-msgs"
+   ],
+   "note": "no Flutter driver for \"tap msg.kOpenNewest\""
+  },
+  "golden.19#e:screen.k": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "screen.k = msg.kPlay",
+   "status": "pending",
+   "rows": [
+    "k-msgs"
+   ],
+   "note": "blocked: an action in golden.19 is pending"
+  },
+  "golden.20#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "call: tap msg.playTo end",
+   "status": "pending",
+   "rows": [
+    "k-msgs"
+   ],
+   "note": "no Flutter driver for \"call: tap msg.playTo end\""
+  },
+  "golden.20#e:msg.0.state": {
+   "group": "golden",
+   "kind": "assert",
+   "label": "msg.0.state = watched",
+   "status": "pending",
+   "rows": [
+    "k-msgs"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.state\""
+  },
+  "golden.21#a0": {
+   "group": "golden",
+   "kind": "act",
+   "label": "go msg.gQueue",
+   "status": "pending",
+   "rows": [
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"go msg.gQueue\""
+  },
+  "offline.01#a0": {
+   "group": "offline",
+   "kind": "act",
+   "label": "tap msg.gStart",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"tap msg.gStart\""
+  },
+  "offline.01#a1": {
+   "group": "offline",
+   "kind": "act",
+   "label": "tap msg.gSample",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"tap msg.gSample\""
+  },
+  "offline.01#a2": {
+   "group": "offline",
+   "kind": "act",
+   "label": "tap msg.gBankIt",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"tap msg.gBankIt\""
+  },
+  "offline.01#e:msg.0.attempts": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.0.attempts = 0",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.attempts\""
+  },
+  "offline.01#e:msg.0.onTablet": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.0.onTablet = false",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.onTablet\""
+  },
+  "offline.01#e:msg.0.state": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.0.state = pending",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.state\""
+  },
+  "offline.01#e:msg.count": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.count = 1",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "no Flutter counterpart for \"msg.count\""
+  },
+  "offline.01#e:screen.g": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "screen.g = msg.gQueue",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank"
+   ],
+   "note": "blocked: an action in offline.01 is pending"
+  },
+  "offline.02#a0": {
+   "group": "offline",
+   "kind": "act",
+   "label": "call: network k off",
+   "status": "implemented",
+   "rows": [
+    "sub:offline/online as a feature (status 0)"
+   ]
+  },
+  "offline.02#e:net.k.online": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "net.k.online = false",
+   "status": "implemented",
+   "rows": [
+    "sub:offline/online as a feature (status 0)"
+   ]
+  },
+  "offline.03#a0": {
+   "group": "offline",
+   "kind": "act",
+   "label": "tap msg.worker",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter driver for \"tap msg.worker\""
+  },
+  "offline.03#a1": {
+   "group": "offline",
+   "kind": "act",
+   "label": "go msg.gQueue",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter driver for \"go msg.gQueue\""
+  },
+  "offline.03#a2": {
+   "group": "offline",
+   "kind": "act",
+   "label": "call: clock +120 min",
+   "status": "implemented",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "rule:delivery-worker"
+   ]
+  },
+  "offline.03#e:msg.0.attempts": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.0.attempts = 1",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.attempts\""
+  },
+  "offline.03#e:msg.0.state": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.0.state = delivering",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "rule:delivery-worker"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.state\""
+  },
+  "offline.04#a0": {
+   "group": "offline",
+   "kind": "act",
+   "label": "go msg.kOffline",
+   "status": "pending",
+   "rows": [
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"go msg.kOffline\""
+  },
+  "offline.04#e:screen.k": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "screen.k = msg.kOffline",
+   "status": "pending",
+   "rows": [
+    "msg-bank"
+   ],
+   "note": "blocked: an action in offline.04 is pending"
+  },
+  "offline.05#a0": {
+   "group": "offline",
+   "kind": "act",
+   "label": "tap msg.kidSync",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "sub:offline/online as a feature (status 0)"
+   ],
+   "note": "no Flutter driver for \"tap msg.kidSync\""
+  },
+  "offline.05#a1": {
+   "group": "offline",
+   "kind": "act",
+   "label": "go msg.kMessages",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "sub:offline/online as a feature (status 0)"
+   ],
+   "note": "no Flutter driver for \"go msg.kMessages\""
+  },
+  "offline.05#a2": {
+   "group": "offline",
+   "kind": "act",
+   "label": "call: network k on",
+   "status": "implemented",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "sub:offline/online as a feature (status 0)"
+   ]
+  },
+  "offline.05#e:msg.0.onTablet": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.0.onTablet = true",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "sub:offline/online as a feature (status 0)"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.onTablet\""
+  },
+  "offline.05#e:msg.0.state": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "msg.0.state = delivered",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "sub:offline/online as a feature (status 0)"
+   ],
+   "note": "no Flutter counterpart for \"msg.0.state\""
+  },
+  "offline.05#e:net.k.online": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "net.k.online = true",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "sub:offline/online as a feature (status 0)"
+   ],
+   "note": "blocked: an action in offline.05 is pending"
+  },
+  "offline.05#e:screen.k": {
+   "group": "offline",
+   "kind": "assert",
+   "label": "screen.k = msg.kMessages",
+   "status": "pending",
+   "rows": [
+    "k-msgs",
+    "msg-bank",
+    "sub:offline/online as a feature (status 0)"
+   ],
+   "note": "blocked: an action in offline.05 is pending"
+  },
+  "offline.06#a0": {
+   "group": "offline",
+   "kind": "act",
+   "label": "go msg.gQueue",
+   "status": "pending",
+   "rows": [
+    "msg-bank"
+   ],
+   "note": "no Flutter driver for \"go msg.gQueue\""
+  },
+  "play.01#a0": {
+   "group": "play",
+   "kind": "act",
+   "label": "go g-play",
+   "status": "pending",
+   "rows": [
+    "play.window"
+   ],
+   "note": "PlayWindowScreen exists but drops the time pickers for 15-minute dropdowns: driven through the store instead"
+  },
+  "play.01#e:screen.g": {
+   "group": "play",
+   "kind": "assert",
+   "label": "screen.g = g-play",
+   "status": "pending",
+   "rows": [
+    "play.window"
+   ],
+   "note": "blocked: an action in play.01 is pending"
+  },
+  "play.02#a0": {
+   "group": "play",
+   "kind": "act",
+   "label": "type grd.play.open",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "play.02#a1": {
+   "group": "play",
+   "kind": "act",
+   "label": "type grd.play.rest",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "play.02#a2": {
+   "group": "play",
+   "kind": "act",
+   "label": "tap gWind 15",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "play.02#e:play.config": {
+   "group": "play",
+   "kind": "assert",
+   "label": "play.config = {on: true, open: 07:30, rest: 19:30, wind: 15}",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "play.03#a0": {
+   "group": "play",
+   "kind": "act",
+   "label": "tap gPlaySave",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "play.05#a0": {
+   "group": "play",
+   "kind": "act",
+   "label": "call: clock +105 min",
+   "status": "implemented",
+   "rows": [
+    "scenario:play"
+   ]
+  },
+  "play.06#a0": {
+   "group": "play",
+   "kind": "act",
+   "label": "call: clock +15 min",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "play.06#e:play.state": {
+   "group": "play",
+   "kind": "assert",
+   "label": "play.state = winding",
+   "status": "differs",
+   "rows": [
+    "play.window"
+   ],
+   "note": "Flutter says closed, prototype says winding (the prototype winds down AFTER the rest time, Flutter winds down BEFORE it)"
+  },
+  "play.07#a0": {
+   "group": "play",
+   "kind": "act",
+   "label": "call: clock +721 min",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "play.07#e:play.state": {
+   "group": "play",
+   "kind": "assert",
+   "label": "play.state = open",
+   "status": "implemented",
+   "rows": [
+    "play.window"
+   ]
+  },
+  "rules#ageLock.lockedStaysLocked": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "ageLock.lockedStaysLocked",
+   "status": "implemented",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ]
+  },
+  "rules#ageLock.pickerRange": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "ageLock.pickerRange",
+   "status": "differs",
+   "rows": [
+    "action:ob.kid.pickAge / askLock / lockAge"
+   ],
+   "note": "the lock logic is 5 to 15 but the onboarding age screen offers 2 to 17 (minAge/maxAge) and does not lock"
+  },
+  "rules#bands.boundaries": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "bands.boundaries",
+   "status": "differs",
+   "rows": [
+    "sub:age bands bandOf"
+   ],
+   "note": "same boundaries (3, 5, 8, 13); the id is t13 where the prototype says t1317, and the 18+ handover band is an open owner decision"
+  },
+  "rules#calls.onlyGuardiansRingOnlyChildKnocks": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "calls.onlyGuardiansRingOnlyChildKnocks",
+   "status": "pending",
+   "rows": [
+    "rule:knock-only-child"
+   ],
+   "note": "call_knock.dart has the knock; no client-visible refusal code to compare"
+  },
+  "rules#controls.messagesNotHideable": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "Messages can never be hidden or paced (ParentalControlsScreen)",
+   "status": "differs",
+   "rows": [
+    "tile:msgs"
+   ],
+   "note": "the Flutter screen offers a visibility switch for Messages (visible_tile:messages); wave 1a removes it"
+  },
+  "rules#deletion.recoveryWindow": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "deletion.recoveryWindow",
+   "status": "pending",
+   "rows": [
+    "row:Account/Delete my account"
+   ],
+   "note": "deletion_screen.dart states what deletion means but has no 6 to 12 month recovery window"
+  },
+  "rules#emergencyCard.staleVersion": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "emergencyCard.staleVersion",
+   "status": "implemented",
+   "rows": [
+    "g-emergency/edit-merge"
+   ]
+  },
+  "rules#expiry.fourteenDays": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "expiry.fourteenDays",
+   "status": "implemented",
+   "rows": [
+    "rule:expiry"
+   ]
+  },
+  "rules#family.limits": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "family.limits",
+   "status": "implemented",
+   "rows": [
+    "row:Family/Family structure"
+   ]
+  },
+  "rules#labels.ageRule": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "labels.ageRule",
+   "status": "differs",
+   "rows": [
+    "labels.age-defaults"
+   ],
+   "note": "2 ages differ: locked 3: Mom/Dad vs Mommy/Daddy; locked 4: Mom/Dad vs Mommy/Daddy (owner decision open: Mommy/Daddy at 3 and 4)"
+  },
+  "rules#labels.guardianView": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "labels.guardianView",
+   "status": "differs",
+   "rows": [
+    "sub:labels.forGuardian ('Ivy calls you Dada')"
+   ],
+   "note": "Flutter shows \"Mom (Ivy calls you Dada)\", the prototype \"Ivy calls you Dada\""
+  },
+  "rules#labels.nicknameWins": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "labels.nicknameWins",
+   "status": "implemented",
+   "rows": [
+    "sub:label rule L.labels.forChild"
+   ]
+  },
+  "rules#medications.noDoubleDose": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "medications.noDoubleDose",
+   "status": "implemented",
+   "rows": [
+    "g-med/double-dose"
+   ]
+  },
+  "rules#messages.lengthLimits": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "messages.lengthLimits",
+   "status": "pending",
+   "rows": [
+    "msg.gBank.trim"
+   ],
+   "note": "no 3 second / 10 minute message length rule in lib/"
+  },
+  "rules#messages.retryCadence": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "messages.retryCadence",
+   "status": "differs",
+   "rows": [
+    "rule:delivery-worker"
+   ],
+   "note": "Flutter outbox backs off 1min doubling to 6h; the prototype retries after 10min then every 60min; both give up after 8 tries: true"
+  },
+  "rules#messages.watchedMeansPlayedThrough": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "messages.watchedMeansPlayedThrough",
+   "status": "pending",
+   "rows": [
+    "rule:watched-played-through"
+   ],
+   "note": "no played-through logic in lib/: inbox_screen.dart marks watched on open"
+  },
+  "rules#pairing.codeShape": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "pairing.codeShape",
+   "status": "differs",
+   "rows": [
+    "sub:pairing-code rules"
+   ],
+   "note": "the field accepts 0 to 9; the prototype codes are 1 to 9 only (owner decision open: alphabet)"
+  },
+  "rules#pin.lockedAnswer": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "pin.lockedAnswer",
+   "status": "differs",
+   "rows": [
+    "sub:PIN rate limit (5 wrong)"
+   ],
+   "note": "real server answers 403 pin_locked and pin_incorrect; the prototype answers 423 pin_locked and invalid_pin"
+  },
+  "rules#pin.lockoutThresholds": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "pin.lockoutThresholds",
+   "status": "implemented",
+   "rows": [
+    "sub:PIN rate limit (5 wrong)"
+   ]
+  },
+  "rules#pin.lockoutThroughTheRealScreen": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "5 wrong PINs lock the PIN gate for 15 minutes (ParentalControlsScreen)",
+   "status": "implemented",
+   "rows": [
+    "sub:PIN rate limit (5 wrong)"
+   ]
+  },
+  "rules#playWindow.states": {
+   "group": "rules",
+   "kind": "rule",
+   "label": "playWindow.states",
+   "status": "differs",
+   "rows": [
+    "play.window"
+   ],
+   "note": "wind-down is placed differently (prototype AFTER the rest time, Flutter BEFORE it): 19:29: Flutter winding, prototype open; 19:30: Flutter closed, prototype winding; 19:44: Flutter closed, prototype winding"
+  }
+ }
+}
