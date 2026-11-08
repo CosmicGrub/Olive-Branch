@@ -17,6 +17,7 @@ import 'family_structure_store.dart';
 import 'parent_learn_logic.dart';
 import 'parent_learn_screens.dart';
 import 'parent_learn_store.dart';
+import 'adults_helpers_screen.dart';
 import 'age_lock_screens.dart';
 import 'connect_child_screen.dart';
 import 'connected_devices_screen.dart';
@@ -26,6 +27,7 @@ import 'device_keys.dart';
 import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_services.dart';
 import 'pairing_records.dart';
+import 'guardian_names_screen.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'availability_screen.dart';
@@ -581,86 +583,69 @@ class GuardianMoreScreen extends StatelessWidget {
     if (context.mounted) _openSettingsHub(context);
   }
 
+  /// The family builder's context (who edits, as whom, for a child of what age).
+  FamilyContext _familyCtx() => FamilyContext(
+    service: familyService ?? localFamilyService,
+    principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
+    childName: childName, yearsOld: childAge);
+
   /// The Settings hub: every row opens the real screen that already exists for
-  /// it. Nothing here is a new setting, and nothing is new online (see
-  /// guardian_settings_hub.dart's header).
+  /// it (or one of the small screens this wave added: "Ivy calls you", Adults and
+  /// helpers, the age planner, Change PIN). Nothing here is a new online feature.
+  ///
+  /// GROUPS AND ORDER follow the prototype's hub (docs/superpowers/mockups/live,
+  /// mod-shell.js and mod-guardian.js `sr(...)`; test/parity/vectors/
+  /// settings_hub_prototype.json holds that list and guardian_hub_parity_test.dart
+  /// holds this one to it): Her, Family, Safety, Learn, Account. Rows the prototype
+  /// does not have (Growing, Care, Routine and rhythm, Her voice, Village, Family
+  /// compass, Connect this device, Deletion) are Flutter's own and sit after the
+  /// prototype's rows in their group. Rows that need the network show an honest
+  /// "needs a live session" and open nothing fake.
   void _openSettingsHub(BuildContext context) {
     final live = baseUrl != null && guardianId != null;
     final local = GuardianLocalScope.maybeOf(context);
     final lockedAge = local?.family?.age;
+    final FamilyPrincipal me = FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
     _open(context, GuardianSettingsHubScreen(childName: childName, groups: [
       SettingsGroup('Her', [
+        SettingsRow(id: 'names', icon: Icons.favorite_border, title: '$childName calls you',
+          subtitle: 'Her word for each of you. Only she can change it',
+          onTap: () => _open(context, GuardianNamesScreen(childName: childName, family: local?.family))),
         SettingsRow(id: 'colour', icon: Icons.palette_outlined, title: 'Colour and art',
           subtitle: 'Colour of the day, art style, coding activities',
           onTap: () => _open(context, HerColourGuardianScreen(childName: childName, childAge: childAge))),
-        SettingsRow(id: 'growing', icon: Icons.eco_outlined, title: 'Growing',
-          subtitle: 'Time capsule, first times, growing marks. Kept on this device',
-          onTap: () => _open(context, GrowingCareHubScreen(care: false, childName: childName,
-            guardianId: guardianId ?? 'local-guardian'))),
         SettingsRow(id: 'look', icon: Icons.format_paint_outlined, title: 'How her app looks',
           subtitle: 'A palette, light or dark', onTap: () => _openThemePicker(context)),
-        SettingsRow(id: 'access', icon: Icons.accessibility_new_outlined, title: 'Accessibility for her device',
-          subtitle: 'Read aloud, motion, spacing, bigger targets, captions',
-          onTap: () => _open(context, AccessScreen(childName: childName, childAge: childAge))),
         SettingsRow(id: 'age', icon: Icons.cake_outlined, title: 'Age band',
           subtitle: lockedAge != null
             ? '$childName is $lockedAge. Locked: your PIN changes it'
             : '$childName is $childAge',
-          onTap: () => local?.family != null
-            ? changeLockedAgeFlow(context, local!)
-            : showDialog<void>(context: context, builder: (ctx) => AlertDialog(
-            title: const Text('Age band'),
-            content: Text('$childName is $childAge. Her age sets what opens for her, like the pixel garden at 8. '
-                'It comes from her birthday; there is nothing to set here yet.'),
-            actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))]))),
-      ]),
-      SettingsGroup('Family', [
-        SettingsRow(id: 'care', icon: Icons.health_and_safety_outlined, title: 'Care',
-          subtitle: 'Care binder, hospital mode, picture stories, appointment prep. Kept on this device',
-          onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName,
-            guardianId: guardianId ?? 'local-guardian', emergency: EmergencyCardService.forChild(childId),
-            openEmergencyCard: _openEmergencyCard))),
-        // This opens the INVITEE-side accept screen, so it is labelled for what it
-        // is: a preview of what another adult would be asked. It sends nothing, and
-        // its wording uses no hard-coded Dad/Mom (it is a preview, not an invite).
-        SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Invitation (preview)',
-          subtitle: 'See what another adult would be asked to accept. Nothing is sent',
-          onTap: () => _open(context, InvitationScreen(
-            childName: childName, inviterLabel: 'Your co-parent', yourLabel: 'Parent',
-            onAccept: () => Navigator.of(context).pop(), onDecline: () => Navigator.of(context).pop()))),
-        SettingsRow(id: 'devices', icon: Icons.devices_other_outlined, title: 'Devices',
-          subtitle: live ? 'See and revoke paired devices' : 'Needs a live session',
-          onTap: () => live
-            ? _open(context, PairedDevicesListScreen(baseUrl: baseUrl!, guardianId: guardianId!,
-                childId: childId, httpClient: availabilityHttpClient))
-            : _needsLive(context, 'Paired devices')),
+          onTap: () => _open(context, AgeBandsScreen(ctx: _familyCtx(),
+            onChangeAge: local?.family != null ? () => changeLockedAgeFlow(context, local!) : null))),
+        SettingsRow(id: 'access', icon: Icons.accessibility_new_outlined, title: 'Accessibility for her device',
+          subtitle: 'Text size, read aloud, motion, spacing, bigger targets, captions',
+          onTap: () => _open(context, AccessScreen(childName: childName, childAge: childAge))),
+        SettingsRow(id: 'window', icon: Icons.bedtime_outlined, title: 'Play window and daily time',
+          subtitle: 'When games are open, the wind-down and the daily total',
+          onTap: () => _open(context, PlayWindowScreen(childName: childName))),
+        SettingsRow(id: 'growing', icon: Icons.eco_outlined, title: 'Growing',
+          subtitle: 'Time capsule, first times, growing marks. Kept on this device',
+          onTap: () => _open(context, GrowingCareHubScreen(care: false, childName: childName,
+            guardianId: guardianId ?? 'local-guardian'))),
         SettingsRow(id: 'rhythm', icon: Icons.checklist_outlined, title: 'Routine and rhythm',
           subtitle: 'Pictures for bedtime, first-then, the bag, a new place. On this device only',
           onTap: () => _open(context, RhythmGuardianHubScreen(childName: childName,
-            service: RhythmVoiceService.forChild(childId),
-            principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
-            yearsOld: childAge))),
+            service: RhythmVoiceService.forChild(childId), principal: me, yearsOld: childAge))),
         SettingsRow(id: 'voice', icon: Icons.record_voice_over_outlined, title: 'Her voice',
           subtitle: 'Her helpers and symbols; worries only if she shows you. On this device only',
           onTap: () => _open(context, VoiceGuardianHubScreen(childName: childName,
-            service: RhythmVoiceService.forChild(childId),
-            principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
-            yearsOld: childAge))),
+            service: RhythmVoiceService.forChild(childId), principal: me, yearsOld: childAge))),
         SettingsRow(id: 'village', icon: Icons.diversity_3_outlined, title: 'Village',
           subtitle: 'Her people in pictures, a story you release, sitter pass, school summary. On this device only',
-          onTap: () {
-            final FamilyPrincipal me = FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
-            _open(context, VillageGuardianHubScreen(childName: childName,
-              service: VillageService.forChild(childId), principal: me, yearsOld: childAge,
-              routineLines: () async {
-                final RhythmDoc d = await RhythmVoiceService.forChild(childId).loadRhythm(me);
-                return <String>[for (final RoutineStep st in d.routine?.steps ?? const <RoutineStep>[]) st.label];
-              }));
-          }),
+          onTap: () => _openVillage(context)),
         SettingsRow(id: 'compass', icon: Icons.explore_outlined, title: 'Family compass',
           subtitle: 'Two gentle questions, suggestions, the suites shelf, accessibility profiles. On this device only',
           onTap: () {
-            final FamilyPrincipal me = FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
             _open(context, CompassHubScreen(childName: childName, principal: me,
               service: CompassService.local(LocalServices.current, childId: childId, ports: suitePortsFor(
                 rhythmVoice: RhythmVoiceService.forChild(childId), village: VillageService.forChild(childId),
@@ -668,44 +653,127 @@ class GuardianMoreScreen extends StatelessWidget {
               hints: () => builderHintsFor(me, childAge)));
           }),
       ]),
+      SettingsGroup('Family', [
+        SettingsRow(id: 'devices', icon: Icons.devices_other_outlined, title: 'Paired devices',
+          subtitle: live ? 'See and revoke paired devices' : 'Needs a live session',
+          onTap: () => live
+            ? _open(context, PairedDevicesListScreen(baseUrl: baseUrl!, guardianId: guardianId!,
+                childId: childId, httpClient: availabilityHttpClient))
+            : _needsLive(context, 'Paired devices')),
+        SettingsRow(id: 'addtablet', icon: Icons.qr_code_outlined, title: 'Add $childName’s tablet',
+          subtitle: live ? 'Make a 6-digit code' : 'Needs a live session',
+          onTap: () => live
+            ? _open(context, AddDeviceScreen(baseUrl: baseUrl!, guardianId: guardianId!,
+                children: [ChildOption(id: childId, name: childName)], httpClient: availabilityHttpClient))
+            : _needsLive(context, 'Making a code')),
+        SettingsRow(id: 'family', icon: Icons.family_restroom_outlined, title: 'Family structure',
+          subtitle: 'Who is in $childName’s life, her homes and her rhythm',
+          onTap: () => _open(context, FamilyStructureScreen(ctx: _familyCtx()))),
+        SettingsRow(id: 'history', icon: Icons.history, title: 'Family history',
+          subtitle: 'Every change, who made it, and when $childName was told',
+          onTap: () => _open(context, FamilyHistoryScreen(ctx: _familyCtx()))),
+        SettingsRow(id: 'weekly', icon: Icons.calendar_month_outlined, title: 'Weekly rhythm',
+          subtitle: 'Where $childName sleeps, week by week',
+          onTap: () => _open(context, FamilyHomesScreen(ctx: _familyCtx()))),
+        // The invitee-side preview is reached from here, not as a settings row of its
+        // own: Adults and helpers is the prototype's row, and it carries the preview.
+        SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Adults and helpers',
+          subtitle: 'Sitter pass, grandparent page, who else can be invited',
+          onTap: () => _openAdultsAndHelpers(context)),
+        SettingsRow(id: 'care', icon: Icons.health_and_safety_outlined, title: 'Care',
+          subtitle: 'Care binder, hospital mode, picture stories, appointment prep. Kept on this device',
+          onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName,
+            guardianId: guardianId ?? 'local-guardian', emergency: EmergencyCardService.forChild(childId),
+            openEmergencyCard: _openEmergencyCard))),
+      ]),
       SettingsGroup('Safety', [
-        SettingsRow(id: 'pin', icon: Icons.key_outlined, title: 'Guardian PIN',
-          subtitle: 'Set or change your PIN',
-          onTap: () => _open(context, GuardianSetupScreen(
-            setGuardianPin: _liveSetGuardianPin(baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient),
-            checkExistingPin: _liveCheckExistingPin(baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient)))),
+        SettingsRow(id: 'pin', icon: Icons.key_outlined, title: 'Change PIN',
+          subtitle: 'Needs the current PIN. Five wrong tries pause it for 15 minutes',
+          onTap: () => _openChangePin(context)),
         SettingsRow(id: 'controls', icon: Icons.shield_outlined, title: 'Parental controls',
-          subtitle: live ? 'Hide or pace anything $childName sees' : 'Needs a live session',
+          subtitle: live ? 'Hide or pace anything $childName sees. Messages are always on' : 'Needs a live session',
           onTap: () => live
             ? _open(context, ParentalControlsScreen(baseUrl: baseUrl!, guardianId: guardianId!,
                 childId: childId, childName: childName, httpClient: availabilityHttpClient))
             : _needsLive(context, 'Parental controls')),
-        SettingsRow(id: 'window', icon: Icons.bedtime_outlined, title: 'Play window',
-          subtitle: 'When games are open, and the bedtime wind-down',
-          onTap: () => _open(context, PlayWindowScreen(childName: childName))),
+        SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this phone',
+          subtitle: 'What lives here, and clear it',
+          onTap: () => _open(context, ClearLocalDataScreen(
+            verifyPin: _wipeVerifier(context)))),
       ]),
       SettingsGroup('Learn', [
-        SettingsRow(id: 'learn', icon: Icons.school_outlined, title: 'Parent Learn choices',
+        SettingsRow(id: 'learn', icon: Icons.school_outlined, title: 'Parent Learn',
           subtitle: 'Private to you',
           onTap: () => _open(context, LearnHomeScreen(
             principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
             store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId), childAge: childAge))),
+        SettingsRow(id: 'learnchoices', icon: Icons.tune_outlined, title: 'Your Learn choices',
+          subtitle: 'Every extra is optional',
+          onTap: () => _open(context, LearnSettingsScreen(
+            principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
+            store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId)))),
       ]),
       SettingsGroup('Account', [
         if (local?.onConnect != null)
           SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
             subtitle: 'Optional. Share your family with your other devices',
             onTap: () => local!.onConnect!(context)),
-        SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',
-          subtitle: 'Stops notifications on this device', onTap: () => _signOut(context)),
-        SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this device',
-          subtitle: 'What this phone keeps, and clear it',
-          onTap: () => _open(context, ClearLocalDataScreen(
-            verifyPin: _wipeVerifier(context)))),
         SettingsRow(id: 'deletion', icon: Icons.delete_outline, title: 'Deletion',
           subtitle: 'What deletion means here, stated first', onTap: () => _openDeletion(context)),
+        SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',
+          subtitle: 'Stops notifications on this device', onTap: () => _signOut(context)),
       ]),
     ]));
+  }
+
+  void _openVillage(BuildContext context) {
+    final FamilyPrincipal me = FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
+    _open(context, VillageGuardianHubScreen(childName: childName,
+      service: VillageService.forChild(childId), principal: me, yearsOld: childAge,
+      routineLines: () async {
+        final RhythmDoc d = await RhythmVoiceService.forChild(childId).loadRhythm(me);
+        return <String>[for (final RoutineStep st in d.routine?.steps ?? const <RoutineStep>[]) st.label];
+      }));
+  }
+
+  /// Adults and helpers: the grown-ups of this family and what she calls each, a way
+  /// into the family builder, the Village helpers, and the invitation PREVIEW.
+  void _openAdultsAndHelpers(BuildContext context) {
+    final local = GuardianLocalScope.maybeOf(context);
+    final f = local?.family;
+    _open(context, AdultsHelpersScreen(
+      childName: childName,
+      grownupLines: f == null ? const <String>[] : <String>[
+        for (final g in f.grownups) '${f.guardianName} (${g.guardianLabel})',
+      ],
+      onChangePeople: () => _open(context, FamilyPeopleScreen(ctx: _familyCtx())),
+      onHelpers: () => _openVillage(context),
+      onInvitePreview: () => _openInvitationPreview(context),
+    ));
+  }
+
+  /// The invitation PREVIEW: what another adult would be asked. Inviting needs the
+  /// network, which is not built, so it says 'Nothing is sent' and sends nothing.
+  void _openInvitationPreview(BuildContext context) {
+    final f = GuardianLocalScope.maybeOf(context)?.family;
+    _open(context, InvitationScreen(
+      preview: true,
+      childName: childName, inviterLabel: f?.guardianLabel ?? 'Your co-parent', yourLabel: 'Parent',
+      onAccept: () => Navigator.of(context).pop(), onDecline: () => Navigator.of(context).pop()));
+  }
+
+  /// Change PIN: with a PIN on this device, the local change flow (current, new,
+  /// confirm; easy guesses refused); otherwise the account PIN form as before.
+  Future<void> _openChangePin(BuildContext context) async {
+    final local = GuardianLocalScope.maybeOf(context);
+    if (local != null && await local.services.pin.isSet()) {
+      if (context.mounted) _open(context, LocalPinChangeScreen(service: local.services.pin));
+      return;
+    }
+    if (!context.mounted) return;
+    _open(context, GuardianSetupScreen(
+      setGuardianPin: _liveSetGuardianPin(baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient),
+      checkExistingPin: _liveCheckExistingPin(baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient)));
   }
 
   @override
@@ -829,13 +897,11 @@ class GuardianMoreScreen extends StatelessWidget {
           ],
         ]),
         HubSection(title: 'Family setup', children: [
-          HubTile(icon: Icons.person_add_alt_outlined, title: 'Invite a co-parent',
-            subtitle: 'The same view you already have — nothing hidden',
-            onTap: () => _open(context, InvitationScreen(
-              childName: childName, inviterLabel: 'Dad', yourLabel: 'Mom',
-              onAccept: () => Navigator.of(context).pop(),
-              onDecline: () => Navigator.of(context).pop(),
-            ))),
+          // A PREVIEW until the network is built: it says 'Nothing is sent' and sends
+          // nothing, with no hard-coded Dad/Mom (invitation_screen.dart, preview: true).
+          HubTile(key: const Key('moreInvite'), icon: Icons.person_add_alt_outlined, title: 'Invite a co-parent (preview)',
+            subtitle: 'See what another adult would be asked. Nothing is sent',
+            onTap: () => _openInvitationPreview(context)),
           // Device pairing & provisioning (docs/superpowers/specs/2026-09-12
           // -device-pairing-provisioning-design.md) — PARALLEL entry point to
           // "Invite a co-parent" above: that one attaches a brand-new

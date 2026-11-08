@@ -51,6 +51,7 @@ import 'expenses_screen.dart';
 import 'form_factors.dart' as ff;
 import 'guardian_local_scope.dart';
 import 'guardian_more.dart';
+import 'guardian_state_line.dart';
 import 'handover_notes.dart';
 import 'meds_care.dart';
 import 'message_banking.dart';
@@ -168,17 +169,17 @@ class GuardianHome extends StatelessWidget {
       final Widget ribbonBlock = Column(children: [
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic, children: [
+            // A Wrap, not a Row: at 2.0x text on the 344 dp cover screen her name, the
+            // clock and the zone no longer fit on one line, and a Row overflowed. The
+            // clock stays dominant either way.
+            Wrap(crossAxisAlignment: WrapCrossAlignment.end, spacing: 4, children: [
                 Text(childName, style: Theme.of(context).textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(width: 4),
                 // The CHILD's clock is dominant — same titleMedium weight as
                 // her name, well above the actor line below (§8.2.3).
                 Text(childLocalTime, style: Theme.of(context).textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w600,
                     fontFeatures: const [FontFeature.tabularFigures()])),
-                const SizedBox(width: 4),
                 Text(childZoneAbbr, style: Theme.of(context).textTheme.labelSmall
                   ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ]),
@@ -192,11 +193,13 @@ class GuardianHome extends StatelessWidget {
             // dominant-frame treatment exchange_screen.dart's own handoff
             // card uses, while the actor line and zone abbreviation stay
             // exactly as subordinate as they were.
-            if (childStateSentence != null) ...[
-              Text(childStateSentence!, style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-            ],
+            // Always one sentence: the caller's when it has one, else the honest
+            // fallback (guardian_state_line.dart), never blank and never invented.
+            Text(guardianStateLine(childName: childName, sentence: childStateSentence,
+                connected: baseUrl != null, dayPart: dayPart),
+              key: const Key('guardianStateLine'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
             // Actor time is subordinate, always.
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),

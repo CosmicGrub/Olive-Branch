@@ -187,8 +187,14 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'access', scope: LocalScope.child, maxBytes: 16 * 1024,
       what: 'Accessibility for her device, as a grown-up set it: read aloud, reduce motion, '
-          'roomier reading, larger targets, and whether captions are wanted. Five on/off '
-          'switches; nothing else.'),
+          'roomier reading, larger targets, and whether captions are wanted (on/off switches), '
+          'and the text size (standard, large or largest). Nothing else.'),
+  LocalDataEntry(
+      area: 'plan', scope: LocalScope.child, maxBytes: 16 * 1024,
+      what: 'The plan a grown-up made for her home, kept on this device: the daily time total they '
+          'chose (off, 1, 2 or 3 hours), and for each age (5, 8 and 13) whether her home waits '
+          'until a grown-up has told her and whether a note to the grown-up is wanted a week '
+          'before. A handful of choices; no count, no score, nothing about what she did.'),
   LocalDataEntry(
       area: 'village', scope: LocalScope.child, encrypted: true, maxBytes: 128 * 1024,
       what: 'Village, on this device only: a large-print grandparent page, picture stories a guardian '

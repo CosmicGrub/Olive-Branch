@@ -114,6 +114,8 @@ abstract class GuardianColourStore {
   Future<ArtSaveResult> saveArt(Map<String, dynamic> patch);
   Future<PlayWindowInfo> playWindow();
   Future<WindowSaveResult> savePlayWindow(PlayWindow w);
+  /// "Use a play window" switched off: games are open all day again.
+  Future<void> clearPlayWindow();
 }
 
 // ================================================================= memory ===
@@ -242,6 +244,11 @@ class MemoryColourStore implements ChildColourStore, GuardianColourStore {
     _window = w;
     return WindowSaveResult.ok(lengthened: longer);
   }
+
+  @override
+  Future<void> clearPlayWindow() async {
+    _window = null;
+  }
 }
 
 // ================================================================ durable ===
@@ -346,6 +353,8 @@ class LocalColourStore implements ChildColourStore, GuardianColourStore {
   Future<ArtSaveResult> saveArt(Map<String, dynamic> patch) => _write((MemoryColourStore m) => m.saveArt(patch));
   @override
   Future<WindowSaveResult> savePlayWindow(PlayWindow w) => _write((MemoryColourStore m) => m.savePlayWindow(w));
+  @override
+  Future<void> clearPlayWindow() => _write((MemoryColourStore m) => m.clearPlayWindow());
 }
 
 /// One store for the whole process, so the child’s shell and the guardian’s

@@ -20,8 +20,30 @@ import 'a11y_speech.dart' show readAloudDefaultOn;
 import 'local_services.dart';
 import 'local_store.dart';
 
-/// The five choices. All default off except read-aloud, which follows her age
-/// until a guardian chooses (§8.8.5: default-on below 8, opt-in above).
+/// How big her text is: the prototype's Standard / Large / Largest (g-access).
+/// Applied on top of her phone's own text size, never instead of it.
+enum AccessTextSize {
+  standard(1.0, 'Standard'),
+  large(1.18, 'Large'),
+  largest(1.41, 'Largest');
+
+  const AccessTextSize(this.scale, this.label);
+
+  /// Multiplies her device's own text scale (the prototype's 17, 20 and 24 px).
+  final double scale;
+  final String label;
+
+  static AccessTextSize fromName(Object? n) {
+    for (final AccessTextSize s in values) {
+      if (s.name == n) return s;
+    }
+    return standard;
+  }
+}
+
+/// The choices. All default off except read-aloud, which follows her age
+/// until a guardian chooses (§8.8.5: default-on below 8, opt-in above), and the
+/// text size, which defaults to standard.
 @immutable
 class AccessSettings {
   const AccessSettings({
@@ -31,6 +53,7 @@ class AccessSettings {
     this.largerTargets = false,
     this.captions = false,
     this.visualAlerts = false,
+    this.textSize = AccessTextSize.standard,
   });
 
   /// Null means "no guardian choice yet": [readAloudFor] then follows her age.
@@ -49,6 +72,9 @@ class AccessSettings {
   /// flashes, for anyone (see compass_logic.dart's [AlertCue]).
   final bool visualAlerts;
 
+  /// Standard, Large or Largest; multiplies her phone's own text size.
+  final AccessTextSize textSize;
+
   static const AccessSettings defaults = AccessSettings();
 
   /// Whether read-aloud is on for a child of [ageYears] (null = unknown).
@@ -66,6 +92,7 @@ class AccessSettings {
     bool? largerTargets,
     bool? captions,
     bool? visualAlerts,
+    AccessTextSize? textSize,
   }) =>
       AccessSettings(
         readAloud: clearReadAloud ? null : (readAloud ?? this.readAloud),
@@ -74,6 +101,7 @@ class AccessSettings {
         largerTargets: largerTargets ?? this.largerTargets,
         captions: captions ?? this.captions,
         visualAlerts: visualAlerts ?? this.visualAlerts,
+        textSize: textSize ?? this.textSize,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -83,6 +111,7 @@ class AccessSettings {
         'largerTargets': largerTargets,
         'captions': captions,
         if (visualAlerts) 'visualAlerts': true,
+        if (textSize != AccessTextSize.standard) 'textSize': textSize.name,
       };
 
   /// Tolerant: anything that is not a map, and any field that is not a bool,
@@ -97,6 +126,7 @@ class AccessSettings {
       largerTargets: b('largerTargets') ?? false,
       captions: b('captions') ?? false,
       visualAlerts: b('visualAlerts') ?? false,
+      textSize: AccessTextSize.fromName(raw['textSize']),
     );
   }
 
@@ -108,10 +138,11 @@ class AccessSettings {
       other.roomierReading == roomierReading &&
       other.largerTargets == largerTargets &&
       other.captions == captions &&
-      other.visualAlerts == visualAlerts;
+      other.visualAlerts == visualAlerts &&
+      other.textSize == textSize;
 
   @override
-  int get hashCode => Object.hash(readAloud, reduceMotion, roomierReading, largerTargets, captions, visualAlerts);
+  int get hashCode => Object.hash(readAloud, reduceMotion, roomierReading, largerTargets, captions, visualAlerts, textSize);
 }
 
 /// Captions on live calls and async artifacts are a §8.4 promise that is not

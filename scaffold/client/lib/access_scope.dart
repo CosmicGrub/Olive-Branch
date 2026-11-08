@@ -85,6 +85,13 @@ class _AccessHostState extends State<AccessHost> {
               final MediaQueryData mq = MediaQuery.of(context);
               out = MediaQuery(data: mq.copyWith(disableAnimations: true), child: out);
             }
+            if (s.textSize != AccessTextSize.standard) {
+              // On top of her phone's own text size, never instead of it.
+              final MediaQueryData mq = MediaQuery.of(context);
+              out = MediaQuery(
+                  data: mq.copyWith(textScaler: TextScaler.linear(mq.textScaler.scale(1) * s.textSize.scale)),
+                  child: out);
+            }
             return out;
           },
         ),

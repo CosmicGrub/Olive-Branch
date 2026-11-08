@@ -150,6 +150,153 @@ class LocalPinSetupScreen extends StatelessWidget {
       );
 }
 
+/// Change the local PIN: the current one, a new one, the new one again (the prototype's
+/// g-pin and ob.pinInfo, on this device). The explainer is true to THIS build: the PIN
+/// guards settings, her locked age and clearing data, five wrong tries pause it for 15
+/// minutes, and a child's app has no way to make or change one. A new PIN may not be
+/// the old one or one anyone would guess first ([isEasyGuessLocalPin]). It is 4 to 8 digits
+/// here (the prototype says exactly 4; an open owner decision), and the current PIN is
+/// proved before anything changes ([LocalPinService.change]).
+class LocalPinChangeScreen extends StatefulWidget {
+  const LocalPinChangeScreen({super.key, required this.service, this.onChanged});
+  final LocalPinService service;
+  final VoidCallback? onChanged;
+
+  @override
+  State<LocalPinChangeScreen> createState() => _LocalPinChangeScreenState();
+}
+
+class _LocalPinChangeScreenState extends State<LocalPinChangeScreen> {
+  final TextEditingController _cur = TextEditingController();
+  final TextEditingController _new = TextEditingController();
+  final TextEditingController _confirm = TextEditingController();
+  String? _error;
+  String? _done;
+  bool _working = false;
+
+  @override
+  void dispose() {
+    _cur.dispose();
+    _new.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_working) return;
+    setState(() { _error = null; _done = null; });
+    if (!isValidLocalPin(_new.text)) {
+      setState(() => _error = 'Enter a 4-8 digit PIN.');
+      return;
+    }
+    if (_new.text == _cur.text) {
+      setState(() => _error = 'Pick a PIN that is different from the current one.');
+      return;
+    }
+    if (isEasyGuessLocalPin(_new.text)) {
+      setState(() => _error = kEasyGuessPinMessage);
+      return;
+    }
+    if (_new.text != _confirm.text) {
+      setState(() => _error = "The two PINs don't match.");
+      return;
+    }
+    setState(() => _working = true);
+    PinCheck r;
+    try {
+      r = await widget.service.change(_cur.text, _new.text);
+    } on EasyGuessPinException {
+      if (!mounted) return;
+      setState(() { _working = false; _error = kEasyGuessPinMessage; });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = 'Could not keep your new PIN on this device. Your old PIN still works.';
+      });
+      return;
+    }
+    if (!mounted) return;
+    _cur.clear();
+    switch (r.outcome) {
+      case PinOutcome.ok:
+        _new.clear();
+        _confirm.clear();
+        setState(() { _working = false; _done = 'Your PIN is changed.'; });
+        widget.onChanged?.call();
+      case PinOutcome.locked:
+        setState(() { _working = false; _error = kLocalPinLockedMessage; });
+      case PinOutcome.notSet:
+        setState(() { _working = false; _error = 'No PIN is set on this device yet.'; });
+      case PinOutcome.wrong:
+        setState(() { _working = false; _error = 'That is not your current PIN. ${r.attemptsLeft} ${r.attemptsLeft == 1 ? 'try' : 'tries'} left before it pauses.'; });
+    }
+  }
+
+  Widget _field(Key k, TextEditingController c, String label) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: TextField(
+          key: k,
+          controller: c,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+          maxLength: kLocalPinMaxDigits,
+          decoration: InputDecoration(labelText: label, counterText: '', border: const OutlineInputBorder()),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Change PIN')),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+            Card(
+              key: const Key('pinInfoCard'),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Text(
+                  'Your PIN protects your settings, her locked age and clearing data on this device. '
+                  'A child can never make or change one. Five wrong tries pause it for 15 minutes.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _field(const Key('pinChangeCurrent'), _cur, 'Current PIN'),
+            _field(const Key('pinChangeNew'), _new, 'New PIN'),
+            _field(const Key('pinChangeConfirm'), _confirm, 'Confirm new PIN'),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(_error!, key: const Key('pinChangeError'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.error)),
+              ),
+            if (_done != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(_done!, key: const Key('pinChangeDone')),
+              ),
+            SizedBox(
+              height: 56,
+              child: FilledButton(
+                key: const Key('pinChangeSave'),
+                onPressed: _working ? null : _submit,
+                child: const Text('Change PIN', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
 /// Asks for the local PIN. True only when it checked out; false when cancelled. A locked
 /// PIN says so and stays on screen until cancelled.
 Future<bool> askLocalPin(BuildContext context, LocalPinService service,

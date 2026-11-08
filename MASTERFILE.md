@@ -2353,7 +2353,7 @@ Owner requirement: the server must build in security against those who try to pe
 | **Sitter** | time-boxed link | Emergency card, medication log write, calendar read. Auto-expires. |
 | **Coordinator / GAL** | passkey + order_ref | Read-only across the parent↔parent log, custody changes, and expense ledger. No child-facing surface at all. |
 
-**Wave 1a prohibition fixes (Unreleased).** (1) **Messages can never be hidden by a parental control.** `tile:messages` is no longer in the parental-controls catalogue (a note says "Messages can't be hidden"), `OliveApi.setActivityOverride` refuses `visible: false` for it with `never_hideable` before any request is sent, and `isTileVisible` ignores a stored hide (a legacy row can never take effect). The server route is unchanged. (2) **The child never sees a count (P2).** The inbox greeting reads "Hi <name>, something new for you" (no number); the Messages tile shows a dot, never a number; War shows each pile as a stack picture whose depth steps coarsely, with no card count and no round number. (3) The Settings hub row formerly called "Adults and helpers" opened the invitee-side accept screen with hard-coded Dad/Mom; it is now "Invitation (preview)" and says nothing is sent. Guardian colour-day override is unchanged.
+**Wave 1a prohibition fixes (Unreleased).** (1) **Messages can never be hidden by a parental control.** `tile:messages` is no longer in the parental-controls catalogue (a note says "Messages can't be hidden"), `OliveApi.setActivityOverride` refuses `visible: false` for it with `never_hideable` before any request is sent, and `isTileVisible` ignores a stored hide (a legacy row can never take effect). The server route is unchanged. (2) **The child never sees a count (P2).** The inbox greeting reads "Hi <name>, something new for you" (no number); the Messages tile shows a dot, never a number; War shows each pile as a stack picture whose depth steps coarsely, with no card count and no round number. (3) The Settings hub row formerly called "Adults and helpers" opened the invitee-side accept screen with hard-coded Dad/Mom; it is now "Invitation (preview)" and says nothing is sent. (Wave 3: "Adults and helpers" is the real row again, as the prototype has it, and carries the preview; see §8.6.7.) Guardian colour-day override is unchanged.
 
 #### §8.1.1 The per-age child homes (wave 2a, Unreleased)
 
@@ -5179,28 +5179,69 @@ touches a network.
 
 ### 8.6.6 The play window and the gentle ending
 
-A guardian sets when games are open on her device (opens, rests, and a wind-down
-of off, 15 or 30 minutes; `checkPlayWindow`). The ending is a goodnight in her
-own frame, not a limit she can run into: during the wind-down the games list
-stays and one calm line appears over it ("It's getting sleepy. One more, then
-goodnight."); after it, the Play together door shows a goodnight card that
-promises tomorrow, until the window opens again. No number, no timer, no red, no
-lock. A game already in progress is never cut off (the gate stands at the door),
+A guardian sets when games are open on her device (whether to use a window at
+all, when it opens, when it rests, and a wind-down of off, 15 or 30 minutes;
+`checkPlayWindow`). **The order is the prototype's (Wave 3, parity ledger rule
+`playWindow.states`): rest time first, wind-down AFTER it.** Games are open from
+the opening time until the rest time; for the wind-down that follows the rest
+time the games list stays and one calm line appears over it ("It's getting
+sleepy. One more, then goodnight."), a game in progress can finish and new ones
+wait; after the tail, the Play together door shows a goodnight card that
+promises tomorrow, until the window opens again. (Before Wave 3 the tail came
+BEFORE the rest time; `packages/palette/src/colour_day.ts` and the shared
+vectors moved with it, and the old `window_too_short` refusal is gone because the
+tail is no longer inside the window.) No number, no timer, no red, no lock. A game already in progress is never cut off (the gate stands at the door),
 and it gates games only: calls and family messages never pass through it, and
 the file that does the gating imports neither. The window is evaluated in her
 local time. `isLonger()` flags a lengthened window; telling the other guardian
-about it needs the online layer and is parked, not built.
+about it needs the online layer and is parked, not built, and the guardian's
+screen says plainly that nothing was sent. **The guardian screen** (`play_window_screen.dart`,
+titled "Play window and daily time") has a "Use a play window" switch (off means games
+are open all day: the saved window is cleared), a 6 AM to 9 PM timeline, the opens and
+rests pickers, the wind-down choice, "What she sees at <rest time>", a live line
+"On <her> tablet right now: games are open / winding down / resting", and **Daily time**
+(off, 1, 2 or 3 hours; reading and watching share one total across both homes). Daily
+time is kept on this device (`home_plan_store.dart`, area `plan`) and is honest about
+what it does: no screen counts her minutes (P2), so today it records the total a
+guardian chose and stops nothing, and a raise cannot yet be shown to the other guardian
+(network). The card says both in words.
 
 ### 8.6.7 The guardian Settings hub
 
 `guardian_settings_hub.dart`: five plainly named groups, every row opening the
 real screen that already exists for it, with a search box and a banner that says
-her app has none of these (§8.1). **Her:** colour and art (new, §8.6.5), how her
-app looks (the theme picker), age band (an explanatory placeholder with nothing
-to set). **Family:** adults and helpers (invite a co-parent), devices (paired
-devices, live sessions only). **Safety:** guardian PIN, parental controls (live
-sessions only), play window (new, §8.6.6). **Learn:** Parent Learn choices.
-**Account:** sign out, deletion. It is reached from More. The bottom tab bar
+her app has none of these (§8.1). **Wave 3 brought the hub to the prototype's
+groups, order and titles**; `test/parity/vectors/settings_hub_prototype.json` is the
+prototype's list and `guardian_hub_parity_test.dart` holds this hub to it (same group,
+same relative order, same title; every prototype row with no Flutter row says why).
+**Her:** "<Ivy> calls you" (new, §8.5.7; read-only, her word for each grown-up, never a
+setter), colour and art (§8.6.5), how her app looks (the theme picker), **age band (now
+the real Age bands screen, no longer an info dialog; it links the new planner and, on a
+device with a locked local age, the PIN-gated way to change it)**, accessibility for her
+device (now with **Text size: Standard, Large, Largest**, applied on top of her phone's
+own size, with a live preview), **play window and daily time** (§8.6.6), then Flutter's own
+suites rows (Growing, Routine and rhythm, Her voice, Village, Family compass).
+**Family:** paired devices (live sessions only), **Add <Ivy>'s tablet** (live sessions only,
+an honest "needs a live session" otherwise), **Family structure, Family history and
+Weekly rhythm** (the family builder, §8.19), **Adults and helpers** (new screen: the
+grown-ups and what she calls each, a way into "who is in her life", the Village helpers
+(sitter pass, grandparent page, school summary: written by you, shown on a screen, never
+sent) and **Invite a co-parent (preview)**, which opens the invitee-side screen titled
+"Invitation (preview)" with "Nothing is sent" and no Accept, until the network is built),
+then Care. **Safety:** **Change PIN** (on a device with a local PIN: current, new, confirm; a
+new PIN may not be the old one, nor a repeat or straight run like 1111 or 1234; 4 to 8
+digits (the prototype's exactly 4 is an open owner decision); five wrong tries pause it
+for 15 minutes; the screen opens with the PIN explainer), parental controls (live sessions
+only; Messages are always on, §2.1), **Data on this phone**. **Learn:** **Parent Learn**
+and **Your Learn choices**. **Account:** connect this device (when the build can), deletion,
+sign out. **What changes at each age** (`age_planner_screen.dart`): for the ages 5, 8 and
+13 the real band table's bullets, "Hold when she arrives" (default on) and "Remind me a
+week before" (default off), kept on this device (`home_plan_store.dart`); the hold that
+acts today is the single one on the Age bands screen and a reminder waits for
+notifications, and the screen says so. **The guardian home** shows one sentence under the
+hero, always: the caller's own when it has one, else (`guardian_state_line.dart`) "<Ivy>'s
+tablet isn't connected yet", else "You are offline", else "It is <part of her day> for
+<Ivy>", never an invented mood or place. It is reached from More. The bottom tab bar
 proposed in the overhaul (Today, Messages, Together, Family, Settings) is
 **not** built: re-plumbing the guardian shell around one would touch every
 guardian route and test, so the hub lives where settings already lived.
@@ -6217,7 +6258,8 @@ drift. Nothing is written that is not in it.
 | `child.<id>.ladder` | Growing-up grants reached (append-only), rungs a guardian moved later, reveals she has seen, announcements dismissed. Makes "told once" true across a restart. | No |
 | `child.<id>.colour` | Colour of the day for this device (`LocalColourStore`, same real rules as the in-memory store): the last two weeks of colour days (only the latest is used; older are dropped), the art style, and the play window. No tally of picks. | No |
 | `child.<id>.family` | Family structure a grown-up built and released on this device (`LocalStoreFamilyStore`): the append-only history, her homes and people, guardian-written stories. A failed save throws; a change is never reported recorded when it was not. | **Yes** |
-| `child.<id>.access` | Accessibility for her device, as a guardian set it: read aloud, reduce motion, roomier reading, larger targets, captions wanted. Five on/off switches (§8.21). | No |
+| `child.<id>.access` | Accessibility for her device, as a guardian set it: read aloud, reduce motion, roomier reading, larger targets, captions wanted. On/off switches and the text size: standard, large or largest (§8.21, Wave 3). | No |
+| `child.<id>.plan` | The plan a guardian made for her home, kept on this device (Wave 3, §8.6.6, §8.6.7): the daily time total (off, 1, 2 or 3 hours) and, for ages 5, 8 and 13, whether her home waits for a grown-up and whether a reminder note is wanted. A handful of choices; no count, no score, nothing about what she did. | No |
 | `child.<id>.profile` | Offline start-up cache: her first name, age in whole years (and whether it is locked, §8.5.10), that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
 | `device.devicekey` | This device's own Ed25519 pairing key (section 8.5.11): the secret seed, never sent. No PIN, no personal data. | **Yes** |
 | `device.childpairing` | On a child's device: the certificate a grown-up's device signed (which child, which family), that grown-up's public key and first name, and the child's first name. No PIN. | **Yes** |

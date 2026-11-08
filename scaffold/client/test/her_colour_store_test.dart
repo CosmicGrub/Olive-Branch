@@ -141,10 +141,12 @@ void main() {
       clock = DateTime(2026, 11, 7, 16, 0);
       expect((await s.playWindow()).state, 'open');
       clock = DateTime(2026, 11, 7, 18, 40);
+      expect((await s.playWindow()).state, 'open', reason: 'the tail FOLLOWS the rest time (19:00), it does not precede it');
+      clock = DateTime(2026, 11, 7, 19, 10);
       final wind = await s.playWindow();
       expect(wind.state, 'winding_down');
       expect(wind.line, 'It’s getting sleepy. One more, then goodnight.');
-      clock = DateTime(2026, 11, 7, 19, 0);
+      clock = DateTime(2026, 11, 7, 19, 30);
       final rest = await s.playWindow();
       expect(rest.state, 'resting');
       expect(rest.line, contains('tomorrow'));

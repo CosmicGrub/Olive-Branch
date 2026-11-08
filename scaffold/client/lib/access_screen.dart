@@ -6,7 +6,8 @@
 // every other settings screen is: a grown-up has already passed the guardian
 // gate to be here, and her own app has no path to it at any depth (§8.1).
 //
-// Five switches, each written plainly and each honest about what it does:
+// A text size (Standard, Large, Largest) with a live preview, and five switches,
+// each written plainly and each honest about what it does:
 //   * read aloud everywhere — a speaker on tiles and story pages, long-press to
 //     hear a tile; never starts by itself;
 //   * reduce motion — everything that moves after a tap simply appears;
@@ -21,6 +22,7 @@ import 'package:flutter/material.dart';
 
 import 'access_scope.dart';
 import 'access_settings.dart';
+import 'ui/olive_ui.dart';
 
 class AccessScreen extends StatefulWidget {
   const AccessScreen({super.key, required this.childName, this.controller, this.childAge});
@@ -76,6 +78,33 @@ class _AccessScreenState extends State<AccessScreen> {
                   key: const Key('accessIntro'),
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                const SizedBox(height: 12),
+                OliveCard(
+                  key: const Key('accessTextPreview'),
+                  variant: OliveCardVariant.tint,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                    Text('Preview', style: Theme.of(context).textTheme.labelMedium),
+                    const SizedBox(height: 6),
+                    Text('$name’s story is ready at bedtime.',
+                        textScaler: TextScaler.linear(s.textSize.scale),
+                        style: s.roomierReading
+                            ? roomierStyle(Theme.of(context).textTheme.titleMedium)
+                            : Theme.of(context).textTheme.titleMedium),
+                  ]),
+                ),
+                const SizedBox(height: 12),
+                Text('Text size', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 6),
+                SegmentedControl(
+                  key: const Key('accessTextSize'),
+                  semanticLabel: 'Text size',
+                  items: <SegmentItem>[for (final AccessTextSize z in AccessTextSize.values) SegmentItem(z.label)],
+                  selected: AccessTextSize.values.indexOf(s.textSize),
+                  onChanged: (int i) => _set((AccessSettings a) => a.copyWith(textSize: AccessTextSize.values[i])),
+                ),
+                const SizedBox(height: 4),
+                Text('Her device’s own text size applies as well. This is added, not instead.',
+                    key: const Key('accessTextSizeNote'), style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 12),
                 _Row(
                   rowKey: const Key('accessReadAloud'),

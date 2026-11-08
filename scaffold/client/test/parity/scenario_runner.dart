@@ -30,7 +30,9 @@ import 'package:olive_client/onboarding_draft.dart';
 import 'package:olive_client/onboarding_logic.dart';
 import 'package:olive_client/onboarding_name.dart';
 import 'package:olive_client/pairing_redeem_screen.dart';
+import 'package:olive_client/home_plan_store.dart';
 import 'package:olive_client/play_window_gate.dart';
+import 'package:olive_client/play_window_screen.dart';
 
 import 'fake_server.dart';
 import 'parity_ledger.dart';
@@ -314,28 +316,42 @@ final Map<String, _Driver> _drivers = <String, _Driver>{
     return const Res.pending('the PIN pad on the guardian setup screens has no Flutter counterpart in this step (OS keyboard + button)');
   },
 
-  // ---- play window: the real store + the real gate
-  'go:g-play': (ParityWorld w, _Act a) async => const Res.pending('PlayWindowScreen exists but drops the time pickers for 15-minute dropdowns: driven through the store instead'),
+  // ---- play window: the REAL guardian screen (Wave 3) writing the real store, read by the real gate.
+  // The screen has the prototype's switch, 15-minute time pickers and wind-down choices; each driver taps them.
+  'go:g-play': (ParityWorld w, _Act a) async {
+    await w.mount(PlayWindowScreen(childName: 'Ivy', store: w.colour, plan: MemoryHomePlanRepository()));
+    await w.tester.pumpAndSettle();
+    return find.byKey(const Key('useWindow')).evaluate().isNotEmpty ? const Res.ok() : const Res.pending('the play window screen did not appear');
+  },
   'tap:gPlayOn': (ParityWorld w, _Act a) async {
+    await w.tester.tap(find.byKey(const Key('useWindow')));
+    await w.tester.pumpAndSettle();
     w.playOn = !w.playOn;
     return const Res.ok();
   },
   'type:grd.play.open': (ParityWorld w, _Act a) async {
     w.playOpen = a.value!;
-    return const Res.ok();
+    return _pickTime(w, 'opensDrop', _hm(a.value!));
   },
   'type:grd.play.rest': (ParityWorld w, _Act a) async {
     w.playRest = a.value!;
-    return const Res.ok();
+    return _pickTime(w, 'restsDrop', _hm(a.value!));
   },
   'tap:gWind': (ParityWorld w, _Act a) async {
     w.playWind = int.parse(a.arg!);
+    final Finder seg = find.descendant(of: find.byKey(const Key('windSeg')), matching: find.text(w.playWind == 0 ? 'Off' : '${w.playWind} min'));
+    if (seg.evaluate().isEmpty) return const Res.pending('the wind-down choice is not on screen');
+    await w.tester.tap(seg);
+    await w.tester.pumpAndSettle();
     return const Res.ok();
   },
   'tap:gPlaySave': (ParityWorld w, _Act a) async {
-    if (!w.playOn) return const Res.ok(); // off = open all day: nothing to save
-    final WindowSaveResult r = await w.colour.savePlayWindow(PlayWindow(opensMin: _hm(w.playOpen), restsMin: _hm(w.playRest), windDownMin: w.playWind));
-    return r.ok ? const Res.ok() : Res.pending('the store refused the window: ${r.reason}');
+    await w.tester.tap(find.byKey(const Key('saveWindow')));
+    await w.tester.pumpAndSettle();
+    final PlayWindow? saved = (await w.colour.playWindow()).window;
+    if (!w.playOn) return saved == null ? const Res.ok() : const Res.pending('switched off, but a window is still saved');
+    final bool same = saved != null && saved.opensMin == _hm(w.playOpen) && saved.restsMin == _hm(w.playRest) && saved.windDownMin == w.playWind;
+    return same ? const Res.ok() : Res.pending('the screen saved $saved, not ${w.playOpen} to ${w.playRest} with a ${w.playWind} minute wind-down');
   },
 
   // ---- family structure: the real service, with a hold and a release
@@ -374,6 +390,7 @@ const Map<String, Type> _screenTypes = <String, Type>{
   'ob.kid.age': ObAgeScreen,
   'ob.kid.name': ObNameScreen,
   'ob.kid.connect': PairingRedeemScreen,
+  'g-play': PlayWindowScreen,
 };
 
 Res _eq(Object? flutter, Object? proto, String what) =>
@@ -418,7 +435,7 @@ final Map<String, _Checker> _checkers = <String, _Checker>{
   'play.state': (ParityWorld w, Object? e, Map<String, Object?> s) async {
     final String got = await _gateState(w);
     if (got == e) return const Res.ok();
-    return Res.differs('Flutter says $got, prototype says $e (the prototype winds down AFTER the rest time, Flutter winds down BEFORE it)');
+    return Res.differs('Flutter says $got, prototype says $e');
   },
   'fam.hist': (ParityWorld w, Object? e, Map<String, Object?> s) async {
     final Res r = _eq(w.lastWriteState, e, 'state of the change');
@@ -434,6 +451,19 @@ final Map<String, _Checker> _checkers = <String, _Checker>{
     return names.contains('Grandma Rose') ? const Res.ok() : const Res.differs('released, but not shown to the child');
   },
 };
+
+/// Picks [minute] (a multiple of 15) in the play window screen's time dropdown [key].
+Future<Res> _pickTime(ParityWorld w, String key, int minute) async {
+  final Finder drop = find.byKey(Key(key));
+  if (drop.evaluate().isEmpty) return Res.pending('$key is not on screen (is the window switched on?)');
+  // The menu has 96 quarter-hour items and builds only those in view, so the pick is made through the
+  // dropdown's own onChanged (what choosing the item calls), after checking the minute is one of its choices.
+  final DropdownButton<int> d = w.tester.widget<DropdownButton<int>>(drop);
+  if (!d.items!.any((DropdownMenuItem<int> i) => i.value == minute)) return Res.pending('${minuteLabel(minute)} is not a choice');
+  d.onChanged!(minute);
+  await w.tester.pumpAndSettle();
+  return const Res.ok();
+}
 
 Res _screenCheck(ParityWorld w, Object? expected) {
   final Type? t = _screenTypes['$expected'];
