@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 
 import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'picture_icons.dart';
+import 'read_aloud.dart' show ReadAloudScope;
 import 'rhythm_logic.dart';
 import 'rhythm_voice_repositories.dart';
 
@@ -49,8 +50,10 @@ class SensoryScope extends StatefulWidget {
 
   /// [speak] wrapped so that nothing is spoken when the sound is off.
   static Speak? speakFor(BuildContext context, Speak? speak) {
-    if (speak == null || of(context).silent) return null;
-    return speak;
+    // The screen's own seam if given, else the app's read-aloud (when it is on for her).
+    final Speak? s = speak ?? ReadAloudScope.speakFnIfEnabled(context);
+    if (s == null || of(context).silent) return null;
+    return s;
   }
 
   @override

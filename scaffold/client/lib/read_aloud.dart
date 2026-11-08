@@ -123,6 +123,16 @@ class ReadAloudScope extends InheritedNotifier<ReadAloudController> {
     return on ? c : null;
   }
 
+  /// Like [speakFnOf] but null unless read-aloud is ON for her (guardian switch / age): what a
+  /// child screen's optional `speak` seam falls back to, so it shows no speaker when it is off.
+  static Future<void> Function(String)? speakFnIfEnabled(BuildContext context) {
+    final ReadAloudController? c = enabledOf(context);
+    if (c == null) return null;
+    return (String text) async {
+      await c.speak(text);
+    };
+  }
+
   /// A `speak` callback in the shape the older screens take (call knock,
   /// emergency card, handover notes), or null with no scope. Explicit taps on
   /// those screens do not depend on the "everywhere" switch.

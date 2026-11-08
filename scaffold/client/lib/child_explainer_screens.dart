@@ -14,6 +14,8 @@ import 'package:flutter/material.dart';
 import 'growing_care_logic.dart';
 import 'growing_care_store.dart';
 import 'growing_care_widgets.dart';
+import 'access_scope.dart' show readingAlign, readingStyleOf;
+import 'read_aloud.dart' show ReadAloudScope;
 
 /// The stories a guardian chose to show her. Nothing here writes.
 class ExplainerStoriesScreen extends StatefulWidget {
@@ -75,16 +77,18 @@ class _ExplainerPagerScreenState extends State<ExplainerPagerScreen> {
   Widget build(BuildContext context) {
     final List<String> pages = widget.story.pages;
     final bool last = _i == pages.length - 1;
+    final Future<void> Function(String)? speak = widget.speak ?? ReadAloudScope.speakFnIfEnabled(context);
     return Scaffold(
       appBar: AppBar(title: Text(widget.story.title), actions: <Widget>[
-        if (widget.speak != null)
+        if (speak != null)
           IconButton(key: const Key('readAloud'), tooltip: 'Read it to me', icon: const Icon(Icons.volume_up_outlined),
-              onPressed: () => unawaited(widget.speak!(pages[_i]))),
+              onPressed: () => unawaited(speak(pages[_i]))),
       ]),
       body: SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: Column(children: <Widget>[
         if (widget.story.thumb != null && _i == 0) Padding(padding: const EdgeInsets.only(bottom: 16), child: ThumbImage(widget.story.thumb!, size: 160)),
         Expanded(child: Center(child: SingleChildScrollView(child: Text(pages[_i], key: const Key('storyText'),
-            textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall?.copyWith(height: 1.4))))),
+            textAlign: readingAlign(context, TextAlign.center),
+            style: readingStyleOf(context, Theme.of(context).textTheme.headlineSmall!.copyWith(height: 1.4)))))),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
           for (int d = 0; d < pages.length; d++) Container(
               margin: const EdgeInsets.all(4), width: 10, height: 10,

@@ -173,6 +173,11 @@ cannot. No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated
   handover-note header overflowed once its speaker became a 48dp target.
 - The colouring picture's semantics (new) needed a text direction; found by the new test.
 
+- The `SEAM(child-accessibility)` read-aloud callbacks of the Rhythm and Voice screens (#143) and the
+  picture-story pager (#142) fall back to the app's read-aloud when none is passed, only when it is on
+  for her; the pager honours roomier reading; the Rhythm tile grid grows for the speaker's corner.
+  The memory box is not wired.
+
 ### Not built (said plainly)
 - Captions: the switch records a wish; the screen and `captionsActive` say nothing shows. Voice
   navigation. A dyslexia-specific typeface (the evidence is mixed). No real-device TalkBack or
@@ -180,10 +185,10 @@ cannot. No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated
   width-bound.
 
 ### Tests
-- 215 new Flutter tests in `access_settings_test.dart`, `access_scope_test.dart`,
+- 219 new Flutter tests in `access_settings_test.dart`, `access_scope_test.dart`,
   `read_aloud_test.dart`, `story_read_aloud_test.dart`, `access_screen_test.dart`,
   `game_semantics_test.dart`, `picture_bank_test.dart`, `child_text_scale_test.dart`,
-  `child_targets_test.dart`, `reduce_motion_screens_test.dart`. Dart only.
+  `child_targets_test.dart`, `reduce_motion_screens_test.dart`, `hub_read_aloud_test.dart`, `seam_read_aloud_test.dart`. Dart only.
 
 ## [Unreleased] — Family structure and age bands (suites J and K), local-first
 
