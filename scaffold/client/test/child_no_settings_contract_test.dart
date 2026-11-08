@@ -36,4 +36,46 @@ void main() {
     expect(src.contains("'guardian_more.dart'"), isFalse);
     expect(src.contains("'guardian_home.dart'"), isFalse);
   });
+
+  // C-14 — nothing guardian-facing may be reachable from the child shell.
+  // Same technique as above: read the real source (comments stripped), not a
+  // rendered tree, so a regression cannot hide behind an age gate or a
+  // scroll position a widget test happened not to reach.
+  String stripped(String path) =>
+      File(path).readAsStringSync().replaceAll(RegExp(r'//.*'), '');
+
+  test('child_more.dart carries no demo section and no first-run tour replay', () {
+    final src = stripped('lib/child_more.dart');
+    expect(src.contains('OnboardingFlowScreen'), isFalse);
+    expect(src.contains("'onboarding_flow.dart'"), isFalse);
+    expect(src.contains('welcome tour'), isFalse);
+    expect(RegExp(r"HubSection\(title: 'Demo'").hasMatch(src), isFalse);
+  });
+
+  test('the guardian-side setup screens (word search, guess the word) are '
+      'only ever constructed behind guardianSide in the shared games hub', () {
+    final src = stripped('lib/games_hub.dart');
+    for (final String screen in <String>['WordSearchSetupScreen(', 'HangmanSetupScreen(']) {
+      final int at = src.indexOf(screen);
+      expect(at, greaterThan(0), reason: '$screen should still exist for the guardian side');
+      final String before = src.substring(0, at);
+      final String guard = before.substring(before.lastIndexOf('if ('));
+      expect(guard.contains('guardianSide'), isTrue,
+          reason: '$screen must sit under an `if (guardianSide ...)` guard');
+    }
+  });
+
+  test('neither child_home.dart nor child_more.dart reach a guardian setup '
+      'screen, the family settings, or the parental controls', () {
+    for (final String f in <String>['lib/child_home.dart', 'lib/child_more.dart']) {
+      final src = stripped(f);
+      for (final String banned in <String>[
+        'WordSearchSetupScreen', 'HangmanSetupScreen', 'ParentalControlsScreen',
+        'GuardianSetupScreen', 'ThemePickerScreen', 'OnboardingFlowScreen',
+        'guardian_more.dart', 'parental_controls_screen.dart',
+      ]) {
+        expect(src.contains(banned), isFalse, reason: '$f must not reference $banned');
+      }
+    }
+  });
 }

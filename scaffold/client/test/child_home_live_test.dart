@@ -116,9 +116,12 @@ void main() {
       await t.pumpAndSettle();
 
       expect(find.text('Hi Ivy'), findsOneWidget);
-      // The real unread badge: 2 delivered, not the raw row count of 3 —
-      // proves opened messages are excluded, not just that SOME number shows.
-      expect(find.text('2'), findsOneWidget);
+      // The unread signal is a dot (C-24: no number for a child): 2 delivered
+      // and 1 already opened -> there IS something new, and no count is
+      // ever painted at her. The opened-excluded count itself is
+      // proven by the all-opened case in child_wiring_test.dart.
+      expect(find.byKey(const Key('newDot')), findsOneWidget);
+      expect(find.text('2'), findsNothing);
       expect(find.text('3'), findsNothing);
       // No active custody order in this fixture (/now's own honest null) —
       // still an absence, but now a REAL fetched one, not an unfetched field.

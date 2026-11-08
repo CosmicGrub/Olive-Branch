@@ -255,6 +255,22 @@ const Map<String, int> hubGameMinAge = {
   'scavengerHunt': 5,
 };
 
+/// Minimum ages for the five ad-hoc "play together on this table" games
+/// (games_hub.dart's own section of that name; C-11). A JUDGMENT CALL, not a
+/// MASTERFILE ranking — none of these ever had an age concept (they were
+/// built as local-play proofs, see local_pairing.dart): War and Draw-and-
+/// guess are pre-reader friendly, Uno needs colour/number matching plus
+/// rules like skip and draw-two, so it starts at 6. Plain age comparison on
+/// purpose (no `game:` override key) so parental_controls_screen.dart's
+/// pinned list of 8 hub games is untouched.
+const Map<String, int> localPlayMinAge = {
+  'puzzle': 4,
+  'war': 5,
+  'pictionary': 5,
+  'connect4': 6,
+  'uno': 6,
+};
+
 // ------------------------------------------------------------ handicap -----
 
 /// Refusal reasons a caller can act on. Mirrors games.ts's `setHandicap`
@@ -291,13 +307,41 @@ SetHandicapResult setHandicap({
 
 /// Shown to both. Never "Dad is worse"; always "Dad is playing the hard way".
 /// Returns null when no handicap is active.
-String? handicapBanner(GameKind kind, String? handicapId) {
+///
+/// [parentName] (C-13): the catalogue's labels are a 1:1 port of games.ts and
+/// say "Dad" literally. A real child's grown-up is not always "Dad", so a
+/// live caller passes the real display name (or [neutralGrownUp]) and every
+/// "Dad" in the label is replaced by it. Null keeps the legacy wording
+/// byte-for-byte (the TS-parity tests pin it).
+String? handicapBanner(GameKind kind, String? handicapId, {String? parentName}) {
   if (handicapId == null) return null;
   for (final h in catalogueFor(kind).handicaps) {
-    if (h.id == handicapId) return "Dad's playing the hard way — ${h.label.toLowerCase()}";
+    if (h.id == handicapId) {
+      if (parentName == null) return "Dad's playing the hard way — ${h.label.toLowerCase()}";
+      return "$parentName's playing the hard way — ${_lowerKeepingName(h.label, parentName)}";
+    }
   }
   return null;
 }
+
+/// What the child shell calls a grown-up when no real name is known (no live
+/// session, or nobody is currently free). Neutral on purpose: never a
+/// guessed "Dad" or "Mom".
+const String neutralGrownUp = 'your grown-up';
+
+/// Replaces the port's literal "Dad" with [parentName] in [text].
+String withParentName(String text, String parentName) => text.replaceAll('Dad', parentName);
+
+String _lowerKeepingName(String label, String parentName) {
+  const String marker = '@@dad@@';
+  return label.replaceAll('Dad', marker).toLowerCase().replaceAll(marker, parentName);
+}
+
+/// Games whose board is not built (child_home etc. fall back to a "not built
+/// yet" snackbar for these). C-12: a child must never be offered a card that
+/// answers "not built yet" — the pickers filter these kinds out until the
+/// photo-source product decision lands and the board exists.
+const Set<GameKind> unbuiltGameKinds = {GameKind.memory};
 
 // -------------------------------------------------- the losing streak ------
 /// A parent who always wins is a harm the product created, so the handicap
@@ -330,7 +374,7 @@ class HandicapOffer {
 
 /// Mirrors games.ts's `handicapOffer`. Her choice, her framing — never
 /// "you keep losing".
-HandicapOffer handicapOffer(GameKind kind) => HandicapOffer(
-      'Want to make it harder for Dad?',
+HandicapOffer handicapOffer(GameKind kind, {String? parentName}) => HandicapOffer(
+      'Want to make it harder for ${parentName ?? 'Dad'}?',
       catalogueFor(kind).handicaps,
     );

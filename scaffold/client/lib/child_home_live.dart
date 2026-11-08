@@ -68,8 +68,10 @@ import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
 import 'api_client.dart';
 import 'call_knock_screen.dart' show buildCallIncomingHandler;
+import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
+import 'game_logic.dart' show neutralGrownUp;
 import 'push_channel.dart';
 import 'wear_sync_channel.dart';
 
@@ -121,6 +123,15 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   String _errorMessage = '';
   String _childName = '';
   int _unreadCount = 0;
+  // C-05: her real age in whole years, from GET /v1/me's `yearsOld` (the
+  // server computes it from birth_date; a birthdate never reaches her
+  // device). Fail-closed: if the server somehow omits it, assume the youngest
+  // end of the catalogue so a young child never meets an older child's games
+  // or screens — the age gate must never fail open.
+  static const int _failClosedAge = 5;
+  int _childAge = _failClosedAge;
+  // C-10: today's real day parts in HER zone, from GET /now's `dayParts`.
+  List<DayPartLite> _dayParts = const <DayPartLite>[];
   // Still null -- see file header. Kept as a field (not a bare literal on
   // ChildHome's constructor below) so _syncWear() has a real value to read
   // once a live custody endpoint exists to populate it from.
@@ -217,6 +228,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         // server/routes.mjs's own query, `state IN ('delivered','opened')`),
         // so counting the raw list length double-counted every message
         // she had already watched as still unread. See file header.
+        _childAge = (me['yearsOld'] as num?)?.toInt() ?? _failClosedAge;
+        _dayParts = _decodeDayParts(now['dayParts']);
         _unreadCount = messages.where(
             (dynamic m) => (m as Map<String, dynamic>)['state'] == 'delivered').length;
         // Real, fetched from /now -- see file header. Honestly null when
@@ -244,6 +257,21 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         _state = _LoadState.error;
       });
     }
+  }
+
+  /// Decodes /now's `dayParts` (`[{kind, startsLocal, endsLocal, reachable}]`).
+  /// Anything malformed is skipped, so one bad row never blanks her day.
+  static List<DayPartLite> _decodeDayParts(Object? raw) {
+    if (raw is! List) return const <DayPartLite>[];
+    final out = <DayPartLite>[];
+    for (final dynamic p in raw) {
+      if (p is! Map) continue;
+      final kind = p['kind'], s = p['startsLocal'], e = p['endsLocal'];
+      if (kind is! String || s is! String || e is! String) continue;
+      out.add(DayPartLite(kind: kind, startsLocal: s, endsLocal: e,
+          reachable: p['reachable'] != false));
+    }
+    return out;
   }
 
   // Forwards a real sleepsUntilHandover to a paired Wear OS companion
@@ -302,7 +330,10 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             // design (push.ts's content-free PushInput shape), so there is
             // nothing to resolve 'from'/'who'/'displayName' from even if
             // this screen wanted to.
-            from: 'Dad', who: 'ivy', displayName: 'Ivy',
+            // C-13: the real name when a parent is known to be free, else
+            // a neutral phrase — never a hard-coded "Dad".
+            from: _presence?.name ?? neutralGrownUp, who: 'ivy',
+            displayName: _childName.isEmpty ? 'there' : _childName,
           ),
         );
     _pushChannel = channel;
@@ -338,15 +369,10 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           ]),
         )));
       case _LoadState.ready:
+        // C-23: no development banner here any more ("Live: name and message
+        // count are real..." was a build-time note aimed at the developer, shown
+        // to the child on every launch).
         return Scaffold(body: SafeArea(child: Column(children: [
-          Container(width: double.infinity,
-            color: Theme.of(context).colorScheme.tertiaryContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              'Live: name and message count are real, fetched from the server '
-              'just now.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onTertiaryContainer))),
           Expanded(child: ChildHome(
             childName: _childName,
             presence: _presence, // real, from GET .../presence
@@ -360,6 +386,9 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             sessionToken: _sessionToken,
             httpClient: widget.httpClient,
             overrides: _overrides,
+            childAge: _childAge,
+            dayParts: _dayParts,
+            guardianName: _presence?.name,
           )),
         ])));
     }

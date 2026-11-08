@@ -46,36 +46,58 @@ void _notBuiltYet(BuildContext context, String what) {
 /// own "Play together" tile and guardian_more.dart's mirrored one — pass
 /// this straight through rather than each maintaining their own copy of the
 /// switch.
-void Function(BuildContext context, GameKind kind) buildGameNavigator(String childName) {
+///
+/// [parentName] (C-13): the real grown-up's display name, threaded to every
+/// board that takes one so a child never meets a hard-coded "Dad". Null (the
+/// guardian side's own call) keeps each board's legacy default.
+void Function(BuildContext context, GameKind kind) buildGameNavigator(String childName, {String? parentName}) {
   return (playContext, kind) {
     switch (kind) {
       case GameKind.story:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GameStoryScreen(childName: childName)));
+          builder: (_) => parentName == null
+            ? GameStoryScreen(childName: childName)
+            : GameStoryScreen(childName: childName, parentName: parentName)));
       case GameKind.tictactoe:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GameTicTacToe(childName: childName)));
+          builder: (_) => parentName == null
+            ? GameTicTacToe(childName: childName)
+            : GameTicTacToe(childName: childName, parentName: parentName)));
       case GameKind.dotsboxes:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GameDotsBoxes(childName: childName)));
+          builder: (_) => parentName == null
+            ? GameDotsBoxes(childName: childName)
+            : GameDotsBoxes(childName: childName, parentName: parentName)));
       case GameKind.drawTogether:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => DrawTogetherScreen(childName: childName)));
+          builder: (_) => parentName == null
+            ? DrawTogetherScreen(childName: childName)
+            : DrawTogetherScreen(childName: childName, parentName: parentName)));
       case GameKind.guessDoodle:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => GuessDoodleScreen(childName: childName)));
+          builder: (_) => parentName == null
+            ? GuessDoodleScreen(childName: childName)
+            : GuessDoodleScreen(childName: childName, parentName: parentName)));
       case GameKind.sillySentence:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => SillySentenceScreen(childName: childName)));
+          builder: (_) => parentName == null
+            ? SillySentenceScreen(childName: childName)
+            : SillySentenceScreen(childName: childName, parentName: parentName)));
       case GameKind.wouldYouRather:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => WouldYouRatherScreen(childName: childName)));
+          builder: (_) => parentName == null
+            ? WouldYouRatherScreen(childName: childName)
+            : WouldYouRatherScreen(childName: childName, parentName: parentName)));
       case GameKind.twoTruths:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => TwoTruthsScreen(childName: childName)));
+          builder: (_) => parentName == null
+            ? TwoTruthsScreen(childName: childName)
+            : TwoTruthsScreen(childName: childName, parentName: parentName)));
       case GameKind.twentyQuestions:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
-          builder: (_) => TwentyQuestionsScreen(childName: childName)));
+          builder: (_) => parentName == null
+            ? TwentyQuestionsScreen(childName: childName)
+            : TwentyQuestionsScreen(childName: childName, parentName: parentName)));
       case GameKind.copyPattern:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
           builder: (_) => CopyPatternScreen(childName: childName)));

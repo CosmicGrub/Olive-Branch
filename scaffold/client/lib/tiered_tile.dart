@@ -46,7 +46,7 @@ void _notBuiltYet(BuildContext context, String what) {
 /// mainAxisExtent to size a tile.
 class TieredTile extends StatelessWidget {
   const TieredTile({super.key, required this.icon, required this.label, this.onTap,
-    this.badgeCount, this.featured = false, this.hero = false, this.height});
+    this.badgeCount, this.unreadDot = false, this.featured = false, this.hero = false, this.height});
   final IconData icon;
   final String label;
   // Defaults to the honest not-built-yet acknowledgment; tiles with a real
@@ -56,6 +56,12 @@ class TieredTile extends StatelessWidget {
   // own use (`unreadCount`); GuardianHome doesn't use it today. Optional —
   // null/0 renders no badge at all, not a badge showing "0".
   final int? badgeCount;
+  // C-24: a plain dot, no number, no alarm colour — for the CHILD's own
+  // surfaces, where a red "3" reads as a debt and a count of unread things is
+  // exactly the guilt-pressure framing §8.4/P2 forbid. Says "something new is
+  // here" by shape alone (and by a spoken label for a screen reader), never
+  // how much. Wins over [badgeCount] if both are given.
+  final bool unreadDot;
   final bool featured;
   final bool hero;
   final double? height;
@@ -92,7 +98,10 @@ class TieredTile extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Icon(icon, size: featured ? 36 : 28, color: onFill),
-            if (badgeCount != null && badgeCount! > 0) ...[
+            if (unreadDot) ...[
+              const Spacer(),
+              const _NewDot(),
+            ] else if (badgeCount != null && badgeCount! > 0) ...[
               const Spacer(),
               _UnreadBadge(count: badgeCount!),
             ],
@@ -111,6 +120,20 @@ class TieredTile extends StatelessWidget {
     // its GridView cell already.
     return hero ? SizedBox(width: double.infinity, child: tile) : tile;
   }
+}
+
+class _NewDot extends StatelessWidget {
+  const _NewDot();
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Something new',
+    child: Container(
+      key: const Key('newDot'),
+      width: 14, height: 14,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).colorScheme.surface, width: 2))));
 }
 
 class _UnreadBadge extends StatelessWidget {

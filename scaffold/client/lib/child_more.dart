@@ -22,11 +22,11 @@ import 'collection_screen.dart';
 import 'colour_daily.dart';
 import 'colouring_screen.dart';
 import 'doodle_desk.dart';
+import 'game_logic.dart' show neutralGrownUp;
 import 'hub_widgets.dart';
 import 'journal_screen.dart';
 import 'letters_screen.dart';
 import 'maturation_ladder.dart';
-import 'onboarding_flow.dart';
 import 'quieting_note.dart';
 import 'shared_gallery.dart';
 import 'shared_reading.dart';
@@ -46,6 +46,7 @@ class ChildMoreScreen extends StatelessWidget {
     this.sessionToken,
     this.httpClient,
     this.overrides,
+    this.guardianName,
   });
   final String childName;
   final int childAge;
@@ -63,9 +64,26 @@ class ChildMoreScreen extends StatelessWidget {
   /// render exactly as before this feature existed.
   final Map<String, ActivityOverride>? overrides;
 
+  /// The real display name of the grown-up she talks to (C-13). Null falls
+  /// back to [neutralGrownUp] — never a hard-coded "Dad".
+  final String? guardianName;
+  String get _grownUp => guardianName ?? neutralGrownUp;
+
+  /// C-15: the maturation ladder's first rung is her tenth birthday
+  /// (maturation_ladder.dart's [kLadder]); "Growing up", "The quiet corner"
+  /// and "Taking your things with you" are all about that ladder and what
+  /// fades or unlocks on it, so a younger child never sees them.
+  bool get _showGrowingUp => childAge >= kLadder.first.age;
+
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
 
+  // Child voice throughout (C-13/C-15): short second-person lines, no
+  // spec language ("irreversible", "guardian access", "preserved").
+  // Contract: nothing guardian-facing and no settings affordance is
+  // reachable from here (§8.1) — child_no_settings_contract_test.dart reads
+  // this file's source to hold that line, including that the demo section
+  // and the first-run tour replay are gone (C-14).
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('More for you')),
@@ -74,88 +92,76 @@ class ChildMoreScreen extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         HubSection(title: 'Just yours', children: [
           HubTile(icon: Icons.menu_book_outlined, title: 'My journal',
-            subtitle: 'Private. Nobody else can read it — ever.',
+            subtitle: 'Just for you',
             onTap: () => _open(context, JournalScreen(childName: childName))),
           HubTile(icon: Icons.markunread_mailbox_outlined, title: 'Letters to me',
-            subtitle: 'Write one now, open it when you are older',
+            subtitle: 'Write now, open later',
             onTap: () => _open(context, LettersScreen(childName: childName, currentAge: childAge,
               childId: childId ?? 'demo-child',
               baseUrl: baseUrl, sessionToken: sessionToken, httpClient: httpClient))),
-          HubTile(icon: Icons.timeline_outlined, title: 'Growing up',
-            subtitle: 'What you get to do next, and when',
-            onTap: () => _open(context, MaturationLadderScreen(
-              childName: childName, childAgeYears: childAge, viewer: LadderViewer.child))),
-          HubTile(icon: Icons.spa_outlined, title: 'The quiet corner',
-            subtitle: 'A few things fade as you get older — here is why',
-            onTap: () => _open(context, QuietingScreen(childName: childName, age: childAge))),
+          if (_showGrowingUp) ...[
+            HubTile(icon: Icons.timeline_outlined, title: 'Growing up',
+              subtitle: 'What comes next',
+              onTap: () => _open(context, MaturationLadderScreen(
+                childName: childName, childAgeYears: childAge, viewer: LadderViewer.child))),
+            HubTile(icon: Icons.spa_outlined, title: 'The quiet corner',
+              subtitle: 'Things that fade as you grow',
+              onTap: () => _open(context, QuietingScreen(childName: childName, age: childAge))),
+          ],
         ]),
         HubSection(title: 'Together', children: [
           HubTile(icon: Icons.nights_stay_outlined, title: 'My weeks',
-            subtitle: 'Who tonight is with, in sleeps',
+            subtitle: 'Where you sleep, night by night',
             onTap: () => _open(context, WeeksScreen(
               childName: childName, nights: demoCustodyNights(), guardianColors: demoGuardianColors))),
-          HubTile(icon: Icons.school_outlined, title: 'Teach Dad something',
-            subtitle: 'You be the teacher this time',
-            onTap: () => _open(context, TeachMeScreen(childName: childName, childAge: childAge))),
+          HubTile(icon: Icons.school_outlined, title: 'Teach $_grownUp something',
+            subtitle: 'You be the teacher',
+            onTap: () => _open(context, TeachMeScreen(childName: childName, childAge: childAge,
+              parentName: _grownUp))),
           HubTile(icon: Icons.auto_stories, title: 'Read together',
-            subtitle: 'One book, two screens, his voice',
-            onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: 'Dad'))),
+            subtitle: 'One book, two of you',
+            onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: _grownUp))),
         ]),
         HubSection(title: 'Make things', children: [
           if (isTileVisible(overrides, 'activity:doodle'))
             HubTile(icon: Icons.brush_outlined, title: 'Doodle desk',
-              subtitle: 'Free strokes and stamps',
+              subtitle: 'Draw anything',
               onTap: () => _open(context, DoodleDesk(childName: childName))),
           if (isTileVisible(overrides, 'activity:colouring'))
             HubTile(icon: Icons.palette_outlined, title: 'Colouring',
-              subtitle: 'A scene, coloured your way',
+              subtitle: 'Colour a picture',
               onTap: () => _open(context, const ColouringScreen())),
           HubTile(icon: Icons.photo_library_outlined, title: 'My saved pictures',
-            subtitle: 'Everything you have saved here',
+            subtitle: 'Pictures you kept',
             onTap: () => _open(context, AppGalleryScreen(gallery: demoAppGallery))),
         ]),
         HubSection(title: 'Show & tell', children: [
           HubTile(icon: Icons.collections_bookmark_outlined, title: 'My collections',
-            subtitle: 'What you have shown, kept',
+            subtitle: 'Things you showed',
             onTap: () => _open(context, CollectionScreen(childName: childName))),
         ]),
         HubSection(title: 'Stories', children: [
           HubTile(icon: Icons.local_library_outlined, title: 'Story library',
-            subtitle: 'Every story you have kept',
+            subtitle: 'Stories you kept',
             onTap: () => _open(context, StoryLibraryScreen.demo(childName: childName))),
         ]),
         HubSection(title: 'Colour', children: [
           HubTile(icon: Icons.color_lens_outlined, title: "Today's colour",
-            subtitle: 'A daily pick, all yours',
+            subtitle: 'Pick yours',
             onTap: () => _open(context, ColourDailyScreen(currentColourId: 'sea', onChoose: (_) {}))),
         ]),
-        HubSection(title: 'Demo', children: [
-          HubTile(icon: Icons.replay_circle_filled_outlined, title: 'Redo the welcome tour',
-            subtitle: 'The first-run screens, walked through again',
-            // baseUrl/childId/sessionToken/httpClient threaded through as of
-            // Onboarding & Guardian Access sub-project 1 (docs/superpowers/
-            // specs/2026-09-12-onboarding-identity-pin-design.md) — the
-            // second live-wiring this hub has ever carried (see this file's
-            // own header for the first, LettersScreen). Reused unchanged
-            // from this hub's own already-authenticated session; the demo
-            // re-run stays exactly as it was when none of these are
-            // supplied.
-            onTap: () => _open(context, OnboardingFlowScreen(
-              fallbackName: childName,
-              childId: childId, baseUrl: baseUrl,
-              sessionToken: sessionToken, httpClient: httpClient))),
-        ]),
-        // §9.8.4, §21.2 rung 17, §21.7 — always reachable, same posture every
-        // other tile here takes: the SCREEN states the real, honest outcome
-        // (including "not yet" for an under-age tap), never this hub deciding
-        // in advance whether she is "allowed to see the button". See
-        // take_and_go_screen.dart's own header for why hiding this behind a
-        // client-side age check would be the wrong kind of gate.
-        HubSection(title: 'When you are ready', children: [
-          HubTile(icon: Icons.outbox_outlined, title: 'Take your data and go',
-            subtitle: 'At eighteen: a full copy of everything, and guardian access closes',
-            onTap: () => _open(context, TakeAndGoScreen(childName: childName))),
-        ]),
+        // §9.8.4, §21.2 rung 17, §21.7 — the SCREEN states the real, honest
+        // outcome (including "not yet" for an under-age tap), never this hub
+        // deciding in advance whether she is "allowed to see the button" for
+        // a LEGAL reason; the age gate here (C-15) is only about relevance —
+        // a five-year-old has no use for it — and uses the same ladder start
+        // as the two tiles above.
+        if (_showGrowingUp)
+          HubSection(title: 'When you are ready', children: [
+            HubTile(icon: Icons.outbox_outlined, title: 'Take your things with you',
+              subtitle: 'For when you are grown up',
+              onTap: () => _open(context, TakeAndGoScreen(childName: childName))),
+          ]),
       ]),
     )),
   );

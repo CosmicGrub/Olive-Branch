@@ -1613,6 +1613,20 @@ POST   /v1/children/:id/overlap         availability intersection with actor set
 GET    /v1/children/:id/schedule-strip  visual next-N-day-parts, child shell (§8.4)
 ```
 
+**Client-wiring audit fix — the two reads the child shell was missing (this
+pass).** `GET /v1/me` now returns `yearsOld` for a **child** session (whole
+years, computed server-side from `child.birth_date` in her home zone; `null`
+for a guardian caller; the birth date itself never leaves the server). The key
+is `yearsOld`, deliberately not `age`: `age` is on the global child-payload
+sweep's forbidden list (`packages/globalaudit`), so a field of that name would
+500 every child `/me`. `GET /v1/children/:id/now` now also returns
+`dayParts: [{kind, startsLocal, endsLocal, reachable}]` — **today's** schedule
+in the child's own zone (same weekday filter and `HH:mm` shape as `/ribbon`,
+which stays guardian-only) — so the child's own "My day" screen shows her real
+day parts instead of the demo hours. A child with no day-part rows gets `[]`,
+and the client then shows an honest empty day, never invented hours. The demo
+hours remain only in the offline/demo build (no `baseUrl`).
+
 ### 7.3 Async delivery & message banking
 
 ```
@@ -1797,6 +1811,61 @@ POST   /v1/rituals
 **ChildHome's own tile grid — real 3-tier hierarchy, v0.49.65 (intuitivism pass, sub-project 2).** The child shell's home screen (`child_home.dart`, MARKUP `childHome`) renders 9 real destinations — Homework, Play together, More games, My list, Messages, My day, Storyteller, Show & tell, More for you — previously one flat, equal-weight grid with a HARDCODED `crossAxisCount: 2` (`form_factors.dart`'s real posture system, already used by `game_picker.dart` since v0.49.17, was imported nowhere in this file — a real, independently-found inconsistency, now closed). Real hierarchy replaces it: **Hero** (My day — the one tile this document calls a "signature element," §8.2.2 below) full-width and largest; **Featured** (Play together, Messages, Storyteller, Show & tell) larger, posture-aware cells; **Standard** (Homework, More games, My list, More for you) at the previous tile size. Every placement traces to a real citation where one exists (Storyteller's own "a story every night... draws 6,570 of them," §9.11; Show & tell's own self-critique that it has been under-treated as secondary, §9.10) or is disclosed as a design judgment call where it doesn't — see `docs/superpowers/specs/2026-08-31-intuitivism-navigation-density-design.md` for the full, cited account. Hierarchy is communicated by size/width/type-scale alone — never her own §8.6.2 accent colour, never usage-analytics-derived (P2). The ad-hoc local-play games' own eventual placement (Featured tier, once PR #85/#87's independent navigation-file changes are reconciled) is answered in that spec but deliberately not wired here.
 
 **GuardianHome's own tile grid — the SAME real 3-tier hierarchy, v0.49.71 (intuitivism pass, sub-project 3b).** `_Tile` was extracted into a new shared `tiered_tile.dart` (`TieredTile`, identical behavior — ChildHome's own migration onto it is a pure rename, proven by its full existing test suite passing unmodified) once GuardianHome needed the same shape rather than a second, drifting `_GTile` copy. GuardianHome's 11 real destinations (`guardian_home.dart`, MARKUP `guardianHome`) — previously one flat, equal-weight grid — now render as: **Hero** (Message banking, full-width, outside the grid); **Featured** (Availability, Send-time guard, Meds & care, Emergency card — `secondaryContainer`); **Standard** (Handover notes, Exchange, Expenses, Morning briefing, Care note, More — `primaryContainer`, unchanged). Every placement traces to the user's own stated answer about which tiles feel most urgent/frequent as a real guardian, not usage data (P2 not triggered) — see `docs/superpowers/specs/2026-09-12-intuitivism-guardianhome-tiering-design.md`. The ribbon above (Ivy's day bars, Call Ivy) is untouched, real live data, not a tile. A real, pre-existing-class overflow bug was found and fixed along the way: Featured's larger icon/type-scale, combined with this screen's OWN shared (not per-tier) `mainAxisExtent`, reintroduced the exact 344px-width wrap-overflow class §8.11.1 already documents for this file, now also present in a real ~372-380px phone-width band the old 165px breakpoint routed into too short an extent — both breakpoint values grew (136/170, was 128/165) to close it, confirmed by real widget tests pinned to exact widths.
+
+**Child shell wiring fixes — the client audit's C-series (this pass).** What
+the child shell now does, as shipped:
+
+- *Age gate is live.* `LiveChildHomeScreen` reads `/me`'s `yearsOld` and passes
+  it to `ChildHome`, so the games catalogue, the More hub and the jokebook are
+  gated on her real age. If the server omits it the client fails **closed** to
+  the youngest age (5), never open. The `ChildHome`/`ChildMoreScreen`/
+  `GamePickerScreen` constructor defaults (7/9/7) remain only for the offline
+  demo build and tests.
+- *Grown-up's name.* No "Dad" is hard-coded on a live child path: the name is
+  the parent who is currently free (`/presence`) or, failing that, the neutral
+  phrase "your grown-up". It is threaded to the games hub, every board that
+  takes a `parentName`, the handicap offer/banner wording, More ("Teach …
+  something", Read together) and the incoming-call handler. The TS-ported
+  handicap catalogue strings keep "Dad" internally (parity tests pin them) and
+  are rewritten with the real name at display time.
+- *More for you.* The "Demo" section and "Redo the welcome tour" are removed
+  (the first-run flow still runs automatically on a first launch). "Growing up",
+  "The quiet corner" and "Take your things with you" (was "Take your data and
+  go") appear only from age 10, the first rung of the maturation ladder.
+  Wording is short and second-person. `child_no_settings_contract_test.dart`
+  now also reads `child_more.dart`/`games_hub.dart` source to hold that nothing
+  guardian-facing is reachable from the child shell.
+- *Games.* The five hardware-verified ad-hoc games (War, Connect 4, Uno,
+  Draw-and-guess, Puzzle together) are listed in the Play together hub under
+  "Play together on this table" and open the existing local-play screens (same
+  wifi, no internet; the child plays as `ivy`, a guardian opening the same hub
+  plays as `dad`). Minimum ages (4–6) are a judgment call recorded in
+  `game_logic.dart`'s `localPlayMinAge`. The unbuilt memory game ("Our photos")
+  is no longer offered (also excluded from Surprise me). Board games that play
+  against the game on this screen say so plainly. Word search and Guess-the-word
+  start on a grown-up's own setup screen, so only the guardian-side hub lists
+  them; the guardian-side hub no longer offers the child's "make it harder for
+  your grown-up" handicap (§9.2: the child sets it, never the other way).
+- *Unread is a dot.* The Messages tile shows a plain dot (no number, no alarm
+  colour, announced "Something new") — a count of unread things is pressure
+  (§8.4, P2). Guardian tiles keep their numeric badge.
+- *No developer banner.* The "Live: name and message count are real…" strip is
+  gone from the live child home.
+- *Kiosk lock-out.* After repeated wrong PINs the child sees a large picture,
+  30 pt "Take a little break", and a one-tap **Call** (the same call screen her
+  home screen's presence card opens — no new server route). The lock stays
+  fail-closed: calling does not unlock, and the grown-up's PIN path is unchanged.
+- *Co-viewing screens* are not wired: they have no real transport or server
+  route yet (`co_view_session.dart`'s own header), so no honest entry exists.
+
+**Guardian shell wiring fixes (this pass).** GuardianHome's Meds & care,
+Emergency card, Handover notes, Exchange and Expenses tiles now receive the
+same `(baseUrl, guardianId, childId)` the More hub passes, so a live session
+shows real data. A half-wired session (a `baseUrl` but no ids) refuses with
+"not connected" instead of falling back to a screen's demo fixture. In the live
+guardian More hub the tiles that render invented content (Year book, Gallery,
+The book, the hard-coded colour history, and the "(demo)" call walkthroughs) are
+hidden unless `showDemoTiles` is set; the offline demo build still lists them.
 
 ### 8.2 Closeness UI patterns
 
@@ -2364,6 +2433,23 @@ images. Guardian-writable, sitter-readable.
 blood type, both guardians, pediatrician, insurance. Built for a babysitter or an
 ER intake nurse, not for browsing. Ships in Phase 1 because it costs almost
 nothing and the downside of not having it is unbounded.
+
+**Optimistic concurrency and history (this pass).** The card used to be
+last-write-wins: two guardians editing from two phones silently overwrote one
+another. `GET .../emergency-card` now returns `version` (0 = never written) and
+`lastChange: {byName, at}`; `PUT` must send the version it read as `ifMatch`
+(in the body — route handlers do not see request headers). A missing `ifMatch`
+is `428 if_match_required`; a stale one is `409 stale_version` with
+`currentVersion`, and writes lock the row so two concurrent writers get exactly
+one 200. Every successful write appends the previous values to the append-only
+`medical_record_history` table (migration `0035_emergency_card_versioning.sql`:
+RLS enabled and forced, SELECT/INSERT policies only, a trigger refuses UPDATE
+and direct DELETE; cascade deletion of a child still works), readable at
+`GET .../emergency-card/history` (newest first; a child session is refused).
+The live card shows "Last changed by X on <date>". There is still no emergency-
+card **edit** screen in the client, so the 409 handling exists at the API-client
+level only; the first edit surface must catch it and say "someone else changed
+this — reload".
 
 #### 9.6.4 School layer
 

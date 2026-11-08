@@ -16,11 +16,14 @@ Widget wrap(Widget child) => MaterialApp(home: child);
 void main() {
   group('games hub — navigation-wiring pass', () {
     testWidgets('every board in the wiring brief gets a real, tappable tile', (t) async {
-      await t.pumpWidget(wrap(const GamesHubScreen()));
+      // guardianSide: Word search / Guess the word start on a grown-up's own
+      // setup screen, so only the guardian side lists them (C-14; the child
+      // side's absence is asserted in child_wiring_test.dart).
+      await t.pumpWidget(wrap(const GamesHubScreen(guardianSide: true)));
       for (final title in <String>[
         'Checkers', 'Chess', 'Battleship', 'Word search', "Kim's game",
         'Word chain', 'Story game', 'Scavenger hunt', 'Find the thing',
-        'Play it easier (demo)',
+        'Guess the word',
       ]) {
         expect(find.text(title), findsOneWidget, reason: '"$title" tile missing');
       }
@@ -50,17 +53,17 @@ void main() {
 
     testWidgets('word search opens the guardian setup screen, never the play screen directly',
         (t) async {
-      await t.pumpWidget(wrap(const GamesHubScreen()));
+      await t.pumpWidget(wrap(const GamesHubScreen(guardianSide: true)));
       await t.tap(find.text('Word search'));
       await t.pumpAndSettle();
       expect(find.byType(WordSearchSetupScreen), findsOneWidget);
       expect(find.byType(WordSearchScreen), findsNothing);
     });
 
-    testWidgets('the handicap demo tile opens tic-tac-toe\'s handicap offer', (t) async {
+    testWidgets('the child\'s "make it harder" tile opens tic-tac-toe\'s handicap offer', (t) async {
       await t.pumpWidget(wrap(const GamesHubScreen()));
-      await t.ensureVisible(find.text('Play it easier (demo)'));
-      await t.tap(find.text('Play it easier (demo)'));
+      await t.ensureVisible(find.text('Make it harder for Dad'));
+      await t.tap(find.text('Make it harder for Dad'));
       await t.pumpAndSettle();
       expect(find.byType(HandicapScreen), findsOneWidget);
     });
@@ -93,7 +96,7 @@ void main() {
       // this file.
       testWidgets('at childAge 3 (below every one of the 8 real minAge values), none of them render',
           (t) async {
-        await t.pumpWidget(wrap(const GamesHubScreen(childAge: 3)));
+        await t.pumpWidget(wrap(const GamesHubScreen(childAge: 3, guardianSide: true)));
         for (final title in <String>[
           'Checkers', 'Chess', 'Battleship', 'Word search', "Kim's game",
           'Word chain', 'Guess the word', 'Scavenger hunt',

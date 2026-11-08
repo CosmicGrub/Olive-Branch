@@ -383,6 +383,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
+            "me route: yearsOld for the child age gate (real DB)|server/test/me_route.test.mjs" \
             "presence route: on-duty exclusion + tie-break (real DB)|server/test/presence_route.test.mjs" \
             "ribbon route: GuardianHome live data, real day-parts + windows (real DB)|server/test/ribbon_route.test.mjs" \
             "handover-notes route: real message_log writer (real DB)|server/test/handover_notes_route.test.mjs" \

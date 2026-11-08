@@ -19,7 +19,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('Three in a row'), findsOneWidget);
       expect(find.text('Dots and boxes'), findsOneWidget);
-      expect(find.text('Our photos'), findsOneWidget);
+      expect(find.text('Our photos'), findsNothing); // C-12: unbuilt, never offered
       expect(find.text('Make up a story'), findsOneWidget);
       expect(find.text('Draw together'), findsOneWidget);
       expect(find.text('Guess the doodle'), findsOneWidget);
@@ -37,7 +37,7 @@ void main() {
       await t.pumpWidget(wrap(const GamePickerScreen(childAge: 4)));
       await t.pumpAndSettle();
       expect(find.text('Three in a row'), findsOneWidget);
-      expect(find.text('Our photos'), findsOneWidget);
+      expect(find.text('Our photos'), findsNothing); // C-12: unbuilt, never offered
       expect(find.text('Draw together'), findsOneWidget);
       expect(find.text('Copy the pattern'), findsOneWidget);
       expect(find.text('Find it'), findsOneWidget);
@@ -383,7 +383,7 @@ void main() {
       await t.pumpWidget(wrap(GamePickerScreen(
         childAge: 8,
         favoriteKinds: const {'story'},
-        onSurpriseMe: () => surprised = catalogueFor(GameKind.memory),
+        onSurpriseMe: () => surprised = catalogueFor(GameKind.story),
       )));
       await t.pumpAndSettle();
       expect(find.text('Recommended'), findsOneWidget);
@@ -435,7 +435,7 @@ void main() {
       GameKind? tapped;
       await t.pumpWidget(wrap(GamePickerScreen(
         childAge: 8,
-        onSurpriseMe: () => catalogueFor(GameKind.memory),
+        onSurpriseMe: () => catalogueFor(GameKind.story),
         onPlay: (context, kind) => tapped = kind,
       )));
       await t.pumpAndSettle();
@@ -443,7 +443,7 @@ void main() {
       expect(find.text('Surprise me'), findsOneWidget);
       await t.tap(find.text('Surprise me'));
       await t.pump();
-      expect(tapped, GameKind.memory);
+      expect(tapped, GameKind.story);
     });
 
     testWidgets('a null result from onSurpriseMe never navigates', (t) async {

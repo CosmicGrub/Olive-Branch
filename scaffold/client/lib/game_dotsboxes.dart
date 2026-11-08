@@ -381,7 +381,8 @@ class _GameDotsBoxesState extends State<GameDotsBoxes> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final finished = _state.outcome != null;
-    final banner = handicapBanner(GameKind.dotsboxes, _state.handicap);
+    final banner = handicapBanner(GameKind.dotsboxes, _state.handicap,
+        parentName: widget.parentName == 'Dad' ? null : widget.parentName);
     return Scaffold(
       appBar: AppBar(
         title: Text(catalogueFor(GameKind.dotsboxes).title),
@@ -392,6 +393,7 @@ class _GameDotsBoxesState extends State<GameDotsBoxes> {
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => HandicapScreen(
                 kind: GameKind.dotsboxes,
+                parentName: widget.parentName,
                 currentHandicapId: _state.handicap,
                 onChanged: _applyHandicap,
               ),
