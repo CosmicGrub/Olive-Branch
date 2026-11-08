@@ -1605,7 +1605,7 @@ graduated privacy was built to have none of.
 ### 7.1c The authenticated session — one real session for every live screen
 
 *Shipped in the change recorded under `[Unreleased]` in CHANGELOG.md (audit
-findings G-02, G-06, C-03, G-13, G-14). Migration `0037_paired_device_
+findings G-02, G-06, C-03, G-13, G-14). Migration `0038_paired_device_
 credential.sql`; client `client/lib/auth_session.dart`.*
 
 **What was wrong.** Production compose pins `DEV_LOGIN=0`, so the credential-
@@ -1623,7 +1623,7 @@ kiosk lock and pairing-code gate checks.
    random bits, shown **once**; `paired_device.credential_hash` stores only its
    SHA-256 (a fast hash is correct for a 256-bit secret; the 4–8 digit PIN is
    what needs scrypt). The redeem body is `{sessionToken, expiresAt, deviceId,
-   deviceCredential, role, targetId}`. A device paired before migration 0037 has
+   deviceCredential, role, targetId}`. A device paired before migration 0038 has
    a NULL hash: it keeps working until its last session lapses, then must
    re-pair. It never matches anything (fail closed).
 2. *Refresh.* `POST /v1/auth/session/refresh {deviceId, deviceCredential}` — no
@@ -1635,7 +1635,7 @@ kiosk lock and pairing-code gate checks.
    `api.ts` `handle()`). Outcomes: `200 {sessionToken, expiresAt, deviceId, role,
    targetId}`; `400 device_credential_required`; `401 invalid_device_credential`
    (unknown id, wrong credential, a credential belonging to a different device,
-   a session token presented as a credential, a pre-0037 device — all
+   a session token presented as a credential, a pre-0038 device — all
    deliberately indistinguishable, so the route is not a device-id oracle);
    `401 device_revoked` (only to a caller who proved the credential);
    `403 account_deactivated` (a deactivated guardian's device stops minting
@@ -1983,7 +1983,7 @@ automatic is stated, command by command, in `scaffold/docs/backup-and-restore.md
 Not built: a restore drill on a schedule, and any default off-host destination —
 no credential is invented.
 
-**Schema and tooling (P-17, P-18, P-19).** Migration `0037_fk_indexes.sql`
+**Schema and tooling (P-17, P-18, P-19).** Migration `0038_fk_indexes.sql`
 indexes `guardianship(user_id)`, `call_log(child_id)`,
 `medication_dose(child_id)`, `media_artifact(author_id)`,
 `intent_batch(child_id)`, `export_record(child_id)` and

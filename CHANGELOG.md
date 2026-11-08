@@ -53,7 +53,7 @@ suite registered in `tools/verify.sh`.
   returned 500; now 400.
 - **Migration races (P-18).** `tools/migrate.mjs` holds a Postgres advisory lock
   for the run (pg and psql modes).
-- **Missing foreign-key indexes (P-17).** Migration `0037_fk_indexes.sql`
+- **Missing foreign-key indexes (P-17).** Migration `0038_fk_indexes.sql`
   (six FK columns plus `auth_challenge.issued_at`); RLS untouched.
 - **`livekit-server-sdk` was a devDependency** although `routes.mjs` imports it
   at runtime; it only worked because the image installed everything.
@@ -105,14 +105,14 @@ newest *numbered* entry.)
 
 ### Added
 - **Device credential + session refresh (server).** Migration
-  `0037_paired_device_credential.sql` adds `paired_device.credential_hash`
+  `0038_paired_device_credential.sql` adds `paired_device.credential_hash`
   (SHA-256 of a 256-bit CSPRNG credential; the credential itself is returned
   once, by `POST /v1/device-pairing/redeem`, which also now returns
   `expiresAt`). New `POST /v1/auth/session/refresh {deviceId,
   deviceCredential}` (no session required) returns a fresh 1-hour session for
   the identity in the `paired_device` row, carrying the same `deviceId` claim.
   `401 invalid_device_credential` for an unknown id / wrong credential / another
-  device's credential / a pre-0037 device (indistinguishable by design),
+  device's credential / a pre-0038 device (indistinguishable by design),
   `401 device_revoked` for a proven credential on a revoked device,
   `403 account_deactivated`. `Api.sessionExpiresAt()` exposes the signed TTL.
 - **Sign-out (server).** `POST /v1/auth/session/sign-out` revokes the calling
@@ -6987,7 +6987,7 @@ only.
   rather than opening demo data. The live guardian More hub hides the tiles that
   render invented content unless `showDemoTiles` is set.
 - **Emergency card last-write-wins.** `medical_record.version` + `ifMatch`
-  (428/409) and an append-only `medical_record_history` table (migration 0037);
+  (428/409) and an append-only `medical_record_history` table (migration 0038);
   the card shows "Last changed by X".
 - **Not done:** co-viewing screens (no real transport/route yet), an
   emergency-card edit screen (the 409 UX needs one), and the child "My weeks"

@@ -30,7 +30,7 @@ ALTER TABLE paired_device ADD COLUMN credential_hash text;
 COMMENT ON COLUMN paired_device.credential_hash IS
   'Lowercase hex SHA-256 of the device''s long-lived credential (256-bit CSPRNG '
   'value, returned to the device exactly once, at redeem). NULL for a device '
-  'paired before 0037 — it cannot refresh and must re-pair. Never returned by '
+  'paired before 0038 — it cannot refresh and must re-pair. Never returned by '
   'any route.';
 
 COMMIT;

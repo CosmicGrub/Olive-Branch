@@ -822,7 +822,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // a redeeming device would have no way to know which childId to boot
       // into. See this PR's own description.
       //
-      // deviceCredential / expiresAt (audit G-02/G-06/C-03, migration 0037):
+      // deviceCredential / expiresAt (audit G-02/G-06/C-03, migration 0038):
       // the session above lives 1 hour (SESSION_TTL_MS) and this device had
       // no way to get another — every request after that hour was a 401. The
       // credential is the device's long-lived proof of "I am this paired
@@ -844,7 +844,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // identity in the new session comes from the paired_device ROW, never from
   // anything the caller sent. Failure shapes: 400 bad_request (malformed
   // body), 401 invalid_device_credential (unknown id / wrong credential /
-  // pre-0037 device — deliberately indistinguishable), 401 device_revoked
+  // pre-0038 device — deliberately indistinguishable), 401 device_revoked
   // (proved credential, device was revoked — the same code every other
   // request from a revoked device gets), 403 account_deactivated.
   api.register({

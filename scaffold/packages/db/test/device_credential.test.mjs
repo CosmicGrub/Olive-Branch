@@ -1,11 +1,11 @@
 /**
  * packages/db — the paired-device long-lived credential and session refresh:
  * real Postgres, real RLS. Audit G-02 / G-06 / C-03 / G-13,
- * db/migrations/0037_paired_device_credential.sql, packages/db/src/pool.ts's
+ * db/migrations/0038_paired_device_credential.sql, packages/db/src/pool.ts's
  * redeemDevicePairingCode() / refreshPairedDeviceSession() /
  * revokeOwnPairedDevice() / setPinCredential({onlyIfAbsent}).
  *
- * Requires a real Postgres with 0037 applied; DATABASE_URL MUST be a
+ * Requires a real Postgres with 0038 applied; DATABASE_URL MUST be a
  * NOSUPERUSER NOBYPASSRLS role (db/DEPLOYMENT.md's app_owner), exactly like
  * device_pairing.test.mjs, which this suite mirrors.
  *
@@ -126,7 +126,7 @@ const momDev = await pairDevice('guardian', GUARDIAN_B, GUARDIAN_B);
   const empty = await refreshPairedDeviceSession(pool, kid.deviceId, '', now);
   check('B refresh', 'an empty credential never matches', empty.reason, 'invalid_device_credential');
 
-  // A device paired before 0037 has NULL credential_hash: it must never match anything.
+  // A device paired before 0038 has NULL credential_hash: it must never match anything.
   await admin.query(`UPDATE paired_device SET credential_hash = NULL WHERE id = $1`, [momDev.deviceId]);
   for (const probe of ['', 'null', 'NULL', momDev.deviceCredential]) {
     const r = await refreshPairedDeviceSession(pool, momDev.deviceId, probe, now);

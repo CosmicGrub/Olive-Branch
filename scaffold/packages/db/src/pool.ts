@@ -2881,7 +2881,7 @@ export interface MedicalRecord {
   guardians: { userId: string; name: string; phone: string | null }[];
   medications: Medication[];
   /**
-   * G-11 (migration 0037) — optimistic-concurrency token. 0 when no card has
+   * G-11 (migration 0038) — optimistic-concurrency token. 0 when no card has
    * ever been written; otherwise the medical_record.version this read saw.
    * setMedicalRecord() requires it back.
    */
@@ -2958,7 +2958,7 @@ export class StaleMedicalRecordError extends Error {
   constructor(currentVersion: number) { super('stale_version'); this.currentVersion = currentVersion; }
 }
 
-/** One append-only history row (medical_record_history, migration 0037). */
+/** One append-only history row (medical_record_history, migration 0038). */
 export interface MedicalRecordHistoryEntry {
   version: number;
   changedById: string;
@@ -4094,7 +4094,7 @@ export async function cancelDevicePairingCode(
 export const DEVICE_CODE_MAX_ATTEMPTS = 5;
 
 /**
- * The paired device's long-lived credential (migration 0037). 32 CSPRNG bytes,
+ * The paired device's long-lived credential (migration 0038). 32 CSPRNG bytes,
  * base64url. Handed to the device once, at redeem; only [deviceCredentialDigest]
  * of it is ever stored.
  */
@@ -4245,7 +4245,7 @@ export type RefreshDeviceSessionError =
  * authorizes it, the same posture redeemDevicePairingCode() has for the code).
  *
  * Order matters, and each branch is deliberate:
- *   1. Unknown id, NULL stored hash (a pre-0037 device) and wrong credential
+ *   1. Unknown id, NULL stored hash (a pre-0038 device) and wrong credential
  *      are ONE outcome, invalid_device_credential — an unauthenticated caller
  *      learns nothing about which device ids exist, and one device's id paired
  *      with another's credential ("wrong device") is just a wrong credential.

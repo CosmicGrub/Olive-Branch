@@ -264,7 +264,7 @@ const kidDev = await redeem('code-c1', 'child');
   check('C refresh failures', 'unknown id and wrong credential give identical bodies',
     JSON.stringify(unknown.body), JSON.stringify(wrong.body));
 
-  // A device paired BEFORE migration 0037 has no stored hash: it can never refresh.
+  // A device paired BEFORE migration 0038 has no stored hash: it can never refresh.
   devices.set('legacy-1', { id: 'legacy-1', role: 'guardian', target_id: DAD, revoked_at: null,
     credential_hash: null, last_seen_at: null });
   bad(await refresh('legacy-1', ''), 400, 'device_credential_required', 'legacy device, empty credential');
