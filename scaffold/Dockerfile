@@ -81,7 +81,7 @@ RUN if [ "$PG_CLIENT" = "1" ]; then \
       apt-get update; \
       apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
       install -d /usr/share/postgresql-common/pgdg; \
-      curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
         https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
       . /etc/os-release; \
       echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
