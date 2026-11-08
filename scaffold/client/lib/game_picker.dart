@@ -27,6 +27,7 @@ import 'activity_overrides.dart';
 import 'form_factors.dart' as ff;
 import 'game_favorites_logic.dart' as fav;
 import 'game_logic.dart';
+import 'read_aloud.dart';
 
 class GamePickerScreen extends StatelessWidget {
   const GamePickerScreen({
@@ -441,6 +442,19 @@ class _GameCard extends StatefulWidget {
 
 class _GameCardState extends State<_GameCard> {
   bool _pressed = false;
+  ReadAloudController? _ra;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ra = ReadAloudScope.maybeOf(context);
+  }
+
+  @override
+  void dispose() {
+    _ra?.release(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -455,6 +469,10 @@ class _GameCardState extends State<_GameCard> {
         onTapCancel: () => setState(() => _pressed = false),
         onTapUp: (_) => setState(() => _pressed = false),
         onTap: widget.onTap,
+        // Read-aloud (§8.8.5), child session only: long-press reads the game's name.
+        onLongPress: widget.onToggleFavorite == null && ReadAloudScope.enabledOf(context) != null
+            ? () => ReadAloudScope.enabledOf(context)?.speak(meta.title, owner: this)
+            : null,
         // Consequence motion only — driven by her tap, settles in 120ms,
         // never a loop (§8.13.1/§8.13.6).
         child: AnimatedScale(
@@ -477,6 +495,9 @@ class _GameCardState extends State<_GameCard> {
               Row(children: [
                 Icon(_kindIcon[meta.kind], size: 30, color: onColor),
                 const Spacer(),
+                // A quiet speaker on a child's card (absent for the guardian, who has the star).
+                if (widget.onToggleFavorite == null)
+                  SpeakerButton(text: meta.title, label: 'Read "${meta.title}" out loud'),
                 // Guardian-only, per [onToggleFavorite]'s own doc comment —
                 // a null callback means this rendered from a child session
                 // (or no live session at all), and no star exists at any

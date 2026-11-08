@@ -99,44 +99,44 @@ class MoreGamesSections extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     HubSection(title: 'Board games', children: [
       if (_hubGameVisible('checkers')) ...[
-        HubTile(icon: Icons.grid_on, title: 'Checkers',
+        HubTile(readAloud: !guardianSide, icon: Icons.grid_on, title: 'Checkers',
           subtitle: 'You against the game, on this screen',
           onTap: () => _open(context, GameCheckers(childName: childName, parentName: parentName))),
-        HubTile(icon: Icons.wifi_tethering, title: 'Checkers on two screens',
+        HubTile(readAloud: !guardianSide, icon: Icons.wifi_tethering, title: 'Checkers on two screens',
           subtitle: 'One game, played from two screens',
           onTap: () => _open(context, const NetworkedCheckersLobbyScreen())),
       ],
       if (_hubGameVisible('chess'))
-        HubTile(icon: Icons.castle_outlined, title: 'Chess',
+        HubTile(readAloud: !guardianSide, icon: Icons.castle_outlined, title: 'Chess',
           subtitle: 'You against the game, on this screen',
           onTap: () => _open(context, GameChess(childName: childName, parentName: parentName))),
       if (_hubGameVisible('battleship'))
-        HubTile(icon: Icons.sailing_outlined, title: 'Battleship',
+        HubTile(readAloud: !guardianSide, icon: Icons.sailing_outlined, title: 'Battleship',
           subtitle: 'Hunt for hidden ships, on this screen',
           onTap: () => _open(context, GameBattleship(childName: childName, parentName: parentName))),
     ]),
     HubSection(title: 'Words and looking', children: [
       if (guardianSide && _hubGameVisible('wordsearch'))
-        HubTile(icon: Icons.search, title: 'Word search',
+        HubTile(readAloud: !guardianSide, icon: Icons.search, title: 'Word search',
           subtitle: 'Set up a puzzle from words in their week',
           onTap: () => _open(context, WordSearchSetupScreen(childName: childName))),
       if (_hubGameVisible('kimsGame'))
-        HubTile(icon: Icons.visibility_outlined, title: "Kim's game",
+        HubTile(readAloud: !guardianSide, icon: Icons.visibility_outlined, title: "Kim's game",
           subtitle: 'Look closely, then spot what is gone',
           onTap: () => _open(context, GameKim(childName: childName, parentName: parentName))),
       if (_hubGameVisible('wordChain'))
-        HubTile(icon: Icons.link, title: 'Word chain',
+        HubTile(readAloud: !guardianSide, icon: Icons.link, title: 'Word chain',
           subtitle: 'Add a word to the chain',
           onTap: () => _open(context, GameChainScreen(childName: childName, parentName: parentName))),
       if (guardianSide && _hubGameVisible('hangman'))
-        HubTile(icon: Icons.abc, title: 'Guess the word',
+        HubTile(readAloud: !guardianSide, icon: Icons.abc, title: 'Guess the word',
           subtitle: 'Choose a word for them to guess',
           onTap: () => _open(context, HangmanSetupScreen(childName: childName))),
-      HubTile(icon: Icons.auto_stories_outlined, title: 'Story game',
+      HubTile(readAloud: !guardianSide, icon: Icons.auto_stories_outlined, title: 'Story game',
         subtitle: 'Make up a story, one line each',
         onTap: () => _open(context, GameStoryScreen(childName: childName, parentName: parentName))),
       if (_hubGameVisible('scavengerHunt'))
-        HubTile(icon: Icons.travel_explore, title: 'Scavenger hunt',
+        HubTile(readAloud: !guardianSide, icon: Icons.travel_explore, title: 'Scavenger hunt',
           subtitle: 'Hunt for hidden things',
           onTap: () => _open(context, GameHuntScreen(childName: childName, parentName: parentName))),
     ]),
@@ -147,29 +147,29 @@ class MoreGamesSections extends StatelessWidget {
     // section only has to open them.
     HubSection(title: 'Play together on this table', children: [
       if (_localVisible('war'))
-        HubTile(icon: Icons.style_outlined, title: 'War',
+        HubTile(readAloud: !guardianSide, icon: Icons.style_outlined, title: 'War',
           subtitle: 'Flip your cards, biggest card wins',
           onTap: () => _open(context, GameWarScreen(role: localRole, displayName: localName))),
       if (_localVisible('connect4'))
-        HubTile(icon: Icons.apps, title: 'Connect 4',
+        HubTile(readAloud: !guardianSide, icon: Icons.apps, title: 'Connect 4',
           subtitle: 'Drop discs, get four in a row',
           onTap: () => _open(context, GameConnect4Screen(role: localRole, displayName: localName))),
       if (_localVisible('uno'))
-        HubTile(icon: Icons.filter_none, title: 'Uno',
+        HubTile(readAloud: !guardianSide, icon: Icons.filter_none, title: 'Uno',
           subtitle: 'Match the colour or the number',
           onTap: () => _open(context, GameUnoScreen(role: localRole, displayName: localName))),
       if (_localVisible('pictionary'))
-        HubTile(icon: Icons.draw_outlined, title: 'Draw and guess',
+        HubTile(readAloud: !guardianSide, icon: Icons.draw_outlined, title: 'Draw and guess',
           subtitle: 'One draws, the other guesses',
           onTap: () => _open(context, GamePictionaryScreen(role: localRole, displayName: localName))),
       if (_localVisible('puzzle'))
-        HubTile(icon: Icons.extension_outlined, title: 'Puzzle together',
+        HubTile(readAloud: !guardianSide, icon: Icons.extension_outlined, title: 'Puzzle together',
           subtitle: 'Put the pieces in, side by side',
           onTap: () => _open(context, GamePuzzleScreen(role: localRole, displayName: localName))),
     ]),
     HubSection(title: 'On your own', children: [
       if (isTileVisible(overrides, 'game:findthing'))
-        HubTile(icon: Icons.zoom_in, title: 'Find the thing',
+        HubTile(readAloud: !guardianSide, icon: Icons.zoom_in, title: 'Find the thing',
           subtitle: 'Spot things in a busy picture',
           onTap: () => _open(context, const GameFindThingScreen())),
     ]),
@@ -177,7 +177,7 @@ class MoreGamesSections extends StatelessWidget {
     // way round — so the grown-up's own hub does not offer it at all.
     if (!guardianSide)
       HubSection(title: 'Make it fair', children: [
-        HubTile(icon: Icons.balance, title: 'Make it harder for $parentName',
+        HubTile(readAloud: !guardianSide, icon: Icons.balance, title: 'Make it harder for $parentName',
           subtitle: 'Pick a tricky rule, just for them',
           onTap: () => _open(context, HandicapScreen(kind: GameKind.tictactoe, parentName: parentName))),
       ]),

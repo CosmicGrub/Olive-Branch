@@ -1,7 +1,7 @@
 // OLIVE BRANCH — "Accessibility for her device": the settings model, its
 // repository and the controller screens read it through. No longer UNVERIFIED —
 // verified by CI (client/test/access_settings_test.dart). MASTERFILE §8.4,
-// §8.8.5, §8.13, §8.19.
+// §8.8.5, §8.13, §8.21.
 //
 // LOCAL-FIRST. Nothing here touches a network or a credential. The settings are
 // a guardian's choices about HER device, kept on this device in LocalStore (area

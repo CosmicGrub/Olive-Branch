@@ -2,7 +2,7 @@
 // MaterialApp: the one controller each, the builder that installs them, and the
 // navigator observer that ends speech on every route change. No longer
 // UNVERIFIED — verified by CI (client/test/access_screen_test.dart). MASTERFILE
-// §8.8.5, §8.19.
+// §8.8.5, §8.21.
 //
 // Used by the CHILD's builds (main.dart's preview, main_live.dart). The
 // guardian-only build (main_live_guardian.dart) has no child screens to read

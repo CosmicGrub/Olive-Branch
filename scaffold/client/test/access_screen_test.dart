@@ -1,7 +1,7 @@
 // No longer UNVERIFIED — verified by CI (this file). OLIVE BRANCH — the guardian's
 // "Accessibility for her device" screen, its place in the Settings hub, and the
 // shell wiring that carries the settings to her screens. MASTERFILE §8.1, §8.4,
-// §8.19.
+// §8.21.
 import 'dart:io';
 
 import 'package:flutter/material.dart';

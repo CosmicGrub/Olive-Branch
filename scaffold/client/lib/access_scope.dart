@@ -2,7 +2,7 @@
 // child's widgets read, the host that installs it, and the three shared helpers
 // (reduce motion, roomier reading, target floors) every screen goes through.
 // No longer UNVERIFIED — verified by CI (client/test/access_scope_test.dart).
-// MASTERFILE §8.4, §8.13, §8.19.
+// MASTERFILE §8.4, §8.13, §8.21.
 //
 // READ-ONLY FOR HER. A child widget can read the settings here and nothing else:
 // the one writer is the guardian's screen (access_screen.dart). A widget built

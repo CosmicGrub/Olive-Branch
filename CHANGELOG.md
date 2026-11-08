@@ -113,6 +113,78 @@ updated. No prohibition in §2.1 is changed; P2, P3 and P7 are held in code and 
   proposals between guardians, the owl-sleeps-here choice carried out in a real house, a
   "my room is ready" stamp, a quiet-corner screen, and a commissioned symbol and picture set.
 
+## [Unreleased] — Child accessibility and read-aloud (offline, on-device)
+
+Described as shipped in MASTERFILE §8.21. **Owner direction 2026-11-07: offline, on-device only.**
+No server route, no migration, no network call, nothing that needs a credential; no TypeScript.
+Written after a code audit whose findings were each re-checked against the code first: the
+pre-reader promises of §8.1/§8.4 ("TTS everywhere, voice-driven nav, icon-only") were not
+implemented. This pass builds the parts that can be built on the device and says plainly which
+cannot. No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+
+### Added
+- **Read aloud on every child tile and story page** — `read_aloud.dart` (`ReadAloudController`,
+  `SpeakerButton`, `ReadAloudRouteObserver`) over the existing `tts_channel.dart`. A 48dp quiet
+  speaker in each tile's corner, long-press on a tile reads its label, a speaker on each story
+  page reads that page. Never autonomous (every request passes `admitSpeech`), stops when the
+  screen closes, the page turns or any route changes, and goes to a muted icon with no message
+  when there is no voice. The emergency card, handover notes and call knock reach it when no
+  callback is passed; `child_home_live.dart` reads through the same controller.
+- **"Accessibility for her device"** — guardian screen (`access_screen.dart`, Settings -> Her):
+  read aloud everywhere (default by age, 8), reduce motion, roomier reading, larger targets, and
+  captions. Stored per child in the new LocalStore area `access`, not encrypted (five booleans),
+  through an abstract `AccessRepository` with memory and LocalStore implementations
+  (`access_settings.dart`). `access_scope.dart` carries it to the screens; `access_shell.dart`
+  installs it in the preview and live child builds.
+- **Reduce motion** — one helper, `motionDuration()`: zero when the OS sets
+  `MediaQuery.disableAnimations` or the guardian chose it, else capped at 400ms. 61 animation
+  durations in 37 files now use it; `ConsequenceSwitcher` is a fade-only switcher; the colouring
+  screen starts no fade when reduced; no new autonomous motion.
+- **Semantics** — Connect 4 (42 named cells in column order), War (named cards, "your pile"
+  with no count), the puzzle (named spots; activate places a piece in its own spot), Pictionary,
+  doodle and colouring (named colours, brush sizes, stamps; each part of the colouring picture is
+  a node that can be coloured by a screen reader), story pages. Turn changes are live regions
+  (`LiveLine`), held P2-safe by test (no digit, no score words). `colour_names.dart`.
+- **Roomier reading** — letter spacing 0.12em, word spacing 0.16em, line height 1.5 on every
+  text-theme role, reading text kept left; not a special font. Tiles grow with it. Text scale 2.0
+  is held at phone and tablet sizes on nine child screens and the game boards.
+- **Targets** — child controls 64dp (80 with larger targets), guardian controls 48dp (64): the
+  tile floor, ~60 buttons in the child screens, the header snapshot button, doodle and colouring
+  swatches, the theme's button minimums, the handover-note speaker (36), the kiosk escalation
+  trigger (40), the guardian colour swatches (44).
+- **Picture-first input** — `picture_bank.dart`: wants and needs and the journal accept a tap on
+  a labelled picture as well as typing. No price, brand or count (P2, P4); the journal gains no
+  reader (P7); hangman setup stays guardian-side.
+
+### Changed
+- `TieredTile` and `HubTile` are `StatefulWidget`s (to release their reading on dispose) with an
+  opt-in/opt-out `readAloud` flag: the child's home, More rows and game cards speak; the guardian
+  home, hubs and game picker never do. `TieredTile`'s unread-count badge is the theme's calm
+  primary, not the error red. The jokebook's "tell a parent" sheet now scrolls.
+- `WarView`, `PuzzleView`, `PictionaryView` and `PicPhase` are public (were private) so their
+  semantics can be tested; behaviour unchanged.
+- `local_services.dart`'s catalogue gains `access`; MASTERFILE §8.16.4 gains its row.
+
+### Fixed
+- Connect 4's board overflowed its row at nearly every width (26dp at the default padding): its
+  width budget subtracted 64 where the layout really takes 90. The cell floor is now 30dp so the
+  344dp cover screen fits, and a tap in a cell's margin drops there.
+- The wants-and-needs card title and the Pictionary guess row overflowed at text scale 2.0; the
+  handover-note header overflowed once its speaker became a 48dp target.
+- The colouring picture's semantics (new) needed a text direction; found by the new test.
+
+### Not built (said plainly)
+- Captions: the switch records a wish; the screen and `captionsActive` say nothing shows. Voice
+  navigation. A dyslexia-specific typeface (the evidence is mixed). No real-device TalkBack or
+  voice check yet. Connect 4 cells and the pixel garden stay under 64dp where the grid is
+  width-bound.
+
+### Tests
+- 215 new Flutter tests in `access_settings_test.dart`, `access_scope_test.dart`,
+  `read_aloud_test.dart`, `story_read_aloud_test.dart`, `access_screen_test.dart`,
+  `game_semantics_test.dart`, `picture_bank_test.dart`, `child_text_scale_test.dart`,
+  `child_targets_test.dart`, `reduce_motion_screens_test.dart`. Dart only.
+
 ## [Unreleased] — Family structure and age bands (suites J and K), local-first
 
 A guardian builds the family structure; her home follows it. Described as shipped in

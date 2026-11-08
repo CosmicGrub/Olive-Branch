@@ -1,6 +1,6 @@
 // OLIVE BRANCH — the guardian's "Accessibility for her device" screen. No longer
 // UNVERIFIED — verified by CI (client/test/access_screen_test.dart). MASTERFILE
-// §8.4, §8.8.5, §8.13, §8.19.
+// §8.4, §8.8.5, §8.13, §8.21.
 //
 // Reached from the Settings hub (Her group), inside the guardian shell, the way
 // every other settings screen is: a grown-up has already passed the guardian

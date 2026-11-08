@@ -127,34 +127,34 @@ class ChildMoreScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         HubSection(title: 'Just yours', children: [
-          HubTile(icon: Icons.menu_book_outlined, title: 'My journal',
+          HubTile(readAloud: true, icon: Icons.menu_book_outlined, title: 'My journal',
             subtitle: 'Just for you',
             onTap: () => _open(context, JournalScreen(childName: childName))),
-          HubTile(icon: Icons.markunread_mailbox_outlined, title: 'Letters to me',
+          HubTile(readAloud: true, icon: Icons.markunread_mailbox_outlined, title: 'Letters to me',
             subtitle: 'Write now, open later',
             onTap: () => _open(context, LettersScreen(childName: childName, currentAge: childAge,
               childId: childId ?? 'demo-child',
               baseUrl: baseUrl, sessionToken: sessionToken, httpClient: httpClient))),
           if (_showGrowingUp) ...[
-            HubTile(icon: Icons.timeline_outlined, title: 'Growing up',
+            HubTile(readAloud: true, icon: Icons.timeline_outlined, title: 'Growing up',
               subtitle: 'What comes next',
               onTap: () => _open(context, MaturationLadderScreen(
                 childName: childName, childAgeYears: childAge, viewer: LadderViewer.child))),
-            HubTile(icon: Icons.spa_outlined, title: 'The quiet corner',
+            HubTile(readAloud: true, icon: Icons.spa_outlined, title: 'The quiet corner',
               subtitle: 'Things that fade as you grow',
               onTap: () => _open(context, QuietingScreen(childName: childName, age: childAge))),
           ],
         ]),
         HubSection(title: 'Together', children: [
-          HubTile(icon: Icons.nights_stay_outlined, title: 'My weeks',
+          HubTile(readAloud: true, icon: Icons.nights_stay_outlined, title: 'My weeks',
             subtitle: 'Where you sleep, night by night',
             onTap: () => _open(context, WeeksScreen(
               childName: childName, nights: demoCustodyNights(), guardianColors: demoGuardianColors))),
-          HubTile(icon: Icons.school_outlined, title: 'Teach $_grownUp something',
+          HubTile(readAloud: true, icon: Icons.school_outlined, title: 'Teach $_grownUp something',
             subtitle: 'You be the teacher',
             onTap: () => _open(context, TeachMeScreen(childName: childName, childAge: childAge,
               parentName: _grownUp))),
-          HubTile(icon: Icons.auto_stories, title: 'Read together',
+          HubTile(readAloud: true, icon: Icons.auto_stories, title: 'Read together',
             subtitle: 'One book, two of you',
             onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: _grownUp))),
         ]),
@@ -164,24 +164,24 @@ class ChildMoreScreen extends StatelessWidget {
           family: family, yearsOld: childAge, speak: speak),
         HubSection(title: 'Make things', children: [
           if (isTileVisible(overrides, 'activity:doodle'))
-            HubTile(icon: Icons.brush_outlined, title: 'Doodle desk',
+            HubTile(readAloud: true, icon: Icons.brush_outlined, title: 'Doodle desk',
               subtitle: 'Draw anything',
               onTap: () => _open(context, DoodleDesk(childName: childName))),
           if (isTileVisible(overrides, 'activity:colouring'))
-            HubTile(icon: Icons.palette_outlined, title: 'Colouring',
+            HubTile(readAloud: true, icon: Icons.palette_outlined, title: 'Colouring',
               subtitle: 'Colour a picture',
               onTap: () => _open(context, const ColouringScreen())),
-          HubTile(icon: Icons.photo_library_outlined, title: 'My saved pictures',
+          HubTile(readAloud: true, icon: Icons.photo_library_outlined, title: 'My saved pictures',
             subtitle: 'Pictures you kept',
             onTap: () => _open(context, AppGalleryScreen(gallery: demoAppGallery))),
         ]),
         HubSection(title: 'Show & tell', children: [
-          HubTile(icon: Icons.collections_bookmark_outlined, title: 'My collections',
+          HubTile(readAloud: true, icon: Icons.collections_bookmark_outlined, title: 'My collections',
             subtitle: 'Things you showed',
             onTap: () => _open(context, CollectionScreen(childName: childName))),
         ]),
         HubSection(title: 'Stories', children: [
-          HubTile(icon: Icons.local_library_outlined, title: 'Story library',
+          HubTile(readAloud: true, icon: Icons.local_library_outlined, title: 'Story library',
             subtitle: 'Stories you kept',
             onTap: () => _open(context, StoryLibraryScreen.demo(childName: childName))),
         ]),
@@ -196,7 +196,7 @@ class ChildMoreScreen extends StatelessWidget {
         // as the two tiles above.
         if (_showGrowingUp)
           HubSection(title: 'When you are ready', children: [
-            HubTile(icon: Icons.outbox_outlined, title: 'Take your things with you',
+            HubTile(readAloud: true, icon: Icons.outbox_outlined, title: 'Take your things with you',
               subtitle: 'For when you are grown up',
               onTap: () => _open(context, TakeAndGoScreen(childName: childName))),
           ]),
@@ -319,23 +319,23 @@ class _KeepAndGrowState extends State<_KeepAndGrow> {
     if (!_suites.any) return const SizedBox.shrink();
     return HubSection(title: 'Keep and grow', children: [
       if (_suites.memoryBox)
-        HubTile(key: const Key('childMemoryBox'), icon: Icons.inventory_2_outlined, title: 'My memory box',
+        HubTile(readAloud: true, key: const Key('childMemoryBox'), icon: Icons.inventory_2_outlined, title: 'My memory box',
           subtitle: 'Things you chose to keep',
           onTap: () => _open(MemoryBoxScreen(childName: widget.childName, stores: _s))),
       if (_marks)
-        HubTile(key: const Key('childDoorframe'), icon: Icons.straighten, title: 'My doorframe',
+        HubTile(readAloud: true, key: const Key('childDoorframe'), icon: Icons.straighten, title: 'My doorframe',
           subtitle: 'Look how you are growing',
           onTap: () => _open(GrowthPictureScreen(childName: widget.childName, lens: _lens))),
       if (_firsts)
-        HubTile(key: const Key('childFirsts'), icon: Icons.star_outline, title: 'Something new',
+        HubTile(readAloud: true, key: const Key('childFirsts'), icon: Icons.star_outline, title: 'Something new',
           subtitle: 'Times you did something new',
           onTap: () => _open(MyFirstsScreen(lens: _lens))),
       if (_letters)
-        HubTile(key: const Key('childLetters'), icon: Icons.mail_outline, title: 'A letter for you',
+        HubTile(readAloud: true, key: const Key('childLetters'), icon: Icons.mail_outline, title: 'A letter for you',
           subtitle: 'Ready to open',
           onTap: () => _open(LettersOpenedScreen(lens: _lens))),
       if (_stories)
-        HubTile(key: const Key('childStories'), icon: Icons.menu_book_outlined, title: 'Stories for you',
+        HubTile(readAloud: true, key: const Key('childStories'), icon: Icons.menu_book_outlined, title: 'Stories for you',
           subtitle: 'Someone who loves you wrote these',
           onTap: () => _open(ExplainerStoriesScreen(reader: _s?.childExplainers()))),
     ]);

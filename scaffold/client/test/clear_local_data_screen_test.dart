@@ -24,7 +24,9 @@ class _MemorySecure implements SecureKeyValueStore {
 }
 
 Future<void> _pump(WidgetTester t, Widget w) async {
-  t.view.physicalSize = const Size(500, 3200);
+  // Tall enough for every catalogue row plus the PIN field and button: the list grows each time an
+  // area is added (the accessibility settings were the seventeenth), so this has headroom.
+  t.view.physicalSize = const Size(500, 5200);
   t.view.devicePixelRatio = 1.0;
   addTearDown(t.view.resetPhysicalSize);
   addTearDown(t.view.resetDevicePixelRatio);
