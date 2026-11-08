@@ -56,9 +56,16 @@ import 'maturation_ladder.dart';
 import 'meds_care.dart';
 import 'palette_logic.dart';
 import 'push_channel.dart';
+import 'compass_repositories.dart';
+import 'compass_screens.dart';
+import 'growing_care_store.dart' show GrowingCareStores;
+import 'local_services.dart' show LocalServices;
+import 'rhythm_logic.dart' show RhythmDoc, RoutineStep;
 import 'rhythm_voice_guardian_screens.dart';
 import 'rhythm_voice_repositories.dart';
 import 'show_guardian.dart';
+import 'village_guardian_screens.dart';
+import 'village_repositories.dart';
 import 'siblings_screen.dart';
 import 'storyteller_screen.dart' show StorytellerSafetyScreen;
 import 'the_book.dart';
@@ -588,6 +595,27 @@ class GuardianMoreScreen extends StatelessWidget {
             service: RhythmVoiceService.forChild(childId),
             principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
             yearsOld: childAge))),
+        SettingsRow(id: 'village', icon: Icons.diversity_3_outlined, title: 'Village',
+          subtitle: 'Her people in pictures, a story you release, sitter pass, school summary. On this device only',
+          onTap: () {
+            final FamilyPrincipal me = FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
+            _open(context, VillageGuardianHubScreen(childName: childName,
+              service: VillageService.forChild(childId), principal: me, yearsOld: childAge,
+              routineLines: () async {
+                final RhythmDoc d = await RhythmVoiceService.forChild(childId).loadRhythm(me);
+                return <String>[for (final RoutineStep st in d.routine?.steps ?? const <RoutineStep>[]) st.label];
+              }));
+          }),
+        SettingsRow(id: 'compass', icon: Icons.explore_outlined, title: 'Family compass',
+          subtitle: 'Two gentle questions, suggestions, the suites shelf, accessibility profiles. On this device only',
+          onTap: () {
+            final FamilyPrincipal me = FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
+            _open(context, CompassHubScreen(childName: childName, principal: me,
+              service: CompassService.local(LocalServices.current, childId: childId, ports: suitePortsFor(
+                rhythmVoice: RhythmVoiceService.forChild(childId), village: VillageService.forChild(childId),
+                growingCare: GrowingCareStores.forChild(childId: childId), principal: me)),
+              hints: () => builderHintsFor(me, childAge)));
+          }),
       ]),
       SettingsGroup('Safety', [
         SettingsRow(id: 'pin', icon: Icons.key_outlined, title: 'Guardian PIN',

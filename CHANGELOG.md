@@ -14,6 +14,55 @@ Silent deletion is a process failure.
 
 ---
 
+## [Unreleased] — Village and Compass (umbrella suites D and I), offline and on this device
+
+Grandparent corner, her people in pictures, a story a guardian releases, the sibling shelf, the
+sitter pass and the school summary (D); a two-question family compass with a plain rules table,
+a suites shelf and two accessibility profiles (I). Described as shipped in MASTERFILE §8.22.
+**Local only** by owner direction: no server route, no migration, no network call, no
+credential; **anything that shares between homes or contacts another person is parked and not
+built.** No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+
+### Added
+- **Pure rules** `client/lib/village_logic.dart` — every bound and refusal: a grandparent page
+  (up to four big buttons and a phone number kept as text, never dialled), picture stories that
+  stay **held** until a guardian releases them, a sibling shelf (up to four siblings, six pictures
+  each, the oldest drops off; no author, time, read mark or count), a sitter pass and a school
+  summary (lines, contacts, allergies in the guardian's own words; an address is refused, P3), and
+  `villageTilesFor`, which **reuses the family-structure model** and fails closed to age five.
+  Nothing is generated: no text about a new partner, a family change or a person's role.
+- **Repositories and service** `client/lib/village_repositories.dart` — abstract + in-memory +
+  LocalStore-backed, per child, **sealed**. A guardian principal writes everything; the child
+  principal reads only released stories, siblings and faces and leaves or takes down a shelf
+  picture; **no child principal can read, write or list the passes** (`guardian_only`).
+- **Screens** `village_screens.dart` (her people in pictures with the names from the family
+  builder and a face a guardian picked; a released story one page at a time; the shelf; 64 dp,
+  picture-first, read-aloud through the merged seam), `village_sections.dart` (the More-hub tiles,
+  shared `TieredTile`), `village_guardian_screens.dart` (the hub, every editor, the large-print
+  grandparent page and the black-on-white pass page) and entry points under *Settings → Family*.
+- **Compass** `compass_logic.dart` (two questions of ways families look and things that help,
+  never labels; `compassRules`, a plain table read top to bottom with no weights or scoring,
+  capped at five, "not now" remembers nothing), `compass_repositories.dart` (answers as ids,
+  sealed, guardian-only; the **suites shelf** reads each suite's own switch, so it cannot
+  disagree with it), `compass_screens.dart`.
+- **Two accessibility profiles** (device used in another home; alerts she can see) that only
+  change presentation defaults by writing the existing accessibility settings; turning one off
+  leaves the settings where they are. A sixth setting, **`visualAlerts`** (also on the guardian's
+  accessibility screen), and `visual_alert.dart`: no cue is sound only and nothing flashes.
+- **Catalogue** `village`, `passes`, `compass` (all sealed) in `localDataCatalogue`, MASTERFILE
+  §8.16 and the clear-data screen.
+- **Tests** — `village_logic_test`, `village_repositories_test`, `village_screens_test`,
+  `village_sections_test`, `village_guardian_screens_test`, `compass_logic_test`,
+  `compass_repositories_test`, `compass_screens_test`, `visual_alert_test`.
+
+### Local only, and not built
+- Everything above stays on this device and says so. **Not built:** a sitter link that expires or
+  reports being opened, a medicine log, a teacher's note reaching both homes, calling or sending a
+  picture from the grandparent page, a shared sibling canvas, the step-parent role and invitations,
+  printing, her arranging her people, reshaping her home for a far-away parent, and live captions.
+  Clinical and child-development review is still required before any pre-written text about a
+  partner, a family change or a role.
+
 ## [Unreleased] — Growing and Care (suites G and F), on-device only
 
 Time capsule, first times, memory box and growing marks (G); care binder, hospital mode,

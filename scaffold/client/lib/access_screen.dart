@@ -139,6 +139,15 @@ class _AccessScreenState extends State<AccessScreen> {
                   value: s.captions,
                   onChanged: (bool v) => _set((AccessSettings a) => a.copyWith(captions: v)),
                 ),
+                _Row(
+                  rowKey: const Key('accessVisualAlerts'),
+                  icon: Icons.notifications_active_outlined,
+                  title: 'Alerts she can see',
+                  subtitle: 'An alert shows a picture and words that stay until she taps it, with a '
+                      'gentle buzz, so nothing is ever sound only. Nothing flashes.',
+                  value: s.visualAlerts,
+                  onChanged: (bool v) => _set((AccessSettings a) => a.copyWith(visualAlerts: v)),
+                ),
                 if (_note != null) Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Semantics(liveRegion: true, child: Text(_note!, key: const Key('accessNote'))),

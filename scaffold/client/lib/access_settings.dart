@@ -30,6 +30,7 @@ class AccessSettings {
     this.roomierReading = false,
     this.largerTargets = false,
     this.captions = false,
+    this.visualAlerts = false,
   });
 
   /// Null means "no guardian choice yet": [readAloudFor] then follows her age.
@@ -41,6 +42,12 @@ class AccessSettings {
   /// A wish only. Captions are not built (see [captionsBuilt]); this records
   /// that a guardian wants them, and nothing is shown because of it today.
   final bool captions;
+
+  /// Alerts she can SEE: a picture and words that stay until she taps them, with
+  /// a gentle buzz, so no cue is ever sound only. Off by default; the Compass
+  /// "alerts she can see" profile turns it on, a guardian may too. Nothing ever
+  /// flashes, for anyone (see compass_logic.dart's [AlertCue]).
+  final bool visualAlerts;
 
   static const AccessSettings defaults = AccessSettings();
 
@@ -58,6 +65,7 @@ class AccessSettings {
     bool? roomierReading,
     bool? largerTargets,
     bool? captions,
+    bool? visualAlerts,
   }) =>
       AccessSettings(
         readAloud: clearReadAloud ? null : (readAloud ?? this.readAloud),
@@ -65,6 +73,7 @@ class AccessSettings {
         roomierReading: roomierReading ?? this.roomierReading,
         largerTargets: largerTargets ?? this.largerTargets,
         captions: captions ?? this.captions,
+        visualAlerts: visualAlerts ?? this.visualAlerts,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -73,6 +82,7 @@ class AccessSettings {
         'roomierReading': roomierReading,
         'largerTargets': largerTargets,
         'captions': captions,
+        if (visualAlerts) 'visualAlerts': true,
       };
 
   /// Tolerant: anything that is not a map, and any field that is not a bool,
@@ -86,6 +96,7 @@ class AccessSettings {
       roomierReading: b('roomierReading') ?? false,
       largerTargets: b('largerTargets') ?? false,
       captions: b('captions') ?? false,
+      visualAlerts: b('visualAlerts') ?? false,
     );
   }
 
@@ -96,10 +107,11 @@ class AccessSettings {
       other.reduceMotion == reduceMotion &&
       other.roomierReading == roomierReading &&
       other.largerTargets == largerTargets &&
-      other.captions == captions;
+      other.captions == captions &&
+      other.visualAlerts == visualAlerts;
 
   @override
-  int get hashCode => Object.hash(readAloud, reduceMotion, roomierReading, largerTargets, captions);
+  int get hashCode => Object.hash(readAloud, reduceMotion, roomierReading, largerTargets, captions, visualAlerts);
 }
 
 /// Captions on live calls and async artifacts are a §8.4 promise that is not

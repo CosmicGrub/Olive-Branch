@@ -5385,7 +5385,7 @@ per install from the platform CSPRNG and kept in `flutter_secure_storage`
 (Keystore/Keychain) — never on disk beside the data. Opening a private
 namespace with no cipher is refused; it never falls back to plaintext.
 
-**Private namespaces:** the child's journal (P7), the family structure, all of Parent Learn, the Growing and Care areas (§8.19), and her feelings weather and worry box (§8.20).
+**Private namespaces:** the child's journal (P7), the family structure, all of Parent Learn, the Growing and Care areas (§8.19), her feelings weather and worry box (§8.20), and Village, the sitter pass and school summary, and Compass (§8.22).
 
 ### 8.16.3 Scoping
 
@@ -5429,6 +5429,9 @@ drift. Nothing is written that is not in it.
 | `child.<id>.voice` | Voice, on this device only (§8.20): the grown-ups a guardian wrote as her helpers (a name, a picture and a short line each; she sees only those who said yes) and her personal symbols. What she says with symbols is never kept. | No |
 | `child.<id>.feelings` | Feelings weather (§8.20): only **today's** weather picture she picked (older ones are dropped). Never shown to anyone, no history, no count. | **Yes** |
 | `child.<id>.worries` | Her worry box (§8.20): the pictures she tapped and the drawings she made, and whether she chose to show her grown-up. A grown-up sees only what she chose to show; letting one float away deletes it. Never read or tagged: no score, no count. | **Yes** |
+| `child.<id>.village` | Village, on this device only (§8.22): a large-print grandparent page, picture stories a guardian wrote and whether each is released to her (a held one is never shown), the sibling shelf (names, pictures, and the pictures left on it), and the faces a guardian picked for her people. No count or score; nothing is sent or shared with her other home. | **Yes** |
+| `child.<id>.passes` | The sitter pass and the school summary a guardian wrote (§8.22): routine lines, allergies in the guardian's own words, contact names and numbers as text. Guardian side only, never in her app; it leaves only when a grown-up shows the screen; no school or sitter is ever contacted. | **Yes** |
+| `child.<id>.compass` | Compass (§8.22): a guardian's own answers to two gentle questions (as ids) and which of the two accessibility profiles are on. Guardian side only; no score and no label about her; nothing is sent. | **Yes** |
 
 Rules held in code and tests: **no scores, streaks, counters, rankings or
 completion states are stored (P2)**; no price (P4); no coordinates (P3); no
@@ -7471,6 +7474,160 @@ networked play. The guardian-only build (`main_live_guardian.dart`) does not ins
 the child scopes. Real-device verification (TalkBack, a real synthesizer voice) has
 not been done: the engine behind `TtsChannel` is the OS's own and is exercised here
 through a fake.
+
+## §8.22 Village and Compass — suites D and I, offline and on this device (umbrella)
+
+Design: the umbrella concepts `grandCorner`, `familyTree`, `stepWelcome`, `siblingSpace`,
+`sitterPass`, `schoolBridge` (suite D, **Village**) and `compassWho`, `compassNeeds`,
+`compassSuggest`, `suitesShelf`, `childAwayHome`, `childDeafHome` (suite I, **Compass**) in
+`docs/superpowers/mockups/umbrella/`, with the look and flow of
+`docs/superpowers/mockups/overhaul2/`. **Offline and on-device by owner direction:** no
+server route, no migration, no network call, nothing that needs a credential. **Anything that
+shares between homes or contacts another person is parked**, so every feature below stores and
+works on this device only and says so in its own notes. No school, sitter, grandparent or other
+home is ever contacted; a page leaves the device only because a grown-up holds the screen up.
+
+**Nothing is written for a guardian.** There is no template and no suggested sentence about a
+new partner, a family change or a person's role (clinical review is required before any
+pre-written text of that kind is considered; none is shipped). Every name and relationship word
+on any page is a string a guardian typed. Her people in pictures take their **names only from the
+family builder** (what a guardian chose, through the merged family-structure model), and a
+background role (sitter, therapist, caseworker) is never among them (F5).
+
+**Who writes what.** A **guardian principal** writes everything and reads everything
+(`VillageService`, `client/lib/village_repositories.dart`). The **child principal** (and only
+this child's id) reads a *narrow* part (the stories a guardian released, her siblings' names and
+pictures, the faces a guardian picked) and leaves and takes down a picture on the sibling shelf.
+**No child principal can read, write or list the sitter pass or the school summary**: the
+service has no child reader for them and answers `guardian_only`. Compass has no child side at
+all (`CompassService` refuses every call from anyone but a guardian). These rules live in the
+services, not only the screens; a source test holds that no child file imports a guardian or
+Compass file.
+
+### 8.22.1 Village (suite D)
+
+- **Grandparent corner** (`grandCorner`, guardian side): a large-print page a guardian writes to
+  hand a grandparent the device: "Hello, Nana", up to **four huge buttons** (a picture, a title
+  and up to 200 characters that open in very large type) and a **phone line written down as text**
+  (a name, a number of 7 to 15 digits, a short note). The app never dials it; there is no link.
+  *Calling and sending a picture are not built* (they need the network); the editor says so.
+- **Her people, in pictures** (`familyTree`, her side): her people grouped by home with the
+  names the model derived, each a big face (a picture a guardian picked from the *people* group in
+  the guardian editor, else her first letter); tapping a face says the name through the
+  read-aloud seam. Nothing about a role, a hierarchy or a legal status is shown. She does not
+  arrange it (left out).
+- **A story for her** (`stepWelcome`): a guardian-authored picture story (a title, 1 to 6 pages,
+  each a library picture and up to 160 characters; up to three stories). A story is **held**
+  until the guardian presses *Show her* (a confirmation names what that does); **a held story is
+  never returned to her side**, not even by id. *Hold it again* takes it back. **Editing a
+  released story holds it again.** She reads it one page at a time with Back and Next and a calm
+  "All done": no "page 2 of 6", no bar, no star (P2).
+- **Sibling shelf** (`siblingSpace`): a guardian lists up to four brothers or sisters (a name as
+  typed and a picture); children who use this device leave each other a picture from a small kit
+  (a thing, a sky or a small word-picture), up to six per sibling (a new one lets the oldest drop,
+  so it never says "full"). A picture is taken down by tapping it and confirming. **No author, no
+  time, no read mark and no count are stored or shown (P2).** Leaving a picture raises the visual
+  cue of §8.22.2. Shared canvas, games, and anything between homes are not built.
+- **Sitter pass** (`sitterPass`, guardian side): a one-page summary a guardian writes for a
+  trusted adult: a title, whom it is for, when (in words), **allergies in the guardian's own
+  words**, a routine, good-to-know lines and up to five contacts (a name, what they are to her as
+  typed, a number as text, best times). Up to eight lines of 80 characters each; an address is
+  refused (P3). A "copy the step names from her routine" button reads the guardian's *own* Rhythm
+  routine at write time. The page is **black on white, large type** (a photo of the screen or a
+  printed copy reads the same), states "Written by a grown-up on `<day>`. Kept on this device;
+  shown only when it is held up", and is shown on screen by the guardian. **There is no link, no
+  expiry, no "opened" notice, no medicine log and no print action** (printing is not built).
+- **School summary** (`schoolBridge`, guardian side): the same kind of page for a school: a school
+  **name only** (an address or coordinates are refused), a class or teacher, what helps, allergies,
+  who collects her, up to four contacts. Kept here; **the school is not contacted and nothing
+  arrives from it** (no forwarding address, no teacher posts, no shared calendar). The editor says
+  nothing about grades or behaviour is carried.
+
+### 8.22.2 Compass (suite I)
+
+- **Two gentle questions** (`compassWho`, `compassNeeds`): "Who is in her life" (ways families look:
+  more than one home, a device that goes to another home, a parent away, a step-parent or a
+  parent's partner, a grandparent or relative, brothers and sisters, a carer who is not a parent,
+  a loss) and "What would help her" (things that help, never conditions: knowing what comes next, a
+  calm app, pictures, a way to show how today feels, alerts she can see, sign language at home,
+  regular medicine or hospital visits, a sitter, someone at school, keeping letters and firsts).
+  **Any number, or none; "not sure" and "skip" are complete answers.** The family builder's own
+  facts (more than one sleeping home, someone marked away) show as a quiet hint and are never
+  ticked for her. Answers are ids only, sealed, forgettable at any time.
+- **Suggestions** (`compassSuggest`): a **plain rules table** (`compassRules`): if any of these
+  answers is chosen, mention this suite or profile, with the table's own sentence of why and the
+  answers that led to it. Read top to bottom; **no weights, no numbers, no learning, no scoring
+  of the child or the family, no label about the child, no diagnosis, no claim to be smart**; the
+  same answers always give the same list in the same order, capped at five (the rest are on the
+  shelf). Nothing is switched on by looking; the guardian's tap is the yes, and "Not now"
+  remembers nothing (no "dismissed" record exists). A test reads the reasons for banned words and
+  digits and the code for any score, weight or rank.
+- **Suites shelf** (`suitesShelf`): Rhythm, Voice, Village, Growing and Care, each with a switch
+  and a plain line of what it adds. **Each switch is the suite's own** (the shelf keeps no copy,
+  so it and the suite's own screen cannot disagree); Growing and Care are groups of four
+  switches (off turns all four off; the row is on while any is on). It shows on or off and
+  **never use**: no count, date, chart or streak, and it is not a store (P4). The suites start on,
+  as they already do, but show her nothing until a guardian has written or released something.
+- **Two accessibility profiles** that **only change local presentation defaults**: *Device used in
+  another home* (read aloud on, motion reduced) and *Alerts she can see* (read aloud off, roomier
+  reading ready for captions, a captions wish, visible alerts). A profile writes the **existing**
+  accessibility settings (`access`, §8.21), and a sixth, `visualAlerts` ("alerts she can see",
+  stored only when on, also on the guardian's accessibility screen), and nothing else: not what
+  is shown, not who sees what, not any family data. Every setting it touches stays changeable one
+  by one; **turning a profile off leaves the settings where they are** (the screen says so). The
+  captions wish is honest: live captions are **not built** (§8.21.8).
+- **No cue is sound only; nothing flashes.** `showAlertCue` (`visual_alert.dart`) is the one way a
+  child screen says something happened: a brief note with an icon and words, or, when visible alerts
+  are on, a banner that stays until she taps OK with a gentle buzz. It makes no sound, never
+  animates on its own, and reads only the child-readable accessibility settings (she never learns
+  why). Today only the sibling shelf raises it; existing alert surfaces (call knock and the rest)
+  are unchanged.
+
+### 8.22.3 Which tiles she gets
+
+`village_logic.dart`'s `villageTilesFor` **reuses the family-structure model's answer** (her band,
+her More hub, her `myPeople` tile and released people from `deriveChildView`); it computes no band
+or feature of its own. **Fail-closed to five:** with no snapshot the age comes from `yearsOld`,
+and a missing, negative or non-number age is five, never older; with no snapshot her people stay
+off rather than guess. The youngest band (3 to 4) gets nothing (no More hub). A tile appears only
+when the guardian's Village switch is on *and* there is something authored (and, for a story,
+released), so she is never handed an empty screen. Entry points: her side in the More hub
+(`VillageSections`, shared `TieredTile`, 64 dp, one to a row at large text); the guardian side in
+*Settings → Family* (**Village** and **Family compass**, `guardian_more.dart`).
+
+### 8.22.4 What is stored
+
+Three new on-device areas (§8.16, all **sealed**, all per child, listed in
+`localDataCatalogue`): `child.<id>.village` (128 KB: the grandparent page, stories and whether each
+is released, the sibling shelf, faces, the suite switch), `child.<id>.passes` (64 KB: the sitter
+pass and the school summary; guardian side only) and `child.<id>.compass` (32 KB: answers as ids
+and which profiles are on). The largest legal documents are built in the tests and fit with room
+to spare; a write over the ceiling is refused as "full" and the old document is kept; a damaged
+file is quarantined and loads as empty. The device wipe and "forget this child" remove all three.
+None holds a count, score, streak or rank (a test scans the stored shapes).
+
+### 8.22.5 Not built, and why
+
+Anything between homes or that contacts a person (parked): a sitter *link* that expires, is opened
+on the sitter's phone and tells the guardian it was opened; a medicine log; a teacher's note that
+reaches both homes; a forwarding address; shared calendars; a shared sibling canvas or game table;
+calling and sending a picture from the grandparent page; the step-parent role, invitations, scope
+and one-month review; "getting to know" cards and a first message. Printing (the page is designed
+for it; there is no print or share action). She cannot arrange her people. Reshaping her home for
+a far-away parent (hero tile, path home) and the signing room, fingerspelling game, signed video
+messages and live captions of `childDeafHome` are not built; the two profiles only change the
+presentation defaults listed above. Compass does not carry the mockups' per-suite feature list
+(Two Skies and others are not built). A commissioned, diverse picture set is still an open owner
+decision (Material icons stand in, as in §8.20). Clinical and child-development review is still
+required before any pre-written text about a partner, a family change or a role is considered.
+
+### 8.22.6 Tests
+
+`village_logic_test`, `village_repositories_test` (restart survival in memory and on a real
+directory, sealed at rest, per-child names, size bounds, every principal, the story release flow),
+`village_screens_test`, `village_sections_test`, `village_guardian_screens_test` (every editor,
+refusals in words, no network or launcher import in any of these files), `compass_logic_test`,
+`compass_repositories_test`, `compass_screens_test` and `visual_alert_test`.
 
 ---
 
