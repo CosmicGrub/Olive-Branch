@@ -188,6 +188,11 @@ if [ -x "$FLUTTER_BIN" ]; then
   p=$(printf '%s' "$lines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
   f=$(printf '%s' "$lines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+ -[0-9]+' | tail -1 | grep -oE '\-[0-9]+$' | tr -d '-')
   record "dart widget invariants" "${p:-0}" "${f:-0}"
+  # A failed count with no name is a failure nobody can root-cause from the CI log: say WHICH
+  # tests failed (the reporter lists them after "Failing tests:").
+  if [ "${f:-0}" != "0" ]; then
+    printf '%s' "$lines" | sed -n '/Failing tests:/,$p' | head -30 | sed 's/^/    /'
+  fi
 else
   # Not a skip. The toolchain is a declared dependency of this suite.
   echo "  dart widget invariants     MISSING TOOLCHAIN — not a skip, a gap"

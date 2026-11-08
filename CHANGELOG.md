@@ -92,6 +92,8 @@ totals updated.
 - **Voice starts OFF** until a guardian turns it on (Settings, Family, Her voice); persisted per
   child; only an explicit true counts. Age and family-structure gating unchanged.
 - The memory-box hub row no longer says there is no grown-up editor; it offers the marked section.
+- `tools/verify.sh` now prints the names of failing Dart tests (it printed only a count, so a CI-only
+  failure could not be root-caused from the log).
 
 ### Tests
 - `offline_followups_test`, `emergency_card_local_test`, `emergency_card_local_screens_test`,
