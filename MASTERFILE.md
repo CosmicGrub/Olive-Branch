@@ -6437,6 +6437,76 @@ deliberately not a retrofit of the ~100 other files with their own one-off
 spacing drift, the same "refine, don't redesign" budget this section's own
 color pass already worked within.
 
+## §8.17 Parent Learn — guardian-only education, every extra optional
+
+A guardian-only education suite (research:
+`docs/superpowers/specs/2026-11-07-parenting-styles-education-research.md`;
+mockups: `docs/superpowers/mockups/parent-learn-suite-mockups.html`). It never
+appears in the child shell (§8.1: the child shell has no settings and no
+adult content), never scores, ranks or labels a parent, and never claims a
+style *causes* an outcome. **Shipped: the pure core and the server.** **Not
+yet built: the Dart client port, the Learn tab screens, and the message-check
+and rules-list screens.**
+
+**Core** — `packages/parent-learn/src/learn.ts` (rules L1–L5): 16 cards, each
+carrying an evidence label (strong / moderate / weak / contested) and at least
+one https source, enforced by `lintCards()` (no causal claims, no person
+labels, no "risk: none"). Guardian-only reads (L1); a reflection belongs to
+its author and the module deliberately exports no way to export or share one
+(L2); the message check returns hints only and never stores, sends or rewrites
+(L4); the two-home rules list carries only four core categories — bedtime,
+screens, homework, safety — never a style, reflection or setting (L5).
+
+**Optional means opt-in.** Owner decision 2026-11-07: the Learn tab is in;
+private reflection, cultural framing, the rules list and the message check are
+each the guardian's choice, and every default is the most private one:
+reflection session-only, framing neutral, rules list off, message check off.
+
+**Server** — `db/migrations/0035_parent_learn.sql`, three tables, all
+`ENABLE` + `FORCE` RLS and listed in `health_check`'s `rls_unforced`:
+
+| Table | Who can read | Who can write |
+|---|---|---|
+| `guardian_learn_settings` (absent row = defaults, never stored) | that guardian only | that guardian only |
+| `guardian_reflection` (day, warmth 0–100, expectations 0–100; one per guardian per day) | **the author only** — not the co-guardian, a child, a sitter, a step-parent, court tier or the system role | the author only |
+| `guardian_house_rule` (child, author, one of four categories, 1–200 characters) | the author, and the other live guardians of the same child | the author only |
+
+A "family" here is the set of live guardians of one child (this schema has no
+family table), so the house-rules routes are child-scoped. `guardian_reflection`
+must never be added to any court, raw or certified export, or to any view; a
+test asserts neither export function names it. One honest limit:
+`backup_reader` is `BYPASSRLS` (0022), so an operational backup contains
+these rows — RLS cannot hide them from it, and backups are operator-held, not
+reachable by any app role.
+
+Routes (`server/routes.mjs`), all guardian-only, fail closed (403
+`guardian_only` for any other role, before any query), guardian id always
+from the session and never from a body, every body whitelisted and bounded
+(unknown field → 400):
+
+- `GET`/`PUT /v1/learn/settings` — partial patch; a junk field is a 400, and
+  the DB layer keeps the current value for any invalid field rather than
+  resetting it. Turning `rulesList` off deletes the guardian's shared rules in
+  the same transaction, so a shared list never outlives its opt-in.
+- `GET`/`PUT /v1/learn/reflections`, `DELETE /v1/learn/reflections/:day`,
+  `DELETE /v1/learn/reflections` — a write returns 409
+  `reflection_storage_off` unless the guardian's own setting is `saved`; the
+  day must be a real calendar date (2000-01-01 to tomorrow); both numbers are
+  integers 0–100; a GET returns only the caller's own rows. Deletes are
+  idempotent.
+- `GET`/`PUT /v1/children/:childId/learn/house-rules` (`action: 'settings'`,
+  so an observer-only guardian is denied per §17.3) — `GET` returns `mine` and
+  `others`; `PUT` replaces only the caller's own list (at most 20 rules) and
+  returns 409 `rules_list_off` until the guardian opted in. A guardian with no
+  live edge to the child gets 403.
+
+Verified by `packages/db/test/parent_learn.test.mjs` (85 assertions: real
+RLS, every non-author role gets zero rows, opt-in refusals, cascade, export
+guard) and `server/test/parent_learn_route.test.mjs` (103 assertions: 401/403
+on every route for every non-guardian role, validation 400s, 409 opt-in
+refusals, author-only reflections, replace-only-my-list rules).
+
+
 ---
 
 *End of MASTERFILE v0.49.73. Amend in place. Bump version. Log in CHANGELOG.
