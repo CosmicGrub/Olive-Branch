@@ -44,6 +44,8 @@ import 'call_screen.dart';
 import 'care_note.dart';
 import 'cover_collapse.dart';
 import 'emergency_card.dart';
+import 'emergency_card_local.dart';
+import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'form_factors.dart' as ff;
@@ -444,7 +446,9 @@ List<_TileSpec> _kGuardianTiles({
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
       builder: () => EmergencyCardScreen(childName: childName,
         baseUrl: baseUrl, guardianId: guardianId, childId: childId,
-        httpClient: availabilityHttpClient))),
+        httpClient: availabilityHttpClient,
+        localService: EmergencyCardService.forChild(childId),
+        principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian')))),
   _TileSpec(icon: Icons.receipt_long, label: 'Handover notes', tier: _Tier.standard,
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,

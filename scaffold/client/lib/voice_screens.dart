@@ -423,7 +423,11 @@ class _WorryShelfScreenState extends State<_WorryShelfScreenView> {
   List<Worry> _box = const <Worry>[];
   bool _loaded = false;
   Worry? _open;
+  String? _backNote;
   FamilyPrincipal get _me => childPrincipalFor(widget.service);
+
+  static const String _sawNote = 'A grown-up already saw this one. It is just yours now.';
+  static const String _justMineNote = 'It is just yours now.';
 
   @override
   void initState() {
@@ -461,13 +465,24 @@ class _WorryShelfScreenState extends State<_WorryShelfScreenView> {
                           child: InkWell(
                             key: Key('worry_${w.id}'),
                             borderRadius: BorderRadius.circular(14),
-                            onTap: () => setState(() => _open = w),
+                            onTap: () => setState(() { _open = w; _backNote = null; }),
                             child: Padding(padding: const EdgeInsets.all(4), child: WorryThumb(worry: w)),
                           ),
                         ),
                     ]),
     );
   }
+
+  /// Said once, in her words with the grown-up picture beside it; no alarm, no
+  /// blame, nothing she has to do about it.
+  Widget _backNoteView(String text) => Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
+          const PictureGlyph('grown-up', size: 36),
+          const SizedBox(width: 10),
+          Flexible(child: Text(text, key: const Key('worryBackNote'))),
+        ]),
+      );
 
   Widget _detail(BuildContext context, Worry w) =>
       Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
@@ -477,10 +492,18 @@ class _WorryShelfScreenState extends State<_WorryShelfScreenView> {
           const Center(child: Text('Your grown-up can see this one.', key: Key('worryShownNote')))
         else
           const Center(child: Text('Just yours.', key: Key('worryPrivateNote'))),
+        if (!w.shown && _backNote != null) _backNoteView(_backNote!),
         const SizedBox(height: 16),
         if (w.shown)
           PictureTile(key: const Key('worryHide'), picture: 'worry-other', label: 'Keep it just mine', minHeight: 72,
-              onTap: () async { await widget.service.showWorryToGrownUp(_me, w.id, false); await _load(); })
+              onTap: () async {
+                final r = await widget.service.takeBackWorry(_me, w.id);
+                // The truth, gently: if a grown-up already looked, she is told so.
+                if (mounted && r.result.ok) {
+                  setState(() => _backNote = r.grownUpSawIt ? _sawNote : _justMineNote);
+                }
+                await _load();
+              })
         else
           PictureTile(key: const Key('worryShowLater'), picture: 'grown-up', label: 'Show my grown-up', minHeight: 72,
               onTap: () async { await widget.service.showWorryToGrownUp(_me, w.id, true); await _load(); }),

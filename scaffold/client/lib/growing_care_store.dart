@@ -24,6 +24,9 @@
 //    child type can reach the care binder, hospital notes or appointment prep.
 import 'dart:convert';
 
+import 'dart:typed_data';
+
+import 'family_structure_logic.dart' show FamilyPrincipal, canEditStructure;
 import 'growing_care_logic.dart';
 import 'local_services.dart';
 import 'local_store.dart';
@@ -46,6 +49,8 @@ const ItemKind<FirstTime> firstKind = ItemKind<FirstTime>('first.', maxFirsts, F
 const ItemKind<PencilMark> markKind = ItemKind<PencilMark>('mark.', maxPencilMarks, PencilMark.fromJson);
 const ItemKind<SuiteSwitches> switchKind = ItemKind<SuiteSwitches>('switches', 1, SuiteSwitches.fromJson);
 const ItemKind<MemoryItem> memoryKind = ItemKind<MemoryItem>('mem.', maxMemoryItems, MemoryItem.fromJson);
+const ItemKind<GrownUpMemory> grownUpMemoryKind =
+    ItemKind<GrownUpMemory>('gift.', maxGrownUpMemories, GrownUpMemory.fromJson);
 const ItemKind<CareSection> sectionKind = ItemKind<CareSection>('sec.', maxCareSections, CareSection.fromJson);
 const ItemKind<CareContact> contactKind = ItemKind<CareContact>('con.', maxCareContacts, CareContact.fromJson);
 const ItemKind<HospitalNotes> hospitalKind = ItemKind<HospitalNotes>('hospital', 1, HospitalNotes.fromJson);
@@ -176,7 +181,7 @@ class GrowingCareStores {
   GrowingCareStores({
     required this.capsules, required this.firsts, required this.marks, required this.switches,
     required this.memories, required this.sections, required this.contacts, required this.hospital,
-    required this.preps, required this.stories,
+    required this.preps, required this.stories, required this.grownUpMemories,
   });
 
   /// All in memory (tests, the preview before a store boots).
@@ -190,7 +195,8 @@ class GrowingCareStores {
       contacts: MemoryItemRepository<CareContact>(contactKind),
       hospital: MemoryItemRepository<HospitalNotes>(hospitalKind),
       preps: MemoryItemRepository<AppointmentPrep>(prepKind),
-      stories: MemoryItemRepository<ExplainerStory>(storyKind));
+      stories: MemoryItemRepository<ExplainerStory>(storyKind),
+      grownUpMemories: MemoryItemRepository<GrownUpMemory>(grownUpMemoryKind));
 
   /// Durable and sealed: the namespaces of [services] (default
   /// [LocalServices.current]) for [childId] (default: its child).
@@ -210,7 +216,8 @@ class GrowingCareStores {
         contacts: LocalItemRepository<CareContact>(care, contactKind),
         hospital: LocalItemRepository<HospitalNotes>(care, hospitalKind),
         preps: LocalItemRepository<AppointmentPrep>(care, prepKind),
-        stories: LocalItemRepository<ExplainerStory>(tales, storyKind));
+        stories: LocalItemRepository<ExplainerStory>(tales, storyKind),
+        grownUpMemories: LocalItemRepository<GrownUpMemory>(box, grownUpMemoryKind));
   }
 
   final ItemRepository<TimeCapsule> capsules;
@@ -224,12 +231,77 @@ class GrowingCareStores {
   final ItemRepository<AppointmentPrep> preps;
   final ItemRepository<ExplainerStory> stories;
 
+  /// Things a grown-up left in her memory box. Same sealed namespace as [memories]
+  /// but a different key prefix, so the two are never mixed.
+  final ItemRepository<GrownUpMemory> grownUpMemories;
+
   /// The narrow, read-only lens her own app gets. It has no way to reach
   /// [sections], [contacts], [hospital] or [preps].
   ChildGrowingLens childLens({DateTime Function()? now}) =>
       ChildGrowingLens(capsules, firsts, marks, now ?? DateTime.now);
 
   ChildExplainerReader childExplainers() => RepositoryExplainerReader(stories);
+}
+
+// ===================================================== grown-up memory desk =====
+/// The ONLY door a guardian has into her memory box, and it opens onto the
+/// grown-up's own section alone. It holds no reference to her items
+/// ([GrowingCareStores.memories]), so a guardian can neither edit nor delete
+/// anything she kept: that is true by construction, not by a check.
+///
+/// A child principal is refused ('guardian_only') for every call here.
+class GrownUpMemoryDesk {
+  GrownUpMemoryDesk(this._repo, {DateTime Function()? now, IdMaker? ids})
+      : _now = now ?? DateTime.now,
+        _ids = ids ?? IdMaker(now);
+  final ItemRepository<GrownUpMemory> _repo;
+  final DateTime Function() _now;
+  final IdMaker _ids;
+
+  bool _ok(FamilyPrincipal? p) => canEditStructure(p);
+
+  /// Newest first. Guardian only.
+  Future<List<GrownUpMemory>> list(FamilyPrincipal? p) async {
+    if (!_ok(p)) throw const CareRefused('guardian_only');
+    return _sorted(await _repo.list());
+  }
+
+  /// Leaves a note and/or a small photo, marked as from [fromName]. Throws
+  /// [CareRefused] (a bound, 'empty', 'full', 'guardian_only').
+  Future<GrownUpMemory> add(FamilyPrincipal? p, {required String fromName, String note = '', Uint8List? photo}) async {
+    if (!_ok(p)) throw const CareRefused('guardian_only');
+    // A new id that no earlier one shares (two desks, or a clock that has not moved, cannot overwrite).
+    final Set<String> taken = <String>{for (final GrownUpMemory e in await _repo.list()) e.id};
+    String id = _ids.next('g');
+    while (taken.contains(id)) {
+      id = _ids.next('g');
+    }
+    final GrownUpMemory m = GrownUpMemory(
+        id: id, addedOn: isoOf(_now()), fromName: fromName.trim(), note: note.trim(), thumb: photo);
+    await _repo.save(m);
+    return m;
+  }
+
+  /// Takes back something a grown-up left. Only the grown-up section exists
+  /// here, so nothing of hers can be reached by id.
+  Future<void> remove(FamilyPrincipal? p, String id) async {
+    if (!_ok(p)) throw const CareRefused('guardian_only');
+    await _repo.remove(id);
+  }
+}
+
+List<GrownUpMemory> _sorted(List<GrownUpMemory> l) =>
+    l..sort((GrownUpMemory a, GrownUpMemory b) {
+      final int c = b.addedOn.compareTo(a.addedOn);
+      return c != 0 ? c : b.id.compareTo(a.id);
+    });
+
+/// What her memory box may read of the grown-up section: read-only, newest
+/// first. There is no write on this type.
+class ChildGrownUpMemoryReader {
+  ChildGrownUpMemoryReader(this._repo);
+  final ItemRepository<GrownUpMemory> _repo;
+  Future<List<GrownUpMemory>> all() async => _sorted(await _repo.list());
 }
 
 // ============================================================== child lens ====

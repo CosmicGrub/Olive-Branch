@@ -120,12 +120,21 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'memorybox', scope: LocalScope.child, encrypted: true, maxBytes: 6 * _mib,
       what: 'Her memory box: pictures she chose to keep (a copy of a doodle or colouring, or a small '
-          'photo) with an optional short caption. No totals. Sealed on the device; never uploaded.'),
+          'photo) with an optional short caption. Kept apart from these, and marked as from them, are '
+          'the short notes or small photos a grown-up left for her; a grown-up cannot edit or remove '
+          'her own. No totals. Sealed on the device; never uploaded.'),
   LocalDataEntry(
       area: 'care', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
       what: 'Care binder (grown-up side only): sections and contacts a guardian wrote, hospital-mode '
           'notes, and appointment checklists and question lists. Every word is a guardian\'s; the app '
           'adds no medical text. Never shown in her app. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
+      area: 'emergencycard', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
+      what: 'The emergency card a guardian wrote for hospital mode when there is no live session: '
+          'allergies, conditions, medicines, her doctor and contacts, every word typed by a guardian '
+          '(the app adds no medical text), plus the version number and the append-only history of '
+          'changes (who, when and what it said before; never deleted). Guardian-only. Sealed on the '
+          'device; never uploaded.'),
   LocalDataEntry(
       area: 'explainers', scope: LocalScope.child, encrypted: true, maxBytes: 3 * _mib,
       what: 'Picture stories a guardian wrote for her: a title, up to six short pages, an optional '
@@ -135,7 +144,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       area: 'rhythm', scope: LocalScope.child, maxBytes: 256 * 1024,
       what: 'Rhythm, on this device only: the routine and the first-then cards a grown-up set '
           '(pictures and short names), her bag list, how-the-app-feels settings (sound, motion, '
-          'brightness), and which steps she has ticked TODAY (dropped the next day). No score, '
+          'brightness), a local "she sleeps in two homes" setting a grown-up set for the bag (off unless set), '
+          'and which steps she has ticked TODAY (dropped the next day). No score, '
           'streak or count; nothing is shared with her other home.'),
   LocalDataEntry(
       area: 'newplace', scope: LocalScope.child, maxBytes: 4 * _mib,
@@ -145,8 +155,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'voice', scope: LocalScope.child, maxBytes: 256 * 1024,
       what: 'Voice, on this device only: the grown-ups a guardian wrote down as her helpers (a '
-          'name, a picture and a short line each) and her personal symbols. What she says with '
-          'symbols is never kept.'),
+          'name, a picture and a short line each), her personal symbols, and whether a grown-up has '
+          'switched Voice on (it is off until they do). What she says with symbols is never kept.'),
   LocalDataEntry(
       area: 'feelings', scope: LocalScope.child, encrypted: true, maxBytes: 64 * 1024,
       what: "Feelings weather: only TODAY's weather picture she picked (older ones are dropped). "
@@ -154,8 +164,10 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'worries', scope: LocalScope.child, encrypted: true, maxBytes: 2 * _mib,
       what: 'Her worry box: the pictures she tapped and the drawings she made, and whether she '
-          'chose to show her grown-up. Sealed on the device; a grown-up sees only what she '
-          'chose to show; letting one float away deletes it. Never read or tagged: no score, no count.'),
+          'chose to show her grown-up, and, privately, whether the window for grown-ups has opened on one she '
+          'showed (only so she can be told the truth if she takes it back). Sealed on the device; a '
+          'grown-up sees only what she chose to show; letting one float away deletes it. Never read '
+          'or tagged: no score, no count.'),
   LocalDataEntry(
       area: 'access', scope: LocalScope.child, maxBytes: 16 * 1024,
       what: 'Accessibility for her device, as a grown-up set it: read aloud, reduce motion, '

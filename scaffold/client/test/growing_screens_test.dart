@@ -483,7 +483,8 @@ void main() {
         expect(find.byKey(Key(k)), findsOneWidget, reason: k);
       }
       expect(find.byKey(const Key('localOnlyNote')), findsOneWidget);
-      expect(find.textContaining('no grown-up editor'), findsOneWidget);
+      expect(find.textContaining('Hers to fill'), findsOneWidget);
+      expect(find.byKey(const Key('hubMemoryBox')), findsOneWidget, reason: 'a grown-up may only leave a marked note');
     });
 
     testWidgets('switching a suite off removes its entry and the choice is kept', (t) async {

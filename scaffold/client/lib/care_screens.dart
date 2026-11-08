@@ -23,7 +23,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'emergency_card.dart';
-import 'family_structure_logic.dart' show maxStoryPageChars, maxStoryPages;
+import 'emergency_card_editor_screen.dart';
+import 'emergency_card_local.dart';
+import 'family_structure_logic.dart' show FamilyPrincipal, maxStoryPageChars, maxStoryPages;
 import 'growing_care_logic.dart';
 import 'growing_care_store.dart';
 import 'growing_care_widgets.dart';
@@ -34,10 +36,23 @@ import 'hub_widgets.dart';
 // ================================================================== the hubs ==
 /// One hub, two faces: [care] false lists the Growing suites, true the Care ones.
 class GrowingCareHubScreen extends StatefulWidget {
-  const GrowingCareHubScreen({super.key, required this.care, this.childName = 'Ivy', this.stores});
+  const GrowingCareHubScreen({
+    super.key, required this.care, this.childName = 'Ivy', this.stores, this.guardianId = 'local-guardian',
+    this.fromName = '', this.emergency, this.openEmergencyCard,
+  });
   final bool care;
   final String childName;
   final GrowingCareStores? stores;
+
+  /// The guardian using this hub (the principal for the guardian-only editors) and the name that
+  /// marks what they leave in her memory box.
+  final String guardianId;
+  final String fromName;
+
+  /// The local emergency card (hospital mode reads it), and how to open the emergency card screen
+  /// (the app supplies one that keeps using a live session's server card; null opens the local one).
+  final EmergencyCardService? emergency;
+  final void Function(BuildContext context)? openEmergencyCard;
 
   @override
   State<GrowingCareHubScreen> createState() => _GrowingCareHubScreenState();
@@ -89,7 +104,13 @@ class _GrowingCareHubScreenState extends State<GrowingCareHubScreen> {
             subtitle: 'The doorframe, kept on a screen',
             onTap: () => _open(PencilMarksScreen(childName: n, stores: _s)));
       case 'memoryBox':
-        return null; // hers: a grown-up has no editor for it (see the note below).
+        // A grown-up may leave a marked note or photo in its own section; what she keeps herself
+        // stays hers and has no editor here.
+        return HubTile(key: const Key('hubMemoryBox'), icon: Icons.inventory_2_outlined, title: 'Leave something for her',
+            subtitle: 'A note or photo marked as from you, in its own place in her memory box',
+            onTap: () => _open(LeaveForHerScreen(childName: n, stores: _s,
+                principal: FamilyPrincipal(roleName: 'guardian', userId: widget.guardianId),
+                fromName: widget.fromName)));
       case 'careBinder':
         return HubTile(key: const Key('hubCareBinder'), icon: Icons.folder_shared_outlined, title: 'Care binder',
             subtitle: 'Routines, allergies, contacts, school: in your words',
@@ -97,7 +118,10 @@ class _GrowingCareHubScreenState extends State<GrowingCareHubScreen> {
       case 'hospitalMode':
         return HubTile(key: const Key('hubHospitalMode'), icon: Icons.local_hospital_outlined, title: 'Hospital mode',
             subtitle: 'One calm page for a stressed adult',
-            onTap: () => _open(HospitalModeScreen(childName: n, stores: _s)));
+            onTap: () => _open(HospitalModeScreen(
+                childName: n, stores: _s, emergency: widget.emergency,
+                openEmergencyCard: widget.openEmergencyCard,
+                principal: FamilyPrincipal(roleName: 'guardian', userId: widget.guardianId))));
       case 'explainerCards':
         return HubTile(key: const Key('hubExplainers'), icon: Icons.menu_book_outlined, title: 'Picture stories',
             subtitle: 'Short stories you write for her, shown only if you choose',
@@ -130,7 +154,9 @@ class _GrowingCareHubScreenState extends State<GrowingCareHubScreen> {
           for (final String k in _suites)
             SwitchListTile(
                 key: ValueKey<String>('switch_$k'), title: Text(suiteTitles[k]!), value: _sw.on(k),
-                subtitle: k == 'memoryBox' ? const Text("Hers to fill. There is no grown-up editor for it.") : null,
+                subtitle: k == 'memoryBox'
+                    ? const Text('Hers to fill. You can only leave a marked note or photo in its own section.')
+                    : null,
                 onChanged: _loaded ? (bool v) => _set(k, v) : null),
         ]),
       ]))),
@@ -383,9 +409,15 @@ class BinderPrintScreen extends StatelessWidget {
 
 // ============================================================== hospital mode ==
 class HospitalModeScreen extends StatefulWidget {
-  const HospitalModeScreen({super.key, this.childName = 'Ivy', this.stores, this.openEmergencyCard});
+  const HospitalModeScreen({
+    super.key, this.childName = 'Ivy', this.stores, this.openEmergencyCard, this.emergency, this.principal,
+  });
   final String childName;
   final GrowingCareStores? stores;
+
+  /// The local emergency card a guardian wrote (read with [principal]); null reads none.
+  final EmergencyCardService? emergency;
+  final FamilyPrincipal? principal;
 
   /// Overridable so a test need not build the whole emergency card.
   final void Function(BuildContext context)? openEmergencyCard;
@@ -397,6 +429,7 @@ class HospitalModeScreen extends StatefulWidget {
 class _HospitalModeScreenState extends State<HospitalModeScreen> {
   late final GrowingCareStores _s = widget.stores ?? GrowingCareStores.forChild();
   HospitalSummary? _summary;
+  EmergencyCardDoc? _local;
 
   @override
   void initState() {
@@ -407,7 +440,23 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
   Future<void> _load() async {
     final HospitalSummary sum = hospitalSummary(
         await _s.sections.list(), await _s.contacts.list(), await _s.hospital.get(HospitalNotes.itemId));
-    if (mounted) setState(() => _summary = sum);
+    EmergencyCardDoc? local;
+    if (widget.emergency != null) {
+      try {
+        final EmergencyCardDoc d = await widget.emergency!.read(widget.principal);
+        if (d.card != null && !d.card!.isEmpty) local = d;
+      } catch (_) {
+        local = null; // not a guardian, or unreadable: no local card is shown
+      }
+    }
+    if (mounted) setState(() { _summary = sum; _local = local; });
+  }
+
+  Future<void> _editCard() async {
+    final bool? saved = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
+        builder: (_) => EmergencyCardEditorScreen(
+            service: widget.emergency!, principal: widget.principal, childName: widget.childName)));
+    if (saved == true) await _load();
   }
 
   Future<void> _edit() async {
@@ -422,7 +471,8 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
       o(context);
       return;
     }
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => EmergencyCardScreen(childName: widget.childName)));
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => EmergencyCardScreen(
+        childName: widget.childName, localService: widget.emergency, principal: widget.principal)));
   }
 
   Widget _block(BuildContext context, String title, String text, {Key? key}) => Padding(
@@ -434,11 +484,40 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
         ]),
       );
 
+  /// The guardian's local emergency card, in the words they wrote, allergies first.
+  List<Widget> _localCardBlocks(BuildContext context, LocalEmergencyCard c) => <Widget>[
+        if (c.allergies.isNotEmpty)
+          _block(context, 'Allergies (emergency card)', c.allergies.join('\n'), key: const Key('hospCardAllergies')),
+        if (c.conditions.isNotEmpty)
+          _block(context, 'Conditions', c.conditions.join('\n'), key: const Key('hospCardConditions')),
+        if (c.medicines.isNotEmpty)
+          _block(context, 'Medicines',
+              c.medicines.map((EcMedicine m) => m.dose.isEmpty ? m.name : '${m.name}  -  ${m.dose}').join('\n'),
+              key: const Key('hospCardMedicines')),
+        if (!c.doctor.isEmpty)
+          _block(context, 'Her doctor',
+              <String>[
+                if (c.doctor.name.isNotEmpty) c.doctor.name,
+                if (c.doctor.practice.isNotEmpty) c.doctor.practice,
+                if (c.doctor.phone.isNotEmpty) c.doctor.phone,
+              ].join('  -  '),
+              key: const Key('hospCardDoctor')),
+        if (c.contacts.isNotEmpty)
+          _block(context, 'Emergency card contacts',
+              c.contacts.map((EcContact x) => <String>[
+                    x.name, if (x.relation.isNotEmpty) x.relation, if (x.phone.isNotEmpty) x.phone,
+                  ].join('  -  ')).join('\n'),
+              key: const Key('hospCardContacts')),
+      ];
+
   @override
   Widget build(BuildContext context) {
     final HospitalSummary? s = _summary;
     return Scaffold(
       appBar: AppBar(title: const Text('Hospital mode'), actions: <Widget>[
+        if (widget.emergency != null)
+          IconButton(key: const Key('editEmergencyCard'), tooltip: 'Write the emergency card', icon: const Icon(Icons.medical_information_outlined),
+              onPressed: s == null ? null : _editCard),
         IconButton(key: const Key('editHospital'), tooltip: 'Write notes', icon: const Icon(Icons.edit_outlined), onPressed: s == null ? null : _edit),
       ]),
       body: SafeArea(child: s == null ? const SizedBox.shrink() : ListView(padding: const EdgeInsets.all(20), children: <Widget>[
@@ -448,11 +527,12 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
             icon: const Icon(Icons.medical_information_outlined, size: 30),
             label: Text("${widget.childName}'s emergency card", style: const TextStyle(fontSize: 20))),
         const SizedBox(height: 20),
-        if (!s.hasAnything)
+        if (!s.hasAnything && _local == null)
           const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text(
               'Nothing written yet. Tap the pencil to write what you would want at hand. '
               'Allergies and contacts come from your care binder.', key: Key('hospitalEmpty'))),
         if (s.notes.happeningToday.trim().isNotEmpty) _block(context, 'Happening today', s.notes.happeningToday, key: const Key('hospToday')),
+        if (_local != null) ..._localCardBlocks(context, _local!.card!),
         for (final CareSection a in s.allergies) _block(context, a.title, a.body, key: ValueKey<String>('hospAllergy-${a.id}')),
         if (s.notes.staffShouldKnow.trim().isNotEmpty) _block(context, 'Staff should know', s.notes.staffShouldKnow, key: const Key('hospStaff')),
         if (s.notes.whatHelpsHer.trim().isNotEmpty) _block(context, 'What helps her', s.notes.whatHelpsHer, key: const Key('hospHelps')),

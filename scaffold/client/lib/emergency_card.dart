@@ -35,13 +35,29 @@
 // live screen shows "Last changed by X on <date>" from it, and
 // OliveApi.putEmergencyCard requires the version, so the future edit
 // surface cannot silently overwrite a co-guardian's change.
+//
+// LOCAL CARD (MASTERFILE section 8.24). Which card is shown, in this order:
+//   1. a live build WITH a session (baseUrl/guardianId/childId): the server's card,
+//      exactly as above. If the server cannot be reached and a guardian has written
+//      a local card, that local card is shown, clearly labelled as saved on this
+//      device (it never replaces a card that WAS fetched);
+//   2. no session and a local card exists (emergency_card_local.dart, read through
+//      [localService] by a guardian [principal]): the local card;
+//   3. no session, no local card: the invented demo card ONLY when this run allows
+//      demo content (LocalServices.demoSeeds, the offline preview); in a live build a
+//      plain "no card yet" page. A live build never shows invented data.
+// Without a [localService] nothing local is read and (1) and (3) behave as before.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'design_tokens.dart';
+import 'emergency_card_editor_screen.dart';
+import 'emergency_card_local.dart';
+import 'family_structure_logic.dart' show FamilyPrincipal, canEditStructure;
 import 'form_factors.dart' as ff;
+import 'local_services.dart' show LocalServices;
 import 'read_aloud.dart' show ReadAloudScope;
 
 /// Same "recorded, not glossed over" pattern as child_home.dart's helper —
@@ -66,6 +82,9 @@ const String _cardSpokenText =
 
 enum _LoadState { ready, loading, error }
 
+/// Where the card on screen came from.
+enum _Src { demo, server, local, none }
+
 class EmergencyCardScreen extends StatefulWidget {
   const EmergencyCardScreen({
     super.key,
@@ -75,6 +94,8 @@ class EmergencyCardScreen extends StatefulWidget {
     this.guardianId,
     this.childId,
     this.httpClient,
+    this.localService,
+    this.principal,
   });
 
   /// Real wiring is tts_channel.dart's buildSpeakCallback(). Null means no
@@ -85,6 +106,11 @@ class EmergencyCardScreen extends StatefulWidget {
   final String? guardianId;
   final String? childId;
   final http.Client? httpClient;
+
+  /// The local card (guardian-written, on this device) and the guardian reading
+  /// it. Both null: no local card is read.
+  final EmergencyCardService? localService;
+  final FamilyPrincipal? principal;
 
   bool get _isLive => baseUrl != null && guardianId != null && childId != null;
 
@@ -122,11 +148,100 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
   // `version` is deliberately not kept: this screen has no edit surface to
   // send it back from — see OliveApi.putEmergencyCard's `ifMatch`.)
   String? _lastChangedBy, _lastChangedAt;
+  List<String> _conditions = <String>[];
+  _Src _src = _Src.demo;
+  bool _localAsFallback = false;
+
+  // The server's card lists the guardians and a pediatrician; a guardian's own card lists
+  // whoever they wrote as contacts and a doctor, so it says that.
+  String get _contactsTitle => _src == _Src.local ? 'Contacts' : 'Guardians';
+  String get _doctorTitle => _src == _Src.local ? 'Doctor' : 'Pediatrician';
+
+  bool get _canEditLocal => widget.localService != null && canEditStructure(widget.principal);
 
   @override
   void initState() {
     super.initState();
-    if (widget._isLive) _load();
+    _start();
+  }
+
+  @override
+  void didUpdateWidget(EmergencyCardScreen old) {
+    super.didUpdateWidget(old);
+    // A screen re-used for a different source (live <-> not) starts over, so nothing from the
+    // earlier source (an author line, a fetched card) lingers.
+    if (old._isLive != widget._isLive || old.localService != widget.localService) {
+      _lastChangedBy = _lastChangedAt = null;
+      _localAsFallback = false;
+      _loadState = _LoadState.ready;
+      _start();
+    }
+  }
+
+  void _start() {
+    if (widget._isLive) {
+      _src = _Src.server;
+      _load();
+    } else if (widget.localService != null) {
+      _loadState = _LoadState.loading;
+      _loadLocal();
+    } else {
+      _src = LocalServices.current.demoSeeds ? _Src.demo : _Src.none;
+    }
+  }
+
+  /// The guardian's local card, or null (none written, or not a guardian).
+  Future<EmergencyCardDoc?> _readLocal() async {
+    final EmergencyCardService? s = widget.localService;
+    if (s == null) return null;
+    try {
+      final EmergencyCardDoc d = await s.read(widget.principal);
+      final LocalEmergencyCard? c = d.card;
+      return c == null || c.isEmpty ? null : d;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _applyLocal(EmergencyCardDoc d) {
+    final LocalEmergencyCard c = d.card!;
+    _bloodType = null;
+    _allergies = c.allergies;
+    _conditions = c.conditions;
+    _medications = <_LiveMedLine>[for (final EcMedicine m in c.medicines) _LiveMedLine(m.name, m.dose)];
+    _guardians = <_LiveGuardian>[
+      for (final EcContact x in c.contacts)
+        _LiveGuardian(x.relation.isEmpty ? x.name : '${x.name}, ${x.relation}', x.phone.isEmpty ? null : x.phone),
+    ];
+    _pediatricianName = c.doctor.name.isEmpty ? null : c.doctor.name;
+    _pediatricianPractice = c.doctor.practice.isEmpty ? null : c.doctor.practice;
+    _pediatricianPhone = c.doctor.phone.isEmpty ? null : c.doctor.phone;
+    _insuranceProvider = null;
+    _insuranceMemberId = null;
+    final EcChange? last = d.history.isEmpty ? null : d.history.last;
+    _lastChangedBy = last?.byName;
+    _lastChangedAt = last?.at;
+  }
+
+  Future<void> _loadLocal() async {
+    final EmergencyCardDoc? d = await _readLocal();
+    if (!mounted) return;
+    setState(() {
+      if (d != null) {
+        _applyLocal(d);
+        _src = _Src.local;
+      } else {
+        _src = LocalServices.current.demoSeeds ? _Src.demo : _Src.none;
+      }
+      _loadState = _LoadState.ready;
+    });
+  }
+
+  Future<void> _editLocal() async {
+    final bool? saved = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
+        builder: (_) => EmergencyCardEditorScreen(
+            service: widget.localService!, principal: widget.principal, childName: widget.childName)));
+    if (saved == true && !widget._isLive) await _loadLocal();
   }
 
   /// The ONLY place this screen calls the network — mirrors meds_care.dart's
@@ -169,8 +284,19 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
         _loadState = _LoadState.ready;
       });
     } catch (e) {
+      final EmergencyCardDoc? local = await _readLocal();
       if (!mounted) return;
-      setState(() => _loadState = _LoadState.error);
+      setState(() {
+        if (local != null) {
+          // Could not reach the server: the guardian's own card, labelled as such.
+          _applyLocal(local);
+          _src = _Src.local;
+          _localAsFallback = true;
+          _loadState = _LoadState.ready;
+        } else {
+          _loadState = _LoadState.error;
+        }
+      });
     }
   }
 
@@ -184,19 +310,20 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
     b.write(_allergies.isEmpty
       ? 'No allergies on file. ' : 'Allergies: ${_allergies.join('. ')}. ');
     if (_bloodType != null) b.write('Blood type: $_bloodType. ');
+    if (_conditions.isNotEmpty) b.write('Conditions: ${_conditions.join('. ')}. ');
     if (_medications.isNotEmpty) {
       b.write('Current medications: ');
       b.write(_medications.map((_LiveMedLine m) => '${m.name}, ${m.schedule}').join('. '));
       b.write('. ');
     }
     if (_guardians.isNotEmpty) {
-      b.write('Guardians: ');
+      b.write('$_contactsTitle: ');
       b.write(_guardians.map((_LiveGuardian g) =>
         g.phone == null ? g.name : '${g.name}, ${g.phone}').join('. '));
       b.write('. ');
     }
     if (_pediatricianName != null) {
-      b.write('Pediatrician: $_pediatricianName');
+      b.write('$_doctorTitle: $_pediatricianName');
       if (_pediatricianPractice != null) b.write(', $_pediatricianPractice');
       if (_pediatricianPhone != null) b.write('. Phone: $_pediatricianPhone');
       b.write('. ');
@@ -221,7 +348,11 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
     // ever passes SpeechTrigger.autonomous here is refused for real, not
     // just by convention.
     if (admitSpeech(SpeechTrigger.tap) != null) return;
-    speak(widget._isLive ? _liveSpokenText() : _cardSpokenText);
+    speak(switch (_src) {
+      _Src.demo => _cardSpokenText,
+      _Src.none => 'No emergency card has been written yet.',
+      _ => _liveSpokenText(),
+    });
   }
 
   @override
@@ -252,6 +383,13 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
     }
     return Scaffold(
     appBar: AppBar(title: Text('Emergency card — ${widget.childName}'), actions: [
+      if (_canEditLocal && _src != _Src.server)
+        IconButton(
+          key: const Key('editLocalCard'),
+          icon: const Icon(Icons.edit_outlined),
+          tooltip: 'Write or change the card',
+          onPressed: _editLocal,
+        ),
       IconButton(
         key: const Key('readAloudButton'),
         icon: const Icon(Icons.volume_up_outlined),
@@ -272,13 +410,34 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
       // ListView, not a fixed Column: generous text at this size can exceed a
       // small phone's viewport. The allergy card is still first in the tree, so
       // it's on screen before any scrolling on every device this ships to.
-      final Widget content = widget._isLive
+      final Widget content = _src == _Src.none
+        ? _NoCardYet(canWrite: _canEditLocal, onWrite: _editLocal)
+        : _src != _Src.demo
         ? ListView(
             key: const Key('emergencyCardList'),
             padding: const EdgeInsets.all(16),
             children: [
+              if (_src == _Src.local) ...[
+                Text(key: const Key('localCardNote'),
+                  _localAsFallback
+                    ? "Couldn't reach the server, so this is the card saved on this device."
+                    : 'This is the card a guardian saved on this device.',
+                  style: TextStyle(fontSize: 14,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 8),
+              ],
               _AllergyCard(allergies: _allergies),
               const SizedBox(height: 20),
+              if (_conditions.isNotEmpty) ...[
+                _Section(title: 'Conditions', child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final String c in _conditions)
+                      Padding(padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(c, style: const TextStyle(fontSize: 18))),
+                  ])),
+                const SizedBox(height: 20),
+              ],
               if (_bloodType != null) ...[
                 _Section(title: 'Blood type', child: Text(_bloodType!,
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
@@ -296,7 +455,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
                 const SizedBox(height: 20),
               ],
               if (_guardians.isNotEmpty) ...[
-                _Section(title: 'Guardians', child: Column(
+                _Section(title: _contactsTitle, child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     for (int i = 0; i < _guardians.length; i++) ...[
@@ -308,7 +467,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
                 const SizedBox(height: 20),
               ],
               if (_pediatricianName != null) ...[
-                _Section(title: 'Pediatrician', child: _ContactLine(
+                _Section(title: _doctorTitle, child: _ContactLine(
                   name: _pediatricianPractice == null
                     ? _pediatricianName! : '$_pediatricianName — $_pediatricianPractice',
                   phone: _pediatricianPhone ?? 'No phone on file')),
@@ -383,6 +542,31 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
     })),
   );
   }
+}
+
+/// Shown in a live build when there is no card at all: never invented data.
+class _NoCardYet extends StatelessWidget {
+  const _NoCardYet({required this.canWrite, required this.onWrite});
+  final bool canWrite;
+  final VoidCallback onWrite;
+
+  @override
+  Widget build(BuildContext context) => Center(child: Padding(
+    padding: const EdgeInsets.all(24),
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.medical_information_outlined, size: 40,
+        color: Theme.of(context).colorScheme.onSurfaceVariant),
+      const SizedBox(height: 12),
+      Text('No emergency card has been written yet.', key: const Key('noCardYet'),
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+      if (canWrite) ...[
+        const SizedBox(height: 16),
+        FilledButton(key: const Key('writeLocalCard'), onPressed: onWrite,
+          child: const Text('Write the emergency card')),
+      ],
+    ]),
+  ));
 }
 
 class _AllergyCard extends StatelessWidget {

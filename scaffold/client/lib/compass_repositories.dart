@@ -115,7 +115,7 @@ class ShelfSuite {
 
 const List<ShelfSuite> shelfSuites = <ShelfSuite>[
   ShelfSuite('rhythm', 'Rhythm', 'One routine, first-then, my bag, a new place, how the app feels'),
-  ShelfSuite('voice', 'Voice', 'The sky in me, worry box, my helpers, say it with pictures'),
+  ShelfSuite('voice', 'Voice', 'The sky in me, worry box, my helpers, say it with pictures. Off until you switch it on'),
   ShelfSuite('village', 'Village', 'Her people in pictures, a story you release, sibling shelf; sitter pass, school summary and grandparent page for you'),
   ShelfSuite('growing', 'Growing', 'Time capsule, first times, memory box, growing marks'),
   ShelfSuite('care', 'Care', 'Care binder, hospital mode, appointment lists, picture stories (grown-ups only)'),

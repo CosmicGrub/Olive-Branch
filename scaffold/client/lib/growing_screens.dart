@@ -24,9 +24,11 @@ import 'package:flutter/material.dart';
 
 import 'colouring_screen.dart' show ColouringThumbnail;
 import 'doodle_desk.dart' show DoodleThumbnail;
+import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'growing_care_logic.dart';
 import 'growing_care_store.dart';
 import 'growing_care_widgets.dart';
+import 'read_aloud.dart' show SpeakerButton;
 import 'shared_gallery.dart';
 import 'snapshot_button.dart' show AppGallery, AppPhoto;
 
@@ -665,6 +667,7 @@ class _MemoryBoxScreenState extends State<MemoryBoxScreen> {
   late final DateTime Function() _now = widget.now ?? DateTime.now;
   final IdMaker _ids = IdMaker();
   List<MemoryItem> _items = <MemoryItem>[];
+  List<GrownUpMemory> _gifts = <GrownUpMemory>[];
   bool _loaded = false;
 
   @override
@@ -677,7 +680,9 @@ class _MemoryBoxScreenState extends State<MemoryBoxScreen> {
   Future<void> _load() async {
     final List<MemoryItem> all = await _s.memories.list();
     all.sort((MemoryItem a, MemoryItem b) => b.addedOn.compareTo(a.addedOn));
-    if (mounted) setState(() { _items = all; _loaded = true; });
+    // The grown-up section is read separately and never merged into [_items].
+    final List<GrownUpMemory> gifts = await ChildGrownUpMemoryReader(_s.grownUpMemories).all();
+    if (mounted) setState(() { _items = all; _gifts = gifts; _loaded = true; });
   }
 
   Future<void> _save(MemoryItem m) async {
@@ -734,6 +739,7 @@ class _MemoryBoxScreenState extends State<MemoryBoxScreen> {
                   Icon(Icons.inventory_2_outlined, size: 64),
                   SizedBox(height: 12),
                   Text("It's yours. Keep things here whenever you like.", key: Key('memoryEmpty'), textAlign: TextAlign.center),
+                  SpeakerButton(key: Key('memoryEmptySpeaker'), text: "It's yours. Keep things here whenever you like."),
                 ])))
               : GridView.count(crossAxisCount: 2, padding: const EdgeInsets.all(16), mainAxisSpacing: 12, crossAxisSpacing: 12, children: <Widget>[
                   for (final MemoryItem m in _items) GestureDetector(
@@ -747,6 +753,16 @@ class _MemoryBoxScreenState extends State<MemoryBoxScreen> {
                             : _PictureThumb(kind: m.kind, data: m.pictureData ?? const <String, Object?>{}),
                       )),
                 ])),
+          if (_gifts.isNotEmpty)
+            Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 0), child: Row(children: <Widget>[
+              Expanded(child: OutlinedButton.icon(
+                  key: const Key('fromGrownUp'),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => FromGrownUpScreen(stores: _s))),
+                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(childTarget)),
+                  icon: const Icon(Icons.favorite_border), label: const Text('From a grown-up'))),
+              const SpeakerButton(key: Key('fromGrownUpSpeaker'), text: 'From a grown-up'),
+            ])),
           Padding(padding: const EdgeInsets.all(16), child: Row(children: <Widget>[
             Expanded(child: FilledButton.icon(
                 key: const Key('keepPicture'), onPressed: _keepPicture,
@@ -758,6 +774,175 @@ class _MemoryBoxScreenState extends State<MemoryBoxScreen> {
                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(childTarget)),
                 icon: const Icon(Icons.photo_outlined), label: const Text('A photo'))),
           ])),
+        ])),
+      );
+}
+
+/// What grown-ups left for her, in its own screen and never mixed into her own
+/// box. Read-only on her side: it has no write, and each one says who it is from.
+class FromGrownUpScreen extends StatefulWidget {
+  const FromGrownUpScreen({super.key, this.stores});
+  final GrowingCareStores? stores;
+
+  @override
+  State<FromGrownUpScreen> createState() => _FromGrownUpScreenState();
+}
+
+class _FromGrownUpScreenState extends State<FromGrownUpScreen> {
+  late final GrowingCareStores _s = widget.stores ?? GrowingCareStores.forChild();
+  List<GrownUpMemory>? _gifts;
+
+  @override
+  void initState() {
+    super.initState();
+    ChildGrownUpMemoryReader(_s.grownUpMemories).all().then((List<GrownUpMemory> g) {
+      if (mounted) setState(() => _gifts = g);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('From a grown-up')),
+        body: SafeArea(child: _gifts == null
+            ? const SizedBox.shrink()
+            : _gifts!.isEmpty
+                ? const Center(child: Text('Nothing here right now.', key: Key('giftsEmpty')))
+                : ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+                    for (final GrownUpMemory g in _gifts!)
+                      Card(
+                        key: ValueKey<String>('gift-${g.id}'),
+                        child: Padding(padding: const EdgeInsets.all(16), child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                          Row(children: <Widget>[
+                            const Icon(Icons.favorite_border),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text('From ${g.fromName}', key: ValueKey<String>('giftFrom-${g.id}'),
+                                style: Theme.of(context).textTheme.titleMedium)),
+                            if (g.note.isNotEmpty)
+                              SpeakerButton(key: ValueKey<String>('giftSpeaker-${g.id}'),
+                                  text: 'From ${g.fromName}. ${g.note}'),
+                          ]),
+                          if (g.thumb != null)
+                            Padding(padding: const EdgeInsets.only(top: 8), child: ThumbImage(g.thumb!, size: 160)),
+                          if (g.note.isNotEmpty)
+                            Padding(padding: const EdgeInsets.only(top: 8), child: Text(g.note,
+                                style: Theme.of(context).textTheme.titleLarge)),
+                        ])),
+                      ),
+                  ])),
+      );
+}
+
+// ================================================= guardian: for her box ====
+/// A grown-up leaves a note or a small photo for her memory box. It is marked as
+/// from them and sits in its own section on her side. Her own things are not
+/// reachable from this screen at all.
+class LeaveForHerScreen extends StatefulWidget {
+  const LeaveForHerScreen({
+    super.key, this.childName = 'Ivy', this.stores, this.principal, this.fromName = '',
+    this.photoSource, this.now,
+  });
+  final String childName;
+  final GrowingCareStores? stores;
+  final FamilyPrincipal? principal;
+
+  /// The name that will say who it is from (prefilled; the guardian can change it).
+  final String fromName;
+  final PhotoSource? photoSource;
+  final DateTime Function()? now;
+
+  @override
+  State<LeaveForHerScreen> createState() => _LeaveForHerScreenState();
+}
+
+class _LeaveForHerScreenState extends State<LeaveForHerScreen> {
+  late final GrowingCareStores _s = widget.stores ?? GrowingCareStores.forChild();
+  late final GrownUpMemoryDesk _desk = GrownUpMemoryDesk(_s.grownUpMemories, now: widget.now);
+  late final FamilyPrincipal? _me = widget.principal;
+  late final TextEditingController _from = TextEditingController(text: widget.fromName);
+  final TextEditingController _note = TextEditingController();
+  Uint8List? _photo;
+  List<GrownUpMemory> _mine = <GrownUpMemory>[];
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _from.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final List<GrownUpMemory> l = await _desk.list(_me);
+      if (mounted) setState(() { _mine = l; _loaded = true; });
+    } on CareRefused catch (e) {
+      if (mounted) { setState(() => _loaded = true); showRefusal(context, e); }
+    }
+  }
+
+  Future<void> _pickPhoto() async {
+    final Uint8List? b = await (widget.photoSource ?? pickSmallPhoto)();
+    if (b == null || !mounted) return;
+    setState(() => _photo = b);
+  }
+
+  Future<void> _leave() async {
+    try {
+      await _desk.add(_me, fromName: _from.text, note: _note.text, photo: _photo);
+      _note.clear();
+      setState(() => _photo = null);
+      await _load();
+    } on CareRefused catch (e) {
+      if (mounted) showRefusal(context, e);
+    }
+  }
+
+  Future<void> _remove(GrownUpMemory g) async {
+    if (!await confirmPutAway(context, 'Take this back?', keep: 'Leave it', go: 'Take it back')) return;
+    try {
+      await _desk.remove(_me, g.id);
+      await _load();
+    } on CareRefused catch (e) {
+      if (mounted) showRefusal(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text("Leave something for ${widget.childName}")),
+        body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+          LocalOnlyBanner('A note or a small photo, marked as from you, in its own place in ${widget.childName}\'s '
+              'memory box. What she keeps herself stays hers: you cannot see, change or remove it. $localOnlyNote'),
+          const SizedBox(height: 12),
+          TextField(key: const Key('giftFrom'), controller: _from, maxLength: 40,
+              decoration: const InputDecoration(labelText: 'From (a name she knows)')),
+          TextField(key: const Key('giftNote'), controller: _note, maxLength: maxGrownUpNoteChars, maxLines: 4,
+              decoration: const InputDecoration(labelText: 'A short note')),
+          if (_photo != null) Align(alignment: Alignment.centerLeft, child: ThumbImage(_photo!, size: 96)),
+          Row(children: <Widget>[
+            OutlinedButton.icon(key: const Key('giftPhoto'), onPressed: _pickPhoto,
+                icon: const Icon(Icons.photo_outlined), label: Text(_photo == null ? 'Add a photo' : 'Change photo')),
+            const Spacer(),
+            FilledButton(key: const Key('leaveForHer'), onPressed: _leave, child: const Text('Leave it for her')),
+          ]),
+          const SizedBox(height: 16),
+          if (_loaded && _mine.isNotEmpty) Text('What you have left', style: Theme.of(context).textTheme.titleMedium),
+          for (final GrownUpMemory g in _mine)
+            ListTile(
+              key: ValueKey<String>('mine-${g.id}'),
+              leading: g.thumb != null ? ThumbImage(g.thumb!, size: 48) : const Icon(Icons.notes_outlined),
+              title: Text(g.note.isEmpty ? '(a photo)' : g.note, maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text('From ${g.fromName}, ${_fmt(g.addedOn)}'),
+              trailing: IconButton(key: ValueKey<String>('takeBack-${g.id}'), tooltip: 'Take it back',
+                  icon: const Icon(Icons.delete_outline), onPressed: () => _remove(g)),
+            ),
         ])),
       );
 }

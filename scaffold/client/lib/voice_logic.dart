@@ -65,7 +65,7 @@ enum WorryKind { picture, drawing }
 
 class Worry {
   const Worry._({required this.id, required this.kind, required this.madeOn, required this.shown,
-      this.picture, this.strokes});
+      this.picture, this.strokes, this.seen = false});
 
   /// A worry she made by tapping a picture.
   factory Worry.picture({required String id, required String picture, required String madeOn, bool shown = false}) {
@@ -93,10 +93,26 @@ class Worry {
   final String? picture;
   final List<List<double>>? strokes;
 
-  Worry withShown(bool v) => Worry._(id: id, kind: kind, madeOn: madeOn, shown: v, picture: picture, strokes: strokes);
+  /// True once the grown-ups' window opened while this worry was shown. It exists
+  /// for ONE reason: so that if she takes the worry back, the screen can tell her
+  /// honestly that a grown-up already saw it. It is never shown to a guardian, is
+  /// not a count and carries no note or tag.
+  final bool seen;
+
+  Worry withShown(bool v) =>
+      Worry._(id: id, kind: kind, madeOn: madeOn, shown: v, picture: picture, strokes: strokes, seen: seen);
+
+  /// The copy a grown-up's window gets: exactly what she made and chose to show, with the
+  /// private "seen" memory left out.
+  Worry forGrownUp() =>
+      Worry._(id: id, kind: kind, madeOn: madeOn, shown: shown, picture: picture, strokes: strokes);
+
+  Worry withSeen() =>
+      Worry._(id: id, kind: kind, madeOn: madeOn, shown: shown, picture: picture, strokes: strokes, seen: true);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'id': id, 'kind': kind.name, 'madeOn': madeOn, 'shown': shown,
+        if (seen) 'seen': true,
         if (picture != null) 'picture': picture,
         if (strokes != null) 'strokes': strokes,
       };
@@ -105,17 +121,20 @@ class Worry {
     if (j is! Map) return null;
     try {
       final bool shown = j['shown'] == true;
+      final bool seen = j['seen'] == true;
       if (j['kind'] == WorryKind.picture.name) {
-        return Worry.picture(id: j['id']! as String, picture: j['picture']! as String,
+        final Worry w = Worry.picture(id: j['id']! as String, picture: j['picture']! as String,
             madeOn: j['madeOn']! as String, shown: shown);
+        return seen ? w.withSeen() : w;
       }
       if (j['kind'] == WorryKind.drawing.name) {
-        return Worry.drawing(
+        final Worry w = Worry.drawing(
             id: j['id']! as String, madeOn: j['madeOn']! as String, shown: shown,
             strokes: <List<double>>[
               for (final Object? s in j['strokes']! as List)
                 <double>[for (final Object? n in s! as List) (n! as num).toDouble()],
             ]);
+        return seen ? w.withSeen() : w;
       }
     } on RvRefused {
       return null;
@@ -165,6 +184,11 @@ List<Worry> floatAway(List<Worry> box, String id) {
 
 /// What a grown-up may see: only the worries she chose to show, exactly as she
 /// made them. No tag, no count, no reading of the contents.
+/// Marks the shown worries as seen (the grown-ups' window opened on them), and
+/// nothing else. Used only so she can be told the truth if she takes one back.
+List<Worry> markShownAsSeen(List<Worry> box) =>
+    <Worry>[for (final Worry w in box) w.shown && !w.seen ? w.withSeen() : w];
+
 List<Worry> shownToGrownUp(List<Worry> box) => <Worry>[for (final Worry w in box) if (w.shown) w];
 
 // ================================================================ HELPERS ====
@@ -258,9 +282,13 @@ String sentenceOf(List<String> strip) {
 // ============================================================ THE DOCUMENT ===
 /// The guardian-authored half of suite C, kept in one small document.
 class VoiceDoc {
-  const VoiceDoc({this.helpers = const <Helper>[], this.personalSymbols = const <String>[], this.suiteOn = true});
+  const VoiceDoc({this.helpers = const <Helper>[], this.personalSymbols = const <String>[], this.suiteOn = false});
   final List<Helper> helpers;
   final List<String> personalSymbols;
+
+  /// The guardian's switch for the whole suite on her device. OFF until a guardian
+  /// turns it on: only an explicit `true` counts, so a missing, damaged or
+  /// unreadable value is off (fail closed).
   final bool suiteOn;
 
   VoiceDoc copyWith({List<Helper>? helpers, List<String>? personalSymbols, bool? suiteOn}) => VoiceDoc(
@@ -291,6 +319,6 @@ class VoiceDoc {
         }
       }
     }
-    return VoiceDoc(helpers: helpers, personalSymbols: syms, suiteOn: j['suiteOn'] != false);
+    return VoiceDoc(helpers: helpers, personalSymbols: syms, suiteOn: j['suiteOn'] == true);
   }
 }

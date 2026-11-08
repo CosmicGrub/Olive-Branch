@@ -49,6 +49,8 @@ const int maxCapsules = 40;
 const int maxFirsts = 200;
 const int maxPencilMarks = 60;
 const int maxMemoryItems = 60;
+const int maxGrownUpMemories = 30;
+const int maxGrownUpNoteChars = 300;
 const int maxCareSections = 12;
 const int maxCareContacts = 20;
 const int maxPreps = 20;
@@ -108,6 +110,7 @@ String refusalMessage(String reason) => switch (reason) {
       'too_big' => 'That one is too big to keep. Make it a little smaller.',
       'full' => "This device's box for these is full. Remove something to make room.",
       'bad_page_count' => 'A story needs between 1 and $maxStoryPages pages.',
+      'guardian_only' => 'Only a grown-up can do that.',
       'invalid' => 'That could not be kept.',
       _ => 'That could not be kept.',
     };
@@ -397,6 +400,47 @@ class MemoryItem extends StoredItem {
     return MemoryItem(
         id: id, kind: kind, addedOn: on, caption: j['caption'] is String ? j['caption']! as String : '',
         pictureData: _map(j['data']), thumb: decodeThumb(j['thumb']));
+  }
+}
+
+// =================================================== from a grown-up (memory box) ==
+/// Something a guardian left for her: a short note and/or a small photo, marked
+/// as from that grown-up. It lives under its OWN key prefix, so it can never be
+/// listed with, counted with or mistaken for one of HER items ([MemoryItem]).
+class GrownUpMemory extends StoredItem {
+  const GrownUpMemory({
+    required this.id, required this.addedOn, required this.fromName, this.note = '', this.thumb,
+  });
+  @override
+  final String id;
+  final String addedOn;
+
+  /// Who left it, in words she knows ("Mum", "Grandpa"): written by the guardian.
+  final String fromName;
+  final String note;
+  final Uint8List? thumb;
+
+  @override
+  String? check() {
+    if (_clean(note).isEmpty && thumb == null) return 'empty';
+    if (_clean(fromName).isEmpty) return 'empty';
+    if (fromName.length > 40 || note.length > maxGrownUpNoteChars) return 'too_long';
+    if (!isIsoDate(addedOn)) return 'bad_date';
+    return thumbRefusal(thumb);
+  }
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+        'id': id, 'addedOn': addedOn, 'from': fromName, 'note': note,
+        if (thumb != null) 'thumb': encodeThumb(thumb),
+      };
+
+  static GrownUpMemory? fromJson(Map<String, Object?> j) {
+    final String? id = _text(j['id'], max: 80), on = _text(j['addedOn']), from = _text(j['from'], max: 40);
+    if (id == null || on == null || from == null) return null;
+    return GrownUpMemory(
+        id: id, addedOn: on, fromName: from, note: j['note'] is String ? j['note']! as String : '',
+        thumb: decodeThumb(j['thumb']));
   }
 }
 

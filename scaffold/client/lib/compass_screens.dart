@@ -320,7 +320,7 @@ class _ShelfState extends State<SuitesShelfScreen> with _Say<SuitesShelfScreen> 
         const _LocalNote(),
         const SizedBox(height: 8),
         if (denied) deniedNote,
-        Text('What is on for ${widget.childName}. Each switch is the same one on the suite\'s own page. A suite shows her nothing until you have written something for it.',
+        Text('What is on for ${widget.childName}. Each switch is the same one on the suite\'s own page. A suite shows her nothing until you have written something for it. Voice starts off and stays off until you switch it on.',
             key: const Key('shelfIntro')),
         const SizedBox(height: 8),
         if (_loaded)

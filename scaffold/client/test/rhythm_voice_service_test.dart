@@ -63,7 +63,8 @@ void main() {
       expect(d.suiteOn, isTrue);
       expect(await s.place.load(), isNull);
       expect((await s.voice.load()).helpers, isEmpty);
-      expect((await s.voice.load()).suiteOn, isTrue);
+      expect((await s.voice.load()).suiteOn, isFalse, reason: 'Voice stays off; nothing was written');
+      expect(d.twoHomes, isFalse);
     });
 
     both('a guardian can write each one, and the child then reads it', (RhythmVoiceService s) async {

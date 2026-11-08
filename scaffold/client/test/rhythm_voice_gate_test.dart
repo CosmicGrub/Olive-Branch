@@ -118,9 +118,48 @@ void main() {
     });
   });
 
+  group('Voice starts OFF until a guardian turns it on', () {
+    test('with nothing set up, no Voice tile shows for any age five and up, with or without the model', () {
+      for (final ChildView? v in <ChildView?>[view(twoHomes, 't57'), view(oneHome, 't812'), view(twoHomes, 't13'), null]) {
+        final RhythmVoiceTiles t = tilesFor(view: v, yearsOld: 9);
+        expect(t.anyVoice, isFalse);
+        expect(t.weather || t.worryBox || t.helpers || t.symbols, isFalse);
+      }
+      // Even with a helper written, the switch decides.
+      expect(tilesFor(view: view(twoHomes, 't57'), helpers: helpers()).helpers, isFalse);
+    });
+
+    test('a guardian turning it on shows weather, worry box and symbols (age and structure gates still apply)', () {
+      final RhythmVoiceTiles t = tilesFor(view: view(twoHomes, 't57'), voiceOn: true);
+      expect(t.weather && t.worryBox && t.symbols, isTrue);
+      expect(tilesFor(view: view(twoHomes, 't34'), voiceOn: true).any, isFalse, reason: 'the youngest band still gets nothing');
+      expect(tilesFor(yearsOld: 4, voiceOn: true).any, isFalse);
+    });
+
+    test('Rhythm is not affected by the Voice default', () {
+      expect(tilesFor(view: view(twoHomes, 't57'), routine: routine()).routine, isTrue);
+    });
+  });
+
+  group('the packing buddy "two homes" fallback (a guardian\'s local setting)', () {
+    test('with no family snapshot it appears only when the setting is on, a bag list exists and Rhythm is on', () {
+      expect(tilesFor(yearsOld: 7, packing: packing()).packingBuddy, isFalse, reason: 'off by default');
+      expect(tilesFor(yearsOld: 7, packing: packing(), twoHomesSetting: true).packingBuddy, isTrue);
+      expect(tilesFor(yearsOld: 7, twoHomesSetting: true).packingBuddy, isFalse, reason: 'no list, nothing to show');
+      expect(tilesFor(yearsOld: 7, packing: packing(), twoHomesSetting: true, rhythmOn: false).packingBuddy, isFalse);
+      expect(tilesFor(yearsOld: 4, packing: packing(), twoHomesSetting: true).packingBuddy, isFalse,
+          reason: 'the youngest band still gets nothing');
+    });
+
+    test('with a snapshot the model alone decides: the setting cannot override it', () {
+      expect(tilesFor(view: view(oneHome, 't57'), packing: packing(), twoHomesSetting: true).packingBuddy, isFalse);
+      expect(tilesFor(view: view(twoHomes, 't57'), packing: packing()).packingBuddy, isTrue);
+    });
+  });
+
   group('what a guardian has not written does not appear', () {
     test('no routine, board, bag, place or helpers means no tile for them; weather, worry and symbols stay', () {
-      final RhythmVoiceTiles t = tilesFor(view: view(twoHomes, 't57'));
+      final RhythmVoiceTiles t = tilesFor(view: view(twoHomes, 't57'), voiceOn: true);
       expect(t.routine || t.firstThen || t.packingBuddy || t.newPlace || t.helpers, isFalse);
       expect(t.weather && t.worryBox && t.symbols, isTrue);
     });
@@ -132,8 +171,8 @@ void main() {
     });
 
     test('a helper who has not said yes does not make the tile appear', () {
-      expect(tilesFor(view: view(twoHomes, 't57'), helpers: helpers(yes: false)).helpers, isFalse);
-      expect(tilesFor(view: view(twoHomes, 't57'), helpers: helpers()).helpers, isTrue);
+      expect(tilesFor(view: view(twoHomes, 't57'), voiceOn: true, helpers: helpers(yes: false)).helpers, isFalse);
+      expect(tilesFor(view: view(twoHomes, 't57'), voiceOn: true, helpers: helpers()).helpers, isTrue);
     });
   });
 }
