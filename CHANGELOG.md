@@ -40,7 +40,9 @@ No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
   instead of overflowing) no longer overflow at 2.0x on 344 dp.
 - **CI:** the `fetch livekit-server` step used `curl -sL` with no `-f`, so a transient HTTP
   error from the releases CDN was saved as the "tarball" and `tar` died with "not in gzip
-  format" (run 42466446343). It now uses `curl -fsSL --retry 5 --retry-all-errors`.
+  format" (run 42466446343). It now uses `curl -fsSL` with retries, and falls back to
+  `gh release download` (the authenticated API route) when the public download URL is down; it
+  was returning 504 for every tag on 2026-11-08 while the API route still worked.
 
 ### Changed
 - `client/test/child_text_scale_test.dart` covers every main child screen (and the child More
