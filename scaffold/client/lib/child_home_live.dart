@@ -72,6 +72,9 @@ import 'call_knock_screen.dart' show buildCallIncomingHandler;
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
+import 'family_structure_logic.dart' show FamilyPrincipal;
+import 'family_structure_store.dart';
+import 'tts_channel.dart' show buildSpeakCallback;
 import 'game_logic.dart' show neutralGrownUp;
 import 'push_channel.dart';
 import 'wear_sync_channel.dart';
@@ -87,6 +90,7 @@ class LiveChildHomeScreen extends StatefulWidget {
     this.wearSync,
     this.pushChannel,
     this.navigatorKey,
+    this.familyService,
   });
 
   final String baseUrl;
@@ -114,6 +118,10 @@ class LiveChildHomeScreen extends StatefulWidget {
   /// log fallback instead of opening CallKnockScreen — not a regression,
   /// the same behavior every build without this param already had.
   final GlobalKey<NavigatorState>? navigatorKey;
+  /// Age bands and family structure (suites J and K), local-first: the structure a guardian built
+  /// and released on THIS device. Null = the shared in-process [localFamilyService]. Nothing here
+  /// touches the network; syncing between devices comes later.
+  final FamilyService? familyService;
 
   @override
   State<LiveChildHomeScreen> createState() => _LiveChildHomeScreenState();
@@ -160,6 +168,11 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   String? _sessionToken;
   late final WearSyncChannel _wearSync = widget.wearSync ?? WearSyncChannel();
   PushChannel? _pushChannel;
+  // Her derived home (age band, My people, birthday line) from the local family structure.
+  // Null (never loaded, or the local read failed) renders the home exactly as before.
+  FamilyChildSnapshot? _family;
+  Future<void> Function(String)? _speakFn;
+  Future<void> _speak(String text) => (_speakFn ??= buildSpeakCallback())(text);
 
   @override
   void initState() {
@@ -210,6 +223,15 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       } catch (e) {
         debugPrint('[olive.activityOverrides] not loaded this run: $e');
       }
+      FamilyChildSnapshot? family;
+      try {
+        // Local-first, a secondary read: a failure here never traps the primary screen.
+        family = await (widget.familyService ?? localFamilyService).childSnapshot(
+            FamilyPrincipal(roleName: 'child', childId: widget.childId),
+            childId: widget.childId, yearsOld: (me['yearsOld'] as num?)?.toInt() ?? _failClosedAge);
+      } catch (e) {
+        debugPrint('[olive.family] not loaded this run: $e');
+      }
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
       // `entries`, not `messages` -- server/routes.mjs's own GET .../inbox
@@ -246,6 +268,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         );
         _overrides = overridesJson == null ? null : decodeActivityOverrides(overridesJson);
         _sessionToken = api.sessionToken;
+        _family = family;
         _state = _LoadState.ready;
       });
       await _syncWear();
@@ -394,6 +417,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             childAge: _childAge,
             dayParts: _dayParts,
             guardianName: _presence?.name,
+            family: _family,
+            speak: _speak,
           )),
         ])));
     }

@@ -756,6 +756,53 @@ export function parentLearnView(): Any {
   };
 }
 export { Learn };
+// ------------------------------- family structure + age bands (J and K) ----
+import * as Family from '../../packages/family-structure/src/family.ts';
+
+/** Every value below is computed by the real module — nothing is typed in. */
+export function familyStructureView(): Any {
+  const home = (id: string, name: string) => ({ id, name, childSleeps: true });
+  const person = (id: string, label: string, role: any, homeId: string | null, contact: any[], away: any = null) =>
+    ({ id, label, role, homeId, contact, away });
+  const family: Any = {
+    ...Family.emptyStructure(),
+    homes: [home('h1', "Mom's house"), home('h2', "Dad's house")],
+    people: [person('p1', 'Mom', 'guardian', 'h1', ['live_call', 'message']),
+      person('p2', 'Dad', 'guardian', 'h2', ['live_call', 'message']),
+      person('p3', 'Dana', 'step_parent', 'h2', ['message']),
+      person('p4', 'Grandma', 'relative', null, ['live_call', 'postcard'], { until: null }),
+      person('p5', 'Sue', 'sitter', 'h1', ['message'])],
+  };
+  const today = '2026-11-07';
+  const add = Family.withBefore(family, { op: 'put_person', person: person('p9', 'Pat', 'relative', 'h1', ['message']) } as Any);
+  const entries: Any[] = [
+    { entry: 'change', id: 'c1', seq: 1, op: add, timing: { kind: 'hold' } },
+    { entry: 'change', id: 'c2', seq: 2, op: Family.withBefore(family, { op: 'set_area_band', area: 'reading', band: 't812' } as Any),
+      timing: { kind: 'date', on: '2026-11-21' } },
+  ];
+  const names = (s: Any) => s.people.map((p: Any) => p.label).join(', ');
+  const guardian = { roleName: 'guardian', userId: 'g1' };
+  return {
+    bands: Family.BAND_TABLE.map(b => ({ band: b.label, name: b.name, home: b.home, tiles: b.tiles.length })),
+    herBandAtYears: [3, 5, 8, 13].map(y => ({ years: y, band: Family.bandForYears(y) })),
+    homeAtEachBand: Family.AGE_BANDS.map(b => ({ band: b, tiles: Family.deriveChildView(family, b, {}, []).home.tiles.join(' · ') })),
+    herPeople: Family.deriveChildView(family, 't57', {}, []).places.map(p => `${p.name}: ${p.people.map(x => x.name).join(', ')}`),
+    sitterShownToHer: Family.deriveChildView(family, 't57', {}, []).places.some(p => p.people.some(x => x.name === 'Sue')),
+    guardianEdits: Family.canEditStructure(guardian), childEdits: Family.canEditStructure({ roleName: 'child', userId: null }),
+    sitterEdits: Family.canEditStructure({ roleName: 'sitter', userId: 's1' }),
+    heldChange: { guardianSees: names(Family.foldIntended(family, entries)), sheSeesToday: names(Family.foldReleased(family, entries, today)),
+      sheSeesOnTheDay: Family.foldReleased(family, entries, '2026-11-21').areaBands },
+    timing: [{ kind: 'now' }, { kind: 'hold' }, { kind: 'date', on: '2026-11-21' }, { kind: 'date', on: today }]
+      .map(t => ({ raw: t, out: Family.parseTiming(t, today) })),
+    ownListPermanent: Family.deriveChildView(family, 't812', { myList: false }, Family.rungsAt(10)).home.tiles.includes('myList'),
+    courtOrder: Family.validateOp({ ...family, rhythm: { pattern: '2-2-3', exchangeDay: 5, exchangeTime: '17:00', source: 'court_order' } },
+      { op: 'set_rhythm', rhythm: { pattern: '2-2-5-5', exchangeDay: 0, exchangeTime: '18:00', source: 'guardian' } } as Any),
+    birthday: Family.birthdayInfo('2019-12-09', today),
+    birthdayLine: [32, 7, 3, 0].map(n => ({ sleeps: n, shown: Family.birthdayLineShown(n, true) })),
+    story: [Family.validateStory({ pages: ['Some weeks you sleep at Mom\'s house.'] }), Family.validateStory({ pages: ['a'], generated: true })],
+  };
+}
+export { Family };
 
 
 

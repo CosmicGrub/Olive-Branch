@@ -92,6 +92,7 @@ const ENTRIES = [
   ["--format=esm","--platform=node","packages/game-sync/src/table.ts","--outfile=packages/game-sync/src/table.mjs"],
   ["--format=esm","--platform=node","packages/co-view/src/coview.ts","--outfile=packages/co-view/src/coview.mjs"],
   ["--format=esm","--platform=node","packages/parent-learn/src/learn.ts","--outfile=packages/parent-learn/src/learn.mjs"],
+  ["--format=esm","--platform=node","packages/family-structure/src/family.ts","--outfile=packages/family-structure/src/family.mjs"],
 ];
 
 function toOptions(args) {
