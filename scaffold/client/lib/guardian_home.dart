@@ -49,6 +49,7 @@ import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'form_factors.dart' as ff;
+import 'guardian_local_scope.dart';
 import 'guardian_more.dart';
 import 'handover_notes.dart';
 import 'meds_care.dart';
@@ -478,6 +479,9 @@ List<_TileSpec> _kGuardianTiles({
   _TileSpec(icon: Icons.more_horiz, label: 'More', tier: _Tier.standard,
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => GuardianMoreScreen(childName: childName,
+        // The age the local family locked (guardian_local_scope.dart); 9 is the hub's own
+        // long-standing default when this tree has no local family.
+        childAge: GuardianLocalScope.maybeOf(context)?.family?.age ?? 9,
         baseUrl: baseUrl, guardianId: guardianId,
         // GuardianMoreScreen.childId is non-nullable (it also keys the
         // family-agreement fetch, which needs SOME concrete child even

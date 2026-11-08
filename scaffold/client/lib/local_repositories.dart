@@ -241,10 +241,15 @@ Object? jsonSafe(Object? v) {
 /// signal (audit C-06) and see her own name. Three facts, no more: her first
 /// name, her age in whole years, and that onboarding finished.
 class ProfileCache {
-  const ProfileCache({this.displayName, this.yearsOld, required this.hasOnboarded, this.overrides});
+  const ProfileCache({
+    this.displayName, this.yearsOld, required this.hasOnboarded, this.overrides, this.ageLocked = false});
   final String? displayName;
   final int? yearsOld;
   final bool hasOnboarded;
+
+  /// True when [yearsOld] was LOCKED (the kid picker, contact_labels.dart `lockKidAge`): the server's
+  /// age no longer overwrites it here, and only a grown-up's PIN changes it. One bit (P2).
+  final bool ageLocked;
 
   /// The grown-up's last-known "hide / pace this" choices for her, exactly as
   /// the server sent them (activity_overrides.dart's wire shape). Remembered so
@@ -266,6 +271,7 @@ class ProfileCacheRepository {
       yearsOld: m['yearsOld'] is int ? m['yearsOld'] as int : null,
       hasOnboarded: m['hasOnboarded'] == true,
       overrides: _asMap(m['overrides']),
+      ageLocked: m['ageLocked'] == true && m['yearsOld'] is int,
     );
   }
 
@@ -274,6 +280,7 @@ class ProfileCacheRepository {
         if (c.yearsOld != null) 'yearsOld': c.yearsOld,
         'hasOnboarded': c.hasOnboarded,
         if (c.overrides != null) 'overrides': c.overrides,
+        if (c.ageLocked) 'ageLocked': true,
       });
 
   /// Records only that onboarding finished, keeping everything else cached.
@@ -281,7 +288,15 @@ class ProfileCacheRepository {
     final ProfileCache? e = await load();
     await save(ProfileCache(
         displayName: e?.displayName, yearsOld: e?.yearsOld, hasOnboarded: true,
-        overrides: e?.overrides));
+        overrides: e?.overrides, ageLocked: e?.ageLocked ?? false));
+  }
+
+  /// Locks her age at [age] (what she tapped on the kid picker), keeping everything else cached.
+  Future<void> lockAge(int age) async {
+    final ProfileCache? e = await load();
+    await save(ProfileCache(
+        displayName: e?.displayName, yearsOld: age, hasOnboarded: e?.hasOnboarded ?? false,
+        overrides: e?.overrides, ageLocked: true));
   }
 
   /// Remembers what the home screen last learned from the server (her name,
@@ -290,9 +305,11 @@ class ProfileCacheRepository {
     final ProfileCache? e = await load();
     await save(ProfileCache(
         displayName: displayName ?? e?.displayName,
-        yearsOld: yearsOld ?? e?.yearsOld,
+        // A locked age is not overwritten by what the server last said (only a PIN moves it).
+        yearsOld: (e?.ageLocked ?? false) ? (e?.yearsOld ?? yearsOld) : (yearsOld ?? e?.yearsOld),
         hasOnboarded: e?.hasOnboarded ?? false,
-        overrides: overrides ?? e?.overrides));
+        overrides: overrides ?? e?.overrides,
+        ageLocked: e?.ageLocked ?? false));
   }
 }
 
@@ -320,7 +337,7 @@ Future<bool> resolveHasOnboarded({
     try {
       await cache.save(ProfileCache(
           displayName: cached?.displayName, yearsOld: cached?.yearsOld, hasOnboarded: answer,
-          overrides: cached?.overrides));
+          overrides: cached?.overrides, ageLocked: cached?.ageLocked ?? false));
     } catch (_) {
       // A full or unwritable store must never turn a good answer into a crash.
     }

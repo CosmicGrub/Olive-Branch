@@ -44,6 +44,7 @@ class OnboardingDraft {
     this.birthdayMonth,
     this.birthdayDay,
     this.complete = false,
+    this.ageLocked = false,
   });
 
   /// Exactly what she typed; null when she skipped the step.
@@ -57,6 +58,11 @@ class OnboardingDraft {
   final int? birthdayDay;
   /// True once every question has been walked (each may have been skipped).
   final bool complete;
+  /// True when the age was tapped on the kid picker (5 to 15) and so LOCKED
+  /// (contact_labels.dart `lockKidAge`): it picks the default words for her grown-ups
+  /// (Mommy/Daddy at a locked 5 to 15) and only a grown-up's PIN changes it. One bit; no
+  /// count (P2).
+  final bool ageLocked;
 
   Map<String, Object?> toJson() => <String, Object?>{
         if (name != null) 'name': name,
@@ -65,6 +71,7 @@ class OnboardingDraft {
         if (colourId != null) 'colourId': colourId,
         if (birthdayMonth != null) 'birthdayMonth': birthdayMonth,
         if (birthdayDay != null) 'birthdayDay': birthdayDay,
+        if (ageLocked) 'ageLocked': true,
         'complete': complete,
       };
 
@@ -77,6 +84,7 @@ class OnboardingDraft {
         birthdayMonth: m['birthdayMonth'] is int ? m['birthdayMonth'] as int : null,
         birthdayDay: m['birthdayDay'] is int ? m['birthdayDay'] as int : null,
         complete: m['complete'] == true,
+        ageLocked: m['ageLocked'] == true && m['age'] is int,
       );
 }
 

@@ -119,9 +119,27 @@ void main() {
       expect(all, contains('journal'));
     });
 
-    test('nothing is catalogued as device-wide personal data; coordinates are never a field (P3)', () {
-      expect(localDataCatalogue.where((LocalDataEntry e) => e.scope == LocalScope.device), isEmpty);
+    test('the only device-wide area is the role (one word, not personal data); coordinates are never a field (P3)', () {
+      // Owner requirement 2026-11-08: the role is kept once per device. It is the ONLY area that is
+      // not owned by a child or a grown-up, and it holds one word. Everything personal stays scoped.
+      final List<LocalDataEntry> device =
+          localDataCatalogue.where((LocalDataEntry e) => e.scope == LocalScope.device).toList();
+      expect(device.map((LocalDataEntry e) => e.area).toList(), <String>['role']);
+      expect(device.single.maxBytes, lessThanOrEqualTo(4 * 1024));
+      expect(device.single.what.toLowerCase(), contains('not a name'));
       expect(describeLocalData().toLowerCase(), isNot(contains('location')));
+    });
+
+    test('the role, the local family and the local PIN are catalogued; the family and PIN are sealed', () {
+      expect(localDataEntry('role').scope, LocalScope.device);
+      expect(localDataEntry('localfamily').scope, LocalScope.guardian);
+      expect(localDataEntry('localfamily').encrypted, isTrue);
+      expect(localDataEntry('localpin').scope, LocalScope.guardian);
+      expect(localDataEntry('localpin').encrypted, isTrue);
+      final LocalServices s = LocalServices.memory(childId: 'ivy', guardianId: 'mom');
+      expect(s.namespaceName(localDataEntry('role')), 'device.role');
+      expect(s.namespaceName(localDataEntry('localfamily'), ownerId: 'local-guardian'),
+          'guardian.local-guardian.localfamily');
     });
   });
 

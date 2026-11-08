@@ -18,7 +18,17 @@ import 'onboarding_logic.dart';
 import 'onboarding_shared.dart';
 
 class ObAgeScreen extends StatefulWidget {
-  const ObAgeScreen({super.key, required this.birthDate, required this.onContinue, this.now});
+  const ObAgeScreen({super.key, required this.birthDate, required this.onContinue, this.now,
+    this.ageMin = minAge, this.ageMax = maxAge, this.locksAge = false});
+
+  /// The numbers offered. The default is the whole 2 to 17 range of the demo tour; the real
+  /// first run passes 5 to 15 (contact_labels.dart `kKidAgeMin`/`kKidAgeMax`): the picker a
+  /// child sees stays inside the years she can honestly tap, and a grown-up sets 3 to 17.
+  final int ageMin, ageMax;
+
+  /// True when this tap LOCKS her age (first_run, MASTERFILE §8.5.10): she is told so in
+  /// plain words under the numbers, and only a grown-up's PIN changes it afterwards.
+  final bool locksAge;
 
   /// Guardian-entered birth date, if any. Authoritative — see acceptAge().
   final String? birthDate;
@@ -43,16 +53,26 @@ class _ObAgeScreenState extends State<ObAgeScreen> {
         acceptAge(_tapped, widget.birthDate, widget.now ?? DateTime.now())),
       onSkip: () => widget.onContinue(
         acceptAge(null, widget.birthDate, widget.now ?? DateTime.now())),
-      body: Wrap(
-        spacing: 12, runSpacing: 12, alignment: WrapAlignment.center,
-        children: [for (var a = minAge; a <= maxAge; a++) TapChoice(
-          key: ValueKey('age_$a'),
-          label: '$a',
-          selected: _tapped == a,
-          minSide: 56,
-          onTap: () => setState(() => _tapped = a),
-        )],
-      ),
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Wrap(
+          spacing: 12, runSpacing: 12, alignment: WrapAlignment.center,
+          children: [for (var a = widget.ageMin; a <= widget.ageMax; a++) TapChoice(
+            key: ValueKey('age_$a'),
+            label: '$a',
+            selected: _tapped == a,
+            minSide: 56,
+            onTap: () => setState(() => _tapped = a),
+          )],
+        ),
+        if (widget.locksAge) ...[
+          const SizedBox(height: 16),
+          Text('A grown-up can change this later.',
+            key: const Key('ageLockNote'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        ],
+      ]),
     );
   }
 }

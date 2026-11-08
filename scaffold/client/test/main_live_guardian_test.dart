@@ -74,19 +74,38 @@ void main() {
   });
 
   group('B — the boot-branch decision itself, asserted against this file\'s own source', () {
-    final src = File('lib/main_live_guardian.dart').readAsStringSync();
+    // The guardian boot moved to guardian_boot.dart when main_live.dart became the one live entry point;
+    // main_live_guardian.dart is a thin wrapper (asserted below). The dart-defines are in live_common.dart.
+    final src = File('lib/guardian_boot.dart').readAsStringSync();
+    final common = File('lib/live_common.dart').readAsStringSync();
+    final entry = File('lib/main_live.dart').readAsStringSync();
+    final wrapper = File('lib/main_live_guardian.dart').readAsStringSync();
+
+    test('main_live_guardian.dart is a thin wrapper over the unified entry on the guardian dev target', () {
+      expect(wrapper, contains('Future<void> main() => runLive(target: LiveTarget.guardianDev);'));
+      expect(wrapper, contains("export 'guardian_boot.dart' show OliveLiveGuardian"));
+      expect(wrapper.split('\n').where((l) => !l.trimLeft().startsWith('//')).join('\n'),
+          isNot(contains('runApp(')));
+    });
 
     test('detects the dart-define via bool.hasEnvironment, never a defaultValue comparison', () {
-      expect(src, contains("bool.hasEnvironment('OLIVE_GUARDIAN_ID')"));
+      expect(common, contains("bool.hasEnvironment('OLIVE_GUARDIAN_ID')"));
     });
 
-    test('the pairing boot branch is gated on that exact flag', () {
-      expect(src, contains('if (!_hasGuardianIdDartDefine)'));
+    test('the dev boot is gated on that exact flag, and nothing is read from the device first', () {
+      final String live = entry.split('\n').where((l) => !l.trimLeft().startsWith('//')).join('\n');
+      expect(live, contains('hasGuardianDefine: kHasGuardianIdDartDefine'));
+      expect(live, contains('if (dev == BootRoute.guardianDev) {'));
+      expect(live.indexOf('if (dev == BootRoute.guardianDev) {'),
+          lessThan(live.indexOf('DeviceIdentityStore().load()')));
+      expect(src, contains('Future<void> bootGuardianDev()'));
     });
 
-    test('a missing stored identity is what actually triggers the pairing screen', () {
-      expect(src, contains('DeviceIdentityStore().load()'));
-      expect(src, contains('if (stored == null)'));
+    test('a missing stored identity is what actually triggers the role-first flow, not a pairing screen', () {
+      expect(entry, contains('DeviceIdentityStore().load()'));
+      expect(entry, contains('if (stored == null) {'));
+      expect(entry, contains('case BootRoute.guardianPaired:'));
+      expect(entry, contains('await bootGuardianPaired(stored!);'));
     });
 
     test('the pairing screen it boots into is the real PairingRedeemScreen, compiled '
@@ -110,14 +129,14 @@ void main() {
       expect(src, contains('session: _deviceSession(stored)'));
       expect(src, contains('session: _deviceSession(identity)'));
       expect(src, contains("deviceCredential: result['deviceCredential'] as String?"));
-      expect(src, contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+      expect(common, contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
       expect(RegExp(r'await devLoginFor\(').hasMatch(src), isFalse);
     });
 
     test('a guardian-role redeem never invents a childId — this build keeps the '
         'pre-existing OLIVE_CHILD_ID default regardless of pairing state (a real, '
         'disclosed limit — see this file\'s own header)', () {
-      expect(src, contains('_dartDefineChildId'));
+      expect(src, contains('kLiveChildId'));
       expect(src, isNot(contains("result['childId']")));
     });
 
@@ -125,14 +144,22 @@ void main() {
         'OliveLiveGuardian, on both boot paths -- Automatic First-Run Detection is '
         're-checked every launch, never cached across boots', () {
       expect(src, contains("me['hasPin'] == true"));
-      expect(src, contains('final hasPin = await _fetchHasPin(guardianId);'));
-      expect(src, contains('hasPin: hasPin'));
+      expect(src, contains('final bool? serverHasPin = await _fetchServerHasPin(guardianId);'));
+      expect(src, contains('hasPin: entry != GuardianEntry.serverPinSetup'));
+    });
+
+    test('the server answer is three-way: a server that cannot be asked is NOT folded into "no PIN" '
+        '(that fold was the undismissable offline server-PIN trap)', () {
+      final fn = src.substring(src.indexOf('Future<bool?> _fetchServerHasPin('), src.indexOf('/// Real POST /v1/me/pin'));
+      expect(fn, contains('return null;'));
+      expect(fn, contains('on DeviceRevokedException'));
+      expect(src, contains('resolveGuardianEntry(serverHasPin: serverHasPin, localPinSet: localPinSet)'));
     });
 
     test('GuardianSetupScreen\'s onComplete re-invokes _bootLiveApp itself -- "the very '
         'next boot proceeds to GuardianHome normally" implemented literally as a fresh '
         'boot, not a local setState flip', () {
-      expect(src, contains('onComplete: () => _bootLiveApp('));
+      expect(src, contains('onComplete: () => bootLiveGuardian('));
     });
   });
 }

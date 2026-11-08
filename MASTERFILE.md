@@ -1693,8 +1693,9 @@ sign in again." (`ApiException.userMessage`). Changing a PIN from the guardian
 setup screen collects the current PIN first.
 
 **Not in this change (open, deliberately).** Guardian *sign-in* on a fresh
-device still begins at pairing (by design, §8.5.6: the PIN needs a session) (a guardian pairs with a code from another
-device); a passkey-based sign-in that mints a device credential is not built.
+device still begins at pairing when it has a server account to join (a guardian pairs with a code from another
+device); since the role-first first run (§8.5.9) a grown-up with no account can instead start a LOCAL family on the device, with a
+local PIN, and connect later; a passkey-based sign-in that mints a device credential is not built.
 `LiveChildHomeScreen`'s "Live: name and message count are real" banner, and
 the networked-checkers lobby's own dev login, are untouched.
 
@@ -3415,7 +3416,8 @@ enrollment. Documented in the security policy required by §10.1.
 > there's no stored identity AND no dart-define set (**superseded for the child
 > build, 2026-11-08, §8.5.6:** a fresh child device now runs the welcome
 > questions first and reaches this screen as the LAST step; the guardian build
-> still opens on it) — `bool.hasEnvironment`,
+> now builds a local family first and offers this screen as its last, optional step, §8.5.9; a cut-off guardian with no local
+> family still lands on it) — `bool.hasEnvironment`,
 > not a defaultValue comparison, is what tells the two apart. On success,
 > `{sessionToken, deviceId, role, targetId}` persists via
 > `flutter_secure_storage` — the FIRST on-device persistence this app has
@@ -3917,7 +3919,7 @@ taxonomy. | **Not planned** — do not re-propose absent new owner direction |
 
 ### §19.1 Child device reality — stub
 
-> *Numbering: this stub was headed §8.5 until v0.50.0, which clashed with §8.5 *The child's first run*. It is §19.1 because it is a deferred item. Status at v0.50.0: the **no-install web path is not built** (the client has `android/` and `windows/` targets only, no web or iOS target); a **household-device mode** exists in part (paired devices, §5.20, and the on-device store, §8.16); **offline playback of delivered messages is not built** (no message cache is among the 29 areas in §8.16.4).*
+> *Numbering: this stub was headed §8.5 until v0.50.0, which clashed with §8.5 *The child's first run*. It is §19.1 because it is a deferred item. Status at v0.50.0: the **no-install web path is not built** (the client has `android/` and `windows/` targets only, no web or iOS target); a **household-device mode** exists in part (paired devices, §5.20, and the on-device store, §8.16); **offline playback of delivered messages is not built** (no message cache is among the areas in §8.16.4).*
 
 The SMS-bridge insight (§8.4) applied to the child's side. A child may have a
 shared family tablet, a school Chromebook, a phone the *other* parent controls,
@@ -4237,8 +4239,9 @@ gains `hasOnboarded`, symmetric with `hasPin`: `null` for a guardian,
 **Two hard, non-dismissible boot gates**, checked fresh on every launch,
 identically for a paired device or a dart-define-provisioned one:
 
-- Guardian side (`main_live_guardian.dart`): `hasPin === false` renders
-  `GuardianSetupScreen` in place of `GuardianHome` outright. That screen's
+- Guardian side (`main_live_guardian.dart`, now `guardian_boot.dart`; the file is a thin wrapper since §8.5.8): `hasPin === false`
+  renders `GuardianSetupScreen` in place of `GuardianHome` outright **when the server could be asked**; when it could not, a local PIN is
+  enough to enter (§8.5.9). That screen's
   own code is unchanged (§11's own account below) — only what decides the
   initial screen changed.
 - Child side (`main_live.dart`): `hasOnboarded === false` runs the
@@ -4323,12 +4326,12 @@ session; a device that was connected and is later cut off returns to the code
 screen alone (it has already been through the questions); the post-pairing
 tour for a paired child who has not onboarded (§8.5.5) still runs.
 
-**The guardian build keeps pairing first, on purpose.** Its first run is
-pairing, then `GuardianSetupScreen`. The PIN is set through `POST /v1/me/pin`
-and `hasPin` is read from `GET /v1/me`: both need a session, so there is
-nothing honest to ask before a device is connected, and a local-only PIN would
-be faked and is not built. The pairing screen now says so ("Connect first.
-Your PIN is kept safely on your account...").
+**Superseded for the guardian build (2026-11-08, §8.5.9).** This section first said the guardian build keeps
+pairing first because the account PIN is set through `POST /v1/me/pin` and `hasPin` is read from `GET /v1/me`, both of which need
+a session, and that "a local-only PIN would be faked and is not built". That is still true of the ACCOUNT PIN, which is not
+faked and not replaced. What changed is that the owner's role-first requirement needs a grown-up to be able to start at all
+(audit findings A-G1/A-G2), so §8.5.9 adds a separate, honestly-named LOCAL PIN for on-device actions and makes "Connect this
+device" the last, optional step there too.
 
 **Prohibitions.** P2: the draft holds answers and one "finished" bit; no
 score, count, rank or progress ("step 7 of 7") is stored or shown. P3: no
@@ -4338,16 +4341,13 @@ authority is not granted by anything she taps (§8.5.0).
 ### 8.5.7 What she calls her grown-ups, and the age lock (naming core)
 
 Owner addition, 2026-11-08. **Built:** the pure core, `contact_labels.dart`,
-with its tests, and (label-adoption pass) its **adoption by every child-facing
-screen** through `grownup_labels.dart` (below). **Not built yet, listed in §22:**
-the role picker, the unified entry, the guardian onboarding, a rename-a-grown-up
-screen, and the one-line install of the label scope at the app root.
+with its tests, its **adoption by every child-facing screen** through `grownup_labels.dart` (label-adoption pass, below) and, in the role-first change (§8.5.8 to §8.5.10), the role picker, the unified entry, the guardian onboarding, the age lock in the UI, the rename screen and the install of the label scope at the child shell's root. **Not built yet, listed in §22:** see the row there.
 
 - **Age lock.** The picker she sees offers **5 to 15** (`kKidAgeMin`/`Max`); a
   guardian sets **3 to 17** (`kGuardianAgeMin`/`Max`), as in the family screens.
   `lockKidAge()` clamps and locks; once locked, `changeAge()` refuses unless the
   caller passes the result of the guardian PIN gate. The lock is a pure function;
-  wiring the picker to it and storing the lock is not done yet.
+  wiring the picker to it, storing the lock and the PIN-gated change are built (§8.5.10).
 - **Default words by age, one constant.** `kLittleWordsAges` (5 to 15): once the
   age is locked inside it, the defaults are **Mommy** and **Daddy**; before the
   lock, at 16 and over, and in any unlocked state, **Mom** and **Dad**. Only a
@@ -4421,6 +4421,138 @@ under each pile, which sits uneasily with P2 (no scoring shown to the child).
 (2) "Where was today" shows its 0 to 100 slider values, which reads as a score.
 Both are shipped, working screens and are left exactly as they are for the
 owner's decision.
+
+
+### 8.5.8 Step 0: "Who is using this device?", and the one live entry
+
+**Owner requirement, 2026-11-08:** *the onboarding has to follow the logic of ROLES: it has to ask if you are a kid, a mom, or a
+dad; we can change it to mommy and daddy once we locked in the age of the child (anywhere from 5 to 15) and let the kid edit what
+they want to call mommy and daddy, like renaming contacts.* Code: `device_role.dart`, `role_picker_screen.dart`,
+`live_boot_plan.dart`, `live_common.dart`, `guardian_boot.dart`, `main_live.dart` (`runLive`).
+
+**The picker.** A device with no stored identity and no stored role opens on "Who is using this device?" with three big picture
+choices, **Kid**, **Mom** and **Dad**, and a smaller fourth, **Someone else** (a grandparent or another guardian). *The fourth is
+the coordinator's addition, beyond the owner's three; it exists so that a grown-up who is neither does not have to pick a role that
+is not true. Remove it by deleting `DeviceRole.other` and its tile if the owner does not want it.* Picture-first (a large face and
+one word per choice), **64dp** targets, read-aloud on request (a speaker reads the question and every choice; long-press on a face
+says its word; speech never starts by itself, §8.8.5), and no pressure: nothing is timed, counted or compared, and there is no "step
+1 of 7". A tap only **highlights** a face; a second, separate "That's me" commits it, so a small finger's mis-tap costs nothing.
+
+**The role is one word per device,** kept in the new device-scoped catalogue area `device.role` (§8.16.4). It is not a name and not
+personal data. A device wipe removes it, after which the device asks again. **A role is a question, not authority (§8.5.0):** picking
+Mom, Dad or Someone else grants nothing on any server; the guardian shell it opens is the same shell a paired guardian gets and every
+server-side capability is still the family-graph authorizer's.
+
+**One live entry.** `main_live.dart` is now the only live entry point. `decideBoot` (`live_boot_plan.dart`, a pure function, tested
+for every combination) picks the route; first match wins:
+
+| # | Facts | Route |
+|---|---|---|
+| 1 | `OLIVE_CHILD_ID` set (unified target) | child shell on a dev session, exactly as before |
+| 1 | `OLIVE_GUARDIAN_ID` set | guardian shell on a dev session, exactly as before |
+| 2 | a stored device identity | its own role: child shell or guardian shell (a connected device is what the server says it is) |
+| 3 | no identity, no role | the role picker |
+| 4 | role Kid | the child's first run (§8.5.6, with §8.5.10) |
+| 5 | role Mom, Dad or Someone else, local family and local PIN present | the guardian home with no server |
+| 5 | role Mom, Dad or Someone else, otherwise | the guardian onboarding (§8.5.9) |
+
+The dev defines are decided first and read **nothing** from the device. `OLIVE_DEV_LOGIN` is unchanged (it only enables the dev
+login, it picks no route). The two live targets share one package id, so there is no reason left for two entry points.
+`main_live_guardian.dart` stays as a **thin wrapper** (`runLive(target: LiveTarget.guardianDev)`) so the existing dev flows and test
+imports (`OliveLiveGuardian`) keep working; on that legacy target `OLIVE_CHILD_ID` only names the child the guardian looks at and does
+not boot the child shell. The guardian shell's boot moved, unchanged in behaviour, into `guardian_boot.dart`, and the dart-defines and
+the Firebase start-up into `live_common.dart`.
+
+**What this does not do.** One role per device: a Mom's phone does not run the Kid onboarding (a "hand her the phone" mode, or
+changing a device's role without a wipe, is not built; §22). The role is not synced and no server learns it.
+
+### 8.5.9 The grown-up's first run: a local family, a local PIN, and "Connect this device" last
+
+This is the local half of audit findings **A-G1/A-G2**: until now a new parent could not start at all (the only way in was a pairing
+code another guardian made) and an offline launch landed on a server-PIN setup that could not be left. Code:
+`guardian_onboarding.dart`, `local_family.dart`, `local_pin.dart`, `local_pin_screens.dart`, `local_guardian_home.dart`,
+`guardian_local_scope.dart`, `guardian_boot.dart`.
+
+**The steps (no server until the last).**
+1. **You:** your name, and what she calls you: *Mom*, *Dad* (one tap) or a word of your own (Grandma, Nana, Uncle Sam). A label that
+   is exactly Mom or Dad is treated as one, so the age-default words apply; any other word is shown to her as it is.
+2. **Her:** first name and age. **The age is locked when you enter it.** A grown-up may set 3 to 17 (the kid picker stays 5 to 15).
+3. **Her time zone:** "same as this phone" (the default) or one of 23 region names. The phone has no zone database, so a zone other than
+   "this phone" is remembered and **not converted offline**: the home shows its name instead of an invented clock.
+4. **A PIN for this device** (below). Not skippable: it is what lets the device open offline.
+5. **Connect this device,** where a server exists. **Last and optional:** the same code screen, with words saying everything already
+   works without it and that it can be done later in Settings > Account. "Not now" is a real way on.
+
+The family and the PIN are **saved when step 4 ends, before step 5,** so a restart or "Not now" never repeats the questions. A store
+that cannot be written is said plainly and holds the grown-up on step 4; nothing is reported saved that is not.
+
+**The local family** (`guardian.local-guardian.localfamily`, sealed): the guardian (name, label, kind), the child (first name, age,
+locked) and her home time zone. The guardian is a `GrownupContact` (id `local-guardian`), so a nickname she gives them keeps
+applying. **Nothing is uploaded and connecting does not upload it** (no route takes it). A damaged record reads as "no family" and the
+onboarding runs again.
+
+**The local PIN** (`guardian.local-guardian.localpin`, sealed). A 4 to 8 digit code, **separate from the server PIN.**
+- *Kept as:* PBKDF2-HMAC-SHA256 over a fresh 16-byte random salt, 100,000 rounds (the pinned pure-Dart `cryptography` package that
+  already seals the private areas), the salt and the round count stored with the hash. The PIN itself is never stored. Compared in
+  constant time. The sealed area adds a second layer.
+- *Limited as:* five wrong tries lock it for 15 minutes, in the server's words ("Too many wrong tries. Try again in 15 minutes."); the
+  count restarts at zero when a lock is imposed and when a check succeeds; while locked even the right PIN is refused and nothing is
+  counted. The state is held in memory first and written second, so a store that cannot be written is not a way to try forever.
+- **What it protects:** (1) *changing her locked age* (§8.5.10); (2) *"Data on this device"* (the wipe) **when there is no session**
+  (with a session the server's `verify-controls-pin` is used, unchanged); (3) *the guardian Settings hub* on a device that has a local
+  PIN. Setting it also stops the offline server-PIN trap (below).
+- **What it does not protect, plainly:** it is **not the account PIN** and nothing here calls `POST /v1/me/pin`, `verify-controls-pin`
+  or `/kiosk-pin/verify`; **when a session exists the server PIN rules are exactly what they were** and a local PIN never stands in for
+  them. It does **not** gate launching the app (the phone's own screen lock does that) or the other guardian screens outside the hub. It
+  is **not** the kiosk lock's PIN (the child shell still checks the server). It is a deterrent against a child, a sibling or a thief
+  with the screen on, **not** against someone who has copied the app's files and the device's keystore (a 4 digit code has 10,000
+  values; the slow hash only makes each guess cost more). It is not synced and there is **no in-app way to recover a forgotten PIN**
+  (the wipe needs it; clearing the app's storage in Android's settings is the only reset, and it erases the family too). That recovery
+  question is for the owner (§22).
+
+**The boot gate, three answers instead of two** (`resolveGuardianEntry`). The old gate folded "the server could not be asked" into
+"no PIN" and showed a server-PIN setup that needs the server, which could not be dismissed. Now: the server says **yes** -> in; the
+server says **no** -> the server-PIN setup, unchanged (a local PIN does not stand in for it); the server **cannot be asked** -> a
+**local PIN is sufficient to enter**, and without one a **local PIN is set**, which works offline. A connected grown-up who is offline
+and has a local family lands on the local home, not on "Couldn't reach the server".
+
+**The offline home** (`LocalGuardianHome`) is the same `GuardianHome` the live build shows, fed from the local family: her name, the
+phone's clock, no ribbon (that is a server route), no state sentence, no overlap, and every tile that needs a server says so as it does
+in the preview build. A one-line band says it is on this device only and, when the build can connect, how.
+
+**Connecting later.** Settings > Account > "Connect this device" (only on a device that is not connected and whose build has a server)
+opens the same code screen; a successful redeem stores the identity first and boots the connected guardian shell exactly as before.
+Signing out of a connected device with a local family returns to the offline home instead of a bare code screen.
+
+### 8.5.10 Her locked age, and "My people"
+
+**The age lock, wired.** On the Kid's first run the age picker offers **5 to 15** and says "A grown-up can change this later."; what she
+taps is **locked** (`lockKidAge`). Skipping the question locks nothing. If a local family already locked her age (a grown-up set the
+device up) the question is not asked. The lock is one bit with the age: in the draft (`ageLocked`, §8.5.6) and, once the device is
+connected, in her profile cache (`child.<id>.profile`, `ageLocked`); **what the server last said about her age does not overwrite a
+locked age.** A grown-up changes it only through `changeLockedAgeFlow`: the local PIN gate, then 3 to 17, then Save (Settings > Her >
+"Age band"). A wrong PIN, a locked PIN, Cancel and a store that cannot be written all leave the old age, and the last says so.
+
+**The words.** Unchanged from §8.5.7 and now in the UI: her own word, else the age default for a Mom or a Dad (Mommy and Daddy once the
+age is locked inside 5 to 15; Mom and Dad before the lock, at 16 and over, and when unlocked), else the grown-up's own label.
+
+**Who her grown-ups are** (`grownup_roster.dart`). With a **local family** on the device, the "who is here" step (§8.5.3, left out by
+§8.5.6) returns, driven by it: she is told "You're here to talk to Mommy." Otherwise (nobody known yet) the step is **not shown** and the
+naming step offers two **neutral placeholders**, "Your grown-up" and "Your other grown-up", so no screen invents a Dad or a Mom who may
+not exist; she can still give each a word of her own (a word, not a claim about a person). After pairing, nicknames she gave before are
+moved to her connected profile (`carryOverFirstRun`, hers win, nothing is lost). **Real names and labels from the server's `/me` for a
+connected child are not built** (§22); until then the nickname map keeps applying by contact id.
+
+**"My people"** (`my_people_screen.dart`). A large face per grown-up with the name she sees; tap a face; pick a word from the bank
+(Mommy, Mama, Mum, Mom, Mummy, Daddy, Dada, Papa, Pop, Dad) or type her own (24 letters at most); "Use the usual word" returns to the
+default. 64dp targets, long-press says the name aloud, a failed save says only "That did not save. Try again." In the first run it is
+the step after "who is here" ("What do you call your grown-ups?", optional, "Next" or "Skip for now"); from her More hub it is the
+"My people" tile under "Just yours".
+
+**Hers.** `NicknameRepository` is the only writer and only the child's own screens hold it; a guardian screen is handed a
+`NicknameReader` that cannot write (a test fails if any guardian-side file mentions the writer). `ContactLabels.forGuardian` renders
+"Dad (Ivy calls you Dada)". **The guardian-side row that shows it is not built:** nicknames live on the child's device and there is no
+sync between a family's devices (§8.16.7), so on any one device today there is nothing for it to show.
 
 ---
 
@@ -5589,8 +5721,11 @@ drift. Nothing is written that is not in it.
 | `child.<id>.colour` | Colour of the day for this device (`LocalColourStore`, same real rules as the in-memory store): the last two weeks of colour days (only the latest is used; older are dropped), the art style, and the play window. No tally of picks. | No |
 | `child.<id>.family` | Family structure a grown-up built and released on this device (`LocalStoreFamilyStore`): the append-only history, her homes and people, guardian-written stories. A failed save throws; a change is never reported recorded when it was not. | **Yes** |
 | `child.<id>.access` | Accessibility for her device, as a guardian set it: read aloud, reduce motion, roomier reading, larger targets, captions wanted. Five on/off switches (§8.21). | No |
-| `child.<id>.profile` | Offline start-up cache: her first name, age in whole years, that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
-| `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
+| `child.<id>.profile` | Offline start-up cache: her first name, age in whole years (and whether it is locked, §8.5.10), that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
+| `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
+| `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
+| `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
+| `guardian.local-guardian.localpin` | The grown-up's PIN for this device only (§8.5.9): PBKDF2-HMAC-SHA256 hash, salt, round count and the count toward a 15 minute lock. Never the PIN itself; not the account PIN; never sent. | **Yes** |
 | `child.<id>.nicknames` | What she calls each grown-up if she renamed one (§8.5.7): a contact id and the word she chose. Hers: a grown-up can see it, not change it. No count or ranking. | No |
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
 | `child.<id>.growing` | Time capsules (note, dates, optional thumbnail), first times, pencil-mark heights, which of the eight Growing and Care suites a guardian switched off. No counts, streaks or comparison. | **Yes** |
@@ -7095,7 +7230,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **29 areas, 13 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **32 areas, 15 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
@@ -7104,7 +7239,7 @@ Each row is something this document or the product's own screens might lead a re
 
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
-| **Role-led first run** (owner addition 2026-11-08) | The pairing-last child flow (§8.5.6) and the naming core and age lock (§8.5.7). | The "Who is using this device?" picker (kid, Mom, Dad, and a fourth "Someone else", which is the coordinator's addition, not the owner's), the role stored per device, a unified live entry that routes to the child or guardian shell (today `main_live.dart` and `main_live_guardian.dart` are separate targets), the guardian onboarding, wiring the age lock and a rename-a-grown-up screen, and installing the label scope at the app root (the child-facing screens already read it, §8.5.7). |
+| **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |
@@ -7707,7 +7842,7 @@ No server route, migration, network call or credential. No dyslexia font. No voi
 navigation (the §8.4 row "voice-driven nav" is not built; it needs speech
 recognition, which is not on-device in this client). No captions. No hangman setup
 for her (guardian-side by design). No change to calls, push, delivery, invites or
-networked play. The guardian-only build (`main_live_guardian.dart`) does not install
+networked play. The guardian-only build (`main_live_guardian.dart`, now a wrapper over the unified entry; its shell is `guardian_boot.dart`) does not install
 the child scopes. Real-device verification (TalkBack, a real synthesizer voice) has
 not been done: the engine behind `TtsChannel` is the OS's own and is exercised here
 through a fake.

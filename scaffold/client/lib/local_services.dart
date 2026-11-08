@@ -204,6 +204,23 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'would help) and which of the two accessibility profiles are on. Guardian side only. '
           'Sealed on the device; no score and no label about her; nothing is sent.'),
   LocalDataEntry(
+      area: 'role', scope: LocalScope.device, maxBytes: 4 * 1024,
+      what: 'Who is using this device, chosen on the very first screen: one word, kid, mom, dad or '
+          'someone else. It decides which app opens. It is not a name and grants a grown-up nothing; '
+          'a device wipe removes it and the device asks again.'),
+  LocalDataEntry(
+      area: 'localfamily', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * 1024,
+      what: 'The family a grown-up set up on this device without a server: their name and what she '
+          'calls them, her first name and age (locked; changing it needs a grown-up PIN) and '
+          'the time zone she lives in. Kept only here until the device is connected; nothing is '
+          'uploaded. Sealed on the device.'),
+  LocalDataEntry(
+      area: 'localpin', scope: LocalScope.guardian, encrypted: true, maxBytes: 4 * 1024,
+      what: 'The PIN a grown-up chose for this device only, as a salted slow hash (the PIN itself is never '
+          'kept), and the count of wrong tries toward a 15 minute lock. It gates changing her locked '
+          'age, clearing data and the settings here. It is not the account PIN and is never sent '
+          'anywhere. Sealed on the device.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '

@@ -45,6 +45,7 @@ class PairingRedeemScreen extends StatefulWidget {
     this.httpClient,
     this.closingStep = false,
     this.onNotNow,
+    this.localFirst = false,
   });
 
   final String baseUrl;
@@ -77,6 +78,12 @@ class PairingRedeemScreen extends StatefulWidget {
   /// Closing step only: leave for the calm waiting screen. Never a way past
   /// connecting, only a pause; the caller keeps the draft answers.
   final VoidCallback? onNotNow;
+
+  /// Guardian only (standalone layout): this grown-up already has a working family on this
+  /// device (guardian_onboarding.dart). Connecting is OPTIONAL and last: the screen says
+  /// everything keeps working without it and offers [onNotNow] ("Not now") as a real way on.
+  /// The default (false) is the unchanged "connect first" screen.
+  final bool localFirst;
 
   @override
   State<PairingRedeemScreen> createState() => _PairingRedeemScreenState();
@@ -247,7 +254,18 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
           'Ask a guardian to open "Add a device" and either show you the '
           'QR code or read out the 6-digit code.',
           textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
-        if (widget.role == 'guardian') ...[
+        if (widget.role == 'guardian' && widget.localFirst) ...[
+          const SizedBox(height: 8),
+          // The family and the PIN already live on this device; connecting only lets the
+          // other devices share them. Skipping it loses nothing.
+          Text(
+            'This step is optional. Your family and your PIN are already set up on '
+            'this device and keep working without a connection. Connecting lets '
+            'your other devices share the account. You can do it later in '
+            'Settings, under Account.',
+            key: const Key('pairingGuardianLocalFirst'),
+            textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+        ] else if (widget.role == 'guardian') ...[
           const SizedBox(height: 8),
           // Why a grown-up connects FIRST (the child build connects last): the
           // PIN is kept on the account, so choosing one needs a connection.
@@ -263,6 +281,14 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
           const SizedBox(height: 16),
           Text(_errorMessage!, key: const Key('pairingErrorMessage'), textAlign: TextAlign.center,
             style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ],
+        if (widget.localFirst && widget.onNotNow != null) ...[
+          const SizedBox(height: 16),
+          TextButton(
+            key: const Key('pairingGuardianNotNow'),
+            style: TextButton.styleFrom(minimumSize: const Size(88, 48)),
+            onPressed: _submitting ? null : widget.onNotNow,
+            child: const Text('Not now')),
         ],
       ]),
     )),

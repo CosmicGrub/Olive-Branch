@@ -32,6 +32,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'access_settings.dart' show kChildTarget;
+import 'contact_labels.dart';
+import 'grownup_roster.dart';
 import 'onboarding_draft.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_shared.dart' show ChildOnboardingScaffold;
@@ -46,10 +48,20 @@ class FirstRunFlow extends StatefulWidget {
     required this.draftRepository,
     required this.onRedeemed,
     this.httpClient,
+    this.roster,
+    this.nicknames,
   });
 
   final String baseUrl;
   final OnboardingDraftRepository draftRepository;
+
+  /// Who her grown-ups are, as far as the device knows (grownup_roster.dart): the local family's
+  /// people and locked age, or neutral placeholders. Null runs the questions without the grown-ups
+  /// steps (tests of the older shape).
+  final KidRoster? roster;
+
+  /// Where the names she gives her grown-ups are kept (hers; contact_labels.dart).
+  final NicknameRepository? nicknames;
   final void Function(Map<String, dynamic> result) onRedeemed;
   final http.Client? httpClient;
 
@@ -98,9 +110,14 @@ class _FirstRunFlowState extends State<FirstRunFlow> {
     FirstRunStage.questions => OnboardingFlowScreen(
         // No grown-up is known yet and no child id exists: no 'Ivy', no 'Dad',
         // no 'demo-child' in a live build.
-        fallbackName: '',
+        fallbackName: widget.roster?.childName ?? '',
         childId: kPendingDeviceScope,
         includeWho: false,
+        lockAge: true,
+        knownAge: (widget.roster?.known ?? false) ? widget.roster!.age : null,
+        grownups: widget.roster?.contacts,
+        grownupsKnown: widget.roster?.known ?? false,
+        nicknames: widget.nicknames,
         introLine: "Let's get to know each other. A few quick questions, then "
             'one last step to connect this device with a grown-up.',
         onDraft: _questionsDone,
