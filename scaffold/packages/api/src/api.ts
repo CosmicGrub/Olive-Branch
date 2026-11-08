@@ -50,6 +50,67 @@ export const MAX_REQUEST_BODY_BYTES = (() => {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_REQUEST_BODY_BYTES;
 })();
 
+/**
+ * P-08 -- the body cap for a caller who has NOT proven a session: the three
+ * raw /v1/auth/* login routes in server/index.mjs, every `noSessionRequired`
+ * route, and any request whose Bearer token fails verification. A login
+ * challenge, an assertion or an invite-accept body is a few hundred bytes to
+ * a few KB; 16 KiB leaves generous headroom while closing "an anonymous
+ * caller can make the server buffer 40 MiB". `MAX_UNAUTH_BODY_BYTES`
+ * overrides; invalid/missing falls back (same NaN-disables-the-cap guard as
+ * above).
+ */
+const DEFAULT_MAX_UNAUTH_BODY_BYTES = 16 * 1024;
+export const MAX_UNAUTH_BODY_BYTES = (() => {
+  const raw = Number(process.env.MAX_UNAUTH_BODY_BYTES);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_UNAUTH_BODY_BYTES;
+})();
+
+export type BodyRead = { ok: true; body: string } | { ok: false; reason: 'too_large' | 'aborted' };
+
+/**
+ * P-05 -- read a request body byte-exactly. The previous `raw += chunk` on
+ * Buffer chunks decoded each chunk to a string SEPARATELY, so any multi-byte
+ * UTF-8 sequence split across a chunk boundary became U+FFFD (reproduced
+ * with a 200,008-character 'é' body). Here chunks are collected as Buffers,
+ * the cap counts BYTES (not UTF-16 code units, which under-count non-ASCII
+ * by up to 4x), and the body is decoded exactly once at the end.
+ *
+ * Oversized: stops buffering the moment the cap is crossed (or up front when
+ * a truthful Content-Length already exceeds it) and resolves
+ * `{ ok: false, reason: 'too_large' }`; the caller answers 413 and closes.
+ */
+export function readRequestBody(req: IncomingMessage, maxBytes: number): Promise<BodyRead> {
+  return new Promise((resolve) => {
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      resolve({ ok: false, reason: 'too_large' });
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    const finish = (r: BodyRead) => {
+      if (settled) return;
+      settled = true;
+      req.off('data', onData); req.off('end', onEnd); req.off('error', onError);
+      resolve(r);
+    };
+    const onData = (c: Buffer | string) => {
+      const buf = typeof c === 'string' ? Buffer.from(c, 'utf8') : c;
+      bytes += buf.length;
+      if (bytes > maxBytes) { chunks.length = 0; finish({ ok: false, reason: 'too_large' }); return; }
+      chunks.push(buf);
+    };
+    const onEnd = () => finish({ ok: true, body: Buffer.concat(chunks).toString('utf8') });
+    // A client that aborts mid-body must not be processed as if the body
+    // were complete (a truncated JSON/base64 body is not what was sent).
+    const onError = () => finish({ ok: false, reason: 'aborted' });
+    req.on('data', onData); req.on('end', onEnd); req.on('error', onError);
+    req.on('aborted', onError);
+  });
+}
+
 export type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 export interface Ctx {
@@ -148,6 +209,14 @@ export interface Route {
    * that does not resolve on its own (load-tested live: reproduced and fixed
    * during the real-authentication adversarial review, kiosk-pin/verify).
    *
+   * P-01 hardening: the rule "a handler that calls a pool-scoped accessor
+   * must not also hold the outer connection" is now applied to EVERY such
+   * route in server/routes.mjs and server/game_tables.mjs (they register with
+   * this flag and run each caller-scoped read in its own short session), the
+   * pool has a connect timeout so a future violation fails fast instead of
+   * hanging, and packages/db/test/pool_concurrency.test.mjs proves no request
+   * ever holds two connections at once.
+   *
    * Setting this to `true` is a promise enforced nowhere but in these words:
    * the handler must not read `q` (it is handed a stub that throws if called,
    * specifically so a future edit that starts using `q` fails loudly instead
@@ -243,21 +312,60 @@ export class Api {
       const params: Record<string, string> = {};
       let ok = true;
       for (let i = 0; i < rp.length; i++) {
-        if (rp[i].startsWith(':')) params[rp[i].slice(1)] = decodeURIComponent(pp[i]);
-        else if (rp[i] !== pp[i]) { ok = false; break; }
+        if (rp[i].startsWith(':')) {
+          // decodeURIComponent throws URIError on a malformed escape ("%E0%A4%A"):
+          // that is a bad REQUEST (400), never a 500.
+          try { params[rp[i].slice(1)] = decodeURIComponent(pp[i]); }
+          catch { return { malformed: true as const }; }
+        } else if (rp[i] !== pp[i]) { ok = false; break; }
       }
       if (ok) return { route: r, params };
     }
     return null;
   }
 
+  private safeMatch(method: string, url: string) {
+    try { return this.match(method, new URL(url, 'http://x').pathname); }
+    catch { return null; }
+  }
+
+  /**
+   * The matched route's registered TEMPLATE ('/v1/children/:childId/expenses'),
+   * never the concrete URL: ids in an access log are both noise and PII.
+   * Null when nothing matches.
+   */
+  routeTemplate(method: string, url: string): string | null {
+    const m = this.safeMatch(method, url);
+    return m && 'route' in m ? m.route.path : null;
+  }
+
+  /**
+   * P-08 -- how many body bytes the HTTP entry point may buffer for this
+   * request BEFORE any handler runs. A caller who has not proven a session
+   * (no route, a `noSessionRequired` route, a missing/forged Bearer token)
+   * gets MAX_UNAUTH_BODY_BYTES; only a request carrying a token that
+   * verifies gets the large authenticated cap (media/homework uploads).
+   */
+  bodyLimitFor(method: string, url: string, headers: Record<string, string | undefined>): number {
+    const m = this.safeMatch(method, url);
+    if (!m || !('route' in m) || m.route.noSessionRequired) return MAX_UNAUTH_BODY_BYTES;
+    const auth = headers['authorization'] ?? '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!token) return MAX_UNAUTH_BODY_BYTES;
+    return readSession(this.secret, token, this.now()).ok
+      ? MAX_REQUEST_BODY_BYTES : MAX_UNAUTH_BODY_BYTES;
+  }
+
   async handle(
     method: string, url: string, headers: Record<string, string | undefined>,
     rawBody: string,
   ): Promise<{ status: number; body: any }> {
-    const u = new URL(url, 'http://x');
+    let u: URL;
+    try { u = new URL(url, 'http://x'); }
+    catch { return { status: 400, body: { error: 'bad_url' } }; }
     const m = this.match(method, u.pathname);
     if (!m) return { status: 404, body: { error: 'not_found' } };
+    if ('malformed' in m) return { status: 400, body: { error: 'bad_path' } };
 
     // ---- pre-session routes ---------------------------------------------------
     // noSessionRequired -- see the Route field's own doc comment. No Bearer
@@ -417,22 +525,31 @@ export class Api {
   }
 
   listen(port: number) {
-    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-      let raw = '';
-      req.on('data', (c) => { raw += c; if (raw.length > MAX_REQUEST_BODY_BYTES) req.destroy(); });
-      req.on('end', async () => {
-        const out = await this.handle(req.method ?? 'GET', req.url ?? '/',
-          req.headers as any, raw);
-        res.writeHead(out.status, {
-          // charset=utf-8 explicit -- see server/index.mjs's own header on
-          // this exact fix, found via court_export.dart's live wiring.
-          'content-type': 'application/json; charset=utf-8',
-          // Child media must never be cached by an intermediary.
-          'cache-control': 'no-store',
-          'x-content-type-options': 'nosniff',
-        });
-        res.end(JSON.stringify(out.body));
-      });
+    const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+      const headers = {
+        // charset=utf-8 explicit -- see server/index.mjs's own header on
+        // this exact fix, found via court_export.dart's live wiring.
+        'content-type': 'application/json; charset=utf-8',
+        // Child media must never be cached by an intermediary.
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      };
+      const read = await readRequestBody(req,
+        this.bodyLimitFor(req.method ?? 'GET', req.url ?? '/', req.headers as any));
+      if (!read.ok) {
+        if (read.reason === 'aborted') { req.destroy(); return; }
+        // Drain (discard, never buffer) what the client is still sending so
+        // closing the socket after the 413 is a clean FIN, not an RST that
+        // can destroy the 413 before the client reads it.
+        req.resume();
+        res.writeHead(413, { ...headers, connection: 'close' });
+        res.end(JSON.stringify({ error: 'payload_too_large' }));
+        return;
+      }
+      const out = await this.handle(req.method ?? 'GET', req.url ?? '/',
+        req.headers as any, read.body);
+      res.writeHead(out.status, headers);
+      res.end(JSON.stringify(out.body));
     });
     return new Promise<{ close: () => Promise<void>; port: number }>((resolve) => {
       server.listen(port, () => resolve({

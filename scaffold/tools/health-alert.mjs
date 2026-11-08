@@ -43,6 +43,7 @@
  *   tolerate (see CHANGELOG.md's own "false-green" history in §20.4).
  */
 import pg from 'pg';
+import { staleBackupAlarm } from './backup_lib.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL || process.env.ADMIN_DATABASE_URL;
 if (!DATABASE_URL) {
@@ -71,6 +72,21 @@ if (!rows.length) {
 }
 
 const breaches = rows.filter((r) => Number(r.observed) > Number(r.threshold));
+
+// P-04: stale-backup alarm. Not a row of the health_check VIEW (a backup lives
+// on a filesystem, which SQL cannot see), so it is evaluated here and merged
+// into the same ALERT stream / exit code. Only active when BACKUP_DIR is set
+// (see tools/backup_lib.mjs's staleBackupAlarm for why: unset means backups
+// were never promised, so there is nothing to be late).
+const staleBackup = staleBackupAlarm(process.env);
+if (staleBackup) {
+  breaches.push({
+    check_name: staleBackup.checkName, severity: staleBackup.severity,
+    observed: staleBackup.observed, threshold: staleBackup.threshold,
+    meaning: staleBackup.meaning,
+  });
+  rows.push(breaches[breaches.length - 1]);
+}
 
 if (breaches.length) {
   // One structured line per breach, to stderr, meant to be grepped — not the

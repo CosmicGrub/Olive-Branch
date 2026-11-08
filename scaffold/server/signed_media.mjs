@@ -45,7 +45,16 @@ export async function serveSignedMedia(reqUrl, res, storage) {
   } catch {
     return json(400, { error: 'bad_signed_url' });
   }
-  const key = decodeURIComponent(parsed.pathname.replace(/^\/media\//, ''));
+  // P-19: decodeURIComponent throws URIError on a malformed escape ("%E0%A4%A",
+  // a lone "%"). Unguarded, an anonymous GET /media/%zz?... was a 500 with a
+  // logged stack trace; it is a malformed REQUEST, so 400 -- same body shape
+  // every other malformed signed URL above/below gets.
+  let key;
+  try {
+    key = decodeURIComponent(parsed.pathname.replace(/^\/media\//, ''));
+  } catch {
+    return json(400, { error: 'bad_signed_url' });
+  }
   // A MISSING exp param must be caught explicitly, before Number() ever
   // sees it: Number(null) coerces to 0, not NaN, so a bare
   // !Number.isFinite(exp) check alone silently admits a request with no

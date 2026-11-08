@@ -182,6 +182,31 @@ const NOW = Date.now();
     + 'try/catch in server/index.mjs is what turns this into a real 500 in production.');
 }
 
+// ===========================================================================
+// G · audit P-19 -- a malformed percent escape in the path is a 400, not a
+// thrown URIError (a 500 with a logged stack trace for an anonymous caller).
+// ===========================================================================
+{
+  const validTail = `?exp=${NOW + 300_000}&sig=abc`;
+  for (const [label, bad] of [
+    ['a truncated multi-byte escape', '/media/children%E0%A4%A/x.mp4'],
+    ['a lone percent', '/media/%/x.mp4'],
+    ['a percent followed by non-hex', '/media/%zz'],
+    ['an invalid UTF-8 continuation', '/media/%C0%AF'],
+  ]) {
+    const res = fakeRes();
+    let threw = false;
+    try { await serveSignedMedia(bad + validTail, res, storage); } catch { threw = true; }
+    check('G malformed path', `${label} does not throw out of the handler`, threw, false);
+    check('G malformed path', `${label} is a 400`, res.statusCode, 400);
+    check('G malformed path', `${label} says bad_signed_url, not an internal error`,
+      JSON.parse(res.body ?? 'null')?.error, 'bad_signed_url');
+  }
+  const okRes = fakeRes();
+  await serveSignedMedia(storage.signedUrl(KEY, 300, NOW), okRes, storage);
+  check('G malformed path', 'a valid, correctly-escaped URL is unaffected by the guard', okRes.statusCode, 200);
+}
+
 await fs.rm(root, { recursive: true, force: true });
 
 let g = '';

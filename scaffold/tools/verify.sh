@@ -41,7 +41,18 @@ record() { # name pass fail
 
 echo ""
 echo "── JavaScript suites ──────────────────────────────────────────"
-npm i --silent >/dev/null 2>&1
+# STRICT (P-13). This used to be `npm i --silent >/dev/null 2>&1`: a failed or
+# partial install (registry blip, lockfile drift, a native-module build
+# error) was thrown away with the output, and the suites below then ran
+# against whatever happened to be in node_modules -- a false-green path of the
+# exact class this file's header exists to close. `npm ci` installs EXACTLY
+# package-lock.json (and fails if it disagrees with package.json); any failure
+# aborts the run with the real error visible.
+if ! npm ci --silent >/tmp/npm-ci.out 2>&1; then
+  echo "  NPM CI FAILED — dependencies are not installed as package-lock.json says; nothing below is trustworthy"
+  tail -30 /tmp/npm-ci.out | sed 's/^/    /'
+  exit 2
+fi
 npm run --silent build >/dev/null 2>&1 || { echo "  BUILD FAILED"; exit 2; }
 for spec in \
   "time engine|packages/time-engine/test/golden.test.mjs" \
@@ -110,6 +121,10 @@ for spec in \
   "offline outbox + conflict resolution (§5.22)|packages/offline/test/offline.test.mjs" \
   "toddler shell (§8.10)|packages/toddler/test/toddler.test.mjs" \
   "annotation canvas engine (undo/redo/erase)|packages/annotation/test/canvas.test.mjs" \
+  "http hardening: body integrity, caps, rate limit, access log, metrics (P-05/07/08/19)|server/test/http_hardening.test.mjs" \
+  "lifecycle: graceful shutdown + game-socket heartbeat (P-14/15)|server/test/lifecycle.test.mjs" \
+  "backup lib: retention, stale alarm, encryption (P-04)|tools/test/backup_lib.test.mjs" \
+  "infra: Dockerfile, compose, CI hygiene (P-13/14/16)|tools/test/infra.test.mjs" \
   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
@@ -394,7 +409,12 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "letters route: real age-gated open, RLS child-owned (real DB)|server/test/letters_route.test.mjs" \
             "inbox route (real DB, real RLS)|server/test/inbox_route.test.mjs" \
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
-            "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" ; do
+            "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" \
+            "db pool: no self-deadlock, limits, broken clients (real RLS)|packages/db/test/pool_concurrency.test.mjs" \
+            "db auth hardening: challenge purge + uniform login (real DB)|packages/db/test/auth_hardening.test.mjs" \
+            "db fk indexes, migration 0036 (real DB)|packages/db/test/fk_indexes.test.mjs" \
+            "scheduler backup job: real pg_dump, prune, alarm (real DB)|packages/db/test/backup_job.test.mjs" \
+            "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   # MASTERFILE §16.2 #6 REVERSED AGAIN — server/test/calls_route.test.mjs
   # imports routes.mjs directly, which now reads LIVEKIT_URL/LIVEKIT_
@@ -411,7 +431,11 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
   # LiveKit Cloud project, matching this suite's own header (it only
   # decodes the minted JWT locally; it never round-trips it against a
   # server — that proof lives in live.test.mjs instead).
+  # PGBIN/PG_DUMP_BIN: backup_job.test.mjs takes a REAL pg_dump and
+  # migrate_lock.test.mjs drives migrate.mjs in psql mode; both need the
+  # version-matched client binaries this script already locates above.
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" \
+        PGBIN="$PGBIN" PG_DUMP_BIN="$PGBIN/pg_dump" \
         LIVEKIT_URL="wss://verify-sh.invalid" LIVEKIT_API_KEY="devkey" \
         LIVEKIT_API_SECRET="devsecret_at_least_32_chars_long_xx" \
         node "$file" 2>&1 || true)

@@ -151,6 +151,12 @@ services:
   server:
     image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
     restart: always
+    # P-14: server/index.mjs's SIGTERM handler closes websockets (1001), then
+    # cuts whatever is still open after SHUTDOWN_DEADLINE_MS (default 8 s),
+    # then ends the pool. Docker's default 10 s stop timeout leaves too little
+    # headroom over that deadline, so a SIGKILL could land mid-shutdown;
+    # 15 s is the 8 s deadline plus pool drain with margin.
+    stop_grace_period: 15s
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -299,6 +305,10 @@ services:
   scheduler:
     image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
     restart: always
+    # A SIGTERM during a nightly run lets the in-flight job finish (the loop
+    # only stops BETWEEN jobs); a dump of a family-sized database is seconds,
+    # but this leaves room for the media archive and an off-host sync.
+    stop_grace_period: 60s
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -321,7 +331,25 @@ services:
       # this feature exists at all. Pinned explicitly, same reasoning as
       # `server`'s own identical comment above.
       MEDIA_STORAGE_ROOT: /app/data/media
+      # P-04 -- the scheduler's `backup` job (tools/scheduler.mjs) and the
+      # stale-backup alarm in its health-alert job. See
+      # docs/backup-and-restore.md for exactly what is and is not automatic.
+      # BACKUP_DIR is the path INSIDE this container (the host side of the
+      # bind mount below is compose's own ${BACKUP_DIR:-./backups}); setting
+      # it is what turns the alarm on. backup_reader (BYPASSRLS, SELECT-only —
+      # db/migrations/0022) is the only identity that can dump every table.
+      BACKUP_DIR: /backups
+      BACKUP_DATABASE_URL: postgres://backup_reader:${BACKUP_READER_PASSWORD:?BACKUP_READER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+      # Optional, empty = off. Never defaulted to a credential.
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      BACKUP_SYNC_COMMAND: ${BACKUP_SYNC_COMMAND:-}
     volumes:
+      # Same host directory the ops-profile `backup` service writes, so one
+      # retention policy and one alarm cover both. The container runs as uid
+      # 1000 (USER node): the host directory must be writable by it
+      # (`mkdir -p backups && chown 1000:1000 backups`) or the nightly job
+      # fails loudly and the stale-backup alarm fires within BACKUP_MAX_AGE_HOURS.
+      - ${BACKUP_DIR:-./backups}:/backups
       # The other half of the same fix — without this mount, the env var
       # above points at a path that exists but is never the real volume.
       # Same named volume `server` writes to; `reap-media` needs to delete

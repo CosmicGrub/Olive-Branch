@@ -11,9 +11,23 @@ on:
     branches: [main]
   pull_request:
 
+# P-13. A new push to a PR branch supersedes the run still going for the
+# previous commit of that SAME ref (that run's result is already stale and it
+# burns ~15 runner-minutes finishing). Only pull_request runs are cancelled:
+# a `push` to main is the post-merge verification publish-image.yml chains
+# off, and one merge landing right after another must not silently cancel the
+# earlier commit's verification.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # Measured: ~14-16 minutes. A hung step (a wedged livekit-server, a stuck
+    # Postgres connection) otherwise holds the runner for GitHub's 6-hour
+    # default; 45 minutes is ~3x the real duration.
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -29,7 +43,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22.22.2' }
+        with:
+          node-version: '22.22.2'
+          cache: npm
+          cache-dependency-path: scaffold/package-lock.json
       # The Dart client is analysed and its widget invariants executed.
       # verify.sh treats a missing toolchain as a gap, not a skip.
       #
@@ -43,7 +60,15 @@ jobs:
       # the exact version this whole project has actually been built and
       # verified against locally all session.
       - uses: subosito/flutter-action@v2
-        with: { flutter-version: '3.44.8', channel: stable }
+        with: { flutter-version: '3.44.8', channel: stable, cache: true }
+      # pub packages, keyed on the lockfile: `flutter pub get` below (and the
+      # analyze/test steps inside verify.sh) resolve from this instead of
+      # re-downloading the same hosted packages every run.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('scaffold/client/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
       - run: flutter pub get
         working-directory: scaffold/client
       # Explicit pin, matching the Flutter pin's own discipline right above.
@@ -105,7 +130,10 @@ jobs:
             https://github.com/livekit/livekit/releases/download/v1.8.0/livekit_1.8.0_linux_amd64.tar.gz
           tar xzf /tmp/lk.tar.gz -C /tmp
           printf 'port: 7880\nrtc:\n  tcp_port: 7881\n  port_range_start: 50000\n  port_range_end: 50020\n  use_external_ip: false\nkeys:\n  devkey: devsecret_at_least_32_chars_long_xx\nlogging:\n  level: warn\n' > /tmp/lk.yaml
-      - run: npm ci || npm install
+      # Strict (P-13): the old `npm ci || npm install` fell back to a lockfile-
+      # IGNORING install whenever package-lock.json drifted from package.json,
+      # so CI quietly tested dependency versions nobody had committed.
+      - run: npm ci
         working-directory: scaffold
 
       # db/migrations/0022_backup_reader_role.sql references BOTH app_owner
@@ -156,3 +184,50 @@ jobs:
       # A monitoring view nobody queries is a comment.
       - run: node tools/healthcheck.mjs
         working-directory: scaffold
+
+  # The server image, built for real on every PR (P-16). publish-image.yml only
+  # builds it AFTER a merge to main, so before this job a broken Dockerfile was
+  # first discovered on main. The smoke checks pin the properties the
+  # multi-stage rewrite exists to provide: runtime deps present without dev
+  # deps, unprivileged user, no tests/demo/client shipped, version-matched
+  # pg_dump for the scheduler's backup job, writable media dir, and a real
+  # container that boots and exits 0 on SIGTERM within its stop grace period
+  # (the end-to-end proof of the graceful-shutdown fix).
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the server image
+        run: docker build -t olive-branch:ci scaffold
+      - name: Smoke-test the image contents
+        run: |
+          set -eu
+          [ "$(docker run --rm olive-branch:ci id -u)" != "0" ] || { echo "image runs as root"; exit 1; }
+          docker run --rm olive-branch:ci pg_dump --version | grep -q ' 16\.'
+          docker run --rm olive-branch:ci node -e "Promise.all(['livekit-server-sdk','pg','ws','luxon'].map(m => import(m))).then(() => console.log('runtime deps ok'))"
+          docker run --rm olive-branch:ci sh -c 'test -f server/index.mjs && test -f tools/migrate.mjs && test -f db/migrations/0001_phase0_init.sql'
+          docker run --rm olive-branch:ci sh -c '! test -e demo && ! test -e client && ! find . -path ./node_modules -prune -o -type d -name test -print | grep -q .'
+          docker run --rm olive-branch:ci sh -c 'touch /app/data/media/.w && rm /app/data/media/.w'
+          docker run --rm olive-branch:ci sh -c '! test -d node_modules/esbuild && ! test -d node_modules/jsdom'
+      - name: Boot it, then SIGTERM it
+        run: |
+          set -eu
+          docker run -d --name olive-ci -p 18080:8080 \
+            -e DATABASE_URL=postgres://nobody:nopass@127.0.0.1:9/none \
+            -e SESSION_SECRET=ci-session-secret-ci-session-secret \
+            olive-branch:ci
+          code=000
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/healthz || true)
+            [ "$code" = "503" ] && break
+            sleep 0.5
+          done
+          [ "$code" = "503" ] || { echo "server did not answer /healthz (got '$code')"; docker logs olive-ci; exit 1; }
+          start=$(date +%s)
+          docker stop -t 15 olive-ci
+          took=$(( $(date +%s) - start ))
+          exit_code=$(docker inspect -f '{{.State.ExitCode}}' olive-ci)
+          echo "stopped in ${took}s, exit code ${exit_code}"
+          docker logs olive-ci | grep -q 'shutdown: complete'
+          [ "$exit_code" = "0" ] && [ "$took" -lt 12 ]

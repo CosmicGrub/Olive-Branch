@@ -410,12 +410,26 @@ const EXPORT_DENIAL_MESSAGES = {
 export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   api.register({
     method: 'GET', path: '/v1/me', action: null,
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       // Her own name, not an id (§8.1) -- resolved for real here so a live
       // client never has to hardcode "Ivy" the way the demo build does.
-      const displayName = c.principal.roleName === 'child'
-        ? (await q(`SELECT display_name FROM child WHERE id = $1`, [c.principal.childId]))[0]?.display_name
-        : (await q(`SELECT display_name FROM app_user WHERE id = $1`, [c.principal.userId]))[0]?.display_name;
+      // Caller-scoped reads run in one short session that is released
+      // before pinCredentialFor() below checks out its own connection.
+      const [displayName, hasOnboarded, yearsOld] = await inSession(c, async (q) => {
+        if (c.principal.roleName === 'child') {
+          const name = (await q(`SELECT display_name FROM child WHERE id = $1`, [c.principal.childId]))[0]?.display_name;
+          const onboarded = (await q(`SELECT 1 FROM child_profile WHERE child_id = $1`, [c.principal.childId])).length > 0;
+          const yearsOld = (await q(
+            `SELECT date_part('year', age((now() AT TIME ZONE home_tz)::date, birth_date))::int AS years
+               FROM child WHERE id = $1`, [c.principal.childId]))[0]?.years ?? null;
+          return [name, onboarded, yearsOld];
+        }
+        const name = (await q(`SELECT display_name FROM app_user WHERE id = $1`, [c.principal.userId]))[0]?.display_name;
+        return [name, null, null];
+      });
       // hasPin — Onboarding & Guardian Access sub-project 1 (docs/superpowers/
       // specs/2026-09-12-onboarding-identity-pin-design.md). guardian_setup
       // .dart's new "Finish setup" stepper needs to know, on a RETURN visit,
@@ -442,22 +456,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // identical `SELECT ... WHERE child_id = $1` existence-check shape
       // this file already runs for `displayName` above, just against
       // `child_profile` instead of `child`.
-      const hasOnboarded = c.principal.roleName === 'child'
-        ? (await q(`SELECT 1 FROM child_profile WHERE child_id = $1`, [c.principal.childId])).length > 0
-        : null;
-      // yearsOld — audit C-05 (the child age gate was inert because no live
-      // client ever learned her age). Whole years, computed HERE from
-      // child.birth_date against her own home-zone calendar date — the
-      // birth date itself never leaves the server. Named `yearsOld`, not
-      // `age`: `age` is on packages/globalaudit's GLOBAL_CHILD_FORBIDDEN
-      // list, and Api.handle()'s child-payload sweep would 500 this route
-      // for every child session. `null` for a guardian caller (this is a
-      // per-child signal, same shape as hasOnboarded above).
-      const yearsOld = c.principal.roleName === 'child'
-        ? ((await q(
-            `SELECT date_part('year', age((now() AT TIME ZONE home_tz)::date, birth_date))::int AS years
-               FROM child WHERE id = $1`, [c.principal.childId]))[0]?.years ?? null)
-        : null;
+      // (hasOnboarded and yearsOld are computed in the session block above.)
+      // yearsOld: audit C-05. Whole years from child.birth_date against her home-zone date;
+      // the birth date never leaves the server. Named yearsOld, not age: `age` is on
+      // GLOBAL_CHILD_FORBIDDEN and the child-payload sweep would 500 this route.
       return { body: {
         userId: c.principal.userId,
         childId: c.principal.childId,
@@ -485,6 +487,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // in this handler that passed the wrong id could not reach another
     // guardian's row.
     method: 'POST', path: '/v1/me/delete', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       // A child principal always has userId: null (readSession's own
       // invariant, packages/auth/src/auth.ts) — children have no login of
@@ -930,6 +935,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // which caller" line, taken literally.
   api.register({
     method: 'GET', path: '/v1/children/:childId/activity-overrides', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const overrides = await activityOverridesFor(pool, c.principal, c.childId);
       return { body: { overrides } };
@@ -943,6 +951,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // PUT .../theme already uses for the same reason.
   api.register({
     method: 'PUT', path: '/v1/children/:childId/activity-overrides/:activityKey', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
         return { status: 403, body: { error: 'guardian_only' } };
@@ -966,6 +977,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // revokePairedDevice() already take on a double-tap.
   api.register({
     method: 'DELETE', path: '/v1/children/:childId/activity-overrides/:activityKey', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
         return { status: 403, body: { error: 'guardian_only' } };
@@ -1119,6 +1133,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // childId, ...) before this handler ever starts, on the exact same
     // authorization function mintToken() itself relies on.
     action: 'call',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       // The generic gate above does NOT reject a child principal outright
       // for 'call' (it isn't a P6/P7-restricted action) — but this route's
@@ -1283,6 +1300,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // one) — the generic gate's own P6/P7-only child restriction already
     // permits this; no extra child_cannot_end_call check is added here.
     action: 'call',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const ended = await recordCallEnd(pool, c.childId, c.params.sessionId);
       // Idempotent by design (recordCallEnd()'s own doc comment): both
@@ -1313,6 +1333,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   api.register({
     method: 'POST', path: '/v1/children/:childId/calls/:sessionId/join',
     action: 'call',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const session = await callSessionFor(pool, c.childId, c.params.sessionId);
       // Same honest-absence posture as every other "not found OR not yours"
@@ -1364,20 +1387,13 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // was never taught to recognize. calendar.view is the closest existing
     // fit (schedule/status-adjacent) until a real §7 action is specified.
     method: 'GET', path: '/v1/children/:childId/now', action: 'calendar.view',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       const nowUtc = DateTime.utc();
-      const interval = await q(
-        `SELECT tz FROM child_tz_interval
-          WHERE child_id = $1 AND valid @> $2::timestamptz
-          ORDER BY confidence DESC LIMIT 1`,
-        [c.childId, nowUtc.toJSDate()],
-      );
-      let tz = interval[0]?.tz;
-      if (!tz) {
-        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
-        if (!child.length) return { status: 404, body: { error: 'child_not_found' } };
-        tz = child[0].home_tz;
-      }
+      const tz = await childTzFor(c, nowUtc);
+      if (!tz) return { status: 404, body: { error: 'child_not_found' } };
       const local = nowUtc.setZone(tz);
       // §8.2.5 — "3 sleeps until Dad's week" is counted on HER local day
       // boundaries (child-local), never the order's zone or the server's.
@@ -1441,6 +1457,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // application logic here.
   api.register({
     method: 'POST', path: '/v1/me/device-tokens', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const platform = c.body?.platform;
       const token = c.body?.token;
@@ -1477,6 +1496,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'DELETE', path: '/v1/me/device-tokens', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const token = c.body?.token;
       if (typeof token !== 'string' || token.length === 0) {
@@ -1497,28 +1519,16 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // custody order" either, and calendar.view is the same schedule-adjacent
     // fit for the same undocumented reason.
     method: 'GET', path: '/v1/children/:childId/custody-order', action: 'calendar.view',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       // Which order is "active" is answered on a REAL date, resolved the
       // same way /now resolves hers (child_tz_interval, falling back to
-      // child.home_tz) -- duplicated here rather than shared, because unlike
-      // sleepsUntilSideChange's day-boundary maths, a custody_order's
-      // effective_from/effective_to window is normally months or years wide,
-      // so this route tolerates the small duplication rather than risk
-      // changing /now's own already-relied-upon behaviour for an edge case
-      // that essentially never matters here.
+      // child.home_tz) -- via the shared childTzFor() helper.
       const nowUtc = DateTime.utc();
-      const interval = await q(
-        `SELECT tz FROM child_tz_interval
-          WHERE child_id = $1 AND valid @> $2::timestamptz
-          ORDER BY confidence DESC LIMIT 1`,
-        [c.childId, nowUtc.toJSDate()],
-      );
-      let tz = interval[0]?.tz;
-      if (!tz) {
-        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
-        if (!child.length) return { status: 404, body: { error: 'child_not_found' } };
-        tz = child[0].home_tz;
-      }
+      const tz = await childTzFor(c, nowUtc);
+      if (!tz) return { status: 404, body: { error: 'child_not_found' } };
       const nowLocalDate = nowUtc.setZone(tz).toISODate();
       const order = await activeCustodyOrderFor(pool, c.childId, nowLocalDate);
       // Honest absence, not a 404 and not a fabricated schedule: a child who
@@ -1543,7 +1553,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // no dedicated Action exists for this either, and calendar.view is the
     // same schedule/status-adjacent fit for the same undocumented gap.
     method: 'GET', path: '/v1/children/:childId/presence', action: 'calendar.view',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       // Real bug, found by this project's own post-tier audit: calendar.view
       // alone is far wider than this route was ever meant to admit — it is
       // also held by sitter/coordinator/caseworker/trusted_adult, none of
@@ -1567,23 +1580,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         return { status: 403, body: { error: 'not_a_parent_of_child' } };
       }
 
-      // Same tz-resolution block as /now and /custody-order, duplicated a
-      // third time rather than shared — matching those two routes' own
-      // explicit "small duplication, not worth a shared helper here"
-      // comments.
+      // Same tz resolution as /now and /custody-order (shared childTzFor()).
       const nowUtc = DateTime.utc();
-      const interval = await q(
-        `SELECT tz FROM child_tz_interval
-          WHERE child_id = $1 AND valid @> $2::timestamptz
-          ORDER BY confidence DESC LIMIT 1`,
-        [c.childId, nowUtc.toJSDate()],
-      );
-      let tz = interval[0]?.tz;
-      if (!tz) {
-        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
-        if (!child.length) return { status: 404, body: { error: 'child_not_found' } };
-        tz = child[0].home_tz;
-      }
+      const tz = await childTzFor(c, nowUtc);
+      if (!tz) return { status: 404, body: { error: 'child_not_found' } };
       const local = nowUtc.setZone(tz);
       const nowLocalDate = local.toISODate();
       // 24h, comparison-only — HH:mm sorts/compares identically to
@@ -1663,29 +1663,19 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // uses — no child-self branch, since GuardianHome has no child-facing
     // caller anywhere in this client.
     method: 'GET', path: '/v1/children/:childId/ribbon', action: 'calendar.view',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       const parents = await parentGuardiansOfChild(pool, c.childId);
       if (!(c.principal.userId && parents.some(g => g.userId === c.principal.userId))) {
         return { status: 403, body: { error: 'not_a_parent_of_child' } };
       }
 
-      // Same tz-resolution block /now and /presence both already duplicate a
-      // third time rather than share — matching those two routes' own
-      // explicit "small duplication, not worth a shared helper here"
-      // comments just above.
+      // Same tz resolution as /now and /presence (shared childTzFor()).
       const nowUtc = DateTime.utc();
-      const interval = await q(
-        `SELECT tz FROM child_tz_interval
-          WHERE child_id = $1 AND valid @> $2::timestamptz
-          ORDER BY confidence DESC LIMIT 1`,
-        [c.childId, nowUtc.toJSDate()],
-      );
-      let tz = interval[0]?.tz;
-      if (!tz) {
-        const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
-        if (!child.length) return { status: 404, body: { error: 'child_not_found' } };
-        tz = child[0].home_tz;
-      }
+      const tz = await childTzFor(c, nowUtc);
+      if (!tz) return { status: 404, body: { error: 'child_not_found' } };
       const local = nowUtc.setZone(tz);
       // Sun=0..Sat=6, matching /presence's own nowWeekday convention just
       // above (packages/delivery-engine/src/materialize.ts,
@@ -1740,7 +1730,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // GUARDIAN caller (that route returns the CALLER's own name, per its
       // own header). One-line lookup, not folded into childCtxFor() — that
       // function's other two callers have no use for a display name at all.
-      const child = await q(`SELECT display_name FROM child WHERE id = $1`, [c.childId]);
+      const child = await inSession(c, (q) =>
+        q(`SELECT display_name FROM child WHERE id = $1`, [c.childId]));
       const childName = child[0]?.display_name ?? null;
 
       // The CALLING guardian's own windows, today only — availabilityFor()
@@ -1866,7 +1857,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // silently stale a second time.
   api.register({
     method: 'POST', path: '/v1/children/:childId/inbox/:messageId/opened', action: 'message',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       // Real authorization, narrower than the outer action check alone:
       // "opened" means SHE watched it — a guardian's own read of the same
       // inbox (action: 'message' admits her too, same as the GET route
@@ -1882,6 +1876,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // 'opened' row makes this a safe no-op (real re-opens, offline-queued
       // duplicate calls); 'expired'/'revoked' must never be resurrected into
       // 'opened' by a stale client request racing a server-side sweep.
+      // P-01: the state flip commits in its own short session BEFORE
+      // applyRetentionOnOpen() checks out a second connection. A retention
+      // failure after the commit is retry-safe: the re-fetch below finds
+      // the already-'opened' row and re-applies retention.
+      const opened = await inSession(c, async (q) => {
       const updated = await q(
         `UPDATE delivery_intent SET state = 'opened'
           WHERE id = $1 AND child_id = $2 AND state = 'delivered'
@@ -1896,11 +1895,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // every reopen (it shortens, never lengthens, §10.1), so a second
       // real open of the same message is not treated any differently from
       // the first for retention purposes, only for the state transition.
-      const opened = updated.length ? updated : await q(
+      return updated.length ? updated : await q(
         `SELECT id, payload_ref FROM delivery_intent
           WHERE id = $1 AND child_id = $2 AND state = 'opened'`,
         [c.params.messageId, c.childId],
       );
+      });
       if (!opened.length) {
         return { status: 404, body: { error: 'message_not_found_or_not_yet_delivered' } };
       }
@@ -2046,6 +2046,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // branch) a same-family child session passes through regardless of the
     // specific action chosen, so the child sees her own family's windows too.
     method: 'GET', path: '/v1/children/:childId/availability', action: 'calendar.view',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const windows = await availabilityFor(pool, c.childId);
       return { body: { windows } };
@@ -2121,6 +2124,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // own discipline, applied here to the guardian's identity instead of a
     // child's).
     method: 'PUT', path: '/v1/me/availability', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
         return { status: 403, body: { error: 'guardian_only' } };
@@ -2147,6 +2153,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // navigation, not §8.3's PIN+biometric escalation flow.
   api.register({
     method: 'GET', path: '/v1/children/:childId/theme', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const theme = await themeFor(pool, c.childId);
       return { body: { theme } };
@@ -2161,6 +2170,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // table's RLS stays coarser (any 'guardian'-role session with a live
     // edge) while THIS app-layer check is the finer-grained gate.
     method: 'PUT', path: '/v1/children/:childId/theme', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'guardian' || !c.principal.userId) {
         return { status: 403, body: { error: 'guardian_only' } };
@@ -2189,6 +2201,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // a child session today).
   api.register({
     method: 'GET', path: '/v1/children/:childId/game-favorites', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const state = await gameFavoritesFor(pool, c.childId);
       return { body: state };
@@ -2208,9 +2223,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // "no guardian involvement needed to record it, unlike favorites" is
     // the design spec's own line for why.
     method: 'PUT', path: '/v1/children/:childId/game-favorites', action: 'settings',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       if (c.principal.roleName === 'child') {
-        const localDate = await resolveChildLocalDate(q, c.childId);
+        const localDate = await localDateFor(c);
         const ageAtLastOpen = await recordGamePickerOpen(pool, c.childId, localDate);
         return { status: 200, body: { ok: true, ageAtLastOpen } };
       }
@@ -2248,6 +2266,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // own "no GET route" case).
   api.register({
     method: 'PUT', path: '/v1/children/:childId/profile', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'child' || !c.principal.childId) {
         return { status: 403, body: { error: 'child_only' } };
@@ -2362,6 +2383,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // coarse gate that already denied them.
     method: 'GET', path: '/v1/children/:childId/export', action: null,
     identityScopedByHandler: true,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c, _q) => {
       // packages/db/src/pool.mjs's rawExportBundleFor()/certifiedExportBundleFor()
       // each run their OWN withSession/withSystemSession, independent of the
@@ -2555,7 +2579,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // client-facing name, not retrofitted to a stale declaration.
   api.register({
     method: 'GET', path: '/v1/children/:childId/handover-notes', action: 'message',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       // Real bug in this route's own first draft, found by its own first
       // test: handoverNotesFor() reads via a SYSTEM-scoped session
       // (message_log's own log_no_child RLS policy only excludes the
@@ -2585,20 +2612,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // (child_tz_interval, falling back to child.home_tz) -- duplicated
       // here rather than shared, matching this file's own existing precedent
       // for that block (see the comment at the exchange route above).
-      let tz;
-      {
-        const interval = await q(
-          `SELECT tz FROM child_tz_interval
-            WHERE child_id = $1 AND valid @> now()
-            ORDER BY confidence DESC LIMIT 1`,
-          [c.childId],
-        );
-        tz = interval[0]?.tz;
-        if (!tz) {
-          const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
-          tz = child[0]?.home_tz ?? 'UTC';
-        }
-      }
+      const tz = (await childTzFor(c, DateTime.utc())) ?? 'UTC';
       return { body: { entries: entries.map(e => ({
         seq: e.seq, authorId: e.authorId, authorName: e.authorName, at: e.at, body: e.body,
         whenLabel: DateTime.fromISO(e.at, { zone: 'utc' }).setZone(tz).toFormat('MMM d, h:mm a'),
@@ -2608,7 +2622,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'POST', path: '/v1/children/:childId/handover-notes', action: 'message',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       // Real guard, not just relying on the RLS backstop: message_log's own
       // log_no_child policy (0006_court_tier.sql) would correctly refuse a
       // child-role write at the DB layer too (current_role_name() IS
@@ -2635,20 +2652,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // already see). Duplicated rather than shared with GET's own block --
       // matches this file's own stated convention for this exact query
       // (see the GET handler's comment just above).
-      let tz;
-      {
-        const interval = await q(
-          `SELECT tz FROM child_tz_interval
-            WHERE child_id = $1 AND valid @> now()
-            ORDER BY confidence DESC LIMIT 1`,
-          [c.childId],
-        );
-        tz = interval[0]?.tz;
-        if (!tz) {
-          const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
-          tz = child[0]?.home_tz ?? 'UTC';
-        }
-      }
+      const tz = (await childTzFor(c, DateTime.utc())) ?? 'UTC';
       return { status: 201, body: {
         ok: true, seq: entry.seq, authorId: entry.authorId, at: entry.at, body: entry.body,
         whenLabel: DateTime.fromISO(entry.at, { zone: 'utc' }).setZone(tz).toFormat('MMM d, h:mm a'),
@@ -2713,6 +2717,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'GET', path: '/v1/children/:childId/expenses', action: 'expense.view',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       // Real, explicit guard on top of RLS — same reasoning the
       // handover-notes GET route's own comment gives: expensesFor() reads
@@ -2731,6 +2738,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'POST', path: '/v1/children/:childId/expenses', action: 'expense.create',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'P6_child_financial' } };
@@ -2756,6 +2766,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     api.register({
       method: 'POST', path: `/v1/children/:childId/expenses/:expenseId/${action}`,
       action: 'expense.resolve',
+      // Holds no outer pooled connection: this handler reaches Postgres only through
+      // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+      skipOuterSession: true,
       handler: async (c) => {
         if (c.principal.roleName === 'child') {
           return { status: 403, body: { error: 'P6_child_financial' } };
@@ -2804,9 +2817,35 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     return DateTime.utc().setZone(tz).toISODate();
   }
 
+  // P-01 -- routes that ALSO call pool-scoped accessors must never hold the
+  // request's own pooled connection while those accessors check out a second
+  // one (see api.ts's skipOuterSession doc comment). They register with
+  // skipOuterSession: true and run each caller-scoped read in its OWN
+  // short-lived session through this helper: one connection at a time, and
+  // that connection is released BEFORE the next pool call starts.
+  const inSession = (c, fn) => c.db.withSession(c.principal, fn);
+  const localDateFor = (c) => inSession(c, (q) => resolveChildLocalDate(q, c.childId));
+  // The child's current tz name, or null when no such child row is visible.
+  // Same resolution order /now, /presence, /ribbon, /custody-order and the
+  // inbox have always used (child_tz_interval first, child.home_tz second).
+  const childTzFor = (c, nowUtc) => inSession(c, async (q) => {
+    const interval = await q(
+      `SELECT tz FROM child_tz_interval
+        WHERE child_id = $1 AND valid @> $2::timestamptz
+        ORDER BY confidence DESC LIMIT 1`,
+      [c.childId, nowUtc.toJSDate()],
+    );
+    if (interval[0]?.tz) return interval[0].tz;
+    const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [c.childId]);
+    return child.length ? child[0].home_tz : null;
+  });
+
   api.register({
     method: 'GET', path: '/v1/children/:childId/medications', action: 'medication.view',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       // Explicit guard, not just relying on the outer gate: api.ts's own
       // child-principal path only auto-refuses P6_child_financial/
       // P7_journal_never (see that file's own authorize block) -- every
@@ -2818,7 +2857,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
       }
-      const localDate = await resolveChildLocalDate(q, c.childId);
+      const localDate = await localDateFor(c);
       const [medications, doses] = await Promise.all([
         medicationsFor(pool, c.childId),
         dosesForDate(pool, c.childId, localDate),
@@ -2843,7 +2882,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   api.register({
     method: 'POST', path: '/v1/children/:childId/medications/:medicationId/doses',
     action: 'medication.log',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
       }
@@ -2852,7 +2894,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (!slot) return { status: 400, body: { error: 'slot_required' } };
       const status = c.body?.status ?? 'given';
       if (!DOSE_STATUSES.has(status)) return { status: 400, body: { error: 'bad_status' } };
-      const localDate = await resolveChildLocalDate(q, c.childId);
+      const localDate = await localDateFor(c);
       const result = await recordDose(
         pool, c.principal.roleName, c.principal.userId, c.childId,
         c.params.medicationId, localDate, slot, status);
@@ -2892,6 +2934,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'GET', path: '/v1/children/:childId/emergency-card', action: 'emergency_card.view',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -2903,6 +2948,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'PUT', path: '/v1/children/:childId/emergency-card', action: 'emergency_card.edit',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -2980,6 +3028,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // calendar.edit are neither.
   api.register({
     method: 'GET', path: '/v1/children/:childId/exchange/bag-items', action: 'calendar.view',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -2992,6 +3043,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   api.register({
     method: 'POST', path: '/v1/children/:childId/exchange/bag-items/:itemId',
     action: 'calendar.edit',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -3014,6 +3068,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'GET', path: '/v1/children/:childId/exchange/running-late', action: 'calendar.view',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -3025,6 +3082,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'POST', path: '/v1/children/:childId/exchange/running-late', action: 'calendar.edit',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -3042,6 +3102,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'GET', path: '/v1/children/:childId/exchange/arrival', action: 'calendar.view',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -3059,12 +3122,15 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // order — never trusted from the client, same discipline
     // resolveChildLocalDate() already established for medication doses above.
     method: 'POST', path: '/v1/children/:childId/exchange/arrival', action: 'calendar.edit',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
       }
       if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
-      const localDate = await resolveChildLocalDate(q, c.childId);
+      const localDate = await localDateFor(c);
       const result = await recordExchangeArrival(
         pool, c.principal.roleName, c.principal.userId, c.childId, localDate);
       if (!result.ok) {
@@ -3094,6 +3160,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // care_note.view/write are neither.
   api.register({
     method: 'GET', path: '/v1/children/:childId/care-notes', action: 'care_note.view',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -3107,6 +3176,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'POST', path: '/v1/children/:childId/care-notes', action: 'care_note.write',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName === 'child') {
         return { status: 403, body: { error: 'not_a_child_surface' } };
@@ -3157,6 +3229,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // only one" posture authorize.ts's own file header describes.
   api.register({
     method: 'GET', path: '/v1/children/:childId/letters', action: 'letter',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'child') {
         return { status: 403, body: { error: 'not_a_guardian_surface' } };
@@ -3168,7 +3243,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'POST', path: '/v1/children/:childId/letters', action: 'letter',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       if (c.principal.roleName !== 'child') {
         return { status: 403, body: { error: 'not_a_guardian_surface' } };
       }
@@ -3178,7 +3256,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (typeof openAtAge !== 'number' || !Number.isInteger(openAtAge)) {
         return { status: 400, body: { error: 'open_at_age_required' } };
       }
-      const localDate = await resolveChildLocalDate(q, c.childId);
+      const localDate = await localDateFor(c);
       const result = await sealLetterRow(pool, c.childId, openAtAge, body, localDate);
       if (!result.ok) {
         // Honest refusal, real reasons — 'child_not_found' is only
@@ -3201,11 +3279,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // the request at all, structurally, so there is nothing here a future
     // edit could even try to trust from the client.
     method: 'POST', path: '/v1/children/:childId/letters/:letterId/open', action: 'letter',
-    handler: async (c, q) => {
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
       if (c.principal.roleName !== 'child') {
         return { status: 403, body: { error: 'not_a_guardian_surface' } };
       }
-      const localDate = await resolveChildLocalDate(q, c.childId);
+      const localDate = await localDateFor(c);
       const result = await openLetterRow(pool, c.childId, c.params.letterId, localDate);
       if (!result.ok) {
         if (result.reason === 'not_found') return { status: 404, body: { error: 'letter_not_found' } };
@@ -3223,6 +3304,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // §2.10 — she can delete without ever having read it; it is hers. The
     // only early exit this file ever offers on a letter — read never is.
     method: 'DELETE', path: '/v1/children/:childId/letters/:letterId', action: 'letter',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       if (c.principal.roleName !== 'child') {
         return { status: 403, body: { error: 'not_a_guardian_surface' } };
@@ -3243,7 +3327,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
     // packages/db/src/pool.ts's persistCapturedMessage() — never insert a row
     // captureMessage() has not first validated.
     method: 'POST', path: '/v1/children/:childId/messages', action: 'message',
-    handler: async (c, q) => {
+    handler: async (c) => {
       const body = c.body ?? {};
       const storageKey = typeof body.storageKey === 'string' && body.storageKey
         ? body.storageKey : null;

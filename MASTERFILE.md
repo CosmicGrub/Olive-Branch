@@ -1793,6 +1793,117 @@ POST   /v1/rituals
 > There is deliberately no `GET /v1/children/:id/journal`. The absence is the
 > feature. See P7.
 
+### 7.11 Server hardening — as shipped (audit pass `fix/server-hardening`)
+
+What the HTTP layer, the connection pool, the unauthenticated surface, the
+process lifecycle and the backups actually do. Every line below is enforced by
+a test registered in `tools/verify.sh`; none is aspiration.
+
+**Connections (P-01).** `createPool()` (`packages/db/src/pool.ts`) is no longer
+node-postgres's bare default. `DB_POOL_MAX` (10), `DB_CONNECTION_TIMEOUT_MS`
+(10 000), `DB_STATEMENT_TIMEOUT_MS` (30 000), `DB_IDLE_IN_TX_TIMEOUT_MS`
+(30 000) and `DB_IDLE_TIMEOUT_MS` (30 000) are real, overridable limits; the
+statement and idle-in-transaction timeouts are sent as startup parameters so
+they bind the session itself. A missing, non-numeric or non-positive value
+falls back to the default (`0` would mean "no timeout" to Postgres — the
+failure being closed). `withSession()` releases a client whose `ROLLBACK`
+failed, or whose error was a connection fault, with `release(err)` so the pool
+destroys it instead of re-pooling a dead socket; it also listens for the
+client's `error` event while checked out (an unhandled one — e.g. the server
+killing an idle-in-transaction backend — used to crash the process).
+**A request must hold at most one pooled connection at a time.** Every route
+that reaches Postgres through pool-scoped accessors (`expensesFor(pool, …)` and
+the dozens like it) registers with `skipOuterSession: true` and runs any
+caller-scoped read in its own short `inSession()`; `medicalRecordFor()` no
+longer nests `medicationsFor()` inside its own session. Before this, ~45 routes
+(44 in `routes.mjs`, 2 in `game_tables.mjs`) held the request's connection while a second was requested from the same
+bounded pool: `max` concurrent requests deadlocked it permanently, and
+`/healthz` (which also used the pool) hung with it. `/healthz` now answers 503
+after 3 s instead of hanging. Proof: `packages/db/test/pool_concurrency.test.mjs`
+tracks connections per request across 30 routes and fires 48 parallel requests
+at a 3-connection pool.
+
+**Bodies (P-05).** Request bodies are read as `Buffer` chunks, counted in
+BYTES against the cap, and decoded once (`readRequestBody()`, `api.ts`).
+Concatenating decoded chunks had turned every multi-byte UTF-8 sequence split
+across a chunk boundary into U+FFFD (reproduced with a 200,008-character `é`
+body). The cap is `MAX_REQUEST_BODY_BYTES` (40 MiB) only for a request whose
+Bearer token verifies; every other caller (no token, a forged one, a
+`noSessionRequired` route, the three raw `/v1/auth/*` login routes, an
+unrouted path) is capped at `MAX_UNAUTH_BODY_BYTES` — 16 KiB — and answered
+`413 payload_too_large`. A `Content-Length` over the cap is refused before a
+byte is read; an aborted upload is never processed as a complete body.
+
+**The unauthenticated surface (P-08).** Everything under `/v1/auth/` is
+token-bucket limited per client IP (burst 30, 30/min) and the three login routes
+additionally per identifier (`userId`/`childId`: burst 10, 10/min) — `429
+rate_limited` with `Retry-After`. `X-Forwarded-For` is honoured only with
+`TRUST_PROXY=1`, and then only its rightmost entry. `POST
+/v1/auth/webauthn/login/challenge` answers identically for a real user, an
+unknown uuid and a malformed id (a fresh, never-stored challenge for the
+latter two), so it is no longer an account oracle; the follow-up `verify` gives
+the same `401 challenge_expired` for all of them. `auth_challenge` rows are
+deleted by the scheduler's `purge-challenges` job (anything older than the
+5-minute TTL plus a 1-hour grace). Not changed: `dev-login` (off unless
+`DEV_LOGIN=1`) still names `user_not_found`, and the login `verify` still
+returns `403 account_deactivated` for a deactivated account (asserted by
+`auth_credentials.test.mjs`).
+
+**Observability (P-07, server half).** One JSON line per request on stdout —
+`ts, level, msg, id, method, route, status, ms` — where `route` is the
+registered TEMPLATE (never a concrete URL: no child id, no query string; an
+unrouted path logs as `unmatched`). `x-request-id` is echoed on every response
+(a short, plain inbound value is reused; anything else is replaced).
+`GET /internal/metrics` returns in-process counters (requests, status classes,
+per-route count / 5xx / avg / max latency, pool gauges, rate-limit and
+body-cap counters). It is internal-only: loopback peer **and** no proxy header,
+or a matching `INTERNAL_METRICS_TOKEN`; anyone else gets the 404 an unknown
+path gets. `ACCESS_LOG=0` silences the log; `/healthz` is not logged unless
+`ACCESS_LOG_HEALTHZ=1`. Not built: shipping the counters anywhere (no
+Prometheus/OTel exporter), and the client half of P-07.
+
+**Lifecycle (P-14, P-15).** `SIGTERM`/`SIGINT` run one idempotent shutdown
+(`server/shutdown.mjs`): stop accepting, close game-table sockets with 1001,
+close idle keep-alives, give in-flight requests 8 s (`SHUTDOWN_DEADLINE_MS`),
+cut whatever remains, `pool.end()` exactly once. (`server.close(cb)` alone
+never completed while a WebSocket was open.) `docker-compose.prod.yml` sets
+`stop_grace_period: 15s` on `server`. An `unhandledRejection` is logged as one
+structured line and counted, not fatal; an `uncaughtException` logs, shuts down
+cleanly and exits 1. Game-table sockets are pinged every 20 s; a seat that does
+not answer within 10 s ends the table, the other seat receiving `table_closed`
+with reason `peer_timeout` (`server/game_tables.mjs`).
+
+**Backups (P-04).** The scheduler's `backup` job (`tools/scheduler.mjs`) is
+**off unless `BACKUP_DIR` and `BACKUP_DATABASE_URL` are set**. When on it runs
+`tools/backup-db.sh` (and `backup-media.sh` if `MEDIA_STORAGE_ROOT` exists),
+optionally encrypts each file (AES-256-GCM, `BACKUP_ENCRYPTION_PASSPHRASE`),
+prunes to 7 daily + 4 weekly per family only AFTER a new backup succeeded, then
+optionally runs `BACKUP_SYNC_COMMAND`. `health-alert` raises `ALERT
+check_name=backup_stale` and exits 1 when `BACKUP_DIR` is set and the newest
+dump is older than `BACKUP_MAX_AGE_HOURS` (36) or missing. What is and is not
+automatic is stated, command by command, in `scaffold/docs/backup-and-restore.md`.
+Not built: a restore drill on a schedule, and any default off-host destination —
+no credential is invented.
+
+**Schema and tooling (P-17, P-18, P-19).** Migration `0036_fk_indexes.sql`
+indexes `guardianship(user_id)`, `call_log(child_id)`,
+`medication_dose(child_id)`, `media_artifact(author_id)`,
+`intent_batch(child_id)`, `export_record(child_id)` and
+`auth_challenge(issued_at)`; no policy, grant or RLS setting is touched.
+`tools/migrate.mjs` holds a Postgres advisory lock for the whole run (pg mode
+and psql mode), so a second concurrent migrator waits and then reports "up to
+date". A malformed percent escape in a path (`/media/%zz`, a route param) is a
+`400`, not a `500`.
+
+**Image and CI (P-16, P-13).** `scaffold/Dockerfile` is multi-stage
+(`npm ci --omit=dev` runtime deps, no tests/demo/client, `USER node`,
+PGDG `postgresql-client-16`); `livekit-server-sdk` moved from
+`devDependencies` to `dependencies` because the server imports it at runtime.
+`verify.yml` gains `timeout-minutes`, a per-ref `concurrency` group that cancels
+superseded PR runs, npm and pub caches, a strict `npm ci`, and an `image` job
+that builds the Dockerfile and SIGTERMs the running container on every PR.
+`tools/verify.sh` runs a strict `npm ci` instead of swallowing install failure.
+
 ---
 
 ## §8 UI architecture

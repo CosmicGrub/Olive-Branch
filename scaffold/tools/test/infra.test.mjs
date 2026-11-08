@@ -1,0 +1,153 @@
+/**
+ * Static guards on the deployment/CI files this hardening pass changed
+ * (audit P-13, P-14, P-16, plus the package.json duplicate). Pure text/JSON
+ * analysis, no Docker or network -- the same "read the file and assert on it"
+ * approach tools/docker-dev/test/compose.test.mjs and check-markup.mjs use.
+ * The Dockerfile is additionally BUILT and smoke-run by the `image` job in
+ * .github/workflows/verify.yml; these assertions are what stops the text
+ * regressing between CI runs.
+ */
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const SCAFFOLD = fileURLToPath(new URL('../../', import.meta.url));
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const rd = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+const DOCKERFILE = rd(SCAFFOLD + 'Dockerfile');
+const PROD = rd(SCAFFOLD + 'docker-compose.prod.yml');
+const VERIFY_SH = rd(SCAFFOLD + 'tools/verify.sh');
+const WORKFLOW = rd(ROOT + '.github/workflows/verify.yml');
+const PUBLISH = rd(ROOT + '.github/workflows/publish-image.yml');
+const PKG = JSON.parse(rd(SCAFFOLD + 'package.json'));
+
+let pass = 0, fail = 0; const rows = [];
+const check = (g, n, a, e) => { const ok = String(a) === String(e); ok ? pass++ : fail++;
+  rows.push({ g, n, ok, a: String(a), e: String(e) }); };
+const code = (s) => s.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+const serviceBlock = (text, name) => {
+  const start = text.indexOf(`\n  ${name}:\n`);
+  if (start === -1) return '';
+  const body = text.slice(start + name.length + 4);
+  const next = body.search(/^  \w[\w-]*:\n|^volumes:\n/m);
+  return next === -1 ? body : body.slice(0, next);
+};
+
+// ---- A · Dockerfile ----------------------------------------------------------
+{
+  const d = code(DOCKERFILE);
+  const stages = [...d.matchAll(/^FROM\s+(\S+)(?:\s+AS\s+(\w+))?/gim)];
+  check('A Dockerfile', 'multi-stage: at least three FROM lines (build, deps, final)', stages.length >= 3, 'true');
+  const final = d.slice(d.lastIndexOf('\nFROM ') + 1);
+  check('A Dockerfile', 'the runtime stage is not the build stage (separate final FROM)',
+    /^FROM node:22-slim\s*$/m.test(final) && !/npm run build/.test(final), 'true');
+  check('A Dockerfile', 'production dependencies come from `npm ci --omit=dev`', /npm ci --omit=dev/.test(d), 'true');
+  check('A Dockerfile', 'the build stage is the only place a full `npm ci` runs',
+    (d.match(/\bnpm ci\b(?! --omit=dev)/g) ?? []).length, 1);
+  check('A Dockerfile', 'the process runs as the unprivileged `node` user', /^USER node\s*$/m.test(final), 'true');
+  check('A Dockerfile', 'USER node comes AFTER the last RUN that needs root (no later apt/chown)',
+    final.lastIndexOf('USER node') > final.lastIndexOf('RUN '), 'true');
+  check('A Dockerfile', 'the final stage never does a blanket `COPY . .` (only named, pruned directories)',
+    /^COPY \. \./m.test(final), false);
+  check('A Dockerfile', 'tests are deleted from the shipped tree (every test/ directory)',
+    /-name test/.test(d) && /rm -rf \{\}/.test(d), 'true');
+  check('A Dockerfile', 'the demo and the Flutter client are deleted from the shipped tree',
+    /rm -rf demo client/.test(d), 'true');
+  check('A Dockerfile', 'the final stage does not copy demo/ or client/', /COPY --from=build[^\n]*\/app\/(demo|client)\b/.test(final), false);
+  check('A Dockerfile', 'the built .ts sources are NOT stripped (built .mjs files import them; Node type-strips at runtime)',
+    /find [^\n]*-name '\*\.ts'[^\n]*-delete/.test(d), false);
+  check('A Dockerfile', 'uploaded-media directory exists node-owned (a fresh named volume inherits it)',
+    /mkdir -p \/app\/data\/media[^\n]*\n?[^\n]*chown -R node:node \/app\/data/.test(final.replace(/\\\n/g, ' ')), 'true');
+  check('A Dockerfile', 'ports and the default command are unchanged (compose and healthchecks rely on them)',
+    /EXPOSE 8080 8787/.test(d) && /CMD \["node", "server\/index\.mjs"\]/.test(d), 'true');
+  check('A Dockerfile', 'pg_dump/pg_restore 16 (matching docker-compose.prod.yml\'s postgres:16) are installed from PGDG',
+    /postgresql-client-16/.test(d) && /apt\.postgresql\.org/.test(d), 'true');
+  check('A Dockerfile', 'and that install is switchable off (PG_CLIENT build arg)', /ARG PG_CLIENT=1/.test(d), 'true');
+  check('A Dockerfile', 'the package-lock layer-cache ordering is preserved (manifest copied before source)',
+    d.indexOf('COPY package.json package-lock.json') < d.indexOf('COPY . .'), 'true');
+}
+
+// ---- B · runtime dependencies --------------------------------------------------
+{
+  check('B dependencies', 'livekit-server-sdk is a runtime dependency (routes.mjs imports it; --omit=dev would drop it)',
+    Boolean(PKG.dependencies?.['livekit-server-sdk']) && !PKG.devDependencies?.['livekit-server-sdk'], 'true');
+  check('B dependencies', 'esbuild stays a devDependency (build stage only)', Boolean(PKG.devDependencies?.esbuild), 'true');
+  const lock = JSON.parse(rd(SCAFFOLD + 'package-lock.json'));
+  const lk = lock.packages['node_modules/livekit-server-sdk'];
+  const proto = lock.packages['node_modules/@livekit/protocol'];
+  check('B dependencies', 'package-lock.json agrees: livekit-server-sdk and its transitive deps are not flagged dev-only',
+    `${lk?.dev === true}/${proto?.dev === true}`, 'false/false');
+  const serverSrc = rd(SCAFFOLD + 'packages/session-runtime/src/livekit-token.ts');
+  check('B dependencies', 'and the runtime really does import it (so the move is load-bearing, not cosmetic)',
+    /from 'livekit-server-sdk'/.test(serverSrc), 'true');
+}
+
+// ---- C · compose ------------------------------------------------------------------
+{
+  const server = serviceBlock(PROD, 'server');
+  const grace = Number(/stop_grace_period:\s*(\d+)s/.exec(server)?.[1] ?? 0);
+  check('C compose', 'prod `server` sets stop_grace_period above the 8 s shutdown deadline', grace >= 12, 'true');
+  const sched = serviceBlock(PROD, 'scheduler');
+  check('C compose', 'prod `scheduler` has a stop_grace_period long enough to finish a nightly job',
+    Number(/stop_grace_period:\s*(\d+)s/.exec(sched)?.[1] ?? 0) >= 30, 'true');
+  check('C compose', 'scheduler gets BACKUP_DIR inside the container, which is what arms the stale-backup alarm',
+    /BACKUP_DIR:\s*\/backups/.test(sched), 'true');
+  check('C compose', 'scheduler dumps as backup_reader (BYPASSRLS), never app_owner',
+    /BACKUP_DATABASE_URL:\s*postgres:\/\/backup_reader:/.test(sched), 'true');
+  check('C compose', 'encryption passphrase and sync command are optional, empty by default (no invented credential)',
+    /BACKUP_ENCRYPTION_PASSPHRASE:\s*\$\{BACKUP_ENCRYPTION_PASSPHRASE:-\}/.test(sched)
+      && /BACKUP_SYNC_COMMAND:\s*\$\{BACKUP_SYNC_COMMAND:-\}/.test(sched), 'true');
+  check('C compose', 'scheduler mounts the backup directory', /\$\{BACKUP_DIR:-\.\/backups\}:\/backups/.test(sched), 'true');
+  check('C compose', 'DEV_LOGIN is still the literal "0" (this pass did not weaken the prod file)', /DEV_LOGIN:\s*"0"/.test(PROD), 'true');
+  check('C compose', 'the server healthcheck still targets /healthz', /fetch\('http:\/\/127\.0\.0\.1:8123\/healthz'\)/.test(server), 'true');
+  const shutdownSrc = rd(SCAFFOLD + 'server/shutdown.mjs');
+  const deadline = Number(/DEFAULT_SHUTDOWN_DEADLINE_MS = (\d+)/.exec(shutdownSrc)?.[1]);
+  check('C compose', 'the compose grace period leaves headroom over the code\'s shutdown deadline', grace * 1000 > deadline, 'true');
+}
+
+// ---- D · CI workflow + verify.sh -------------------------------------------------------
+{
+  const w = code(WORKFLOW);
+  check('D CI hygiene', 'the verify job has a timeout-minutes', /timeout-minutes:\s*\d+/.test(w), 'true');
+  check('D CI hygiene', 'the workflow has a concurrency group with cancel-in-progress',
+    /concurrency:\s*\n\s+group:[^\n]+\n\s+cancel-in-progress:\s*(true|\$\{\{[^}]*pull_request[^}]*\}\})/.test(w), 'true');
+  check('D CI hygiene', 'cancellation is scoped to pull_request runs (a push to main is never cancelled by the next merge)',
+    /cancel-in-progress:\s*\$\{\{\s*github\.event_name == 'pull_request'\s*\}\}/.test(w), 'true');
+  check('D CI hygiene', 'the concurrency group is per workflow+ref (a new push cancels only ITS OWN older run)',
+    /group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.ref\s*\}\}/.test(w), 'true');
+  check('D CI hygiene', 'npm is cached via setup-node', /cache:\s*['"]?npm['"]?/.test(w) && /cache-dependency-path:\s*scaffold\/package-lock\.json/.test(w), 'true');
+  check('D CI hygiene', 'the pub cache is enabled for Flutter', /cache:\s*true/.test(w), 'true');
+  check('D CI hygiene', 'the workflow installs with a strict `npm ci` (no `|| npm install` fallback masking lockfile drift)',
+    /run:\s*npm ci\s*$/m.test(w) && !/npm ci \|\| npm install/.test(w), 'true');
+  check('D CI hygiene', 'an `image` job builds the Dockerfile on every PR', /^\s{2}image:/m.test(w) && /docker build/.test(w), 'true');
+  check('D CI hygiene', 'push is still scoped to main and PRs still trigger (the existing on: block is intact)',
+    /push:\s*\n\s+branches:\s*\[main\]/.test(w) && /pull_request:/.test(w), 'true');
+  check('D CI hygiene', 'publish-image.yml still chains off the `verify` workflow and builds scaffold/Dockerfile',
+    /workflows:\s*\["verify"\]/.test(PUBLISH) && /scaffold/.test(PUBLISH), 'true');
+  const sh = code(VERIFY_SH);
+  check('D CI hygiene', 'verify.sh no longer swallows npm failure (`npm i --silent >/dev/null 2>&1` is gone)',
+    /npm i --silent >\/dev\/null 2>&1/.test(sh), false);
+  check('D CI hygiene', 'verify.sh runs a strict `npm ci` and aborts the run when it fails',
+    /npm ci --silent[^\n]*\n?[^\n]*(exit 2|exit 1)/.test(sh.replace(/\\\n/g, ' ')) || /if ! npm ci/.test(sh), 'true');
+  const test = PKG.scripts.test.split(' && ').map((s) => s.trim());
+  const dupes = test.filter((s, i) => test.indexOf(s) !== i);
+  check('D CI hygiene', 'package.json `test` runs no suite twice (test:games2 was listed twice)', dupes.join(',') || 'none', 'none');
+  check('D CI hygiene', 'every suite the `test` chain names is a real script',
+    test.filter((s) => s.startsWith('npm run ') && !PKG.scripts[s.slice(8)]).join(',') || 'none', 'none');
+  check('D CI hygiene', 'every new suite is in the test chain', ['test:http-hardening', 'test:lifecycle', 'test:backup-lib', 'test:infra']
+    .filter((s) => !test.includes(`npm run ${s}`)).join(',') || 'none', 'none');
+  const files = readdirSync(SCAFFOLD + 'tools/test');
+  check('D CI hygiene', 'each new suite is registered in verify.sh (a suite verify.sh does not run is not a suite)',
+    ['server/test/http_hardening.test.mjs', 'server/test/lifecycle.test.mjs', 'tools/test/backup_lib.test.mjs',
+      'tools/test/infra.test.mjs', 'packages/db/test/pool_concurrency.test.mjs', 'packages/db/test/auth_hardening.test.mjs',
+      'packages/db/test/fk_indexes.test.mjs', 'packages/db/test/backup_job.test.mjs', 'tools/test/migrate_lock.test.mjs']
+      .filter((f) => !VERIFY_SH.includes(f)).join(',') || 'none', 'none');
+  void files;
+}
+
+let g = '';
+for (const r of rows) {
+  if (r.g !== g) { g = r.g; console.log(`\n${g}`); }
+  console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.n}` + (r.ok ? '' : `\n         expected ${r.e}, got ${r.a}`));
+}
+console.log(`\n${'-'.repeat(60)}\n${pass} passed, ${fail} failed\n`);
+setImmediate(() => process.exit(fail === 0 ? 0 : 1));

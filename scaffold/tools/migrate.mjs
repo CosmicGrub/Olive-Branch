@@ -23,7 +23,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
 
 const DIR = process.env.MIGRATIONS_DIR ?? 'db/migrations';
@@ -56,11 +56,25 @@ let execFile;  // (path) => Promise<void>     -- runs a whole file as one transa
 // process tears down. Every exit point below awaits this explicitly instead.
 let closeDb = async () => {};
 
+// P-18 -- ONE migrator at a time. docker-compose.prod.yml's `migrate` service
+// runs on every `up`, and an operator (or a second replica, or a CI retry)
+// can start another run while one is mid-flight. Without a lock, two runners
+// read the same "applied" list, both decide 00NN is pending, and race: one
+// fails on `CREATE TABLE ... already exists`, or -- worse -- both succeed in
+// part and the loser's INSERT INTO schema_migration collides on the primary
+// key AFTER its schema changes ran. A session-level advisory lock, taken
+// before anything reads schema_migration and held for the whole run, makes the
+// second runner WAIT, then find everything applied ("up to date"). It is
+// released automatically when the connection closes -- including when this
+// process is killed -- so a crashed migrator can never wedge the next one.
+const MIGRATE_LOCK_SQL = `hashtext('olive_branch_migrate')::bigint`;
+
 if (DATABASE_URL) {
   const { Client } = await import('pg');
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
   closeDb = async () => { await client.end().catch(() => {}); };
+  await client.query(`SELECT pg_advisory_lock(${MIGRATE_LOCK_SQL})`);
 
   execSql = async (text) => {
     const res = await client.query(text);
@@ -78,6 +92,28 @@ if (DATABASE_URL) {
     }
   };
 } else {
+  // psql mode runs every statement in its OWN short-lived psql process, and a
+  // session lock dies with its session -- so the lock is held by ONE extra,
+  // long-lived psql whose stdin we keep open until every exit point calls
+  // closeDb(). `\echo LOCKED` only prints once pg_advisory_lock() has
+  // actually returned, i.e. once we hold it.
+  {
+    const [cmd, ...args] = PSQL.split(' ');
+    const holder = spawn(cmd, [...args, '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1'],
+      { stdio: ['pipe', 'pipe', 'inherit'] });
+    holder.stdin.write(`SELECT pg_advisory_lock(${MIGRATE_LOCK_SQL});\n\\echo LOCKED\n`);
+    await new Promise((resolve, reject) => {
+      let buf = '';
+      holder.stdout.on('data', (d) => { buf += d; if (buf.includes('LOCKED')) resolve(); });
+      holder.on('error', reject);
+      holder.on('exit', (code) => reject(new Error(`migration lock session exited early (${code})`)));
+    });
+    closeDb = async () => {
+      holder.removeAllListeners('exit');
+      holder.stdin.end('\\q\n');
+      await new Promise((resolve) => { holder.on('exit', resolve); setTimeout(resolve, 3000).unref(); });
+    };
+  }
   execSql = async (text) => {
     const [cmd, ...args] = PSQL.split(' ');
     return execFileSync(cmd, [...args, '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', text],
