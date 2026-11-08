@@ -1,0 +1,726 @@
+{
+ "cards": [
+  {
+   "id": "two-dimensions",
+   "topic": "style",
+   "title": "Two things, not four boxes",
+   "body": "Home feels like a mix of warmth and expectations. The four named styles are corners of that map, not types of person. Most days you move around it.",
+   "evidence": "strong",
+   "sources": [
+    {
+     "label": "Darling and Steinberg 1993",
+     "url": "https://data.zhenzhi.com/details/1/1001468350"
+    }
+   ]
+  },
+  {
+   "id": "warm-and-clear",
+   "topic": "style",
+   "title": "Warm and clear",
+   "body": "Children tend to do well on school, mood and friendships when warmth and clear limits go together. This is a link in studies, not a promise, and it is not risk-free.",
+   "evidence": "moderate",
+   "sources": [
+    {
+     "label": "Darling and Steinberg 1993",
+     "url": "https://data.zhenzhi.com/details/1/1001468350"
+    },
+    {
+     "label": "ParentData: is gentle parenting evidence-based",
+     "url": "https://parentdata.org/ask/is-gentle-parenting-evidence-based-does-it-actually-work"
+    }
+   ]
+  },
+  {
+   "id": "climate-and-tools",
+   "topic": "style",
+   "title": "Climate and tools",
+   "body": "Style is the emotional climate. Practices are the tools. The same tool, such as a time-out, lands differently in a warm home than in a cold one.",
+   "evidence": "moderate",
+   "sources": [
+    {
+     "label": "Darling and Steinberg 1993",
+     "url": "https://data.zhenzhi.com/details/1/1001468350"
+    }
+   ]
+  },
+  {
+   "id": "child-shapes-parent",
+   "topic": "style",
+   "title": "Children shape parents too",
+   "body": "Twin studies estimate that about a quarter of the variation in parenting is driven by the child. Parent and child influence each other, so nobody is to blame for the whole picture.",
+   "evidence": "strong",
+   "sources": [
+    {
+     "label": "Avinun and Knafo 2014",
+     "url": "https://cris.huji.ac.il/en/publications/parenting-as-a-reaction-evoked-by-childrens-genotype-a-meta-analy/"
+    }
+   ]
+  },
+  {
+   "id": "culture-changes-meaning",
+   "topic": "style",
+   "title": "Culture changes the meaning",
+   "body": "A firm, high-expectation style can mean care and training in some families and coldness in others. Research found the same style linked to opposite school results in different communities.",
+   "evidence": "contested",
+   "sources": [
+    {
+     "label": "Chao 1994",
+     "url": "https://aacdrpubs.faculty.ucdavis.edu/wp-content/uploads/sites/211/2015/03/chao001.pdf"
+    }
+   ]
+  },
+  {
+   "id": "gentle-with-limits",
+   "topic": "style",
+   "title": "Gentle means kind and firm",
+   "body": "Gentle parenting has no studies of its own. Its ingredients, warmth, validation and limits that are held, match research on authoritative parenting. The risk is dropping the limits. Check: did I say the limit, and did I hold it?",
+   "evidence": "weak",
+   "sources": [
+    {
+     "label": "ParentData: is gentle parenting evidence-based",
+     "url": "https://parentdata.org/ask/is-gentle-parenting-evidence-based-does-it-actually-work"
+    }
+   ]
+  },
+  {
+   "id": "short-time-out",
+   "topic": "discipline",
+   "title": "A short, calm time-out",
+   "body": "Name what happened, use a boring safe spot, stay calm and quiet, then reconnect. About one minute per year of age. Skip long isolation and punishing tears.",
+   "evidence": "strong",
+   "sources": [
+    {
+     "label": "AAP: Disciplining Your Child",
+     "url": "https://www.healthychildren.org/English/family-life/family-dynamics/communication-discipline/Pages/Disciplining-Your-Child.aspx"
+    }
+   ],
+   "ages": [
+    2,
+    8
+   ]
+  },
+  {
+   "id": "avoid-hitting",
+   "topic": "discipline",
+   "title": "Hitting does not teach",
+   "body": "Pediatric guidance advises against physical punishment. It is less effective than time-outs or losing a privilege and is linked to more defiance.",
+   "evidence": "strong",
+   "sources": [
+    {
+     "label": "AAP: Disciplining Your Child",
+     "url": "https://www.healthychildren.org/English/family-life/family-dynamics/communication-discipline/Pages/Disciplining-Your-Child.aspx"
+    }
+   ]
+  },
+  {
+   "id": "specific-praise",
+   "topic": "discipline",
+   "title": "Specific praise",
+   "body": "Name the thing they did. \"You shared the red block\" lands better than \"good boy\".",
+   "evidence": "moderate",
+   "sources": [
+    {
+     "label": "AAP: Disciplining Your Child",
+     "url": "https://www.healthychildren.org/English/family-life/family-dynamics/communication-discipline/Pages/Disciplining-Your-Child.aspx"
+    }
+   ],
+   "ages": [
+    3,
+    8
+   ]
+  },
+  {
+   "id": "plain-instructions",
+   "topic": "communication",
+   "title": "Say it plainly",
+   "body": "If it is an instruction, say it as one, once, in specific words. \"Shoes on, please\" works better than \"Can you put your shoes on?\"",
+   "evidence": "moderate",
+   "sources": [
+    {
+     "label": "AAP: Disciplining Your Child",
+     "url": "https://www.healthychildren.org/English/family-life/family-dynamics/communication-discipline/Pages/Disciplining-Your-Child.aspx"
+    }
+   ]
+  },
+  {
+   "id": "emotion-coaching",
+   "topic": "communication",
+   "title": "Naming feelings",
+   "body": "Emotion coaching reliably changes what parents do. Evidence that it improves 5 to 7 year olds' emotion skills is still thin and mostly parent-reported.",
+   "evidence": "weak",
+   "sources": [
+    {
+     "label": "Emotion-enhanced Triple P thesis",
+     "url": "https://openaccess.wgtn.ac.nz/articles/thesis/Integrating_emotion_into_behaviourally-based_parenting_programmes_can_this_enhance_outcomes_for_child_conduct_problems_/17006110"
+    }
+   ],
+   "ages": [
+    4,
+    8
+   ]
+  },
+  {
+   "id": "how-parents-fight",
+   "topic": "conflict",
+   "title": "How you disagree matters most",
+   "body": "Hostility and withdrawal between parents are linked to more child problems because a child may feel the family is unsafe. Calm disagreement that gets resolved is not harmful.",
+   "evidence": "strong",
+   "sources": [
+    {
+     "label": "Notre Dame: couples and kids",
+     "url": "https://shaw.nd.edu/research/couples-and-kids"
+    }
+   ]
+  },
+  {
+   "id": "out-of-the-middle",
+   "topic": "coparenting",
+   "title": "Keep your child out of the middle",
+   "body": "No messengers, no questions about the other home, no criticism of the other parent in earshot.",
+   "evidence": "strong",
+   "sources": [
+    {
+     "label": "Notre Dame: couples and kids",
+     "url": "https://shaw.nd.edu/research/couples-and-kids"
+    }
+   ]
+  },
+  {
+   "id": "rules-that-match",
+   "topic": "coparenting",
+   "title": "What is worth matching",
+   "body": "Core routines such as bedtime, screens, homework and safety are the better-supported place to line up. Evidence that matching whole styles matters is mixed, and low conflict matters more.",
+   "evidence": "moderate",
+   "sources": [
+    {
+     "label": "Bielefeld longitudinal study",
+     "url": "https://pub.uni-bielefeld.de/record/1591258"
+    },
+    {
+     "label": "Fatherhood Institute briefing",
+     "url": "https://fatherhoodinstitute.org/_files/ugd/efff1d_dc63e949baaa4de2ac96d5b562234262.pdf"
+    }
+   ]
+  },
+  {
+   "id": "repair",
+   "topic": "repair",
+   "title": "After you lost your temper",
+   "body": "Calm yourself first, go back and name it, say it was yours, then reconnect. Mistakes happen. A mistake does not make anyone bad.",
+   "evidence": "strong",
+   "sources": [
+    {
+     "label": "AAP: Disciplining Your Child",
+     "url": "https://www.healthychildren.org/English/family-life/family-dynamics/communication-discipline/Pages/Disciplining-Your-Child.aspx"
+    }
+   ]
+  },
+  {
+   "id": "siblings",
+   "topic": "discipline",
+   "title": "When siblings fight",
+   "body": "Step in only if someone could be hurt. Name each feeling, ask what they could try, then notice the fix. Common practice, but no sibling-specific trials were found.",
+   "evidence": "weak",
+   "sources": [
+    {
+     "label": "AAP: Disciplining Your Child",
+     "url": "https://www.healthychildren.org/English/family-life/family-dynamics/communication-discipline/Pages/Disciplining-Your-Child.aspx"
+    }
+   ],
+   "ages": [
+    4,
+    8
+   ]
+  }
+ ],
+ "defaults": {
+  "reflection": "session",
+  "framing": "neutral",
+  "rulesList": false,
+  "messageCheck": false
+ },
+ "ruleCategories": [
+  "bedtime",
+  "screens",
+  "homework",
+  "safety"
+ ],
+ "maxCheckChars": 4000,
+ "lint": [
+  {
+   "name": "shipped",
+   "out": []
+  },
+  {
+   "name": "no source",
+   "out": [
+    "two-dimensions: no source"
+   ]
+  },
+  {
+   "name": "http source",
+   "out": [
+    "two-dimensions: non-https source"
+   ]
+  },
+  {
+   "name": "causal",
+   "out": [
+    "two-dimensions: causal claim"
+   ]
+  },
+  {
+   "name": "label",
+   "out": [
+    "two-dimensions: labels a person"
+   ]
+  },
+  {
+   "name": "no risk",
+   "out": [
+    "two-dimensions: claims no risk"
+   ]
+  }
+ ],
+ "canRead": [
+  {
+   "n": "guardian",
+   "learn": true,
+   "reflectionOwn": true,
+   "reflectionOther": false
+  },
+  {
+   "n": "child",
+   "learn": false,
+   "reflectionOwn": false,
+   "reflectionOther": false
+  },
+  {
+   "n": "sitter",
+   "learn": false,
+   "reflectionOwn": false,
+   "reflectionOther": false
+  }
+ ],
+ "settings": [
+  {
+   "raw": "__undefined__",
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": null,
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": [
+    1
+   ],
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": {},
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": {
+    "reflection": "cloud"
+   },
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": {
+    "framing": "x"
+   },
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": {
+    "messageCheck": "yes"
+   },
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": {
+    "rulesList": 1
+   },
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  },
+  {
+   "raw": {
+    "reflection": "saved",
+    "framing": "values-first",
+    "rulesList": true,
+    "messageCheck": true
+   },
+   "out": {
+    "reflection": "saved",
+    "framing": "values-first",
+    "rulesList": true,
+    "messageCheck": true
+   }
+  },
+  {
+   "raw": {
+    "evil": 1
+   },
+   "out": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   }
+  }
+ ],
+ "describeDay": [
+  {
+   "w": 80,
+   "e": 80,
+   "out": {
+    "headline": "Warm, with clear limits.",
+    "prompt": "Notice: what made that possible today?"
+   }
+  },
+  {
+   "w": 20,
+   "e": 80,
+   "out": {
+    "headline": "Firm today, with less warmth.",
+    "prompt": "Notice: what was going on for you? One small warm moment can change the day."
+   }
+  },
+  {
+   "w": 80,
+   "e": 20,
+   "out": {
+    "headline": "Warm today, with looser limits.",
+    "prompt": "Notice: was it a choice, or were you tired? One clear limit may be enough."
+   }
+  },
+  {
+   "w": 10,
+   "e": 10,
+   "out": {
+    "headline": "Low on both today.",
+    "prompt": "Notice: are you okay? Support is fine to ask for. Tomorrow is a fresh day."
+   }
+  },
+  {
+   "w": 50,
+   "e": 50,
+   "out": {
+    "headline": "Warm, with clear limits.",
+    "prompt": "Notice: what made that possible today?"
+   }
+  },
+  {
+   "w": 1000000000,
+   "e": -1000000000,
+   "out": {
+    "headline": "Warm today, with looser limits.",
+    "prompt": "Notice: was it a choice, or were you tired? One clear limit may be enough."
+   }
+  },
+  {
+   "w": -5,
+   "e": 120,
+   "out": {
+    "headline": "Firm today, with less warmth.",
+    "prompt": "Notice: what was going on for you? One small warm moment can change the day."
+   }
+  }
+ ],
+ "cardsFor": [
+  {
+   "who": "guardian",
+   "settings": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   },
+   "age": null,
+   "ids": [
+    "two-dimensions",
+    "warm-and-clear",
+    "climate-and-tools",
+    "child-shapes-parent",
+    "culture-changes-meaning",
+    "gentle-with-limits",
+    "short-time-out",
+    "avoid-hitting",
+    "specific-praise",
+    "plain-instructions",
+    "emotion-coaching",
+    "how-parents-fight",
+    "out-of-the-middle",
+    "rules-that-match",
+    "repair",
+    "siblings"
+   ]
+  },
+  {
+   "who": "guardian",
+   "settings": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   },
+   "age": 6,
+   "ids": [
+    "two-dimensions",
+    "warm-and-clear",
+    "climate-and-tools",
+    "child-shapes-parent",
+    "culture-changes-meaning",
+    "gentle-with-limits",
+    "short-time-out",
+    "avoid-hitting",
+    "specific-praise",
+    "plain-instructions",
+    "emotion-coaching",
+    "how-parents-fight",
+    "out-of-the-middle",
+    "rules-that-match",
+    "repair",
+    "siblings"
+   ]
+  },
+  {
+   "who": "guardian",
+   "settings": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   },
+   "age": 1,
+   "ids": [
+    "two-dimensions",
+    "warm-and-clear",
+    "climate-and-tools",
+    "child-shapes-parent",
+    "culture-changes-meaning",
+    "gentle-with-limits",
+    "avoid-hitting",
+    "plain-instructions",
+    "how-parents-fight",
+    "out-of-the-middle",
+    "rules-that-match",
+    "repair"
+   ]
+  },
+  {
+   "who": "child",
+   "settings": {
+    "reflection": "session",
+    "framing": "neutral",
+    "rulesList": false,
+    "messageCheck": false
+   },
+   "age": null,
+   "ids": []
+  },
+  {
+   "who": "guardian",
+   "settings": {
+    "reflection": "session",
+    "framing": "culture-note",
+    "rulesList": false,
+    "messageCheck": false
+   },
+   "age": null,
+   "bodies": [
+    "Home feels like a mix of warmth and expectations. The four named styles are corners of that map, not types of person. Most days you move around it. What this means can differ by family and culture.",
+    "Children tend to do well on school, mood and friendships when warmth and clear limits go together. This is a link in studies, not a promise, and it is not risk-free. What this means can differ by family and culture.",
+    "Style is the emotional climate. Practices are the tools. The same tool, such as a time-out, lands differently in a warm home than in a cold one. What this means can differ by family and culture.",
+    "Twin studies estimate that about a quarter of the variation in parenting is driven by the child. Parent and child influence each other, so nobody is to blame for the whole picture. What this means can differ by family and culture.",
+    "A firm, high-expectation style can mean care and training in some families and coldness in others. Research found the same style linked to opposite school results in different communities.",
+    "Gentle parenting has no studies of its own. Its ingredients, warmth, validation and limits that are held, match research on authoritative parenting. The risk is dropping the limits. Check: did I say the limit, and did I hold it? What this means can differ by family and culture.",
+    "Name what happened, use a boring safe spot, stay calm and quiet, then reconnect. About one minute per year of age. Skip long isolation and punishing tears.",
+    "Pediatric guidance advises against physical punishment. It is less effective than time-outs or losing a privilege and is linked to more defiance.",
+    "Name the thing they did. \"You shared the red block\" lands better than \"good boy\".",
+    "If it is an instruction, say it as one, once, in specific words. \"Shoes on, please\" works better than \"Can you put your shoes on?\"",
+    "Emotion coaching reliably changes what parents do. Evidence that it improves 5 to 7 year olds' emotion skills is still thin and mostly parent-reported.",
+    "Hostility and withdrawal between parents are linked to more child problems because a child may feel the family is unsafe. Calm disagreement that gets resolved is not harmful.",
+    "No messengers, no questions about the other home, no criticism of the other parent in earshot.",
+    "Core routines such as bedtime, screens, homework and safety are the better-supported place to line up. Evidence that matching whole styles matters is mixed, and low conflict matters more.",
+    "Calm yourself first, go back and name it, say it was yours, then reconnect. Mistakes happen. A mistake does not make anyone bad.",
+    "Step in only if someone could be hurt. Name each feeling, ask what they could try, then notice the fix. Common practice, but no sibling-specific trials were found."
+   ]
+  }
+ ],
+ "messages": [
+  {
+   "text": "You always let her stay up and it is your fault.",
+   "on": [
+    {
+     "flag": "absolute",
+     "hint": "Try the one thing that happened: \"On Friday bedtime was late.\""
+    },
+    {
+     "flag": "blame",
+     "hint": "Describe the effect, not who is at fault."
+    }
+   ],
+   "off": null,
+   "child": null
+  },
+  {
+   "text": "You are useless.",
+   "on": [
+    {
+     "flag": "contempt",
+     "hint": "Leave out the insult. It makes the real point harder to hear."
+    }
+   ],
+   "off": null,
+   "child": null
+  },
+  {
+   "text": "Tell your dad he owes me.",
+   "on": [
+    {
+     "flag": "child-messenger",
+     "hint": "Send this to the other guardian directly. Please keep the child out of it."
+    }
+   ],
+   "off": null,
+   "child": null
+  },
+  {
+   "text": "Ask Mia what Dad said about me.",
+   "on": [
+    {
+     "flag": "questioning-child",
+     "hint": "Please do not question the child about the other home."
+    }
+   ],
+   "off": null,
+   "child": null
+  },
+  {
+   "text": "Do it or else.",
+   "on": [
+    {
+     "flag": "threat",
+     "hint": "Say what you need and by when, without a threat."
+    }
+   ],
+   "off": null,
+   "child": null
+  },
+  {
+   "text": "Pickup is 5:30 Sunday at the library.",
+   "on": [],
+   "off": null,
+   "child": null
+  },
+  {
+   "text": "You always. You never. You always.",
+   "on": [
+    {
+     "flag": "absolute",
+     "hint": "Try the one thing that happened: \"On Friday bedtime was late.\""
+    }
+   ],
+   "off": null,
+   "child": null
+  },
+  {
+   "text": "",
+   "on": [],
+   "off": null,
+   "child": null
+  }
+ ],
+ "rules": [
+  {
+   "items": [
+    {
+     "category": "bedtime",
+     "text": "  8:00 on school nights "
+    },
+    {
+     "category": "screens",
+     "text": "No screens at dinner"
+    },
+    {
+     "category": "style",
+     "text": "x"
+    },
+    {
+     "category": "reflection",
+     "text": "y"
+    },
+    {
+     "category": "safety",
+     "text": ""
+    },
+    {
+     "category": "homework",
+     "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    null,
+    7,
+    "bedtime"
+   ],
+   "on": [
+    {
+     "category": "bedtime",
+     "text": "8:00 on school nights"
+    },
+    {
+     "category": "screens",
+     "text": "No screens at dinner"
+    },
+    {
+     "category": "homework",
+     "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+   ],
+   "off": [],
+   "child": []
+  }
+ ]
+}
