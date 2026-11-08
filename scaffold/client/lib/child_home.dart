@@ -71,6 +71,7 @@ import 'inbox_screen.dart';
 import 'jokebook_screen.dart';
 import 'live_game_picker.dart';
 import 'my_day.dart';
+import 'play_window_gate.dart';
 import 'showcase_screen.dart';
 import 'storyteller_screen.dart';
 import 'tiered_tile.dart';
@@ -274,16 +275,16 @@ class ChildHome extends StatelessWidget {
                   // of a favorite, never the mechanism (the design spec's
                   // own "Where favoriting happens").
                   if (baseUrl != null && childId != null && sessionToken != null) {
-                    return LiveGamePickerScreen(
+                    return PlayWindowGate(child: LiveGamePickerScreen(
                       baseUrl: baseUrl!, childId: childId!, sessionToken: sessionToken!,
                       childName: childName, childAge: childAge, httpClient: httpClient,
                       onPlay: onPlay, extraSections: gameSections, overrides: overrides,
-                    );
+                    ));
                   }
-                  return GamePickerScreen(
+                  return PlayWindowGate(child: GamePickerScreen(
                     childName: childName, childAge: childAge, onPlay: onPlay,
                     extraSections: gameSections, overrides: overrides,
-                  );
+                  ));
                 }))),
             if (isTileVisible(overrides, 'tile:messages') && _fam('messages'))
               TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,

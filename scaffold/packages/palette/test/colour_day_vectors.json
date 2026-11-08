@@ -1,0 +1,2341 @@
+{
+ "constants": {
+  "artStyles": [
+   "paper",
+   "sticker",
+   "crayon",
+   "watercolour",
+   "felt",
+   "line",
+   "pixel"
+  ],
+  "pixelMinAge": 8,
+  "defaultArtStyle": "paper",
+  "defaultArtSettings": {
+   "artStyle": "paper",
+   "allowedStyles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line"
+   ],
+   "dailyQuestion": true,
+   "codeActivities": true
+  },
+  "colourIds": [
+   "sunny",
+   "tangerine",
+   "coral",
+   "bubblegum",
+   "grape",
+   "sea",
+   "sky",
+   "mint",
+   "grass",
+   "chocolate",
+   "storm",
+   "midnight"
+  ],
+  "maxAnswerAgeMs": 43200000,
+  "maxClockSkewMs": 300000,
+  "windDownChoices": [
+   0,
+   15,
+   30
+  ]
+ },
+ "stylesForAge": [
+  {
+   "age": null,
+   "styles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line"
+   ]
+  },
+  {
+   "age": 0,
+   "styles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line"
+   ]
+  },
+  {
+   "age": 5,
+   "styles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line"
+   ]
+  },
+  {
+   "age": 7,
+   "styles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line"
+   ]
+  },
+  {
+   "age": 8,
+   "styles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line",
+    "pixel"
+   ]
+  },
+  {
+   "age": 9,
+   "styles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line",
+    "pixel"
+   ]
+  },
+  {
+   "age": 12,
+   "styles": [
+    "paper",
+    "sticker",
+    "crayon",
+    "watercolour",
+    "felt",
+    "line",
+    "pixel"
+   ]
+  }
+ ],
+ "artPatches": [
+  {
+   "patch": {
+    "artStyle": "watercolour"
+   },
+   "age": 6,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "watercolour",
+     "allowedStyles": [
+      "paper",
+      "sticker",
+      "crayon",
+      "watercolour",
+      "felt",
+      "line"
+     ],
+     "dailyQuestion": true,
+     "codeActivities": true
+    }
+   }
+  },
+  {
+   "patch": {
+    "artStyle": "pixel"
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "style_not_for_age"
+   }
+  },
+  {
+   "patch": {
+    "artStyle": "pixel",
+    "allowedStyles": [
+     "pixel",
+     "line"
+    ]
+   },
+   "age": 8,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "pixel",
+     "allowedStyles": [
+      "line",
+      "pixel"
+     ],
+     "dailyQuestion": true,
+     "codeActivities": true
+    }
+   }
+  },
+  {
+   "patch": {
+    "artStyle": "pixel",
+    "allowedStyles": [
+     "pixel",
+     "line"
+    ]
+   },
+   "age": 7,
+   "expect": {
+    "ok": false,
+    "reason": "style_not_for_age"
+   }
+  },
+  {
+   "patch": {
+    "allowedStyles": [
+     "line"
+    ]
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "style_not_allowed"
+   }
+  },
+  {
+   "patch": {
+    "allowedStyles": [
+     "line",
+     "felt"
+    ],
+    "artStyle": "felt"
+   },
+   "age": 6,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "felt",
+     "allowedStyles": [
+      "felt",
+      "line"
+     ],
+     "dailyQuestion": true,
+     "codeActivities": true
+    }
+   }
+  },
+  {
+   "patch": {
+    "allowedStyles": [
+     "felt",
+     "line",
+     "felt"
+    ]
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_allowedStyles"
+   }
+  },
+  {
+   "patch": {
+    "allowedStyles": []
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_allowedStyles"
+   }
+  },
+  {
+   "patch": {
+    "allowedStyles": "paper"
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_allowedStyles"
+   }
+  },
+  {
+   "patch": {
+    "allowedStyles": [
+     "neon"
+    ]
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_allowedStyles"
+   }
+  },
+  {
+   "patch": {
+    "artStyle": "neon"
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_artStyle"
+   }
+  },
+  {
+   "patch": {
+    "artStyle": 5
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_artStyle"
+   }
+  },
+  {
+   "patch": {
+    "dailyQuestion": false
+   },
+   "age": 6,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "paper",
+     "allowedStyles": [
+      "paper",
+      "sticker",
+      "crayon",
+      "watercolour",
+      "felt",
+      "line"
+     ],
+     "dailyQuestion": false,
+     "codeActivities": true
+    }
+   }
+  },
+  {
+   "patch": {
+    "dailyQuestion": "no"
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_dailyQuestion"
+   }
+  },
+  {
+   "patch": {
+    "codeActivities": false,
+    "dailyQuestion": false
+   },
+   "age": null,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "paper",
+     "allowedStyles": [
+      "paper",
+      "sticker",
+      "crayon",
+      "watercolour",
+      "felt",
+      "line"
+     ],
+     "dailyQuestion": false,
+     "codeActivities": false
+    }
+   }
+  },
+  {
+   "patch": {
+    "codeActivities": 1
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "bad_codeActivities"
+   }
+  },
+  {
+   "patch": {
+    "mood": "x"
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "unknown_field"
+   }
+  },
+  {
+   "patch": {},
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "empty_body"
+   }
+  },
+  {
+   "patch": null,
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "body_must_be_object"
+   }
+  },
+  {
+   "patch": [],
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "body_must_be_object"
+   }
+  },
+  {
+   "patch": "x",
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "body_must_be_object"
+   }
+  },
+  {
+   "patch": {
+    "allowedStyles": [
+     "sticker",
+     "paper"
+    ]
+   },
+   "age": 6,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "paper",
+     "allowedStyles": [
+      "paper",
+      "sticker"
+     ],
+     "dailyQuestion": true,
+     "codeActivities": true
+    }
+   }
+  },
+  {
+   "patch": {
+    "artStyle": "line"
+   },
+   "age": null,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "line",
+     "allowedStyles": [
+      "paper",
+      "sticker",
+      "crayon",
+      "watercolour",
+      "felt",
+      "line"
+     ],
+     "dailyQuestion": true,
+     "codeActivities": true
+    }
+   }
+  }
+ ],
+ "artPatchesFromNarrow": [
+  {
+   "current": {
+    "artStyle": "line",
+    "allowedStyles": [
+     "line",
+     "felt"
+    ],
+    "dailyQuestion": true,
+    "codeActivities": true
+   },
+   "patch": {
+    "artStyle": "paper"
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "style_not_allowed"
+   }
+  },
+  {
+   "current": {
+    "artStyle": "line",
+    "allowedStyles": [
+     "line",
+     "felt"
+    ],
+    "dailyQuestion": true,
+    "codeActivities": true
+   },
+   "patch": {
+    "artStyle": "felt"
+   },
+   "age": 6,
+   "expect": {
+    "ok": true,
+    "settings": {
+     "artStyle": "felt",
+     "allowedStyles": [
+      "line",
+      "felt"
+     ],
+     "dailyQuestion": true,
+     "codeActivities": true
+    }
+   }
+  },
+  {
+   "current": {
+    "artStyle": "line",
+    "allowedStyles": [
+     "line",
+     "felt"
+    ],
+    "dailyQuestion": true,
+    "codeActivities": true
+   },
+   "patch": {
+    "allowedStyles": [
+     "felt"
+    ]
+   },
+   "age": 6,
+   "expect": {
+    "ok": false,
+    "reason": "style_not_allowed"
+   }
+  }
+ ],
+ "clamp": [
+  {
+   "answered": "__undefined__",
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": null,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": "x",
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": "__nan__",
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": "NaN",
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": 1700000000000,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": 1699999999999,
+   "nowMs": 1700000000000,
+   "expect": 1699999999999
+  },
+  {
+   "answered": 1700000000001,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": 1700000300000,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": 1700000300001,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": 1699956800000,
+   "nowMs": 1700000000000,
+   "expect": 1699956800000
+  },
+  {
+   "answered": 1699956799999,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": 1699999994999.3,
+   "nowMs": 1700000000000,
+   "expect": 1699999994999
+  },
+  {
+   "answered": 0,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  },
+  {
+   "answered": -5,
+   "nowMs": 1700000000000,
+   "expect": 1700000000000
+  }
+ ],
+ "localDates": [
+  {
+   "s": "2026-11-07",
+   "expect": true
+  },
+  {
+   "s": "2026-02-29",
+   "expect": false
+  },
+  {
+   "s": "2024-02-29",
+   "expect": true
+  },
+  {
+   "s": "2026-13-01",
+   "expect": false
+  },
+  {
+   "s": "2026-1-1",
+   "expect": false
+  },
+  {
+   "s": "",
+   "expect": false
+  },
+  {
+   "s": 5,
+   "expect": false
+  },
+  {
+   "s": null,
+   "expect": false
+  },
+  {
+   "s": "2026-11-07T00:00",
+   "expect": false
+  }
+ ],
+ "merge": [
+  {
+   "name": "first answer",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 100
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 100
+    },
+    "changed": true,
+    "kept": "incoming"
+   }
+  },
+  {
+   "name": "later device wins",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 100
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 200
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "sunny",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 200
+    },
+    "changed": true,
+    "kept": "incoming"
+   }
+  },
+  {
+   "name": "earlier device is kept out",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 200
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 100
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 200
+    },
+    "changed": false,
+    "kept": "existing"
+   }
+  },
+  {
+   "name": "tie goes to the incoming write",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 100
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 100
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "sunny",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 100
+    },
+    "changed": true,
+    "kept": "incoming"
+   }
+  },
+  {
+   "name": "same colour again changes nothing",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 100
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 150
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 150
+    },
+    "changed": false,
+    "kept": "incoming"
+   }
+  },
+  {
+   "name": "colour day over her answer",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 900
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "mint",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 100
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "mint",
+     "chosenBy": "guardian",
+     "override": true,
+     "chosenAtMs": 100
+    },
+    "changed": true,
+    "kept": "incoming"
+   }
+  },
+  {
+   "name": "colour day when nothing yet",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "mint",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 100
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "mint",
+     "chosenBy": "guardian",
+     "override": true,
+     "chosenAtMs": 100
+    },
+    "changed": true,
+    "kept": "incoming"
+   }
+  },
+  {
+   "name": "her tap does not replace a colour day",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "mint",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 100
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 900
+   },
+   "expect": {
+    "ok": false,
+    "reason": "override_holds"
+   }
+  },
+  {
+   "name": "later colour day replaces earlier",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "mint",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 100
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "grape",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 200
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "grape",
+     "chosenBy": "guardian",
+     "override": true,
+     "chosenAtMs": 200
+    },
+    "changed": true,
+    "kept": "incoming"
+   }
+  },
+  {
+   "name": "earlier colour day does not replace later",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "grape",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 200
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "mint",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 100
+   },
+   "expect": {
+    "ok": true,
+    "row": {
+     "localDate": "2026-11-07",
+     "colourId": "grape",
+     "chosenBy": "guardian",
+     "override": true,
+     "chosenAtMs": 200
+    },
+    "changed": false,
+    "kept": "existing"
+   }
+  },
+  {
+   "name": "unknown colour",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "red",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1
+   },
+   "expect": {
+    "ok": false,
+    "reason": "unknown_colour"
+   }
+  },
+  {
+   "name": "pure red is not a swatch",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "#FF0000",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 2
+   },
+   "expect": {
+    "ok": false,
+    "reason": "unknown_colour"
+   }
+  },
+  {
+   "name": "wrong day",
+   "existing": {
+    "localDate": "2026-11-06",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 2
+   },
+   "expect": {
+    "ok": false,
+    "reason": "wrong_day"
+   }
+  },
+  {
+   "name": "child cannot claim override",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": true,
+    "chosenAtMs": 1
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_shape"
+   }
+  },
+  {
+   "name": "guardian without override flag",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "guardian",
+    "override": false,
+    "chosenAtMs": 1
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_shape"
+   }
+  },
+  {
+   "name": "bad date",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-13-40",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_shape"
+   }
+  },
+  {
+   "name": "bad time",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": "NaN"
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_shape"
+   }
+  },
+  {
+   "name": "bad actor",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "sitter",
+    "override": false,
+    "chosenAtMs": 1
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_shape"
+   }
+  }
+ ],
+ "days": [
+  {
+   "localDate": "2026-11-05",
+   "colourId": "grass",
+   "chosenBy": "child",
+   "override": false,
+   "chosenAtMs": 10
+  },
+  {
+   "localDate": "2026-11-06",
+   "colourId": "storm",
+   "chosenBy": "child",
+   "override": false,
+   "chosenAtMs": 20
+  },
+  {
+   "localDate": "2026-11-06",
+   "colourId": "sky",
+   "chosenBy": "child",
+   "override": false,
+   "chosenAtMs": 30
+  },
+  {
+   "localDate": "2026-11-07",
+   "colourId": "sea",
+   "chosenBy": "child",
+   "override": false,
+   "chosenAtMs": 40
+  }
+ ],
+ "currentDay": [
+  {
+   "days": [],
+   "expect": null
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "expect": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 40
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    }
+   ],
+   "expect": {
+    "localDate": "2026-11-06",
+    "colourId": "storm",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 20
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    }
+   ],
+   "expect": {
+    "localDate": "2026-11-06",
+    "colourId": "sky",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 30
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-07",
+     "colourId": "mint",
+     "chosenBy": "guardian",
+     "override": true,
+     "chosenAtMs": 1
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 5
+    }
+   ],
+   "expect": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 5
+   }
+  }
+ ],
+ "colourToday": [
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-07",
+   "expect": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 40
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-08",
+   "expect": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 40
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-06",
+   "expect": {
+    "localDate": "2026-11-06",
+    "colourId": "sky",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 30
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-04",
+   "expect": null
+  },
+  {
+   "days": [],
+   "localDate": "2026-11-07",
+   "expect": null
+  }
+ ],
+ "needsQuestion": [
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-07",
+   "dailyQuestion": true,
+   "expect": false
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-08",
+   "dailyQuestion": true,
+   "expect": true
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-08",
+   "dailyQuestion": false,
+   "expect": false
+  },
+  {
+   "days": [],
+   "localDate": "2026-11-07",
+   "dailyQuestion": true,
+   "expect": true
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-07",
+     "colourId": "mint",
+     "chosenBy": "guardian",
+     "override": true,
+     "chosenAtMs": 1
+    }
+   ],
+   "localDate": "2026-11-07",
+   "dailyQuestion": true,
+   "expect": false
+  }
+ ],
+ "deviceMatches": [
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-07",
+   "seen": {
+    "localDate": "2026-11-07",
+    "colourId": "sea"
+   },
+   "expect": true
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-07",
+   "seen": {
+    "localDate": "2026-11-06",
+    "colourId": "sky"
+   },
+   "expect": false
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-07",
+   "seen": null,
+   "expect": false
+  },
+  {
+   "days": [],
+   "localDate": "2026-11-07",
+   "seen": {
+    "localDate": "2026-11-07",
+    "colourId": "sea"
+   },
+   "expect": false
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-08",
+   "seen": {
+    "localDate": "2026-11-07",
+    "colourId": "sea"
+   },
+   "expect": true
+  }
+ ],
+ "toChoices": [
+  {
+   "days": [],
+   "expect": []
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "expect": [
+    {
+     "colourId": "grass",
+     "chosenAt": "2026-11-05T12:00:00.000Z",
+     "via": "daily"
+    },
+    {
+     "colourId": "storm",
+     "chosenAt": "2026-11-06T12:00:00.000Z",
+     "via": "daily"
+    },
+    {
+     "colourId": "sky",
+     "chosenAt": "2026-11-06T12:00:00.000Z",
+     "via": "daily"
+    },
+    {
+     "colourId": "sea",
+     "chosenAt": "2026-11-07T12:00:00.000Z",
+     "via": "daily"
+    }
+   ]
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    },
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    }
+   ],
+   "expect": [
+    {
+     "colourId": "grass",
+     "chosenAt": "2026-11-05T12:00:00.000Z",
+     "via": "daily"
+    },
+    {
+     "colourId": "sea",
+     "chosenAt": "2026-11-07T12:00:00.000Z",
+     "via": "daily"
+    }
+   ]
+  }
+ ],
+ "guardianView": [
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-07",
+   "expect": {
+    "label": "sea blue",
+    "hex": "#2F8FC4",
+    "changedToday": true,
+    "line": "Today her colour is sea blue."
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    }
+   ],
+   "localDate": "2026-11-07",
+   "expect": {
+    "label": "storm grey",
+    "hex": "#7C8698",
+    "changedToday": false,
+    "line": "Her colour is storm grey."
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-05",
+     "colourId": "grass",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 10
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "storm",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 20
+    },
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sky",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 30
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 40
+    }
+   ],
+   "localDate": "2026-11-06",
+   "expect": {
+    "label": "sea blue",
+    "hex": "#2F8FC4",
+    "changedToday": true,
+    "line": "Today her colour is sea blue."
+   }
+  },
+  {
+   "days": [],
+   "localDate": "2026-11-07",
+   "expect": null
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-06",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 1
+    },
+    {
+     "localDate": "2026-11-07",
+     "colourId": "sea",
+     "chosenBy": "child",
+     "override": false,
+     "chosenAtMs": 2
+    }
+   ],
+   "localDate": "2026-11-07",
+   "expect": {
+    "label": "sea blue",
+    "hex": "#2F8FC4",
+    "changedToday": false,
+    "line": "Her colour is sea blue."
+   }
+  },
+  {
+   "days": [
+    {
+     "localDate": "2026-11-07",
+     "colourId": "mint",
+     "chosenBy": "guardian",
+     "override": true,
+     "chosenAtMs": 5
+    }
+   ],
+   "localDate": "2026-11-07",
+   "expect": {
+    "label": "mint",
+    "hex": "#5FC9A8",
+    "changedToday": true,
+    "line": "Today her colour is mint."
+   }
+  }
+ ],
+ "checkWindow": [
+  {
+   "input": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "expect": {
+    "ok": true,
+    "window": {
+     "opensMin": 930,
+     "restsMin": 1140,
+     "windDownMin": 30
+    }
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 1439,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": true,
+    "window": {
+     "opensMin": 0,
+     "restsMin": 1439,
+     "windDownMin": 0
+    }
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 15,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": true,
+    "window": {
+     "opensMin": 0,
+     "restsMin": 15,
+     "windDownMin": 0
+    }
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 30,
+    "windDownMin": 15
+   },
+   "expect": {
+    "ok": true,
+    "window": {
+     "opensMin": 0,
+     "restsMin": 30,
+     "windDownMin": 15
+    }
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 44,
+    "windDownMin": 30
+   },
+   "expect": {
+    "ok": false,
+    "reason": "window_too_short"
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 45,
+    "windDownMin": 30
+   },
+   "expect": {
+    "ok": true,
+    "window": {
+     "opensMin": 0,
+     "restsMin": 45,
+     "windDownMin": 30
+    }
+   }
+  },
+  {
+   "input": {
+    "opensMin": 600,
+    "restsMin": 600,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_restsMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": 700,
+    "restsMin": 600,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_restsMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": -1,
+    "restsMin": 600,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_opensMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 1440,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_restsMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 600,
+    "windDownMin": 10
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_windDownMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": 1.5,
+    "restsMin": 600,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_opensMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": "0",
+    "restsMin": 600,
+    "windDownMin": 0
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_opensMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": 0,
+    "restsMin": 600
+   },
+   "expect": {
+    "ok": false,
+    "reason": "bad_windDownMin"
+   }
+  },
+  {
+   "input": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30,
+    "mood": "x"
+   },
+   "expect": {
+    "ok": false,
+    "reason": "unknown_field"
+   }
+  },
+  {
+   "input": null,
+   "expect": {
+    "ok": false,
+    "reason": "body_must_be_object"
+   }
+  },
+  {
+   "input": [],
+   "expect": {
+    "ok": false,
+    "reason": "body_must_be_object"
+   }
+  },
+  {
+   "input": "x",
+   "expect": {
+    "ok": false,
+    "reason": "body_must_be_object"
+   }
+  }
+ ],
+ "windowState": [
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 0,
+   "expect": "resting"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 929,
+   "expect": "resting"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 930,
+   "expect": "open"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1000,
+   "expect": "open"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1109,
+   "expect": "open"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1110,
+   "expect": "winding_down"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1111,
+   "expect": "winding_down"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1139,
+   "expect": "winding_down"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1140,
+   "expect": "resting"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1141,
+   "expect": "resting"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1439,
+   "expect": "resting"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 0
+   },
+   "minute": 1139,
+   "expect": "open"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 0
+   },
+   "minute": 1140,
+   "expect": "resting"
+  },
+  {
+   "window": null,
+   "minute": 5,
+   "expect": "open"
+  }
+ ],
+ "windowLength": [
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "expect": 210
+  },
+  {
+   "window": {
+    "opensMin": 0,
+    "restsMin": 1439,
+    "windDownMin": 0
+   },
+   "expect": 1439
+  },
+  {
+   "window": {
+    "opensMin": 600,
+    "restsMin": 615,
+    "windDownMin": 0
+   },
+   "expect": 15
+  }
+ ],
+ "isLonger": [
+  {
+   "prev": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "next": {
+    "opensMin": 900,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "expect": true
+  },
+  {
+   "prev": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "next": {
+    "opensMin": 930,
+    "restsMin": 1200,
+    "windDownMin": 30
+   },
+   "expect": true
+  },
+  {
+   "prev": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "next": {
+    "opensMin": 960,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "expect": false
+  },
+  {
+   "prev": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "next": {
+    "opensMin": 930,
+    "restsMin": 1110,
+    "windDownMin": 30
+   },
+   "expect": false
+  },
+  {
+   "prev": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "next": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 15
+   },
+   "expect": false
+  },
+  {
+   "prev": null,
+   "next": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "expect": false
+  },
+  {
+   "prev": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "next": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "expect": false
+  }
+ ],
+ "lines": [
+  {
+   "state": "open",
+   "expect": null
+  },
+  {
+   "state": "winding_down",
+   "expect": "It’s getting sleepy. One more, then goodnight."
+  },
+  {
+   "state": "resting",
+   "expect": "Games are resting now. They’ll be back tomorrow."
+  }
+ ]
+}

@@ -53,6 +53,7 @@ const ENTRIES = [
   ["packages/showcase/src/showcase.ts","--format=esm","--platform=node","--outfile=packages/showcase/src/showcase.mjs"],
   ["packages/onboarding/src/onboarding.ts","--format=esm","--platform=node","--outfile=packages/onboarding/src/onboarding.mjs"],
   ["packages/palette/src/palette.ts","--format=esm","--platform=node","--outfile=packages/palette/src/palette.mjs"],
+  ["packages/palette/src/colour_day.ts","--format=esm","--platform=node","--outfile=packages/palette/src/colour_day.mjs"],
   ["packages/calendar/src/calendar.ts","--format=esm","--platform=node","--outfile=packages/calendar/src/calendar.mjs"],
   ["packages/storyteller/src/storyteller.ts","--format=esm","--platform=node","--outfile=packages/storyteller/src/storyteller.mjs"],
   ["--format=esm","--platform=node","packages/activities/src/activities.ts","--outfile=packages/activities/src/activities.mjs"],
