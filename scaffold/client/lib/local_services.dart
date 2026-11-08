@@ -162,6 +162,24 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'roomier reading, larger targets, and whether captions are wanted. Five on/off '
           'switches; nothing else.'),
   LocalDataEntry(
+      area: 'village', scope: LocalScope.child, encrypted: true, maxBytes: 128 * 1024,
+      what: 'Village, on this device only: a large-print grandparent page, picture stories a guardian '
+          'wrote and whether each is released to her (a held one is never shown), the sibling '
+          'shelf (names, pictures, and the pictures left on it), and the faces a guardian picked '
+          'for her people. Sealed on the device; no count or score; nothing is sent or shared '
+          'with her other home.'),
+  LocalDataEntry(
+      area: 'passes', scope: LocalScope.child, encrypted: true, maxBytes: 64 * 1024,
+      what: 'The sitter pass and the school summary a guardian wrote: routine lines, allergies in '
+          'the guardian\'s own words, and contact names and numbers as text. Guardian side only, '
+          'never in her app. Sealed on the device; it leaves only when a grown-up shows the '
+          'screen; no school or sitter is ever contacted.'),
+  LocalDataEntry(
+      area: 'compass', scope: LocalScope.child, encrypted: true, maxBytes: 32 * 1024,
+      what: 'Compass, a guardian\'s own answers to two gentle questions (who is in her life, what '
+          'would help) and which of the two accessibility profiles are on. Guardian side only. '
+          'Sealed on the device; no score and no label about her; nothing is sent.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '

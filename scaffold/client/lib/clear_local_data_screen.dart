@@ -246,6 +246,9 @@ class _ClearLocalDataScreenState extends State<ClearLocalDataScreen> {
         'voice' => 'Her helpers and symbols',
         'feelings' => 'Feelings weather',
         'worries' => 'Worry box',
+        'village' => 'Village',
+        'passes' => 'Sitter pass and school summary',
+        'compass' => 'Family compass',
         _ => e.area,
       };
 }
