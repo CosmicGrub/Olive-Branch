@@ -133,6 +133,7 @@ for spec in \
   "infra: Dockerfile, compose, CI hygiene (P-13/14/16)|tools/test/infra.test.mjs" \
   "design tokens: prototype kit to tokens.json + Dart, drift guard|tools/test/design_tokens.test.mjs" \
   "olive UI art drift guard (kit icons, scenes, spots to Dart)|tools/test/olive_art.test.mjs" \
+  "parity scenarios: prototype scenarios + rule table, drift guard|tools/test/parity_scenarios.test.mjs" \
   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
