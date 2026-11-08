@@ -23,6 +23,7 @@
 // "consequence" budget. Nothing here loops or moves on its own.
 import 'package:flutter/material.dart';
 import 'access_scope.dart' show motionDuration;
+import 'grownup_labels.dart' show GrownupLabelScope;
 import 'activity_overrides.dart';
 import 'form_factors.dart' as ff;
 import 'game_favorites_logic.dart' as fav;
@@ -546,7 +547,7 @@ class _GameCardState extends State<_GameCard> {
                 // must never overflow rather than relying on tuning copy
                 // length to a specific breakpoint.
                 Flexible(
-                  child: Text(meta.competitive ? 'Play against Dad' : 'Just for fun, together',
+                  child: Text(meta.competitive ? 'Play against ${GrownupLabelScope.of(context).nameFor()}' : 'Just for fun, together',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context)

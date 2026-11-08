@@ -33,6 +33,7 @@ import 'growing_care_logic.dart';
 import 'growing_care_store.dart';
 import 'growing_screens.dart';
 import 'game_logic.dart' show neutralGrownUp;
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels;
 import 'hub_widgets.dart';
 import 'journal_screen.dart';
 import 'letters_screen.dart';
@@ -88,7 +89,10 @@ class ChildMoreScreen extends StatelessWidget {
   /// The real display name of the grown-up she talks to (C-13). Null falls
   /// back to [neutralGrownUp] — never a hard-coded "Dad".
   final String? guardianName;
-  String get _grownUp => guardianName ?? neutralGrownUp;
+  String _grownUpIn(BuildContext context, {bool watch = false}) {
+    final GrownupLabels labels = watch ? GrownupLabelScope.of(context) : GrownupLabelScope.read(context);
+    return labels.hasPrimary ? labels.nameFor() : (guardianName ?? neutralGrownUp);
+  }
 
   /// Where today's colour comes from; null uses the process-wide in-memory store.
   final ChildColourStore? colourStore;
@@ -156,14 +160,14 @@ class ChildMoreScreen extends StatelessWidget {
           HubTile(readAloud: true, icon: Icons.nights_stay_outlined, title: 'My weeks',
             subtitle: 'Where you sleep, night by night',
             onTap: () => _open(context, WeeksScreen(
-              childName: childName, nights: demoCustodyNights(), guardianColors: demoGuardianColors))),
-          HubTile(readAloud: true, icon: Icons.school_outlined, title: 'Teach $_grownUp something',
+              childName: childName, nights: demoCustodyNights(names: GrownupLabelScope.read(context).twoNames()), guardianColors: demoGuardianColorsFor(GrownupLabelScope.read(context).twoNames())))),
+          HubTile(readAloud: true, icon: Icons.school_outlined, title: 'Teach ${_grownUpIn(context, watch: true)} something',
             subtitle: 'You be the teacher',
             onTap: () => _open(context, TeachMeScreen(childName: childName, childAge: childAge,
-              parentName: _grownUp))),
+              parentName: _grownUpIn(context)))),
           HubTile(readAloud: true, icon: Icons.auto_stories, title: 'Read together',
             subtitle: 'One book, two of you',
-            onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: _grownUp))),
+            onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: _grownUpIn(context)))),
         ]),
         _KeepAndGrow(childName: childName, childAge: childAge, family: family, stores: growingCare),
         RhythmVoiceSections(

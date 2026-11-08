@@ -380,8 +380,8 @@ void main() {
       await _show(t, const TeachMeScreen(childName: 'Ivy', childAge: 9));
       await t.enterText(find.byType(TextField), 'How a lock works');
       await t.pump();
-      await t.ensureVisible(find.widgetWithText(FilledButton, 'Teach Dad'));
-      await t.tap(find.widgetWithText(FilledButton, 'Teach Dad'));
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Teach your grown-up'));
+      await t.tap(find.widgetWithText(FilledButton, 'Teach your grown-up'));
       await t.pumpAndSettle();
 
       final Map<Object?, Object?> row =

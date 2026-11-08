@@ -81,7 +81,7 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('Once there was a very small dragon'), findsOneWidget);
-      expect(find.textContaining("Dad's turn"), findsOneWidget);
+      expect(find.textContaining("Your grown-up's turn"), findsOneWidget);
       // The text field cleared after a successful add.
       final TextField field = tester.widget(find.byType(TextField));
       expect(field.controller!.text, isEmpty);

@@ -242,6 +242,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Messages'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Dad'), findsWidgets);
+    expect(find.textContaining('Your grown-up sent a video'), findsWidgets);
   });
 }

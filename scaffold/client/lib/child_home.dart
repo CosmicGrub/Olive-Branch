@@ -64,6 +64,7 @@ import 'family_structure_screens.dart';
 import 'family_structure_store.dart';
 import 'form_factors.dart' as ff;
 import 'game_logic.dart' show neutralGrownUp;
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, asSubject;
 import 'game_navigation.dart';
 import 'game_picker.dart';
 import 'games_hub.dart';
@@ -130,7 +131,12 @@ class ChildHome extends StatelessWidget {
   /// live session knows one. Null falls back to who is free right now
   /// ([presence]) and finally to [neutralGrownUp] — never a guessed "Dad".
   final String? guardianName;
-  String get _grownUp => guardianName ?? presence?.name ?? neutralGrownUp;
+  /// Her own word for her grown-up when a [GrownupLabelScope] knows one (nickname, then the age default,
+  /// then the guardian's label); otherwise the live name, then who is free, then the neutral phrase.
+  String _grownUpIn(BuildContext context) {
+    final GrownupLabels labels = GrownupLabelScope.read(context);
+    return labels.hasPrimary ? labels.nameFor() : (guardianName ?? presence?.name ?? neutralGrownUp);
+  }
 
   /// Age bands and family structure (suites J and K): her derived home, from what a guardian
   /// built and released on this device. Null (every existing caller) renders exactly as before.
@@ -263,12 +269,12 @@ class ChildHome extends StatelessWidget {
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) {
                   final gameSections = [
-                    MoreGamesSections(childName: childName, parentName: _grownUp,
+                    MoreGamesSections(childName: childName, parentName: _grownUpIn(context),
                       childAge: childAge, overrides: overrides),
-                    JokebookSection(childName: childName, parentName: _grownUp,
+                    JokebookSection(childName: childName, parentName: _grownUpIn(context),
                       childAge: childAge, overrides: overrides),
                   ];
-                  final onPlay = buildGameNavigator(childName, parentName: _grownUp);
+                  final onPlay = buildGameNavigator(childName, parentName: _grownUpIn(context));
                   // Intuitivism pass, sub-project 3a (docs/superpowers/specs/
                   // 2026-09-12-intuitivism-gamepicker-recommended-design.md)
                   // — her own Recommended row/Surprise-me button need a real
@@ -346,7 +352,7 @@ class ChildHome extends StatelessWidget {
                   builder: (_) => ChildMoreScreen(childName: childName,
                     baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
                     httpClient: httpClient, childAge: childAge, overrides: overrides,
-                    guardianName: _grownUp, family: family, speak: speak)))),
+                    guardianName: _grownUpIn(context), family: family, speak: speak)))),
           ],
         ),
 
@@ -406,8 +412,12 @@ class ChildHome extends StatelessWidget {
 }
 
 class ParentPresence {
-  const ParentPresence(this.name, this.theirLocalTime, this.freeUntilHerTime);
+  const ParentPresence(this.name, this.theirLocalTime, this.freeUntilHerTime, {this.userId});
   final String name, theirLocalTime, freeUntilHerTime;
+
+  /// The grown-up's id, when known: lets the card show HER word for them (nickname, age default)
+  /// through a [GrownupLabelScope] instead of the grown-up's own display name.
+  final String? userId;
 }
 
 class _PresenceCard extends StatelessWidget {
@@ -415,14 +425,22 @@ class _PresenceCard extends StatelessWidget {
   final ParentPresence p;
   final String childName;
   @override
-  Widget build(BuildContext context) => Card(child: Padding(
+  Widget build(BuildContext context) {
+    final GrownupLabels labels = GrownupLabelScope.of(context);
+    final String name = p.userId != null && labels.contact(p.userId) != null
+        ? labels.nameFor(p.userId)
+        : p.name;
+    return _card(context, name);
+  }
+
+  Widget _card(BuildContext context, String name) => Card(child: Padding(
     padding: const EdgeInsets.all(16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('${p.name} is free right now',
+      Text('${asSubject(name)} is free right now',
         style: Theme.of(context).textTheme.titleMedium
           ?.copyWith(fontWeight: FontWeight.w600)),
       // HER frame first; his time is the aside.
-      Text("It's ${p.theirLocalTime} where ${p.name} is · "
+      Text("It's ${p.theirLocalTime} where $name is · "
            'until ${p.freeUntilHerTime}',
         style: Theme.of(context).textTheme.bodySmall
           ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
@@ -431,7 +449,7 @@ class _PresenceCard extends StatelessWidget {
         child: FilledButton(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
             builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
-          child: Text('Call ${p.name}'))),
+          child: Text('Call $name'))),
     ]),
   ));
 }

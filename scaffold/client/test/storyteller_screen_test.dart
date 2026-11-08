@@ -6,6 +6,8 @@
 // invariants (no settings affordance, 48dp touch targets).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/contact_labels.dart';
+import 'package:olive_client/grownup_labels.dart';
 import 'package:olive_client/library_logic.dart';
 import 'package:olive_client/storyteller_screen.dart';
 
@@ -90,9 +92,26 @@ void main() {
       await tester.tap(find.text('told by the storyteller'));
       await tester.pumpAndSettle();
       expect(find.text('Who tells these stories?'), findsOneWidget);
-      expect(find.textContaining('Not Mum, not Dad'), findsOneWidget);
+      expect(find.textContaining("Not a grown-up — it's the storyteller"), findsOneWidget);
       await tester.tap(find.text('Okay!'));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('the same reassurance names her grown-ups in HER words when a family is known', (tester) async {
+      await useNarrowSurface(tester);
+      const GrownupLabels labels = GrownupLabels(
+        contacts: <GrownupContact>[
+          GrownupContact(id: 'a', guardianLabel: 'Dad', kind: GrownupKind.dad),
+          GrownupContact(id: 'b', guardianLabel: 'Mom', kind: GrownupKind.mom),
+        ],
+        age: AgeLockState(age: 9, locked: true),
+        nicknames: <String, String>{'a': 'Dada'},
+      );
+      await tester.pumpWidget(wrap(const GrownupLabelScope(labels: labels, child: StorytellerScreen(childName: 'Ivy'))));
+      await askForAStory(tester);
+      await tester.tap(find.text('told by the storyteller'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Not Dada, not Mommy — it's the storyteller"), findsOneWidget);
     });
 
     testWidgets('her line (the refrain) is visually marked as HER line', (tester) async {

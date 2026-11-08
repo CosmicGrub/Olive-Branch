@@ -53,7 +53,7 @@ void main() {
       await t.pumpWidget(wrap(CoViewChildScreen(follower: r.follower)));
       r.leader.start();
       await t.pump();
-      expect(find.text('Dad wants to read a story with you'), findsOneWidget);
+      expect(find.text('Your grown-up wants to read a story with you'), findsOneWidget);
       expect(t.getSize(find.byKey(const Key('coViewJoin'))).height, greaterThanOrEqualTo(64));
       expect(t.getSize(find.byKey(const Key('coViewNotNow'))).height, greaterThanOrEqualTo(64));
     });
@@ -75,7 +75,7 @@ void main() {
       await t.pump();
       expect(r.leader.ending, CoViewEnding.declined);
       expect(find.text('Okay!'), findsOneWidget);
-      expect(find.text("Dad will be here when you're ready."), findsOneWidget);
+      expect(find.text("Your grown-up will be here when you're ready."), findsOneWidget);
     });
   });
 
@@ -144,7 +144,7 @@ void main() {
   group('the child — the three kind endings', () {
     for (final c in [
       (CoViewEnding.child, 'All done!', 'See you soon.'),
-      (CoViewEnding.guardian, 'All done', 'Dad says goodnight.'),
+      (CoViewEnding.guardian, 'All done', 'Your grown-up says goodnight.'),
       (CoViewEnding.budget, "That's all for today", 'You did a great job. See you tomorrow!'),
     ]) {
       testWidgets('${c.$1.name}: "${c.$2}"', (t) async {

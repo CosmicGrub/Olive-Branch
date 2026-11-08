@@ -70,6 +70,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'game_curated_activity.dart';
 
 // ============================================================ prompt bank ==
@@ -267,7 +268,7 @@ TallTaleRound newRound(String category, Random random, {String? excludingSetId})
 // ================================================================ widget ===
 
 class TwoTruthsScreen extends StatefulWidget {
-  const TwoTruthsScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad', this.random});
+  const TwoTruthsScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp, this.random});
   final String childName;
   final String parentName;
 
@@ -410,7 +411,7 @@ class _RoundView extends StatelessWidget {
         style: SegmentedButton.styleFrom(minimumSize: const Size(64, 48)),
         segments: <ButtonSegment<String>>[
           ButtonSegment<String>(value: 'child', label: Text(childName)),
-          ButtonSegment<String>(value: 'parent', label: Text(parentName)),
+          ButtonSegment<String>(value: 'parent', label: Text(asSubject(parentName))),
         ],
         selected: <String>{presenterId},
         onSelectionChanged: (Set<String> s) => onPresenterChanged(s.first),
@@ -423,7 +424,7 @@ class _RoundView extends StatelessWidget {
           key: const Key('tallTaleHint'),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: scheme.tertiaryContainer, borderRadius: BorderRadius.circular(12)),
-          child: Text('$presenterName — statement #${round.tallTaleIndex + 1} is the tall tale. Keep this facing you!',
+          child: Text('${asSubject(presenterName)} — statement #${round.tallTaleIndex + 1} is the tall tale. Keep this facing you!',
               style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: scheme.onTertiaryContainer)),
         ),
         const SizedBox(height: 12),
@@ -455,7 +456,7 @@ class _RoundView extends StatelessWidget {
         Text(
           key: const Key('tallTaleResult'),
           round.guessedCorrectly!
-              ? '$presenterName\'s tall tale was spotted!'
+              ? '${asSubject(presenterName)}\'s tall tale was spotted!'
               : 'The tall tale got past them this time.',
           style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary),
         ),

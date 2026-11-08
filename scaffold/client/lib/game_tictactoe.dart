@@ -222,7 +222,7 @@ class GameTicTacToe extends StatefulWidget {
   const GameTicTacToe({
     super.key,
     this.childName = 'Ivy',
-    this.parentName = 'Dad',
+    this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 550),
   });
 
@@ -315,7 +315,7 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
     final scheme = Theme.of(context).colorScheme;
     final finished = _state.outcome != null;
     final banner = handicapBanner(GameKind.tictactoe, _state.handicap,
-        parentName: widget.parentName == 'Dad' ? null : widget.parentName);
+        parentName: widget.parentName);
     return Scaffold(
       appBar: AppBar(
         title: Text(catalogueFor(GameKind.tictactoe).title),
@@ -435,7 +435,7 @@ class _TurnBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = finished ? 'Good game.'
         : isChildTurn ? "$childName's move"
-        : parentThinking ? "$parentName is thinking…" : "$parentName's move";
+        : parentThinking ? "${asSubject(parentName)} is thinking…" : "${asSubject(parentName)}'s move";
     return Text(text, style: Theme.of(context).textTheme.titleLarge);
   }
 }

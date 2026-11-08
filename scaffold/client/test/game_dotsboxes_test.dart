@@ -283,7 +283,7 @@ void main() {
       await t.pumpWidget(wrap(const GameDotsBoxes(botThinkDelay: Duration.zero)));
       await t.tap(find.byKey(const Key('dbH_0_0')));
       await t.pump();
-      expect(find.text("Dad is thinking…"), findsOneWidget);
+      expect(find.text("Your grown-up is thinking…"), findsOneWidget);
       await t.pumpAndSettle();
       expect(find.text("Ivy's move"), findsOneWidget);
     });
@@ -313,8 +313,8 @@ void main() {
       await t.pumpWidget(wrap(const GameDotsBoxes()));
       await t.tap(find.byTooltip('Make it fair'));
       await t.pumpAndSettle();
-      expect(find.text('Want to make it harder for Dad?'), findsOneWidget);
-      await t.tap(find.text('Dad starts two boxes behind'));
+      expect(find.text('Want to make it harder for your grown-up?'), findsOneWidget);
+      await t.tap(find.text('Your grown-up starts two boxes behind'));
       await t.pumpAndSettle();
       await t.pageBack();
       await t.pumpAndSettle();

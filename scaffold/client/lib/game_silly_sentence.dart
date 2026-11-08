@@ -37,6 +37,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'game_curated_activity.dart';
 
 // ============================================================ word bank ====
@@ -217,7 +218,7 @@ String sentenceText(SentenceRound round) {
 // ================================================================ widget ===
 
 class SillySentenceScreen extends StatefulWidget {
-  const SillySentenceScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad', this.random});
+  const SillySentenceScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp, this.random});
   final String childName;
   final String parentName;
 
@@ -235,7 +236,7 @@ class _SillySentenceScreenState extends State<SillySentenceScreen> {
   late List<String> _options = optionsFor(_round, _random);
   final List<String> _history = <String>[];
 
-  String _actorName(String id) => id == 'child' ? widget.childName : widget.parentName;
+  String _actorName(String id) => id == 'child' ? widget.childName : asSubject(widget.parentName);
 
   void _pick(String word) {
     setState(() {

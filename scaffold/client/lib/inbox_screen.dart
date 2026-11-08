@@ -40,6 +40,7 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'calendar_day_logic.dart';
 import 'form_factors.dart' as ff;
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, asSubject, neutralGrownUp;
 import 'receipt_screen.dart';
 
 class InboxMessage {
@@ -49,6 +50,7 @@ class InboxMessage {
     required this.deliveredAtLabel,
     this.dayPartKind,
     this.watched = false,
+    this.senderId,
   });
 
   /// A real fetched message's id is a real database UUID, not a small int —
@@ -56,6 +58,10 @@ class InboxMessage {
   /// the same small numbers for exactly this reason).
   final String id;
   final String senderName;
+
+  /// The sender's id, when the server gives one: lets a [GrownupLabelScope] show HER word for them
+  /// (nickname, age default) instead of [senderName], the name the sender goes by.
+  final String? senderId;
   /// Already formatted, her frame, e.g. "7:04 AM" or "Yesterday, 7:58 PM".
   /// Relative wording only — never a calendar date (§8.2.5's "sleeps, not
   /// dates" rule extends to every child-facing timestamp, not just
@@ -66,19 +72,24 @@ class InboxMessage {
 
   InboxMessage markWatched() => InboxMessage(
     id: id, senderName: senderName, deliveredAtLabel: deliveredAtLabel,
-    dayPartKind: dayPartKind, watched: true,
+    dayPartKind: dayPartKind, watched: true, senderId: senderId,
   );
 }
 
 /// Demo-only inbox contents. No live delivery-engine backend exists yet (see
 /// api_client.dart / packages/delivery-engine) — this stands in for it.
 const List<InboxMessage> demoInboxMessages = <InboxMessage>[
-  InboxMessage(id: '1', senderName: 'Dad', deliveredAtLabel: '7:04 AM', dayPartKind: 'before_school'),
-  InboxMessage(id: '2', senderName: 'Dad', deliveredAtLabel: 'Yesterday, 7:58 PM',
+  InboxMessage(id: '1', senderName: neutralGrownUp, deliveredAtLabel: '7:04 AM', dayPartKind: 'before_school'),
+  InboxMessage(id: '2', senderName: neutralGrownUp, deliveredAtLabel: 'Yesterday, 7:58 PM',
     dayPartKind: 'wind_down', watched: true),
-  InboxMessage(id: '3', senderName: 'Grandma', deliveredAtLabel: '2 days ago, 6:10 PM',
+  InboxMessage(id: '3', senderName: 'another grown-up', deliveredAtLabel: '2 days ago, 6:10 PM',
     dayPartKind: 'dinner', watched: true),
 ];
+
+/// What SHE calls the sender: her word through a [GrownupLabelScope] when the sender's id is known there,
+/// else the name the server gave.
+String _senderLabel(GrownupLabels labels, InboxMessage m) =>
+    m.senderId != null && labels.contact(m.senderId) != null ? labels.nameFor(m.senderId) : m.senderName;
 
 enum _LoadState { ready, loading, error }
 
@@ -137,6 +148,7 @@ class _InboxScreenState extends State<InboxScreen> {
         return InboxMessage(
           id: row['id'] as String,
           senderName: row['sender_name'] as String,
+          senderId: row['sender_id'] as String?,
           // Already formatted in her real frame, server-side — see this
           // file's own header for why no client-side timezone math happens
           // here.
@@ -215,7 +227,7 @@ class _InboxScreenState extends State<InboxScreen> {
 
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ReceiptScreen(
       childName: widget.childName,
-      senderName: m.senderName,
+      senderName: asSubject(_senderLabel(GrownupLabelScope.read(context), m)),
       watchedAtLabel: watchedAtLabel,
       dayPartKind: dayPartKind,
       baseUrl: widget.baseUrl,
@@ -322,7 +334,7 @@ class _InboxTile extends StatelessWidget {
                 color: message.watched ? scheme.onSurfaceVariant : scheme.onPrimary)),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              Text('${message.senderName} sent a video',
+              Text('${asSubject(_senderLabel(GrownupLabelScope.of(context), message))} sent a video',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text(message.watched ? 'Watched · ${message.deliveredAtLabel}' : 'New — tap to watch',

@@ -232,10 +232,10 @@ void main() {
     testWidgets('opens on a setup screen where SHE chooses the handicap', (t) async {
       await t.pumpWidget(wrap(const GameChess()));
       expect(find.text('You go first.'), findsOneWidget);
-      expect(find.text('Want to make it harder for Dad?'), findsOneWidget);
+      expect(find.text('Want to make it harder for your grown-up?'), findsOneWidget);
       expect(find.text('No — play it straight'), findsOneWidget);
       for (final h in chessHandicaps) {
-        expect(find.text(h.labelFor('Dad')), findsOneWidget);
+        expect(find.text(h.labelFor('your grown-up')), findsOneWidget);
       }
       final startButton = t.getSize(find.widgetWithText(FilledButton, 'Start game'));
       expect(startButton.height, greaterThanOrEqualTo(48));

@@ -62,7 +62,7 @@ void main() {
       await tester.pumpWidget(wrap(const GameChainScreen()));
       expect(find.textContaining('6 things so far'), findsOneWidget);
       expect(find.textContaining('Say them back — 1 of 6'), findsOneWidget);
-      expect(find.textContaining("Dad's turn"), findsOneWidget);
+      expect(find.textContaining("Your grown-up's turn"), findsOneWidget);
     });
 
     testWidgets('the chain is hidden during recall — that is the whole game', (tester) async {
@@ -82,7 +82,7 @@ void main() {
         await tester.tap(find.widgetWithText(FilledButton, "That's it!"));
         await settleTimers(tester);
       }
-      expect(find.textContaining("Dad's turn to add"), findsOneWidget);
+      expect(find.textContaining("Your grown-up's turn to add"), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Add it'), findsOneWidget);
       // Now in the building phase, the whole chain is visible again.
       for (final String answer in answers) {

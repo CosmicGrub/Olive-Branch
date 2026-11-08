@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'co_view_logic.dart';
 import 'co_view_session.dart';
 import 'design_tokens.dart';
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, asSubject, neutralGrownUp;
 
 String _fmtMinutes(int m) {
   if (m <= 0) return 'Off';
@@ -60,21 +61,27 @@ class _NightPainter extends CustomPainter {
 /// The child's whole co-viewing surface. It switches on the follower's phase, so
 /// the Navigator never has to know about invitations, endings or time.
 class CoViewChildScreen extends StatelessWidget {
-  const CoViewChildScreen({super.key, required this.follower, this.guardianName = 'Dad', this.onClose});
+  const CoViewChildScreen({super.key, required this.follower, this.guardianName, this.onClose});
   final CoViewFollower follower;
-  final String guardianName;
+  /// A fixed name, only used when no [GrownupLabelScope] knows her grown-up; null means the
+  /// neutral 'your grown-up'.
+  final String? guardianName;
   final VoidCallback? onClose;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
+  Widget build(BuildContext context) {
+    final GrownupLabels labels = GrownupLabelScope.of(context);
+    final String name = asSubject(labels.hasPrimary ? labels.nameFor() : (guardianName ?? neutralGrownUp));
+    return ListenableBuilder(
         listenable: follower,
         builder: (context, _) => switch (follower.phase) {
           CoViewPhase.idle => const SizedBox.shrink(),
-          CoViewPhase.waiting => _Invitation(follower: follower, guardianName: guardianName),
+          CoViewPhase.waiting => _Invitation(follower: follower, guardianName: name),
           CoViewPhase.live => _Reading(follower: follower),
-          CoViewPhase.ended => _ChildEnding(ending: follower.ending ?? CoViewEnding.child, guardianName: guardianName, onClose: onClose),
+          CoViewPhase.ended => _ChildEnding(ending: follower.ending ?? CoViewEnding.child, guardianName: name, onClose: onClose),
         },
       );
+  }
 }
 
 class _BigButton extends StatelessWidget {

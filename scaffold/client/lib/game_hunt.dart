@@ -39,6 +39,7 @@
 // the photograph itself is a stand-in, and the UI never claims otherwise —
 // it says "Found it!", not "Photo saved."
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
@@ -162,7 +163,7 @@ List<HuntArtifactEntry> huntArtifacts(Hunt h) => <HuntArtifactEntry>[
 // ================================================================= widget ===
 
 class GameHuntScreen extends StatefulWidget {
-  const GameHuntScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad'});
+  const GameHuntScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp});
   final String childName;
   final String parentName;
 
@@ -217,7 +218,7 @@ class _GameHuntScreenState extends State<GameHuntScreen> {
         final bool capWidth = ff.columnsAt(
             ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
         final Widget content = ListView(padding: const EdgeInsets.all(16), children: [
-          Text('${widget.parentName} hid these around the house',
+          Text('${asSubject(widget.parentName)} hid these around the house',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           // No timer, ever — §9.2. This is the only progress language on the

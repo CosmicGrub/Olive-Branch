@@ -30,6 +30,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'game_curated_activity.dart';
 
 // ============================================================ prompt bank ==
@@ -132,7 +133,7 @@ WouldYouRatherRound newRound(Random random, {String? excludingId}) {
 // ================================================================ widget ===
 
 class WouldYouRatherScreen extends StatefulWidget {
-  const WouldYouRatherScreen({super.key, this.childName = 'Ivy', this.parentName = 'Dad', this.random});
+  const WouldYouRatherScreen({super.key, this.childName = 'Ivy', this.parentName = neutralGrownUp, this.random});
   final String childName;
   final String parentName;
 
@@ -154,7 +155,7 @@ class _WouldYouRatherScreenState extends State<WouldYouRatherScreen> {
   /// matching `game_guess_doodle.dart`'s artist toggle.
   String _answeringId = 'child';
 
-  String _name(String id) => id == 'child' ? widget.childName : widget.parentName;
+  String _name(String id) => id == 'child' ? widget.childName : asSubject(widget.parentName);
 
   void _answer(String pick) {
     setState(() {
@@ -163,7 +164,7 @@ class _WouldYouRatherScreenState extends State<WouldYouRatherScreen> {
         _history.add(
           '${_round.prompt.optionA} vs ${_round.prompt.optionB} — '
           '${widget.childName}: ${_round.childPick == 'A' ? _round.prompt.optionA : _round.prompt.optionB}, '
-          '${widget.parentName}: ${_round.parentPick == 'A' ? _round.prompt.optionA : _round.prompt.optionB}',
+          '${asSubject(widget.parentName)}: ${_round.parentPick == 'A' ? _round.prompt.optionA : _round.prompt.optionB}',
         );
       } else {
         _answeringId = _answeringId == 'child' ? 'parent' : 'child';
@@ -319,7 +320,7 @@ class _RevealCard extends StatelessWidget {
           Text('$childName picked: ${_label(round.childPick!)}',
               style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onTertiaryContainer)),
           const SizedBox(height: 8),
-          Text('$parentName picked: ${_label(round.parentPick!)}',
+          Text('${asSubject(parentName)} picked: ${_label(round.parentPick!)}',
               style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onTertiaryContainer)),
         ]),
       ),

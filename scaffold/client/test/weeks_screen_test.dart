@@ -19,14 +19,14 @@ void main() {
     testWidgets('states who she is with right now, in words', (tester) async {
       await tester.pumpWidget(wrap(WeeksScreen(
         childName: 'Ivy', nights: _fourteenNights, guardianColors: demoGuardianColors)));
-      expect(find.textContaining("You're with Mom right now"), findsOneWidget);
+      expect(find.textContaining("You're with Grown-up one right now"), findsOneWidget);
     });
 
     testWidgets('the handover countdown is in sleeps, never hours or a raw date',
         (tester) async {
       await tester.pumpWidget(wrap(WeeksScreen(
         childName: 'Ivy', nights: _fourteenNights, guardianColors: demoGuardianColors)));
-      // The demo pattern is 4 nights Mom / 3 nights Dad — the switch is 4 sleeps out.
+      // The demo pattern is 4 nights Grown-up one / 3 nights Grown-up two — the switch is 4 sleeps out.
       expect(find.textContaining('sleeps until'), findsOneWidget);
       expect(find.textContaining('hours'), findsNothing);
       expect(find.textContaining('hour '), findsNothing);

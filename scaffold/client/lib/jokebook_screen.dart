@@ -31,6 +31,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'grownup_labels.dart' show GrownupLabelScope;
 import 'access_settings.dart' show kChildTarget;
 import 'access_scope.dart' show motionDuration;
 import 'activity_overrides.dart';
@@ -49,13 +50,13 @@ class JokebookSection extends StatelessWidget {
     super.key,
     this.childName = 'Ivy',
     this.childAge = 7,
-    this.parentName = 'Dad',
+    this.parentName,
     this.overrides,
   });
   final String childName;
   /// Same default GamePickerScreen itself uses — see its own doc comment.
   final int childAge;
-  final String parentName;
+  final String? parentName;
 
   /// Parental controls, visibility & pacing (docs/superpowers/specs/2026-
   /// 09-13-parental-controls-pacing-design.md) — this child's guardian-set
@@ -123,7 +124,7 @@ class JokebookScreen extends StatefulWidget {
     super.key,
     required this.childName,
     this.childAge = 7,
-    this.parentName = 'Dad',
+    this.parentName,
     this.colourSeed,
     this.initialFavourites = const [],
     this.pick,
@@ -139,7 +140,7 @@ class JokebookScreen extends StatefulWidget {
   /// Gates which jokes come up via joke_logic.dart's forAge(). Default of 7
   /// matches GamePickerScreen's own.
   final int childAge;
-  final String parentName;
+  final String? parentName;
   /// Her colour (§8.6), for a warm accent tint on this surface only.
   final Color? colourSeed;
   final List<JokeFavourite> initialFavourites;
@@ -218,7 +219,7 @@ class _JokebookScreenState extends State<JokebookScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (context) => _TellParentSheet(joke: j, parentName: widget.parentName),
+      builder: (context) => _TellParentSheet(joke: j, parentName: widget.parentName ?? GrownupLabelScope.read(context).nameFor()),
     );
   }
 
@@ -246,7 +247,7 @@ class _JokebookScreenState extends State<JokebookScreen> {
                   revealed: _revealed,
                   accent: accent,
                   starred: isStarred(_favourites, _current!.id),
-                  parentName: widget.parentName,
+                  parentName: widget.parentName ?? GrownupLabelScope.of(context).nameFor(),
                   onReveal: _reveal,
                   onStar: _toggleStar,
                   onTellParent: _tellParent,

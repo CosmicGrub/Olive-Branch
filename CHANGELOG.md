@@ -14,6 +14,20 @@ Silent deletion is a process failure.
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Every child-facing screen now says what SHE calls her grown-ups (MASTERFILE §8.5.7, label adoption).** The hard-coded "Dad", "Mom", "Mommy" and "Daddy" in child copy are gone. A new `grownup_labels.dart` (an immutable `GrownupLabels` snapshot, a `GrownupLabelScope` inherited widget and a read-only `GrownupLabelsProvider` that loads `child.<id>.nicknames`) lets a screen ask `nameFor(id)`, which is `ContactLabels.forChild`: her nickname, else Mommy/Daddy for a locked age 5 to 15 (Mom/Dad otherwise), else the guardian's label; with no family known it is the neutral "your grown-up", never a guess. Adopted by the read-aloud label table (`a11y_speech`), `co_view_screens`, `degradation_banner`, `storyteller_screen`, `inbox_screen` (a new optional `senderId`), `journal_screen` (the privacy banner), `child_home` (the presence card, via a new optional `ParentPresence.userId`) and `child_more`, `weeks_screen` (neutral "Grown-up one"/"Grown-up two" by default), `exchange_screen` (a new optional `sideNames`), `games_hub`, `game_picker`, `game_uno`, `live_games`, the Kim scene titles, and the `parentName` default of eighteen game and activity screens (now "your grown-up"). A name that starts a sentence is raised ("Your grown-up hid these around the house"). Every constructor change is a new optional parameter or a default; no signature was broken. Nothing in this layer writes a nickname, so a guardian can never overwrite one. Behaviour is unchanged beyond names.
+- **Not done here:** the scope is not installed at the app root (that belongs to the role-led entry), the preview build's demo fixtures and the guardian screens keep their own labels (listed in §8.5.7), and two shipped screens are left exactly as they are for the owner's decision: War's card count under each pile (uneasy against P2) and "Where was today"'s 0 to 100 slider values.
+
+### Fixed
+- **"Data on this device" showed raw area ids.** Five catalogue entries (`family`, `growing`, `care`, `explainers`, `access`) had no display name and rendered as the bare id (as did `onboarding` and `nicknames`, added since). The name table is now the public `kLocalDataAreaNames`, every area has a plain-words name, and a test fails if any catalogue area lacks one.
+
+### Tests
+- `label_adoption_test.dart`: each touched screen rendered with a nickname set (Dada), with none (the Daddy age default), and with no family (the neutral text), plus the catalogue-names test and the read-only provider.
+
+---
+
 ## [0.50.0] — 2026-11-08 — Release cut: the offline-first on-device client, a real authenticated session, server hardening, co-viewing and Parent Learn; MASTERFILE, MARKUP and DEMO brought to parity with the code
 
 The first numbered version since 0.49.78 (2026-09-14). It gathers the eleven `[Unreleased]` entries that had accumulated, records the changes that merged with no entry at all, and brings the three canonical documents (MASTERFILE, MARKUP, DEMO) into step with what the code actually does. Everything below was already built and merged (pull requests #119 to #147); the only new work in this cut is documentation, the version, and comments in client file headers.

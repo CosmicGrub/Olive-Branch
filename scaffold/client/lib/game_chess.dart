@@ -60,6 +60,7 @@
 // product never narrates it as a verdict on her.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'game_logic.dart' show asSubject, neutralGrownUp;
 import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
@@ -106,7 +107,11 @@ class ChessHandicap {
   /// Files (0-7) cleared from the parent's back rank at game start.
   final List<int> removeFiles;
 
-  String labelFor(String parentName) => labelTemplate.replaceAll('{parent}', parentName);
+  String labelFor(String parentName) => labelTemplate.replaceAll('{parent}', asSubject(parentName));
+
+  /// The same words mid-sentence (lower-cased), the name left exactly as she says it.
+  String midSentenceLabelFor(String parentName) =>
+      labelTemplate.toLowerCase().replaceAll('{parent}', parentName);
 }
 
 const List<ChessHandicap> chessHandicaps = [
@@ -550,7 +555,7 @@ class GameChess extends StatefulWidget {
   const GameChess({
     super.key,
     this.childName = 'Ivy',
-    this.parentName = 'Dad',
+    this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 550),
   });
 
@@ -716,7 +721,7 @@ class _GameChessState extends State<GameChess> {
           if (childInCheck) const Padding(padding: EdgeInsets.only(top: 8),
             child: _CalloutBanner(text: 'Your king is in check!')),
           if (parentInCheck) Padding(padding: const EdgeInsets.only(top: 8),
-            child: _CalloutBanner(text: "${widget.parentName}'s king is in check.")),
+            child: _CalloutBanner(text: "${asSubject(widget.parentName)}'s king is in check.")),
           if (finished) Padding(padding: const EdgeInsets.only(top: 8),
             child: _EndBanner(line: _outcomeLine(_state.outcome!))),
           if (!finished && _state.turn == ChSide.parent) Padding(
@@ -771,8 +776,8 @@ class _GameChessState extends State<GameChess> {
     if (_handicapId == null) return null;
     for (final h in chessHandicaps) {
       if (h.id == _handicapId) {
-        return "${widget.parentName}'s playing the hard way — "
-            '${h.labelFor(widget.parentName).toLowerCase()}';
+        return "${asSubject(widget.parentName)}'s playing the hard way — "
+            '${h.midSentenceLabelFor(widget.parentName)}';
       }
     }
     return null;
@@ -863,7 +868,7 @@ class _TurnBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = finished ? 'Good game.'
         : isChildTurn ? "$childName's move"
-        : parentThinking ? "$parentName is thinking…" : "$parentName's move";
+        : parentThinking ? "${asSubject(parentName)} is thinking…" : "${asSubject(parentName)}'s move";
     return Text(text, style: Theme.of(context).textTheme.titleLarge);
   }
 }

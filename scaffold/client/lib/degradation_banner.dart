@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
+import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, neutralGrownUp;
 
 // ============================================== §5.28.1 the quality ladder ==
 enum Quality { q720, q360, q180 }
@@ -261,9 +262,10 @@ class DegradationBanner extends StatelessWidget {
 /// resembling a percentage, signal-bars icon, or numeric quality readout
 /// appears inside the phone frame itself.
 class LiveDegradeScreen extends StatefulWidget {
-  const LiveDegradeScreen({super.key, this.childName = 'Ivy', this.callerName = 'Dad'});
+  const LiveDegradeScreen({super.key, this.childName = 'Ivy', this.callerName});
   final String childName;
-  final String callerName;
+  /// A fixed name, only used when no [GrownupLabelScope] knows her grown-up; null is the neutral phrase.
+  final String? callerName;
 
   @override
   State<LiveDegradeScreen> createState() => _LiveDegradeScreenState();
@@ -297,8 +299,10 @@ class _LiveDegradeScreenState extends State<LiveDegradeScreen> {
   @override
   Widget build(BuildContext context) {
     final notice = noticeFor(_stream);
+    final GrownupLabels labels = GrownupLabelScope.of(context);
+    final String caller = labels.hasPrimary ? labels.nameFor() : (widget.callerName ?? neutralGrownUp);
     return Scaffold(
-      appBar: AppBar(title: Text('Call with ${widget.callerName}')),
+      appBar: AppBar(title: Text('Call with $caller')),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final int cross = ff.columnsAt(
@@ -367,7 +371,7 @@ class _LiveDegradeScreenState extends State<LiveDegradeScreen> {
                   style: Theme.of(context).textTheme.bodySmall),
                 if (senderLine(_stream).isNotEmpty)
                   Padding(padding: const EdgeInsets.only(top: 4),
-                    child: Text('What ${widget.callerName} would see: ${senderLine(_stream)}',
+                    child: Text('What $caller would see: ${senderLine(_stream)}',
                       style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(fontStyle: FontStyle.italic))),
               ]),
