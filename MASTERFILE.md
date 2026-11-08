@@ -5372,7 +5372,7 @@ per install from the platform CSPRNG and kept in `flutter_secure_storage`
 (Keystore/Keychain) — never on disk beside the data. Opening a private
 namespace with no cipher is refused; it never falls back to plaintext.
 
-**Private namespaces:** the child's journal (P7) and all of Parent Learn.
+**Private namespaces:** the child's journal (P7), the family structure, all of Parent Learn, and the Growing and Care areas (§8.19).
 
 ### 8.16.3 Scoping
 
@@ -5405,6 +5405,10 @@ drift. Nothing is written that is not in it.
 | `child.<id>.family` | Family structure a grown-up built and released on this device (`LocalStoreFamilyStore`): the append-only history, her homes and people, guardian-written stories. A failed save throws; a change is never reported recorded when it was not. | **Yes** |
 | `child.<id>.profile` | Offline start-up cache: her first name, age in whole years, that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
+| `child.<id>.growing` | Time capsules (note, dates, optional thumbnail), first times, pencil-mark heights, which of the eight Growing and Care suites a guardian switched off. No counts, streaks or comparison. | **Yes** |
+| `child.<id>.memorybox` | What she chose to keep: copies of her doodles and colourings, or small photos. No totals. | **Yes** |
+| `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
+| `child.<id>.explainers` | Picture stories a guardian wrote and whether each is shown to her. The app writes none. | **Yes** |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
 
 Rules held in code and tests: **no scores, streaks, counters, rankings or
@@ -7110,6 +7114,77 @@ child-payload sweep over every derived view and a drift guard on the golden vect
 `tools/gen-family-vectors.mjs` writes), and by the Dart port
 (`client/test/family_structure_logic_test.dart`, run against the same vectors),
 `family_structure_store_test.dart` and `family_structure_screens_test.dart`.
+
+## §8.19 Growing and Care — time capsule, first times, memory box, growing marks; care binder, hospital mode, picture stories, appointment prep (suites G and F)
+
+Mockups `docs/superpowers/mockups/umbrella/` (`timeCapsule`, `firstTimes`, `memoryBox`,
+`pencilMarks`, `careBinder`, `hospitalMode`, `explainerCards`, `appointmentPrep`) and
+`docs/superpowers/mockups/overhaul2/`. **Local only, by owner direction.** Every feature
+below stores and works on **this device only** and says so on its own screen. No server
+route, no migration, no network call, no credential. **Sharing between homes is parked, not
+built** (a capsule, a binder or a first is not visible to the other home). Code:
+`client/lib/growing_care_logic.dart` (models and rules), `growing_care_store.dart`
+(repositories), `growing_screens.dart`, `care_screens.dart`, `child_explainer_screens.dart`,
+`growing_care_widgets.dart`.
+
+### 8.19.1 What shipped
+
+| Suite | Grown-up side | Her side |
+|---|---|---|
+| **Time capsule** (G) | A guardian seals a note and/or one small photo for a date. It opens **on or after that date by this device's clock**; the screen says plainly that changing the clock would open it early. While sealed a guardian sees only the title and dates, never the words. A guardian can **open it early** (asked first; it stays open) or remove it. | An opened letter only ("A letter for you"). A sealed capsule is not shown at all: no title, no date, no countdown. |
+| **First times** (G) | A guardian-kept record of firsts: a title, a date, a few words, one small photo. Newest first. **No count, no streak, no list of firsts still to come.** Each one has "Show her this one", off by default. | Only the firsts a guardian chose to show, picture first, month and year, no total. |
+| **Memory box** (G) | None: it is hers (the Growing hub says so). A guardian can switch the suite off. | A place for things she chooses to keep: a copy of a doodle or colouring she made, or a small photo. Two 64 dp buttons; long-press to put one away (asked first). **No audio**: audio capture does not exist in this app yet, so the box keeps pictures and photos only. Nothing resurfaces and nothing counts. |
+| **Growing marks** (G) | A guardian records a height (30 to 220 cm), a date and optionally a photo by the doorframe. The centimetres are the guardian's private record. | "My doorframe": a post with a pencil line and a **month** for each mark. No number, no percentile, no average, no other child. Lines are placed only against her own other marks. |
+| **Care binder** (F) | **Guardian only.** Sections a guardian writes (routines, allergies, school, notes) and contacts; a print-style view and a copy-to-clipboard button. Every body starts empty. | Nothing. |
+| **Hospital mode** (F) | **Guardian only.** One calm page for a stressed adult: a big door to the **existing emergency card** (`emergency_card.dart`), the allergy sections a guardian wrote, four guardian-written notes (happening today, staff should know, what helps her, to bring) and the contacts. | Nothing. |
+| **Picture stories** (F) | A guardian writes a story (a title, one to six pages of at most 240 characters, an optional picture) and chooses "Show her", off by default. "Read it as she would" previews it. **The app writes none and generates none.** | Only the stories a guardian chose to show, read a page at a time with big Back and Next buttons and dots (no "page 2 of 5"), read-aloud when speech is wired. Read-only. |
+| **Appointment prep** (F) | **Guardian only.** A checklist (tickable) and a question list a guardian writes before a visit, with an optional date written down. **No scheduling, no reminders, nothing sent.** | Nothing. |
+
+### 8.19.2 What the app writes, and what it does not
+
+Every word of the care binder, hospital notes, appointment lists and picture stories is
+typed by a guardian. The app ships **no medical advice, no condition text, no pre-written
+explainer, no suggested question**. The only app-written strings are neutral labels
+("Routines", "Allergies (written by a guardian)", "School", "Notes") and honest notes about
+where things are kept. Nothing is generated about a new partner or a family change.
+
+### 8.19.3 Where it is reached
+
+- **Guardian:** Settings hub, **Her** group, "Growing" (time capsule, first times, growing
+  marks); Settings hub, **Family** group, "Care" (care binder, hospital mode, picture
+  stories, appointment prep). Each hub carries a switch per suite; a suite switched off is
+  not offered. Care is reachable only from the guardian shell.
+- **Her:** the "Keep and grow" section of the child **More** hub (`child_more.dart`). It exists
+  only when the family-structure model says so: the youngest band's home has no More hub
+  (`ChildView.hasTile('more')`), so it gets nothing; from the 5 to 7 band up all five
+  child-facing suites are available, subject to the guardian switches. With no derived view
+  her age decides and an unknown age **fails closed to 5**. The doorframe, firsts, letters and
+  stories tiles appear only when there is something for her to see. The five child-facing
+  suites are the only ones: no child type can reach the care binder, hospital notes or
+  appointment prep (`ChildGrowingLens` and `ChildExplainerReader` are narrower types, and a
+  test reads the child files' source to hold that line).
+
+### 8.19.4 Storage
+
+`LocalItemRepository` over four **sealed** (AES-256-GCM) catalogued areas, per child:
+`child.<id>.growing` (8 MiB), `child.<id>.memorybox` (6 MiB), `child.<id>.care` (4 MiB),
+`child.<id>.explainers` (3 MiB). Abstract `ItemRepository`, `MemoryItemRepository` for tests,
+`LocalItemRepository` for the app. Bounds, all refused with plain words and the stored data
+untouched: text lengths, **one photo at most 48 KiB** (the picker is asked for a 320 px, compressed
+image, so a thumbnail is kept, never a camera original), an item at most 192 KiB, a picture copied
+into the memory box at most 160 KiB, and a count per kind (40 capsules, 200 firsts, 60 marks,
+60 memories, 12 sections, 20 contacts, 20 appointment lists, 12 stories). A full namespace says
+"full" and evicts nothing. The device wipe and "forget this child" remove all four.
+
+### 8.19.5 Not built, and why
+
+Sharing between homes and any sync (parked); a **local editor for the emergency card** (the
+existing screen still shows its demo content when no live session is wired, and hospital mode
+only links to it); audio in the memory box (no audio capture exists); a question box on a
+picture story (it would need a person on the other end); capsule contents from other helpers
+(single device, single guardian write path); anniversaries or any reminder; notifications.
+Clinical and child-development review is still required before any pre-written explainer or
+care text is considered; none is shipped.
 
 ---
 

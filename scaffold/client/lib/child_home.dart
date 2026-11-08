@@ -342,7 +342,7 @@ class ChildHome extends StatelessWidget {
                   builder: (_) => ChildMoreScreen(childName: childName,
                     baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
                     httpClient: httpClient, childAge: childAge, overrides: overrides,
-                    guardianName: _grownUp)))),
+                    guardianName: _grownUp, family: family)))),
           ],
         ),
 
