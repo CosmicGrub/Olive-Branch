@@ -62,7 +62,9 @@ export type CoViewMsg =
   | { t: 'tick';  seq: number; pos: number; rate: number; paused: boolean; sentAt: number }
   | { t: 'seek';  seq: number; pos: number; sentAt: number }
   | { t: 'start'; seq: number; at: number; assetId: string }
-  | { t: 'stop';  seq: number; by: StopBy };
+  | { t: 'stop';  seq: number; by: StopBy }
+  /** The follower's answer to an invitation: she tapped Join. Carries nothing else. */
+  | { t: 'join';  seq: number };
 
 export type ParseResult =
   | { ok: true; msg: CoViewMsg }
@@ -96,6 +98,8 @@ export function parseCoViewMessage(raw: unknown): ParseResult {
     case 'start':
       if (!num(m.at) || typeof m.assetId !== 'string' || !ASSET_ID.test(m.assetId)) return bad;
       return { ok: true, msg: { t: 'start', seq: m.seq, at: m.at, assetId: m.assetId } };
+    case 'join':
+      return { ok: true, msg: { t: 'join', seq: m.seq } };
     case 'stop':
       if (typeof m.by !== 'string' || !STOP_BY.includes(m.by)) return bad;
       return { ok: true, msg: { t: 'stop', seq: m.seq, by: m.by as StopBy } };
@@ -115,7 +119,8 @@ export function canLead(p: Principal | null | undefined): boolean {
 /** Which message types a sender may emit. A follower may only ever stop its own view. */
 export function mayEmit(p: Principal | null | undefined, msg: CoViewMsg): boolean {
   if (canLead(p)) return true;
-  return !!p && p.kind === 'child' && msg.t === 'stop' && msg.by === 'child';
+  // A follower may answer an invitation (join) or end her own view (stop by child); nothing else.
+  return !!p && p.kind === 'child' && (msg.t === 'join' || (msg.t === 'stop' && msg.by === 'child'));
 }
 
 // ============================================================ sequencing ==

@@ -1,0 +1,1443 @@
+{
+ "parse": [
+  {
+   "raw": "{\"t\":\"tick\",\"seq\":1,\"pos\":12.5,\"rate\":1,\"paused\":false,\"sentAt\":1700000000000}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 12.5,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 1700000000000
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"seek\",\"seq\":2,\"pos\":0,\"sentAt\":5}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "seek",
+     "seq": 2,
+     "pos": 0,
+     "sentAt": 5
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"start\",\"seq\":0,\"at\":5,\"assetId\":\"story_01-AB\"}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "start",
+     "seq": 0,
+     "at": 5,
+     "assetId": "story_01-AB"
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"join\",\"seq\":4}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "join",
+     "seq": 4
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"join\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"join\",\"seq\":-1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"seq\":3,\"by\":\"guardian\"}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "stop",
+     "seq": 3,
+     "by": "guardian"
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"seq\":3,\"by\":\"child\"}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "stop",
+     "seq": 3,
+     "by": "child"
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"seq\":3,\"by\":\"budget\"}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "stop",
+     "seq": 3,
+     "by": "budget"
+    }
+   }
+  },
+  {
+   "raw": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "expect": {
+    "ok": false,
+    "reason": "too_large"
+   }
+  },
+  {
+   "raw": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "expect": {
+    "ok": false,
+    "reason": "too_large"
+   }
+  },
+  {
+   "raw": "{nope",
+   "expect": {
+    "ok": false,
+    "reason": "not_json"
+   }
+  },
+  {
+   "raw": "null",
+   "expect": {
+    "ok": false,
+    "reason": "not_object"
+   }
+  },
+  {
+   "raw": "[1,2]",
+   "expect": {
+    "ok": false,
+    "reason": "not_object"
+   }
+  },
+  {
+   "raw": "7",
+   "expect": {
+    "ok": false,
+    "reason": "not_object"
+   }
+  },
+  {
+   "raw": "{\"t\":\"detonate\",\"seq\":1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_type"
+   }
+  },
+  {
+   "raw": "{\"seq\":1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_type"
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"by\":\"child\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"seq\":-1,\"by\":\"child\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"seq\":1.5,\"by\":\"child\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"seq\":\"1\",\"by\":\"child\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"seek\",\"seq\":1,\"pos\":-0.1,\"sentAt\":1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"seek\",\"seq\":1,\"pos\":86401,\"sentAt\":1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"seek\",\"seq\":1,\"pos\":86400,\"sentAt\":1}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "seek",
+     "seq": 1,
+     "pos": 86400,
+     "sentAt": 1
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"tick\",\"seq\":1,\"pos\":1,\"rate\":0.4,\"paused\":false,\"sentAt\":1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"tick\",\"seq\":1,\"pos\":1,\"rate\":0.5,\"paused\":false,\"sentAt\":1}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 1,
+     "rate": 0.5,
+     "paused": false,
+     "sentAt": 1
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"tick\",\"seq\":1,\"pos\":1,\"rate\":2,\"paused\":true,\"sentAt\":1}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 1,
+     "rate": 2,
+     "paused": true,
+     "sentAt": 1
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"tick\",\"seq\":1,\"pos\":1,\"rate\":2.5,\"paused\":false,\"sentAt\":1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"tick\",\"seq\":1,\"pos\":1,\"rate\":1,\"paused\":\"no\",\"sentAt\":1}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"start\",\"seq\":1,\"at\":1,\"assetId\":\"../etc/passwd\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"start\",\"seq\":1,\"at\":1,\"assetId\":\"a b\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"start\",\"seq\":1,\"at\":1,\"assetId\":\"\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"start\",\"seq\":1,\"at\":1,\"assetId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "expect": {
+    "ok": true,
+    "msg": {
+     "t": "start",
+     "seq": 1,
+     "at": 1,
+     "assetId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+   }
+  },
+  {
+   "raw": "{\"t\":\"start\",\"seq\":1,\"at\":1,\"assetId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  },
+  {
+   "raw": "{\"t\":\"stop\",\"seq\":1,\"by\":\"admin\"}",
+   "expect": {
+    "ok": false,
+    "reason": "bad_field"
+   }
+  }
+ ],
+ "principals": [
+  {
+   "principal": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "canLead": true,
+   "mayEmit": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  {
+   "principal": {
+    "kind": "child"
+   },
+   "canLead": false,
+   "mayEmit": [
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true
+   ]
+  },
+  {
+   "principal": {
+    "kind": "adult",
+    "role": "sitter"
+   },
+   "canLead": false,
+   "mayEmit": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "principal": {
+    "kind": "guardian",
+    "role": "sitter"
+   },
+   "canLead": false,
+   "mayEmit": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "principal": null,
+   "canLead": false,
+   "mayEmit": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "principal": {},
+   "canLead": false,
+   "mayEmit": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  }
+ ],
+ "msgs": [
+  {
+   "t": "tick",
+   "seq": 1,
+   "pos": 1,
+   "rate": 1,
+   "paused": false,
+   "sentAt": 1
+  },
+  {
+   "t": "seek",
+   "seq": 1,
+   "pos": 1,
+   "sentAt": 1
+  },
+  {
+   "t": "start",
+   "seq": 1,
+   "at": 1,
+   "assetId": "x"
+  },
+  {
+   "t": "stop",
+   "seq": 1,
+   "by": "child"
+  },
+  {
+   "t": "stop",
+   "seq": 1,
+   "by": "guardian"
+  },
+  {
+   "t": "stop",
+   "seq": 1,
+   "by": "budget"
+  },
+  {
+   "t": "join",
+   "seq": 1
+  }
+ ],
+ "seq": [
+  {
+   "run": [
+    0,
+    1,
+    1,
+    0,
+    7,
+    7.5,
+    7,
+    8
+   ],
+   "accepted": [
+    true,
+    true,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true
+   ],
+   "last": 8
+  },
+  {
+   "run": [
+    5,
+    4,
+    5,
+    6
+   ],
+   "accepted": [
+    true,
+    false,
+    false,
+    true
+   ],
+   "last": 6
+  },
+  {
+   "run": [
+    0,
+    0,
+    0
+   ],
+   "accepted": [
+    true,
+    false,
+    false
+   ],
+   "last": 0
+  },
+  {
+   "run": [
+    -1,
+    0
+   ],
+   "accepted": [
+    false,
+    true
+   ],
+   "last": 0
+  },
+  {
+   "run": [
+    1099511627776,
+    1099511627776,
+    1099511627777
+   ],
+   "accepted": [
+    true,
+    false,
+    true
+   ],
+   "last": 1099511627777
+  }
+ ],
+ "samples": [
+  {
+   "ping": [
+    1000,
+    1540,
+    1545,
+    1085
+   ],
+   "sample": {
+    "offsetMs": 500,
+    "rttMs": 80
+   }
+  },
+  {
+   "ping": [
+    1000,
+    1600,
+    1605,
+    1125
+   ],
+   "sample": {
+    "offsetMs": 540,
+    "rttMs": 120
+   }
+  },
+  {
+   "ping": [
+    0,
+    0,
+    0,
+    -5
+   ],
+   "sample": null
+  },
+  {
+   "ping": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "sample": {
+    "offsetMs": 0,
+    "rttMs": 2
+   }
+  },
+  {
+   "ping": [
+    10,
+    20,
+    25,
+    40
+   ],
+   "sample": {
+    "offsetMs": -2.5,
+    "rttMs": 25
+   }
+  }
+ ],
+ "estimates": [
+  {
+   "samples": [
+    {
+     "offsetMs": 500,
+     "rttMs": 80
+    },
+    {
+     "offsetMs": 500,
+     "rttMs": 80
+    }
+   ],
+   "estimate": null
+  },
+  {
+   "samples": [
+    {
+     "offsetMs": 500,
+     "rttMs": 80
+    },
+    {
+     "offsetMs": 500,
+     "rttMs": 80
+    },
+    null,
+    null
+   ],
+   "estimate": null
+  },
+  {
+   "samples": [
+    {
+     "offsetMs": 500,
+     "rttMs": 600
+    },
+    {
+     "offsetMs": 500,
+     "rttMs": 80
+    },
+    {
+     "offsetMs": 500,
+     "rttMs": 400
+    },
+    {
+     "offsetMs": 500,
+     "rttMs": 180
+    }
+   ],
+   "estimate": {
+    "offsetMs": 500,
+    "rttMs": 80,
+    "samples": 4
+   }
+  },
+  {
+   "samples": [
+    {
+     "offsetMs": 100,
+     "rttMs": 20
+    },
+    {
+     "offsetMs": 100,
+     "rttMs": 20
+    },
+    {
+     "offsetMs": 100,
+     "rttMs": 20
+    }
+   ],
+   "estimate": {
+    "offsetMs": 100,
+    "rttMs": 20,
+    "samples": 3
+   }
+  }
+ ],
+ "correct": [
+  {
+   "err": 0,
+   "expect": {
+    "action": "none"
+   }
+  },
+  {
+   "err": 0.05,
+   "expect": {
+    "action": "none"
+   }
+  },
+  {
+   "err": 0.15,
+   "expect": {
+    "action": "none"
+   }
+  },
+  {
+   "err": 0.1500001,
+   "expect": {
+    "action": "rate",
+    "rate": 0.95
+   }
+  },
+  {
+   "err": 0.16,
+   "expect": {
+    "action": "rate",
+    "rate": 0.95
+   }
+  },
+  {
+   "err": 0.4,
+   "expect": {
+    "action": "rate",
+    "rate": 0.95
+   }
+  },
+  {
+   "err": -0.4,
+   "expect": {
+    "action": "rate",
+    "rate": 1.05
+   }
+  },
+  {
+   "err": 0.8,
+   "expect": {
+    "action": "rate",
+    "rate": 0.95
+   }
+  },
+  {
+   "err": 1.99,
+   "expect": {
+    "action": "rate",
+    "rate": 0.95
+   }
+  },
+  {
+   "err": 2,
+   "expect": {
+    "action": "rate",
+    "rate": 0.95
+   }
+  },
+  {
+   "err": 2.0000001,
+   "expect": {
+    "action": "seek"
+   }
+  },
+  {
+   "err": -2,
+   "expect": {
+    "action": "rate",
+    "rate": 1.05
+   }
+  },
+  {
+   "err": -2.5,
+   "expect": {
+    "action": "seek"
+   }
+  },
+  {
+   "err": -5,
+   "expect": {
+    "action": "seek"
+   }
+  },
+  {
+   "err": "NaN",
+   "expect": {
+    "action": "seek"
+   }
+  },
+  {
+   "err": "Infinity",
+   "expect": {
+    "action": "seek"
+   }
+  },
+  {
+   "err": "-Infinity",
+   "expect": {
+    "action": "seek"
+   }
+  }
+ ],
+ "correctCustom": [
+  {
+   "err": 0.2,
+   "cfg": {
+    "dead": 0.05,
+    "seek": 1,
+    "band": 0.1
+   },
+   "expect": {
+    "action": "rate",
+    "rate": 0.9
+   }
+  },
+  {
+   "err": 0.04,
+   "cfg": {
+    "dead": 0.05,
+    "seek": 1,
+    "band": 0.1
+   },
+   "expect": {
+    "action": "none"
+   }
+  },
+  {
+   "err": 1.5,
+   "cfg": {
+    "dead": 0.05,
+    "seek": 1,
+    "band": 0.1
+   },
+   "expect": {
+    "action": "seek"
+   }
+  },
+  {
+   "err": -0.3,
+   "cfg": {
+    "dead": 0.05,
+    "seek": 1,
+    "band": 0.1
+   },
+   "expect": {
+    "action": "rate",
+    "rate": 1.1
+   }
+  }
+ ],
+ "expected": [
+  {
+   "tick": {
+    "t": "tick",
+    "seq": 1,
+    "pos": 100,
+    "rate": 1,
+    "paused": false,
+    "sentAt": 10000
+   },
+   "nowMs": 12000,
+   "offsetMs": 0,
+   "expect": 102
+  },
+  {
+   "tick": {
+    "t": "tick",
+    "seq": 1,
+    "pos": 100,
+    "rate": 1,
+    "paused": false,
+    "sentAt": 10000
+   },
+   "nowMs": 11500,
+   "offsetMs": 500,
+   "expect": 102
+  },
+  {
+   "tick": {
+    "t": "tick",
+    "seq": 1,
+    "pos": 100,
+    "rate": 1.5,
+    "paused": false,
+    "sentAt": 10000
+   },
+   "nowMs": 12000,
+   "offsetMs": 0,
+   "expect": 103
+  },
+  {
+   "tick": {
+    "t": "tick",
+    "seq": 1,
+    "pos": 100,
+    "rate": 1,
+    "paused": true,
+    "sentAt": 10000
+   },
+   "nowMs": 99000,
+   "offsetMs": 0,
+   "expect": 100
+  },
+  {
+   "tick": {
+    "t": "tick",
+    "seq": 1,
+    "pos": 100,
+    "rate": 1,
+    "paused": false,
+    "sentAt": 10000
+   },
+   "nowMs": 9000,
+   "offsetMs": 0,
+   "expect": 100
+  },
+  {
+   "tick": {
+    "t": "tick",
+    "seq": 1,
+    "pos": 100,
+    "rate": 1,
+    "paused": false,
+    "sentAt": 10000
+   },
+   "nowMs": 10000,
+   "offsetMs": -250,
+   "expect": 100
+  }
+ ],
+ "followerStep": [
+  {
+   "args": {
+    "tick": null,
+    "receivedAtMs": 1000,
+    "nowMs": 1000,
+    "localPos": 0,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "none"
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 1000,
+    "localPos": 51,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "none"
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 1000,
+    "localPos": 50.6,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "rate",
+    "rate": 1.05
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 1000,
+    "localPos": 51.4,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "rate",
+    "rate": 0.95
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 1000,
+    "localPos": 40,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "seek",
+    "to": 51
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": true,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 1000,
+    "localPos": 50.05,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "pause"
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": true,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 1000,
+    "localPos": 53,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "seek",
+    "to": 50
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 13001,
+    "localPos": 0,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "none"
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 13000,
+    "localPos": 0,
+    "offsetMs": 0
+   },
+   "expect": {
+    "action": "seek",
+    "to": 63
+   }
+  },
+  {
+   "args": {
+    "tick": {
+     "t": "tick",
+     "seq": 1,
+     "pos": 50,
+     "rate": 1,
+     "paused": false,
+     "sentAt": 0
+    },
+    "receivedAtMs": 1000,
+    "nowMs": 3000,
+    "localPos": 52,
+    "offsetMs": 500
+   },
+   "expect": {
+    "action": "rate",
+    "rate": 1.05
+   }
+  }
+ ],
+ "allowance": [
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": 90,
+   "expect": {
+    "ok": true,
+    "limitMin": 90,
+    "direction": "lower",
+    "notifyCoGuardian": false
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": 180,
+   "expect": {
+    "ok": true,
+    "limitMin": 180,
+    "direction": "raise",
+    "notifyCoGuardian": true
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": 120,
+   "expect": {
+    "ok": true,
+    "limitMin": 120,
+    "direction": "same",
+    "notifyCoGuardian": false
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": 0,
+   "expect": {
+    "ok": true,
+    "limitMin": 0,
+    "direction": "lower",
+    "notifyCoGuardian": false
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": 480,
+   "expect": {
+    "ok": true,
+    "limitMin": 480,
+    "direction": "raise",
+    "notifyCoGuardian": true
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": 481,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "above_ceiling"
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": -1,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "below_floor"
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": 90.5,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "not_a_number"
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": "90",
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "not_a_number"
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 120,
+   "requested": null,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "not_a_number"
+   }
+  },
+  {
+   "actor": {
+    "kind": "child"
+   },
+   "current": 120,
+   "requested": 480,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "not_a_guardian"
+   }
+  },
+  {
+   "actor": {
+    "kind": "adult",
+    "role": "sitter"
+   },
+   "current": 120,
+   "requested": 60,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "not_a_guardian"
+   }
+  },
+  {
+   "actor": null,
+   "current": 120,
+   "requested": 60,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "not_a_guardian"
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "sitter"
+   },
+   "current": 120,
+   "requested": 60,
+   "expect": {
+    "ok": false,
+    "limitMin": 120,
+    "direction": "rejected",
+    "notifyCoGuardian": false,
+    "reason": "not_a_guardian"
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 0,
+   "requested": 120,
+   "expect": {
+    "ok": true,
+    "limitMin": 120,
+    "direction": "raise",
+    "notifyCoGuardian": true
+   }
+  },
+  {
+   "actor": {
+    "kind": "guardian",
+    "role": "guardian"
+   },
+   "current": 480,
+   "requested": 60,
+   "expect": {
+    "ok": true,
+    "limitMin": 60,
+    "direction": "lower",
+    "notifyCoGuardian": false
+   }
+  }
+ ],
+ "budget": [
+  {
+   "limit": 0,
+   "used": 0,
+   "state": "off",
+   "remaining": 0
+  },
+  {
+   "limit": -5,
+   "used": 0,
+   "state": "off",
+   "remaining": 0
+  },
+  {
+   "limit": 120,
+   "used": 0,
+   "state": "ok",
+   "remaining": 7200
+  },
+  {
+   "limit": 120,
+   "used": 600,
+   "state": "ok",
+   "remaining": 6600
+  },
+  {
+   "limit": 120,
+   "used": 6600,
+   "state": "last_one",
+   "remaining": 600
+  },
+  {
+   "limit": 120,
+   "used": 6599,
+   "state": "ok",
+   "remaining": 601
+  },
+  {
+   "limit": 120,
+   "used": 7200,
+   "state": "exhausted",
+   "remaining": 0
+  },
+  {
+   "limit": 120,
+   "used": 99999,
+   "state": "exhausted",
+   "remaining": 0
+  },
+  {
+   "limit": 120,
+   "used": -9999,
+   "state": "ok",
+   "remaining": 7200
+  },
+  {
+   "limit": 180,
+   "used": 7200,
+   "state": "ok",
+   "remaining": 3600
+  },
+  {
+   "limit": 1,
+   "used": 59,
+   "state": "last_one",
+   "remaining": 1
+  },
+  {
+   "limit": 1,
+   "used": 60,
+   "state": "exhausted",
+   "remaining": 0
+  }
+ ],
+ "transport": [
+  {
+   "callConnected": true,
+   "tableAvailable": true,
+   "expect": "livekit"
+  },
+  {
+   "callConnected": true,
+   "tableAvailable": false,
+   "expect": "livekit"
+  },
+  {
+   "callConnected": false,
+   "tableAvailable": true,
+   "expect": "table"
+  },
+  {
+   "callConnected": false,
+   "tableAvailable": false,
+   "expect": "none"
+  }
+ ],
+ "reannounce": [
+  {
+   "leader": {
+    "pos": 321.5,
+    "rate": 1,
+    "paused": false
+   },
+   "lastSeq": 41,
+   "nowMs": 1700000000000,
+   "expect": {
+    "t": "tick",
+    "seq": 42,
+    "pos": 321.5,
+    "rate": 1,
+    "paused": false,
+    "sentAt": 1700000000000
+   }
+  },
+  {
+   "leader": {
+    "pos": 5,
+    "rate": 1,
+    "paused": true
+   },
+   "lastSeq": 0,
+   "nowMs": 1,
+   "expect": {
+    "t": "tick",
+    "seq": 1,
+    "pos": 5,
+    "rate": 1,
+    "paused": true,
+    "sentAt": 1
+   }
+  }
+ ]
+}

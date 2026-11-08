@@ -205,6 +205,23 @@ await admin.query('COMMIT');
   check('B RLS', 'a child session can never INSERT into this table at all', childInsertThrew, 'true');
 }
 
+// ---- C · migration 0034: the CHECK admits `olive` and still refuses anything else.
+// Runs against CHILD_A's row, which the sections above seeded and left in place.
+{
+  let oliveRejected = false;
+  try { await admin.query(`UPDATE child_theme_preference SET theme_palette = 'olive' WHERE child_id = $1`, [CHILD_A]); }
+  catch { oliveRejected = true; }
+  check('C 0034', 'olive is admitted by the CHECK constraint', oliveRejected, 'false');
+  const read = await admin.query(`SELECT theme_palette FROM child_theme_preference WHERE child_id = $1`, [CHILD_A]);
+  check('C 0034', 'olive is stored', read.rows[0]?.theme_palette, 'olive');
+  let neonRejected = false;
+  try { await admin.query(`UPDATE child_theme_preference SET theme_palette = 'neonRetro' WHERE child_id = $1`, [CHILD_A]); }
+  catch { neonRejected = true; }
+  check('C 0034', 'an unknown palette is still refused by the CHECK', neonRejected, 'true');
+  const still = await admin.query(`SELECT theme_palette FROM child_theme_preference WHERE child_id = $1`, [CHILD_A]);
+  check('C 0034', 'a refused write leaves the row as it was', still.rows[0]?.theme_palette, 'olive');
+}
+
 await admin.query('BEGIN');
 await reset();
 await admin.query('COMMIT');

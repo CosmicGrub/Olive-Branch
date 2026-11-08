@@ -1,0 +1,820 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Colour of the Day Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a bench page with six tabs. A global "pretend today is..." bar (colour, age, style)
+   drives every tab, so one choice is seen in the parent app, the child app, the art and the activities. */
+:root{
+  --font-display:"Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --ground:#e9eee8; --panel:#ffffff; --panel-2:#f3f6f2; --ink:#18261e; --muted:#56665b;
+  --rule:#cfd9cf; --accent:#3d6a49; --accent-ink:#ffffff; --accent-soft:#dcebdc;
+  --warn:#8a5d00; --warn-bg:#fff1cf; --bad:#a8231b; --bad-bg:#fbe5e2; --ok:#21683a; --ok-bg:#dff1e3;
+  --bench:#d7dfd6; --code-bg:#f0f4ef; color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#111a14; --panel:#18231c; --panel-2:#1e2b23; --ink:#e4ede5; --muted:#9db0a2;
+  --rule:#2d3d33; --accent:#8fc79d; --accent-ink:#0d1a11; --accent-soft:#213428;
+  --warn:#e8bd55; --warn-bg:#2c2510; --bad:#f4a8a1; --bad-bg:#2f1a18; --ok:#8fd4a3; --ok-bg:#183024;
+  --bench:#0c130f; --code-bg:#142019; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --ground:#111a14; --panel:#18231c; --panel-2:#1e2b23; --ink:#e4ede5; --muted:#9db0a2;
+  --rule:#2d3d33; --accent:#8fc79d; --accent-ink:#0d1a11; --accent-soft:#213428;
+  --warn:#e8bd55; --warn-bg:#2c2510; --bad:#f4a8a1; --bad-bg:#2f1a18; --ok:#8fd4a3; --ok-bg:#183024;
+  --bench:#0c130f; --code-bg:#142019; color-scheme:dark;}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--ground);color:var(--ink);font:16px/1.55 var(--font-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 64px}
+.wrap{max-width:1220px;margin:0 auto}
+h1,h2,h3{font-family:var(--font-display);line-height:1.1;margin:0;text-wrap:balance}
+h1{font-size:clamp(2rem,5vw,3.1rem);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:800;letter-spacing:-.01em}
+h3{font-size:1.12rem;font-weight:600}
+p{margin:.5em 0}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+code{font-family:var(--font-mono);font-size:.86em;background:var(--code-bg);padding:.1em .35em;border-radius:5px}
+.eyebrow{font:500 .74rem/1 var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header.top{display:grid;gap:12px;padding:10px 0 16px}
+header.top .lede{max-width:74ch;color:var(--muted);font-size:1.04rem;margin:0}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font:500 .74rem/1 var(--font-mono);padding:6px 9px;border-radius:99px;background:var(--panel);border:1px solid var(--rule);color:var(--muted)}
+.pill.ok{background:var(--ok-bg);color:var(--ok);border-color:transparent}
+.pill.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.pill.new{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+
+/* global "pretend" bar */
+.pretend{background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:12px 14px;display:grid;gap:10px}
+.pretend .row{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.lbl{font:500 .72rem/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.sw{display:flex;flex-wrap:wrap;gap:6px}
+.sw button{width:36px;height:36px;border-radius:50%;border:3px solid transparent;cursor:pointer;padding:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.sw button[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--ink)}
+.btn{font:700 .9rem/1 var(--font-body);padding:10px 13px;border-radius:10px;border:1px solid var(--rule);background:var(--panel-2);color:var(--ink);cursor:pointer;min-height:40px}
+.btn:hover{border-color:var(--accent)}
+.btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.ghost{background:transparent}
+.grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.today{display:inline-flex;gap:8px;align-items:center;font-weight:700}
+.today i{width:18px;height:18px;border-radius:50%;display:inline-block;box-shadow:inset 0 0 0 1px rgba(0,0,0,.2)}
+
+nav.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 4px;border-bottom:2px solid var(--rule);padding-bottom:0}
+nav.tabs button{font:800 .98rem/1 var(--font-display);padding:12px 14px;border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:10px 10px 0 0;border-bottom:4px solid transparent;margin-bottom:-2px}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);background:var(--panel)}
+.panel{padding:22px 0 6px}
+.panel[hidden]{display:none}
+.intro{max-width:76ch;color:var(--muted);margin:6px 0 16px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:22px;align-items:start}
+.stage{display:flex;flex-wrap:wrap;justify-content:center;gap:26px 34px;background:var(--bench);border-radius:20px;padding:26px 14px;align-items:flex-start}
+.col{display:grid;gap:10px;justify-items:center;min-width:0;max-width:100%}
+.cap{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+.cap b{font-family:var(--font-display);font-size:1.02rem}
+.tag{font:500 .7rem/1 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 8px;border-radius:6px;background:var(--panel);color:var(--muted);border:1px solid var(--rule)}
+.tag.lead{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.devwrap{max-width:100%;overflow-x:auto}
+.dev{background:#0b100d;border-radius:38px;padding:11px;box-shadow:0 18px 40px rgba(0,0,0,.28),inset 0 0 0 2px #2a332d;flex:none}
+.dev.g,.dev.f-phone{width:316px;height:640px}
+.dev.f-tab{width:640px;height:440px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px;min-width:0}
+.card h3{margin-bottom:6px}
+.stack{display:grid;gap:14px}
+pre.real{margin:6px 0 0;font:400 .8rem/1.5 var(--font-mono);background:var(--code-bg);border-radius:10px;padding:10px 12px;white-space:pre-wrap;word-break:break-word}
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid var(--rule);border-radius:14px}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:.9rem}
+th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:500 .72rem/1 var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);background:var(--panel-2);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+.st{font:500 .68rem/1 var(--font-mono);padding:4px 6px;border-radius:5px;white-space:nowrap}
+.st.exists{background:var(--ok-bg);color:var(--ok)}.st.logic{background:var(--warn-bg);color:var(--warn)}.st.new{background:var(--accent-soft);color:var(--accent)}
+.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+.filters input{font:inherit;padding:9px 11px;border-radius:10px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);min-width:200px}
+.note{background:var(--warn-bg);color:var(--ink);border-left:4px solid var(--warn);border-radius:8px;padding:9px 12px;font-size:.92rem;margin:10px 0}
+
+/* ---------- the app's own look ---------- */
+.scr{--a-bg:#faf8f2;--a-ink:#1d2b1f;--a-olive:#4a6b4f;--a-olive-d:#2f4a35;--a-leaf:#dde8da;--a-sun:#f0c36a;
+  --a-rule:#d9ddd3;--a-warn:#b98900;--a-warn-bg:#fff3d1;--a-bad:#b3261e;--a-mute:#5f6c61;
+  --a-day:#2f8fc4;--a-day-ink:#14536F;
+  background:var(--a-bg);color:var(--a-ink);border-radius:28px;height:100%;display:flex;flex-direction:column;overflow:hidden;font-family:var(--font-body);position:relative}
+.sb{display:flex;justify-content:space-between;font:700 11px/1 var(--font-body);padding:9px 18px 4px;color:var(--a-mute)}
+.appbar{display:flex;align-items:center;gap:8px;padding:6px 14px 8px}
+.appbar h4{margin:0;font:800 17px/1.1 var(--font-display);flex:1}
+.stripe{height:4px;background:var(--a-day);margin:0 14px;border-radius:4px}
+.ib{width:44px;height:44px;border-radius:50%;border:0;background:var(--a-leaf);color:var(--a-olive-d);font-size:19px;cursor:pointer;display:grid;place-items:center}
+.body{flex:1;overflow:auto;padding:6px 14px 14px;display:flex;flex-direction:column;gap:10px;min-height:0}
+.card-a{background:#fff;border:1px solid var(--a-rule);border-radius:16px;padding:12px}
+.tile{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:#fff;border:1px solid var(--a-rule);border-radius:16px;padding:11px;cursor:pointer;font:inherit;color:inherit;min-height:60px}
+.tile:hover{border-color:var(--a-olive)}
+.tile .ic{width:42px;height:42px;border-radius:12px;background:var(--a-leaf);display:grid;place-items:center;font-size:21px;flex:none}
+.tile b{display:block;font-size:14.5px}.tile small{color:var(--a-mute);font-size:12px}
+.tile .chev{margin-left:auto;color:var(--a-mute)}
+.cta{background:var(--a-olive);color:#fff;border:0;border-radius:14px;padding:13px 16px;font:700 15px/1 var(--font-body);cursor:pointer;min-height:50px;width:100%}
+.cta.alt{background:var(--a-leaf);color:var(--a-olive-d)}
+.cta[disabled]{opacity:.5}
+.row2{display:flex;gap:8px}.row2>*{flex:1}
+.chip{display:inline-flex;gap:6px;align-items:center;font:700 12px/1 var(--font-body);padding:6px 9px;border-radius:99px;background:var(--a-leaf);color:var(--a-olive-d)}
+.chip.on{background:var(--a-olive);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{border:0;cursor:pointer;min-height:36px}
+.sub{font:700 11px/1 var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--a-mute);margin:6px 2px 0}
+.seg{display:flex;background:var(--a-leaf);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:transparent;border-radius:9px;padding:9px 4px;font:700 12px/1.1 var(--font-body);color:var(--a-olive-d);cursor:pointer;min-height:40px}
+.seg button[aria-pressed="true"]{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.note-a{font-size:12.5px;color:var(--a-mute)}
+.srow{display:grid;gap:6px;padding:10px 0;border-bottom:1px solid var(--a-rule)}
+.srow:last-child{border-bottom:0}
+.srow .top{display:flex;gap:10px;align-items:center;justify-content:space-between}
+.srow b{font-size:14px}
+.sw-t{position:relative;width:48px;height:28px;border-radius:99px;background:#c9d1c8;border:0;cursor:pointer;flex:none}
+.sw-t::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:left .15s}
+.sw-t[aria-checked="true"]{background:var(--a-olive)}
+.sw-t[aria-checked="true"]::after{left:23px}
+.badge{font:700 9.5px/1 var(--font-mono);letter-spacing:.05em;text-transform:uppercase;padding:3px 5px;border-radius:4px;background:var(--a-leaf);color:var(--a-olive-d);margin-left:5px}
+.badge.new{background:#e6e0f5;color:#4a3a78}.badge.logic{background:var(--a-warn-bg);color:#7a5a00}
+.ring{width:54px;height:54px;border-radius:50%;border:4px solid var(--a-day);display:grid;place-items:center;font-size:26px;background:#fff;flex:none}
+
+/* child side */
+.scr.child .body{padding:0;gap:0}
+.center{flex:1;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;text-align:center;padding:16px}
+.big{font:800 26px/1.1 var(--font-display)}
+.two-up{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%}
+.pick{border:0;border-radius:22px;aspect-ratio:1/1.15;cursor:pointer;font:800 17px/1.1 var(--font-display);display:flex;align-items:flex-end;justify-content:center;padding:12px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);box-shadow:inset 0 0 0 3px rgba(255,255,255,.35)}
+.pick:hover{transform:translateY(-2px)}
+.stop{background:#fff;border:3px solid var(--a-olive);color:var(--a-olive-d);border-radius:99px;font:800 17px/1 var(--font-display);padding:12px 26px;min-height:54px;cursor:pointer}
+.stopbar{display:flex;justify-content:center;padding:8px;background:var(--a-bg);flex:none}
+.numeral{font:800 44px/1 var(--font-display);color:var(--a-day-ink)}
+.art{display:block}
+.grid-art{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:12px}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:10px;display:grid;gap:6px;justify-items:center;text-align:center}
+.fig b{font-size:.92rem}.fig small{color:var(--muted);font-size:.78rem}
+.art-card{background:#faf8f2;border-radius:12px;padding:6px;width:100%;display:grid;place-items:center}
+.real-tag{font:500 .64rem/1 var(--font-mono);padding:3px 5px;border-radius:4px;background:var(--ok-bg);color:var(--ok)}
+.real-tag.story{background:var(--warn-bg);color:var(--warn)}
+
+/* sync sim */
+.nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.node{background:var(--panel);border:2px solid var(--rule);border-radius:14px;padding:12px;display:grid;gap:6px}
+.node.off{opacity:.55;border-style:dashed}
+.node .big2{display:flex;gap:8px;align-items:center;font-weight:700}
+.node .dot{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.2);background:#ccc}
+
+/* storyboard */
+.boards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px}
+.board{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px;display:grid;gap:8px}
+.board header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.board h3{flex:1;min-width:10ch}
+.phases{display:grid;gap:8px}
+.ph{border-radius:10px;padding:8px 10px;font-size:.9rem}
+.ph b{display:block;font:500 .7rem/1.2 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
+.ph.pre{background:var(--accent-soft)}.ph.mid{background:var(--panel-2)}.ph.post{background:var(--ok-bg)}
+.ph.pre b{color:var(--accent)}.ph.mid b{color:var(--muted)}.ph.post b{color:var(--ok)}
+
+/* playables */
+.play{background:var(--a-bg);color:var(--a-ink);border-radius:22px;padding:14px;display:grid;gap:10px;--a-olive:#4a6b4f;--a-olive-d:#2f4a35;--a-leaf:#dde8da;--a-rule:#d9ddd3;--a-mute:#5f6c61;font-family:var(--font-body)}
+.play .hd{display:flex;gap:8px;justify-content:space-between;align-items:center}
+.play h3{font-family:var(--font-display);margin:0}
+.pbtn{border:0;border-radius:14px;background:var(--a-olive);color:#fff;font:700 15px/1 var(--font-body);padding:12px 16px;min-height:48px;cursor:pointer}
+.pbtn.alt{background:var(--a-leaf);color:var(--a-olive-d)}
+.items{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.itm{border:3px solid transparent;border-radius:16px;background:#fff;padding:4px;cursor:pointer;width:84px}
+.itm[aria-pressed="true"]{border-color:var(--a-olive);transform:translateY(-3px)}
+.itm.back{animation:wob .5s}
+@keyframes wob{0%,100%{transform:none}25%{transform:rotate(-6deg)}75%{transform:rotate(6deg)}}
+.baskets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.basket{border:3px dashed var(--a-rule);border-radius:16px;min-height:96px;background:#fff;padding:6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font:700 13px var(--font-body);color:var(--a-ink)}
+.basket.glow{border-color:var(--a-olive);box-shadow:0 0 0 4px rgba(74,107,79,.25)}
+.basket .in{display:flex;flex-wrap:wrap;gap:2px;justify-content:center}
+.gridp{display:grid;gap:3px;justify-content:center}
+.cell{width:54px;height:54px;border-radius:10px;background:#fff;border:2px solid var(--a-rule);display:grid;place-items:center;font-size:30px}
+.cell.rock{background:#c9cfc6}
+.prog{display:flex;flex-wrap:wrap;gap:6px;min-height:50px;background:#fff;border:2px dashed var(--a-rule);border-radius:12px;padding:6px;align-items:center}
+.blk{width:42px;height:42px;border-radius:10px;border:0;background:var(--a-leaf);color:var(--a-olive-d);font:800 20px/1 var(--font-display);cursor:pointer}
+.blk.rep{width:auto;padding:0 10px;font-size:14px;background:#e6e0f5;color:#4a3a78}
+.blk.run{background:var(--a-olive);color:#fff}
+.pix{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-width:280px;margin:0 auto;width:100%}
+.px{aspect-ratio:1;border:0;border-radius:3px;background:#fff;box-shadow:inset 0 0 0 1px var(--a-rule);cursor:pointer;padding:0}
+.say{background:#fff;border:1px solid var(--a-rule);border-radius:12px;padding:8px 10px;font-size:14px}
+
+.never{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
+.never ul{margin:.4em 0 0;padding-left:1.1em}.never li{margin:.3em 0}
+footer{margin-top:34px;color:var(--muted);font-size:.9rem;border-top:2px solid var(--rule);padding-top:14px}
+@media (prefers-reduced-motion:reduce){.itm.back{animation:none}.pick:hover{transform:none}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+ <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2.5" stdDeviation="1.8" flood-color="#000" flood-opacity=".28"/></filter>
+ <filter id="crayon" x="-10%" y="-10%" width="120%" height="120%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="3" result="w"/>
+  <feDisplacementMap in="SourceGraphic" in2="w" scale="5" result="d"/>
+  <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="8" result="g"/>
+  <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.5 1.45" result="ga"/>
+  <feComposite in="d" in2="ga" operator="in"/></filter>
+ <filter id="wcol" x="-12%" y="-12%" width="124%" height="124%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.02 0.03" numOctaves="3" seed="2" result="w"/>
+  <feDisplacementMap in="SourceGraphic" in2="w" scale="8" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0.9" result="b"/>
+  <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="3" seed="5" result="n"/>
+  <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.1 1.4" result="na"/>
+  <feComposite in="b" in2="na" operator="in"/></filter>
+ <filter id="felt" x="-8%" y="-8%" width="116%" height="116%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="4" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="2.4"/></filter>
+</defs></svg>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">Olive Branch · her colour · design draft</div>
+  <h1>Colour of the Day</h1>
+  <p class="lede">Every setting lives in the guardian app. Ivy’s app gets only the safe, playful pieces: her colour, the daily “which do you like more?”, and activities that use the colour as their theme. This page shows the screens, the sync, the art and the activities, before, during and after.</p>
+  <div class="pills">
+    <span class="pill ok">Built: colour engine (§8.6)</span>
+    <span class="pill new">New: settings hub, sync, art, activities</span>
+    <span class="pill warn">Sample data: Dad leads, Ivy is 6</span>
+  </div>
+</header>
+
+<div class="pretend" role="group" aria-label="Pretend today is">
+  <div class="row"><span class="lbl">Pretend today’s colour is</span><div class="sw" id="swrow"></div><span class="today" id="todaylbl"></span></div>
+  <div class="row">
+    <span class="lbl">Ivy’s age</span><div class="grp" id="agerow"></div>
+    <span class="lbl">Art style</span><div class="grp" id="stylerow"></div>
+  </div>
+</div>
+
+<nav class="tabs" role="tablist" aria-label="Sections" id="tabs"></nav>
+
+<section class="panel" id="p-settings" role="tabpanel"></section>
+<section class="panel" id="p-colour" role="tabpanel" hidden></section>
+<section class="panel" id="p-sync" role="tabpanel" hidden></section>
+<section class="panel" id="p-art" role="tabpanel" hidden></section>
+<section class="panel" id="p-acts" role="tabpanel" hidden></section>
+<section class="panel" id="p-rules" role="tabpanel" hidden></section>
+
+<footer>Design draft, 2026-11-07. Grounded in MASTERFILE §8.1, §8.6, §9.10.3–5, §21 and <code>packages/palette</code>. Not yet in <code>MARKUP.html</code>. Art is drawn in code for this mockup; final art would be commissioned or hand-drawn in each style.</footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* ================================================================ data == */
+var PAL=[
+ {id:"sunny",l:"sunny yellow",hex:"#F2B705",ink:"#7A5C00"},{id:"tangerine",l:"orange",hex:"#E8730C",ink:"#8A4207"},
+ {id:"coral",l:"coral pink",hex:"#F0757E",ink:"#8F2C34"},{id:"bubblegum",l:"bright pink",hex:"#E056A8",ink:"#8A1F62"},
+ {id:"grape",l:"purple",hex:"#8B6BB1",ink:"#4F3670"},{id:"sea",l:"sea blue",hex:"#2F8FC4",ink:"#14536F"},
+ {id:"sky",l:"sky blue",hex:"#6BB8E8",ink:"#175A80"},{id:"mint",l:"mint",hex:"#5FC9A8",ink:"#186853"},
+ {id:"grass",l:"grass green",hex:"#5AA84A",ink:"#2A5722"},{id:"chocolate",l:"chocolate",hex:"#8A6244",ink:"#4E3524"},
+ {id:"storm",l:"storm grey",hex:"#7C8698",ink:"#3E4653"},{id:"midnight",l:"midnight",hex:"#2B3358",ink:"#1B2138"}];
+var ALLOWED=["accent_stripe","avatar_ring","sleeps_number","game_piece","header_flourish","loading_dots","collection_tile","show_frame"];
+var FORBIDDEN=["prohibition","error","warning","destructive","ribbon_band","day_part","overlap_band","now_line","medication_block","expiry_digest","court_export","body_text","background","surface"];
+var STYLES=[
+ {id:"paper",n:"Paper cut",ages:"3–8",d:"Flat shapes with a soft shadow, like layered craft paper. The calmest style."},
+ {id:"sticker",n:"Sticker",ages:"3–10",d:"A thick white edge and a little shine. Reads clearly on any background."},
+ {id:"crayon",n:"Crayon",ages:"4–9",d:"Wobbly edges and waxy speckle, like a drawing she might make herself."},
+ {id:"watercolour",n:"Watercolour",ages:"5–10",d:"Soft, uneven washes. Gentle for story time and bedtime."},
+ {id:"felt",n:"Felt",ages:"3–7",d:"Fuzzy cut cloth with stitching. Warm and tactile for the youngest."},
+ {id:"line",n:"Line art",ages:"3–12",d:"Outlines to colour in. This is the style used when she fills a picture."},
+ {id:"pixel",n:"Pixel",ages:"8–12",d:"Chunky squares. Pairs with the coding activities. Unlocks at 8."}];
+var G={tab:"settings",colour:"sea",age:6,style:"paper",gnav:"hub",cflow:"pre",cform:"phone",
+  pairSide:0,pairOther:"sunny",hist:[],set:{}};
+
+/* ---- the settings catalogue. status: exists = screen+route found in repo, logic = engine built, no settings screen confirmed, new = proposed ---- */
+var SECT=[];
+function sec(id,title,icon,summary,rows){SECT.push({id:id,title:title,icon:icon,summary:summary,rows:rows});}
+function R(id,label,type,def,scope,rule,status,note,opts){return {id:id,label:label,type:type,def:def,scope:scope,rule:rule,status:status,note:note||"",opts:opts||[]};}
+sec("colour","Her colour and art","🎨","Colour of the day, art styles, favourites",[
+ R("pick","Let her pick a colour of the day","t",true,"her","E","logic","The daily two-up from §8.6.3. Off keeps her colour as it is and the question simply doesn’t appear."),
+ R("current","Her colour right now","i","","her","R","logic","parentView(): one neutral sentence. A fact, never a mood."),
+ R("showme","Show her colour in my app","t",true,"me","O","new","A thin stripe and her avatar ring. Never my background or my text."),
+ R("alldev","Same colour on all her devices","t",true,"her","E","new","Every device she uses shows the same colour of the day."),
+ R("share","Share with her other home","t",true,"fam","T","new","Both guardians see the same fact. Turning it off hides it in your own app only; her devices don’t change."),
+ R("styles","Art styles she can use","m",["paper","sticker","crayon","watercolour","felt","line"],"her","E","new","Pixel unlocks at age 8 and cannot be switched on earlier."),
+ R("foods","Foods and animals in her activities","m",["fruit","veg","animals"],"her","E","new","Untick a group and it disappears from every activity."),
+ R("favs","Let her add favourites (animal, fruit, vegetable)","t",true,"her","E","new","Kept as light interests (§9.10.3): no ranking, no score, fades after 120 days, never used for ads or training (P5)."),
+ R("yearbook","Colour page in the Year Book","t",true,"fam","E","logic","coloursForYearBook(): twelve swatches and a count. Nothing else."),
+ R("twelve","Colours she can choose from","i","12 fixed swatches","her","R","logic","No free picker, and no pure red, because red means a prohibition.")]);
+sec("time","Time together","⏱","Reading and watching together, pacing, quiet hours",[
+ R("allow","Daily time for reading and watching together","s","2 h","her","T","new","Decided: 2 h by default, adjustable. A raise is shown to the other guardian.",["Off","1 h","2 h","3 h"]),
+ R("pacing","Activity pacing by age","l","","her","E","exists","Parental controls, Pacing tab: games and jokes by age."),
+ R("quiet","Quiet hours on her device","s","Off","her","E","new","Games and shows rest; calls and messages still arrive.",["Off","7:30 pm–7 am","8 pm–7 am"]),
+ R("lastone","“Last one for today” cue","t",true,"her","E","new","A gentle line before time ends. No numbers.")]);
+sec("see","What she can see and play","👀","Visibility, favourites, coding, show-and-tell",[
+ R("vis","Home tiles, games, jokes and activities","l","","her","E","exists","Parental controls, Visibility tab (88 items)."),
+ R("rec","Recommended games row","t",true,"her","E","exists","Game favourites route and row."),
+ R("code","Coding activities (Path code, Pixel garden)","t",true,"her","E","new","Path code from age 5, Pixel garden from 8."),
+ R("showtell","Show-and-tell prompts (colour hunt)","t",true,"her","E","exists","“Show me” hub, parameterised prompts (§9.10.4).")]);
+sec("device","Her device","📱","PIN, devices, how her app looks",[
+ R("pin","Her PIN","l","","her","E","exists","Kiosk PIN verify."),
+ R("adddev","Add a device","l","","her","E","exists","Pairing code."),
+ R("paired","Paired devices","l","","her","E","exists","See and revoke."),
+ R("palette","How her app looks","s","Classic","her","E","exists","Theme picker: six palettes. Applies only with Apply.",["Classic","Calm modern","Warm grounded","Soft playful","Deep cozy","Bright bold"]),
+ R("dark","Light or dark","s","Light","her","E","exists","Same picker.",["Light","Dark"]),
+ R("vol","Loudest her sounds can be","s","Medium","her","E","new","",["Low","Medium","High"])]);
+sec("access","Reading and access","♿","Read-aloud, text, motion, language",[
+ R("tts","Read everything aloud","t",true,"her","E","logic","On by default under 8 (§8.8.5)."),
+ R("size","Text size","s","Medium","her","E","new","",["Small","Medium","Large","Largest"]),
+ R("dys","Dyslexia-friendly typeface","t",false,"her","E","new","§8.4: an optional face and spacing."),
+ R("motion","Reduce motion","t",false,"her","E","logic","Honours the motion vocabulary (§8.13)."),
+ R("caps","Captions on calls","t",true,"her","E","new",""),
+ R("lang","Language","s","English","her","E","logic","Bilingual layer exists (§8.4).",["English","Español"])]);
+sec("calls","Calls","📞","How calls start and end",[
+ R("cam","Camera when she answers","s","Ask","her","E","new","",["Ask","On","Off"]),
+ R("ritual","Closing ritual","t",true,"her","E","exists","Calls end the same way every time."),
+ R("sec","Call security","l","","fam","R","exists","Read-only explanation of relay-only and single-room tokens.")]);
+sec("notify","Notifications","🔔","What buzzes my phone",[
+ R("nmsg","Messages and calls","t",true,"me","O","new",""),
+ R("ncol","Her colour was picked","t",false,"me","O","new","Off by default. Not worth a buzz, and never summarised."),
+ R("nquiet","My quiet hours","s","Off","me","O","new","",["Off","10 pm–7 am"]),
+ R("nexp","14-day expiry reminder","t",true,"fam","E","exists","Preservation is the rule; this only reminds.")]);
+sec("family","Family and helpers","👪","Co-guardian, step-parent, sitters",[
+ R("co","Invite a co-guardian","l","","fam","E","exists","They see exactly what you see."),
+ R("step","Step-parent access","l","","fam","E","new","Scoped by the inviting guardian (§8.1)."),
+ R("trust","Trusted adults","l","","fam","E","new","Calls and messages only."),
+ R("sitter","Sitter link","l","","fam","E","new","Time-boxed, expires by itself.")]);
+sec("me","My app","🙋","My own look and sign-in",[
+ R("mylang","My language","s","English","me","O","logic","",["English","Español"]),
+ R("passkey","Passkeys and sign-in","l","","me","O","new","")]);
+sec("privacy","Privacy and records","🔒","What is kept, exported and deleted",[
+ R("exp","Expiry digest","l","","fam","E","exists",""),
+ R("court","Court export","l","","fam","E","exists",""),
+ R("yb","Year Book","l","","fam","E","exists",""),
+ R("keep","Keep everything","i","A standing rule","fam","R","logic","Preservation is the default, not a choice."),
+ R("p5","Never used for ads, selling or training","i","P5","fam","R","logic","A permanent ban, shown so it can be seen."),
+ R("del","Delete my account","l","","me","O","exists","")]);
+var RULE={E:"Either guardian",T:"Either; the other is told",O:"Only in my own app",R:"Read-only",B:"Both agree",L:"Unlocked by her age"};
+var SCOPE={her:"Her device",fam:"Family",me:"My app"};
+SECT.forEach(function(s){s.rows.forEach(function(r){G.set[r.id]=r.type==="m"?r.def.slice():r.def;});});
+
+/* foods and animals per colour. real = true for things that are that colour in life, false = storybook. */
+var INV={
+ sunny:{fruit:[["Banana","banana"],["Lemon","round"],["Pineapple","round"]],veg:[["Sweetcorn","longveg"],["Yellow pepper","round"]],animals:[["Duckling","bird",1],["Chick","bird",1],["Bee","round-critter",1]]},
+ tangerine:{fruit:[["Orange","round"],["Mango","round"],["Apricot","round"]],veg:[["Carrot","longveg"],["Pumpkin","round"],["Sweet potato","longveg"]],animals:[["Fox","fox",1],["Clownfish","fish",1],["Orange cat","fox",1]]},
+ coral:{fruit:[["Peach","round"],["Pink grapefruit","round"],["Guava","round"]],veg:[["Radish","round"],["Pink potato","longveg"]],animals:[["Piglet","bear",1],["Shrimp","fish",1],["Coral fish","fish",0]]},
+ bubblegum:{fruit:[["Dragon fruit","round"],["Pink apple","round",0]],veg:[["Beetroot","round"],["Radicchio","leafy"]],animals:[["Flamingo","bird",1],["Axolotl","bear",1],["Pink dolphin","fish",1]]},
+ grape:{fruit:[["Grapes","cluster"],["Plum","round"],["Fig","round"]],veg:[["Aubergine","longveg"],["Purple cabbage","leafy"],["Purple carrot","longveg"]],animals:[["Purple elephant","elephant",0],["Purple hedgehog","bear",0]]},
+ sea:{fruit:[["Blueberries","cluster"],["Blue plum","round"]],veg:[["Blue corn","longveg"],["Blue potato","longveg"]],animals:[["Whale","fish",1],["Blue tang","fish",1],["Blue jay","bird",1]]},
+ sky:{fruit:[["Blueberry","cluster"],["Blue raspberry","cluster",0]],veg:[["Blue cauliflower","leafy",0]],animals:[["Bluebird","bird",1],["Butterfly","bird",1],["Cloud bunny","bear",0]]},
+ mint:{fruit:[["Honeydew","round"],["Green grapes","cluster"],["Kiwi","round"]],veg:[["Cucumber","longveg"],["Celery","longveg"],["Peas","cluster"]],animals:[["Sea turtle","bear",1],["Budgie","bird",1]]},
+ grass:{fruit:[["Green apple","round"],["Pear","round"],["Lime","round"]],veg:[["Broccoli","leafy"],["Spinach","leafy"],["Cucumber","longveg"]],animals:[["Frog","frog",1],["Caterpillar","cluster",1],["Grasshopper","bird",1]]},
+ chocolate:{fruit:[["Coconut","round"],["Date","round"],["Chestnut","round"]],veg:[["Potato","longveg"],["Mushroom","round"]],animals:[["Bear cub","bear",1],["Otter","bear",1],["Hedgehog","bear",1]]},
+ storm:{fruit:[],veg:[["Oyster mushroom","round"],["Kohlrabi","round"]],animals:[["Elephant","elephant",1],["Mouse","bear",1],["Seal","fish",1]]},
+ midnight:{fruit:[["Blackberries","cluster"],["Black grapes","cluster"]],veg:[["Black beans","cluster"],["Aubergine","longveg"]],animals:[["Owl","bird",1],["Bat","bear",1],["Firefly","bird",1]]}};
+
+/* ================================================================== art == */
+function hx(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+function mix(h,t){var c=hx(h),k=t>0?255:0,a=Math.abs(t);return "#"+c.map(function(v){return ("0"+Math.round(v+(k-v)*a).toString(16)).slice(-2);}).join("");}
+function pal(h){return {main:h,dark:mix(h,-.38),light:mix(h,.5),leaf:"#5AA84A",black:"#22282b",white:"#ffffff",beak:"#F2A33A",blush:"#F6A5A9",ink:"#2b3a2f"};}
+var REC={
+ round:[{k:"c",x:50,y:58,r:32,f:"main"},{k:"e",x:38,y:46,rx:7,ry:11,f:"light",rot:-20,o:.55},{k:"l",d:"M50 27 Q50 16 57 11",s:"dark",w:4},{k:"e",x:63,y:20,rx:11,ry:6,f:"leaf",rot:-25}],
+ banana:[{k:"p",d:"M18 70 Q30 24 78 18 Q84 18 82 26 Q52 34 36 74 Q30 84 18 70Z",f:"main"},{k:"p",d:"M18 70 Q24 80 36 74 Q30 70 22 66Z",f:"dark"},{k:"p",d:"M78 18 Q84 18 82 26 L76 24Z",f:"dark"}],
+ cluster:[{k:"l",d:"M50 32 Q50 18 59 12",s:"dark",w:4},{k:"e",x:66,y:18,rx:11,ry:6,f:"leaf",rot:-20},{k:"c",x:34,y:44,r:12,f:"main"},{k:"c",x:50,y:44,r:12,f:"main"},{k:"c",x:66,y:44,r:12,f:"main"},{k:"c",x:42,y:60,r:12,f:"main"},{k:"c",x:58,y:60,r:12,f:"main"},{k:"c",x:50,y:76,r:12,f:"main"},{k:"c",x:30,y:40,r:3.5,f:"light",o:.7},{k:"c",x:46,y:40,r:3.5,f:"light",o:.7},{k:"c",x:62,y:40,r:3.5,f:"light",o:.7}],
+ longveg:[{k:"e",x:36,y:20,rx:6,ry:13,f:"leaf",rot:-30},{k:"e",x:48,y:14,rx:6,ry:14,f:"leaf",rot:0},{k:"e",x:60,y:20,rx:6,ry:13,f:"leaf",rot:30},{k:"e",x:50,y:60,rx:16,ry:34,f:"main",rot:18},{k:"l",d:"M42 52 L50 56",s:"dark",w:2.5},{k:"l",d:"M46 70 L54 74",s:"dark",w:2.5},{k:"e",x:42,y:48,rx:4,ry:11,f:"light",rot:18,o:.5}],
+ leafy:[{k:"p",d:"M42 64 L58 64 L61 92 Q50 96 39 92Z",f:"light"},{k:"c",x:32,y:48,r:17,f:"main"},{k:"c",x:50,y:36,r:19,f:"main"},{k:"c",x:68,y:48,r:17,f:"main"},{k:"c",x:44,y:56,r:14,f:"main"},{k:"c",x:58,y:56,r:14,f:"main"},{k:"c",x:46,y:32,r:3,f:"dark",o:.5},{k:"c",x:64,y:46,r:3,f:"dark",o:.5},{k:"c",x:34,y:46,r:3,f:"dark",o:.5}],
+ bear:{face:true,ears:"round"},fox:{face:true,ears:"pointy"},frog:{face:true,ears:"frog"},elephant:{face:true,ears:"elephant"},
+ bird:[{k:"p",d:"M30 88 L30 96 M52 88 L52 96",f:"none",s:"beak",w:3,line:1},{k:"e",x:48,y:66,rx:30,ry:24,f:"main"},{k:"c",x:64,y:38,r:19,f:"main"},{k:"p",d:"M80 36 L97 41 L80 47Z",f:"beak"},{k:"c",x:68,y:34,r:3.2,f:"black"},{k:"c",x:69,y:33,r:1,f:"white"},{k:"e",x:42,y:68,rx:15,ry:10,f:"dark",rot:-20,o:.55},{k:"p",d:"M62 20 Q58 10 66 8 Q64 15 70 19Z",f:"dark",o:.8}],
+ fish:[{k:"p",d:"M12 56 Q20 24 56 28 Q84 32 90 56 Q80 80 50 80 Q24 80 12 56Z",f:"main"},{k:"p",d:"M86 56 L99 38 L99 74Z",f:"dark"},{k:"e",x:46,y:66,rx:28,ry:10,f:"light",o:.7},{k:"c",x:30,y:48,r:4,f:"black"},{k:"c",x:31,y:47,r:1.3,f:"white"},{k:"l",d:"M44 28 Q44 16 36 12 M44 28 Q48 16 56 12",s:"light",w:3},{k:"l",d:"M58 52 Q66 56 62 66",s:"dark",w:2.5}]};
+REC["round-critter"]=[{k:"e",x:50,y:60,rx:30,ry:26,f:"main"},{k:"p",d:"M30 50 Q50 44 70 50 M28 62 Q50 56 72 62",f:"none",s:"black",w:6,line:1,o:.55},{k:"c",x:50,y:34,r:15,f:"main"},{k:"c",x:44,y:32,r:3,f:"black"},{k:"c",x:56,y:32,r:3,f:"black"},{k:"e",x:30,y:30,rx:10,ry:7,f:"white",rot:-30,o:.85},{k:"e",x:70,y:30,rx:10,ry:7,f:"white",rot:30,o:.85},{k:"l",d:"M44 20 Q40 10 36 8 M56 20 Q60 10 64 8",s:"black",w:2}];
+function critterPrims(kind){
+ var P=[],e=kind.ears;
+ if(e==="round"){P.push({k:"c",x:26,y:28,r:12,f:"main"},{k:"c",x:74,y:28,r:12,f:"main"},{k:"c",x:26,y:28,r:6,f:"light"},{k:"c",x:74,y:28,r:6,f:"light"});}
+ if(e==="pointy"){P.push({k:"p",d:"M22 44 L26 10 L46 28Z",f:"main"},{k:"p",d:"M78 44 L74 10 L54 28Z",f:"main"},{k:"p",d:"M28 36 L29 20 L38 29Z",f:"dark"},{k:"p",d:"M72 36 L71 20 L62 29Z",f:"dark"});}
+ if(e==="frog"){P.push({k:"c",x:32,y:30,r:13,f:"main"},{k:"c",x:68,y:30,r:13,f:"main"},{k:"c",x:32,y:30,r:8,f:"white"},{k:"c",x:68,y:30,r:8,f:"white"},{k:"c",x:33,y:31,r:4,f:"black"},{k:"c",x:67,y:31,r:4,f:"black"});}
+ if(e==="elephant"){P.push({k:"c",x:18,y:52,r:17,f:"main"},{k:"c",x:82,y:52,r:17,f:"main"},{k:"c",x:18,y:52,r:10,f:"light",o:.7},{k:"c",x:82,y:52,r:10,f:"light",o:.7});}
+ P.push({k:"c",x:50,y:56,r:30,f:"main"});
+ if(e==="elephant")P.push({k:"p",d:"M43 62 Q43 92 62 88 Q54 84 56 62Z",f:"dark",o:.9});
+ P.push({k:"e",x:50,y:66,rx:14,ry:10,f:"light",o:.7});
+ if(e!=="frog")P.push({k:"c",x:40,y:52,r:3.6,f:"black"},{k:"c",x:60,y:52,r:3.6,f:"black"},{k:"c",x:41,y:51,r:1.1,f:"white"},{k:"c",x:61,y:51,r:1.1,f:"white"});
+ if(e!=="elephant")P.push({k:"e",x:50,y:63,rx:6,ry:4.5,f:"dark"});
+ P.push({k:"l",d:"M44 71 Q50 76 56 71",s:"black",w:2.6},{k:"e",x:32,y:66,rx:6,ry:4,f:"blush",o:.6},{k:"e",x:68,y:66,rx:6,ry:4,f:"blush",o:.6});
+ return P;
+}
+function prims(key){var r=REC[key]||REC.round;return Array.isArray(r)?r:critterPrims(r);}
+function shapeStr(p,fill,extra){
+ var o=p.o!=null?' opacity="'+p.o+'"':"";
+ if(p.k==="l"||p.line){return '<path d="'+p.d+'" fill="none" stroke="'+(extra.stroke||fill)+'" stroke-width="'+(p.w||3)+'" stroke-linecap="round" stroke-linejoin="round"'+o+'/>';}
+ var at=(extra.attrs||"")+o;
+ if(p.k==="c")return '<circle cx="'+p.x+'" cy="'+p.y+'" r="'+p.r+'" fill="'+fill+'" '+at+'/>';
+ if(p.k==="e")return '<ellipse cx="'+p.x+'" cy="'+p.y+'" rx="'+p.rx+'" ry="'+p.ry+'"'+(p.rot?' transform="rotate('+p.rot+' '+p.x+' '+p.y+')"':"")+' fill="'+fill+'" '+at+'/>';
+ return '<path d="'+p.d+'" fill="'+fill+'" '+at+'/>';
+}
+function svgArt(key,hex,style,size,regions){
+ var P=prims(key),c=pal(hex),out="",sz=size||96;
+ function fillOf(p,i){
+  if(style==="line")return regions&&regions[i]?regions[i]:"#fff";
+  return c[p.f]||c.main;
+ }
+ var body="";
+ if(style==="sticker"){
+  body+='<g stroke="#fff" stroke-width="7" stroke-linejoin="round" fill="#fff">'+P.map(function(p){return p.k==="l"||p.line?"":shapeStr(p,"#fff",{attrs:'stroke="#fff" stroke-width="7" stroke-linejoin="round"'});}).join("")+'</g>';
+ }
+ P.forEach(function(p,i){
+  var f=fillOf(p,i),ex={};
+  if(style==="crayon")ex={attrs:'stroke="'+c.dark+'" stroke-width="2.2" stroke-linejoin="round"',stroke:p.s?c[p.s]:c.dark};
+  else if(style==="watercolour"){ex={attrs:'stroke="'+c.dark+'" stroke-opacity=".35" stroke-width="1.6"',stroke:p.s?c[p.s]:c.dark};if(p.o==null)p=Object.assign({},p,{o:.78});}
+  else if(style==="felt")ex={attrs:'stroke="'+c.light+'" stroke-width="1.6" stroke-dasharray="2.5 3.2" stroke-linecap="round"',stroke:p.s?c[p.s]:c.dark};
+  else if(style==="line")ex={attrs:'stroke="#26352b" stroke-width="2.6" stroke-linejoin="round" data-r="'+i+'" class="reg" style="cursor:pointer"',stroke:"#26352b"};
+  else ex={stroke:p.s?c[p.s]:c.dark};
+  if(style==="line"&&(p.k==="l"||p.line))ex={stroke:"#26352b"};
+  body+=shapeStr(p,f,ex);
+ });
+ if(style==="sticker")body+='<ellipse cx="38" cy="26" rx="14" ry="5" fill="#fff" opacity=".35" transform="rotate(-24 38 26)"/>';
+ var filt={paper:"shadow",sticker:"shadow",crayon:"crayon",watercolour:"wcol",felt:"felt"}[style];
+ return '<svg class="art" viewBox="0 0 100 100" width="'+sz+'" height="'+sz+'" role="img" aria-label="Drawing" xmlns="http://www.w3.org/2000/svg"><g'+(filt?' filter="url(#'+filt+')"':"")+'>'+body+'</g></svg>';
+}
+function pixelArt(key,hex,size){
+ var P=prims(key),c=pal(hex),N=36,cv=document.createElement("canvas");cv.width=N;cv.height=N;cv.className="art";cv.style.width=(size||96)+"px";cv.style.height=(size||96)+"px";cv.style.imageRendering="pixelated";
+ var x=cv.getContext("2d");x.scale(N/100,N/100);x.imageSmoothingEnabled=false;
+ P.forEach(function(p){
+  var col=c[p.f]||c.main;x.globalAlpha=p.o!=null?p.o:1;
+  if(p.k==="l"||p.line){x.strokeStyle=c[p.s]||c.dark;x.lineWidth=Math.max(5,(p.w||3)*1.8);x.lineCap="round";x.stroke(new Path2D(p.d));x.globalAlpha=1;return;}
+  x.fillStyle=col;
+  if(p.k==="c"){x.beginPath();x.arc(p.x,p.y,p.r,0,6.2832);x.fill();}
+  else if(p.k==="e"){x.beginPath();x.ellipse(p.x,p.y,p.rx,p.ry,(p.rot||0)*Math.PI/180,0,6.2832);x.fill();}
+  else x.fill(new Path2D(p.d));
+  x.globalAlpha=1;
+ });
+ return cv;
+}
+function art(key,hex,style,size){
+ if(style==="pixel")return pixelHTML(key,hex,size);
+ return svgArt(key,hex,style,size);
+}
+var PXQ=[];
+function pixelHTML(key,hex,size){var id="px"+PXQ.length;PXQ.push({id:id,key:key,hex:hex,size:size});return '<span data-px="'+id+'"></span>';}
+function mountPixels(root){
+ (root||document).querySelectorAll("[data-px]").forEach(function(s){
+  var q=PXQ.filter(function(z){return z.id===s.getAttribute("data-px");})[0];if(!q)return;
+  s.replaceWith(pixelArt(q.key,q.hex,q.size));
+ });
+}
+
+/* ================================================================ helpers == */
+function $(s,r){return (r||document).querySelector(s);}
+function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function P(){for(var i=0;i<PAL.length;i++)if(PAL[i].id===G.colour)return PAL[i];return PAL[5];}
+function styleAllowed(id){if(id==="pixel")return G.age>=8&&G.set.styles.indexOf("pixel")>-1||(id==="pixel"&&G.age>=8&&true);return G.set.styles.indexOf(id)>-1;}
+function allowedStyles(){return STYLES.filter(function(s){return s.id==="pixel"?G.age>=8:G.set.styles.indexOf(s.id)>-1;});}
+function curStyle(){var a=allowedStyles();for(var i=0;i<a.length;i++)if(a[i].id===G.style)return G.style;return a.length?a[0].id:"paper";}
+function today(){return "2026-11-07";}
+function setAppColour(){var p=P();document.documentElement.style.setProperty("--day",p.hex);$$(".scr").forEach(function(s){s.style.setProperty("--a-day",p.hex);s.style.setProperty("--a-day-ink",p.ink);});}
+function statusPill(s){return '<span class="st '+s+'">'+({exists:"exists today",logic:"engine built",new:"new"})[s]+'</span>';}
+function foodsFor(id){var o=INV[id]||INV.sea,out=[];
+ if(G.set.foods.indexOf("fruit")>-1)o.fruit.forEach(function(x){out.push({n:x[0],r:x[1],c:"Fruit",real:x[2]!==0});});
+ if(G.set.foods.indexOf("veg")>-1)o.veg.forEach(function(x){out.push({n:x[0],r:x[1],c:"Vegetable",real:x[2]!==0});});
+ if(G.set.foods.indexOf("animals")>-1)o.animals.forEach(function(x){out.push({n:x[0],r:x[1],c:"Animal",real:x[2]!==0});});
+ return out;}
+
+/* ============================================================== TAB 1: parent settings == */
+function gStatus(){return '<div class="sb"><span>7:42</span><span>● ● ▮</span></div>';}
+function gHub(){
+ var h=gStatus()+'<div class="appbar"><h4>Settings</h4></div>'+(G.set.showme?'<div class="stripe"></div>':"")+'<div class="body">';
+ h+='<div class="card-a" style="display:flex;gap:10px;align-items:center"><span class="ring">🫒</span><div><b>Ivy</b><div class="note-a">'+(G.set.showme?"Today her colour is "+esc(P().l)+".":"Her colour is hidden in your app.")+'</div></div></div>';
+ var groups=[["Ivy",["colour","time","see","device","access","calls"]],["Family",["notify","family"]],["Me",["me","privacy"]]];
+ groups.forEach(function(g){
+  h+='<div class="sub">'+g[0]+'</div>';
+  g[1].forEach(function(id){var s=SECT.filter(function(x){return x.id===id;})[0];
+   h+='<button class="tile" data-act="open" data-v="'+id+'"><span class="ic">'+s.icon+'</span><span><b>'+esc(s.title)+'</b><small>'+esc(s.summary)+'</small></span><span class="chev">›</span></button>';});
+ });
+ return h+'</div>';
+}
+function ctl(r){
+ var v=G.set[r.id],t=r.type,h="";
+ if(t==="t")h='<button class="sw-t" role="switch" aria-checked="'+(!!v)+'" aria-label="'+esc(r.label)+'" data-act="tog" data-v="'+r.id+'"></button>';
+ else if(t==="s")h='<div class="seg" role="group" aria-label="'+esc(r.label)+'">'+r.opts.map(function(o){return '<button data-act="seg" data-v="'+r.id+'|'+esc(o)+'" aria-pressed="'+(v===o)+'">'+esc(o)+'</button>';}).join("")+'</div>';
+ else if(t==="m"){var all=r.id==="styles"?["paper","sticker","crayon","watercolour","felt","line"]:["fruit","veg","animals"];
+  h='<div class="chips">'+all.map(function(o){var on=v.indexOf(o)>-1;return '<button class="chip'+(on?" on":"")+'" data-act="mul" data-v="'+r.id+'|'+o+'" aria-pressed="'+on+'">'+(on?"✓ ":"")+o+'</button>';}).join("")+(r.id==="styles"?'<span class="chip" style="opacity:.6">pixel · age 8+</span>':"")+'</div>';}
+ return h;
+}
+function gSection(id){
+ var s=SECT.filter(function(x){return x.id===id;})[0];
+ var h=gStatus()+'<div class="appbar"><button class="ib" data-act="gback" aria-label="Back">‹</button><h4>'+esc(s.title)+'</h4></div>'+(G.set.showme&&id==="colour"?'<div class="stripe"></div>':"")+'<div class="body"><div class="card-a">';
+ s.rows.forEach(function(r){
+  var line="";
+  if(r.type==="i")line='<div class="top"><b>'+esc(r.label)+'</b><span class="note-a">'+(r.id==="current"?esc(P().l):esc(r.def))+'</span></div>';
+  else if(r.type==="l")line='<div class="top"><b>'+esc(r.label)+'</b><span class="chev note-a">›</span></div>';
+  else if(r.type==="t")line='<div class="top"><b>'+esc(r.label)+'</b>'+ctl(r)+'</div>';
+  else line='<div><b>'+esc(r.label)+'</b></div>'+ctl(r);
+  h+='<div class="srow">'+line+'<div class="note-a">'+(r.note?esc(r.note)+" ":"")+'<span class="badge '+(r.status==="exists"?"":r.status)+'">'+({exists:"exists",logic:"engine",new:"new"})[r.status]+'</span><span class="badge">'+esc(RULE[r.rule])+'</span></div></div>';
+ });
+ return h+'</div></div>';
+}
+function renderSettings(){
+ var el=$("#p-settings");
+ el.innerHTML='<h2>Parent app: every setting</h2><p class="intro">The child shell has no settings surface at any depth (§8.1), so all of it lives here. Tap a section on the phone and use the controls: they change the other tabs too (turn off “Let her pick”, remove an art style, hide a food group).</p>'+
+ '<div class="two"><div class="stage"><div class="col"><div class="cap"><span class="tag lead">Guardian</span><b>Dad’s Settings</b></div><div class="devwrap"><div class="dev g"><div class="scr" id="gset"></div></div></div></div></div>'+
+ '<div class="stack"><div class="card"><h3>The whole catalogue</h3><p class="note-a" style="color:var(--muted)">Every row on the phone, in one table. <b>Exists today</b> means I found its screen or route in the repo. <b>Engine built</b> means the logic exists but I did not confirm a settings screen. <b>New</b> is proposed here.</p>'+
+ '<div class="filters" id="flt"></div><div class="tablewrap" style="max-height:560px;overflow:auto"><table><thead><tr><th>Section</th><th>Setting</th><th>Controls</th><th>Default</th><th>Where</th><th>Who changes it</th><th>Status</th></tr></thead><tbody id="cat"></tbody></table></div></div></div></div>';
+ renderG();renderCat();
+}
+var F={q:"",st:"all"};
+function renderCat(){
+ $("#flt").innerHTML='<input id="fq" type="search" placeholder="Search settings" aria-label="Search settings" value="'+esc(F.q)+'">'+["all","exists","logic","new"].map(function(s){return '<button class="btn" data-act="fst" data-v="'+s+'" aria-pressed="'+(F.st===s)+'">'+({all:"All",exists:"Exists",logic:"Engine built",new:"New"})[s]+'</button>';}).join("");
+ var rows="",n=0,tot=0;
+ SECT.forEach(function(s){s.rows.forEach(function(r){tot++;
+  if(F.st!=="all"&&r.status!==F.st)return;
+  if(F.q&&(s.title+" "+r.label+" "+r.note).toLowerCase().indexOf(F.q.toLowerCase())<0)return;n++;
+  var ct={t:"On / off",s:"Choose one",m:"Choose several",l:"Opens a screen",i:"Information"}[r.type];
+  var df=r.type==="t"?(r.def?"On":"Off"):r.type==="m"?r.def.join(", "):(r.def||"—");
+  rows+='<tr><td>'+esc(s.title)+'</td><td><b>'+esc(r.label)+'</b><div class="note-a" style="color:var(--muted);font-size:.8rem">'+esc(r.note)+'</div></td><td>'+ct+'</td><td>'+esc(df)+'</td><td>'+SCOPE[r.scope]+'</td><td>'+RULE[r.rule]+'</td><td>'+statusPill(r.status)+'</td></tr>';});});
+ $("#cat").innerHTML=rows||'<tr><td colspan="7">No settings match.</td></tr>';
+ var c=$("#cat").closest(".card"),old=$("#catcount");if(old)old.remove();
+ var p=document.createElement("p");p.id="catcount";p.className="note-a";p.style.color="var(--muted)";p.textContent=n+" of "+tot+" settings shown";c.insertBefore(p,$(".filters",c));
+}
+function renderG(){var g=$("#gset");if(!g)return;g.innerHTML=G.gnav==="hub"?gHub():gSection(G.gnav);setAppColour();}
+
+/* ============================================================== TAB 2: her colour (child) == */
+function childFrame(inner){return '<div class="dev '+(G.cform==="tab"?"f-tab":"f-phone")+'"><div class="scr child" id="cscr">'+inner+'</div></div>';}
+function pair(){var cur=P(),oth=null;for(var i=0;i<PAL.length;i++)if(PAL[i].id===G.pairOther)oth=PAL[i];if(!oth||oth.id===cur.id)oth=PAL[(PAL.indexOf(cur)+3)%12];return G.pairSide?[oth,cur]:[cur,oth];}
+function cHome(active){
+ var p=P(),ring=active?"":' style="border-color:#c9d1c8"',numStyle=active?'style="color:var(--a-day-ink)"':'style="color:#4a5a4d"';
+ var tint=active;
+ return '<div class="sb"><span>7:42</span><span>● ● ▮</span></div><div class="appbar"><span class="ring"'+ring+'>🫒</span><h4>Ivy’s home</h4></div>'+(tint?'<div class="stripe"></div>':"")+
+ '<div class="body" style="padding:10px 14px;gap:10px"><div class="card-a" style="text-align:center;padding:16px"><div class="note-a">sleeps until Dad’s house</div><div class="numeral" '+numStyle+'>3</div></div>'+
+ (G.cflow==="pre"&&G.set.pick?'<button class="tile" data-act="cstart" style="border-color:#c9d1c8"><span class="ic">🎨</span><span><b>Which do you like more today?</b><small>Tap to pick</small></span></button>':"")+
+ (active?'<button class="tile" data-act="cacts"><span class="ic" style="background:'+p.hex+'">'+"✨"+'</span><span><b>Today’s colour: '+esc(p.l)+'</b><small>Things that are '+esc(p.l)+'</small></span></button>':"")+
+ '<div class="tile" style="cursor:default"><span class="ic">🎲</span><span><b>Games</b><small>Play with Dad or on your own</small></span></div></div>';
+}
+function cPick(){
+ var pr=pair();
+ return '<div class="sb"><span>7:42</span><span>● ● ▮</span></div><div class="center"><div class="big">Which do you like more today?</div><div class="two-up">'+
+  pr.map(function(s){return '<button class="pick" style="background:'+s.hex+'" data-act="cchoose" data-v="'+s.id+'" aria-label="'+esc(s.l)+'">'+esc(s.l)+'</button>';}).join("")+'</div><div class="note-a">Tap the one you like. Keeping yours is just as easy.</div></div>';
+}
+function cDone2(){
+ var p=P();
+ return cHome(true).replace('<div class="card-a" style="text-align:center;padding:16px">','<div class="card-a" style="text-align:center;padding:16px;background:#fff">');
+}
+function renderColour(){
+ var el=$("#p-colour"),p=P();
+ var inner=G.cflow==="pre"?cHome(false):G.cflow==="mid"?cPick():cDone2();
+ var hist=G.hist.length?G.hist:[{colourId:G.colour,chosenAt:"2026-11-07T07:41:00Z",via:"daily"}];
+ var pr=pair();
+ var ap=applyDemo();
+ el.innerHTML='<h2>Her colour, in Ivy’s app</h2><p class="intro">This is play, not settings. It runs on the engine already built: one of the two is always her current colour, the side is random, and she can’t tell that keeping hers is “the boring choice”.</p>'+
+ '<div class="grp" style="margin-bottom:12px"><span class="lbl">Moment</span>'+[["pre","Before"],["mid","During"],["post","After"]].map(function(x){return '<button class="btn" data-act="cflow" data-v="'+x[0]+'" aria-pressed="'+(G.cflow===x[0])+'">'+x[1]+'</button>';}).join("")+
+ '<span class="lbl" style="margin-left:10px">Device</span><button class="btn" data-act="cform" data-v="phone" aria-pressed="'+(G.cform==="phone")+'">Phone</button><button class="btn" data-act="cform" data-v="tab" aria-pressed="'+(G.cform==="tab")+'">Tablet</button></div>'+
+ (G.set.pick?"":'<div class="note">“Let her pick a colour of the day” is off in the parent app, so the question never appears and her colour stays as it is.</div>')+
+ '<div class="two"><div class="stage"><div class="col"><div class="cap"><span class="tag">Follows</span><b>Ivy’s device</b><span class="tag">'+({pre:"Before",mid:"During",post:"After"})[G.cflow]+'</span></div><div class="devwrap">'+childFrame(inner)+'</div></div>'+
+ '<div class="col"><div class="cap"><span class="tag lead">Reads</span><b>What Dad sees</b></div><div class="devwrap"><div class="dev g"><div class="scr" id="gview"></div></div></div></div></div>'+
+ '<div class="stack"><div class="card"><h3>What the engine just did</h3><pre class="real" id="eng"></pre></div>'+
+ '<div class="card"><h3>The placement budget</h3><p class="note-a" style="color:var(--muted)">Her colour may land in at most 3 of the 8 allowed places on a screen, and never on anything that carries meaning. Try to break it.</p><div class="chips" id="plc" style="gap:6px;display:flex;flex-wrap:wrap"></div><pre class="real" id="plcout"></pre></div></div></div>';
+ $("#eng").textContent=JSON.stringify({dailyPair:pr.map(function(s){return s.id;}),chose:G.colour,history:hist.slice(-1)[0],parentView:G.set.showme||true?"Today her colour is "+p.l+".":null,auditColourPayload:"ok (no mood, trend, streak, score, flag...)"},null,1);
+ renderPlace();renderGView();mountPixels(el);setAppColour();
+}
+var PL={sel:["accent_stripe","avatar_ring","sleeps_number"]};
+function applyDemo(){return null;}
+function renderPlace(){
+ var all=ALLOWED.concat(FORBIDDEN.slice(0,6));
+ $("#plc").innerHTML=all.map(function(a){var on=PL.sel.indexOf(a)>-1;return '<button class="btn" data-act="plc" data-v="'+a+'" aria-pressed="'+on+'" style="min-height:34px;padding:7px 9px;font-size:.78rem">'+a+'</button>';}).join("");
+ var bad=PL.sel.filter(function(x){return FORBIDDEN.indexOf(x)>-1;})[0],valid=PL.sel.filter(function(x){return ALLOWED.indexOf(x)>-1;});
+ var out=bad?{ok:false,reason:"forbidden_placement",offending:bad}:{ok:true,placements:valid.slice(0,3),dropped:valid.slice(3)};
+ $("#plcout").textContent="applyColour('"+G.colour+"', "+JSON.stringify(PL.sel)+")\n"+JSON.stringify(out,null,1);
+}
+function renderGView(){
+ var g=$("#gview");if(!g)return;var p=P();
+ g.innerHTML=gStatus()+'<div class="appbar"><h4>Ivy</h4></div>'+(G.set.showme?'<div class="stripe"></div>':"")+'<div class="body"><div class="card-a" style="display:flex;gap:10px;align-items:center"><span class="ring"'+(G.set.showme?"":' style="border-color:#c9d1c8"')+'>🫒</span><div><b>Ivy</b><div class="note-a" id="gline">'+(G.set.showme?(G.cflow==="post"?"Today her colour is "+esc(p.l)+".":"Her colour is "+esc(p.l)+"."):"Her colour is hidden in your app.")+'</div></div></div>'+
+  '<div class="card-a"><b>What this never says</b><div class="note-a">No mood, no trend, no “darker this week”. If you wonder, you can ask her.</div></div>'+
+  '<div class="sub">Year Book</div><div class="card-a"><div class="chips">'+PAL.map(function(s){return '<span title="'+esc(s.l)+'" style="width:22px;height:22px;border-radius:50%;background:'+s.hex+';opacity:'+(s.id===G.colour?1:.35)+'"></span>';}).join("")+'</div><div class="note-a" style="margin-top:6px">Twelve swatches and a count. That is all.</div></div></div>';
+ setAppColour();
+}
+
+/* ============================================================== TAB 3: sync == */
+var SY={a:{name:"Ivy’s tablet",on:true,col:"sea",seen:null},b:{name:"Ivy’s Fold",on:true,col:"sea",seen:null},dad:{col:"sea"},mom:{col:"sea"},log:[],ent:[],t:0};
+function syInit(){SY.ent=[{id:"e0",colourId:G.colour,at:0,dev:"a"}];SY.a.col=SY.b.col=SY.dad.col=SY.mom.col=G.colour;SY.t=0;SY.log=["Start: all devices show "+P().l+"."];SY.a.on=SY.b.on=true;SY.a.has=[SY.ent[0].id];SY.b.has=[SY.ent[0].id];SY.dad.has=[SY.ent[0].id];SY.mom.has=[SY.ent[0].id];}
+function syCur(ids){var best=null;SY.ent.forEach(function(e){if(ids.indexOf(e.id)>-1&&(!best||e.at>best.at))best=e;});return best;}
+function syPickedToday(ids){return SY.ent.some(function(e){return ids.indexOf(e.id)>-1&&e.id!=="e0";});}
+function syMerge(){
+ var on=[];if(SY.a.on)on.push("a");if(SY.b.on)on.push("b");
+ var know={};["a","b","dad","mom"].forEach(function(k){know[k]=SY[k].has;});
+ var union=[];function add(l){l.forEach(function(x){if(union.indexOf(x)<0)union.push(x);});}
+ if(SY.a.on&&SY.b.on&&G.set.alldev){add(SY.a.has);add(SY.b.has);SY.a.has=union.slice();SY.b.has=union.slice();}
+ var anyOn=SY.a.on||SY.b.on;
+ var srcUnion=[];
+ ["a","b"].forEach(function(k){if(SY[k].on)SY[k].has.forEach(function(x){if(srcUnion.indexOf(x)<0)srcUnion.push(x);});});
+ if(anyOn){["dad","mom"].forEach(function(k){if(k==="mom"&&!G.set.share){return;}srcUnion.forEach(function(x){if(SY[k].has.indexOf(x)<0)SY[k].has.push(x);});});}
+ ["a","b","dad","mom"].forEach(function(k){var c=syCur(SY[k].has);if(c)SY[k].col=c.colourId;});
+}
+function syPick(dev,colour){
+ var d=SY[dev];
+ if(!G.set.pick){SY.log.unshift(d.name+": the daily question is switched off in the parent app.");return;}
+ if(syPickedToday(d.has)){SY.log.unshift(d.name+": already picked today, so the question isn’t shown.");return;}
+ SY.t++;var e={id:"e"+SY.t,colourId:colour,at:SY.t,dev:dev};SY.ent.push(e);d.has.push(e.id);
+ SY.log.unshift(d.name+" picked "+colourLabel(colour)+(d.on?".":" while offline (kept on the device)."));
+ syMerge();
+}
+function colourLabel(id){return PAL.filter(function(p){return p.id===id;})[0].l;}
+function renderSync(){
+ var el=$("#p-sync"),p=P(),others=PAL.filter(function(x){return x.id!==p.id;}),o1=others[2],o2=others[6];
+ function node(k,title,note,extra){var n=SY[k],lab=colourLabel(n.col),off=(k==="a"||k==="b")&&!n.on;
+  return '<div class="node'+(off?" off":"")+'"><b>'+title+'</b><div class="big2"><span class="dot" style="background:'+PAL.filter(function(x){return x.id===n.col;})[0].hex+'"></span>'+esc(lab)+'</div><div class="note-a" style="color:var(--muted)">'+note+'</div>'+(extra||"")+'</div>';}
+ el.innerHTML='<h2>Syncing the colour</h2><p class="intro">One small fact travels: <code>{ childId, date, colourId, at, via }</code>. It goes to her other devices and, if the guardians keep these on, to both homes. Try picking on one device while the other is offline.</p>'+
+ '<div class="two"><div class="stack">'+
+ '<div class="card"><h3>The guardian’s choices</h3><div id="sychoices"></div></div>'+
+ '<div class="card"><h3>What can and cannot cross</h3><pre class="real">sent    { childId, date, colourId, at, via }\nrefused mood · sentiment · feeling · emotion · trend\n        darker · lighter · concern · flag · alert\n        score · streak · stability · volatility\n(auditColourPayload rejects any of these anywhere in the payload)</pre></div></div>'+
+ '<div class="stack"><div class="card"><h3>Try it</h3><div class="nodes">'+
+ node("a","Ivy’s tablet",SY.a.on?"online":"offline")+node("b","Ivy’s Fold",SY.b.on?"online":"offline")+node("dad","Dad’s app",G.set.showme?"shown in his app":"hidden in his app")+node("mom","Mom’s app",G.set.share?"shared":"not shared")+'</div>'+
+ '<div class="grp" style="margin-top:12px"><button class="btn" data-act="sypick" data-v="a|'+o1.id+'">Pick '+esc(o1.l)+' on the tablet</button><button class="btn" data-act="sypick" data-v="b|'+o2.id+'">Pick '+esc(o2.l)+' on the Fold</button><button class="btn" data-act="syoff" data-v="a">'+(SY.a.on?"Tablet goes offline":"Tablet comes online")+'</button><button class="btn" data-act="syoff" data-v="b">'+(SY.b.on?"Fold goes offline":"Fold comes online")+'</button><button class="btn ghost" data-act="syreset">Reset</button></div>'+
+ '<pre class="real" id="sylog">'+esc(SY.log.slice(0,7).join("\n"))+'</pre></div>'+
+ '<div class="card"><h3>The rules that make it agree</h3><ul style="margin:.3em 0 0;padding-left:1.1em"><li><b>One question a day.</b> Once any device has her answer, the others stop asking.</li><li><b>Latest answer wins.</b> If two offline devices both answered, the later one is her colour once they meet.</li><li><b>Nothing is lost.</b> Every answer stays in her history for the Year Book.</li><li><b>Her devices always agree.</b> The guardian toggles only change what a guardian’s own app shows.</li></ul></div></div></div>';
+ var ch=[["pick","Let her pick a colour of the day","Off: no daily question; her colour stays."],["alldev","Same colour on all her devices","Off: each device keeps its own."],["showme","Show her colour in my app","Only a thin stripe and her ring."],["share","Share with her other home","Hides it in your app only."]];
+ $("#sychoices").innerHTML=ch.map(function(c){return '<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule)"><div><b>'+c[1]+'</b><div class="note-a" style="color:var(--muted)">'+c[2]+'</div></div><button class="sw-t" style="background:'+(G.set[c[0]]?"var(--accent)":"#aab3a9")+'" role="switch" aria-checked="'+(!!G.set[c[0]])+'" aria-label="'+c[1]+'" data-act="tog2" data-v="'+c[0]+'"></button></div>';}).join("");
+ $$(".sw-t",el).forEach(function(b){b.style.cssText+=";position:relative;width:48px;height:28px;border-radius:99px;border:0;cursor:pointer;flex:none";});
+}
+
+/* ============================================================== TAB 4: art and foods == */
+function renderArt(){
+ var el=$("#p-art"),p=P(),f=foodsFor(G.colour),al=allowedStyles(),cs=curStyle();
+ var gal="";
+ var keyItem=G.artItem||"fox";
+ var items=[["Duckling","bird"],["Fox","fox"],["Frog","frog"],["Whale","fish"],["Elephant","elephant"],["Bear cub","bear"],["Apple","round"],["Banana","banana"],["Grapes","cluster"],["Carrot","longveg"],["Broccoli","leafy"]];
+ el.innerHTML='<h2>Art, foods and animals in today’s colour</h2><p class="intro">Every picture takes today’s colour as its main tone and derives its shadows and highlights from it, so a purple carrot and a blue whale are drawn the same way. The style comes from what the guardian allows and what suits her age.</p>'+
+ '<div class="card"><h3>One picture, seven styles</h3><div class="grp" style="margin:8px 0">'+items.map(function(i){return '<button class="btn" data-act="artitem" data-v="'+i[1]+'" aria-pressed="'+(keyItem===i[1])+'">'+i[0]+'</button>';}).join("")+'</div>'+
+ '<div class="grid-art">'+STYLES.map(function(s){var ok=s.id==="pixel"?G.age>=8:G.set.styles.indexOf(s.id)>-1;
+  return '<div class="fig" style="'+(ok?"":"opacity:.45")+'"><div class="art-card">'+art(keyItem,p.hex,s.id,96)+'</div><b>'+s.n+'</b><small>Ages '+s.ages+'</small><small>'+(ok?"Allowed":s.id==="pixel"?"Locked until 8":"Turned off by guardian")+'</small></div>';}).join("")+'</div>'+
+ '<div class="note-a" style="color:var(--muted);margin-top:8px">'+STYLES.filter(function(s){return s.id===cs;})[0].d+' She is currently using <b>'+STYLES.filter(function(s){return s.id===cs;})[0].n+'</b>.</div></div>'+
+ '<div class="card" style="margin-top:14px"><h3>Things that are '+esc(p.l)+'</h3>'+(f.length?'<div class="grid-art">'+f.map(function(x){return '<div class="fig"><div class="art-card">'+art(x.r,p.hex,cs,84)+'</div><b>'+esc(x.n)+'</b><small>'+x.c+'</small><span class="real-tag'+(x.real?"":" story")+'">'+(x.real?"real":"storybook")+'</span></div>';}).join("")+'</div>':'<p class="note">Fruit, vegetables and animals are all switched off in the parent app.</p>')+
+ ((INV[G.colour]&&!INV[G.colour].fruit.length)?'<p class="note-a" style="color:var(--muted)">Few fruits are '+esc(p.l)+'. That is fine: some colours lean on animals, and the activities say so out loud.</p>':"")+'</div>'+
+ '<div class="card" style="margin-top:14px"><h3>All twelve colours</h3><div class="tablewrap"><table style="min-width:640px"><thead><tr><th>Colour</th><th>Fruit</th><th>Vegetables</th><th>Animals</th></tr></thead><tbody>'+PAL.map(function(c){var o=INV[c.id];function nm(l){return l.map(function(x){return esc(x[0])+(x[2]===0?" (storybook)":"");}).join(", ")||"—";}return '<tr><td><span class="today"><i style="background:'+c.hex+'"></i>'+esc(c.l)+'</span></td><td>'+nm(o.fruit)+'</td><td>'+nm(o.veg)+'</td><td>'+nm(o.animals)+'</td></tr>';}).join("")+'</tbody></table></div>'+
+ '<p class="note-a" style="color:var(--muted)">“Storybook” means it is not that colour in real life, and the child app says so (“a pretend purple elephant”). Real and pretend are never mixed up.</p></div>';
+ mountPixels(el);
+}
+
+/* ============================================================== TAB 5: activities == */
+var ACTS=[
+ {n:"Colour sort",t:"Learn",a:"3–7",pre:"A tile on her home, tinted with today’s colour (one placement). Tap and a voice says “Let’s find things that are sea blue.”",mid:"Nine things appear. She taps one, then a basket: fruit, vegetables or animals. Right: it hops in. Not yet: it wobbles back, no buzzer, no red. After a pause the right basket glows softly. “All done” is always there.",post:"Her basket becomes a picture in her gallery. Dad sees one line: “Ivy sorted fruit, vegetables and animals.” No score, nothing to finish."},
+ {n:"Path code",t:"Code",a:"5–9",pre:"“Help the fox get to the carrot.” Today’s colour is the path. A short demo shows an arrow moving the fox once.",mid:"She builds a row of arrow blocks and presses Run. The fox follows it step by step. A rock gently stops it, and the blocks stay so she can change one. From 8 there is a repeat block.",post:"The fox eats the carrot and does a small dance. Her program is saved as a picture of the arrows. Dad sees “Ivy wrote a 4-step program.”"},
+ {n:"Colour critter",t:"Design",a:"3–10",pre:"She picks an animal from today’s list and a style from the ones her guardian allows.",mid:"A line drawing. Tap a part to fill it with today’s colour, a lighter tint or a darker tint. Undo is one tap. Nothing can go wrong.",post:"Saved to her gallery in the style she used. “Show Dad” sends it through the existing show-me flow, with a frame in her colour."},
+ {n:"Colour hunt",t:"Show and tell",a:"4–10",pre:"A prompt built from today’s colour: “Can you show Dad something sea blue?”",mid:"She finds something at her end and shows it with the existing show-me capture. No timer, no right answer.",post:"It arrives in Dad’s “Show me”, with a sea-blue frame. The collection has a count but no total: “You have shown me 23”, never “23 of 100”."},
+ {n:"Pixel garden",t:"Code",a:"8–12",pre:"An empty 8 by 8 garden and today’s colour in three tints. Appears only from age 8 and only if coding is on.",mid:"Tap squares to plant. A mirror switch copies each tap across, which teaches symmetry. A repeat stamp copies a pattern along a row.",post:"The picture is saved in pixel style. Dad sees “Ivy made a pixel picture.”"},
+ {n:"Pattern train",t:"Maths",a:"3–6",pre:"A little train of coloured fruit cars with a gap at the end.",mid:"She picks the next car to continue the pattern: sun, moon, sun, … Wrong picks roll back softly.",post:"The train is added to a collection tile in her colour. There is no total and no streak."},
+ {n:"Colour story",t:"Read together",a:"3–8",pre:"Dad picks “The sea-blue whale” from the library. This is the Read together flow, with a story starring today’s colour.",mid:"Pages turn on both devices. The whale and the water are drawn in the style she chose.",post:"The book goes on her shelf. Dad sees it in “The book”. Nothing else is recorded."}
+];
+function renderActs(){
+ var el=$("#p-acts"),p=P(),cs=curStyle();
+ var vis=ACTS.filter(function(a){var lo=+a.a.split("–")[0],hi=+a.a.split("–")[1];if((a.n==="Path code"||a.n==="Pixel garden")&&!G.set.code)return false;return G.age>=lo&&G.age<=hi;});
+ el.innerHTML='<h2>Activities before, during and after</h2><p class="intro">Seven activities use the colour of the day. Each shows its before, during and after. Change Ivy’s age at the top and the list changes; turn off coding in the parent app and the two coding ones go away. Four are playable below.</p>'+
+ '<div class="note-a" style="color:var(--muted)">For age <b>'+G.age+'</b> with her guardian’s settings, she sees: <b>'+(vis.map(function(a){return a.n;}).join(", ")||"nothing yet")+'</b>.</div>'+
+ '<div class="boards" style="margin-top:12px">'+ACTS.map(function(a){var on=vis.indexOf(a)>-1;return '<article class="board" style="'+(on?"":"opacity:.45")+'"><header><h3>'+a.n+'</h3><span class="tag">'+a.t+'</span><span class="tag">Ages '+a.a+'</span>'+(on?"":'<span class="tag">hidden now</span>')+'</header><div class="phases"><div class="ph pre"><b>Before</b>'+esc(a.pre)+'</div><div class="ph mid"><b>During</b>'+esc(a.mid)+'</div><div class="ph post"><b>After</b>'+esc(a.post)+'</div></div></article>';}).join("")+'</div>'+
+ '<h2 style="margin-top:28px">Play them</h2><div class="two" style="margin-top:12px"><div class="play" id="g-sort"></div><div class="play" id="g-path"></div><div class="play" id="g-crit"></div><div class="play" id="g-pix"></div></div>';
+ initSort();initPath();initCrit();initPix();mountPixels(el);
+}
+/* -- sort -- */
+var SORT={};
+function initSort(){
+ var p=P(),f=foodsFor(G.colour);
+ var pool=f.slice(0,9);
+ SORT={items:pool.map(function(x,i){return Object.assign({id:i,placed:null,back:false},x);}),sel:null,msg:"Tap a picture, then a basket.",hint:false};
+ drawSort();
+}
+function cat(x){return x.c==="Animal"?"Animals":(x.c==="Fruit"?"Fruit":"Vegetables");}
+function drawSort(){
+ var el=$("#g-sort"),p=P(),cs=curStyle(),bs=["Fruit","Vegetables","Animals"];
+ if(!SORT.items.length){el.innerHTML='<div class="hd"><h3>Colour sort</h3></div><div class="say">Everything for this colour is switched off in the parent app.</div>';return;}
+ var left=SORT.items.filter(function(x){return x.placed===null;}).length;
+ el.innerHTML='<div class="hd"><h3>Colour sort</h3><button class="pbtn alt" data-act="sortreset">Start again</button></div><div class="say" id="smsg">'+esc(SORT.msg)+'</div>'+
+ '<div class="items">'+SORT.items.filter(function(x){return x.placed===null;}).map(function(x){return '<button class="itm'+(x.back?" back":"")+'" data-act="sortpick" data-v="'+x.id+'" aria-pressed="'+(SORT.sel===x.id)+'" aria-label="'+esc(x.n)+'">'+art(x.r,p.hex,cs,64)+'</button>';}).join("")+'</div>'+
+ '<div class="baskets">'+bs.map(function(b){var glow=SORT.hint&&SORT.sel!==null&&cat(SORT.items[SORT.sel])===b;return '<button class="basket'+(glow?" glow":"")+'" data-act="sortput" data-v="'+b+'">'+b+'<div class="in">'+SORT.items.filter(function(x){return x.placed===b;}).map(function(x){return art(x.r,p.hex,cs,34);}).join("")+'</div></button>';}).join("")+'</div>'+
+ (left===0?'<div class="say"><b>All sorted.</b> Saved to your gallery as “Today’s basket”. Dad sees: “Ivy sorted fruit, vegetables and animals.”</div>':"");
+ SORT.items.forEach(function(x){x.back=false;});mountPixels(el);
+}
+/* -- path -- */
+var PATH={};
+function initPath(){
+ PATH={lvl:0,prog:[],pos:[0,0],msg:"Add arrows, then press Run.",running:false};
+ PATH.levels=[{size:4,start:[0,0],goal:[2,1],rocks:[]},{size:4,start:[0,0],goal:[3,2],rocks:[[1,0],[2,2]]}];
+ drawPath();
+}
+function drawPath(){
+ var el=$("#g-path"),p=P(),L=PATH.levels[PATH.lvl],f=foodsFor(G.colour),critter=(f.filter(function(x){return x.c==="Animal";})[0]||{r:"fox",n:"Fox"}),food=(f.filter(function(x){return x.c!=="Animal";})[0]||{r:"round",n:"Apple"});
+ var h='<div class="hd"><h3>Path code</h3><span class="chip">Level '+(PATH.lvl+1)+'</span></div><div class="say" id="pmsg">'+esc(PATH.msg)+'</div><div class="gridp" style="grid-template-columns:repeat('+L.size+',54px)">';
+ for(var y=0;y<L.size;y++)for(var x=0;x<L.size;x++){
+  var rock=L.rocks.some(function(r){return r[0]===x&&r[1]===y;}),isG=L.goal[0]===x&&L.goal[1]===y,isP=PATH.pos[0]===x&&PATH.pos[1]===y;
+  h+='<div class="cell'+(rock?" rock":"")+'">'+(rock?"🪨":isP?art(critter.r,p.hex,curStyle()==="pixel"?"paper":curStyle(),42):isG?art(food.r,p.hex,curStyle()==="pixel"?"paper":curStyle(),40):"")+'</div>';
+ }
+ h+='</div><div class="prog" id="pprog">'+(PATH.prog.length?PATH.prog.map(function(b,i){return '<button class="blk'+(b.t==="rep"?" rep":"")+'" data-act="pdel" data-v="'+i+'" aria-label="Remove block '+(i+1)+'">'+b.l+'</button>';}).join(""):'<span class="note-a">Your program goes here</span>')+'</div>'+
+ '<div class="chips" style="display:flex;gap:6px;flex-wrap:wrap">'+[["↑","u"],["↓","d"],["←","l"],["→","r"]].map(function(a){return '<button class="blk" data-act="padd" data-v="'+a[1]+'" aria-label="Add '+a[1]+'">'+a[0]+'</button>';}).join("")+(G.age>=8?'<button class="blk rep" data-act="prep" aria-label="Repeat the last block twice">repeat ×2</button>':"")+'<button class="blk run" data-act="prun" aria-label="Run">▶</button><button class="blk" data-act="pclear" aria-label="Clear">✕</button></div>'+(G.age>=8?"":'<div class="note-a">The repeat block unlocks at 8.</div>');
+ el.innerHTML=h;mountPixels(el);
+}
+/* -- critter colouring -- */
+var CR={};
+function initCrit(){var f=foodsFor(G.colour);var an=f.filter(function(x){return x.c==="Animal";})[0]||{r:"fox",n:"Fox"};CR={r:an.r,n:an.n,reg:{},tint:0,saved:false};drawCrit();}
+function drawCrit(){
+ var el=$("#g-crit"),p=P(),tints=[p.hex,mix(p.hex,.5),mix(p.hex,-.35),"#ffffff"];
+ var count=Object.keys(CR.reg).length;
+ el.innerHTML='<div class="hd"><h3>Colour critter</h3><button class="pbtn alt" data-act="critclear">Clear</button></div><div class="say">Tap a part, then pick a colour. Today’s colour and two tints.</div><div style="display:grid;place-items:center;background:#fff;border-radius:14px;padding:6px" id="critsvg">'+svgArt(CR.r,p.hex,"line",200,CR.reg)+'</div>'+
+ '<div class="chips" style="display:flex;gap:8px;justify-content:center">'+tints.map(function(t,i){return '<button class="blk" style="background:'+t+';box-shadow:inset 0 0 0 '+(CR.tint===i?4:1)+'px '+(CR.tint===i?"#1d2b1f":"#c9d1c8")+'" data-act="crtint" data-v="'+i+'" aria-label="Colour '+(i+1)+'"></button>';}).join("")+'</div>'+
+ '<button class="pbtn" data-act="crsave">Save to my gallery</button>'+(CR.saved?'<div class="say"><b>Saved.</b> “'+esc(CR.n)+'” in '+esc(STYLES.filter(function(s){return s.id===curStyle();})[0].n.toLowerCase())+' style. You can show Dad if you like.</div>':"");
+ CR.tints=tints;
+}
+/* -- pixel garden -- */
+var PX={};
+function initPix(){PX={cells:{},tint:0,mirror:false};drawPix();}
+function drawPix(){
+ var el=$("#g-pix"),p=P(),tints=[p.hex,mix(p.hex,.5),mix(p.hex,-.35)];
+ if(G.age<8||!G.set.code){el.innerHTML='<div class="hd"><h3>Pixel garden</h3></div><div class="say">'+(G.set.code?"Pixel garden unlocks at age 8. Change Ivy’s age at the top to try it.":"Coding activities are switched off in the parent app.")+'</div>';return;}
+ var h='<div class="hd"><h3>Pixel garden</h3><button class="pbtn alt" data-act="pxclear">Clear</button></div><div class="pix">';
+ for(var i=0;i<64;i++)h+='<button class="px" data-act="pxset" data-v="'+i+'" style="background:'+(PX.cells[i]!=null?tints[PX.cells[i]]:"#fff")+'" aria-label="Square '+(i+1)+'"></button>';
+ h+='</div><div class="chips" style="display:flex;gap:8px;justify-content:center;align-items:center">'+tints.map(function(t,i){return '<button class="blk" style="background:'+t+';box-shadow:inset 0 0 0 '+(PX.tint===i?4:1)+'px '+(PX.tint===i?"#1d2b1f":"#c9d1c8")+'" data-act="pxtint" data-v="'+i+'" aria-label="Colour '+(i+1)+'"></button>';}).join("")+'<button class="pbtn alt" data-act="pxmir" aria-pressed="'+PX.mirror+'">Mirror '+(PX.mirror?"on":"off")+'</button></div><div class="note-a">Mirror copies every tap to the other side. That is symmetry.</div>';
+ el.innerHTML=h;
+}
+
+/* ============================================================== TAB 6: rules == */
+function renderRules(){
+ $("#p-rules").innerHTML='<h2>Rules this design keeps</h2><p class="intro">Each of these already exists in MASTERFILE. They are why some things on these screens are missing on purpose.</p>'+
+ '<div class="never"><div class="card"><h3>Her colour is a fact, not a mood (§8.6.4)</h3><ul><li>The guardian is told what she picked, never what it might mean.</li><li>No mood, trend, “darker this week”, flag or concern, anywhere in a payload. The audit refuses them.</li></ul></div>'+
+ '<div class="card"><h3>No settings in the child app (§8.1)</h3><ul><li>Everything configurable is in the guardian app.</li><li>Her choices are play: the two-up, the style she colours in, favourites. A guardian can switch any of them off.</li></ul></div>'+
+ '<div class="card"><h3>Her colour never carries meaning (§8.6.2)</h3><ul><li>At most 3 of 8 allowed places per screen.</li><li>Never on a warning, an error, a band, a medication block, body text, a background or a surface.</li><li>No pure red among the twelve.</li></ul></div>'+
+ '<div class="card"><h3>No scores, streaks or totals (P2, §9.10.5)</h3><ul><li>Collections show a count and no total.</li><li>Nothing says “you missed a day” or “3 of 12 colours”.</li><li>Activities have no failing and no timers.</li></ul></div>'+
+ '<div class="card"><h3>Her data stays hers (P5, §9.10.3)</h3><ul><li>Favourites are light interests: no ranking, fade after 120 days, never shown to her as “you used to like…”.</li><li>Never used for ads, selling or training.</li></ul></div>'+
+ '<div class="card"><h3>It grows up with her (§21)</h3><ul><li>Pixel and the repeat block unlock at 8.</li><li>Art styles lean younger or older by age.</li><li>From the ladder’s rungs on, more of this becomes hers.</li></ul></div></div>'+
+ '<h2 style="margin-top:26px">Open choices</h2><div class="card"><ul style="margin:.2em 0 0;padding-left:1.1em"><li><b>Does the guardian’s own app ever take her colour?</b> Here it only gets a stripe and a ring. A fuller theme would put her colour on a surface, which §8.6.2 forbids for hers.</li><li><b>A guardian-chosen “colour day”.</b> A treat both guardians agree on. Not shown here because it overrides her choice.</li><li><b>Real artwork.</b> The seven styles here are drawn in code to show the idea. Final art would be commissioned.</li><li><b>Education claims.</b> The activities teach sorting, patterns and sequencing. Naming specific curriculum standards needs checking against the real standards first.</li><li><b>Read-aloud of food and animal names</b> in both languages needs a translation pass.</li></ul></div>';
+}
+
+/* ================================================================ chrome == */
+var TABS=[["settings","Parent settings"],["colour","Her colour"],["sync","Syncing"],["art","Art and foods"],["acts","Activities"],["rules","Rules"]];
+function renderChrome(){
+ $("#swrow").innerHTML=PAL.map(function(c){return '<button style="background:'+c.hex+'" data-act="col" data-v="'+c.id+'" aria-pressed="'+(G.colour===c.id)+'" aria-label="'+esc(c.l)+'" title="'+esc(c.l)+'"></button>';}).join("");
+ $("#todaylbl").innerHTML='<i style="background:'+P().hex+'"></i>'+esc(P().l);
+ $("#agerow").innerHTML=[4,6,9,12].map(function(a){return '<button class="btn" data-act="age" data-v="'+a+'" aria-pressed="'+(G.age===a)+'">'+a+'</button>';}).join("");
+ var al=allowedStyles(),cs=curStyle();
+ $("#stylerow").innerHTML=al.map(function(s){return '<button class="btn" data-act="style" data-v="'+s.id+'" aria-pressed="'+(cs===s.id)+'">'+s.n+'</button>';}).join("")||'<span class="note-a">No styles allowed</span>';
+ $("#tabs").innerHTML=TABS.map(function(t){return '<button role="tab" id="t-'+t[0]+'" aria-selected="'+(G.tab===t[0])+'" aria-controls="p-'+t[0]+'" data-act="tab" data-v="'+t[0]+'">'+t[1]+'</button>';}).join("");
+ TABS.forEach(function(t){$("#p-"+t[0]).hidden=G.tab!==t[0];});
+}
+function renderTab(){
+ if(G.tab==="settings")renderSettings();else if(G.tab==="colour")renderColour();else if(G.tab==="sync")renderSync();
+ else if(G.tab==="art")renderArt();else if(G.tab==="acts")renderActs();else renderRules();
+ setAppColour();
+}
+function all(){renderChrome();renderTab();}
+
+/* =============================================================== actions == */
+function act(a,v){
+ var x;
+ switch(a){
+  case"tab":G.tab=v;if(v==="sync")syInit();break;
+  case"col":G.colour=v;if(G.tab==="sync")syInit();G.hist=[];break;
+  case"age":G.age=+v;if(curStyle()!==G.style)G.style=curStyle();break;
+  case"style":G.style=v;break;
+  case"open":G.gnav=v;break;
+  case"gback":G.gnav="hub";break;
+  case"tog":G.set[v]=!G.set[v];break;
+  case"tog2":G.set[v]=!G.set[v];if(v==="share"||v==="showme")syMerge();break;
+  case"seg":x=v.split("|");G.set[x[0]]=x[1];break;
+  case"mul":x=v.split("|");var l=G.set[x[0]],i=l.indexOf(x[1]);if(i>-1){if(l.length>1)l.splice(i,1);}else l.push(x[1]);if(curStyle()!==G.style)G.style=curStyle();break;
+  case"fst":F.st=v;renderCat();return;
+  case"cflow":G.cflow=v;if(v==="mid"){G.pairSide=Math.random()<.5?1:0;var oth=PAL.filter(function(s){return s.id!==G.colour;});G.pairOther=oth[Math.floor(Math.random()*oth.length)].id;}break;
+  case"cform":G.cform=v;break;
+  case"cstart":G.cflow="mid";G.pairSide=Math.random()<.5?1:0;var oth2=PAL.filter(function(s){return s.id!==G.colour;});G.pairOther=oth2[Math.floor(Math.random()*oth2.length)].id;break;
+  case"cchoose":G.colour=v;G.hist.push({colourId:v,chosenAt:"2026-11-07T07:41:00Z",via:"daily"});G.cflow="post";break;
+  case"cacts":G.tab="acts";break;
+  case"plc":x=PL.sel.indexOf(v);if(x>-1)PL.sel.splice(x,1);else PL.sel.push(v);renderPlace();return;
+  case"sypick":x=v.split("|");syPick(x[0],x[1]);break;
+  case"syoff":SY[v].on=!SY[v].on;SY.log.unshift(SY[v].name+(SY[v].on?" is back online.":" went offline."));syMerge();break;
+  case"syreset":syInit();break;
+  case"artitem":G.artItem=v;break;
+  case"sortpick":SORT.sel=+v;SORT.msg="Now tap a basket.";SORT.hint=false;drawSort();clearTimeout(SORT.t);SORT.t=setTimeout(function(){if(SORT.sel!==null){SORT.hint=true;drawSort();}},5000);return;
+  case"sortput":if(SORT.sel===null){SORT.msg="Tap a picture first.";drawSort();return;}var it=SORT.items[SORT.sel];if(cat(it)===v){it.placed=v;SORT.msg="Yes! "+it.n+" goes with "+v.toLowerCase()+".";}else{it.back=true;SORT.msg="Not quite. Let’s try another basket.";}SORT.sel=it.placed?null:SORT.sel;SORT.hint=false;drawSort();return;
+  case"sortreset":initSort();return;
+  case"padd":if(PATH.prog.length<10){PATH.prog.push({t:"m",d:v,l:{u:"↑",d:"↓",l:"←",r:"→"}[v]});}PATH.msg="Add arrows, then press Run.";drawPath();return;
+  case"prep":if(PATH.prog.length&&PATH.prog.length<10){var last=PATH.prog[PATH.prog.length-1];if(last.t==="m")PATH.prog.push({t:"rep",d:last.d,l:"repeat ×2"});}drawPath();return;
+  case"pdel":PATH.prog.splice(+v,1);drawPath();return;
+  case"pclear":PATH.prog=[];PATH.pos=PATH.levels[PATH.lvl].start.slice();PATH.msg="Add arrows, then press Run.";drawPath();return;
+  case"prun":runPath();return;
+  case"crtint":CR.tint=+v;drawCrit();return;
+  case"critclear":CR.reg={};CR.saved=false;drawCrit();return;
+  case"crsave":CR.saved=true;drawCrit();return;
+  case"pxtint":PX.tint=+v;drawPix();return;
+  case"pxmir":PX.mirror=!PX.mirror;drawPix();return;
+  case"pxclear":PX.cells={};drawPix();return;
+  case"pxset":var n=+v,r=Math.floor(n/8),c=n%8;PX.cells[n]=PX.tint;if(PX.mirror)PX.cells[r*8+(7-c)]=PX.tint;drawPix();return;
+ }
+ if(G.tab==="settings"&&["tog","seg","mul","open","gback"].indexOf(a)>-1){renderChrome();renderG();renderCat();return;}
+ all();
+}
+function runPath(){
+ if(PATH.running)return;var L=PATH.levels[PATH.lvl];PATH.pos=L.start.slice();
+ var steps=[];PATH.prog.forEach(function(b){steps.push(b.d);if(b.t==="rep")steps.push(b.d);});
+ var d={u:[0,-1],d:[0,1],l:[-1,0],r:[1,0]},i=0;PATH.running=true;PATH.msg="Running…";drawPath();
+ (function step(){
+  if(i>=steps.length){PATH.running=false;var win=PATH.pos[0]===L.goal[0]&&PATH.pos[1]===L.goal[1];
+   if(win){PATH.msg="Got it! Nice program. It’s saved as a picture of your arrows.";if(PATH.lvl<PATH.levels.length-1){setTimeout(function(){PATH.lvl++;PATH.prog=[];PATH.pos=PATH.levels[PATH.lvl].start.slice();PATH.msg="A new path. Try it.";drawPath();},1700);}}
+   else PATH.msg="Close. Change a block and run it again.";drawPath();return;}
+  var m=d[steps[i++]],nx=PATH.pos[0]+m[0],ny=PATH.pos[1]+m[1];
+  if(nx<0||ny<0||nx>=L.size||ny>=L.size||L.rocks.some(function(r){return r[0]===nx&&r[1]===ny;})){PATH.msg="A rock is in the way. Change a block and try again.";PATH.running=false;drawPath();return;}
+  PATH.pos=[nx,ny];drawPath();setTimeout(step,420);
+ })();
+}
+document.addEventListener("click",function(e){
+ var line=e.target.closest&&e.target.closest("svg .reg");
+ if(line&&CR&&CR.tints){var i=line.getAttribute("data-r");CR.reg[i]=CR.tints[CR.tint];CR.saved=false;drawCrit();return;}
+ var el=e.target.closest("[data-act]");if(!el||el.disabled)return;act(el.dataset.act,el.dataset.v);
+});
+document.addEventListener("input",function(e){if(e.target&&e.target.id==="fq"){F.q=e.target.value;renderCat();var q=$("#fq");if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length);}}});
+syInit();all();
+})();
+</script>

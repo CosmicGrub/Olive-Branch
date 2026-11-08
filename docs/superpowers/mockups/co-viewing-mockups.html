@@ -1,0 +1,652 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Read Together Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a bench page. Two device frames side by side (guardian leads, child follows),
+   a wire log under them, then annotated screen specs, posture wireframes and rules. */
+:root{
+  --font-display:"Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --ground:#e9eee8; --panel:#ffffff; --panel-2:#f3f6f2; --ink:#18261e; --muted:#56665b;
+  --rule:#cfd9cf; --accent:#3d6a49; --accent-ink:#ffffff; --accent-soft:#dcebdc;
+  --warn:#8a5d00; --warn-bg:#fff1cf; --bad:#a8231b; --bad-bg:#fbe5e2; --ok:#21683a; --ok-bg:#dff1e3;
+  --bench:#d7dfd6; --code-bg:#f0f4ef;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#111a14; --panel:#18231c; --panel-2:#1e2b23; --ink:#e4ede5; --muted:#9db0a2;
+  --rule:#2d3d33; --accent:#8fc79d; --accent-ink:#0d1a11; --accent-soft:#213428;
+  --warn:#e8bd55; --warn-bg:#2c2510; --bad:#f4a8a1; --bad-bg:#2f1a18; --ok:#8fd4a3; --ok-bg:#183024;
+  --bench:#0c130f; --code-bg:#142019; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --ground:#111a14; --panel:#18231c; --panel-2:#1e2b23; --ink:#e4ede5; --muted:#9db0a2;
+  --rule:#2d3d33; --accent:#8fc79d; --accent-ink:#0d1a11; --accent-soft:#213428;
+  --warn:#e8bd55; --warn-bg:#2c2510; --bad:#f4a8a1; --bad-bg:#2f1a18; --ok:#8fd4a3; --ok-bg:#183024;
+  --bench:#0c130f; --code-bg:#142019; color-scheme:dark;}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--ground);color:var(--ink);font:16px/1.55 var(--font-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 64px}
+.wrap{max-width:1180px;margin:0 auto}
+h1,h2,h3{font-family:var(--font-display);line-height:1.1;margin:0;text-wrap:balance}
+h1{font-size:clamp(2rem,5vw,3.1rem);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(1.45rem,3vw,2rem);font-weight:800;letter-spacing:-.01em}
+h3{font-size:1.15rem;font-weight:600}
+p{margin:.5em 0}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+.mono,code{font-family:var(--font-mono)}
+code{font-size:.86em;background:var(--code-bg);padding:.1em .35em;border-radius:5px}
+.eyebrow{font:500 .74rem/1 var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+
+header.top{display:grid;gap:14px;padding:12px 0 22px;border-bottom:2px solid var(--rule)}
+header.top .lede{max-width:70ch;color:var(--muted);font-size:1.05rem;margin:0}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font:500 .74rem/1 var(--font-mono);padding:6px 9px;border-radius:99px;background:var(--panel);border:1px solid var(--rule);color:var(--muted)}
+.pill.ok{background:var(--ok-bg);color:var(--ok);border-color:transparent}
+.pill.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+nav.jump{display:flex;flex-wrap:wrap;gap:6px 18px;padding:14px 0;font-weight:700}
+nav.jump a{text-decoration:none}
+nav.jump a:hover{text-decoration:underline}
+section{padding:30px 0 6px}
+section>.intro{max-width:72ch;color:var(--muted);margin:8px 0 18px}
+
+/* ---------- prototype controls ---------- */
+.bar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:12px 14px}
+.bar .grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bar .lbl{font:500 .72rem/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.btn{font:700 .9rem/1 var(--font-body);padding:10px 13px;border-radius:10px;border:1px solid var(--rule);background:var(--panel-2);color:var(--ink);cursor:pointer;min-height:40px}
+.btn:hover{border-color:var(--accent)}
+.btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.ghost{background:transparent}
+.stage{display:flex;flex-wrap:wrap;justify-content:center;gap:30px 40px;margin-top:18px;
+  background:var(--bench);border-radius:20px;padding:30px 16px;align-items:flex-start}
+.col{display:grid;gap:12px;justify-items:center;min-width:0;max-width:100%}
+.col .cap{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+.col .cap b{font-family:var(--font-display);font-size:1.05rem}
+.tag{font:500 .7rem/1 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 8px;border-radius:6px;background:var(--panel);color:var(--muted);border:1px solid var(--rule)}
+.tag.lead{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.devwrap{max-width:100%;overflow-x:auto}
+.dev{background:#0b100d;border-radius:38px;padding:11px;box-shadow:0 18px 40px rgba(0,0,0,.28),inset 0 0 0 2px #2a332d;flex:none}
+.dev.f-phone{width:316px;height:640px}
+.dev.f-fold{width:452px;height:520px}
+.dev.f-tab{width:640px;height:420px}
+.dev.g{width:316px;height:640px}
+
+/* ---------- the app's own look (classic palette), independent of the page theme ---------- */
+.scr{--a-bg:#faf8f2;--a-ink:#1d2b1f;--a-olive:#4a6b4f;--a-olive-d:#2f4a35;--a-leaf:#dde8da;--a-sun:#f0c36a;
+  --a-rule:#d9ddd3;--a-warn:#b98900;--a-warn-bg:#fff3d1;--a-bad:#b3261e;--a-mute:#5f6c61;--a-night:#142a3a;
+  background:var(--a-bg);color:var(--a-ink);border-radius:28px;height:100%;display:flex;flex-direction:column;overflow:hidden;
+  font-family:var(--font-body);position:relative}
+.sb{display:flex;justify-content:space-between;font:700 11px/1 var(--font-body);padding:9px 18px 4px;color:var(--a-mute)}
+.appbar{display:flex;align-items:center;gap:8px;padding:6px 14px 8px}
+.appbar h4{margin:0;font:800 17px/1.1 var(--font-display);flex:1}
+.ib{width:44px;height:44px;border-radius:50%;border:0;background:var(--a-leaf);color:var(--a-olive-d);font-size:19px;cursor:pointer;display:grid;place-items:center}
+.body{flex:1;overflow:auto;padding:4px 14px 14px;display:flex;flex-direction:column;gap:10px;min-height:0}
+.card-a{background:#fff;border:1px solid var(--a-rule);border-radius:16px;padding:12px}
+.tile{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:#fff;border:1px solid var(--a-rule);border-radius:16px;padding:12px;cursor:pointer;font:inherit;color:inherit;min-height:64px}
+.tile:hover{border-color:var(--a-olive)}
+.tile .ic{width:44px;height:44px;border-radius:12px;background:var(--a-leaf);display:grid;place-items:center;font-size:22px;flex:none}
+.tile b{display:block;font-size:15px}
+.tile small{color:var(--a-mute);font-size:12.5px}
+.tile[disabled]{opacity:.55;cursor:not-allowed}
+.cta{background:var(--a-olive);color:#fff;border:0;border-radius:14px;padding:14px 16px;font:700 16px/1 var(--font-body);cursor:pointer;min-height:52px;width:100%}
+.cta:hover{background:var(--a-olive-d)}
+.cta.alt{background:var(--a-leaf);color:var(--a-olive-d)}
+.cta.bad{background:#fff;color:var(--a-bad);border:2px solid var(--a-bad)}
+.cta[disabled]{opacity:.5;cursor:not-allowed}
+.row2{display:flex;gap:8px}.row2>*{flex:1}
+.chip{display:inline-flex;gap:6px;align-items:center;font:700 12px/1 var(--font-body);padding:6px 9px;border-radius:99px;background:var(--a-leaf);color:var(--a-olive-d)}
+.chip.warn{background:var(--a-warn-bg);color:#7a5a00}
+.chip.dot::before{content:"";width:8px;height:8px;border-radius:50%;background:#2e7d32}
+.chip.warn.dot::before{background:var(--a-warn)}
+.sub{font:700 11px/1 var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--a-mute);margin:6px 2px 0}
+.seg{display:flex;background:var(--a-leaf);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:transparent;border-radius:9px;padding:9px 4px;font:700 12.5px/1.1 var(--font-body);color:var(--a-olive-d);cursor:pointer;min-height:40px}
+.seg button[aria-pressed="true"]{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.prog{height:8px;background:var(--a-leaf);border-radius:9px;overflow:hidden}.prog i{display:block;height:100%;background:var(--a-olive)}
+.scrub{width:100%;accent-color:var(--a-olive)}
+.note-a{font-size:12.5px;color:var(--a-mute)}
+.open{font:700 10px/1 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;background:var(--a-warn-bg);color:#7a5a00;padding:3px 6px;border-radius:5px;margin-left:6px}
+.sheet{position:absolute;inset:auto 0 0 0;background:#fff;border-radius:22px 22px 0 0;padding:14px;box-shadow:0 -10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:10px;z-index:5}
+.scrim{position:absolute;inset:0;background:rgba(10,20,14,.45);z-index:4}
+.toast{position:absolute;left:12px;right:12px;bottom:12px;background:var(--a-olive-d);color:#fff;padding:12px 14px;border-radius:12px;font-size:13.5px;z-index:6}
+.big{font:800 28px/1.1 var(--font-display)}
+
+/* child side: larger, calmer, one thing at a time */
+.scr.child .body{padding:0;gap:0}
+.scene{flex:1;min-height:0;position:relative;background:var(--a-night);overflow:hidden}
+.scene svg{width:100%;height:100%;display:block}
+.pagetext{background:var(--a-bg);padding:14px 16px;font:700 19px/1.35 var(--font-body);min-height:84px}
+.f-tab .pagetext,.f-fold .pagetext{font-size:22px}
+.stopbar{display:flex;justify-content:center;padding:10px;background:var(--a-bg)}
+.stop{background:#fff;border:3px solid var(--a-olive);color:var(--a-olive-d);border-radius:99px;font:800 18px/1 var(--font-display);padding:14px 30px;min-height:56px;cursor:pointer}
+.stop:hover{background:var(--a-leaf)}
+.cue{position:absolute;top:10px;left:10px;right:10px;background:var(--a-sun);color:#3d2d00;border-radius:14px;padding:10px 14px;font:800 16px/1.2 var(--font-display);z-index:3;display:flex;gap:8px;align-items:center}
+.cam{position:absolute;right:10px;top:10px;background:rgba(0,0,0,.55);color:#fff;font:700 11px/1 var(--font-body);padding:6px 9px;border-radius:99px;display:flex;gap:6px;align-items:center;z-index:3}
+.cam::before{content:"";width:8px;height:8px;border-radius:50%;background:#ff5a4d}
+.center{flex:1;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;text-align:center;padding:20px}
+.pause{position:absolute;inset:0;display:grid;place-items:center;background:rgba(10,20,30,.55);color:#fff;font:800 24px/1 var(--font-display);z-index:2}
+.winframe{position:absolute;inset:14px;border:4px solid var(--a-sun);border-radius:16px;background:#fff;color:#1d2b1f;padding:14px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.frac{display:flex;gap:6px;margin-top:6px}.frac i{flex:1;height:34px;border-radius:7px;background:var(--a-leaf);border:2px solid var(--a-olive)}.frac i.on{background:var(--a-olive)}
+
+/* ---------- wire log ---------- */
+.wire{margin-top:14px;background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:12px 14px}
+.wire pre{margin:8px 0 0;font:400 .8rem/1.55 var(--font-mono);color:var(--ink);white-space:pre-wrap;word-break:break-all;min-height:6.2em}
+.wire .hd{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+
+/* ---------- screen specs ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.specs{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:14px;align-items:start}
+.spec{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px;min-width:0;display:grid;gap:8px}
+.spec header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.spec header .id{font:500 .78rem/1 var(--font-mono);background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:5px 7px}
+.spec h3{flex:1;min-width:10ch}
+.spec p{color:var(--muted);margin:0;font-size:.95rem}
+.spec dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:0;font-size:.9rem}
+.spec dt{font:500 .78rem/1.7 var(--font-mono);color:var(--accent)}
+.spec dd{margin:0}
+.spec h5{margin:6px 0 0;font:500 .7rem/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.spec ul{margin:0;padding-left:1.1em;font-size:.9rem}
+.spec .rule{background:var(--panel-2);border-radius:8px;padding:7px 9px;font-size:.86rem}
+
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid var(--rule);border-radius:14px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:.92rem}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:500 .72rem/1 var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);background:var(--panel-2)}
+tr:last-child td{border-bottom:0}
+
+/* ---------- posture wireframes ---------- */
+.posts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:16px;align-items:end}
+.pf{display:grid;gap:8px;justify-items:center}
+.wf{background:var(--panel);border:2px solid var(--ink);border-radius:12px;display:grid;gap:6px;padding:8px;width:100%}
+.wf .box{background:var(--accent-soft);border:1.5px dashed var(--accent);border-radius:7px;display:grid;place-items:center;font:500 .68rem/1.2 var(--font-mono);color:var(--ink);text-align:center;padding:4px}
+.wf .stopbox{background:var(--panel);border:2px solid var(--accent);border-radius:99px;font-weight:700}
+.pf figcaption{font-size:.84rem;color:var(--muted);text-align:center}
+.pf figcaption b{color:var(--ink);font-family:var(--font-mono);font-size:.8rem}
+
+.never{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
+.never>div{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px}
+.never ul{margin:.4em 0 0;padding-left:1.1em}
+.never li{margin:.25em 0}
+.bad-bg{background:var(--bad-bg)!important}
+.ok-bg{background:var(--ok-bg)!important}
+@media (prefers-reduced-motion:no-preference){.scene svg *{transition:transform .5s ease,opacity .5s ease}}
+footer{margin-top:38px;color:var(--muted);font-size:.9rem;border-top:2px solid var(--rule);padding-top:14px}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">Olive Branch · co-viewing · design draft</div>
+  <h1>Read Together, in the app</h1>
+  <p class="lede">What a guardian and a child would see and tap, side by side, with the messages that cross between them. Everything here is sample data. The behaviour (who may lead, what a child can send, how the daily time works, which channel carries it) is the behaviour of the <code>packages/co-view</code> engine in PR&nbsp;#128.</p>
+  <div class="pills">
+    <span class="pill ok">Phase 1: Read together</span>
+    <span class="pill ok">Phase 2: Watch together</span>
+    <span class="pill warn">Phase 3: Share an app (camera/mic stay on, decision 1)</span>
+    <span class="pill">Sample names: Dad leads, Ivy follows</span>
+  </div>
+  <nav class="jump" aria-label="Sections">
+    <a href="#prototype">Try it</a><a href="#screens">Screen markup</a><a href="#copy">Words on screen</a><a href="#postures">Fold and tablet</a><a href="#rules">Rules and open choices</a>
+  </nav>
+</header>
+
+<section id="prototype" aria-labelledby="h-proto">
+  <h2 id="h-proto">Try it</h2>
+  <p class="intro">Both screens are live. Start something on the guardian side, join on the child side, then use the shortcuts to jump to the moments that are hard to reach: the last ten minutes, time used up, the child ending it.</p>
+  <div class="bar" role="group" aria-label="Prototype controls">
+    <div class="grp"><span class="lbl">Child device</span>
+      <button class="btn" data-act="form" data-v="phone" aria-pressed="true">Phone</button>
+      <button class="btn" data-act="form" data-v="fold" aria-pressed="false">Fold open</button>
+      <button class="btn" data-act="form" data-v="tab" aria-pressed="false">Tablet</button></div>
+    <div class="grp"><span class="lbl">Jump to</span>
+      <button class="btn" data-act="ff10">Last 10 minutes</button>
+      <button class="btn" data-act="useup">Time used up</button>
+      <button class="btn" data-act="childstop">Child taps All done</button>
+      <button class="btn" data-act="prefetch">Download finishes</button>
+      <button class="btn ghost" data-act="reset">Reset</button></div>
+    <div class="grp"><span class="pill" id="pnote" role="status">Prototype notes appear here</span></div>
+  </div>
+  <div class="stage" id="stage">
+    <div class="col">
+      <div class="cap"><span class="tag lead">Leads</span><b>Dad’s phone</b><span class="tag">Guardian app</span></div>
+      <div class="devwrap"><div class="dev g"><div class="scr" id="gscr"></div></div></div>
+    </div>
+    <div class="col">
+      <div class="cap"><span class="tag">Follows</span><b>Ivy’s device</b><span class="tag">Child app</span></div>
+      <div class="devwrap"><div class="dev f-phone" id="cdev"><div class="scr child" id="cscr"></div></div></div>
+    </div>
+  </div>
+  <div class="wire" aria-live="off">
+    <div class="hd"><span class="eyebrow">What crosses the network (last 6 messages)</span><span class="pill" id="chan">channel: none</span></div>
+    <pre id="wirelog">Nothing yet. Start something.</pre>
+  </div>
+</section>
+
+<section id="screens" aria-labelledby="h-screens">
+  <h2 id="h-screens">Screen markup</h2>
+  <p class="intro">Each screen in the order a family meets it. “Rule” lines name the engine function that backs the behaviour, so a screen can’t promise something the logic doesn’t do. G is the guardian app, C is the child app.</p>
+  <div class="specs" id="specs"></div>
+</section>
+
+<section id="copy" aria-labelledby="h-copy">
+  <h2 id="h-copy">Words on screen</h2>
+  <p class="intro">The child never reads a number, a timer or a technical word. The guardian gets the facts. Same event, two voices.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Moment</th><th>Child sees</th><th>Guardian sees</th></tr></thead>
+    <tbody id="copyrows"></tbody>
+  </table></div>
+</section>
+
+<section id="postures" aria-labelledby="h-post">
+  <h2 id="h-post">Fold and tablet</h2>
+  <p class="intro">Names are the existing posture enum in <code>form_factors.dart</code>. The child side is one piece of content and one Stop button in every posture; the guardian side gains a second pane when there is room.</p>
+  <div class="posts" id="posts"></div>
+</section>
+
+<section id="rules" aria-labelledby="h-rules">
+  <h2 id="h-rules">Rules and open choices</h2>
+  <div class="never">
+    <div class="bad-bg"><h3>The child never sees</h3><ul>
+      <li>A clock, a countdown, or a number of minutes.</li>
+      <li>A connection or sync meter. A slow link just keeps playing.</li>
+      <li>Words like “allowance”, “limit”, “budget”, “session” or “synced”.</li>
+      <li>Any control that steers the guardian’s view.</li>
+      <li>Who raised or lowered the time.</li></ul></div>
+    <div class="ok-bg"><h3>The child always has</h3><ul>
+      <li>One large “All done” button, in the same place on every screen.</li>
+      <li>A calm, wordless pause if the guardian pauses.</li>
+      <li>A gentle “Last one for today” cue before the end.</li>
+      <li>A friendly ending in all three cases: they stopped, the guardian stopped, time ran out.</li></ul></div>
+    <div><h3>Choices still open</h3><ul>
+      <li><b>Cap scope.</b> One cap per child across both homes (recommended), or per household.</li>
+      <li><b>Raising time.</b> Either guardian may; the other is told (recommended).</li>
+      <li><b>Ceiling.</b> The prototype stops at 8 h. That number is a placeholder.</li>
+      <li><b>“More” sources.</b> Four candidates are shown on G2; which ones ship is not decided.</li>
+      <li><b>Phase 3 focus rule.</b> Camera and mic stay on during a share (decided); the written amendment to §5.21.2 is not drafted yet.</li></ul></div>
+  </div>
+</section>
+<footer>Design draft, 2026-11-07. Source: <code>docs/superpowers/specs/2026-11-07-co-viewing-design.md</code>. Not wired into <code>MARKUP.html</code> yet; adding these as numbered screens is a separate step because the screen count is checked against the demo.</footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+var LIMIT_MAX=480, LAST_ONE=10;
+var STORY=[
+ {t:"Far above the olive grove, a small owl asked the moon a very big question.",moon:[210,48,26],cloud:0,home:0},
+ {t:"“Why do you follow me home?” The moon smiled and glowed a little brighter.",moon:[170,58,34],cloud:0,home:0},
+ {t:"A soft cloud floated by. The owl yawned. Even big questions can wait for morning.",moon:[130,70,30],cloud:1,home:0},
+ {t:"Down in the valley one small window glowed. Goodnight, owl. Goodnight, moon.",moon:[96,84,26],cloud:0,home:1}
+];
+var ITEMS={
+ read:[
+  {id:"s1",t:"The owl and the moon",meta:"4 pages · Olive library",src:"library",ready:true},
+  {id:"s2",t:"Goodnight, little tractor",meta:"4 pages · Uploaded by Dad",src:"upload",ready:true},
+  {id:"s3",t:"Counting sheep in Spanish",meta:"6 pages · Olive library",src:"library",ready:true}],
+ watch:[
+  {id:"v1",t:"Tiny Tractor Tales",meta:"23 min · Olive library",src:"library",ready:true,len:1380},
+  {id:"v2",t:"Dad’s Saturday video",meta:"6 min · Uploaded by Dad",src:"upload",ready:true,len:360},
+  {id:"v3",t:"Grandpa reads the hungry fox",meta:"11 min · Family shelf",src:"library",ready:false,len:660}]
+};
+var MORE=[["Files on this phone","Photos, videos, PDFs"],["Record yourself","Read a story to the camera"],["Paste a link","Only places that serve your own content"],["Family shelf","Both homes can add to it"]];
+var APPS=["Fractions helper","Drawing pad","Photo album"];
+
+var S,timer=null,tickN=0;
+function fresh(){return {mode:"read",g:"home",phase:"idle",src:"library",item:null,page:0,playing:true,pos:0,
+  limit:120,used:8,ended:null,sheet:false,sheetVal:120,prefetch:62,seq:0,log:[],form:S?S.form:"phone",toast:"",toastTimer:null,app:null,chan:"none"};}
+function $(s){return document.querySelector(s);}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function rem(){return Math.max(0,S.limit-S.used);}
+function budget(){var r=rem();if(S.limit<=0)return"off";if(r<=0)return"exhausted";if(r<=LAST_ONE)return"last_one";return"ok";}
+function fmt(m){if(m<=0)return"0 min";var h=Math.floor(m/60),mm=m%60;return(h?h+" h":"")+(h&&mm?" ":"")+(mm?mm+" min":"");}
+function mmss(s){s=Math.max(0,Math.floor(s));return Math.floor(s/60)+":"+("0"+(s%60)).slice(-2);}
+function itemObj(){var l=(ITEMS[S.mode]||[]);for(var i=0;i<l.length;i++)if(l[i].id===S.item)return l[i];return null;}
+function len(){var it=itemObj();return it&&it.len?it.len:0;}
+
+function wire(o){
+  o.seq=S.seq++;
+  S.log.push(JSON.stringify(o));if(S.log.length>6)S.log.shift();
+  $("#wirelog").textContent=S.log.join("\n");
+}
+function setChan(){S.chan=(S.mode==="share"&&S.phase==="live")?"call data channel":(S.phase==="idle"?"none":"game-sync table");
+  $("#chan").textContent="channel: "+S.chan;}
+function pnote(m){var e=$("#pnote");if(e)e.textContent=m;}
+function toast(m){S.toast=m;clearTimeout(S.toastTimer);S.toastTimer=setTimeout(function(){S.toast="";render();},3200);}
+
+/* ---------- art ---------- */
+function scene(p){
+  var s=STORY[p],m=s.moon,stars="";
+  for(var i=0;i<14;i++){stars+='<circle cx="'+((i*53+17)%300)+'" cy="'+((i*37+9)%90)+'" r="'+(i%3?1:1.8)+'" fill="#fff" opacity="'+(i%2?.55:.9)+'"/>';}
+  var cloud=s.cloud?'<g fill="#9fb4c4" opacity=".85"><ellipse cx="90" cy="70" rx="38" ry="12"/><ellipse cx="118" cy="62" rx="26" ry="12"/></g>':"";
+  var house=s.home?'<g><rect x="205" y="140" width="42" height="30" fill="#2b4b3a"/><polygon points="200,140 226,120 252,140" fill="#1f3a2c"/><rect x="220" y="148" width="12" height="14" fill="#f0c36a"/></g>':"";
+  return '<svg viewBox="0 0 300 200" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Night scene: an owl on a branch under the moon">'+
+   '<rect x="-600" y="-600" width="1500" height="1500" fill="#142a3a"/><rect x="-600" y="168" width="1500" height="900" fill="#1d3b2c"/>'+stars+
+   '<circle cx="'+m[0]+'" cy="'+m[1]+'" r="'+m[2]+'" fill="#f6efc9"/><circle cx="'+(m[0]+8)+'" cy="'+(m[1]-5)+'" r="'+(m[2]-4)+'" fill="#fbf6dd"/>'+cloud+
+   '<path d="M0 170 Q80 140 160 168 T300 160 V200 H0Z" fill="#1d3b2c"/>'+house+
+   '<path d="M20 120 H120" stroke="#5b4630" stroke-width="7" stroke-linecap="round"/>'+
+   '<ellipse cx="70" cy="100" rx="17" ry="22" fill="#a9825b"/><circle cx="62" cy="94" r="6" fill="#fff"/><circle cx="78" cy="94" r="6" fill="#fff"/>'+
+   '<circle cx="62" cy="94" r="2.5" fill="#1d2b1f"/><circle cx="78" cy="94" r="2.5" fill="#1d2b1f"/><polygon points="70,99 66,106 74,106" fill="#e8b04a"/></svg>';
+}
+function showScene(pos){
+  var t=Math.floor(pos/6)%3,sky=["#2a4a6e","#5b3d6e","#2d6a5f"][t];
+  return '<svg viewBox="0 0 300 200" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cartoon: a small tractor on a hill">'+
+   '<rect x="-600" y="-600" width="1500" height="1500" fill="'+sky+'"/><rect x="-600" y="140" width="1500" height="900" fill="#4f8a4a"/><circle cx="'+(40+(pos*3)%220)+'" cy="46" r="20" fill="#f6d36e"/>'+
+   '<path d="M0 150 Q90 110 170 140 T300 130 V200 H0Z" fill="#4f8a4a"/>'+
+   '<g transform="translate('+(30+(pos*5)%190)+',118)"><rect width="46" height="22" rx="4" fill="#d1482f"/><rect x="26" y="-12" width="20" height="14" rx="3" fill="#e9604a"/><circle cx="10" cy="26" r="11" fill="#2b2b2b"/><circle cx="38" cy="28" r="8" fill="#2b2b2b"/></g></svg>';
+}
+
+/* ---------- guardian screens ---------- */
+function status(){return '<div class="sb"><span>7:42</span><span>● ● ▮</span></div>';}
+function timeChip(){
+  var b=budget();
+  if(b==="off")return '<span class="chip warn">Off</span>';
+  if(b==="exhausted")return '<span class="chip warn">Used up today</span>';
+  if(b==="last_one")return '<span class="chip warn dot">'+fmt(rem())+' left</span>';
+  return '<span class="chip">'+fmt(rem())+' left today</span>';
+}
+function gHome(){
+  var b=budget(),blocked=(b==="off"||b==="exhausted");
+  var note=blocked?(b==="off"?"Watching and reading together is switched off.":"Today’s time is used up."):"Counts Ivy’s time at both homes.";
+  return status()+'<div class="appbar"><h4>Ivy</h4>'+timeChip()+'<button class="ib" data-act="sheet" aria-label="Change daily time">⏱</button></div>'+
+  '<div class="body"><div class="sub">Do something together</div>'+
+  '<button class="tile" data-act="mode" data-v="read"'+(blocked?' disabled':'')+'><span class="ic">📖</span><span><b>Read together</b><small>Turn the pages, she follows</small></span></button>'+
+  '<button class="tile" data-act="mode" data-v="watch"'+(blocked?' disabled':'')+'><span class="ic">🎬</span><span><b>Watch together</b><small>Play, pause, skip. Same moment.</small></span></button>'+
+  '<button class="tile" data-act="mode" data-v="share"'+(blocked?' disabled':'')+'><span class="ic">🖥</span><span><b>Show an app</b><small>One app window, never your whole screen</small></span></button>'+
+  '<p class="note-a">'+note+'</p>'+(blocked?'<button class="cta alt" data-act="sheet">Change daily time</button>':'')+'</div>';
+}
+function gPick(){
+  var m=S.mode,title=m==="read"?"Pick a story":m==="watch"?"Pick a show":"Pick an app";
+  var h=status()+'<div class="appbar"><button class="ib" data-act="back" aria-label="Back">‹</button><h4>'+title+'</h4></div><div class="body">';
+  if(m==="share"){
+    h+=APPS.map(function(a){return '<button class="tile" data-act="app" data-v="'+esc(a)+'"><span class="ic">▦</span><span><b>'+esc(a)+'</b><small>Ivy will see only this window</small></span></button>';}).join("");
+    return h+'</div>';
+  }
+  h+='<div class="seg" role="group" aria-label="Where it comes from">'+
+    ['library:Olive library','upload:Uploaded','more:More…'].map(function(x){var p=x.split(":");return '<button data-act="src" data-v="'+p[0]+'" aria-pressed="'+(S.src===p[0])+'">'+p[1]+'</button>';}).join("")+'</div>';
+  if(S.src==="more"){
+    h+='<p class="note-a">Other places a story or show can come from <span class="open">to confirm</span></p>'+
+      MORE.map(function(x){return '<div class="tile" style="cursor:default"><span class="ic">＋</span><span><b>'+x[0]+'</b><small>'+x[1]+'</small></span></div>';}).join("");
+  }else{
+    var list=ITEMS[m].filter(function(i){return i.src===S.src;});
+    h+=list.map(function(i){
+      var ready=i.ready||S.prefetch>=100;
+      var sm=ready?i.meta:'Getting it ready on Ivy’s device… '+S.prefetch+'%';
+      return '<button class="tile" data-act="pick" data-v="'+i.id+'"'+(ready?'':' disabled')+'><span class="ic">'+(m==="read"?"📘":"🎞")+'</span><span><b>'+esc(i.t)+'</b><small>'+esc(sm)+'</small></span></button>';
+    }).join("");
+    h+='<p class="note-a">'+(m==="watch"?"Shows are sent to Ivy’s device first, so nothing depends on the connection while you watch.":"Stories are sent to Ivy’s device first, so the pages turn instantly.")+'</p>';
+  }
+  return h+'</div>';
+}
+function gPreflight(){
+  return status()+'<div class="appbar"><button class="ib" data-act="back" aria-label="Back">‹</button><h4>Before you show it</h4></div><div class="body">'+
+  '<div class="card-a"><b>Ivy will see</b><ul style="margin:6px 0 0;padding-left:18px;font-size:14px"><li>Only the <b>'+esc(S.app||"app")+'</b> window</li><li>Whatever is inside that window</li></ul></div>'+
+  '<div class="card-a"><b>Ivy will not see</b><ul style="margin:6px 0 0;padding-left:18px;font-size:14px"><li>Your notifications (they are silenced while you show)</li><li>Other apps, texts or your home screen</li></ul></div>'+
+  '<div class="card-a"><b>Camera and microphone stay on</b><div class="note-a">So you can talk while you show. Both of you can see the red dot.</div></div>'+
+  '<button class="cta" data-act="startshare">Start showing</button></div>';
+}
+function gWait(){
+  return status()+'<div class="appbar"><h4>Waiting for Ivy</h4></div><div class="body"><div class="card-a"><b>Invitation sent</b><div class="note-a">Ivy’s device shows a big Join button. If she isn’t ready, nothing happens. Try again later.</div></div>'+
+  '<div class="chip dot" style="align-self:flex-start">Ivy’s device is ready</div>'+
+  '<button class="cta alt" data-act="end">Cancel</button></div>';
+}
+function gLive(){
+  var it=itemObj(),b=budget(),h=status()+'<div class="appbar"><h4>'+(S.mode==="share"?"Showing "+esc(S.app):esc(it?it.t:""))+'</h4></div><div class="body">';
+  h+='<div class="row2" style="gap:6px;flex:none"><span class="chip dot">In step with Ivy</span>'+(b==="last_one"?'<span class="chip warn dot">'+fmt(rem())+' left</span>':'<span class="chip">'+fmt(rem())+' left</span>')+'</div>';
+  if(S.mode==="read"){
+    h+='<div style="height:150px;border-radius:14px;overflow:hidden;flex:none">'+scene(S.page)+'</div>'+
+      '<div class="card-a" style="font-weight:700;font-size:14px">'+esc(STORY[S.page].t)+'</div>'+
+      '<div class="note-a" style="text-align:center" id="gpage">Page '+(S.page+1)+' of '+STORY.length+'</div>'+
+      '<div class="row2"><button class="cta alt" data-act="prev"'+(S.page===0?' disabled':'')+'>‹ Back</button><button class="cta" data-act="next"'+(S.page===STORY.length-1?' disabled':'')+'>Next page ›</button></div>';
+  }else if(S.mode==="watch"){
+    h+='<div style="height:130px;border-radius:14px;overflow:hidden;flex:none">'+showScene(S.pos)+'</div>'+
+      '<input class="scrub" id="gscrub" type="range" min="0" max="'+len()+'" value="'+Math.floor(S.pos)+'" aria-label="Position in the show" data-act-input="scrub">'+
+      '<div class="note-a" style="display:flex;justify-content:space-between"><span id="gt1">'+mmss(S.pos)+'</span><span>'+mmss(len())+'</span></div>'+
+      '<div class="row2"><button class="cta alt" data-act="back10" aria-label="Back 10 seconds">−10</button><button class="cta" data-act="play">'+(S.playing?"Pause":"Play")+'</button><button class="cta alt" data-act="fwd10" aria-label="Forward 10 seconds">+10</button></div>';
+  }else{
+    h+='<div class="card-a"><b>Ivy sees your '+esc(S.app)+' window</b><div class="note-a">Your notifications are silenced. Camera and microphone are on.</div></div>'+
+      '<span class="chip warn dot" style="align-self:flex-start">Sharing one window</span>';
+  }
+  h+='<button class="cta bad" data-act="end" style="margin-top:auto">'+(S.mode==="share"?"Stop showing":"End for now")+'</button></div>';
+  return h;
+}
+function gDone(){
+  var by=S.ended,msg,sub,extra="";
+  if(by==="child"){msg="Ivy is all done";sub="She ended it herself. That is always fine.";}
+  else if(by==="budget"){msg="Today’s time is used up";sub="Ivy’s device said goodbye for you.";extra='<button class="cta" data-act="sheet">Change daily time</button>';}
+  else if(by==="declined"){msg="Ivy isn’t ready yet";sub="Nothing was started. Try again later.";}
+  else{msg="Finished";sub="Ivy’s device said goodbye.";}
+  return status()+'<div class="appbar"><h4>'+msg+'</h4></div><div class="body"><div class="card-a">'+sub+'</div>'+extra+'<button class="cta alt" data-act="home">Back to Ivy</button></div>';
+}
+function gSheet(){
+  var v=S.sheetVal,dir=v>S.limit?"raise":v<S.limit?"lower":"same";
+  var note=dir==="raise"?"The other guardian will be told about this change.":dir==="lower"?"Takes effect right away. The other guardian is not asked.":"No change.";
+  var chips=[[0,"Off"],[60,"1 h"],[120,"2 h"],[180,"3 h"]].map(function(c){return '<button data-act="chip" data-v="'+c[0]+'" aria-pressed="'+(v===c[0])+'">'+c[1]+'</button>';}).join("");
+  return '<div class="scrim" data-act="closesheet"></div><div class="sheet" role="dialog" aria-label="Daily time">'+
+  '<b style="font:800 18px var(--font-display)">Ivy’s daily time <span class="open">per child · to confirm</span></b>'+
+  '<div class="note-a">Counted across both homes, so two houses can’t add up to double.</div>'+
+  '<div class="seg" role="group" aria-label="Quick choices">'+chips+'</div>'+
+  '<div class="row2" style="align-items:center"><button class="cta alt" data-act="step" data-v="-15" aria-label="15 minutes less">− 15</button><div class="big" style="text-align:center;flex:1.2">'+(v?fmt(v):"Off")+'</div><button class="cta alt" data-act="step" data-v="15" aria-label="15 minutes more"'+(v>=LIMIT_MAX?' disabled':'')+'>+ 15</button></div>'+
+  '<div class="note-a">'+note+(v>=LIMIT_MAX?" Highest allowed: 8 h (placeholder).":"")+'</div>'+
+  '<div class="row2"><button class="cta alt" data-act="closesheet">Cancel</button><button class="cta" data-act="save"'+(dir==="same"?' disabled':'')+'>Save</button></div></div>';
+}
+function renderG(){
+  var h;
+  if(S.g==="home")h=gHome();else if(S.g==="pick")h=gPick();else if(S.g==="preflight")h=gPreflight();
+  else if(S.g==="wait")h=gWait();else if(S.g==="live")h=gLive();else h=gDone();
+  if(S.sheet)h+=gSheet();
+  if(S.toast)h+='<div class="toast" role="status">'+esc(S.toast)+'</div>';
+  $("#gscr").innerHTML=h;
+}
+
+/* ---------- child screens ---------- */
+function cIdle(){
+  return status()+'<div class="appbar"><h4>Ivy’s home</h4></div><div class="body" style="padding:10px 14px;gap:10px">'+
+   '<div class="card-a" style="text-align:center;padding:22px"><div style="font-size:42px">🫒</div><div class="big">Hi Ivy!</div><div class="note-a">3 sleeps until Dad’s house</div></div>'+
+   '<div class="tile" style="cursor:default"><span class="ic">🎲</span><span><b>Games</b><small>Play with Dad or on your own</small></span></div></div>';
+}
+function cInvite(){
+  var what=S.mode==="read"?"read a story":S.mode==="watch"?"watch a show":"show you something";
+  return status()+'<div class="center"><div style="font-size:60px" aria-hidden="true">'+(S.mode==="read"?"📖":S.mode==="watch"?"🎬":"🖥")+'</div>'+
+   '<div class="big">Dad wants to '+what+' with you</div>'+
+   '<button class="cta" data-act="join" style="max-width:260px;font-size:20px;min-height:64px">Join</button>'+
+   '<button class="stop" data-act="decline" style="border-width:2px;font-size:15px;padding:10px 20px;min-height:48px">Not now</button></div>';
+}
+function cLive(){
+  var b=budget(),h=status().replace('<div class="sb">','<div class="sb" style="background:var(--a-bg)">');
+  var inner="";
+  if(S.mode==="read"){
+    inner='<div class="scene">'+scene(S.page)+(b==="last_one"?'<div class="cue">🌙 Last one for today</div>':"")+'</div>'+
+      '<div class="pagetext" id="cpage" aria-live="polite">'+esc(STORY[S.page].t)+'</div>';
+  }else if(S.mode==="watch"){
+    inner='<div class="scene">'+showScene(S.pos)+(b==="last_one"?'<div class="cue">🌙 Last one for today</div>':"")+(S.playing?"":'<div class="pause" aria-live="polite">Paused</div>')+'</div>';
+  }else{
+    inner='<div class="scene" style="background:#2b3d33"><div class="winframe"><b style="font:800 16px var(--font-display)">'+esc(S.app)+'</b>'+
+      '<div style="font-size:15px;font-weight:700">Which piece is bigger, one half or one quarter?</div><div class="frac"><i class="on"></i><i class="on"></i><i></i><i></i></div>'+
+      '<div class="note-a" style="margin-top:auto">Dad is showing you this</div></div><div class="cam">Camera and mic on</div>'+(b==="last_one"?'<div class="cue" style="top:auto;bottom:10px">🌙 Last one for today</div>':"")+'</div>';
+  }
+  return h+'<div style="flex:1;display:flex;flex-direction:column;min-height:0">'+inner+'<div class="stopbar"><button class="stop" data-act="childstop" aria-label="All done. Stop and go back">All done</button></div></div>';
+}
+function cDone(){
+  var by=S.ended,msg="All done!",sub="See you soon.";
+  if(by==="budget"){msg="That’s all for today";sub="You did a great job. See you tomorrow!";}
+  else if(by==="declined"){msg="Okay!";sub="Dad will be here when you’re ready.";}
+  else if(by==="guardian"){msg="All done";sub="Dad says goodnight.";}
+  return status()+'<div class="center"><div style="font-size:64px" aria-hidden="true">'+(by==="budget"?"🌙":"🫒")+'</div><div class="big">'+msg+'</div><div style="font-size:18px">'+sub+'</div>'+
+   '<button class="stop" data-act="home">Back to my home</button></div>';
+}
+function renderC(){
+  var h;
+  if(S.phase==="idle")h=cIdle();else if(S.phase==="invited")h=cInvite();else if(S.phase==="live")h=cLive();else h=cDone();
+  $("#cscr").innerHTML=h;
+  $("#cdev").className="dev f-"+S.form;
+  var btns=document.querySelectorAll('[data-act="form"]');
+  for(var i=0;i<btns.length;i++)btns[i].setAttribute("aria-pressed",String(btns[i].dataset.v===S.form));
+}
+function render(){renderG();renderC();setChan();}
+
+/* ---------- actions ---------- */
+function stopTimer(){if(timer){clearInterval(timer);timer=null;}}
+function startTimer(){stopTimer();timer=setInterval(function(){
+  if(S.phase!=="live"||S.mode!=="watch"||!S.playing)return;
+  S.pos=Math.min(len(),S.pos+1);tickN++;
+  var g=$("#gscrub"),t=$("#gt1");if(g)g.value=Math.floor(S.pos);if(t)t.textContent=mmss(S.pos);
+  if(tickN%2===0)wire({t:"tick",pos:S.pos,rate:1,paused:false,sentAt:Date.now()%1e7});
+  var cs=$("#cscr .scene");if(cs)cs.innerHTML=showScene(S.pos)+(budget()==="last_one"?'<div class="cue">🌙 Last one for today</div>':"");
+  var gs=$("#gscr .body div[style*='height:130px']");if(gs)gs.innerHTML=showScene(S.pos);
+  if(S.pos>=len()){end("guardian");}
+},1000);}
+function begin(){
+  S.phase="invited";S.g="wait";
+  wire(S.mode==="share"?{t:"start",at:0,assetId:"app_"+(S.app||"").toLowerCase().replace(/[^a-z]/g,"")}:{t:"start",at:Date.now()%1e7+3000,assetId:S.item});
+  render();
+}
+function end(by){
+  if(S.phase==="idle")return;
+  S.phase="ended";S.ended=by;S.g="done";stopTimer();
+  wire({t:"stop",by:(by==="declined"?"child":by)});
+  render();
+}
+function checkBudget(){if(S.phase==="live"&&rem()<=0){end("budget");return true;}return false;}
+function act(a,v,el){
+  switch(a){
+    case"form":S.form=v;break;
+    case"mode":S.mode=v;S.g="pick";S.src="library";S.item=null;S.page=0;S.pos=0;S.playing=true;break;
+    case"src":S.src=v;break;
+    case"back":S.g="home";break;
+    case"home":S=Object.assign(fresh(),{limit:S.limit,used:S.used,form:S.form,prefetch:S.prefetch,log:S.log,seq:S.seq});stopTimer();break;
+    case"pick":S.item=v;begin();return;
+    case"app":S.app=v;S.g="preflight";break;
+    case"startshare":S.item=null;begin();return;
+    case"join":S.phase="live";S.g="live";S.page=0;S.pos=0;S.playing=true;tickN=0;
+      wire({t:"tick",pos:0,rate:1,paused:false,sentAt:Date.now()%1e7});startTimer();break;
+    case"decline":end("declined");return;
+    case"next":if(S.page<STORY.length-1){S.page++;wire({t:"seek",pos:S.page,sentAt:Date.now()%1e7});}break;
+    case"prev":if(S.page>0){S.page--;wire({t:"seek",pos:S.page,sentAt:Date.now()%1e7});}break;
+    case"play":S.playing=!S.playing;wire({t:"tick",pos:Math.floor(S.pos),rate:1,paused:!S.playing,sentAt:Date.now()%1e7});break;
+    case"back10":S.pos=Math.max(0,S.pos-10);wire({t:"seek",pos:Math.floor(S.pos),sentAt:Date.now()%1e7});break;
+    case"fwd10":S.pos=Math.min(len(),S.pos+10);wire({t:"seek",pos:Math.floor(S.pos),sentAt:Date.now()%1e7});break;
+    case"end":end("guardian");return;
+    case"childstop":if(S.phase==="live"||S.phase==="invited"){end("child");return;}break;
+    case"sheet":S.sheet=true;S.sheetVal=S.limit;break;
+    case"closesheet":S.sheet=false;break;
+    case"chip":S.sheetVal=+v;break;
+    case"step":S.sheetVal=Math.max(0,Math.min(LIMIT_MAX,S.sheetVal+(+v)));break;
+    case"save":
+      var dir=S.sheetVal>S.limit?"raise":"lower";
+      S.limit=S.sheetVal;S.sheet=false;
+      toast(dir==="raise"?"Ivy’s daily time is now "+(S.limit?fmt(S.limit):"Off")+". The other guardian has been told.":"Ivy’s daily time is now "+(S.limit?fmt(S.limit):"Off")+".");
+      if(checkBudget())return;
+      break;
+    case"ff10":S.used=Math.max(0,S.limit-9);pnote("Prototype: 9 minutes of today’s time remain.");if(checkBudget())return;break;
+    case"useup":S.used=S.limit;pnote("Prototype: today’s time is used up.");if(checkBudget())return;break;
+    case"prefetch":S.prefetch=100;ITEMS.watch[2].ready=true;pnote("Prototype: the download finished on Ivy’s device.");break;
+    case"reset":S=fresh();stopTimer();ITEMS.watch[2].ready=false;$("#wirelog").textContent="Nothing yet. Start something.";break;
+  }
+  render();
+}
+document.addEventListener("click",function(e){
+  var el=e.target.closest("[data-act]");if(!el||el.disabled)return;
+  if(el.tagName==="INPUT")return;
+  act(el.dataset.act,el.dataset.v,el);
+});
+document.addEventListener("input",function(e){
+  if(e.target&&e.target.id==="gscrub"){S.pos=+e.target.value;var t=$("#gt1");if(t)t.textContent=mmss(S.pos);
+    wire({t:"seek",pos:Math.floor(S.pos),sentAt:Date.now()%1e7});
+    var cs=$("#cscr .scene");if(cs)cs.innerHTML=showScene(S.pos);}
+});
+
+/* ---------- static documentation ---------- */
+var SPECS=[
+ {id:"G1",who:"Guardian",t:"Ivy’s home",p:"The one place to start. Three doors and the day’s remaining time.",
+  el:[["1","Time chip","“1 h 52 min left today”; turns amber at 10 min, “Used up today” at 0, “Off” at 0 limit"],["2","Clock button","Opens G7. 44 dp target"],["3","Three tiles","Read together, Watch together, Show an app"],["4","Footnote","“Counts Ivy’s time at both homes.”"]],
+  st:["Normal","Last ten minutes (amber chip)","Used up: tiles disabled, “Change daily time” shown","Off: tiles disabled, same button"],
+  rule:"budgetState(limitMin, usedS) → off / ok / last_one / exhausted",a11y:"Disabled tiles say why in their label, not only by dimming."},
+ {id:"G2",who:"Guardian",t:"Pick a story or show",p:"Three sources. The extra ones are marked as undecided.",
+  el:[["1","Source tabs","Olive library · Uploaded · More…"],["2","Rows","Title, length, source. Not-ready rows show “Getting it ready on Ivy’s device… 62%” and can’t be started"],["3","“More…” list","Files on this phone, Record yourself, Paste a link, Family shelf (to confirm)"],["4","Footnote","Why it is sent first"]],
+  st:["Ready","Preparing (disabled row)","Empty source (“Nothing here yet. Add something from More…”)"],
+  rule:"Content is delivered to the child device before the session, so playback never waits on the network.",a11y:"Progress is announced at 25% steps, not every percent."},
+ {id:"G3",who:"Guardian",t:"Waiting for Ivy",p:"The invitation is out. Nothing is forced on her.",
+  el:[["1","Status","“Invitation sent”, and whether her device is ready"],["2","Cancel","Withdraws the invitation"]],
+  st:["Waiting","Declined → “Ivy isn’t ready yet. Nothing was started.”","Child device offline → “Ivy’s device isn’t reachable. Try again later.”"],
+  rule:"start message carries a scheduled shared start; the child’s Join begins playback.",a11y:"Declined is stated neutrally, never as a refusal."},
+ {id:"G4",who:"Guardian",t:"Reading together",p:"A preview of what she sees, with page controls.",
+  el:[["1","“In step with Ivy”","Green dot while ticks arrive. Guardian-only"],["2","Time chip","“1 h 52 min left”, amber at 10"],["3","Page preview","What she is looking at"],["4","Back / Next","Each turn sends one seek message"],["5","End for now","Red outline, bottom"]],
+  st:["Live","Child device slow (chip turns neutral “Catching up”, nothing changes for her)","Last ten minutes"],
+  rule:"mayEmit(guardian, seek) → true. correct(err) keeps her within 0.15 s.",a11y:"Page change is announced “Page 3 of 4”."},
+ {id:"G5",who:"Guardian",t:"Watching together",p:"A transport bar. Play, pause and skip move her player too.",
+  el:[["1","Scrubber","Drag sends a seek on release"],["2","−10 / Play / +10","Pause sends paused:true so she holds still"],["3","Elapsed / total","mm:ss"],["4","Ends by itself","At the end the session closes as “Finished”"]],
+  st:["Playing","Paused","Seeking","Last ten minutes"],
+  rule:"expectedPosition() uses the leader tick plus clock offset; hard seek only beyond 2 s.",a11y:"Scrubber exposes a text value (“4 minutes 12 seconds”)."},
+ {id:"G6",who:"Guardian",t:"Before you show it (Phase 3)",p:"A plain-words list of what will and won’t be visible.",
+  el:[["1","Ivy will see","Only the chosen app window"],["2","Ivy will not see","Notifications, other apps, home screen"],["3","Camera and mic","Stay on, both sides see the red dot (decision 1)"],["4","Start showing","One tap. Android then asks its own permission"]],
+  st:["Preflight","Android permission declined → back here with “Showing was cancelled.”","Screen locked → ends, “Showing stopped because the screen locked.”"],
+  rule:"Whole-screen is never offered. Android 14+ app-window sharing is the only path.",a11y:"Preflight text is read in full before the button is reachable."},
+ {id:"G7",who:"Guardian",t:"Ivy’s daily time",p:"Quick choices, a 15-minute stepper, and what the change means.",
+  el:[["1","Quick choices","Off · 1 h · 2 h · 3 h"],["2","Stepper","±15 min, 0 to 8 h (ceiling is a placeholder)"],["3","Explainer","Lower: “Takes effect right away.” Raise: “The other guardian will be told.”"],["4","Save","Disabled when nothing changed"]],
+  st:["Lower","Raise","At ceiling (+ disabled)","Set to Off while a session runs → it ends as “time used up”"],
+  rule:"changeAllowance(actor, current, requested): guardian only; integer 0–480; raise → notifyCoGuardian.",a11y:"Stepper buttons say “15 minutes less / more”."},
+ {id:"G8",who:"Other guardian",t:"Time was raised",p:"What the other household sees after a raise. A lower is silent.",
+  el:[["1","Notice","“Dad raised Ivy’s daily time from 2 h to 3 h.” Kept in the shared log"],["2","Undo","Lowers it back; no approval needed"]],
+  st:["Unread","Read"],rule:"changeAllowance(...).notifyCoGuardian === true only for a raise.",a11y:"Delivered as an ordinary guardian notice, not a push alarm."},
+ {id:"C1",who:"Child",t:"Invitation",p:"One question, one big yes, one quiet no.",
+  el:[["1","Picture","Book, film or window icon"],["2","Sentence","“Dad wants to read a story with you”"],["3","Join","Largest control on screen"],["4","Not now","Smaller, still 48 dp"]],
+  st:["Waiting","After Not now → “Okay! Dad will be here when you’re ready.”"],
+  rule:"Only a guardian principal can send start; only the child can send stop by:child.",a11y:"Reads as one sentence, then the two buttons."},
+ {id:"C2",who:"Child",t:"Reading",p:"The picture, the sentence, and All done. Nothing else.",
+  el:[["1","Scene","Fills the space above the text"],["2","Sentence","19 sp phone, 22 sp fold and tablet"],["3","All done","Same spot on every screen"],["4","Cue","“🌙 Last one for today” on top of the scene"]],
+  st:["Reading","Last one cue","Guardian is catching up (nothing visible)"],
+  rule:"Her device keeps playing if ticks stop; stale ticks older than 12 s are ignored.",a11y:"Page text is a polite live region."},
+ {id:"C3",who:"Child",t:"Watching",p:"The picture and All done.",
+  el:[["1","Picture","Full width"],["2","Paused overlay","“Paused”, no buttons to fight with"],["3","All done","Always there"]],
+  st:["Playing","Paused by Dad","Last one cue"],rule:"followerStep → none / pause / rate / seek. She never sees a buffering or sync indicator.",a11y:"“Paused” announced once."},
+ {id:"C4",who:"Child",t:"Looking at Dad’s app (Phase 3)",p:"A framed window with a small camera-and-mic pill.",
+  el:[["1","Yellow frame","Marks it as shared, not hers"],["2","Pill","“Camera and mic on” with a red dot"],["3","Caption","“Dad is showing you this”"]],
+  st:["Showing","Stopped by Dad","Screen locked on Dad’s phone → All done"],
+  rule:"Shown only while a guardian-started share is active; ends with it.",a11y:"The pill is announced when it appears."},
+ {id:"C5",who:"Child",t:"All done (three endings)",p:"One calm screen. Three sentences.",
+  el:[["1","She tapped","“All done! See you soon.”"],["2","Dad stopped","“All done. Dad says goodnight.”"],["3","Time ran out","“That’s all for today. You did a great job. See you tomorrow!”"]],
+  st:["Any of the three"],rule:"stop by: child / guardian / budget. Only budget may mention “today”.",a11y:"Same layout, so it feels the same each time."}
+];
+function renderSpecs(){
+  $("#specs").innerHTML=SPECS.map(function(s){
+    return '<article class="spec"><header><span class="id">'+s.id+'</span><h3>'+esc(s.t)+'</h3><span class="tag">'+esc(s.who)+'</span></header>'+
+    '<p>'+esc(s.p)+'</p><h5>Elements</h5><dl>'+s.el.map(function(e){return '<dt>'+e[0]+'</dt><dd><b>'+esc(e[1])+'.</b> '+esc(e[2]||"")+'</dd>';}).join("")+'</dl>'+
+    '<h5>States</h5><ul>'+s.st.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul>'+
+    '<div class="rule"><b>Rule.</b> '+esc(s.rule)+'</div><div class="rule"><b>Access.</b> '+esc(s.a11y)+'</div></article>';
+  }).join("");
+}
+var COPY=[
+ ["An invitation arrives","Dad wants to read a story with you","Invitation sent"],
+ ["She says not now","Okay! Dad will be here when you’re ready.","Ivy isn’t ready yet. Nothing was started."],
+ ["Dad pauses a show","Paused","Paused"],
+ ["Ten minutes remain","🌙 Last one for today","10 min left (amber)"],
+ ["The time runs out","That’s all for today. You did a great job. See you tomorrow!","Today’s time is used up. Change daily time"],
+ ["She taps All done","All done! See you soon.","Ivy is all done. She ended it herself. That is always fine."],
+ ["Dad ends it","All done. Dad says goodnight.","Finished. Ivy’s device said goodbye."],
+ ["Connection drops","Nothing. It keeps playing.","Catching up (neutral chip)"],
+ ["A raise is saved","Nothing.","Ivy’s daily time is now 3 h. The other guardian has been told."],
+ ["Sharing starts (Phase 3)","Camera and mic on · Dad is showing you this","Sharing one window · Camera and mic on"]
+];
+function renderCopy(){$("#copyrows").innerHTML=COPY.map(function(r){return '<tr><td><b>'+esc(r[0])+'</b></td><td>'+esc(r[1])+'</td><td>'+esc(r[2])+'</td></tr>';}).join("");}
+function wf(cols,rows,boxes){
+  return '<div class="wf" style="grid-template-columns:'+cols+';grid-template-rows:'+rows+'">'+boxes.map(function(b){return '<div class="box'+(b[2]?" stopbox":"")+'" style="'+(b[1]||"")+'">'+esc(b[0])+'</div>';}).join("")+'</div>';
+}
+function renderPosts(){
+  var P=[
+   ["phone","Child, phone",wf("1fr","110px 28px 34px",[["Content"],["Sentence"],["All done","",1]]),"One column. Content, sentence, All done."],
+   ["foldCover","Child, Fold cover",wf("1fr","90px 30px 34px",[["Content"],["Short sentence"],["All done","",1]]),"Narrow cover screen: the sentence shrinks, All done stays full width."],
+   ["foldMain","Child, Fold open",wf("1.5fr 1fr","150px",[["Content"],["Sentence + All done","",0]]),"Wider canvas: picture left, words and the button right."],
+   ["foldTabletop","Child, tabletop",wf("1fr","80px 80px",[["Content, upper half"],["Sentence + All done, lower half"]]),"Hinge flat: picture up, controls near her hands."],
+   ["tabletMedium","Guardian, tablet",wf("1fr 1.4fr","150px",[["Library list"],["Live controls + preview"]]),"Two panes: pick on the left, lead on the right."]
+  ];
+  $("#posts").innerHTML=P.map(function(p){return '<figure class="pf" style="margin:0">'+p[2]+'<figcaption><b>'+p[0]+'</b><br>'+esc(p[3])+'</figcaption></figure>';}).join("");
+}
+S=fresh();renderSpecs();renderCopy();renderPosts();render();
+})();
+</script>

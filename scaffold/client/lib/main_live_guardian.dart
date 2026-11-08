@@ -65,6 +65,7 @@ import 'guardian_setup.dart';
 import 'pairing_redeem_screen.dart';
 import 'push_channel.dart';
 import 'theme.dart';
+import 'theme_data.dart';
 
 const _dartDefineBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
     defaultValue: 'http://10.0.2.2:8123'); // Android emulator's host-loopback alias
@@ -219,7 +220,7 @@ class _PairingBootApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (pairing)',
-    theme: ThemeData(colorScheme: colorSchemeFor(defaultAppTheme), useMaterial3: true),
+    theme: buildThemeData(defaultAppTheme),
     home: PairingRedeemScreen(baseUrl: baseUrl, role: 'guardian', onRedeemed: _onRedeemed),
   );
 }

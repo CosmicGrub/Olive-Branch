@@ -30,14 +30,14 @@ http.Client mockFor({int putStatus = 200, List<Map<String, dynamic>>? capturedPu
 }
 
 Future<void> pumpTall(WidgetTester tester, Widget child) async {
-  await tester.binding.setSurfaceSize(const Size(500, 1400));
+  await tester.binding.setSurfaceSize(const Size(500, 2000));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(wrap(child));
 }
 
 void main() {
   group('theme picker — palette cards and selection', () {
-    testWidgets('all 6 palettes render a real card', (t) async {
+    testWidgets('all 7 palettes render a real card', (t) async {
       await pumpTall(t, const ThemePickerScreen());
       for (final palette in ThemePalette.values) {
         // findsWidgets, not findsOneWidget: the initially-selected palette's

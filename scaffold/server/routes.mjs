@@ -180,7 +180,7 @@ function invalidAvailabilityBody(body) {
 // 400 with a specific reason rather than surfacing as a bare Postgres
 // constraint-violation 500 (same reasoning invalidAvailabilityBody gives).
 const THEME_PALETTES = new Set(
-  ['classic', 'calmModern', 'warmGrounded', 'softPlayful', 'deepCozy', 'brightBold']);
+  ['olive', 'classic', 'calmModern', 'warmGrounded', 'softPlayful', 'deepCozy', 'brightBold']);
 const THEME_BRIGHTNESSES = new Set(['light', 'dark']);
 
 function invalidThemeBody(body) {

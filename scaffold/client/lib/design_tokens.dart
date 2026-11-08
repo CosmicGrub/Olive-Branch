@@ -39,4 +39,7 @@ class AppRadius {
   static const sm = 8.0;
   static const md = 12.0;
   static const lg = 16.0;
+  // Overhaul additions: cards and tiles (xl), sheets and dialogs (sheet).
+  static const xl = 22.0;
+  static const sheet = 28.0;
 }

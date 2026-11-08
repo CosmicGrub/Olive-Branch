@@ -47,6 +47,7 @@ import 'child_home_live.dart';
 import 'kiosk_shell.dart';
 import 'push_channel.dart';
 import 'theme.dart';
+import 'theme_data.dart';
 
 const _defaultBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
     defaultValue: 'http://10.0.2.2:8123');
@@ -165,8 +166,7 @@ class _OliveLiveChildKioskCallTestState extends State<_OliveLiveChildKioskCallTe
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _themeController,
     builder: (context, _) {
-      final scheme = colorSchemeFor(_themeController.value);
-      final themeData = ThemeData(colorScheme: scheme, useMaterial3: true);
+      final themeData = buildThemeData(_themeController.value);
       return MaterialApp(
         navigatorKey: _navigatorKey,
         title: 'Olive (live, child kiosk+call test)',
