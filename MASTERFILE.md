@@ -7631,6 +7631,69 @@ refusals in words, no network or launcher import in any of these files), `compas
 
 ---
 
+## §8.22 On-device performance pass — measured first, fixed only where shown
+
+Offline and on this device only (owner direction): no server, no network. Written after an audit
+whose candidates were each checked in code before anything changed. No product behaviour or copy
+changes. Numbers are from the Dart VM test harness and the real Gradle release build on the
+development machine, not from the Fold5/Tab S9 FE; they show cost removed, not device frame times.
+
+### 8.22.1 Fixed, with the measurement
+
+| What | Before | After |
+|---|---|---|
+| Journal, 300 entries: cards built / tiles rebuilt per keystroke | 301 / 300 | 5 / 6 |
+| Homework photo, 12 MP sensor image: pixels / decoded bitmap | 12.0 MP / 48 MB | 1.92 MP / 7.7 MB |
+| `LocalNamespace.put` into a ~900 KB, 2,020-entry namespace (plain / sealed) | 14.0 / 64.9 ms | 5.5 / 58 ms |
+| Room photo base64 decodes over one build and ten rebuilds | 11 | 1 |
+| Release APK (`main_live.dart`) | 115,407,653 B, all four ABIs | arm64: 41,694,600 B; armv7 32,501,758 B; x86_64 48,182,653 B |
+
+- **Photo size** (`capture_downscale.dart`): the camera is asked for at most 1600 px on the long
+  edge. Quality stays 90 (the server gate reads fine detail). The scaling is the plugin's own
+  (`maxWidth`/`maxHeight`), so no image is decoded in Dart and the EXIF orientation tag travels
+  with the file; `fitWithin` is the tested statement of what size comes back. **Not verified on a
+  device** (this environment has no camera): the orientation claim is the plugin's documented
+  behaviour, and the byte saving is estimated from the pixel ratio, not measured on a real JPEG.
+- **Journal list** is a `SliverList.builder`. The old comment (sliver lists drop below-the-fold
+  widgets from the tree) is the point for a list that can hold thousands of rows; the tests scroll
+  to what they need. Tiles keep their old shape (`Align`, loose width).
+- **`put`** serialises once. The sealed figure is dominated by pure-Dart AES-GCM (see 8.22.2).
+- **Room photo** (`RoomPhoto`) decodes once per photo; bad base64 shows the picture glyph.
+- **`LocalDiscovery`** keeps and cancels its event subscription.
+- **Release signing**: `assembleRelease`/`bundleRelease`/`packageRelease` fail with "Release build
+  refused: android/key.properties is missing" instead of signing with the debug key; the opt-in
+  for a local smoke build is `--android-project-arg=olive.allowDebugSignedRelease=true`.
+  `RELEASE_SIGNING.md` documents `--split-per-abi` (install `app-arm64-v8a-release.apk` on both
+  devices) and `flutter build appbundle`. Build time is not a result: warm-cache runs were 146 s
+  (first, all ABIs, fat), 35 s (all three split) and 58 s (arm64 only).
+- **Jitsi leftovers** removed: the cleartext/trust-anchor network-security config, the dev cert,
+  the manifest attribute, and `third_party/jitsi_meet_flutter_sdk_patched/` (480 KB; referenced by
+  nothing since the LiveKit migration). In git history if the kiosk-lock verification needs it.
+
+### 8.22.2 Checked and not changed
+
+- **Startup reads every namespace** — no: namespaces are opened on demand and load on first use
+  (`perf_local_store_test.dart` holds that). Opening ten areas reads nothing.
+- **Unbounded caches** — none found: no static maps, and every namespace has a byte ceiling
+  (256 KB to 12 MiB, refused with `LocalStoreFull`, never evicted).
+- **Assets** — 532 KB, the largest file is the 408 KB Bricolage font; a test now holds the tree under
+  1 MiB and each file under 512 KB.
+- **Disposal** — every `State` that creates a timer, controller or listener disposes it; the one
+  leak was `LocalDiscovery` (fixed above).
+- **`ListView(children: [...])` screens** (care binder, growing marks, first times, capsules):
+  their elements are already lazy, only the widget objects are made in `build`; converting 20
+  screens to builders would save little and break tests that find below-the-fold rows.
+- **Handover notes, expenses, letters** — server-fed, with a two-pane layout inside one scroll
+  view at tablet width; a sliver version changes that layout. Left as they are.
+- **Sealed writes** cost ~58 ms for a near-full 1 MB namespace because the whole document is
+  re-sealed on every write, with pure-Dart AES-GCM. Fixing it means per-record files or a native
+  cipher: a storage design change, not a tweak.
+- **Live boot waits on the network** (`main_live.dart`: token, onboarding answer, theme, one after
+  another, each bounded only by the HTTP client's timeouts) even when the device is offline. Showing the cached answer first
+  changes which answer wins and flashes the theme, so it is an owner decision, not done here.
+
+---
+
 *End of MASTERFILE v0.49.73. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*

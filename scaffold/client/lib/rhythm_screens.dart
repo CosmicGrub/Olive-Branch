@@ -542,8 +542,8 @@ class _NewPlaceScreenState extends State<_NewPlaceScreenView> {
     if (s.photoB64 != null) {
       picture = ClipRRect(
         borderRadius: BorderRadius.circular(22),
-        child: Image.memory(base64Decode(s.photoB64!), key: Key('placePhoto_${s.id}'), height: 220, fit: BoxFit.cover,
-            semanticLabel: s.caption, errorBuilder: (_, _, _) => PictureGlyph(s.room, size: 96)),
+        child: RoomPhoto(s.photoB64!, key: Key('placePhoto_${s.id}'), semanticLabel: s.caption,
+            fallback: PictureGlyph(s.room, size: 96)),
       );
     } else {
       picture = Container(
@@ -563,4 +563,54 @@ class _NewPlaceScreenState extends State<_NewPlaceScreenView> {
       ]),
     ]);
   }
+}
+
+/// A kept room photo. The base64 text is decoded ONCE per photo (in
+/// initState / when the text changes), not on every rebuild: a fresh byte
+/// list on each build is a new [MemoryImage] key, so the framework would
+/// re-decode the JPEG and drop the cached bitmap every time the screen
+/// rebuilt (a fold or unfold, a text-scale change, the next-stop tap).
+class RoomPhoto extends StatefulWidget {
+  const RoomPhoto(this.photoB64, {super.key, required this.semanticLabel, required this.fallback});
+  final String photoB64;
+  final String semanticLabel;
+  final Widget fallback;
+
+  /// How many times any [RoomPhoto] has decoded its base64 text. Read by the
+  /// tests that prove a rebuild does not decode again.
+  @visibleForTesting
+  static int decodeCount = 0;
+
+  @override
+  State<RoomPhoto> createState() => _RoomPhotoState();
+}
+
+class _RoomPhotoState extends State<RoomPhoto> {
+  late Uint8List _bytes;
+
+  static Uint8List _decode(String b64) {
+    RoomPhoto.decodeCount++;
+    try {
+      return base64Decode(b64);
+    } on FormatException {
+      return Uint8List(0); // errorBuilder shows the picture glyph instead
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _bytes = _decode(widget.photoB64);
+  }
+
+  @override
+  void didUpdateWidget(RoomPhoto old) {
+    super.didUpdateWidget(old);
+    if (old.photoB64 != widget.photoB64) _bytes = _decode(widget.photoB64);
+  }
+
+  @override
+  Widget build(BuildContext context) => Image.memory(_bytes,
+      height: 220, fit: BoxFit.cover, semanticLabel: widget.semanticLabel,
+      errorBuilder: (_, _, _) => widget.fallback);
 }
