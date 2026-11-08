@@ -51,10 +51,14 @@ void main() {
       });
     }
 
+    // PARITY CHANGE (docs/superpowers/parity/PARITY.md): the schemes are no longer derived with
+    // ColorScheme.fromSeed; they are the prototype's own palette roles (test/design_parity_test.dart
+    // proves every one). What stays true is the identity: classic is still stock deep purple.
     test('classic keeps Colors.deepPurple as its seed — the explicit reset option', () {
+      expect(seedFor(ThemePalette.classic).toARGB32(), Colors.deepPurple.toARGB32());
       final classic = colorSchemeFor(const AppTheme(palette: ThemePalette.classic, brightness: ThemeBrightness.light));
-      final stockDeepPurple = ColorScheme.fromSeed(seedColor: Colors.deepPurple);
-      expect(classic.primary, stockDeepPurple.primary);
+      // its primary is the same hue as the stock seed (the prototype tunes lightness, not hue)
+      expect(HSLColor.fromColor(classic.primary).hue, closeTo(HSLColor.fromColor(Colors.deepPurple).hue, 2));
     });
   });
 

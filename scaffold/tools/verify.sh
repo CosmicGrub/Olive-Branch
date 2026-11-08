@@ -128,6 +128,7 @@ for spec in \
   "lifecycle: graceful shutdown + game-socket heartbeat (P-14/15)|server/test/lifecycle.test.mjs" \
   "backup lib: retention, stale alarm, encryption (P-04)|tools/test/backup_lib.test.mjs" \
   "infra: Dockerfile, compose, CI hygiene (P-13/14/16)|tools/test/infra.test.mjs" \
+  "design tokens: prototype kit to tokens.json + Dart, drift guard|tools/test/design_tokens.test.mjs" \
   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
