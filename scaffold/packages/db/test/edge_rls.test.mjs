@@ -56,8 +56,8 @@ async function cleanup() {
   await admin.query('ALTER TABLE message_log DISABLE TRIGGER message_log_no_delete');
   // (security_event is append-only: its rows go with the child via ON DELETE CASCADE.)
   for (const t of ['message_log', 'expense', 'export_record', 'medication_dose',
-                   'medication', 'medical_record', 'exchange_bag_item', 'exchange_running_late_log',
-                   'exchange_arrival_event', 'care_note', 'custody_order']) {
+                   'medication', 'medical_record', 'exchange_bag_item',
+                   'care_note', 'custody_order']) {   // append-only exchange logs go with the child (cascade)
     await admin.query(`DELETE FROM ${t} WHERE child_id = ANY($1::uuid[])`, [[CA, CB]]);
   }
   await admin.query('ALTER TABLE message_log ENABLE TRIGGER message_log_no_delete');
@@ -90,8 +90,10 @@ await admin.query(
 
 // One real row per family-private table, per child.
 const INSERTS = {
-  message_log: (c, u) => [`INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash)
-    VALUES ($1, 0, $2, 'edge-rls', repeat('0',64), repeat('a',64))`, [c, u]],
+  // 0043: the chain trigger recomputes the hash, so the fixture carries the real one.
+  message_log: (c, u) => [`INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+    VALUES ($1, 0, $2, '2026-01-01T00:00:00Z', 'edge-rls', repeat('0',64),
+            message_log_hash_v1(0, $1::uuid, $2::uuid, '2026-01-01T00:00:00Z', 'edge-rls', repeat('0',64)))`, [c, u]],
   expense: (c, u) => [`INSERT INTO expense (child_id, paid_by, amount_cents, category, incurred_on, split_rule, description)
     VALUES ($1, $2, 100, 'other', current_date, '{}'::jsonb, 'edge-rls')`, [c, u]],
   export_record: (c, u) => [`INSERT INTO export_record (child_id, requested_by, kind, was_free)

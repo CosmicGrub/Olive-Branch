@@ -50,12 +50,15 @@ async function cleanup() {
   await admin.query('ALTER TABLE message_log DISABLE TRIGGER message_log_no_delete');
   try { await admin.query('DELETE FROM message_log WHERE child_id = $1', [CHILD]); }
   finally { await admin.query('ALTER TABLE message_log ENABLE TRIGGER message_log_no_delete'); }
+  await admin.query('DELETE FROM guardianship WHERE child_id = $1', [CHILD]);
   await admin.query('DELETE FROM child WHERE id = $1', [CHILD]);
   await admin.query('DELETE FROM app_user WHERE id = $1', [DAD]);
 }
 await cleanup();
 await admin.query(`INSERT INTO app_user (id, display_name, home_tz) VALUES ($1,'Dad43','America/New_York')`, [DAD]);
 await admin.query(`INSERT INTO child (id, display_name, birth_date, home_tz) VALUES ($1,'C43','2016-04-02','America/New_York')`, [CHILD]);
+// Edge-based RLS (migration 0040): the writer must hold a live edge to the child.
+await admin.query(`INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES ($1,$2,'guardian','{}', tstzrange(now() - interval '1 year', null))`, [CHILD, DAD]);
 
 // ------------------------------------------------ A. SQL hash == engine hash --
 {
