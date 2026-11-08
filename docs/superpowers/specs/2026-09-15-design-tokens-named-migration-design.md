@@ -81,7 +81,7 @@ Note for the implementer: `expenses_screen.dart` appears in both this list and F
 
 ## Doc-sync
 
-`MASTERFILE.md` (version bump, a short new note near §8.16 cross-referencing this as the deferred spacing/radius half of the design-token foundation, now built), `CHANGELOG.md`. No `MARKUP.html`/`scaffold/demo/shell.html` changes — no new screens are introduced, this is internal consistency work on existing ones. As always: sync the claimed assertion count only after a real full `tools/verify.sh` run reports `0 failed`, never estimate it.
+`MASTERFILE.md` (version bump, a short new note near §8.25 (then numbered §8.16) cross-referencing this as the deferred spacing/radius half of the design-token foundation, now built), `CHANGELOG.md`. No `MARKUP.html`/`scaffold/demo/shell.html` changes — no new screens are introduced, this is internal consistency work on existing ones. As always: sync the claimed assertion count only after a real full `tools/verify.sh` run reports `0 failed`, never estimate it.
 
 ## Explicitly out of scope
 

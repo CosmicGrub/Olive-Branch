@@ -788,7 +788,7 @@ Full design spec: `docs/superpowers/specs/2026-09-15-design-tokens-named-
 migration-design.md`. Fourth of seven themes a multi-agent UI/UX review
 surfaced; themes #1-3 (first-run boot polish, Revoke confirmation,
 hardcoded colors) already shipped. `theme.dart` catalogs color only — both
-MASTERFILE §8.16 and the originating intuitivism-foundation spec always
+MASTERFILE §8.25 (then numbered §8.16) and the originating intuitivism-foundation spec always
 scoped spacing/radius tokens as later, deferred work that never happened.
 This is that deferred half, applied ONLY to the review's own concretely-
 named problem spots — not a retrofit of the ~100 other files with their own
@@ -4104,7 +4104,7 @@ Play Together and the theme suite added this session
 ### Fixed
 - **`theme_picker_screen.dart` cited the wrong test filename.** Its own
   header said the child shell's no-settings-affordance contract was proven
-  by `child_no_settings_test.dart`; the real file — matching §8.16's own,
+  by `child_no_settings_test.dart`; the real file — matching §8.25's (then §8.16's) own,
   already-correct citation of the same test — is
   `child_no_settings_contract_test.dart`. Same class of bug as the two
   citation errors PR #41 already fixed (`game_two_truths.dart`'s fabricated
@@ -4132,7 +4132,7 @@ Play Together and the theme suite added this session
   read in full against the current source and already accurately describe
   the FINAL, fully-corrected state — nothing here was an intermediate
   snapshot left behind.
-- **§8.16's theme-customization status note** and both
+- **§8.25's (then §8.16's) theme-customization status note** and both
   `docs/superpowers/specs/` design docs were read in full: the Play
   Together spec's own "common canvas-hosting wrapper" line (~74) matches
   the real spec text verbatim (already correctly cited by MASTERFILE,
