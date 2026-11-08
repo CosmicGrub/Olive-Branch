@@ -1,6 +1,6 @@
-// OLIVE BRANCH — device pairing & provisioning: the redeem screen. UNVERIFIED
-// (no Flutter toolchain in tools/verify.sh's automated pipeline — manually
-// built and run via `flutter analyze`/`flutter test` this session).
+// OLIVE BRANCH — device pairing & provisioning: the redeem screen. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml).
 // docs/superpowers/specs/2026-09-12-device-pairing-provisioning-design.md.
 //
 // Shown at boot (main_live.dart/main_live_guardian.dart) whenever a device

@@ -1,7 +1,7 @@
-// OLIVE BRANCH — guardian shell, the exchange. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §4, §9.7,
-// prohibition P3. Renders MARKUP screen 'exchange'.
+// OLIVE BRANCH — guardian shell, the exchange. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §4, §9.7, prohibition P3.
+// Renders MARKUP screen 'exchange'.
 //
 // Ported from packages/custody/src/schedule.ts (pattern rotation, holiday
 // override, "sleeps until" — §4.1/§8.2.5) and packages/care/src/care.ts

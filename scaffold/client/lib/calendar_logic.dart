@@ -1,6 +1,6 @@
-// OLIVE BRANCH — the calendar primitive, and her birthday. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline). MASTERFILE
-// §8.7, §9.4.
+// OLIVE BRANCH — the calendar primitive, and her birthday. No longer UNVERIFIED
+// — verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §8.7, §9.4.
 //
 // A 1:1 semantic port of packages/calendar/src/calendar.ts, kept close to the
 // TS original (same names, same shapes, same ordering) so the two stay

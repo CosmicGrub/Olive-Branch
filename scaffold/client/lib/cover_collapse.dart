@@ -1,8 +1,7 @@
-// OLIVE BRANCH — shared cover-screen layout. Intuitivism pass, sub-project
-// 3c (docs/superpowers/specs/2026-09-12-intuitivism-fold5-layout-design.md,
-// Part 1). UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated
-// pipeline — manually built and run via `flutter analyze` / `flutter test`
-// this session).
+// OLIVE BRANCH — shared cover-screen layout. Intuitivism pass, sub-project 3c
+// (docs/superpowers/specs/2026-09-12-intuitivism-fold5-layout-design.md, Part
+// 1). No longer UNVERIFIED — verified by CI (`flutter analyze` and `flutter
+// test` run for real in tools/verify.sh and .github/workflows/verify.yml).
 //
 // At Posture.foldCover (form_factors.dart) — the Fold5 closed to its
 // narrowest, 344 CSS px cover screen — a screen's full layout squeezed

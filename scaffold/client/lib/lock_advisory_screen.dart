@@ -1,7 +1,7 @@
-// OLIVE BRANCH — guardian shell, kiosk advisory. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). Renders MARKUP
-// screen "lockAdvisory". MASTERFILE §5.20, §8.3.
+// OLIVE BRANCH — guardian shell, kiosk advisory. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). Renders MARKUP screen
+// "lockAdvisory". MASTERFILE §5.20, §8.3.
 //
 // Calls the real lockAdvisory() from lock_controller.dart rather than
 // reinventing that copy — this screen is a presentation layer over logic

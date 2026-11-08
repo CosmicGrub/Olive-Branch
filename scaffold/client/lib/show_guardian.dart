@@ -1,6 +1,7 @@
-// OLIVE BRANCH — guardian shell, "show me" (his side). UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline). MASTERFILE
-// §9.10, §9.10.7–§9.10.9. Renders MARKUP screen 'showGuardian'.
+// OLIVE BRANCH — guardian shell, "show me" (his side). No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.10,
+// §9.10.7–§9.10.9. Renders MARKUP screen 'showGuardian'.
 //
 // Three invariants this widget tree enforces, all ported from
 // packages/showcase/src/exchange.ts via showcase_logic.dart:

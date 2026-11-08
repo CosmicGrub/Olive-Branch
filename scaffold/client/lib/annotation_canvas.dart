@@ -1,6 +1,7 @@
-// OLIVE BRANCH — shared annotation canvas engine. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.1,
-// §3.1, §9.12.4.
+// OLIVE BRANCH — shared annotation canvas engine. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.1, §3.1,
+// §9.12.4.
 //
 // A 1:1 semantic port of packages/annotation/src/canvas.ts (same class
 // shape, same undo/redo/erase semantics, same field names translated to

@@ -1,6 +1,6 @@
-// OLIVE BRANCH — guardian shell, morning briefing. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §12.4
+// OLIVE BRANCH — guardian shell, morning briefing. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §12.4
 // (guardian.ts), prohibition P7. Renders MARKUP screen 'briefing'.
 //
 // 1:1 port of packages/guardian/src/guardian.ts's §12.4 section: BriefingFact,

@@ -1,7 +1,7 @@
-// OLIVE BRANCH — guardian shell, call security. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). Renders MARKUP
-// screen "callSecurity". MASTERFILE §5.19, §5.23.
+// OLIVE BRANCH — guardian shell, call security. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). Renders MARKUP screen "callSecurity".
+// MASTERFILE §5.19, §5.23.
 //
 // A compact, semantic port of packages/session-runtime/src/rooms.ts's five
 // token invariants (I1-I5) — same numbering, same order. Rather than just

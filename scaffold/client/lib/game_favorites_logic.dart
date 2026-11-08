@@ -1,7 +1,7 @@
-// OLIVE BRANCH — GamePickerScreen's Recommended row, pure logic. UNVERIFIED
-// (no Flutter toolchain in tools/verify.sh's automated pipeline — manually
-// built and run via `flutter analyze`/`flutter test` this session).
-// MASTERFILE §9.2. docs/superpowers/specs/2026-09-12-intuitivism-gamepicker
+// OLIVE BRANCH — GamePickerScreen's Recommended row, pure logic. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.2.
+// docs/superpowers/specs/2026-09-12-intuitivism-gamepicker
 // -recommended-design.md.
 //
 // A 1:1 semantic port of packages/games/src/favorites.ts — same names, same

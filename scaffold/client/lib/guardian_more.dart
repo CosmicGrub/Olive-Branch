@@ -1,6 +1,7 @@
-// OLIVE BRANCH — guardian shell, "more" hub. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). Navigation-wiring-pass
-// addition, not a MARKUP screen of its own.
+// OLIVE BRANCH — guardian shell, "more" hub. No longer UNVERIFIED — verified by
+// CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). Navigation-wiring-pass addition, not a MARKUP
+// screen of its own.
 //
 // guardian_home.dart's own grid stays at the size a real dashboard can
 // carry; this hub is where the wiring pass hangs the remaining

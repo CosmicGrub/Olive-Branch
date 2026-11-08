@@ -1,14 +1,13 @@
-// OLIVE BRANCH — real-time call, LiveKit Cloud. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and
-// run via `flutter analyze` / `flutter test` this session; real two-device
-// verification is next, pending a real LiveKit Cloud project). §5.19/§5.23
-// the call. §16.2 #6 REVERSED AGAIN — this build was self-hosted Jitsi Meet
-// + Jitsi Videobridge; LiveKit Cloud replaces it. See
-// docs/superpowers/specs/2026-08-29-livekit-call-migration-design.md for
-// the full account of why (real, lived self-host operational cost this
-// session; the structural distance/quality ceiling of one self-hosted JVB
-// instance vs LiveKit's real global edge network) and what it does and does
-// not cover.
+// OLIVE BRANCH — real-time call, LiveKit Cloud. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml; real two-device verification is next,
+// pending a real LiveKit Cloud project). §5.19/§5.23 the call. §16.2 #6
+// REVERSED AGAIN — this build was self-hosted Jitsi Meet + Jitsi Videobridge;
+// LiveKit Cloud replaces it. See
+// docs/superpowers/specs/2026-08-29-livekit-call-migration-design.md for the
+// full account of why (real, lived self-host operational cost this session; the
+// structural distance/quality ceiling of one self-hosted JVB instance vs
+// LiveKit's real global edge network) and what it does and does not cover.
 //
 // The one thing the two devices still need to agree on is which room to
 // join, and that coordination reuses real, tested logic —

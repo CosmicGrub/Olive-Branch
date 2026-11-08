@@ -1,5 +1,6 @@
-// OLIVE BRANCH — kiosk_channel.dart contract tests. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline).
+// OLIVE BRANCH — kiosk_channel.dart contract tests. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml).
 //
 // §16.2 #6 / §5.20 — beginCallHandoff() coverage. This is the half of the
 // call/kiosk-lock-task fix that a widget test CAN actually see: whether the

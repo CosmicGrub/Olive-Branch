@@ -1,7 +1,7 @@
-// OLIVE BRANCH — child shell, "teach me something". UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.9.3,
-// §9.14. Renders MARKUP screen 'teachMe': "she teaches him something from
-// her week."
+// OLIVE BRANCH — child shell, "teach me something". No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.9.3, §9.14.
+// Renders MARKUP screen 'teachMe': "she teaches him something from her week."
 //
 // A 1:1 port of the teach-me functions from
 // packages/maturation/src/family.ts (teach / askAgain / lessonArtifact /

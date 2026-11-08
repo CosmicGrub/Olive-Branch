@@ -1,6 +1,7 @@
-// OLIVE BRANCH — shared calendar / day-part / receipt logic. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline). MASTERFILE
-// §8.2, §8.2.4, §8.4, §9.4, §9.5.
+// OLIVE BRANCH — shared calendar / day-part / receipt logic. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §8.2,
+// §8.2.4, §8.4, §9.4, §9.5.
 //
 // Pure-Dart logic shared by the five screens in this group (my_day.dart,
 // weeks_screen.dart, receipt_screen.dart, inbox_screen.dart,

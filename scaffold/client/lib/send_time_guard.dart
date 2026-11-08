@@ -1,7 +1,7 @@
-// OLIVE BRANCH — guardian shell, send-time guard. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). Renders MARKUP
-// screen "sendguard". MASTERFILE §6.4, §8.2.3, §8.2.7.
+// OLIVE BRANCH — guardian shell, send-time guard. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). Renders MARKUP screen
+// "sendguard". MASTERFILE §6.4, §8.2.3, §8.2.7.
 //
 // Two related but distinct guards, both ported from the reference
 // implementation rather than re-derived:

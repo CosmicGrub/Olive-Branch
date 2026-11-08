@@ -1,6 +1,6 @@
-// OLIVE BRANCH — DEV VERIFICATION ONLY entry point. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — same posture as every
-// other dev-only entry point named below). MASTERFILE §5.20, §5.24.4, §8.3,
+// OLIVE BRANCH — DEV VERIFICATION ONLY entry point. No longer UNVERIFIED as
+// code — analysed by CI (`flutter analyze`); the on-device run of this dev-only
+// entry point is manual and not part of CI. MASTERFILE §5.20, §5.24.4, §8.3,
 // §16.2 #6.
 //
 // Exists for exactly one reason, narrower than either file it borrows from:

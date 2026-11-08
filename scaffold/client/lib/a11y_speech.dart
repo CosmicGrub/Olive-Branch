@@ -1,6 +1,6 @@
-// OLIVE BRANCH — read-aloud, the pure logic half. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §8.8.5.
+// OLIVE BRANCH — read-aloud, the pure logic half. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §8.8.5.
 //
 // A 1:1 semantic port of packages/a11y/src/a11y.ts's speakableText()/
 // admitSpeech()/LABELS section, kept deliberately close to the original

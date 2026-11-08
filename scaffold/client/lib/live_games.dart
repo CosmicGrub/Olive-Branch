@@ -1,5 +1,6 @@
-// OLIVE BRANCH — live games, played during a call. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.2, §3.1,
+// OLIVE BRANCH — live games, played during a call. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.2, §3.1,
 // §5.19.
 //
 // A 1:1 semantic port of packages/live/src/live.ts — same names, same

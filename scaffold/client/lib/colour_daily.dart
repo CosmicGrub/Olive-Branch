@@ -1,5 +1,6 @@
-// OLIVE BRANCH — her colour, the daily pick. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). §8.6.3.
+// OLIVE BRANCH — her colour, the daily pick. No longer UNVERIFIED — verified by
+// CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). §8.6.3.
 //
 // Renders MARKUP screen 'colourDaily'. A two-up A/B, not the full twelve —
 // lower effort than a grid, and it plays like a game rather than a settings

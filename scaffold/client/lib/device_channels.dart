@@ -1,7 +1,7 @@
-// OLIVE BRANCH — §8.11.4 delivery channels, the pure-logic half. UNVERIFIED
-// (no Flutter toolchain in tools/verify.sh's automated pipeline — manually
-// built and run via `flutter analyze`/`flutter test` this session).
-// MASTERFILE §8.11.4.
+// OLIVE BRANCH — §8.11.4 delivery channels, the pure-logic half. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml). MASTERFILE
+// §8.11.4.
 //
 // A DELIBERATELY PARTIAL 1:1 port of packages/devices/src/devices.ts's
 // Channel/ChannelCapability/CHANNELS/capability()/channelAdvice() — same

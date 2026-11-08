@@ -1,12 +1,13 @@
-// OLIVE BRANCH — the real entry point for LIVE network play. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline) — manually run
-// via `flutter analyze`/`flutter test` as part of this feature's own
-// security review; see networked_checkers_lobby_screen_test.dart. Two
-// paired devices play one checkers game against each other, relayed through
-// this app's own authenticated backend server (never peer-to-peer, never
-// LAN-broadcast/discovery-based) — see scaffold/packages/game-sync/src/
-// table.ts and scaffold/server/game_tables.mjs for the server-side half of
-// this contract.
+// OLIVE BRANCH — the real entry point for LIVE network play. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml) — manually run via
+// `flutter analyze`/`flutter test` as part of this feature's own security
+// review; see networked_checkers_lobby_screen_test.dart. Two paired devices
+// play one checkers game against each other, relayed through this app's own
+// authenticated backend server (never peer-to-peer, never
+// LAN-broadcast/discovery-based) — see scaffold/packages/game-sync/src/table.ts
+// and scaffold/server/game_tables.mjs for the server-side half of this
+// contract.
 //
 // Reachable from games_hub.dart's "Checkers — play live" tile.
 //

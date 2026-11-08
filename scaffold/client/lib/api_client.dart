@@ -1,5 +1,6 @@
-// OLIVE BRANCH — Flutter client, API surface. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §20.2, §7.
+// OLIVE BRANCH — Flutter client, API surface. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §20.2, §7.
 //
 // Real HTTP client as of this pass — previously endpoint-string constants
 // only, with no code anywhere that actually made a request (there was no

@@ -1,8 +1,7 @@
-// OLIVE BRANCH — GamePickerScreen's live wrapper. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze`/`flutter test` this session). MASTERFILE §9.2.
-// docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended-
-// design.md.
+// OLIVE BRANCH — GamePickerScreen's live wrapper. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.2.
+// docs/superpowers/specs/2026-09-12-intuitivism-gamepicker-recommended-design.md.
 //
 // game_picker.dart's own header is explicit that GamePickerScreen stays a
 // plain, non-fetching StatelessWidget fed by plain data — this file is

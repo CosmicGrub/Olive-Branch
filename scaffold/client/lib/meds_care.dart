@@ -1,7 +1,7 @@
-// OLIVE BRANCH — guardian shell, meds & care. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §9.6.1,
-// §9.6.2, §5.8, §6.7. Renders MARKUP screen 'meds'.
+// OLIVE BRANCH — guardian shell, meds & care. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §9.6.1, §9.6.2, §5.8, §6.7.
+// Renders MARKUP screen 'meds'.
 //
 // "Care information between guardians; never a surface the child carries."
 // Not navigated to from any child-facing widget in this codebase (see

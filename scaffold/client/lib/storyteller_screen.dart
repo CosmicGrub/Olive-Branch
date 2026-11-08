@@ -1,7 +1,7 @@
-// OLIVE BRANCH — child shell, the storyteller. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §9.11.
-// Renders MARKUP screens 'storyteller' and 'storySafety'.
+// OLIVE BRANCH — child shell, the storyteller. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §9.11. Renders MARKUP screens
+// 'storyteller' and 'storySafety'.
 //
 // Two screens live in this file because they are two sides of the same
 // promise:

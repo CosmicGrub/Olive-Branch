@@ -1,5 +1,6 @@
-// OLIVE BRANCH — she places her birthday, the day. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). §8.7.2, §8.7.4.
+// OLIVE BRANCH — she places her birthday, the day. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). §8.7.2, §8.7.4.
 //
 // Renders MARKUP screen 'bdDay'. The real month grid (calendar_logic.dart's
 // monthGrid() — the ONE month renderer in the product, §8.7.1), so she taps a

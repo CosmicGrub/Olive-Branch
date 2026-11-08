@@ -1,6 +1,7 @@
-// OLIVE BRANCH — child shell, private journal. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §5.12,
-// §9.9.2, P7. Renders MARKUP screen 'journal'.
+// OLIVE BRANCH — child shell, private journal. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §5.12, §9.9.2, P7. Renders
+// MARKUP screen 'journal'.
 //
 // P7 (permanent prohibition): no parent-facing path to this screen or its
 // contents exists at any tier, including guardian escalation and court order

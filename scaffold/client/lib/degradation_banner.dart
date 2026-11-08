@@ -1,7 +1,7 @@
-// OLIVE BRANCH — call quality ladder + degradation notice. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline — manually built
-// and run via `flutter analyze` / `flutter test` this session). Renders
-// MARKUP screen "liveDegrade". MASTERFILE §5.28, §8.14.
+// OLIVE BRANCH — call quality ladder + degradation notice. No longer UNVERIFIED
+// — verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). Renders MARKUP screen
+// "liveDegrade". MASTERFILE §5.28, §8.14.
 //
 // A 1:1 semantic port of packages/live/src/stream.ts — same names, same
 // shapes, same ordering — so the two stay auditable side by side, the

@@ -1,8 +1,7 @@
-// OLIVE BRANCH — device pairing & provisioning: on-device identity storage.
-// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline —
-// manually built and run via `flutter analyze`/`flutter test` this session,
-// same posture every other Dart file in this client carries until a real
-// device confirms it). docs/superpowers/specs/2026-09-12-device-pairing
+// OLIVE BRANCH — device pairing & provisioning: on-device identity storage. No
+// longer UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run
+// for real in tools/verify.sh and .github/workflows/verify.yml).
+// docs/superpowers/specs/2026-09-12-device-pairing
 // -provisioning-design.md.
 //
 // This is the FIRST on-device persistence this app has ever needed --

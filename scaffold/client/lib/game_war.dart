@@ -1,11 +1,12 @@
-// OLIVE BRANCH — War, the ad-hoc local card game. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). Network resilience &
+// OLIVE BRANCH — War, the ad-hoc local card game. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). Network resilience &
 // ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion. Builds on
 // local_pairing.dart (the shared foundation) and war_deck.dart (the deck
 // primitive). First of five new local-play activities, deliberately the
-// smallest: no CPU seat, no roster, no decisions at all beyond when to
-// flip — its whole job is to prove local_pairing.dart works for a SECOND
-// game and to give this codebase its first real card-game data model.
+// smallest: no CPU seat, no roster, no decisions at all beyond when to flip —
+// its whole job is to prove local_pairing.dart works for a SECOND game and to
+// give this codebase its first real card-game data model.
 //
 // P2 (MASTERFILE §2.1) governs the whole screen: no score, no streak, no
 // running tally, no "you lost" framing. A finished game closes with a

@@ -1,8 +1,7 @@
-// OLIVE BRANCH — theme customization suite. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and
-// run via `flutter analyze` / `flutter test` this session). MASTERFILE
-// §8.1, `docs/superpowers/specs/2026-08-21-intuitivism-visual-foundation-
-// design.md`.
+// OLIVE BRANCH — theme customization suite. No longer UNVERIFIED — verified by
+// CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). MASTERFILE §8.1,
+// `docs/superpowers/specs/2026-08-21-intuitivism-visual-foundation-design.md`.
 //
 // GUARDIAN-ONLY. Reached from guardian_more.dart's GuardianMoreScreen — this
 // session's first real settings surface, and the reason it lives here

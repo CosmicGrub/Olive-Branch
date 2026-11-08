@@ -1,6 +1,6 @@
-// OLIVE BRANCH — device pairing & provisioning: "Add a device". UNVERIFIED
-// (no Flutter toolchain in tools/verify.sh's automated pipeline — manually
-// built and run via `flutter analyze`/`flutter test` this session).
+// OLIVE BRANCH — device pairing & provisioning: "Add a device". No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml).
 // docs/superpowers/specs/2026-09-12-device-pairing-provisioning-design.md.
 //
 // Off Guardian More, PARALLEL to the existing "Invite a co-parent" entry

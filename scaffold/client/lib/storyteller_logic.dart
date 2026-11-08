@@ -1,6 +1,6 @@
-// OLIVE BRANCH — the storyteller, pure logic. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §9.11.
+// OLIVE BRANCH — the storyteller, pure logic. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §9.11.
 //
 // A 1:1 semantic port of packages/storyteller/src/storyteller.ts, kept
 // deliberately close to the TS original (same function names, same shapes,

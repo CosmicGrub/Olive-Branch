@@ -1,12 +1,12 @@
-// OLIVE BRANCH — Connect 4, pure board logic. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). Network resilience &
-// ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion.
-// Hand-rolled, not a TS port — same reasoning as war_deck.dart's own header: no
-// packages/games/src counterpart exists for this game, and this file's
-// whole reason to exist is a game that never touches a server (the point
-// of local ad-hoc play). game_chess.dart already establishes real
-// precedent in this codebase for a hand-rolled, non-ported engine when
-// that's the honest choice.
+// OLIVE BRANCH — Connect 4, pure board logic. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). Network resilience & ad-hoc mode roadmap,
+// Track B Option 2, ad-hoc games expansion. Hand-rolled, not a TS port — same
+// reasoning as war_deck.dart's own header: no packages/games/src counterpart
+// exists for this game, and this file's whole reason to exist is a game that
+// never touches a server (the point of local ad-hoc play). game_chess.dart
+// already establishes real precedent in this codebase for a hand-rolled,
+// non-ported engine when that's the honest choice.
 //
 // [Side] is deliberately imported from live_games.dart, NOT game_logic
 // .dart's own separately-defined `Side{a,b}` (child/parent role, used by
