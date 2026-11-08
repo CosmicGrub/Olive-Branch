@@ -150,6 +150,8 @@ screens kept their data in memory and lost it on exit.
   memory by owner decision: nothing it makes persists. The wipe's PIN stays
   server-verified; no locally cached PIN verifier (short PINs hashed on-device are weak).
 
+- **Colour of the day, art style, play window** (#140's `ChildColourStore` / `GuardianColourStore`) and the **family structure** (#139's `FamilyStore`) are now durable: `LocalColourStore` (wraps the real-rules in-memory store; keeps two weeks of colour days) and `LocalStoreFamilyStore` (encrypted; a failed save throws). `sharedColourStore` and `localFamilyService` bind to the device's child.
+
 ### Prohibitions
 - **P2** held: no score, streak, counter or ranking is stored. A story's
   `timesRead` is dropped; a lesson's `askedAgain` is reduced to one bit; today's
@@ -162,8 +164,8 @@ screens kept their data in memory and lost it on exit.
   guardian gallery and showcase (demo datasets / other-parent asks), siblings
   (family-structure work), and wiring `receipt_screen.dart`'s in-memory outbox
   (its payload is raw recorded bytes, which the store refuses to write; network
-  semantics untouched). `colour_daily.dart` / `colour_*.dart` untouched: only
-  `TodayColourRepository` is provided for the colour feature to use.
+  semantics untouched). The colour screens are untouched: only the store behind
+  `sharedColourStore` changed.
 
 ---
 

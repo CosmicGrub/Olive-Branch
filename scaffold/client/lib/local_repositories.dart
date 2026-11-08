@@ -335,24 +335,3 @@ Future<ProfileCache?> _safeLoad(ProfileCacheRepository cache) async {
     return null;
   }
 }
-
-/// Today's colour, for this device only: a colour string and the day it was
-/// picked. The colour-of-the-day feature (colour_daily.dart) owns what the
-/// colour MEANS; this only remembers it. One value, overwritten; no history.
-class TodayColourRepository {
-  TodayColourRepository(this._ns);
-  final LocalNamespace _ns;
-  static const String _key = 'today';
-
-  Future<({String colour, String day})?> load() async {
-    final Map<String, Object?>? m = _asMap(await _ns.get(_key));
-    final Object? c = m?['colour'], d = m?['day'];
-    if (c is String && d is String) return (colour: c, day: d);
-    return null;
-  }
-
-  Future<void> save({required String colour, required String day}) =>
-      _ns.put(_key, <String, Object?>{'colour': colour, 'day': day});
-
-  Future<void> clear() => _ns.delete(_key);
-}

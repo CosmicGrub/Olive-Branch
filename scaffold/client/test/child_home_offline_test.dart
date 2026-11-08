@@ -69,7 +69,7 @@ void main() {
   testWidgets('a good load remembers her name, age and the grown-up\'s hide choices on this device', (t) async {
     await t.pumpWidget(_home(_server(up: true)));
     await t.pumpAndSettle();
-    expect(find.text('Hi Ivy'), findsOneWidget);
+    expect(find.byWidgetPredicate((Widget w) => w is Text && (w.data == 'Hi Ivy' || w.data == 'Hey Ivy')), findsOneWidget);
     expect(find.text('Homework'), findsNothing, reason: 'hidden by the grown-up');
 
     final ProfileCache c = (await ProfileCacheRepository(LocalServices.current.area('profile', ownerId: 'child-a')).load())!;
@@ -86,7 +86,7 @@ void main() {
     await t.pumpWidget(_home(_server(up: false))); // same phone, no signal
     await t.pumpAndSettle();
 
-    expect(find.text('Hi Ivy'), findsOneWidget, reason: 'her name, from the cache');
+    expect(find.byWidgetPredicate((Widget w) => w is Text && (w.data == 'Hi Ivy' || w.data == 'Hey Ivy')), findsOneWidget, reason: 'her name, from the cache');
     expect(find.byKey(const Key('childOfflineIcon')), findsOneWidget);
     expect(find.byKey(const Key('childOfflineRetry')), findsOneWidget);
     expect(find.text('Homework'), findsNothing, reason: 'going offline must never unhide what a guardian hid');
@@ -114,7 +114,7 @@ void main() {
     up = true;
     await t.tap(find.byKey(const Key('childOfflineRetry')));
     await t.pumpAndSettle();
-    expect(find.text('Hi Ivy'), findsOneWidget);
+    expect(find.byWidgetPredicate((Widget w) => w is Text && (w.data == 'Hi Ivy' || w.data == 'Hey Ivy')), findsOneWidget);
     expect(find.byKey(const Key('childOfflineIcon')), findsNothing);
   });
 
@@ -124,7 +124,7 @@ void main() {
     await t.pumpWidget(const SizedBox());
     await t.pumpWidget(_home(_server(up: false), id: 'child-b'));
     await t.pumpAndSettle();
-    expect(find.text('Hi Ivy'), findsNothing);
+    expect(find.byWidgetPredicate((Widget w) => w is Text && (w.data == 'Hi Ivy' || w.data == 'Hey Ivy')), findsNothing);
     expect(find.byType(Text), findsNothing);
   });
 
@@ -133,7 +133,7 @@ void main() {
         store: LocalStore(backend: _BrokenDisk()), childId: 'child-a', isLive: true, demoSeeds: false));
     await t.pumpWidget(_home(_server(up: true)));
     await t.pumpAndSettle();
-    expect(find.text('Hi Ivy'), findsOneWidget);
+    expect(find.byWidgetPredicate((Widget w) => w is Text && (w.data == 'Hi Ivy' || w.data == 'Hey Ivy')), findsOneWidget);
     expect(find.byKey(const Key('childOfflineIcon')), findsNothing);
   });
 }

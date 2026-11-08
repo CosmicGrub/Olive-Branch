@@ -21,6 +21,8 @@
 //  - a story is guardian-authored text, bounded by validateStory (F7); this file has
 //    no way to generate one.
 import 'family_structure_logic.dart';
+import 'local_services.dart';
+import 'local_store.dart';
 
 class FamilyStoreRefused implements Exception {
   const FamilyStoreRefused(this.reason);
@@ -105,6 +107,39 @@ class MemoryFamilyStore implements FamilyStore {
   Future<FamilySnapshot> load() async => _json == null ? const FamilySnapshot() : FamilySnapshot.fromJson(_json!);
   @override
   Future<void> save(FamilySnapshot s) async => _json = s.toJson();
+}
+
+/// The durable [FamilyStore]: the whole snapshot as one document in LocalStore's
+/// ENCRYPTED `child.<id>.family` area, so the family structure a guardian built
+/// and released survives a restart and is sealed on the device. Append-only
+/// history is the snapshot's own rule; this only remembers it. Unlike the
+/// best-effort stores elsewhere, a failed [save] THROWS (a full box, an
+/// unwritable disk): a guardian must never be told a change was recorded when it
+/// was not. An unreadable document (quarantined by the store) loads as empty.
+///
+/// [LocalStoreFamilyStore.shared] binds lazily to [LocalServices.current]
+/// (rebinding if the child scope changes); the plain constructor takes one namespace.
+class LocalStoreFamilyStore implements FamilyStore {
+  LocalStoreFamilyStore(LocalNamespace ns) : _fixed = ns;
+  LocalStoreFamilyStore.shared() : _fixed = null;
+  final LocalNamespace? _fixed;
+  static const String _key = 'snapshot';
+
+  LocalNamespace get _ns => _fixed ?? LocalServices.current.area('family');
+
+  @override
+  Future<FamilySnapshot> load() async {
+    try {
+      final Object? raw = await _ns.get(_key);
+      if (raw is Map) return FamilySnapshot.fromJson(raw.cast<String, Object?>());
+    } catch (_) {
+      // a damaged document: start empty rather than fail the shell
+    }
+    return const FamilySnapshot();
+  }
+
+  @override
+  Future<void> save(FamilySnapshot s) => _ns.put(_key, s.toJson());
 }
 
 /// A write's outcome: the new change id and where it stands, or the refusal reason.
@@ -390,4 +425,4 @@ class FamilyService {
 
 /// The one in-process service the guardian and child shells share on this device until a
 /// durable store is wired in. Swap [localFamilyService]'s store; nothing else changes.
-final FamilyService localFamilyService = FamilyService(MemoryFamilyStore());
+final FamilyService localFamilyService = FamilyService(LocalStoreFamilyStore.shared());

@@ -585,11 +585,16 @@ class GuardianMoreScreen extends StatelessWidget {
           subtitle: 'Private to you',
           onTap: () => _open(context, LearnHomeScreen(
             principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
-            store: learnStore ?? _localLearnStore, childAge: childAge))),
+            store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId), childAge: childAge))),
       ]),
       SettingsGroup('Account', [
         SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',
           subtitle: 'Stops notifications on this device', onTap: () => _signOut(context)),
+        SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this device',
+          subtitle: 'What this phone keeps, and clear it',
+          onTap: () => _open(context, ClearLocalDataScreen(
+            verifyPin: _liveVerifyWipePin(
+              baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient)))),
         SettingsRow(id: 'deletion', icon: Icons.delete_outline, title: 'Deletion',
           subtitle: 'What deletion means here, stated first', onTap: () => _openDeletion(context)),
       ]),

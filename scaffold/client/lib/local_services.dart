@@ -94,7 +94,14 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'Only ever grows; nothing is taken back.'),
   LocalDataEntry(
       area: 'colour', scope: LocalScope.child,
-      what: "Today's colour choice for this device: a colour and a day. No history of picks."),
+      what: 'Colour of the day for this device: the last two weeks of colour days (only the '
+          'latest is ever used or shown; older ones are dropped), the art style, and the play '
+          'window the grown-up set. No tally of picks.'),
+  LocalDataEntry(
+      area: 'family', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
+      what: 'Family structure a grown-up built and released on this device: who is in her life, '
+          'her homes, the append-only history of changes, and guardian-written stories. '
+          'Sealed on the device; never uploaded.'),
   LocalDataEntry(
       area: 'profile', scope: LocalScope.child,
       what: 'A small cache so a child who started the app online can open it with no signal: '

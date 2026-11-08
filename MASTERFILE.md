@@ -5401,7 +5401,8 @@ drift. Nothing is written that is not in it.
 | `child.<id>.lessons` | What she taught: title, how, date, and one bit — asked again or not. **No running count**, no grade or score. | No |
 | `child.<id>.collections` | Specimens she added (name, date, optional note). No totals or targets. | No |
 | `child.<id>.ladder` | Growing-up grants reached (append-only), rungs a guardian moved later, reveals she has seen, announcements dismissed. Makes "told once" true across a restart. | No |
-| `child.<id>.colour` | Today's colour: one colour and one day, overwritten. The colour-of-the-day feature owns what it means; this only remembers it. | No |
+| `child.<id>.colour` | Colour of the day for this device (`LocalColourStore`, same real rules as the in-memory store): the last two weeks of colour days (only the latest is used; older are dropped), the art style, and the play window. No tally of picks. | No |
+| `child.<id>.family` | Family structure a grown-up built and released on this device (`LocalStoreFamilyStore`): the append-only history, her homes and people, guardian-written stories. A failed save throws; a change is never reported recorded when it was not. | **Yes** |
 | `child.<id>.profile` | Offline start-up cache: her first name, age in whole years, that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |

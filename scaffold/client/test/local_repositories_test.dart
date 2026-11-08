@@ -118,21 +118,6 @@ void main() {
     });
   });
 
-  group('today\'s colour (store only; colour_daily.dart owns the meaning)', () {
-    test('one value, overwritten; clear forgets it; no history is kept', () async {
-      final LocalNamespace ns = _ns('colour');
-      final TodayColourRepository r = TodayColourRepository(ns);
-      expect(await r.load(), isNull);
-      await r.save(colour: '#ff8800', day: '2026-11-06');
-      await r.save(colour: '#00aa55', day: '2026-11-07');
-      final ({String colour, String day}) now = (await r.load())!;
-      expect(now.colour, '#00aa55');
-      expect(now.day, '2026-11-07');
-      expect(await ns.list(), <String>['today'], reason: 'overwritten in place, no log of past picks');
-      await r.clear();
-      expect(await r.load(), isNull);
-    });
-  });
 
   group('profile cache and the offline-first onboarding answer (audit C-06)', () {
     test('the cache keeps a name, an age, the onboarding bit and the grown-up\'s overrides', () async {
