@@ -537,7 +537,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 8207,
+  "assertions": 8302,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -3320,6 +3320,21 @@ coview: function(){ var v=T.coViewView();
   + real('what the child sees as the allowance is used (0, 10 min, 110 min, 120 min)', v.budget)
   + real('channel choice: in a call / no call / nothing available', v.transports)); },
 
+parentlearn: function(){ var v=T.parentLearnView();
+  return P_engine('Parent Learn (guardian only)',
+  '<p><strong>Education for guardians, with an evidence label on every card.</strong> '
+  + 'Private reflection, cultural framing, the two-home rules list and the message check are each '
+  + '<em>optional</em>, and every default is the most private choice. Nothing here ever reaches the child shell, '
+  + 'and a reflection is never readable by the other guardian.</p>'
+  + real('cards, and how many carry each evidence label', v.cards + ' / ' + JSON.stringify(v.byEvidence))
+  + real('content lint (causal claims, labels, missing sources)', v.lint.length ? v.lint : 'clean')
+  + real('defaults', v.defaults)
+  + real('cards a child sees / a guardian sees for a 6-year-old', v.childSees + ' / ' + v.guardianSeesAtSix)
+  + real('can the co-guardian read my reflection? can I?', v.coGuardianReadsMyReflection + ' / ' + v.iReadMyReflection)
+  + real('a day at warmth 80, expectations 30', v.day)
+  + real('message check, off by default', v.messageCheckOffByDefault)
+  + real('message check, opted in', v.messageCheckOptedIn)
+  + real('rules list shared when off / when on (a style is dropped)', v.rulesOffByDefault + ' / ' + JSON.stringify(v.rulesOptedIn))); },
 motion: function(){ var v=T.motionView();
   return P_engine('Motion',
   '<p>Everything on her side was static. A five-year-old reads a static interface '
@@ -4047,7 +4062,7 @@ var SCREENS = [
     ['observers','Observers'],['access','Accessibility'],
   ]],
   ['Engine room', [
-    ['engineroom','All engines, live'],['ninemore','Nine more'],['devices','Device matrix'],['theten','Ten from the audit'],['callfns','Call functions'],['pane','The pane'],['motion','Motion'],['budget','Stream & budget'],['signal','Come-back signal'],['a11ymatrix','A11y matrix'],['coview','Read together'],
+    ['engineroom','All engines, live'],['ninemore','Nine more'],['devices','Device matrix'],['theten','Ten from the audit'],['callfns','Call functions'],['pane','The pane'],['motion','Motion'],['budget','Stream & budget'],['signal','Come-back signal'],['a11ymatrix','A11y matrix'],['coview','Read together'],['parentlearn','Parent Learn'],
   ]],
   ['Show me', [
     ['asks','Dad asked you'],['hisworld','His world'],['gallery','The gallery'],

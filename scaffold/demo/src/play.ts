@@ -729,6 +729,33 @@ export function coViewView(): Any {
   };
 }
 export { CoView };
+// ------------------------------- parent learn: guardian education ----------
+import * as Learn from '../../packages/parent-learn/src/learn.ts';
+
+/** Every value below is computed by the real module — nothing is typed in. */
+export function parentLearnView(): Any {
+  const g = { kind: 'guardian', id: 'g1' } as Any;
+  const g2 = { kind: 'guardian', id: 'g2' } as Any;
+  const child = { kind: 'child', id: 'c1' } as Any;
+  const on = Learn.parseSettings({ reflection: 'saved', rulesList: true, messageCheck: true });
+  const draft = 'You always let her stay up and it is your fault.';
+  return {
+    cards: Learn.CARDS.length,
+    byEvidence: Learn.EVIDENCE_LEVELS.map(l => ({ level: l, n: Learn.CARDS.filter(c => c.evidence === l).length })),
+    lint: Learn.lintCards(Learn.CARDS),
+    defaults: Learn.DEFAULT_SETTINGS,
+    childSees: Learn.cardsFor(child, Learn.DEFAULT_SETTINGS).length,
+    guardianSeesAtSix: Learn.cardsFor(g, Learn.DEFAULT_SETTINGS, 6).length,
+    coGuardianReadsMyReflection: Learn.canReadReflection(g2, 'g1'),
+    iReadMyReflection: Learn.canReadReflection(g, 'g1'),
+    day: Learn.describeDay(80, 30),
+    messageCheckOffByDefault: Learn.checkMessage(g, Learn.DEFAULT_SETTINGS, draft),
+    messageCheckOptedIn: Learn.checkMessage(g, on, draft),
+    rulesOffByDefault: Learn.shareableRules(g, Learn.DEFAULT_SETTINGS, [{ category: 'bedtime', text: '8:00' }]).length,
+    rulesOptedIn: Learn.shareableRules(g, on, [{ category: 'bedtime', text: '8:00' }, { category: 'style', text: 'authoritative' }]),
+  };
+}
+export { Learn };
 
 
 
