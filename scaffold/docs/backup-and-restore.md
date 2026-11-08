@@ -193,21 +193,44 @@ plain directory extraction, safe to run against an empty or partially
 populated target (existing files with the same name are overwritten, same
 as `pg_restore --clean`'s spirit for the database side).
 
+## What is automatic, and what is not
+
+Read this section as a checklist, not a promise. Nothing is backed up until an
+operator turns it on, because a backup needs credentials and a destination this
+repository does not have and will not invent.
+
+| Thing | Automatic? | What it takes |
+|---|---|---|
+| Nightly database dump | **Only if you configure it.** The `scheduler` service's `backup` job runs once a day (`SCHEDULER_HOUR_UTC`, default 03:00 UTC) but does nothing — it logs `status=skipped reason=not_configured` — unless `BACKUP_DIR` **and** `BACKUP_DATABASE_URL` are set. `docker-compose.prod.yml` sets both for the scheduler out of the box (dump identity: `backup_reader`, from `BACKUP_READER_PASSWORD`), so on the stock prod stack this runs once the host directory below is writable. | `mkdir -p backups && chown 1000:1000 backups` next to the compose file (the container runs as uid 1000). `pg_dump` 16 is in the image (`PG_CLIENT=1` build arg, on by default); a custom image without it fails the dump stage with a clear error. |
+| Nightly media archive | Same job, same switch, if `MEDIA_STORAGE_ROOT` exists (it does in the prod compose). `BACKUP_MEDIA=0` opts out. | Nothing further. |
+| Encryption at rest | **Off by default.** Set `BACKUP_ENCRYPTION_PASSPHRASE` and every new file is AES-256-GCM encrypted to `*.enc` and the plaintext deleted. | Choose a passphrase and store it somewhere that is NOT the same disk. **It is not recoverable: lose it and every encrypted backup is unreadable.** Decrypt with `BACKUP_ENCRYPTION_PASSPHRASE=… node tools/backup-decrypt.mjs backup.dump.enc out.dump`, then restore as normal. |
+| Retention | **Yes, when the job runs and succeeds.** After a new backup lands it keeps the newest backup of each of the 7 most recent days that have one, plus the newest of each of the 4 most recent ISO weeks that have one, plus always the single newest; the rest are deleted. Database dumps, media archives and different database names are pruned independently; files that do not match `olive_*` are never touched. It counts days/weeks that **have a backup**, not calendar days, so a ten-day outage does not wipe the history on the first night back. A failing night prunes nothing. | `BACKUP_DAILY_KEEP` / `BACKUP_WEEKLY_KEEP` to change 7 / 4. |
+| Off-host copy | **Off by default, no destination is invented.** | Set `BACKUP_SYNC_COMMAND` to a shell command that pushes the directory somewhere that is not this host — `rclone sync . remote:olive`, `rsync -a . backup@host:/srv/olive/`, `aws s3 sync . s3://bucket/olive/` — using the tool's own credentials, which you install. It runs inside `BACKUP_DIR` with `BACKUP_NEW_FILES` set to the file(s) just written. If it fails the job is reported failed (exit code, log line, and the next alarm) but the local backup is kept. **The stock image ships none of rclone/rsync/aws**: mount or extend the image to provide the tool you name. |
+| Stale-backup alarm | **Yes, once `BACKUP_DIR` is set** (the prod compose sets it). The scheduler's `health-alert` job runs right after `backup` and emits `ALERT check_name=backup_stale` (exit 1) when there is no database dump or the newest is older than `BACKUP_MAX_AGE_HOURS` (default 36). | Something must read the scheduler's log or exit code — **nothing pages anyone**: `health-alert.mjs`'s own header still applies. |
+| Restore | **Never automatic.** | The "Restore from a backup" section above, by hand. |
+| A restore drill | **Not scheduled.** A backup nobody has restored is a hope. | Run `bash tools/backup-restore-verify.sh` periodically. |
+
+Running it by hand, anywhere `pg_dump` 16 exists:
+
+```bash
+BACKUP_DIR=./backups BACKUP_DATABASE_URL=postgres://backup_reader:…@host/olive_prod \
+  node tools/scheduler.mjs run backup
+```
+
+Alternatively keep using the `ops`-profile `backup` service from cron on the
+host (see "Take a backup"); it writes the same filenames into the same
+directory, so the retention and the alarm above cover its output too.
+
 ## How often
 
-Nightly, via the scheduler service another agent in this same round is
-building — this runbook does not integrate with it directly (out of scope
-for this pass), but the intended cadence is: **the scheduler runs `docker
-compose -f docker-compose.prod.yml --profile ops run --rm backup` once
-nightly**, same invocation as the manual "take a backup" section above.
-Nightly, not hourly, matches this product's own real access pattern (a
+Nightly, by the scheduler's `backup` job above (or the `ops` service from host
+cron). Nightly, not hourly, matches this product's own real access pattern (a
 handful of families, not a high-write-volume service) — the honest
 retention-vs-storage tradeoff is "how much of one day's messages, journal
 entries, and exchange logs can this family afford to lose," and one night
-is the deliberate answer until real usage data says otherwise. Keep at
-least 7 nightly dumps before pruning older ones; this pass does not build
-automatic dump rotation/expiry — that's the scheduler integration's own
-job, not this one's.
+is the deliberate answer until real usage data says otherwise. Retention is
+7 daily + 4 weekly (above); it is applied by the scheduler job only — the
+`ops`-profile service takes a backup but does not prune.
 
 ## How this was verified
 

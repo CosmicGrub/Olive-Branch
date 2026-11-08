@@ -14,6 +14,85 @@ Silent deletion is a process failure.
 
 ---
 
+## [Unreleased] — Server hardening (audit pass: P-01, P-04, P-05, P-07 server half, P-08, P-13 to P-19)
+
+Server, database, image and CI only; no client change, no new screen, so no
+version bump and no MARKUP/DEMO row (`tools/check-markup.mjs` keys on numbered
+entries). Described as shipped in MASTERFILE §7.11. Every fix is covered by a
+suite registered in `tools/verify.sh`.
+
+### Fixed
+- **Pool self-deadlock (P-01).** ~45 routes held the request's pooled
+  connection (`api.ts`'s outer `withSession`) while calling pool-scoped
+  accessors that checked out a second one from the same pool of 10; ten
+  concurrent requests to such a route exhausted it permanently, and `/healthz`
+  hung with it. All now register `skipOuterSession: true` and use one short
+  session at a time; `medicalRecordFor()` no longer nests `medicationsFor()`.
+  The pool gains `DB_POOL_MAX`, a connect timeout, `statement_timeout` and
+  `idle_in_transaction_session_timeout`; `withSession()` releases a broken
+  client with `release(err)`; and a checked-out client's `error` event is
+  listened for (found by the new suite: an idle-in-transaction kill otherwise
+  crashed the process). `/healthz` returns 503 after 3 s rather than hanging.
+- **Request-body corruption (P-05).** Bodies were accumulated as decoded
+  strings chunk by chunk, so a multi-byte UTF-8 character split across a chunk
+  became U+FFFD; the cap also counted UTF-16 units, not bytes. Now collected as
+  Buffers, counted in bytes, decoded once.
+- **Unauthenticated surface (P-08).** No rate limit, a 40 MB body cap and an
+  account oracle on `/v1/auth/webauthn/login/challenge`. Now: per-IP and
+  per-identifier token buckets, a 16 KiB cap for unauthenticated callers, a
+  uniform challenge response for real/unknown/malformed ids, and a scheduler
+  `purge-challenges` job (`auth_challenge` was never purged).
+- **Shutdown (P-14).** `server.close(cb)` never completed with an open
+  WebSocket. New idempotent shutdown (close sockets 1001, idle keep-alives,
+  8 s deadline, then cut, `pool.end()` once); `unhandledRejection` and
+  `uncaughtException` handlers; `stop_grace_period: 15s` in the prod compose.
+- **Game sockets (P-15).** A half-open connection kept a table `active` until
+  the 1-hour lifetime sweep. 20 s ping / 10 s pong deadline; a silent seat ends
+  the table with `peer_timeout`.
+- **`/media/<malformed %>` (P-19)** and a malformed escape in a route param
+  returned 500; now 400.
+- **Migration races (P-18).** `tools/migrate.mjs` holds a Postgres advisory lock
+  for the run (pg and psql modes).
+- **Missing foreign-key indexes (P-17).** Migration `0037_fk_indexes.sql`
+  (six FK columns plus `auth_challenge.issued_at`); RLS untouched.
+- **`livekit-server-sdk` was a devDependency** although `routes.mjs` imports it
+  at runtime; it only worked because the image installed everything.
+
+### Added
+- **Backups (P-04).** Scheduler `backup` job: dump + optional media archive,
+  optional AES-256-GCM encryption (`tools/backup-decrypt.mjs` to reverse it),
+  7 daily + 4 weekly retention applied only after a successful backup, optional
+  `BACKUP_SYNC_COMMAND`; `health-alert` raises `backup_stale`. Off unless
+  `BACKUP_DIR` + `BACKUP_DATABASE_URL` are set. `docs/backup-and-restore.md`
+  now says exactly what is automatic.
+- **Observability, server half (P-07).** One JSON access-log line per request
+  (route template, never the URL), `x-request-id` on every response,
+  `GET /internal/metrics` behind an internal-only guard.
+- **CI (P-13).** `timeout-minutes`, a per-ref concurrency group cancelling
+  superseded PR runs, npm and pub caches, a strict `npm ci` in the workflow and
+  in `tools/verify.sh` (it used to swallow install failure), and an `image` job
+  that builds the Dockerfile and SIGTERMs the container on every PR. The
+  duplicated `test:games2` in `package.json`'s `test` script is gone.
+- **Image (P-16).** Multi-stage Dockerfile: `npm ci --omit=dev`, no tests / demo
+  / client, `USER node`, `postgresql-client-16` for the backup job.
+
+### Operator notes
+- The image no longer runs as root. A media volume created by an earlier image
+  keeps root ownership; once: `docker compose -f docker-compose.prod.yml run
+  --rm --user root server chown -R node:node /app/data/media` (the dev stack's
+  disposable `olive-dev-media` volume: just `docker compose down -v`). The host
+  directory behind `BACKUP_DIR` must be writable by uid 1000.
+- Behaviour change to know about: the 40 MiB body cap now applies only to a
+  request whose Bearer token VERIFIES. An upload over 16 KiB carrying an
+  expired or forged token is answered `413 payload_too_large` instead of
+  buffering 40 MiB to say `401`; a client that wants the 401 must refresh its
+  session before uploading.
+- Not fixed here, disclosed: `dev-login` and the login `verify` still name
+  `user_not_found` / `account_deactivated` respectively (the latter is asserted
+  by an existing suite); no metrics exporter; no scheduled restore drill.
+
+---
+
 ## [0.49.78] — 2026-09-14 — Parental controls information-architecture rework (UI/UX review theme #5)
 
 Full design spec: `docs/superpowers/specs/2026-09-15-parental-controls-ia-

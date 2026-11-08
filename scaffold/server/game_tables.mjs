@@ -107,6 +107,9 @@ export function registerGameTableRoutes(api, { secret, tables, now = () => Date.
 
   api.register({
     method: 'POST', path: '/v1/game-tables', action: null,
+    // P-01: reaches Postgres only via c.db.edgesFor()/siblingLinkFor() (each
+    // checks out its own connection) -- never holds an unused outer one.
+    skipOuterSession: true,
     handler: async (c) => {
       const body = c.body ?? {};
       if (!SUPPORTED_GAMES.has(body.game)) {
@@ -177,6 +180,7 @@ export function registerGameTableRoutes(api, { secret, tables, now = () => Date.
 
   api.register({
     method: 'POST', path: '/v1/game-tables/:tableId/join', action: null,
+    skipOuterSession: true, // P-01, same reason as POST /v1/game-tables above
     handler: async (c) => {
       const tableId = c.params.tableId;
       const entry = tables.get(tableId);
@@ -305,7 +309,13 @@ export function handleTableUpgrade({ tables, secret, now, wssLike, tableId, req,
  * TCP level, never gets an HTTP response body, and — per T6 — the relay
  * never broadcasts to any connection but the other seat at the same table.
  */
-export function attachGameSocketServer(httpServer, { secret, tables, now = () => Date.now() }) {
+export const GAME_PING_INTERVAL_MS = 20_000;
+export const GAME_PONG_TIMEOUT_MS = 10_000;
+
+export function attachGameSocketServer(httpServer, {
+  secret, tables, now = () => Date.now(),
+  pingIntervalMs = GAME_PING_INTERVAL_MS, pongTimeoutMs = GAME_PONG_TIMEOUT_MS,
+}) {
   const wss = new WebSocketServer({
     noServer: true,
     // HIGH finding fix — ws's own default maxPayload is 100 MiB, two orders
@@ -402,8 +412,39 @@ export function attachGameSocketServer(httpServer, { secret, tables, now = () =>
       tables.delete(tableId); // T7 — ephemeral; discarded the instant it closes
     };
 
-    ws.on('close', () => endTable('peer_left'));
-    ws.on('error', () => endTable('peer_error'));
+    // P-15 heartbeat. A half-open TCP connection (phone walks out of Wi-Fi,
+    // NAT drops the mapping, a laptop lid closes) sends no FIN and no error:
+    // before this, the dead seat's table sat 'active' until the 1-hour max
+    // lifetime sweep while the live peer's moves vanished into a socket
+    // nobody was reading. Every `pingIntervalMs` the server pings; if no pong
+    // (any frame counts: ws emits 'pong' for the protocol reply) arrives
+    // within `pongTimeoutMs` the seat is declared dead, the OTHER seat is told
+    // `table_closed` with reason `peer_timeout`, and the dead socket is
+    // terminated. Timers are per socket and always cleared on close.
+    let pongDeadline = null;
+    let pingTimer = null;
+    const clearHeartbeat = () => {
+      if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+      if (pongDeadline) { clearTimeout(pongDeadline); pongDeadline = null; }
+    };
+    ws.on('pong', () => {
+      if (pongDeadline) { clearTimeout(pongDeadline); pongDeadline = null; }
+    });
+    pingTimer = setInterval(() => {
+      if (ws.readyState !== ws.OPEN || pongDeadline) return;
+      pongDeadline = setTimeout(() => {
+        pongDeadline = null;
+        clearHeartbeat();
+        endTable('peer_timeout');
+        ws.terminate();
+      }, pongTimeoutMs);
+      pongDeadline.unref?.();
+      try { ws.ping(); } catch { /* socket already going away: close handler cleans up */ }
+    }, pingIntervalMs);
+    pingTimer.unref?.();
+
+    ws.on('close', () => { clearHeartbeat(); endTable('peer_left'); });
+    ws.on('error', () => { clearHeartbeat(); endTable('peer_error'); });
   });
 
   // Sweep tables that were opened but never fully joined, or that somehow

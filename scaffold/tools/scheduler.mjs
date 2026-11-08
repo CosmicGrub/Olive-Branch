@@ -61,7 +61,8 @@
  *     a time-past one.
  *
  * ---------------------------------------------------------------- LOCKING --
- * Three named jobs (`rematerialize`, `reap-media`, `health-alert`) can each
+ * Five named jobs (`rematerialize`, `reap-media`, `purge-challenges`,
+ * `backup`, `health-alert` -- see JOB_NAMES) can each
  * run at most once at a time, enforced with a real Postgres SESSION-level
  * advisory lock
  * (`pg_try_advisory_lock`), one dedicated connection held for the whole job,
@@ -86,8 +87,10 @@
  * ------------------------------------------------------------------- CLI --
  *   node tools/scheduler.mjs run rematerialize   # one sweep, then exit
  *   node tools/scheduler.mjs run reap-media      # one reap pass, then exit
- *   node tools/scheduler.mjs run health-alert    # one health check, then exit
- *   node tools/scheduler.mjs run all             # all three, in sequence
+ *   node tools/scheduler.mjs run purge-challenges # delete expired auth_challenge rows (P-08)
+ *   node tools/scheduler.mjs run backup          # dump + encrypt? + prune 7d/4w + sync? (P-04; off unless BACKUP_DIR set)
+ *   node tools/scheduler.mjs run health-alert    # one health check (+ stale-backup alarm), then exit
+ *   node tools/scheduler.mjs run all             # every job above, in that order
  *   node tools/scheduler.mjs loop                # runs `all` on a schedule, forever
  *
  * `loop` is what `docker-compose.dev.yml`'s new, opt-in `scheduler` service
@@ -99,9 +102,12 @@ import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
-import { createPool, withSystemSession, childCtxFor } from '../packages/db/src/pool.mjs';
+import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges }
+  from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
 import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
+import { encryptFile, pruneBackups, DEFAULT_DAILY_KEEP, DEFAULT_WEEKLY_KEEP } from './backup_lib.mjs';
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -142,6 +148,12 @@ const LOCK_NAMESPACE = 'olive_branch_scheduler';
 export async function withJobLock(pool, jobName, fn) {
   const client = await pool.connect();
   const lockKey = `${LOCK_NAMESPACE}:${jobName}`;
+  // A checked-out pg client has no 'error' listener of its own; a DB restart
+  // while a long job holds this lock connection would otherwise raise an
+  // unhandled 'error' event and kill the scheduler (P-01 follow-up).
+  let lockConnErr;
+  const onClientError = (e) => { lockConnErr = lockConnErr ?? e; };
+  client.on?.('error', onClientError);
   try {
     const { rows } = await client.query(
       `SELECT pg_try_advisory_lock(hashtext($1)::bigint) AS locked`, [lockKey]);
@@ -153,7 +165,8 @@ export async function withJobLock(pool, jobName, fn) {
       await client.query(`SELECT pg_advisory_unlock(hashtext($1)::bigint)`, [lockKey]);
     }
   } finally {
-    client.release();
+    client.removeListener?.('error', onClientError);
+    client.release(lockConnErr);
   }
 }
 
@@ -387,8 +400,128 @@ export async function runHealthAlertSubprocess(databaseUrl) {
   }
 }
 
+// ------------------------------------------------------ purge-challenges ---
+/**
+ * P-08: auth_challenge rows (WebAuthn ceremony nonces) were never deleted --
+ * see pool.ts's purgeExpiredChallenges() for what counts as expired.
+ */
+export async function runPurgeChallengesJob(pool, opts = {}) {
+  return { removed: await purgeExpiredChallenges(pool, opts.graceMs) };
+}
+
+// ----------------------------------------------------------------- backup ---
+const BACKUP_DB_SCRIPT = join(REPO_ROOT, 'tools', 'backup-db.sh');
+const BACKUP_MEDIA_SCRIPT = join(REPO_ROOT, 'tools', 'backup-media.sh');
+
+function positiveInt(raw, fallback) {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * P-04: the nightly backup, for real. Everything is driven by the operator's
+ * environment and NOTHING is invented here:
+ *
+ *   BACKUP_DIR                  where backups live. Unset => this job is OFF
+ *                               (reported as `skipped reason=not_configured`,
+ *                               never a failure -- a dev/CI database must not
+ *                               alarm about a backup it never promised).
+ *   BACKUP_DATABASE_URL         connection string for the dump. Must be the
+ *                               backup_reader role (db/migrations/0022): a
+ *                               plain app_owner dump fails on FORCE-RLS tables.
+ *                               Unset => `skipped reason=no_database_url`.
+ *   MEDIA_STORAGE_ROOT          if this directory exists, media is archived too
+ *                               (tools/backup-media.sh). BACKUP_MEDIA=0 opts out.
+ *   BACKUP_ENCRYPTION_PASSPHRASE  optional: AES-256-GCM encrypt every new file
+ *                               at rest (tools/backup_lib.mjs; decrypt with
+ *                               tools/backup-decrypt.mjs). Lose it, lose the
+ *                               backups -- by design, see the runbook.
+ *   BACKUP_SYNC_COMMAND         optional: a shell command run AFTER a good
+ *                               backup + prune to push BACKUP_DIR off the host
+ *                               (rclone/rsync/aws s3 sync -- the operator's own
+ *                               tool and credentials). cwd = BACKUP_DIR; env
+ *                               BACKUP_DIR and BACKUP_NEW_FILES (newline-
+ *                               separated) are set. Its failure fails the job
+ *                               (so the next health-alert/exit code sees it)
+ *                               but never deletes the local backup.
+ *   BACKUP_DAILY_KEEP / BACKUP_WEEKLY_KEEP   retention (default 7 / 4).
+ *
+ * The dump itself is tools/backup-db.sh (pg_dump -Fc into a .partial file,
+ * 100-byte floor, rename on success) -- so `pg_dump` (version-matched to the
+ * server) must exist where the scheduler runs. See docs/backup-and-restore.md.
+ * Retention runs only AFTER a new backup succeeded, so a failing night never
+ * eats the history it is supposed to be protecting.
+ */
+export async function runBackupJob(env = process.env, opts = {}) {
+  const dir = env.BACKUP_DIR;
+  if (!dir) return { status: 'skipped', reason: 'not_configured' };
+  const dbUrl = env.BACKUP_DATABASE_URL;
+  if (!dbUrl) return { status: 'skipped', reason: 'no_database_url' };
+  mkdirSync(dir, { recursive: true });
+
+  const before = new Set(readdirSync(dir));
+  const scriptEnv = { ...env, DATABASE_URL: dbUrl };
+  const runScript = opts.runScript ?? ((script, args) => execFileAsync('bash', [script, ...args], { env: scriptEnv }));
+  const errors = [];
+
+  try {
+    await runScript(BACKUP_DB_SCRIPT, [dir]);
+  } catch (e) {
+    // pg_dump failed: report, change nothing (no prune, no sync).
+    return { status: 'failed', stage: 'dump', error: String(e.stderr || e.message || e).trim().slice(-500) };
+  }
+
+  const mediaRoot = env.MEDIA_STORAGE_ROOT;
+  if (env.BACKUP_MEDIA !== '0' && mediaRoot && existsSync(mediaRoot)) {
+    try { await runScript(BACKUP_MEDIA_SCRIPT, [mediaRoot, dir]); }
+    catch (e) { errors.push(`media: ${String(e.stderr || e.message || e).trim().slice(-300)}`); }
+  }
+
+  const created = readdirSync(dir).filter((f) => !before.has(f) && !f.endsWith('.partial'));
+  const newFiles = [];
+  const passphrase = env.BACKUP_ENCRYPTION_PASSPHRASE;
+  for (const f of created) {
+    if (passphrase && !f.endsWith('.enc')) {
+      try {
+        await encryptFile(join(dir, f), join(dir, `${f}.enc`), passphrase);
+        unlinkSync(join(dir, f)); // never leave the plaintext beside its ciphertext
+        newFiles.push(`${f}.enc`);
+      } catch (e) {
+        errors.push(`encrypt ${f}: ${e.message}`);
+        // keep the plaintext rather than lose the backup; flagged as an error
+        newFiles.push(f);
+      }
+    } else newFiles.push(f);
+  }
+
+  const plan = pruneBackups(dir, {
+    daily: positiveInt(env.BACKUP_DAILY_KEEP, DEFAULT_DAILY_KEEP),
+    weekly: positiveInt(env.BACKUP_WEEKLY_KEEP, DEFAULT_WEEKLY_KEEP),
+  });
+
+  let synced = null;
+  if (env.BACKUP_SYNC_COMMAND) {
+    try {
+      await execFileAsync('sh', ['-c', env.BACKUP_SYNC_COMMAND], {
+        cwd: dir, timeout: positiveInt(env.BACKUP_SYNC_TIMEOUT_MS, 30 * 60 * 1000),
+        env: { ...env, BACKUP_DIR: dir, BACKUP_NEW_FILES: newFiles.join('\n') },
+      });
+      synced = true;
+    } catch (e) {
+      synced = false;
+      errors.push(`sync: ${String(e.stderr || e.message || e).trim().slice(-300)}`);
+    }
+  }
+
+  return {
+    status: errors.length ? 'failed' : 'ok', stage: errors.length ? 'post' : undefined,
+    files: newFiles, pruned: plan.prune, kept: plan.keep.length, synced,
+    encrypted: Boolean(passphrase), error: errors.length ? errors.join('; ') : undefined,
+  };
+}
+
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'reap-media', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'reap-media', 'purge-challenges', 'backup', 'health-alert'];
 
 // One real FilesystemStorage instance, constructed once — same convention
 // as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
@@ -413,6 +546,8 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     lockResult = await withJobLock(pool, jobName, async () => {
       if (jobName === 'rematerialize') return runRematerializeSweep(pool, {});
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
+      if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
+      if (jobName === 'backup') return runBackupJob(process.env, {});
       if (jobName === 'health-alert') return runHealthAlertSubprocess(databaseUrl);
       throw new Error(`unknown job: ${jobName}`);
     });
@@ -471,6 +606,30 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
       at: DateTime.utc().toISO(),
     });
     return { ok: true, skipped: false };
+  }
+
+  if (jobName === 'purge-challenges') {
+    logLine({
+      event: 'end', job: jobName, status: 'ok', duration_ms: durationMs,
+      removed: lockResult.result.removed, at: DateTime.utc().toISO(),
+    });
+    return { ok: true, skipped: false };
+  }
+
+  if (jobName === 'backup') {
+    const r = lockResult.result;
+    if (r.status === 'skipped') {
+      logLine({ event: 'end', job: jobName, status: 'skipped', reason: r.reason,
+        duration_ms: durationMs, at: DateTime.utc().toISO() });
+      return { ok: true, skipped: true };
+    }
+    const ok = r.status === 'ok';
+    (ok ? logLine : errLine)({
+      event: 'end', job: jobName, status: r.status, stage: r.stage, duration_ms: durationMs,
+      files: r.files?.length, pruned: r.pruned?.length, kept: r.kept,
+      encrypted: r.encrypted, synced: r.synced, error: r.error, at: DateTime.utc().toISO(),
+    });
+    return { ok, skipped: false };
   }
 
   // health-alert
@@ -570,7 +729,7 @@ export async function loop(pool, databaseUrl) {
 
 // -------------------------------------------------------------------- CLI -
 function usage() {
-  console.error('usage: node tools/scheduler.mjs run <rematerialize|reap-media|health-alert|all>');
+  console.error(`usage: node tools/scheduler.mjs run <${JOB_NAMES.join('|')}|all>`);
   console.error('       node tools/scheduler.mjs loop');
 }
 

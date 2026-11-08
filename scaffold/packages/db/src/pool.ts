@@ -37,8 +37,60 @@ import {
  * this codebase should ever call `set_config('app.role', ...)` directly.
  */
 
-export function createPool(connectionString: string): pg.Pool {
-  const pool = new pg.Pool({ connectionString });
+/**
+ * P-01 -- pool limits, all overridable per deployment (env) or per call
+ * (tests). Before this, `new pg.Pool({ connectionString })` had node-
+ * postgres's bare defaults: max 10, NO connect timeout (a request waiting
+ * for a slot waited forever), NO statement timeout and NO idle-in-
+ * transaction timeout (a wedged handler held its connection forever). Those
+ * three "forever"s are what turned a pool-exhaustion into a self-sustaining
+ * outage -- see api.ts's skipOuterSession doc comment for the deadlock.
+ *
+ *   DB_POOL_MAX                       max connections           (default 10)
+ *   DB_CONNECTION_TIMEOUT_MS          wait for a free slot       (default 10000)
+ *   DB_STATEMENT_TIMEOUT_MS           per-statement cap          (default 30000)
+ *   DB_IDLE_IN_TX_TIMEOUT_MS          idle-in-transaction cap    (default 30000)
+ *   DB_IDLE_TIMEOUT_MS                idle client reaping        (default 30000)
+ *
+ * A missing, non-numeric or non-positive value falls back to the default
+ * rather than parsing to NaN/0 (0 means "no timeout" to pg, which is exactly
+ * the failure mode being closed).
+ */
+export interface PoolOptions {
+  max?: number;
+  connectionTimeoutMillis?: number;
+  statementTimeoutMillis?: number;
+  idleInTransactionTimeoutMillis?: number;
+  idleTimeoutMillis?: number;
+}
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isInteger(raw) && raw > 0 ? raw : fallback;
+}
+
+export function poolConfigFromEnv(): Required<PoolOptions> {
+  return {
+    max: positiveIntEnv('DB_POOL_MAX', 10),
+    connectionTimeoutMillis: positiveIntEnv('DB_CONNECTION_TIMEOUT_MS', 10_000),
+    statementTimeoutMillis: positiveIntEnv('DB_STATEMENT_TIMEOUT_MS', 30_000),
+    idleInTransactionTimeoutMillis: positiveIntEnv('DB_IDLE_IN_TX_TIMEOUT_MS', 30_000),
+    idleTimeoutMillis: positiveIntEnv('DB_IDLE_TIMEOUT_MS', 30_000),
+  };
+}
+
+export function createPool(connectionString: string, opts: PoolOptions = {}): pg.Pool {
+  const cfg = { ...poolConfigFromEnv(), ...opts };
+  const pool = new pg.Pool({
+    connectionString,
+    max: cfg.max,
+    connectionTimeoutMillis: cfg.connectionTimeoutMillis,
+    idleTimeoutMillis: cfg.idleTimeoutMillis,
+    // Sent as startup parameters on every new connection, so they bind the
+    // session role itself, not just one transaction.
+    statement_timeout: cfg.statementTimeoutMillis,
+    idle_in_transaction_session_timeout: cfg.idleInTransactionTimeoutMillis,
+  });
   // node-postgres's own documented gotcha, not a hypothetical: an IDLE
   // pooled client that hits a network-level error (the DB restarting, a
   // dropped connection, a transient blip) emits 'error' on the POOL itself,
@@ -90,6 +142,22 @@ export async function withSession<T>(
   }
 
   const client = await pool.connect();
+  // P-01: a client whose ROLLBACK failed (or whose failure was a connection
+  // fault) is broken. release() with no argument hands it BACK to the pool,
+  // where the next request would inherit a dead or mid-transaction socket;
+  // release(err) destroys it so the pool opens a fresh one instead.
+  let broken: Error | undefined;
+  // A CHECKED-OUT pg client has no 'error' listener (the pool only attaches
+  // one while the client sits idle). So when the server kills the backend
+  // while our handler is between queries -- idle_in_transaction_session_
+  // timeout, a DB restart, a failover -- node-postgres emits 'error' on a
+  // client nobody listens to, and an unhandled 'error' event kills the whole
+  // process. Found by this suite the first time the idle-in-transaction
+  // timeout (P-01) was set low enough to fire. Record it instead: the next
+  // query on this client rejects normally, and the client is destroyed below.
+  const onClientError = (e: Error) => { broken = broken ?? e; };
+  // (Optional calls: a hand-written fake client in a route-contract test has no EventEmitter surface.)
+  client.on?.('error', onClientError);
   try {
     await client.query('BEGIN');
     await client.query(`SELECT set_config('app.role', $1, true)`, [principal.roleName]);
@@ -110,11 +178,23 @@ export async function withSession<T>(
     await client.query('COMMIT');
     return result;
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (isConnectionFault(e)) broken = e as Error;
+    try { await client.query('ROLLBACK'); }
+    catch (rollbackErr) { broken = rollbackErr as Error; }
     throw e;
   } finally {
-    client.release();
+    client.removeListener?.('error', onClientError);
+    client.release(broken);
   }
+}
+
+/** Errors that mean the socket (not the SQL) failed: the client is unusable. */
+export function isConnectionFault(e: unknown): boolean {
+  const err = e as { code?: string; message?: string } | null;
+  if (!err) return false;
+  if (err.code && /^(ECONNRESET|EPIPE|ETIMEDOUT|ECONNREFUSED|57P0[123]|08\w{3})$/.test(err.code)) return true;
+  return /Connection terminated|Client has encountered a connection error/i
+    .test(err.message ?? '');
 }
 
 /** For the delivery sweep and other background jobs — role `system`, no child context. */
@@ -567,6 +647,31 @@ export async function createChallenge(
     );
   });
   return challenge;
+}
+
+/**
+ * P-08 -- auth_challenge rows were written on every login/registration
+ * ceremony start and NEVER deleted: consumed ones, expired ones, and (since
+ * the login-challenge endpoint is unauthenticated) ones an anonymous caller
+ * can mint at will. A challenge is only ever usable inside CHALLENGE_TTL_MS
+ * of `issued_at` (consumeChallenge's own predicate), so anything older than
+ * that -- consumed or not -- is dead weight. `graceMs` keeps rows a little
+ * past expiry so a support engineer looking at a just-failed login can still
+ * see its challenge row. Returns the number of rows removed. Uses the
+ * auth_challenge_issued_at_idx added in migration 0036.
+ */
+export async function purgeExpiredChallenges(
+  pool: pg.Pool, graceMs: number = 60 * 60 * 1000,
+): Promise<number> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `DELETE FROM auth_challenge
+        WHERE issued_at < now() - ($1 || ' milliseconds')::interval
+        RETURNING id`,
+      [CHALLENGE_TTL_MS + graceMs],
+    );
+    return rows.length;
+  });
 }
 
 /**
@@ -2639,18 +2744,21 @@ export interface DoseEntry {
   administeredAt: string; byUserId: string; byUserName: string; status: string;
 }
 
+/** The query half of medicationsFor(), runnable inside a caller's OWN session. */
+async function medicationsVia(q: Query, childId: string): Promise<Medication[]> {
+  const rows = await q(
+    `SELECT id, name, dose, slots, is_prn, min_gap_hours
+       FROM medication WHERE child_id = $1 AND active ORDER BY created_at ASC`,
+    [childId],
+  );
+  return rows.map((r: any): Medication => ({
+    id: r.id, name: r.name, dose: r.dose, slots: r.slots, isPrn: r.is_prn,
+    minGapHours: r.min_gap_hours === null ? null : Number(r.min_gap_hours),
+  }));
+}
+
 export async function medicationsFor(pool: pg.Pool, childId: string): Promise<Medication[]> {
-  return withSystemSession(pool, async (q) => {
-    const rows = await q(
-      `SELECT id, name, dose, slots, is_prn, min_gap_hours
-         FROM medication WHERE child_id = $1 AND active ORDER BY created_at ASC`,
-      [childId],
-    );
-    return rows.map((r: any): Medication => ({
-      id: r.id, name: r.name, dose: r.dose, slots: r.slots, isPrn: r.is_prn,
-      minGapHours: r.min_gap_hours === null ? null : Number(r.min_gap_hours),
-    }));
-  });
+  return withSystemSession(pool, (q) => medicationsVia(q, childId));
 }
 
 /**
@@ -2796,7 +2904,12 @@ export async function medicalRecordFor(pool: pg.Pool, childId: string): Promise<
         ORDER BY u.display_name ASC`,
       [childId],
     );
-    const medications = await medicationsFor(pool, childId);
+    // P-01: through THIS session's own connection. This used to call
+    // medicationsFor(pool, ...), checking out a second connection while this
+    // one was held -- the same self-deadlock shape as the route-level bug,
+    // one layer down (found by pool_concurrency.test.mjs's per-request
+    // connection tracker on GET/PUT .../emergency-card).
+    const medications = await medicationsVia(q, childId);
     const r = rows[0];
     return {
       bloodType: r?.blood_type ?? null,

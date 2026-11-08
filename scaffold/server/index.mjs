@@ -16,14 +16,18 @@
 // dev database, and is fenced behind DEV_LOGIN=1 for exactly that reason.
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { issueSession, verifyAssertion } from '../packages/auth/src/auth.mjs';
-import { Api, MAX_REQUEST_BODY_BYTES } from '../packages/api/src/api.mjs';
+import { issueSession, verifyAssertion, newChallenge } from '../packages/auth/src/auth.mjs';
+import { Api, readRequestBody, MAX_UNAUTH_BODY_BYTES } from '../packages/api/src/api.mjs';
 import { createPool, dbPort, withSystemSession, createChallenge, consumeChallenge,
          webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
 import { registerRoutes, RP_ID, RP_ORIGIN, defaultMediaStorage } from './routes.mjs';
 import { serveSignedMedia } from './signed_media.mjs';
 import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
+import { createAuthLimiter, clientIp } from './rate_limit.mjs';
+import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
+import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PORT = Number(process.env.PORT ?? 8080);
 const DATABASE_URL = process.env.DATABASE_URL;
 const SESSION_SECRET = process.env.SESSION_SECRET;
@@ -106,9 +110,21 @@ async function webauthnLoginChallenge(rawBody) {
   if (typeof userId !== 'string' || !userId) {
     return { status: 400, body: { error: 'userId_required' } };
   }
-  const exists = await withSystemSession(pool,
-    (q) => q(`SELECT id FROM app_user WHERE id = $1`, [userId]));
-  if (!exists.length) return { status: 404, body: { error: 'user_not_found' } };
+  // Not a uuid -> cannot name an account; skip the query (a bare uuid-cast
+  // error from Postgres would 500 and be an oracle of its own).
+  const exists = UUID_RE.test(userId)
+    ? await withSystemSession(pool, (q) => q(`SELECT id FROM app_user WHERE id = $1`, [userId]))
+    : [];
+  // P-08 -- UNIFORM response: this endpoint is unauthenticated, so a 404
+  // `user_not_found` for an unknown id (and 200 for a real one) is an account
+  // oracle -- anyone could enumerate which userIds hold accounts. An unknown
+  // id now gets the same 200 shape with a fresh, correctly-formed challenge
+  // that is simply never stored. It can never verify (consumeChallenge finds
+  // no row -> the SAME 401 challenge_expired a wrong/expired challenge for a
+  // real user gets), so nothing is gained by probing and nothing real leaks.
+  if (!exists.length) {
+    return { status: 200, body: { challenge: newChallenge(), rpId: RP_ID } };
+  }
   const challenge = await createChallenge(pool, userId, 'login');
   return { status: 200, body: { challenge, rpId: RP_ID } };
 }
@@ -201,77 +217,204 @@ async function webauthnLoginVerify(rawBody) {
   return { status: 200, body: { token } };
 }
 
-const server = createServer((req, res) => {
-  let raw = '';
-  // Same cap Api.listen() enforces, imported rather than a second,
-  // independently-configured copy of the same number — see
-  // MAX_REQUEST_BODY_BYTES's own doc comment (api.ts) for why this is no
-  // longer a flat 2,000,000 as of the storage-wiring pass.
-  req.on('data', (c) => { raw += c; if (raw.length > MAX_REQUEST_BODY_BYTES) req.destroy(); });
-  req.on('end', async () => {
-    const send = (out) => {
-      res.writeHead(out.status, {
-        // charset=utf-8 explicit, not implied: RFC 2616's default charset for
-        // an unlabelled response is ISO-8859-1/latin1, and at least one real
-        // client in this codebase (package:http, used by court_export.dart's
-        // live path) honors that default literally -- an em dash in a denial
-        // message (server/routes.mjs's EXPORT_DENIAL_MESSAGES) is exactly the
-        // kind of content that would otherwise round-trip corrupted, found
-        // while wiring the certified-export denial copy for real.
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': 'no-store',
-        'x-content-type-options': 'nosniff',
-      });
-      res.end(JSON.stringify(out.body));
-    };
-    try {
-      // Docker healthcheck target (docker-compose.dev.yml / .prod.yml's
-      // `server` service) — see this pass's CHANGELOG entry for why a real
-      // HTTP check matters here: `depends_on: condition: service_healthy`
-      // is only honest if "healthy" means the server can actually reach
-      // Postgres, not just that the process bound a port. A bare `SELECT 1`
-      // is the cheapest real proof of that — no session, no RLS context, no
-      // app-data read, just "is this connection pool actually usable right
-      // now." Unauthenticated deliberately, same posture as any other
-      // liveness probe: it reveals only up/down, nothing about any family's
-      // data.
-      if (req.method === 'GET' && req.url === '/healthz') {
-        try {
-          await pool.query('SELECT 1');
-          return send({ status: 200, body: { status: 'ok' } });
-        } catch (e) {
-          console.error('healthz: database unreachable', e);
-          return send({ status: 503, body: { status: 'db_unreachable' } });
-        }
-      }
-      if (req.method === 'POST' && req.url === '/v1/auth/dev-login') {
-        return send(await devLogin(raw));
-      }
-      if (req.method === 'POST' && req.url === '/v1/auth/webauthn/login/challenge') {
-        return send(await webauthnLoginChallenge(raw));
-      }
-      if (req.method === 'POST' && req.url === '/v1/auth/webauthn/login/verify') {
-        return send(await webauthnLoginVerify(raw));
-      }
-      if (req.method === 'GET' && req.url && req.url.startsWith('/media/')) {
-        return await serveSignedMedia(req.url, res, defaultMediaStorage);
-      }
-      send(await api.handle(req.method ?? 'GET', req.url ?? '/', req.headers, raw));
-    } catch (e) {
-      console.error(e);
-      send({ status: 500, body: { error: 'internal' } });
+// ---- observability + abuse limits (audit P-07 server half, P-08) ----------
+const metrics = new Metrics();
+const authLimiter = createAuthLimiter();
+const ACCESS_LOG = process.env.ACCESS_LOG !== '0';
+const ACCESS_LOG_HEALTHZ = process.env.ACCESS_LOG_HEALTHZ === '1';
+// The three raw pre-session login routes (dispatched here, outside Api).
+const RAW_AUTH_PATHS = new Set([
+  '/v1/auth/dev-login',
+  '/v1/auth/webauthn/login/challenge',
+  '/v1/auth/webauthn/login/verify',
+]);
+
+/** Fixed, attacker-proof label for the access log / counters. */
+function routeLabel(method, pathname, url) {
+  if (pathname === '/healthz') return '/healthz';
+  if (pathname === '/internal/metrics') return '/internal/metrics';
+  if (pathname.startsWith('/media/')) return '/media/:key';
+  if (RAW_AUTH_PATHS.has(url)) return url;
+  return api.routeTemplate(method, url) ?? 'unmatched';
+}
+
+/** userId/childId named in a pre-session login body, for the per-identifier bucket. */
+function loginIdentifier(raw) {
+  try {
+    const b = JSON.parse(raw || '{}');
+    const id = b?.userId ?? b?.childId;
+    return typeof id === 'string' && id ? id : null;
+  } catch { return null; }
+}
+
+const server = createServer(async (req, res) => {
+  const startedAt = performance.now();
+  const method = req.method ?? 'GET';
+  const url = req.url ?? '/';
+  const pathname = url.split('?')[0];
+  const id = requestIdFor(req);
+  const label = routeLabel(method, pathname, url);
+  res.setHeader('x-request-id', id);
+  res.on('finish', () => {
+    const ms = performance.now() - startedAt;
+    metrics.record({ method, route: label, status: res.statusCode, ms });
+    if (ACCESS_LOG && (label !== '/healthz' || ACCESS_LOG_HEALTHZ)) {
+      console.log(accessLogLine({ id, method, route: label, status: res.statusCode, ms }));
     }
   });
+
+  const send = (out, extraHeaders = {}) => {
+    res.writeHead(out.status, {
+      // charset=utf-8 explicit, not implied: RFC 2616's default charset for
+      // an unlabelled response is ISO-8859-1/latin1, and at least one real
+      // client in this codebase (package:http, used by court_export.dart's
+      // live path) honors that default literally -- an em dash in a denial
+      // message (server/routes.mjs's EXPORT_DENIAL_MESSAGES) is exactly the
+      // kind of content that would otherwise round-trip corrupted, found
+      // while wiring the certified-export denial copy for real.
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      ...extraHeaders,
+    });
+    res.end(JSON.stringify(out.body));
+  };
+
+  try {
+    // Docker healthcheck target (docker-compose.dev.yml / .prod.yml's
+    // `server` service) — see this pass's CHANGELOG entry for why a real
+    // HTTP check matters here: `depends_on: condition: service_healthy`
+    // is only honest if "healthy" means the server can actually reach
+    // Postgres, not just that the process bound a port. A bare `SELECT 1`
+    // is the cheapest real proof of that — no session, no RLS context, no
+    // app-data read, just "is this connection pool actually usable right
+    // now." Unauthenticated deliberately, same posture as any other
+    // liveness probe: it reveals only up/down, nothing about any family's
+    // data. Bounded to 3 s (P-01): with the pool exhausted, pool.query()
+    // would otherwise wait for a free slot and the probe would hang with it
+    // instead of reporting the outage it exists to report.
+    if (method === 'GET' && url === '/healthz') {
+      try {
+        await Promise.race([
+          pool.query('SELECT 1'),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('healthz timeout')), 3000).unref()),
+        ]);
+        return send({ status: 200, body: { status: 'ok' } });
+      } catch (e) {
+        console.error('healthz: database unreachable', e);
+        return send({ status: 503, body: { status: 'db_unreachable' } });
+      }
+    }
+
+    // In-process counters — internal callers only (see isInternalRequest).
+    // A refused caller gets the same 404 any unknown path would.
+    if (method === 'GET' && pathname === '/internal/metrics') {
+      if (!isInternalRequest(req)) return send({ status: 404, body: { error: 'not_found' } });
+      return send({ status: 200, body: metrics.snapshot({
+        pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount },
+        game_tables_open: gameTables.size,
+      }) });
+    }
+
+    if (method === 'GET' && pathname.startsWith('/media/')) {
+      return await serveSignedMedia(url, res, defaultMediaStorage);
+    }
+
+    // P-08 -- the whole /v1/auth/ surface is unauthenticated (or, for
+    // webauthn register, only just authenticated): throttle per client IP
+    // BEFORE spending anything on it, body included.
+    const isAuthPath = pathname.startsWith('/v1/auth/');
+    if (isAuthPath) {
+      const ip = authLimiter.checkIp(clientIp(req));
+      if (!ip.ok) {
+        metrics.inc('rate_limited_total');
+        return send({ status: 429, body: { error: 'rate_limited' } },
+          { 'retry-after': String(ip.retryAfterSec) });
+      }
+    }
+
+    // P-05 + P-08 -- byte-exact body, byte-counted cap. The three raw login
+    // routes and every request without a verifying session get the small
+    // unauthenticated cap; only a verified session gets the 40 MiB one.
+    const limit = RAW_AUTH_PATHS.has(url)
+      ? MAX_UNAUTH_BODY_BYTES : api.bodyLimitFor(method, url, req.headers);
+    const read = await readRequestBody(req, limit);
+    if (!read.ok) {
+      if (read.reason === 'aborted') { req.destroy(); return; }
+      metrics.inc('body_too_large_total');
+      // Drain (discard, never buffer) the rest of the upload so the close
+      // after the 413 is a clean FIN rather than an RST that can destroy the
+      // 413 before the client reads it.
+      req.resume();
+      return send({ status: 413, body: { error: 'payload_too_large' } }, { connection: 'close' });
+    }
+    const raw = read.body;
+
+    if (method === 'POST' && RAW_AUTH_PATHS.has(url)) {
+      const ident = loginIdentifier(raw);
+      if (ident) {
+        const r = authLimiter.checkIdentifier(ident);
+        if (!r.ok) {
+          metrics.inc('rate_limited_total');
+          return send({ status: 429, body: { error: 'rate_limited' } },
+            { 'retry-after': String(r.retryAfterSec) });
+        }
+      }
+      // Literal `req.url === '...'` comparisons, kept in this exact shape on
+      // purpose: packages/api/test/contract.test.mjs finds the raw
+      // pre-session routes by scanning this file's source for them.
+      if (req.url === '/v1/auth/dev-login') return send(await devLogin(raw));
+      if (req.url === '/v1/auth/webauthn/login/challenge') return send(await webauthnLoginChallenge(raw));
+      if (req.url === '/v1/auth/webauthn/login/verify') return send(await webauthnLoginVerify(raw));
+    }
+    send(await api.handle(method, url, req.headers, raw));
+  } catch (e) {
+    console.error(e);
+    if (!res.headersSent) send({ status: 500, body: { error: 'internal' } });
+  }
 });
 
 // Node's own upgrade event on the SAME http.Server and SAME port — no second
 // listener, no LAN-broadcast/discovery mechanism of any kind. Every table
 // connection is relayed through this one authenticated process.
-attachGameSocketServer(server, { secret: gameTableSecret, tables: gameTables });
+const { wss, stopSweep } = attachGameSocketServer(server, { secret: gameTableSecret, tables: gameTables });
 
 server.listen(PORT, () => {
   console.log(`olive-branch server listening on :${PORT}` + (DEV_LOGIN ? ' (DEV_LOGIN enabled)' : ''));
 });
 
-process.on('SIGINT', () => { server.close(() => pool.end().then(() => process.exit(0))); });
-process.on('SIGTERM', () => { server.close(() => pool.end().then(() => process.exit(0))); });
+// ---- graceful shutdown (audit P-14) -----------------------------------------
+// See shutdown.mjs for the full why. Idempotent: signals arriving while a
+// shutdown is already running share its promise, so pool.end() runs once.
+const shutdown = createShutdown({
+  server, wss, pool, stopTimers: [stopSweep],
+  deadlineMs: Number(process.env.SHUTDOWN_DEADLINE_MS) > 0
+    ? Number(process.env.SHUTDOWN_DEADLINE_MS) : DEFAULT_SHUTDOWN_DEADLINE_MS,
+  log: (line) => console.log(line),
+});
+const onSignal = (sig) => {
+  shutdown(sig).then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
+};
+process.on('SIGINT', () => onSignal('SIGINT'));
+process.on('SIGTERM', () => onSignal('SIGTERM'));
+
+// A rejected promise nobody awaited must not take every family's session
+// down with it (Node's default is to crash the process), but it must never be
+// silent either: log it as one structured line and count it.
+process.on('unhandledRejection', (reason) => {
+  metrics.inc('unhandled_rejection_total');
+  console.error(JSON.stringify({
+    ts: new Date().toISOString(), level: 'error', msg: 'unhandledRejection',
+    error: reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
+  }));
+});
+// An uncaught exception IS undefined state: log it, then shut down cleanly
+// (so the pool drains and websockets get a close frame) and exit non-zero so
+// the orchestrator restarts a fresh process.
+process.on('uncaughtException', (err) => {
+  console.error(JSON.stringify({
+    ts: new Date().toISOString(), level: 'fatal', msg: 'uncaughtException',
+    error: err?.stack ?? String(err),
+  }));
+  shutdown('uncaughtException').finally(() => process.exit(1));
+});

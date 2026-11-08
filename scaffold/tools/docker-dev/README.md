@@ -43,11 +43,11 @@ Does NOT replace:
   instead (`LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` in
   `docker-compose.dev.yml`) — a hosted service, not something this stack
   starts or manages either way.
-- **Production deployment.** This is a single-stage dev image (see the
-  `Dockerfile`'s own header) that ships the whole repo plus
-  `node_modules`, runs `npm run build` inside the image, and has no
-  concept of horizontal scaling or a real domain/TLS — none of that is in
-  scope here. `docker-compose.prod.yml` (repo root) is the genuinely
+- **Production deployment.** This is a multi-stage image (see the
+  `Dockerfile`'s own header: full `npm ci` + `npm run build` in a build
+  stage, runtime dependencies only, no tests/demo/client, running as the
+  unprivileged `node` user) and has no concept of horizontal scaling or a
+  real domain/TLS — none of that is in scope here. `docker-compose.prod.yml` (repo root) is the genuinely
   separate production-oriented profile — real restart policies, resource
   limits, DEV_LOGIN structurally unreachable, and secrets read from a
   required `.env.prod` rather than this stack's hardcoded dev role
