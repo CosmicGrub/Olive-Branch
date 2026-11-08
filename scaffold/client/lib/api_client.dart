@@ -351,6 +351,16 @@ class OliveApi {
   static const childActivityOverride =
       '/v1/children/:childId/activity-overrides/:activityKey';
 
+  // --- Parent Learn (guardian-only; db/migrations/0035_parent_learn.sql) ---
+  // Path constants only, so the client/server drift contract (packages/api/
+  // test/contract.test.mjs) holds; the typed client methods belong to the
+  // Dart Learn client PR. House rules are child-scoped (a family is the live
+  // guardians of one child).
+  static const learnSettings = '/v1/learn/settings';
+  static const learnReflections = '/v1/learn/reflections';
+  static const learnReflection = '/v1/learn/reflections/:day';
+  static const childLearnHouseRules = '/v1/children/:childId/learn/house-rules';
+
   // --- call — real room-coordination + ringing (§5.19, §5.21, §5.25.2) ----
   // server/routes.mjs's own real replacement for local-call-room-server.mjs's
   // dev-only /room endpoint — see that route's own header comment for the
