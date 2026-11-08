@@ -12,7 +12,10 @@ if (!PSQL) { console.error('PSQL_CMD required'); process.exit(2); }
 const [cmd, ...args] = PSQL.split(' ');
 let out;
 try {
-  out = execFileSync(cmd, [...args,'-q','-t','-A','-F','\u0001','-c',
+  // S-B4 (migration 0040): message_log/guardianship are edge-scoped, so the
+  // monitor reads as the `system` role like every other background reader (a
+  // role-less session would see zero rows and go blind).
+  out = execFileSync(cmd, [...args,'-q','-t','-A','-F','\u0001','-c', "SET app.role = 'system'", '-c',
     'SELECT check_name, severity, observed, threshold, meaning FROM health_check ORDER BY severity, check_name;'],
     { encoding:'utf8' });
 } catch (e) { console.error('ABORT: cannot query health_check'); process.exit(2); }

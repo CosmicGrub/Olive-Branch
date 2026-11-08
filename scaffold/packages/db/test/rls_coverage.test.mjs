@@ -104,6 +104,55 @@ const enabledNotForced = rlsTables.filter(t => t.enabled && !t.forced).map(t => 
 check('E forced too', 'every RLS-enabled table also has RLS FORCED, not merely enabled',
   enabledNotForced.length ? `enabled-not-forced: ${enabledNotForced.join(', ')}` : 'none', 'none');
 
+// ---------------------------------------------------------------------------
+// F · S-B4 -- the allow-list direction. D/E above only look at tables that
+// ALREADY have RLS. This asks the opposite question of every public base table:
+// does it have ENABLE + FORCE row level security? A table that does not must be
+// named below WITH A REASON, so "forgot to add RLS to the new table" fails in CI
+// on the PR that adds it instead of surviving until an audit.
+//
+// Every entry here is a known, disclosed gap or a table with no tenant data, not
+// an endorsement: the child-keyed ones (child_tz_interval, day_part,
+// contact_ladder, sibling_link, child_ping) are follow-up work for the next
+// isolation pass (the sensitive tables were done in migration 0040).
+const NO_RLS_ALLOWED = {
+  schema_migration: 'migration-runner bookkeeping; no tenant data',
+  reap_tombstone: 'retention-reaper bookkeeping (storage keys + errors); system-only access, no UI path',
+  household: 'dead schema: no query call site anywhere in the app (see the header above)',
+  succession_directive: 'dead schema: no query call site anywhere in the app',
+  child_ping: 'dead schema: no query call site anywhere in the app',
+  sibling_link: 'child-keyed, read by the system role only today; edge policy is follow-up',
+  contact_ladder: 'child-keyed via guardianship; read through effective_guardianship; edge policy is follow-up',
+  child_tz_interval: 'child-keyed scheduling data; read/written by system sessions; edge policy is follow-up',
+  day_part: 'child-keyed scheduling data; read/written by system sessions; edge policy is follow-up',
+};
+const { rows: allTables } = await client.query(`
+  SELECT c.relname, c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY c.relname`);
+const unprotected = allTables.filter(t => !(t.enabled && t.forced)).map(t => t.relname);
+const undeclared = unprotected.filter(t => !(t in NO_RLS_ALLOWED));
+check('F coverage', 'every public table has ENABLE+FORCE RLS or is allow-listed with a reason',
+  undeclared.length ? `no RLS and not allow-listed: ${undeclared.join(', ')}` : 'none', 'none');
+const staleAllow = Object.keys(NO_RLS_ALLOWED).filter(
+  t => !allTables.some(x => x.relname === t) || !unprotected.includes(t));
+check('F coverage', 'the allow-list has no stale entries (a table that gained RLS or was dropped must leave it)',
+  staleAllow.length ? `stale: ${staleAllow.join(', ')}` : 'none', 'none');
+check('F coverage', 'every allow-list entry carries a reason',
+  Object.values(NO_RLS_ALLOWED).every(r => typeof r === 'string' && r.length > 10), 'true');
+for (const t of ['child', 'guardianship', 'app_user', 'message_log', 'security_event', 'media_upload',
+                 'expense', 'medication', 'medication_dose', 'medical_record', 'export_record',
+                 'exchange_bag_item', 'exchange_running_late_log', 'exchange_arrival_event',
+                 'care_note', 'custody_order']) {
+  const row = allTables.find(x => x.relname === t);
+  check('F coverage', `${t} is ENABLE+FORCE row level security`,
+    row ? `${row.enabled}/${row.forced}` : 'missing', 'true/true');
+}
+// The backup role must keep working past FORCE RLS (migration 0022): BYPASSRLS.
+const { rows: br } = await client.query(`SELECT rolbypassrls FROM pg_roles WHERE rolname = 'backup_reader'`);
+check('F coverage', 'backup_reader still BYPASSRLS (backups keep working under the new policies)',
+  br[0]?.rolbypassrls, 'true');
+
 await client.end();
 
 let g = '';

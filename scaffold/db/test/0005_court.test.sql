@@ -106,8 +106,28 @@ SELECT set_config('app.role','child',false);
 SELECT assert_eq('child role sees zero expense rows (expense_no_child RLS)',
                  (SELECT count(*) FROM expense
                    WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), 0::bigint);
+-- S-B4 (migration 0040): a guardian sees the row only through a LIVE edge to
+-- THIS child. The edge is created as the superuser (guardianship is system-
+-- write-only under FORCE RLS), then read back as app_owner.
+RESET ROLE;
+INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','11111111-1111-1111-1111-111111111111','guardian','{}',
+        tstzrange(now() - interval '1 year', null))
+ON CONFLICT (child_id, user_id) DO UPDATE
+  SET closed_at = NULL, closed_reason = NULL, restricted = false, expires_at = NULL,
+      valid = tstzrange(now() - interval '1 year', null);
+SET ROLE app_owner;
 SELECT set_config('app.role','guardian',false);
-SELECT assert_eq('a guardian role still sees the same row (RLS filters by role, not an empty table)',
+SELECT set_config('app.user_id','11111111-1111-1111-1111-111111111111',false);
+SELECT assert_eq('a guardian WITH a live edge still sees the row (RLS filters by edge, not an empty table)',
+                 (SELECT count(*) FROM expense
+                   WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), 1::bigint);
+SELECT set_config('app.user_id','99999999-9999-9999-9999-999999999999',false);
+SELECT assert_eq('a guardian of ANOTHER family sees zero expense rows (edge-based isolation, S-B4)',
+                 (SELECT count(*) FROM expense
+                   WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), 0::bigint);
+SELECT set_config('app.role','system',false);
+SELECT assert_eq('the system role still sees the row',
                  (SELECT count(*) FROM expense
                    WHERE child_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), 1::bigint);
 RESET ROLE;

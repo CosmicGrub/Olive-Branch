@@ -751,11 +751,264 @@ export async function storeWebauthnCredential(
         { code: 'account_deactivated' },
       );
     }
+    // S-B3: a bounded number of passkeys per account. Counted under the same
+    // app_user row lock as the INSERT, so two racing registrations cannot
+    // both slip under the cap.
+    const [{ n }] = await q(
+      `SELECT count(*)::int AS n FROM webauthn_credential WHERE user_id = $1`, [userId]);
+    if (n >= MAX_PASSKEYS_PER_USER) {
+      throw Object.assign(
+        new Error('storeWebauthnCredential: passkey limit reached'),
+        { code: 'passkey_limit' },
+      );
+    }
     await q(
       `INSERT INTO webauthn_credential (user_id, credential_id, public_key_pem)
        VALUES ($1, $2, $3)`,
       [userId, credentialId, publicKeyPem],
     );
+  });
+}
+
+export const MAX_PASSKEYS_PER_USER = 10;
+
+export interface PasskeySummary { id: string; createdAt: string; signCount: number }
+
+/** S-B3: GET /v1/me/passkeys. Never returns the credential id or the public key. */
+export async function passkeysFor(pool: pg.Pool, userId: string): Promise<PasskeySummary[]> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT id, created_at, sign_count FROM webauthn_credential
+        WHERE user_id = $1 ORDER BY created_at ASC, id ASC`, [userId]);
+    return rows.map((r: any): PasskeySummary => ({
+      id: r.id, createdAt: new Date(r.created_at).toISOString(), signCount: Number(r.sign_count),
+    }));
+  });
+}
+
+/**
+ * S-B3: DELETE /v1/me/passkeys/:passkeyId. Scoped to the caller's own row (RLS
+ * and the explicit user_id); refuses to remove the LAST passkey, which would
+ * lock the account out of passkey login. (A rightful owner removing an
+ * intruder's passkey is the case this endpoint exists for.)
+ */
+export async function deletePasskey(
+  pool: pg.Pool, userId: string, passkeyId: string,
+): Promise<'deleted' | 'not_found' | 'last_passkey'> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    await q(`SELECT 1 FROM app_user WHERE id = $1 FOR UPDATE`, [userId]);
+    const mine = await q(
+      `SELECT id FROM webauthn_credential WHERE id = $1 AND user_id = $2`, [passkeyId, userId]);
+    if (!mine.length) return 'not_found';
+    const [{ n }] = await q(
+      `SELECT count(*)::int AS n FROM webauthn_credential WHERE user_id = $1`, [userId]);
+    if (n <= 1) return 'last_passkey';
+    await q(`DELETE FROM webauthn_credential WHERE id = $1 AND user_id = $2`, [passkeyId, userId]);
+    return 'deleted';
+  });
+}
+
+/** True when the account already has a PIN or a passkey (i.e. is past first-run setup). */
+export async function hasSecondFactorSetup(pool: pg.Pool, userId: string): Promise<boolean> {
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT (SELECT count(*) FROM pin_credential WHERE user_id = $1)
+            + (SELECT count(*) FROM webauthn_credential WHERE user_id = $1) AS n`, [userId]);
+    return Number(rows[0].n) > 0;
+  });
+}
+
+// ----------------------------------------------------------- security events --
+export type SecurityEventKind =
+  | 'passkey_added' | 'passkey_removed' | 'pin_changed' | 'pin_lockout'
+  | 'device_paired' | 'export_taken' | 'invite_created';
+
+/**
+ * Fixed, content-free summaries (migration 0039). The text comes from THIS
+ * table only, never from a request, so a row can never carry a message body,
+ * a PIN, an email or a device label. `variant` picks between a few
+ * pre-written wordings; an unknown variant falls back to the base wording.
+ */
+const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
+  passkey_added: 'A passkey was added to a guardian account',
+  passkey_removed: 'A passkey was removed from a guardian account',
+  pin_changed: 'A guardian PIN was changed',
+  pin_lockout: 'A guardian PIN was locked after too many wrong attempts',
+  device_paired: 'A device was paired',
+  'device_paired:child': 'A child device was paired',
+  'device_paired:guardian': 'A guardian device was paired',
+  export_taken: 'An export of the family records was taken',
+  'export_taken:raw': 'A raw export of the family records was taken',
+  'export_taken:certified': 'A certified export of the family records was taken',
+  invite_created: 'A guardian invite was created',
+};
+
+export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
+  return (variant && SECURITY_EVENT_SUMMARIES[`${kind}:${variant}`]) || SECURITY_EVENT_SUMMARIES[kind];
+}
+
+/**
+ * Writes one security_event row per child the actor holds a live edge to (or
+ * only `childId` when the event is about one child). Needs the `system` role,
+ * the only one the table lets write; call it from INSIDE the transaction of
+ * whatever it records when there is one (redeem), or just after it. Returns
+ * the number of rows written.
+ */
+export async function insertSecurityEvent(
+  q: Query, actorId: string, kind: SecurityEventKind,
+  opts: { childId?: string | null; variant?: string } = {},
+): Promise<number> {
+  const summary = securityEventSummary(kind, opts.variant);
+  const rows = opts.childId
+    ? await q(
+        `INSERT INTO security_event (child_id, actor_id, kind, summary)
+         VALUES ($1, $2, $3, $4) RETURNING seq`, [opts.childId, actorId, kind, summary])
+    : await q(
+        `INSERT INTO security_event (child_id, actor_id, kind, summary)
+         SELECT DISTINCT g.child_id, $1::uuid, $2::text, $3::text
+           FROM effective_guardianship g WHERE g.user_id = $1 RETURNING seq`,
+        [actorId, kind, summary]);
+  return rows.length;
+}
+
+export async function recordSecurityEvent(
+  pool: pg.Pool, actorId: string, kind: SecurityEventKind,
+  opts: { childId?: string | null; variant?: string } = {},
+): Promise<number> {
+  return withSystemSession(pool, (q) => insertSecurityEvent(q, actorId, kind, opts));
+}
+
+export interface SecurityEventRow {
+  seq: number; kind: SecurityEventKind; summary: string; at: string;
+  actor: { userId: string; name: string };
+}
+
+/**
+ * The feed, newest first, through the CALLER's own session `q` so migration
+ * 0039's RLS (a live edge to the child) is the second lock behind the route's
+ * own can(). `beforeSeq` is the keyset cursor (pass the last `seq` seen).
+ */
+export async function securityEventsVia(
+  q: Query, childId: string, opts: { limit?: number; beforeSeq?: number | null } = {},
+): Promise<SecurityEventRow[]> {
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 50), 1), 200);
+  const rows = await q(
+    `SELECT e.seq, e.kind, e.summary, e.created_at, e.actor_id, u.display_name
+       FROM security_event e JOIN app_user u ON u.id = e.actor_id
+      WHERE e.child_id = $1 AND ($2::bigint IS NULL OR e.seq < $2::bigint)
+      ORDER BY e.seq DESC LIMIT $3`,
+    [childId, opts.beforeSeq ?? null, limit]);
+  return rows.map((r: any): SecurityEventRow => ({
+    seq: Number(r.seq), kind: r.kind, summary: r.summary,
+    at: new Date(r.created_at).toISOString(),
+    actor: { userId: r.actor_id, name: r.display_name },
+  }));
+}
+
+// ------------------------------------------------------------ media ledger --
+/** Hours an uploaded blob may wait for its message before the sweeper deletes it (S-B8). */
+export const MEDIA_ORPHAN_AGE_HOURS = 24;
+
+export interface MediaUploadRow {
+  storageKey: string; childId: string; uploaderUserId: string | null;
+  uploaderRole: string; mime: string; byteSize: number;
+}
+
+/**
+ * Reserves the ledger row for an upload BEFORE the blob is written, under a
+ * per-child advisory lock so concurrent uploads cannot jointly slip past the
+ * byte quota. Bytes "in use" are the child's uploads that either still back a
+ * media_artifact row or are young enough (< MEDIA_ORPHAN_AGE_HOURS) to be
+ * waiting for their message; a reaped artifact stops counting once its row is
+ * gone. `quotaBytes` <= 0 disables the cap.
+ */
+export async function reserveMediaUpload(
+  pool: pg.Pool, row: MediaUploadRow, quotaBytes: number,
+): Promise<{ ok: true } | { ok: false; reason: 'quota_exceeded'; usedBytes: number }> {
+  return withSystemSession(pool, async (q) => {
+    await q(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`media_quota:${row.childId}`]);
+    const [{ used }] = await q(
+      `SELECT COALESCE(sum(u.byte_size), 0)::bigint AS used
+         FROM media_upload u
+        WHERE u.child_id = $1
+          AND (u.created_at > now() - make_interval(hours => $2::int)
+               OR EXISTS (SELECT 1 FROM media_artifact a WHERE a.storage_key = u.storage_key))`,
+      [row.childId, MEDIA_ORPHAN_AGE_HOURS]);
+    const usedBytes = Number(used);
+    if (quotaBytes > 0 && usedBytes + row.byteSize > quotaBytes) {
+      return { ok: false, reason: 'quota_exceeded', usedBytes };
+    }
+    await q(
+      `INSERT INTO media_upload (storage_key, child_id, uploader_user_id, uploader_role, mime, byte_size)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [row.storageKey, row.childId, row.uploaderUserId, row.uploaderRole, row.mime, row.byteSize]);
+    return { ok: true };
+  });
+}
+
+export async function mediaUploadFor(pool: pg.Pool, storageKey: string): Promise<MediaUploadRow | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT storage_key, child_id, uploader_user_id, uploader_role, mime, byte_size
+         FROM media_upload WHERE storage_key = $1`, [storageKey]);
+    if (!rows.length) return null;
+    const r = rows[0];
+    return { storageKey: r.storage_key, childId: r.child_id, uploaderUserId: r.uploader_user_id,
+      uploaderRole: r.uploader_role, mime: r.mime, byteSize: Number(r.byte_size) };
+  });
+}
+
+/** True when a media_artifact row already uses this storage key (a blob backs one message). */
+export async function storageKeyInUse(pool: pg.Pool, storageKey: string): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT 1 FROM media_artifact WHERE storage_key = $1 LIMIT 1`, [storageKey]);
+    return rows.length > 0;
+  });
+}
+
+export async function releaseMediaUpload(pool: pg.Pool, storageKey: string): Promise<void> {
+  await withSystemSession(pool, (q) => q(`DELETE FROM media_upload WHERE storage_key = $1`, [storageKey]));
+}
+
+/**
+ * Orphan sweep, step 1 -- adopt blobs the ledger has never heard of (uploads
+ * from before migration 0041): a row is created with created_at = now(), so a
+ * blob that is still unreferenced MEDIA_ORPHAN_AGE_HOURS later is swept like any
+ * other orphan. Only keys of the shape children/<existing child uuid>/... are
+ * adopted. Returns the number adopted.
+ */
+export async function adoptUntrackedBlobs(pool: pg.Pool, keys: string[]): Promise<number> {
+  const re = /^children\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i;
+  const candidates = keys.map((k) => ({ k, m: re.exec(k) })).filter((x) => x.m);
+  if (!candidates.length) return 0;
+  return withSystemSession(pool, async (q) => {
+    let adopted = 0;
+    for (const { k, m } of candidates) {
+      const rows = await q(
+        `INSERT INTO media_upload (storage_key, child_id, uploader_role, mime, byte_size)
+         SELECT $1, c.id, 'unknown', 'application/octet-stream', 1
+           FROM child c
+          WHERE c.id = $2
+            AND NOT EXISTS (SELECT 1 FROM media_upload WHERE storage_key = $1)
+            AND NOT EXISTS (SELECT 1 FROM media_artifact WHERE storage_key = $1)
+         RETURNING 1`, [k, m![1].toLowerCase()]);
+      adopted += rows.length;
+    }
+    return adopted;
+  });
+}
+
+/** Orphan sweep, step 2 -- ledger rows older than `olderThanHours` that no media_artifact references. */
+export async function orphanedUploads(
+  pool: pg.Pool, olderThanHours = MEDIA_ORPHAN_AGE_HOURS, limit = 500,
+): Promise<string[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT u.storage_key FROM media_upload u
+        WHERE u.created_at < now() - make_interval(hours => $1::int)
+          AND NOT EXISTS (SELECT 1 FROM media_artifact a WHERE a.storage_key = u.storage_key)
+        ORDER BY u.created_at ASC LIMIT $2`, [olderThanHours, limit]);
+    return rows.map((r: any) => r.storage_key as string);
   });
 }
 
@@ -2815,6 +3068,10 @@ export async function dosesForDate(
  */
 export type RecordDoseResult =
   | { ok: true; dose: DoseEntry }
+  // S-B5: the medication id in the path is not a medication of THIS child
+  // (another family's, or none at all). Indistinguishable from "no such
+  // medication" on purpose, and never discloses a display name.
+  | { ok: false; notFound: true }
   | { ok: false; blockedBy: string; blockedAtIso: string };
 
 /**
@@ -2836,6 +3093,15 @@ export async function recordDose(
   medicationId: string, localDate: string, slot: string, status: string,
 ): Promise<RecordDoseResult> {
   return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    // S-B5: the medication must belong to THIS child. The composite FK
+    // (migration 0039) is the database's own backstop; checking here turns
+    // the violation into an ordinary 404 instead of a 500, and keeps the
+    // conflict lookup below from ever reading another family's dose log.
+    const owned = await q(
+      `SELECT 1 FROM medication WHERE id = $1 AND child_id = $2`,
+      [medicationId, childId],
+    );
+    if (!owned.length) return { ok: false, notFound: true };
     const rows = await q(
       `INSERT INTO medication_dose
          (medication_id, child_id, local_date, slot, administered_at, by_user_id, status)
@@ -2860,9 +3126,10 @@ export async function recordDose(
       `SELECT d.by_user_id, u.display_name AS by_user_name,
               to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at
          FROM medication_dose d JOIN app_user u ON u.id = d.by_user_id
-        WHERE d.medication_id = $1 AND d.local_date = $2::date AND d.slot = $3 AND d.status = 'given'
+        WHERE d.medication_id = $1 AND d.child_id = $4
+          AND d.local_date = $2::date AND d.slot = $3 AND d.status = 'given'
         LIMIT 1`,
-      [medicationId, localDate, slot],
+      [medicationId, localDate, slot, childId],
     );
     return { ok: false, blockedBy: clash[0]?.by_user_name ?? 'another guardian',
       blockedAtIso: clash[0]?.administered_at ?? '' };
@@ -4167,6 +4434,11 @@ export async function redeemDevicePairingCode(
       [row.role, row.target_id, label, row.id, deviceCredentialDigest(deviceCredential)],
     );
     await q(`UPDATE device_pairing_code SET redeemed_at = now() WHERE id = $1`, [row.id]);
+    // S-B3/S-B20: the other guardian must be able to see that a device was
+    // paired (and by whom). Written in THIS transaction (we are `system`
+    // here), so a pairing that commits always leaves its trail.
+    await insertSecurityEvent(q, row.created_by, 'device_paired', {
+      childId: row.role === 'child' ? row.target_id : null, variant: row.role });
     return { ok: true, deviceId: inserted[0].id, targetId: row.target_id, role: row.role,
              deviceCredential };
   });

@@ -103,7 +103,7 @@ try {
     const port = 27000 + (process.pid % 3000);
     const child = spawn(process.execPath, [serverEntry], {
       env: { ...process.env, DATABASE_URL, SESSION_SECRET: 'auth-hardening-secret-not-for-prod-use',
-        PORT: String(port), DEV_LOGIN: '0' },
+        PORT: String(port), DEV_LOGIN: '0', NODE_ENV: 'development' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';

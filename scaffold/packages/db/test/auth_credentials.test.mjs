@@ -500,7 +500,7 @@ await admin.query('COMMIT');
   const secret = 'auth-credentials-test-session-secret-not-for-production-use';
 
   const child = spawn(process.execPath, [serverEntry], {
-    env: { ...process.env, DATABASE_URL, SESSION_SECRET: secret, DEV_LOGIN: '1', PORT: String(port) },
+    env: { ...process.env, DATABASE_URL, SESSION_SECRET: secret, NODE_ENV: 'development', DEV_LOGIN: '1', PORT: String(port) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
@@ -530,9 +530,13 @@ await admin.query('COMMIT');
       }),
     });
     const body = await res.json();
+    // S-B15: the refusal is UNIFORM with an unknown user / spent challenge
+    // (401 challenge_expired), so this unauthenticated endpoint is not an
+    // oracle for "this userId is a deactivated account".
     check('H webauthn login gate', 'a deactivated account is refused BEFORE any crypto runs',
-      res.status, 403);
-    check('H webauthn login gate', 'refused with the real reason', body.error, 'account_deactivated');
+      res.status, 401);
+    check('H webauthn login gate', 'with the SAME body an unknown account gets (no deactivation oracle)',
+      body.error, 'challenge_expired');
 
     // Sanity control — the SAME malformed body against a NEVER-deactivated
     // account must NOT be refused by this gate (it will still fail later,
@@ -706,8 +710,22 @@ await admin.query('COMMIT');
   const childTok = issueSession(SECRET,
     { userId: null, roleName: 'child', childId: CHILD, escalated: false }, NOW);
 
+  // S-B3: once an account has a PIN or a passkey, registering ANOTHER passkey
+  // needs that PIN in the verify body. Section K exercises the ceremony itself
+  // (challenge/replay/ownership), so every caller here owns a PIN and the helper
+  // supplies it; the step-up gate's own deny paths (missing / wrong PIN, no
+  // user-verification flag, passkey cap) are asserted in
+  // server/test/security_round2_route.test.mjs.
+  const K_PIN = '246810';
+  for (const u of [STRANGER, MOM]) {
+    await admin.query(
+      `INSERT INTO pin_credential (user_id, pin_hash) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL`,
+      [u, hashPin(K_PIN)]);
+  }
   const post = (path, tok, body) => api.handle('POST', path,
-    tok ? { authorization: `Bearer ${tok}` } : {}, body ? JSON.stringify(body) : '');
+    tok ? { authorization: `Bearer ${tok}` } : {},
+    body ? JSON.stringify(path.endsWith('/register/verify') ? { pin: K_PIN, ...body } : body) : '');
 
   // A tiny, standalone CBOR encoder — the same deliberately-independent
   // shape attestation.test.mjs's own header explains (built only to
@@ -732,7 +750,7 @@ await admin.query('COMMIT');
   ]);
   const rpIdHash = createHash('sha256').update(RP_ID, 'utf8').digest();
   const buildAuthData = (credentialIdBuf, coseKeyBuf) => {
-    const flags = Buffer.from([0x41]); // UP + AT
+    const flags = Buffer.from([0x45]); // UP + UV + AT (S-B3: the route refuses a credential made without user verification)
     const signCount = Buffer.alloc(4);
     const aaguid = Buffer.alloc(16, 0);
     const credIdLen = Buffer.alloc(2); credIdLen.writeUInt16BE(credentialIdBuf.length);
