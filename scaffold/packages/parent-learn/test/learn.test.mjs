@@ -3,6 +3,8 @@
  * Every deny path is a real assertion (same discipline as co-view).
  */
 import * as L from '../src/learn.mjs';
+import { readFileSync } from 'node:fs';
+import { generate } from '../../../tools/gen-learn-vectors.mjs';
 const {
   CARDS, EVIDENCE_LEVELS, DEFAULT_SETTINGS, RULE_CATEGORIES, MAX_CHECK_CHARS,
   canReadLearn, canReadReflection, parseSettings, mayStoreReflection, describeDay,
@@ -160,6 +162,15 @@ const ON = { reflection: 'saved', framing: 'neutral', rulesList: true, messageCh
   check(g, 'non-array input is empty', shareableRules(G1, ON, 'bedtime').length, 0);
   check(g, 'at most 20 items are read', shareableRules(G1, ON, Array.from({ length: 100 }, () => ({ category: 'bedtime', text: 'x' }))).length, 20);
   check(g, 'only the four core categories exist', RULE_CATEGORIES.join(), 'bedtime,screens,homework,safety');
+}
+
+{
+  const g = 'golden vectors';
+  const onDisk = JSON.parse(readFileSync(new URL('./vectors.json', import.meta.url), 'utf8'));
+  check(g, 'vectors.json equals a fresh generation (run: node tools/gen-learn-vectors.mjs)', JSON.stringify(onDisk) === JSON.stringify(JSON.parse(JSON.stringify(generate()))), true);
+  for (const k of ['cards', 'lint', 'canRead', 'settings', 'describeDay', 'cardsFor', 'messages', 'rules'])
+    check(g, `section "${k}" is present and non-empty`, Array.isArray(onDisk[k]) && onDisk[k].length > 0, true);
+  check(g, 'the undefined settings input is spelled as a marker, never lost', onDisk.settings.some((x) => x.raw === '__undefined__'), true);
 }
 
 // ---------------------------------------------------------------------------

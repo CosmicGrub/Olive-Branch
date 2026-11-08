@@ -10,6 +10,9 @@
 // screen the way child_more.dart does for the child side.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'parent_learn_logic.dart';
+import 'parent_learn_screens.dart';
+import 'parent_learn_store.dart';
 import 'api_client.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
@@ -116,6 +119,8 @@ Future<bool> Function()? _liveCheckExistingPin(
   };
 }
 
+final MemoryLearnStore _localLearnStore = MemoryLearnStore(principal: const LearnPrincipal('guardian', 'local-guardian'));
+
 class GuardianMoreScreen extends StatelessWidget {
   const GuardianMoreScreen({
     super.key,
@@ -135,9 +140,13 @@ class GuardianMoreScreen extends StatelessWidget {
     this.currentTheme = defaultAppTheme,
     this.onThemeApplied,
     this.onCallStarted,
+    this.learnStore,
   });
   final String childName;
   final int childAge;
+  /// Parent Learn storage. Null = the in-process store (nothing leaves this phone); a
+  /// server-backed LearnStore is passed in once a live session exists.
+  final LearnStore? learnStore;
   /// Live-session wiring for AvailabilityScreen, the family-agreement fetch,
   /// AND the Court export tile below all key off this same child —
   /// baseUrl/guardianId stay optional and default to null because nothing
@@ -484,6 +493,14 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.menu_book, title: 'The book',
             subtitle: 'The stories you read together, bound',
             onTap: () => _open(context, TheBookScreen.demo(childName: childName))),
+        ]),
+        HubSection(title: 'Learn', children: [
+          HubTile(key: const Key('moreLearn'), icon: Icons.school_outlined, title: 'Learn',
+            subtitle: 'Short, sourced parenting guides. Private to you.',
+            onTap: () => _open(context, LearnHomeScreen(
+              principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
+              store: learnStore ?? _localLearnStore,
+              childAge: childAge))),
         ]),
         HubSection(title: 'Show me', children: [
           HubTile(icon: Icons.photo_camera_back_outlined, title: 'Show me — your side',
