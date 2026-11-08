@@ -53,6 +53,7 @@
 // test-file edits.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'access_scope.dart';
 import 'activity_overrides.dart';
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
@@ -199,7 +200,10 @@ class ChildHome extends StatelessWidget {
       // much the new Hero+Featured bands can grow at large accessibility
       // text keeps that risk smaller, not eliminated — see child_home_test
       // .dart's own fold-line regression coverage.
-      final double heightScale = textScale.clamp(1.0, 1.6);
+      // Roomier reading (a guardian option) lifts the line height from ~1.2 to 1.5,
+      // so a tile's label needs a quarter more room; the tiles grow with it.
+      final double roomy = AccessScope.of(context).roomierReading ? roomyLineHeight / 1.2 : 1.0;
+      final double heightScale = textScale.clamp(1.0, 1.6) * roomy;
 
       // Shared between `full` and the foldCover `collapsed` layout below —
       // built once, mounted in whichever of the two CoverCollapse actually
@@ -423,7 +427,7 @@ class _PresenceCard extends StatelessWidget {
         style: Theme.of(context).textTheme.bodySmall
           ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       const SizedBox(height: 12),
-      SizedBox(width: double.infinity, height: 48,
+      SizedBox(width: double.infinity, height: kChildTarget,
         child: FilledButton(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
             builder: (_) => CallScreen(who: 'ivy', displayName: childName))),

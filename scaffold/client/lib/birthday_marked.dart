@@ -13,6 +13,8 @@
 // just having placed the date (a 300ms pop, once) — never a loop, per
 // §8.13.1; the sparkles around the card are static, not animated confetti.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'calendar_logic.dart';
 
 class BirthdayMarkedScreen extends StatefulWidget {
@@ -44,7 +46,21 @@ class _BirthdayMarkedScreenState extends State<BirthdayMarkedScreen> with Single
   @override
   void initState() {
     super.initState();
-    _pop = AnimationController(vsync: this, duration: const Duration(milliseconds: 300))..forward();
+    _pop = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
+  }
+
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Started once, here rather than in initState, because the duration depends
+    // on reduced motion (an inherited setting): with it on, the pop is instant.
+    if (!_started) {
+      _started = true;
+      _pop.duration = motionDuration(context, 300);
+      _pop.forward();
+    }
   }
 
   @override
@@ -120,7 +136,7 @@ class _Marked extends StatelessWidget {
       style: Theme.of(context).textTheme.bodyMedium
         ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
     const SizedBox(height: 32),
-    SizedBox(width: double.infinity, height: 56, child: FilledButton(
+    SizedBox(width: double.infinity, height: kChildTarget, child: FilledButton(
       onPressed: onDone,
       style: FilledButton.styleFrom(shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16))),

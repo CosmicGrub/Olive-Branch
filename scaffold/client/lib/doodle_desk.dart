@@ -34,6 +34,9 @@
 // keep and says so gently.
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
+import 'access_settings.dart' show kChildTarget;
+import 'colour_names.dart';
 import 'annotation_canvas.dart';
 import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
@@ -231,7 +234,7 @@ class _DoodleDeskState extends State<DoodleDesk> {
               ),
               SizedBox(height: narrow ? 8 : 12),
               AnimatedSize(
-                duration: const Duration(milliseconds: crossfadeMs),
+                duration: motionDuration(context, crossfadeMs),
                 curve: Curves.easeOut,
                 child: _tool == _Tool.draw
                     ? _DrawControls(
@@ -267,7 +270,7 @@ class _ToolSwitch extends StatelessWidget {
         // §8.4/child-facing 48dp minimum — M3's own default segmented-button
         // height (40dp) is a hair under that, so it's raised explicitly
         // rather than trusted to the theme default.
-        style: SegmentedButton.styleFrom(minimumSize: const Size(64, 48)),
+        style: SegmentedButton.styleFrom(minimumSize: const Size(kChildTarget, kChildTarget)),
         segments: const <ButtonSegment<_Tool>>[
           ButtonSegment<_Tool>(value: _Tool.draw, label: Text('Draw'), icon: Icon(Icons.brush)),
           ButtonSegment<_Tool>(value: _Tool.stamp, label: Text('Stamps'), icon: Icon(Icons.emoji_emotions_outlined)),
@@ -314,7 +317,11 @@ class _Board extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: GestureDetector(
+      child: Semantics(
+        container: true,
+        label: 'Drawing area',
+        hint: tool == _Tool.draw ? 'Drag a finger across it to draw' : 'Tap it to place a stamp',
+        child: GestureDetector(
         key: const Key('doodleBoard'),
         behavior: HitTestBehavior.opaque,
         onPanStart: tool == _Tool.draw ? onPanStart : null,
@@ -325,7 +332,7 @@ class _Board extends StatelessWidget {
           CustomPaint(painter: _InkPainter(strokes: ink, live: liveStroke, liveColor: liveColor, liveWidth: liveWidth)),
           for (final Stroke s in stamps) _PlacedStamp(stroke: s),
         ]),
-      ),
+      )),
     );
   }
 }
@@ -350,7 +357,7 @@ class _PlacedStamp extends StatelessWidget {
       width: size, height: size,
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: 0, end: 1),
-        duration: const Duration(milliseconds: maxConsequenceMs),
+        duration: motionDuration(context, maxConsequenceMs),
         curve: Curves.easeOutBack,
         builder: (context, t, child) => Opacity(
           opacity: t.clamp(0, 1),
@@ -460,13 +467,16 @@ class _Swatch extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) => Semantics(
+      button: true, selected: selected, excludeSemantics: true,
+      label: 'Colour: ${colourName(color)}', onTap: onTap,
+      child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: Container(
-          // 48dp minimum touch target (§8.4) — the visible dot may look
-          // dainty; the tappable area does not.
-          width: 48, height: 48,
+          // 64dp child touch target (§8.4) — the visible dot may look dainty;
+          // the tappable area does not.
+          width: kChildTarget, height: kChildTarget,
           alignment: Alignment.center,
           child: Container(
             width: 34, height: 34,
@@ -481,7 +491,7 @@ class _Swatch extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ));
 }
 
 class _BrushDot extends StatelessWidget {
@@ -491,11 +501,14 @@ class _BrushDot extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) => Semantics(
+      button: true, selected: selected, excludeSemantics: true,
+      label: '${diameter <= 4 ? 'Thin' : diameter <= 8 ? 'Medium' : 'Thick'} brush', onTap: onTap,
+      child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: Container(
-          width: 48, height: 48,
+          width: kChildTarget, height: kChildTarget,
           alignment: Alignment.center,
           child: Container(
             width: diameter + 8, height: diameter + 8,
@@ -505,7 +518,7 @@ class _BrushDot extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ));
 }
 
 class _StampTray extends StatelessWidget {
@@ -527,13 +540,15 @@ class _StampChip extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Tooltip(
+  Widget build(BuildContext context) => Semantics(
+      button: true, selected: selected, excludeSemantics: true, label: '${spec.label} stamp', onTap: onTap,
+      child: Tooltip(
         message: spec.label,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Container(
-            width: 56, height: 56,
+            width: kChildTarget, height: kChildTarget,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               color: selected
@@ -545,7 +560,7 @@ class _StampChip extends StatelessWidget {
             child: _stampVisual(spec.id, 30),
           ),
         ),
-      );
+      ));
 }
 
 class _RoundIconButton extends StatelessWidget {
@@ -556,7 +571,7 @@ class _RoundIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        height: 48,
+        height: kChildTarget,
         child: OutlinedButton.icon(onPressed: onTap, icon: Icon(icon), label: Text(label)),
       );
 }

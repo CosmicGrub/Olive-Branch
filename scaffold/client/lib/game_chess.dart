@@ -60,6 +60,7 @@
 // product never narrates it as a verdict on her.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
@@ -890,7 +891,7 @@ class _CoachCard extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => AnimatedSwitcher(
-    duration: const Duration(milliseconds: 250),
+    duration: motionDuration(context, 250),
     child: Container(key: ValueKey<String>(text),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -915,7 +916,7 @@ class _CalloutBanner extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-    duration: const Duration(milliseconds: 200),
+    duration: motionDuration(context, 200),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.errorContainer,
       borderRadius: BorderRadius.circular(12)),
@@ -997,7 +998,7 @@ class _ChessBoardView extends StatelessWidget {
         return GestureDetector(
           onTap: () => onTapCell(r, c),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
+            duration: motionDuration(context, 150),
             color: isCheck
                 ? const Color(0xFFD97757)
                 : isSelected

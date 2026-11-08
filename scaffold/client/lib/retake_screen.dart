@@ -16,6 +16,8 @@
 // motion_rules.dart's durationFor(quietnessOf('homework'), ...), which
 // collapses to a plain instant appearance rather than a slide or a bounce.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'homework_quality_gate.dart';
 import 'motion_rules.dart';
 
@@ -53,7 +55,7 @@ class _RetakeScreenState extends State<RetakeScreen> {
       body: SafeArea(
         child: AnimatedOpacity(
           opacity: _opacity,
-          duration: Duration(milliseconds: fadeMs),
+          duration: motionDuration(context, fadeMs),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
@@ -76,7 +78,7 @@ class _RetakeScreenState extends State<RetakeScreen> {
                     style: const TextStyle(fontSize: 17, height: 1.4)),
                   const SizedBox(height: 32),
                   SizedBox(
-                    width: double.infinity, height: 56,
+                    width: double.infinity, height: kChildTarget,
                     child: FilledButton(
                       key: const Key('retakeTryAgain'),
                       onPressed: widget.onRetry,

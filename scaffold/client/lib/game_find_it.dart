@@ -53,6 +53,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 // ================================================================ engine ===
@@ -157,7 +158,7 @@ FindScene nextScene(Random random, {required String excludingId}) {
 
 /// The check-mark reveal's transition — comfortably under §8.13's 400ms
 /// consequence-motion budget.
-const Duration _transitionDuration = Duration(milliseconds: 180);
+const int _transitionMs = 180;
 
 class FindItScreen extends StatefulWidget {
   const FindItScreen({super.key, this.random});
@@ -306,7 +307,7 @@ class _ObjectTile extends StatelessWidget {
                   top: 2,
                   child: AnimatedScale(
                     scale: found ? 1 : 0,
-                    duration: _transitionDuration,
+                    duration: motionDuration(context, _transitionMs),
                     curve: Curves.easeOut,
                     child: Icon(Icons.check_circle, size: 20, color: scheme.primary),
                   ),

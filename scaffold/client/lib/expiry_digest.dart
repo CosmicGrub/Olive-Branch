@@ -20,6 +20,7 @@
 // experiences only the outcome. This screen is never navigated to from any
 // child-facing widget in this codebase.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 
 // =========================================================== retention.ts ==
 const int digestLeadDays = 14;
@@ -151,7 +152,7 @@ class _ExpiryDigestScreenState extends State<ExpiryDigestScreen> {
           ]),
         const SizedBox(height: 12),
         for (final ExpiringArtifact a in digest.items)
-          AnimatedSize(duration: const Duration(milliseconds: 200),
+          AnimatedSize(duration: motionDuration(context, 200),
             child: _ExpiringTile(artifact: a, onKeep: () => _keep(a.artifactId))),
         if (digest.items.isEmpty)
           // 40/12 matches the house "nothing pending" empty-state idiom used

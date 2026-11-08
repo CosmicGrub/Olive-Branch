@@ -12,6 +12,8 @@
 // allowed list, so the same guard the palette module enforces is visibly the
 // thing drawing this screen.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'motion_rules.dart';
 import 'onboarding_shared.dart';
 import 'palette_logic.dart';
@@ -77,8 +79,8 @@ class _SwatchTile extends StatelessWidget {
       // to that same circular boundary rather than a rounded-rect approximation.
       customBorder: const CircleBorder(),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        duration: motionDuration(context, 180),
+        constraints: const BoxConstraints(minWidth: kChildTarget, minHeight: kChildTarget),
         decoration: BoxDecoration(
           color: swatch.color,
           shape: BoxShape.circle,
@@ -128,7 +130,7 @@ class _LivePreview extends StatelessWidget {
           // colouring_screen.dart's _ColouringPainter._colorFor.
           TweenAnimationBuilder<Color?>(
             tween: ColorTween(end: swatch.color),
-            duration: const Duration(milliseconds: maxConsequenceMs),
+            duration: motionDuration(context, maxConsequenceMs),
             builder: (context, color, child) => CircleAvatar(
               radius: 26, backgroundColor: color, child: child),
             child: CircleAvatar(
@@ -146,7 +148,7 @@ class _LivePreview extends StatelessWidget {
           if (placements.contains('accent_stripe'))
             TweenAnimationBuilder<Color?>(
               tween: ColorTween(end: swatch.color),
-              duration: const Duration(milliseconds: maxConsequenceMs),
+              duration: motionDuration(context, maxConsequenceMs),
               builder: (context, color, _) => Container(height: 4, width: 64,
                 decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
             ),

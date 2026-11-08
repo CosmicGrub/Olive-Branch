@@ -58,6 +58,7 @@ import 'call_knock.dart';
 import 'call_modes.dart' show CallMode;
 import 'call_screen.dart';
 import 'push_channel.dart' show PushPointer;
+import 'read_aloud.dart' show ReadAloudScope;
 
 /// The on-screen reassurance line, read aloud verbatim below — a single
 /// source of truth, same convention emergency_card.dart's own
@@ -252,7 +253,10 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
   }
 
   void _readAloud(BuildContext context) {
-    if (widget.speak == null) {
+    // The screen's own callback if it was given one, else the app's read-aloud
+    // (access_shell.dart). Null only with neither: then it says so honestly.
+    final Future<void> Function(String)? speak = widget.speak ?? ReadAloudScope.speakFnOf(context);
+    if (speak == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Read aloud — not built yet.'), duration: Duration(seconds: 2)));
       return;
@@ -265,7 +269,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     // (the only call site is this real tap), but the safety net every
     // sibling screen relies on was silently absent.
     if (admitSpeech(SpeechTrigger.tap) != null) return;
-    widget.speak!(_spokenText);
+    speak(_spokenText);
   }
 
   @override

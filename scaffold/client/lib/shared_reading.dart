@@ -19,6 +19,8 @@
 //     already uses. His screen, which she never sees, may say "line 3 of 11"
 //     plainly, because he is not the one this rule protects.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 import 'storyteller_logic.dart' as story;
 
@@ -174,7 +176,7 @@ class _HerScreen extends StatelessWidget {
       Expanded(
         child: Center(
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 240),
+            duration: motionDuration(context, 240),
             transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
             child: block.herLine
                 ? _HerLineCard(key: ValueKey('her-$index'), text: block.text)
@@ -187,14 +189,14 @@ class _HerScreen extends StatelessWidget {
       _Dots(total: total, current: index),
       const SizedBox(height: 16),
       Row(children: [
-        Expanded(child: SizedBox(height: 56, child: OutlinedButton.icon(
+        Expanded(child: SizedBox(height: kChildTarget, child: OutlinedButton.icon(
           // Turning back is allowed and is not an error (§9.13.2) — never
           // disabled with a warning, only disabled at the true start.
           onPressed: canGoBack ? onPrev : null,
           icon: const Icon(Icons.arrow_back_rounded),
           label: const Text('Back')))),
         const SizedBox(width: 12),
-        Expanded(child: SizedBox(height: 56, child: FilledButton.icon(
+        Expanded(child: SizedBox(height: kChildTarget, child: FilledButton.icon(
           onPressed: canGoForward ? onNext : null,
           icon: const Icon(Icons.arrow_forward_rounded),
           label: const Text('Turn the page')))),
@@ -203,12 +205,12 @@ class _HerScreen extends StatelessWidget {
       // with AnimatedSize rather than popping in instantly, the same
       // restraint storyteller_screen.dart's own "The end" transition uses.
       AnimatedSize(
-        duration: const Duration(milliseconds: 260),
+        duration: motionDuration(context, 260),
         curve: Curves.easeOut,
         child: finished
           ? Padding(
               padding: const EdgeInsets.only(top: 16),
-              child: SizedBox(width: double.infinity, height: 52, child: FilledButton.tonalIcon(
+              child: SizedBox(width: double.infinity, height: kChildTarget, child: FilledButton.tonalIcon(
                 onPressed: onNewBook,
                 icon: const Icon(Icons.autorenew_rounded),
                 label: const Text('Read another one together'))))

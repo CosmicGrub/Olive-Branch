@@ -12,6 +12,7 @@
 // silently drop out of the element tree), so this wiring pass avoids it
 // from the start rather than rediscovering it.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show guardianTargetOf;
 
 class HubTile extends StatelessWidget {
   const HubTile({
@@ -47,7 +48,8 @@ class HubTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 56),
+          // 56 always clears the 48dp guardian floor; with "larger targets" it rises to 64.
+          constraints: BoxConstraints(minHeight: guardianTargetOf(context) > 56 ? guardianTargetOf(context) : 56),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(children: [
             CircleAvatar(

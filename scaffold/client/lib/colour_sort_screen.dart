@@ -11,6 +11,7 @@
 // no score, no counter, no timer and no streak (P2): the only numbers on it are
 // the ones a child can count herself, the pictures.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'colour_activities_logic.dart';
 import 'colour_foods.dart';
 import 'her_colour_art.dart';
@@ -109,7 +110,7 @@ class _ItemButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+          duration: motionDuration(context, 160),
           transform: Matrix4.translationValues(wobbling ? 4 : 0, 0, 0),
           constraints: const BoxConstraints(minWidth: 88, minHeight: 88),
           padding: const EdgeInsets.all(6),
@@ -145,7 +146,7 @@ class _Basket extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 240),
+          duration: motionDuration(context, 240),
           constraints: const BoxConstraints(minHeight: 104),
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(

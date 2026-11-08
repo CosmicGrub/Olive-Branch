@@ -19,6 +19,7 @@
 // Expanded children inside a Row silently paint nothing on this engine build
 // (Flutter 3.44.8 stable, Impeller/Vulkan), confirmed there by bisection.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'calendar_day_logic.dart';
 
 // _colorFor(kind) used to be a private copy of these ten values, kept
@@ -212,7 +213,7 @@ class _DayPartCardState extends State<_DayPartCard> {
         onTap: () => setState(() => _expanded = !_expanded),
         child: AnimatedContainer(
           key: Key('dayPartCard_${s.kind}'),
-          duration: const Duration(milliseconds: 200),
+          duration: motionDuration(context, 200),
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -234,7 +235,7 @@ class _DayPartCardState extends State<_DayPartCard> {
               style: Theme.of(context).textTheme.bodySmall
                 ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             AnimatedSize(
-              duration: const Duration(milliseconds: 200),
+              duration: motionDuration(context, 200),
               child: _expanded
                 ? Padding(padding: const EdgeInsets.only(top: 8),
                     child: Text(_dayPartBlurb[s.kind] ?? '', style: Theme.of(context).textTheme.bodyMedium))

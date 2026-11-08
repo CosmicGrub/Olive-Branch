@@ -20,6 +20,8 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show OrdinalSortKey;
+import 'access_scope.dart' show LiveLine, motionDuration;
 import 'connect4_bot.dart';
 import 'connect4_engine.dart';
 import 'design_tokens.dart';
@@ -184,11 +186,15 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
     // one nested in something scrollable.
     return LayoutBuilder(builder: (context, constraints) {
       final posture = ff.postureFor(ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
-      // 7 real columns, each with its own 3dp padding, inside a
-      // container with 8dp padding on every side — the REAL leftover
-      // budget per cell, not a guessed constant that had no relationship
-      // to whatever screen this actually renders on.
-      final cellSize = ((constraints.maxWidth - 48 - 16) / 7).clamp(44.0, 84.0);
+      final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
+      // 7 real columns, each with its own 3dp padding either side (42 in all),
+      // inside a container with 8dp padding every side (16), inside the page's
+      // own padding either side. This used to subtract 64 from the width, which
+      // is 26dp short of that real total of 90 (32 + 16 + 42 at the default
+      // padding), so the board overflowed its row at nearly every width. Found by
+      // the accessibility pass's own overflow test; the budget is now exact and
+      // the cell floor is 30dp, so even the 344dp cover screen fits.
+      final cellSize = ((constraints.maxWidth - 2 * outerPad - 16 - 42) / 7).clamp(30.0, 84.0);
       final Widget body;
       if (_mode == _Mode.none) {
         body = _ModePicker(
@@ -232,7 +238,6 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
           };
         }
       }
-      final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
       return Scaffold(
         appBar: AppBar(title: const Text('Connect 4')),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own
@@ -313,14 +318,15 @@ class _BoardView extends StatelessWidget {
     final finished = outcome != Connect4Outcome.none;
     final myTurn = !finished && toMove == mySide;
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      if (finished)
-        Text(outcome == Connect4Outcome.draw ? 'Draw. Good game.' : 'Good game.',
-          style: theme.textTheme.headlineSmall)
-      else
-        Text(cpuThinking ? "$peerName is thinking…" : myTurn ? 'Your turn' : "Waiting for $peerName…",
-          style: theme.textTheme.titleMedium),
+      // A live region: a screen reader announces a turn change without her
+      // having to go looking. Plain words only; no score is ever spoken (P2).
+      LiveLine(child: finished
+        ? Text(outcome == Connect4Outcome.draw ? 'Draw. Good game.' : 'Good game.',
+            style: theme.textTheme.headlineSmall)
+        : Text(cpuThinking ? "$peerName is thinking…" : myTurn ? 'Your turn' : "Waiting for $peerName…",
+            style: theme.textTheme.titleMedium)),
       const SizedBox(height: 16),
-      _Board(board: board, canPlay: myTurn, onTapColumn: onTapColumn, cellSize: cellSize),
+      _Board(board: board, canPlay: myTurn, onTapColumn: onTapColumn, cellSize: cellSize, mySide: mySide),
       if (finished) ...[
         const SizedBox(height: 20),
         FilledButton(onPressed: onPlayAgain, child: const Text('Play again')),
@@ -330,8 +336,9 @@ class _BoardView extends StatelessWidget {
 }
 
 class _Board extends StatelessWidget {
-  const _Board({required this.board, required this.canPlay, required this.onTapColumn, required this.cellSize});
+  const _Board({required this.board, required this.canPlay, required this.onTapColumn, required this.cellSize, required this.mySide});
   final Connect4Board board;
+  final Side mySide;
   final bool canPlay;
   final void Function(int col) onTapColumn;
   /// The REAL per-cell size this screen has room for — measured from the
@@ -343,7 +350,11 @@ class _Board extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      label: 'Connect 4 board, $connect4Cols columns by $connect4Rows rows',
+      child: Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(color: theme.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
       child: Column(
@@ -352,13 +363,26 @@ class _Board extends StatelessWidget {
           for (var row = connect4Rows - 1; row >= 0; row--)
             Row(mainAxisSize: MainAxisSize.min, children: [
               for (var col = 0; col < connect4Cols; col++)
-                Padding(
-                  padding: const EdgeInsets.all(3),
-                  child: GestureDetector(
+                // The tap target is the cell AND its 3dp margin (so a column strip is
+                // cell+6 wide), and a tap anywhere in a column drops there.
+                // Each cell is one node, read column by column from the bottom
+                  // (the order a column fills in), saying who has a disc there and
+                  // which shape, since colour is never the only cue.
+                  Semantics(
+                    container: true,
+                    sortKey: OrdinalSortKey(col * connect4Rows + row.toDouble()),
+                    label: 'Column ${col + 1}, row ${row + 1} from the bottom',
+                    value: connect4DiscWords(board.at(col, row), mySide),
+                    button: canPlay && !board.isColumnFull(col),
                     onTap: canPlay && !board.isColumnFull(col) ? () => onTapColumn(col) : null,
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: canPlay && !board.isColumnFull(col) ? () => onTapColumn(col) : null,
+                    child: Padding(
+                    padding: const EdgeInsets.all(3),
                     child: Container(
                       width: cellSize, height: cellSize,
-                      constraints: const BoxConstraints(minWidth: 64 / 1.45, minHeight: 64 / 1.45),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: board.at(col, row) == null ? theme.colorScheme.surface : Colors.transparent,
@@ -368,14 +392,22 @@ class _Board extends StatelessWidget {
                       clipBehavior: Clip.none,
                       child: board.at(col, row) == null ? null : _DroppedDisc(side: board.at(col, row)!, row: row, cellSize: cellSize),
                     ),
-                  ),
-                ),
+                  ))),
             ]),
         ],
       ),
-    );
+    ));
   }
 
+}
+
+/// What a screen reader says about one cell: empty, or whose disc and its shape.
+/// Pure, so the wording is tested directly.
+String connect4DiscWords(Side? disc, Side mySide) {
+  if (disc == null) return 'empty';
+  final String whose = disc == mySide ? 'your disc' : 'their disc';
+  final String shape = disc == Side.a ? 'a triangle' : 'a circle';
+  return '$whose, $shape';
 }
 
 /// A disc that falls into place from above the column when it first
@@ -396,7 +428,7 @@ class _DroppedDisc extends StatelessWidget {
     final glyphScale = cellSize / 44; // scales the glyph with the real cell size, floor unchanged
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: -fallDistance, end: 0),
-      duration: const Duration(milliseconds: 380),
+      duration: motionDuration(context, 380),
       curve: Curves.easeIn,
       builder: (context, dy, child) => Transform.translate(offset: Offset(0, dy), child: child),
       child: Container(

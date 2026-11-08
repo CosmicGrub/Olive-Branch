@@ -17,6 +17,7 @@
 // answerYearCheck()'s 'in_the_future' is handled silently: no error copy, she
 // simply remains on the same question and may answer again.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
 import 'calendar_logic.dart';
 import 'onboarding_shared.dart';
 
@@ -142,10 +143,10 @@ class _YearCheck extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-    Expanded(child: SizedBox(height: 56, child: OutlinedButton(
+    Expanded(child: SizedBox(height: kChildTarget, child: OutlinedButton(
       onPressed: () => onAnswer(false), child: const Text('Not yet')))),
     const SizedBox(width: 16),
-    Expanded(child: SizedBox(height: 56, child: FilledButton(
+    Expanded(child: SizedBox(height: kChildTarget, child: FilledButton(
       onPressed: () => onAnswer(true), child: const Text('Yes')))),
   ]);
 }

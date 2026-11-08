@@ -42,6 +42,7 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
+import 'read_aloud.dart' show ReadAloudScope;
 
 /// Same "recorded, not glossed over" pattern as child_home.dart's helper —
 /// copied locally since it's private to that file.
@@ -208,7 +209,10 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
   }
 
   void _readAloud(BuildContext context) {
-    if (widget.speak == null) {
+    // The screen's own callback if it was given one, else the app's read-aloud
+    // (access_shell.dart). Null only with neither: then it says so honestly.
+    final Future<void> Function(String)? speak = widget.speak ?? ReadAloudScope.speakFnOf(context);
+    if (speak == null) {
       _notBuiltYet(context, 'Read aloud');
       return;
     }
@@ -217,7 +221,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
     // ever passes SpeechTrigger.autonomous here is refused for real, not
     // just by convention.
     if (admitSpeech(SpeechTrigger.tap) != null) return;
-    widget.speak!(widget._isLive ? _liveSpokenText() : _cardSpokenText);
+    speak(widget._isLive ? _liveSpokenText() : _cardSpokenText);
   }
 
   @override

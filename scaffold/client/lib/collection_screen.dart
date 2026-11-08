@@ -20,6 +20,7 @@
 // starts with the two empty collections and no invented specimens.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
 import 'local_repositories.dart';
 import 'local_services.dart';
 import 'showcase_logic.dart';
@@ -183,7 +184,7 @@ class _CollectionCard extends StatelessWidget {
               _SpecimenChip(entry: sorted[i], isNewest: i == sorted.length - 1),
           ]),
           const SizedBox(height: 12),
-          SizedBox(height: 48, child: OutlinedButton.icon(
+          SizedBox(height: kChildTarget, child: OutlinedButton.icon(
             onPressed: onAddAnother,
             icon: const Icon(Icons.add),
             label: Text('Show another ${label.toLowerCase()}'))),
@@ -239,7 +240,7 @@ class _AddEntrySheetState extends State<_AddEntrySheet> {
         decoration: const InputDecoration(
           border: OutlineInputBorder(), hintText: 'Anything else? (not required)')),
       const SizedBox(height: 16),
-      SizedBox(width: double.infinity, height: 48, child: FilledButton(
+      SizedBox(width: double.infinity, height: kChildTarget, child: FilledButton(
         onPressed: _submit, child: const Text('Add it'))),
     ]),
   );
@@ -252,7 +253,7 @@ class _SpecimenChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    constraints: const BoxConstraints(minHeight: 48),
+    constraints: const BoxConstraints(minHeight: kChildTarget),
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(24),

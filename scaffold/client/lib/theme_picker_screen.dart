@@ -34,6 +34,7 @@
 // its own. No score, rank, or "you've tried N themes" tally of any kind —
 // P2. This is a preference, not a game.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -291,7 +292,7 @@ class _PaletteCardState extends State<_PaletteCard> {
         // own card — driven entirely by the tap, never a loop (§8.13).
         child: AnimatedScale(
           scale: _pressed ? 0.96 : 1.0,
-          duration: const Duration(milliseconds: 120),
+          duration: motionDuration(context, 120),
           curve: Curves.easeOut,
           child: Container(
             constraints: const BoxConstraints(minHeight: 64), // §8.4 touch target

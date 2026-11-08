@@ -45,6 +45,8 @@ void main() {
       await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
       await t.enterText(find.byType(TextField), 'Today was a good day.');
       await t.pump(); // let the listener-driven setState enable the button first
+      // The picture banks sit above the button now, so on a short viewport it is scrolled to.
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
 
@@ -59,6 +61,8 @@ void main() {
       expect(button.onPressed, isNull);
 
       await t.enterText(find.byType(TextField), '   ');
+      // The picture banks sit above the button now, so on a short viewport it is scrolled to.
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
       expect(find.text('Nothing written yet. Whenever you feel like it.'), findsOneWidget);
@@ -71,6 +75,8 @@ void main() {
 
       await t.enterText(find.byType(TextField), 'Today was a good day.');
       await t.pump();
+      // The picture banks sit above the button now, so on a short viewport it is scrolled to.
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
       expect(find.byIcon(Icons.edit_note_outlined), findsNothing);
@@ -80,10 +86,14 @@ void main() {
       await t.pumpWidget(wrap(const JournalScreen(childName: 'Maya')));
       await t.enterText(find.byType(TextField), 'First entry');
       await t.pump();
+      // The picture banks sit above the button now, so on a short viewport it is scrolled to.
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
       await t.enterText(find.byType(TextField), 'Second entry');
       await t.pump();
+      // The picture banks sit above the button now, so on a short viewport it is scrolled to.
+      await t.ensureVisible(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.tap(find.widgetWithText(FilledButton, 'Keep it, just for me'));
       await t.pump();
 

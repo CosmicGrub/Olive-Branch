@@ -37,6 +37,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
 
 import 'colouring_screen.dart' show ColouringThumbnail;
 import 'doodle_desk.dart' show DoodleThumbnail;
@@ -358,13 +359,13 @@ class SnapshotButton extends StatelessWidget {
         key: const Key('snapshotButton'),
         tooltip: tooltip,
         iconSize: 28,
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        constraints: const BoxConstraints(minWidth: kChildTarget, minHeight: kChildTarget),
         onPressed: () => _press(context),
         icon: Icon(icon),
       );
     }
     return SizedBox(
-      width: 56, height: 56, // >=48dp target with room to spare
+      width: kChildTarget, height: kChildTarget, // >=48dp target with room to spare
       child: FloatingActionButton(
         key: const Key('snapshotButton'),
         heroTag: 'snapshotButton-$currentSurface',

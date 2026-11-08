@@ -27,6 +27,7 @@ import 'theme_data.dart';
 import 'child_home.dart';
 import 'entry_gate.dart';
 import 'guardian_home.dart';
+import 'access_shell.dart';
 import 'kiosk_shell.dart';
 
 void main() {
@@ -54,6 +55,9 @@ class OliveDemo extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (demo)',
     theme: buildThemeData(defaultAppTheme),
+    // Accessibility settings and read-aloud (access_shell.dart); a route change ends any reading.
+    navigatorObservers: [sharedReadAloudObserver],
+    builder: accessBuilder,
     home: const EntryGate(
       childDestination: KioskShell(
         verifyPin: _demoVerifyGuardianPin,

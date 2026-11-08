@@ -65,6 +65,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side, auditLiveView;
@@ -1423,14 +1424,14 @@ class _UnoBoard extends StatelessWidget {
           onWillAcceptWithDetails: (details) => _enabled && _looksLegal(details.data),
           onAcceptWithDetails: (details) => onCardTap(details.data),
           builder: (context, candidates, rejected) => AnimatedContainer(
-            duration: const Duration(milliseconds: 150), // consequence: reacts to the drag, settles fast, never loops
+            duration: motionDuration(context, 150), // consequence: reacts to the drag, settles fast, never loops
             padding: EdgeInsets.all(candidates.isNotEmpty ? 4 : 0),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               border: candidates.isNotEmpty ? Border.all(color: theme.colorScheme.primary, width: 3) : null,
             ),
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220), // consequence: a new card just landed here
+              duration: motionDuration(context, 220), // consequence: a new card just landed here
               transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: FadeTransition(opacity: anim, child: child)),
               child: _UnoCardFace(key: ValueKey(discardTop.code + currentColor.name), card: discardTop, width: pileCardWidth, height: pileCardHeight),
             ),
@@ -1580,23 +1581,34 @@ class _ActionMomentGlowState extends State<_ActionMomentGlow> with SingleTickerP
   // documented consequence budget. Brought inside it.
   late final AnimationController _controller =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+  bool _started = false;
+
+  /// Plays the glow once. The duration is read here, not at construction, so
+  /// reduced motion (an inherited setting) can make it instant.
+  void _play() {
+    _controller.duration = motionDuration(context, 400);
+    _controller..reset()..forward();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_started) {
+      _started = true;
+      if (_isAction) _play();
+    }
+  }
   late String _lastCode = widget.card.code;
 
   bool get _isAction => widget.card.type == UnoCardType.skip || widget.card.type == UnoCardType.reverse ||
       widget.card.type == UnoCardType.drawTwo || widget.card.type == UnoCardType.wildDrawFour;
 
   @override
-  void initState() {
-    super.initState();
-    if (_isAction) _controller.forward();
-  }
-
-  @override
   void didUpdateWidget(_ActionMomentGlow oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.card.code != _lastCode) {
       _lastCode = widget.card.code;
-      if (_isAction) _controller..reset()..forward();
+      if (_isAction) _play();
     }
   }
 
@@ -1676,7 +1688,7 @@ class _RoundEndCelebration extends StatelessWidget {
       // sibling win-reveal pattern (game_findthing.dart/game_hunt.dart) —
       // this was 420ms, a real bug the review found (20ms over both the
       // 400ms consequence budget and its own true siblings' shared value).
-      tween: Tween(begin: 0, end: 1), duration: const Duration(milliseconds: 380), curve: Curves.easeOutBack,
+      tween: Tween(begin: 0, end: 1), duration: motionDuration(context, 380), curve: Curves.easeOutBack,
       builder: (context, t, child) => Transform.scale(scale: 0.7 + 0.3 * t.clamp(0, 1), child: Opacity(opacity: t.clamp(0, 1), child: child)),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(

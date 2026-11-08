@@ -130,17 +130,18 @@ ThemeData buildThemeData(AppTheme theme) {
       backgroundColor: s.surface, foregroundColor: s.onSurface, surfaceTintColor: Colors.transparent,
       elevation: 0, scrolledUnderElevation: 0, centerTitle: false, titleTextStyle: text.titleLarge),
     filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
-      minimumSize: const Size(64, 46), shape: shape(field), textStyle: text.labelLarge,
+      minimumSize: const Size(64, 48), shape: shape(field), textStyle: text.labelLarge,
       padding: const EdgeInsets.symmetric(horizontal: 20))),
     elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(
-      minimumSize: const Size(64, 46), shape: shape(field), textStyle: text.labelLarge,
+      minimumSize: const Size(64, 48), shape: shape(field), textStyle: text.labelLarge,
       elevation: 0, backgroundColor: s.primaryContainer, foregroundColor: s.onPrimaryContainer)),
     outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
-      minimumSize: const Size(64, 46), shape: shape(field), textStyle: text.labelLarge,
+      minimumSize: const Size(64, 48), shape: shape(field), textStyle: text.labelLarge,
       side: BorderSide(color: s.outline, width: 1.5))),
     textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(
-      minimumSize: const Size(48, 44), shape: shape(field), textStyle: text.labelLarge)),
-    iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(minimumSize: const Size(44, 44))),
+      minimumSize: const Size(48, 48), shape: shape(field), textStyle: text.labelLarge)),
+    // §8.4: nothing a hand has to hit is below 48dp (the child's own controls go to 64).
+    iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(minimumSize: const Size(48, 48))),
     inputDecorationTheme: InputDecorationTheme(
       filled: true, fillColor: s.surfaceContainerLowest,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),

@@ -52,6 +52,8 @@
 // agrees it should be ready, so this path is a genuine defensive fallback
 // for a stale client or a real race, not the normal case.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -436,7 +438,7 @@ class _LettersScreenState extends State<LettersScreen> {
                 onSelected: (_) => setState(() => _selectedOpenAge = age)),
             ]),
           const SizedBox(height: 16),
-          SizedBox(width: double.infinity, height: 48,
+          SizedBox(width: double.infinity, height: kChildTarget,
             child: FilledButton.icon(
               onPressed: (avail.isEmpty || _controller.text.trim().isEmpty || _sealing)
                 ? null : _seal,
@@ -542,7 +544,7 @@ class _LetterTile extends StatelessWidget {
         child: AnimatedSize(
           // Consequence-driven expand/reveal only, well under the motion
           // budget — never ambient, never looping.
-          duration: const Duration(milliseconds: 300),
+          duration: motionDuration(context, 300),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Icon(opened ? Icons.drafts_outlined : Icons.mail_lock_outlined,
@@ -563,7 +565,7 @@ class _LetterTile extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35)),
             ] else if (ready) ...[
               const SizedBox(height: 12),
-              SizedBox(width: double.infinity, height: 48,
+              SizedBox(width: double.infinity, height: kChildTarget,
                 child: FilledButton.tonal(onPressed: busy ? null : onOpen, child: const Text('Open it'))),
             ],
           ]),

@@ -18,15 +18,19 @@
 // the new text, never queue two readings back to back.
 import 'package:flutter_tts/flutter_tts.dart';
 
-class TtsChannel {
+import 'read_aloud.dart' show ReadAloudEngine;
+
+class TtsChannel implements ReadAloudEngine {
   TtsChannel({FlutterTts? engine}) : _engine = engine ?? FlutterTts();
   final FlutterTts _engine;
 
+  @override
   Future<void> speak(String text) async {
     await _engine.stop();
     await _engine.speak(text);
   }
 
+  @override
   Future<void> stop() => _engine.stop();
 }
 

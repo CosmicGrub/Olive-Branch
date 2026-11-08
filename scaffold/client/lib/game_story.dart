@@ -23,6 +23,7 @@
 // winner, ever" is structural here, not a UI choice: `addLine()` has no
 // concept of an outcome besides 'finished'.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 
 // =========================================================== ported logic ===
 // packages/games/src/games.ts — the story branch of the generic game engine.
@@ -297,7 +298,7 @@ class _StoryBubble extends StatelessWidget {
     if (!animate) return bubble;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 300),
+      duration: motionDuration(context, 300),
       curve: Curves.easeOut,
       builder: (BuildContext context, double t, Widget? child) => Opacity(
         opacity: t,

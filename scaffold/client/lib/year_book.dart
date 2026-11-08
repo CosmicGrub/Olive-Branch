@@ -18,6 +18,7 @@
 // section grouping, which places 'yearbook' among guardianHome/export/gallery
 // rather than the child-surface block above it.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 
 import 'archive_models.dart';
 import 'form_factors.dart' as ff;
@@ -154,7 +155,7 @@ class _YearBookScreenState extends State<YearBookScreen> {
               ),
               const SizedBox(height: 16),
               AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
+                duration: motionDuration(context, 250),
                 child: Column(
                   key: ValueKey<int>(_selectedYear),
                   crossAxisAlignment: CrossAxisAlignment.start,

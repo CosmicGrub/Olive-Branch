@@ -86,7 +86,8 @@ import 'call_screen.dart';
 import 'child_home.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'family_structure_store.dart';
-import 'tts_channel.dart' show buildSpeakCallback;
+import 'access_settings.dart' show kChildTarget, sharedAccess;
+import 'access_shell.dart' show sharedReadAloud;
 import 'game_logic.dart' show neutralGrownUp;
 import 'local_repositories.dart';
 import 'local_services.dart';
@@ -186,8 +187,11 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // Her derived home (age band, My people, birthday line) from the local family structure.
   // Null (never loaded, or the local read failed) renders the home exactly as before.
   FamilyChildSnapshot? _family;
-  Future<void> Function(String)? _speakFn;
-  Future<void> _speak(String text) => (_speakFn ??= buildSpeakCallback())(text);
+  // Through the shared read-aloud controller, so this screen's readings obey the
+  // same rules as every tile's: tap-started only, one at a time, ended by a route change.
+  Future<void> _speak(String text) async {
+    await sharedReadAloud.speak(text);
+  }
 
   @override
   void initState() {
@@ -266,6 +270,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         // so counting the raw list length double-counted every message
         // she had already watched as still unread. See file header.
         _childAge = (me['yearsOld'] as num?)?.toInt() ?? _failClosedAge;
+        sharedAccess.setAge(_childAge);
         _dayParts = _decodeDayParts(now['dayParts']);
         _unreadCount = messages.where(
             (dynamic m) => (m as Map<String, dynamic>)['state'] == 'delivered').length;
@@ -449,7 +454,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           IconButton(
             key: const Key('childOfflineRetry'),
             tooltip: 'Try again',
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            constraints: const BoxConstraints(minWidth: kChildTarget, minHeight: kChildTarget),
             onPressed: _load,
             icon: const Icon(Icons.refresh)),
         ]),

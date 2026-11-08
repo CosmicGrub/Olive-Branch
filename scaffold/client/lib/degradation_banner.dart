@@ -13,6 +13,7 @@
 // exactly once — never a live meter, never blame.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 // ============================================== §5.28.1 the quality ladder ==
@@ -215,7 +216,7 @@ class DegradationBanner extends StatelessWidget {
     // notice's own text (not just null-vs-not), so a CHANGED notice
     // crossfades too, not just the show/hide transition.
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 120),
+      duration: motionDuration(context, 120),
       transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
       child: n == null
         ? const SizedBox.shrink(key: ValueKey('degradationBannerHidden'))

@@ -27,6 +27,7 @@
 //     — a `SliverGrid` per year inside one `CustomScrollView`, so only the
 //     selected era's slivers are ever built, not two thousand widgets.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 
 import 'archive_models.dart';
 
@@ -266,7 +267,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
           Expanded(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
+              duration: motionDuration(context, 250),
               child: _GalleryGrid(key: ValueKey<String>('$_fullDemo-$_selectedEra'), pieces: toRender),
             ),
           ),

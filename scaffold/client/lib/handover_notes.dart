@@ -51,9 +51,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
 import 'api_client.dart';
+import 'access_settings.dart' show kGuardianTarget;
 import 'auth_session.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
+import 'read_aloud.dart' show ReadAloudScope;
 
 class _HandoverEntry {
   const _HandoverEntry({required this.author, required this.when, required this.text});
@@ -344,27 +346,34 @@ class _EntryTile extends StatelessWidget {
   final Future<void> Function(String text)? speak;
 
   void _readAloud(BuildContext context) {
-    if (speak == null) {
+    // The screen's own callback if it was given one, else the app's read-aloud
+    // (access_shell.dart). Null only with neither: then it says so honestly.
+    final Future<void> Function(String)? say = speak ?? ReadAloudScope.speakFnOf(context);
+    if (say == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Read aloud — not built yet.'), duration: Duration(seconds: 2)));
       return;
     }
     if (admitSpeech(SpeechTrigger.tap) != null) return;
-    speak!('${entry.author}, ${entry.when}: ${entry.text}');
+    say('${entry.author}, ${entry.when}: ${entry.text}');
   }
 
   @override
   Widget build(BuildContext context) {
     final List<Widget> rows = <Widget>[
       Row(children: <Widget>[
-        Text(entry.author, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+        Flexible(child: Text(entry.author, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5))),
         const SizedBox(width: 8),
-        Text(entry.when, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+        // Flexible: the speaker button is now the 48dp guardian target, so on the
+        // narrowest screen the date gives way (ellipsis) rather than overflow.
+        Flexible(child: Text(entry.when, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline))),
         const Spacer(),
-        SizedBox(width: 36, height: 36, child: IconButton(
+        SizedBox(width: kGuardianTarget, height: kGuardianTarget, child: IconButton(
           key: Key('readAloudButton_$index'),
           padding: EdgeInsets.zero,
-          iconSize: 18,
+          iconSize: 22,
           icon: const Icon(Icons.volume_up_outlined),
           tooltip: 'Read this entry aloud',
           onPressed: () => _readAloud(context))),
