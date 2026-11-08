@@ -188,10 +188,11 @@ void main() {
   });
 
   group('the suites shelf', () {
-    test('five rows in a fixed order, each with what it adds; on by default as each suite already is', () async {
+    test('five rows in a fixed order, each with what it adds; on by default as each suite already is, except Voice, which starts off', () async {
       final List<ShelfRow> rows = await service().shelf(guardian);
       expect(rows.map((ShelfRow r) => r.suite.key), suiteKeysOnShelf);
-      expect(rows.every((ShelfRow r) => r.on), isTrue);
+      expect(rows.where((ShelfRow r) => r.suite.key != 'voice').every((ShelfRow r) => r.on), isTrue);
+      expect(rows.firstWhere((ShelfRow r) => r.suite.key == 'voice').on, isFalse);
       for (final ShelfRow r in rows) {
         expect(r.suite.adds.length, greaterThan(20));
       }
