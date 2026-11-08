@@ -132,6 +132,31 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'small photo, and whether it is shown to her. The app writes none. Sealed on the device; '
           'never uploaded.'),
   LocalDataEntry(
+      area: 'rhythm', scope: LocalScope.child, maxBytes: 256 * 1024,
+      what: 'Rhythm, on this device only: the routine and the first-then cards a grown-up set '
+          '(pictures and short names), her bag list, how-the-app-feels settings (sound, motion, '
+          'brightness), and which steps she has ticked TODAY (dropped the next day). No score, '
+          'streak or count; nothing is shared with her other home.'),
+  LocalDataEntry(
+      area: 'newplace', scope: LocalScope.child, maxBytes: 4 * _mib,
+      what: 'A new place a grown-up prepared for her: a few room pictures or small room photos '
+          'with a short caption each, and a short plan. Rooms only: no address, no map, no '
+          'coordinates. Kept only here.'),
+  LocalDataEntry(
+      area: 'voice', scope: LocalScope.child, maxBytes: 256 * 1024,
+      what: 'Voice, on this device only: the grown-ups a guardian wrote down as her helpers (a '
+          'name, a picture and a short line each) and her personal symbols. What she says with '
+          'symbols is never kept.'),
+  LocalDataEntry(
+      area: 'feelings', scope: LocalScope.child, encrypted: true, maxBytes: 64 * 1024,
+      what: "Feelings weather: only TODAY's weather picture she picked (older ones are dropped). "
+          'Sealed on the device; never shown to anyone, no history, no count.'),
+  LocalDataEntry(
+      area: 'worries', scope: LocalScope.child, encrypted: true, maxBytes: 2 * _mib,
+      what: 'Her worry box: the pictures she tapped and the drawings she made, and whether she '
+          'chose to show her grown-up. Sealed on the device; a grown-up sees only what she '
+          'chose to show; letting one float away deletes it. Never read or tagged: no score, no count.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '

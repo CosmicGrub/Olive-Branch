@@ -241,6 +241,11 @@ class _ClearLocalDataScreenState extends State<ClearLocalDataScreen> {
         'profile' => 'Offline start-up',
         'outbox' => 'Waiting to send',
         'learn' => 'Parent Learn',
+        'rhythm' => 'Routine and rhythm',
+        'newplace' => 'A new place',
+        'voice' => 'Her helpers and symbols',
+        'feelings' => 'Feelings weather',
+        'worries' => 'Worry box',
         _ => e.area,
       };
 }

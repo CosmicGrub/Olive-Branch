@@ -56,6 +56,63 @@ when no live session is wired); audio in the memory box (no audio capture exists
 box on a picture story; reminders or scheduling of any kind; any pre-written medical or
 explainer text. The app writes no care content: every word is a guardian's.
 
+## [Unreleased] — Rhythm and Voice (umbrella suites B and C), offline and on this device
+
+Client only: **no server route, no migration, no network call, nothing that needs a
+credential** (owner direction: offline, on-device features only). **Sharing between a
+child's two homes is parked**, so every feature stores and works on this device only and
+says so in its own notes. Described as shipped in MASTERFILE §8.20 (and the five new areas
+in the §8.16.4 table). No version bump and no new MARKUP screen row; MARKUP/DEMO totals
+updated. No prohibition in §2.1 is changed; P2, P3 and P7 are held in code and tests.
+
+### Added
+- **Suite B, Rhythm** (pure logic `rhythm_logic.dart`, screens `rhythm_screens.dart`):
+  **one routine** (up to 8 picture steps, shown First and Then with one Done; a tick is a
+  private bit for today and is dropped the next day), **first, then** (two cards, Done turns
+  Then into Now), **packing buddy** (a picture bag list; "same in both homes" items are calm
+  chips that can never be ticked; ticks kept three days), **a new place** (up to 8 rooms as a
+  picture or a small room photo with a caption, then a short plan; **rooms only**, a street
+  address or coordinates are refused, P3) and **how the app feels** (a guardian's sound,
+  motion, haptics and brightness-ceiling settings, applied on this device by `SensoryScope`;
+  it can only reduce motion further than the device; "no flashing, ever" is a fact).
+- **Suite C, Voice** (`voice_logic.dart`, `voice_screens.dart`): **feelings weather** (six
+  skies, only today's pick kept, no history, no show control, sealed, a guardian read is
+  refused), **worry box** (a tapped picture or a drawing; she chooses keep, show my
+  grown-up, or let it float away, which deletes for real; a guardian sees only what she
+  chose to show, with no note, tag, count or reading; the box never drops a worry to make
+  room), **my helpers** (guardian-written; she sees only people a guardian recorded as having
+  said yes; no call, message, map or number) and **symbols** (16 core words plus up to 8
+  personal ones; the sentence is the words as tapped, never rewritten; never stored).
+- **Gate** `rhythm_voice_gate.dart`: tiles come from the family-structure model's
+  `ChildView` (band, More hub, `features.packingBuddy`) and two guardian switches. The
+  3-to-4 band gets nothing; with no snapshot the age is `yearsOld`, failing closed to five;
+  authored content shows once it exists. `deriveChildView` and the pinned `suiteKeys` are
+  untouched. The tiles are the shared `TieredTile` in the child's More hub
+  (`rhythm_voice_sections.dart`); `child_home.dart` passes its family snapshot and speaker
+  through.
+- **Guardian editors** (`rhythm_voice_guardian_screens.dart`) under Settings, Family:
+  *Routine and rhythm* and *Her voice*, plus the one window onto worries she chose to show.
+  Each says it is kept on this device only. Every guardian write is refused for the child
+  principal inside the service (`guardian_only`), and every child write for anyone else
+  (`child_only`).
+- **Repositories** (`rhythm_voice_repositories.dart`): an abstract interface, an in-memory
+  and a LocalStore-backed implementation for each of five new on-device areas, listed in
+  `localDataCatalogue` (and so on the "Data on this device" screen): `rhythm`, `newplace`,
+  `voice` (plain) and `feelings`, `worries` (**encrypted**). Bounded, restart-safe, one
+  namespace per child; a failed save is reported, never faked.
+- **Read-aloud seam** (`SEAM(child-accessibility)`): every child tile takes an optional
+  `speak` callback and speaks only on her tap; with none, no speaker is drawn. It does not
+  depend on the child accessibility work and is muted when the sound is off.
+- Picture library `picture_library.dart` / `picture_icons.dart` (Material icons stand in for
+  a commissioned set), and 10 new test files (picture library, both logic cores, the gate,
+  repositories, the service, and four widget suites at 344 dp and large text).
+
+### Not built, deliberately
+- **I need help** (`needHelp`): needs clinicians and a lawyer first.
+- Sharing a routine, bag, place or helpers between a child's two homes, agreement and
+  proposals between guardians, the owl-sleeps-here choice carried out in a real house, a
+  "my room is ready" stamp, a quiet-corner screen, and a commissioned symbol and picture set.
+
 ## [Unreleased] — Family structure and age bands (suites J and K), local-first
 
 A guardian builds the family structure; her home follows it. Described as shipped in

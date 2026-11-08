@@ -5372,7 +5372,7 @@ per install from the platform CSPRNG and kept in `flutter_secure_storage`
 (Keystore/Keychain) — never on disk beside the data. Opening a private
 namespace with no cipher is refused; it never falls back to plaintext.
 
-**Private namespaces:** the child's journal (P7), the family structure, all of Parent Learn, and the Growing and Care areas (§8.19).
+**Private namespaces:** the child's journal (P7), the family structure, all of Parent Learn, the Growing and Care areas (§8.19), and her feelings weather and worry box (§8.20).
 
 ### 8.16.3 Scoping
 
@@ -5410,6 +5410,11 @@ drift. Nothing is written that is not in it.
 | `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
 | `child.<id>.explainers` | Picture stories a guardian wrote and whether each is shown to her. The app writes none. | **Yes** |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
+| `child.<id>.rhythm` | Rhythm, on this device only (§8.20): the routine and first-then cards a grown-up set (pictures and short names), her bag list, how-the-app-feels settings (sound, motion, brightness), and which steps she has ticked **today** (dropped the next day). No score, streak or count; nothing is shared with her other home. | No |
+| `child.<id>.newplace` | A new place a grown-up prepared (§8.20): a few room pictures or small room photos with a short caption each, and a short plan. Rooms only: no address, no map, no coordinates. | No |
+| `child.<id>.voice` | Voice, on this device only (§8.20): the grown-ups a guardian wrote as her helpers (a name, a picture and a short line each; she sees only those who said yes) and her personal symbols. What she says with symbols is never kept. | No |
+| `child.<id>.feelings` | Feelings weather (§8.20): only **today's** weather picture she picked (older ones are dropped). Never shown to anyone, no history, no count. | **Yes** |
+| `child.<id>.worries` | Her worry box (§8.20): the pictures she tapped and the drawings she made, and whether she chose to show her grown-up. A grown-up sees only what she chose to show; letting one float away deletes it. Never read or tagged: no score, no count. | **Yes** |
 
 Rules held in code and tests: **no scores, streaks, counters, rankings or
 completion states are stored (P2)**; no price (P4); no coordinates (P3); no
@@ -7185,6 +7190,129 @@ picture story (it would need a person on the other end); capsule contents from o
 (single device, single guardian write path); anniversaries or any reminder; notifications.
 Clinical and child-development review is still required before any pre-written explainer or
 care text is considered; none is shipped.
+
+## §8.20 Rhythm and Voice — suites B and C, offline and on this device (umbrella)
+
+Design: the umbrella concepts `oneRoutine`, `firstThen`, `packingBuddy`, `newPlace`,
+`sensoryProfile` (suite B, **Rhythm**) and `feelingsWeather`, `worryBox`, `myHelpers`,
+`symbols` (suite C, **Voice**) in `docs/superpowers/mockups/umbrella/`, with the look and
+flow of `docs/superpowers/mockups/overhaul2/`. **Offline and on-device by owner
+direction:** no server route, no migration, no network call, nothing that needs a
+credential. **Sharing between a child's two homes is parked**, so every feature below
+stores and works on this device only and says so in its own notes. **Deliberately not
+built:** `needHelp` (I need help: it needs clinicians and a lawyer before any build),
+sharing a routine, a bag or a place between homes, a "same at both houses" agreement or
+a proposal the other guardian accepts, the owl-sleeps-here choice carried out in a real
+house, a "my room is ready" stamp, a quiet-corner screen, and a commissioned picture set
+(Material icons stand in; swapping the set changes one table).
+
+**Who writes what.** A **guardian principal** writes every guardian-authored thing (the
+routine, the first-then cards, the bag list, the place plan, how the app feels, her
+helpers, her personal symbols, the two suite switches); the **child principal** (and only
+this child's id) ticks, picks a weather and manages her own worries. Both rules live in
+the service (`RhythmVoiceService`, `client/lib/rhythm_voice_repositories.dart`), not only in
+the screens: a refused principal gets `guardian_only` / `child_only` and nothing is written.
+The child shell has no settings (§8.1); the guardian editors are in
+`rhythm_voice_guardian_screens.dart`, which no child file imports, and a source test
+holds that.
+
+### 8.20.1 Rhythm (suite B)
+
+- **One routine**: ordered picture steps (up to 8, a name each), shown to her as **First**
+  and **Then** with one big **Done**. She can only tick the step she is on. Finishing is a calm
+  resting state ("All done", **Again**), not a result. A tick is a private bit for **today** and
+  is dropped the next day. No number, bar, star, streak or "3 of 8" exists on screen or in
+  the stored shape (P2).
+- **First, then**: two cards a guardian sets from the picture library; **Done** turns
+  **Then** into **Now**, for today only.
+- **Packing buddy**: a picture list for the exchange bag. Things to bring are tickable
+  and un-tickable by her (kept three days, then dropped); things a guardian marked
+  "same in both homes" are shown as calm chips and can never be ticked, so they can never be
+  "forgotten". Nothing says forgotten, missing, left or how many.
+- **A new place**: a gentle walk through up to eight rooms (a room picture or a small room
+  photo, each with a short caption) then a short plan of up to four lines. **Rooms only:** a
+  caption or line that looks like a street address or a coordinate pair is refused (P3), and
+  the editor says so. Photos are small JPEG or PNG, at most 150 KB each, chosen through an
+  injectable picker (the real one scales and compresses through `image_picker`).
+- **How the app feels** (the sensory profile): a guardian sets, for this device, the loudest
+  sound (off, low, medium, full), no motion, no buzzing, and a brightness ceiling (30 to
+  100 in steps of 10). "No flashing, ever" is shown as a fact, not a setting. It is
+  *applied* locally: `SensoryScope` turns animation off for the subtree (it can only
+  reduce motion further than the device, never switch it back on), dims the screen to the
+  ceiling with a soft layer, mutes the read-aloud seam when the sound is off, and gates tap
+  buzzes. It describes the app, never the child: the screen says so and carries no label,
+  no diagnosis and no free text.
+
+### 8.20.2 Voice (suite C)
+
+- **Feelings weather**: six skies (sunny, cloudy, rainy, stormy, windy, foggy), a picture
+  for how today feels. A sky, not a mood: no name is good or bad (a test checks it), and
+  her colour stays a fact. **Only today's pick is kept** (older ones are dropped), so there
+  is no history to chart; the record has two fields (`weather`, `day`). It is sealed on the
+  device, there is **no show or send control at all**, and the service refuses a guardian
+  read (`child_only`).
+- **Worry box**: she taps a picture (a thing, not a feeling: the dark, a loud noise,
+  being apart, and so on) or draws. Then **she** chooses: **keep it in the box**, **show my
+  grown-up**, or **let it float away** (on a new worry this writes nothing at all; on one
+  already in the box it deletes it for real). A guardian sees **only** the worries she chose
+  to show, exactly as she made them, in `SharedWorriesScreen`: no note, tag, count, reading
+  or delete, and she can take a show back. The product never reads, interprets or scores a
+  worry (P7). The box holds at most 24; when full it asks her to let one float away and
+  **never drops one itself**. A drawing is bounded (40 strokes, 120 points each).
+- **My helpers**: the grown-ups she can go to, written by a guardian with a person picture
+  each and an optional short line. A helper appears to her **only after a guardian ticks
+  that they have said yes**. No call, message, map or number: a name or line that looks
+  like a phone number or an address is refused.
+- **Symbols**: a small AAC-style board with sixteen core words always, plus up to eight a
+  guardian adds. Tapping builds a strip of up to six; the sentence is the words **in the
+  order tapped, word for word**, never rewritten. It is read aloud through the optional
+  speak seam and is otherwise shown large in quiet. **What she says is never stored.**
+
+### 8.20.3 Which tiles she gets
+
+`client/lib/rhythm_voice_gate.dart` turns the family-structure model's answer into tiles;
+it does not compute an age band or a feature of its own and **does not edit
+`deriveChildView` or the pinned `suiteKeys`**. Rhythm and Voice have their own two
+switches, kept in their own documents. The tiles sit in the child's **More for you** hub
+as the shared `TieredTile` (64 dp floor, picture-first, one per row at large text):
+
+- the **3-to-4 band gets nothing** (no More hub, no settings, by the age-band design);
+  with no family snapshot the age is `yearsOld`, **failing closed to five**;
+- the **packing buddy** needs the model's `features.packingBuddy` (two sleeping homes and
+  the `weeks` switch); with no snapshot the structure is unknown and it stays off;
+- what a guardian must write (a routine, the cards, a bag list, a place, a helper who
+  said yes) shows only once it exists; weather, worry box and symbols are hers and show
+  whenever Voice is on;
+- a guardian's switch off hides every tile of that suite and deletes nothing.
+
+Guardian entry points: **Settings, Family group**, rows *Routine and rhythm* and *Her
+voice*. Each hub opens with "kept on this device only, not shared with her other home
+yet" and says what her age band means for it.
+
+### 8.20.4 Read-aloud seam
+
+Every child tile takes the optional `speak` callback (the same `Future<void>
+Function(String)` the child home already uses). Null means no speaker is drawn and
+nothing is spoken; a speaker only ever speaks on her tap (§8.8.5). The child
+accessibility work plugs in by passing its speaker through `ChildMoreScreen`; nothing here
+depends on it. The seam is marked `SEAM(child-accessibility)` in `picture_icons.dart`.
+
+### 8.20.5 What is stored
+
+Five areas, all per child, all in the table in §8.16.4: `rhythm`, `newplace` and `voice`
+(plain, guardian-authored), `feelings` and `worries` (**encrypted**, hers). Each has an
+abstract repository, an in-memory implementation and a LocalStore-backed one; a failed
+save throws and the service reports `full` or `not_saved` rather than pretending. Sizes
+are bounded (the largest legal place and the largest legal worry box each fit their
+area) and nothing is ever silently evicted.
+
+**Verified** by `picture_library_test`, `rhythm_logic_test`, `voice_logic_test`,
+`rhythm_voice_gate_test`, `rhythm_voice_repositories_test` (restart survival,
+encryption at rest, size bounds, per-child names, quarantine, catalogue and this file in
+step), `rhythm_voice_service_test` (every principal, both stores), and the widget suites
+`rhythm_screens_test`, `voice_screens_test`, `rhythm_voice_guardian_screens_test` and
+`rhythm_voice_sections_test` (344 dp, large text, 64 dp, no counters, the child shell has
+no way in).
 
 ---
 
