@@ -144,6 +144,37 @@ const serviceBlock = (text, name) => {
   void files;
 }
 
+// ---- E · route registration guard (P-01, static) --------------------------------------
+// The deadlock came back the moment someone registered a new route in the old
+// shape. This is the tripwire: a route whose handler reaches Postgres through a
+// pool-scoped accessor (`fooFor(pool, ...)`) or c.db.edgesFor()/siblingLinkFor()
+// MUST declare skipOuterSession: true, because api.ts's default outer
+// withSession() would hold one pooled connection while that accessor checks out
+// a second from the same bounded pool. The runtime proof is
+// packages/db/test/pool_concurrency.test.mjs; this catches a violation in a
+// route that suite does not happen to call.
+{
+  for (const file of ['server/routes.mjs', 'server/game_tables.mjs']) {
+    const lines = rd(SCAFFOLD + file).split('\n');
+    const starts = lines.map((l, i) => (/api\.register\(\{/.test(l) ? i : -1)).filter((i) => i >= 0);
+    const violations = [];
+    let registered = 0, skipping = 0;
+    starts.forEach((s, k) => {
+      const block = lines.slice(s, starts[k + 1] ?? lines.length).join('\n');
+      registered++;
+      const skip = /skipOuterSession:\s*true/.test(block);
+      if (skip) skipping++;
+      const usesPool = /\b[a-zA-Z]\w*\(\s*pool\b/.test(block) || /c\.db\.(edgesFor|siblingLinkFor)\(/.test(block);
+      const path = /path:\s*[`'"]([^`'"]+)[`'"]/.exec(block)?.[1] ?? `line ${s + 1}`;
+      if (usesPool && !skip) violations.push(path);
+    });
+    check('E route guard', `${file}: no route reaches a pool-scoped accessor while holding the outer session`,
+      violations.join(',') || 'none', 'none');
+    check('E route guard', `${file}: the guard saw real registrations (${registered}) and real skipOuterSession routes (${skipping})`,
+      registered > 1 && skipping > 1, 'true');
+  }
+}
+
 let g = '';
 for (const r of rows) {
   if (r.g !== g) { g = r.g; console.log(`\n${g}`); }

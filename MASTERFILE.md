@@ -1820,7 +1820,7 @@ longer nests `medicationsFor()` inside its own session. Before this, ~45 routes
 bounded pool: `max` concurrent requests deadlocked it permanently, and
 `/healthz` (which also used the pool) hung with it. `/healthz` now answers 503
 after 3 s instead of hanging. Proof: `packages/db/test/pool_concurrency.test.mjs`
-tracks connections per request across 30 routes and fires 48 parallel requests
+tracks connections per request across 33 routes and fires 48 parallel requests
 at a 3-connection pool.
 
 **Bodies (P-05).** Request bodies are read as `Buffer` chunks, counted in

@@ -1014,6 +1014,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'GET', path: '/v1/learn/settings', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;
@@ -1023,6 +1026,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'PUT', path: '/v1/learn/settings', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;
@@ -1035,6 +1041,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'GET', path: '/v1/learn/reflections', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;
@@ -1044,6 +1053,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'PUT', path: '/v1/learn/reflections', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;
@@ -1059,6 +1071,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
   // clears all of the caller's own. Both idempotent.
   api.register({
     method: 'DELETE', path: '/v1/learn/reflections/:day', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;
@@ -1070,6 +1085,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'DELETE', path: '/v1/learn/reflections', action: null,
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;
@@ -1080,6 +1098,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'GET', path: '/v1/children/:childId/learn/house-rules', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;
@@ -1089,6 +1110,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
 
   api.register({
     method: 'PUT', path: '/v1/children/:childId/learn/house-rules', action: 'settings',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
     handler: async (c) => {
       const denied = learnGuardianOnly(c);
       if (denied) return denied;

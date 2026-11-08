@@ -111,6 +111,7 @@ const GUARDIAN_GETS = [
   `${C}/theme`, `${C}/emergency-card`, `${C}/exchange/bag-items`,
   `${C}/exchange/running-late`, `${C}/exchange/arrival`, `${C}/care-notes`,
   `${C}/game-favorites`, `${C}/activity-overrides`,
+  '/v1/learn/settings', '/v1/learn/reflections', `${C}/learn/house-rules`,
 ];
 
 // ===========================================================================
