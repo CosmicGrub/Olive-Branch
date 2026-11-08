@@ -5420,9 +5420,9 @@ drift. Nothing is written that is not in it.
 | `child.<id>.profile` | Offline start-up cache: her first name, age in whole years, that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
 | `child.<id>.growing` | Time capsules (note, dates, optional thumbnail), first times, pencil-mark heights, which of the eight Growing and Care suites a guardian switched off. No counts, streaks or comparison. | **Yes** |
-| `child.<id>.memorybox` | What she chose to keep: copies of her doodles and colourings, or small photos. No totals. Under a different key prefix (`gift.`), marked as from them, the short notes or small photos a grown-up left for her (§8.23.5). | **Yes** |
+| `child.<id>.memorybox` | What she chose to keep: copies of her doodles and colourings, or small photos. No totals. Under a different key prefix (`gift.`), marked as from them, the short notes or small photos a grown-up left for her (§8.24.5). | **Yes** |
 | `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
-| `child.<id>.emergencycard` | The local emergency card a guardian wrote (§8.23.4): allergies, conditions, medicines, doctor, contacts, every word typed by a guardian; the version counter; the append-only history (who, when, what it said before; never deleted); guardians' remembered names. Guardian-only. | **Yes** |
+| `child.<id>.emergencycard` | The local emergency card a guardian wrote (§8.24.4): allergies, conditions, medicines, doctor, contacts, every word typed by a guardian; the version counter; the append-only history (who, when, what it said before; never deleted); guardians' remembered names. Guardian-only. | **Yes** |
 | `child.<id>.explainers` | Picture stories a guardian wrote and whether each is shown to her. The app writes none. | **Yes** |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
 | `child.<id>.rhythm` | Rhythm, on this device only (§8.20): the routine and first-then cards a grown-up set (pictures and short names), her bag list, how-the-app-feels settings (sound, motion, brightness), and which steps she has ticked **today** (dropped the next day). No score, streak or count; nothing is shared with her other home. | No |
@@ -7156,7 +7156,7 @@ built** (a capsule, a binder or a first is not visible to the other home). Code:
 |---|---|---|
 | **Time capsule** (G) | A guardian seals a note and/or one small photo for a date. It opens **on or after that date by this device's clock**; the screen says plainly that changing the clock would open it early. While sealed a guardian sees only the title and dates, never the words. A guardian can **open it early** (asked first; it stays open) or remove it. | An opened letter only ("A letter for you"). A sealed capsule is not shown at all: no title, no date, no countdown. |
 | **First times** (G) | A guardian-kept record of firsts: a title, a date, a few words, one small photo. Newest first. **No count, no streak, no list of firsts still to come.** Each one has "Show her this one", off by default. | Only the firsts a guardian chose to show, picture first, month and year, no total. |
-| **Memory box** (G) | Hers: a guardian cannot edit or delete what she keeps. A guardian can switch the suite off, and can leave a separate note or small photo marked as from them (§8.23.5). | A place for things she chooses to keep: a copy of a doodle or colouring she made, or a small photo. Two 64 dp buttons; long-press to put one away (asked first). **No audio**: audio capture does not exist in this app yet, so the box keeps pictures and photos only. Nothing resurfaces and nothing counts. |
+| **Memory box** (G) | Hers: a guardian cannot edit or delete what she keeps. A guardian can switch the suite off, and can leave a separate note or small photo marked as from them (§8.24.5). | A place for things she chooses to keep: a copy of a doodle or colouring she made, or a small photo. Two 64 dp buttons; long-press to put one away (asked first). **No audio**: audio capture does not exist in this app yet, so the box keeps pictures and photos only. Nothing resurfaces and nothing counts. |
 | **Growing marks** (G) | A guardian records a height (30 to 220 cm), a date and optionally a photo by the doorframe. The centimetres are the guardian's private record. | "My doorframe": a post with a pencil line and a **month** for each mark. No number, no percentile, no average, no other child. Lines are placed only against her own other marks. |
 | **Care binder** (F) | **Guardian only.** Sections a guardian writes (routines, allergies, school, notes) and contacts; a print-style view and a copy-to-clipboard button. Every body starts empty. | Nothing. |
 | **Hospital mode** (F) | **Guardian only.** One calm page for a stressed adult: a big door to the **existing emergency card** (`emergency_card.dart`), the allergy sections a guardian wrote, four guardian-written notes (happening today, staff should know, what helps her, to bring) and the contacts. | Nothing. |
@@ -7298,10 +7298,10 @@ as the shared `TieredTile` (64 dp floor, picture-first, one per row at large tex
   with no family snapshot the age is `yearsOld`, **failing closed to five**;
 - the **packing buddy** needs the model's `features.packingBuddy` (two sleeping homes and
   the `weeks` switch); with no snapshot the structure is unknown and it stays off, unless
-  a guardian set the local "she sleeps in two homes" fallback (§8.23.2);
+  a guardian set the local "she sleeps in two homes" fallback (§8.24.2);
 - what a guardian must write (a routine, the cards, a bag list, a place, a helper who
   said yes) shows only once it exists; weather, worry box and symbols are hers and show
-  once a guardian has turned Voice **on**; **Voice starts OFF** (§8.23.1);
+  once a guardian has turned Voice **on**; **Voice starts OFF** (§8.24.1);
 - a guardian's switch off hides every tile of that suite and deletes nothing.
 
 Guardian entry points: **Settings, Family group**, rows *Routine and rhythm* and *Her
@@ -7630,7 +7630,7 @@ directory, sealed at rest, per-child names, size bounds, every principal, the st
 `village_screens_test`, `village_sections_test`, `village_guardian_screens_test` (every editor,
 refusals in words, no network or launcher import in any of these files), `compass_logic_test`,
 `compass_repositories_test`, `compass_screens_test` and `visual_alert_test`.
-## §8.23 Offline follow-ups to Rhythm, Voice, Care and the memory box
+## §8.24 Offline follow-ups to Rhythm, Voice, Care and the memory box
 
 *Owner direction, 2026-11-08: offline, on-device only. This section adds no server route,
 no migration, no network call and nothing that needs a credential; sharing between homes
@@ -7638,7 +7638,7 @@ stays parked.* A bundle of small follow-ups the owner approved. No prohibition i
 changed; P2, P7 and the rule that **a guardian sees only what she chose to show** are held
 in code and tests.
 
-### 8.23.1 Voice starts OFF
+### 8.24.1 Voice starts OFF
 
 `VoiceDoc.suiteOn` defaults to **false** and only an explicit stored `true` counts, so a
 missing, damaged or odd value is off (fail closed). `tilesFor` takes `voiceOn: false` by
@@ -7651,7 +7651,7 @@ existing `voice` area and `LocalStoreVoiceRepository`; a child principal cannot 
 already saved a Voice document wrote `suiteOn: true` with it, so it stays on; only a device
 with no Voice document, or one that never saved, starts off (owner decision: no reset). The Compass suites shelf (§8.22) reads the same switch, so it shows Voice as **off** until a guardian switches it on and says so on the shelf ("Voice starts off and stays off until you switch it on").
 
-### 8.23.2 The packing buddy "two homes" fallback
+### 8.24.2 The packing buddy "two homes" fallback
 
 `RhythmDoc.twoHomes` (default **false**; only `true` counts) is a guardian-set, clearly
 labelled local setting in the Rhythm hub ("Ivy sleeps in two homes ... kept on this device
@@ -7661,7 +7661,7 @@ snapshot the model alone decides and the setting cannot override it. The bag lis
 exist, Rhythm must be on, and the youngest band still gets nothing. Written through
 `RhythmVoiceService.setTwoHomes` (guardian only).
 
-### 8.23.3 Taking a worry back: the truth, gently
+### 8.24.3 Taking a worry back: the truth, gently
 
 When she takes back "show my grown-up", the screen says so in her words with the grown-up
 picture: "A grown-up already saw this one. It is just yours now." if the grown-ups' window
@@ -7673,7 +7673,7 @@ tag or count), is not a count, and dies with the worry. `takeBackWorry` is child
 failed save of the bit never blocks the grown-ups' read. The line clears when she opens
 another worry or shows it again.
 
-### 8.23.4 The local emergency card
+### 8.24.4 The local emergency card
 
 `emergency_card_local.dart` (logic, repositories, service), `emergency_card_editor_screen.dart`
 (editor and history). Hospital mode (§8.19) is only as good as the card, so a guardian can
@@ -7705,7 +7705,7 @@ content, no suggestion and no example. Stored in the new sealed area `emergencyc
   contacts when a guardian wrote one, and carries a pencil to write it. Reached from the Care
   hub and from the guardian's emergency-card tile, both guardian-only.
 
-### 8.23.5 The memory box: something for her, from a grown-up
+### 8.24.5 The memory box: something for her, from a grown-up
 
 A guardian can leave a short note (300 characters) or a small photo, **marked as from them**
 ("From Mum"), from **Settings, Her, Growing, "Leave something for her"**
@@ -7721,7 +7721,7 @@ refused. A guardian can take back only what a grown-up left.
 *Read aloud* (the §8.21 `SpeakerButton`, tap only, absent when read-aloud is off): the empty
 box's line, the "From a grown-up" button, and each note ("From Mum. Proud of you").
 
-### 8.23.6 What is deliberately not here
+### 8.24.6 What is deliberately not here
 
 No sharing between homes; no server; no clinical content of the app's own; the guardian
 cannot read her feelings weather or unshown worries; she cannot remove or hide a note a

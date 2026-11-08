@@ -64,7 +64,7 @@ built.** No version bump and no new MARKUP screen row; MARKUP/DEMO totals update
   partner, a family change or a role.
 ## [Unreleased] — Offline follow-ups: Voice off by default, two-homes fallback, honest worry take-back, local emergency card, memory box from a grown-up
 
-Described as shipped in MASTERFILE §8.23. **Owner direction 2026-11-08: offline, on-device only.**
+Described as shipped in MASTERFILE §8.24. **Owner direction 2026-11-08: offline, on-device only.**
 No server route, no migration, no network call, nothing that needs a credential; no TypeScript;
 sharing between homes stays parked. No version bump and no new MARKUP screen row; MARKUP/DEMO
 totals updated.

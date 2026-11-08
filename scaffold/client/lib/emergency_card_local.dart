@@ -1,6 +1,6 @@
 // OLIVE BRANCH — the LOCAL emergency card: what a guardian writes, kept sealed on
 // this device, with an append-only history. No longer UNVERIFIED — verified by CI
-// (client/test/emergency_card_local_test.dart). MASTERFILE section 8.23.
+// (client/test/emergency_card_local_test.dart). MASTERFILE section 8.24.
 //
 // WHY. Hospital mode (care_screens.dart) and the emergency card screen
 // (emergency_card.dart) are only as good as the card behind them. A live build

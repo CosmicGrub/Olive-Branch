@@ -1,6 +1,6 @@
 // OLIVE BRANCH — the guardian-only editor and history for the LOCAL emergency card.
 // No longer UNVERIFIED — verified by CI (client/test/emergency_card_editor_screen_test.dart).
-// MASTERFILE section 8.23.
+// MASTERFILE section 8.24.
 //
 // Every field starts EMPTY and every word in it is typed by a guardian: the app
 // supplies only neutral labels ("Allergies (written by a guardian)"), never a

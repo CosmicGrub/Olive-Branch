@@ -1,4 +1,4 @@
-// OLIVE BRANCH — offline follow-ups to Rhythm and Voice (MASTERFILE section 8.23):
+// OLIVE BRANCH — offline follow-ups to Rhythm and Voice (MASTERFILE section 8.24):
 //  1. Voice starts OFF until a guardian turns it on (persisted per child);
 //  2. the guardian's local "two homes" fallback for the packing buddy (off by default);
 //  3. taking a worry back tells her honestly if a grown-up already saw it, gently,

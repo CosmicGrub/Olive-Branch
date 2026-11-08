@@ -1,4 +1,4 @@
-// OLIVE BRANCH — the memory box "from a grown-up" section (MASTERFILE section 8.23):
+// OLIVE BRANCH — the memory box "from a grown-up" section (MASTERFILE section 8.24):
 // a guardian leaves a note or small photo marked as theirs, in a separate section she
 // can see and read aloud; her own items stay hers (a guardian cannot edit or delete them).
 import 'dart:convert';

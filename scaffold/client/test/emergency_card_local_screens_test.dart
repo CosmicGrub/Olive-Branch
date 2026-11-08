@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the emergency card screen, hospital mode and the guardian editor around the
-// LOCAL card (MASTERFILE section 8.23). A live build with a session still shows the server's
+// LOCAL card (MASTERFILE section 8.24). A live build with a session still shows the server's
 // card exactly as before; with no session (or no reach) the guardian's local card is shown;
 // a live build never shows invented demo data.
 import 'dart:convert';

@@ -36,7 +36,7 @@
 // OliveApi.putEmergencyCard requires the version, so the future edit
 // surface cannot silently overwrite a co-guardian's change.
 //
-// LOCAL CARD (MASTERFILE section 8.23). Which card is shown, in this order:
+// LOCAL CARD (MASTERFILE section 8.24). Which card is shown, in this order:
 //   1. a live build WITH a session (baseUrl/guardianId/childId): the server's card,
 //      exactly as above. If the server cannot be reached and a guardian has written
 //      a local card, that local card is shown, clearly labelled as saved on this
