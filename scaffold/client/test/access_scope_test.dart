@@ -120,7 +120,7 @@ void main() {
       // initiated theme crossfade, call_screen.dart (calls are parked and untouched),
       // and the two controllers that read the setting in didChangeDependencies.
       const Set<String> allowed = <String>{
-        'main_live.dart', 'main_live_guardian.dart', 'main_live_child_call_test.dart',
+        'main_live.dart', 'main_live_guardian.dart', 'guardian_boot.dart', 'main_live_child_call_test.dart',
         'main_live_child_kiosk_call_test.dart', 'main_live_dad_answer_test.dart',
         'main_live_guardian_call_test.dart', 'call_screen.dart',
         'birthday_marked.dart', 'game_uno.dart', 'access_scope.dart',

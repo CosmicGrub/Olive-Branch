@@ -38,6 +38,7 @@ import 'hub_widgets.dart';
 import 'journal_screen.dart';
 import 'letters_screen.dart';
 import 'maturation_ladder.dart';
+import 'my_people_entry.dart';
 import 'picture_icons.dart' show Speak;
 import 'quieting_note.dart';
 import 'rhythm_voice_repositories.dart';
@@ -141,6 +142,9 @@ class ChildMoreScreen extends StatelessWidget {
           HubTile(readAloud: true, icon: Icons.menu_book_outlined, title: 'My journal',
             subtitle: 'Just for you',
             onTap: () => _open(context, JournalScreen(childName: childName))),
+          HubTile(readAloud: true, key: const Key('childMyPeople'), icon: Icons.favorite_outline, title: 'My people',
+            subtitle: 'What you call your grown-ups',
+            onTap: () => _open(context, MyPeopleEntry(fallbackAge: childAge))),
           HubTile(readAloud: true, icon: Icons.markunread_mailbox_outlined, title: 'Letters to me',
             subtitle: 'Write now, open later',
             onTap: () => _open(context, LettersScreen(childName: childName, currentAge: childAge,

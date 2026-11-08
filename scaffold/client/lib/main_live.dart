@@ -52,39 +52,43 @@
 // function's own doc comment, and `_OnboardingBootApp`'s, for the full
 // account of the new pre-KioskShell onboarding branch this adds.
 import 'dart:async';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'access_shell.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'child_home_live.dart';
+import 'contact_labels.dart';
 import 'device_identity.dart';
+import 'device_role.dart';
 import 'first_run_flow.dart';
+import 'grownup_roster.dart';
+import 'guardian_boot.dart';
+import 'guardian_local_scope.dart';
 import 'kiosk_shell.dart';
+import 'live_boot_plan.dart';
+import 'live_common.dart';
+import 'local_family.dart';
+import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_repositories.dart';
 import 'local_services.dart';
 import 'onboarding_draft.dart';
 import 'onboarding_flow.dart';
 import 'pairing_redeem_screen.dart';
-import 'push_channel.dart';
+import 'read_aloud.dart';
+import 'role_picker_screen.dart';
 import 'theme.dart';
 import 'theme_data.dart';
 
-const _dartDefineBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8123'); // Android emulator's host-loopback alias
-const _dartDefineChildId = String.fromEnvironment('OLIVE_CHILD_ID',
-    defaultValue: 'aaaaaaaa-0000-4000-8000-000000000001'); // seed-dev.mjs's Ivy
-// `bool.hasEnvironment`, NOT a defaultValue comparison — see this file's own
-// header for why the two are not the same question. True on every existing
-// `flutter run --dart-define=OLIVE_CHILD_ID=...` invocation, dev or CI,
-// unaffected by this feature.
-const _hasChildIdDartDefine = bool.hasEnvironment('OLIVE_CHILD_ID');
-// Explicit opt-in to the credential-free dev login for a build that is NOT
-// provisioned through OLIVE_CHILD_ID (e.g. the hardware dev entry points).
-// Off by default: a store build sets neither define and can never reach
-// POST /v1/auth/dev-login (AuthSession.devLoginEnabled stays false).
-const _devLoginDartDefine = bool.fromEnvironment('OLIVE_DEV_LOGIN');
+export 'guardian_boot.dart' show OliveLiveGuardian, OliveLocalGuardian;
+export 'live_boot_plan.dart' show LiveTarget;
+
+// The dart-defines live in live_common.dart, shared with the guardian shell's boot (one place;
+// `bool.hasEnvironment`, NOT a defaultValue comparison — see that file for why the two are not
+// the same question). These are the names this file has always used for them.
+const _dartDefineBaseUrl = kLiveBaseUrl;
+const _dartDefineChildId = kLiveChildId;
+const _hasChildIdDartDefine = kHasChildIdDartDefine;
+const _devLoginDartDefine = kDevLoginDartDefine;
 
 /// The one session for a paired device: its stored {deviceId, deviceCredential}
 /// -> short sessions, refreshed on demand. When it ends for good (revoked,
@@ -311,6 +315,11 @@ Future<void> _bootWithOnboardingGate({
   // never runs again, and a failed delivery keeps the draft and retries.
   final draftRepo = LocalOnboardingDraftRepository(
       LocalServices.current.area('onboarding', ownerId: kPendingDeviceScope));
+  await carryOverFirstRun(
+    childId: childId, profile: profile, draftRepo: draftRepo,
+    pendingNicknames: LocalNicknameRepository(
+        LocalServices.current.area('nicknames', ownerId: kPendingDeviceScope)),
+    hersNicknames: LocalNicknameRepository(LocalServices.current.area('nicknames', ownerId: childId)));
   final delivery = await deliverPendingDraft(
     attempt: () => _attemptDraftSync(childId, session, draftRepo),
     onDelivered: profile.markOnboarded,
@@ -344,65 +353,124 @@ Future<void> _bootWithOnboardingGate({
   ));
 }
 
-Future<void> main() async {
+/// The one live entry point (owner requirement 2026-11-08: the onboarding follows ROLES).
+/// `main()` is [runLive] on the unified target; main_live_guardian.dart calls it with
+/// [LiveTarget.guardianDev]. What opens is [decideBoot]'s answer (live_boot_plan.dart), in this
+/// order: a dev define, a stored device identity, the role picker, then the role's own first run.
+Future<void> main() => runLive();
+
+Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
   WidgetsFlutterBinding.ensureInitialized();
   AuthSession.devLoginEnabled = _devLoginDartDefine;
-  // MASTERFILE §11 -- registers the real top-level background handler
-  // (push_channel.dart's firebaseMessagingBackgroundHandler) at the one
-  // place FlutterFire's own docs require it: before runApp(), so a
-  // background/terminated-state push tap has a real callback waiting for it
-  // from the moment this isolate exists.
-  //
-  // Wrapped in try/catch because Firebase.initializeApp() genuinely fails in
-  // this checkout -- no real android/app/google-services.json exists here
-  // (see pubspec.yaml's own comment on why one is not fabricated). Letting
-  // that exception escape would crash this entire preview build before it
-  // ever draws a frame, which would defeat main_live.dart's whole purpose
-  // (see this file's own header -- a real device/emulator target meant to
-  // stay inspectable). push_channel.dart's PushChannel.initialize(), called
-  // later from child_home_live.dart once a real session exists, is the
-  // second, independent attempt -- THAT failure is the one surfaced (as
-  // PushInitializationError) rather than silently caught, per house style;
-  // this one is intentionally the boot-time exception.
-  try {
-    await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-  } catch (e) {
-    debugPrint('[olive.push] background handler not registered at boot: $e');
-  }
+  // MASTERFILE §11 -- registers the real top-level background handler before runApp(); wrapped in
+  // try/catch inside (a missing google-services.json must never crash the build before its first
+  // frame). See live_common.dart.
+  await initFirebaseForLive();
 
-  // Device pairing & provisioning boot branch — see this file's own header.
-  // The dart-define path below is completely unchanged when the define IS
-  // set; `DeviceIdentityStore().load()` is never even called in that case,
-  // matching the design spec's own "dart-define, when present, keeps
-  // working exactly as today" line literally, not just in effect.
-  if (!_hasChildIdDartDefine) {
-    final stored = await DeviceIdentityStore().load();
-    if (stored == null) {
-      // Pairing LAST: a fresh device opens on the welcome questions, offline,
-      // and ends on "Connect this device". Answers wait in a local draft under
-      // the 'pending-device' owner (never the literal 'demo-child').
-      await _openLocalStorage(kPendingDeviceScope);
-      runApp(_FirstRunApp(
-        baseUrl: _dartDefineBaseUrl,
-        draftRepository: LocalOnboardingDraftRepository(
-            LocalServices.current.area('onboarding', ownerId: kPendingDeviceScope)),
-      ));
-      return;
-    }
-    await _bootWithOnboardingGate(childId: stored.targetId, session: _deviceSession(stored));
+  // The dev defines decide first and read NOTHING from the device: `DeviceIdentityStore().load()`
+  // and the role are never touched when OLIVE_CHILD_ID / OLIVE_GUARDIAN_ID is set, matching the
+  // device-pairing spec's "dart-define, when present, keeps working exactly as today" literally.
+  final BootRoute dev = decideBoot(BootFacts(
+    target: target,
+    hasChildDefine: _hasChildIdDartDefine,
+    hasGuardianDefine: kHasGuardianIdDartDefine,
+  ));
+  if (dev == BootRoute.childDev) {
+    // The explicit dev path: this build was provisioned with OLIVE_CHILD_ID, so dev login is allowed
+    // (and refreshable — it is the whole app's session).
+    AuthSession.devLoginEnabled = true;
+    await _bootWithOnboardingGate(childId: _dartDefineChildId, session: _devSession());
     return;
   }
-  // Automatic First-Run Detection applies HERE too — the dart-define path
-  // is otherwise completely unchanged (identity resolution itself is
-  // untouched, matching device pairing's own precedent above), but it now
-  // goes through the SAME gate the paired path does, not straight to
-  // _bootLiveApp — see _bootWithOnboardingGate's own doc comment for why
-  // that is the point, not an oversight.
-  // The explicit dev path: this build was provisioned with OLIVE_CHILD_ID, so
-  // dev login is allowed (and refreshable — it is the whole app's session).
-  AuthSession.devLoginEnabled = true;
-  await _bootWithOnboardingGate(childId: _dartDefineChildId, session: _devSession());
+  if (dev == BootRoute.guardianDev) {
+    await bootGuardianDev();
+    return;
+  }
+
+  // No define: a connected device is what its stored identity says; otherwise the role this device
+  // was given on its first screen decides.
+  final stored = await DeviceIdentityStore().load();
+  DeviceRole? role;
+  bool hasFamily = false, hasPin = false;
+  if (stored == null) {
+    // Storage opens under the pending-device owner (never the literal 'demo-child').
+    await _openLocalStorage(kPendingDeviceScope);
+    role = await _loadRole();
+    if (role != null && role.isGuardian) {
+      final GuardianLocalServices local = GuardianLocalServices.from(LocalServices.current);
+      hasFamily = await _safeBool(() async => (await local.families.load()) != null);
+      hasPin = await _safeBool(local.pin.isSet);
+    }
+  }
+  final BootRoute route = decideBoot(BootFacts(
+    target: target,
+    storedIdentityRole: stored?.role,
+    role: role,
+    hasLocalFamily: hasFamily,
+    hasLocalPin: hasPin,
+  ));
+  switch (route) {
+    case BootRoute.childPaired:
+      await _bootWithOnboardingGate(childId: stored!.targetId, session: _deviceSession(stored));
+    case BootRoute.guardianPaired:
+      await bootGuardianPaired(stored!);
+    case BootRoute.rolePicker:
+      runApp(const _RolePickerApp(onPicked: _onRolePicked));
+    case BootRoute.kidFirstRun:
+      await _startKidFirstRun();
+    case BootRoute.guardianOnboarding:
+    case BootRoute.guardianOffline:
+      await bootGuardianFlow(role!, reuseStorage: true);
+    case BootRoute.childDev:
+    case BootRoute.guardianDev:
+      break; // handled above; unreachable without a define
+  }
+}
+
+Future<bool> _safeBool(Future<bool> Function() f) async {
+  try {
+    return await f();
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<DeviceRole?> _loadRole() async {
+  try {
+    return await LocalDeviceRoleRepository(LocalServices.current.area('role')).load();
+  } catch (_) {
+    return null; // an unreadable role is "no role": she is asked again, never stuck
+  }
+}
+
+/// Step 0 answered: remember it on this device (a failed write is held for this run and she is asked
+/// again after a restart, never stuck), then go to that role's own first run.
+Future<void> _onRolePicked(DeviceRole role) async {
+  try {
+    await LocalDeviceRoleRepository(LocalServices.current.area('role')).save(role);
+  } catch (e) {
+    debugPrint('[olive.role] could not keep the role on this device: $e');
+  }
+  if (role.isGuardian) {
+    await bootGuardianFlow(role, reuseStorage: true);
+  } else {
+    await _startKidFirstRun();
+  }
+}
+
+/// A Kid device with no identity: the welcome questions, then "Connect this device" last. Answers wait
+/// in a local draft under the pending-device owner. Her grown-ups come from the local family if the
+/// device has one, else two neutral placeholders (grownup_roster.dart).
+Future<void> _startKidFirstRun() async {
+  final LocalServices s = LocalServices.current;
+  final KidRoster roster = await loadKidRoster(
+      LocalStoreLocalFamilyRepository(s.area('localfamily', ownerId: kLocalGuardianScope)));
+  runApp(_FirstRunApp(
+    baseUrl: _dartDefineBaseUrl,
+    draftRepository: LocalOnboardingDraftRepository(s.area('onboarding', ownerId: kPendingDeviceScope)),
+    roster: roster,
+    nicknames: LocalNicknameRepository(s.area('nicknames', ownerId: kPendingDeviceScope)),
+  ));
 }
 
 /// The explicit dev-login session for the OLIVE_CHILD_ID-provisioned build.
@@ -429,9 +497,12 @@ Future<void> _completeRedeem(Map<String, dynamic> result) async {
 /// welcome questions, then "Connect this device" as the LAST step
 /// ([FirstRunFlow]). Same bare-MaterialApp shape as [_PairingBootApp].
 class _FirstRunApp extends StatelessWidget {
-  const _FirstRunApp({required this.baseUrl, required this.draftRepository});
+  const _FirstRunApp({
+    required this.baseUrl, required this.draftRepository, this.roster, this.nicknames});
   final String baseUrl;
   final OnboardingDraftRepository draftRepository;
+  final KidRoster? roster;
+  final NicknameRepository? nicknames;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -440,8 +511,27 @@ class _FirstRunApp extends StatelessWidget {
     home: FirstRunFlow(
       baseUrl: baseUrl,
       draftRepository: draftRepository,
+      roster: roster,
+      nicknames: nicknames,
       onRedeemed: (result) => unawaited(_completeRedeem(result)),
     ),
+  );
+}
+
+/// Step 0: "Who is using this device?" in a bare MaterialApp (no shell exists yet). The read-aloud
+/// scope is installed so the speaker can read the question to a child who cannot read it yet.
+class _RolePickerApp extends StatelessWidget {
+  const _RolePickerApp({required this.onPicked});
+  final Future<void> Function(DeviceRole role) onPicked;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Olive (welcome)',
+    theme: buildThemeData(defaultAppTheme),
+    navigatorObservers: [sharedReadAloudObserver],
+    builder: (context, child) =>
+        ReadAloudScope(controller: sharedReadAloud, child: child ?? const SizedBox.shrink()),
+    home: RolePickerScreen(onPicked: (DeviceRole r) => unawaited(onPicked(r))),
   );
 }
 

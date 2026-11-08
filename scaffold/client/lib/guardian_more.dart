@@ -17,6 +17,7 @@ import 'family_structure_store.dart';
 import 'parent_learn_logic.dart';
 import 'parent_learn_screens.dart';
 import 'parent_learn_store.dart';
+import 'age_lock_screens.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'availability_screen.dart';
@@ -39,6 +40,7 @@ import 'gallery_screen.dart';
 import 'game_navigation.dart';
 import 'game_picker.dart';
 import 'games_hub.dart';
+import 'guardian_local_scope.dart';
 import 'guardian_setup.dart';
 import 'guardian_settings_hub.dart';
 import 'her_colour_guardian.dart';
@@ -52,6 +54,7 @@ import 'paired_devices_list.dart';
 import 'parental_controls_screen.dart';
 import 'jokebook_screen.dart';
 import 'live_game_picker.dart';
+import 'local_pin_screens.dart';
 import 'lock_advisory_screen.dart';
 import 'clear_local_data_screen.dart';
 import 'maturation_ladder.dart';
@@ -546,11 +549,36 @@ class GuardianMoreScreen extends StatelessWidget {
         content: Text('$what needs a live session — no backend in this preview build.'),
         duration: const Duration(seconds: 3)));
 
+  /// The PIN check behind "Clear data on this device". With a session it is the server's
+  /// (unchanged). With NO session and a local PIN on this device (the offline family),
+  /// it is the local PIN. With neither it is null, which the screen treats as fail closed.
+  Future<bool> Function(String pin)? _wipeVerifier(BuildContext context) {
+    final server = _liveVerifyWipePin(
+      baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient);
+    if (server != null) return server;
+    return GuardianLocalScope.maybeOf(context)?.services.pin.verifyBool;
+  }
+
+  /// Opens the settings hub. If this device has a LOCAL PIN, the hub is behind it (the
+  /// offline family's guard on its own settings); with none, it opens as it always did.
+  Future<void> _openSettingsHubGated(BuildContext context) async {
+    final local = GuardianLocalScope.maybeOf(context);
+    if (local != null && await local.services.pin.isSet()) {
+      if (!context.mounted) return;
+      final ok = await askLocalPin(context, local.services.pin,
+        title: 'Enter your PIN', why: 'Settings are for grown-ups.');
+      if (!ok || !context.mounted) return;
+    }
+    if (context.mounted) _openSettingsHub(context);
+  }
+
   /// The Settings hub: every row opens the real screen that already exists for
   /// it. Nothing here is a new setting, and nothing is new online (see
   /// guardian_settings_hub.dart's header).
   void _openSettingsHub(BuildContext context) {
     final live = baseUrl != null && guardianId != null;
+    final local = GuardianLocalScope.maybeOf(context);
+    final lockedAge = local?.family?.age;
     _open(context, GuardianSettingsHubScreen(childName: childName, groups: [
       SettingsGroup('Her', [
         SettingsRow(id: 'colour', icon: Icons.palette_outlined, title: 'Colour and art',
@@ -566,8 +594,12 @@ class GuardianMoreScreen extends StatelessWidget {
           subtitle: 'Read aloud, motion, spacing, bigger targets, captions',
           onTap: () => _open(context, AccessScreen(childName: childName, childAge: childAge))),
         SettingsRow(id: 'age', icon: Icons.cake_outlined, title: 'Age band',
-          subtitle: '$childName is $childAge',
-          onTap: () => showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+          subtitle: lockedAge != null
+            ? '$childName is $lockedAge. Locked: your PIN changes it'
+            : '$childName is $childAge',
+          onTap: () => local?.family != null
+            ? changeLockedAgeFlow(context, local!)
+            : showDialog<void>(context: context, builder: (ctx) => AlertDialog(
             title: const Text('Age band'),
             content: Text('$childName is $childAge. Her age sets what opens for her, like the pixel garden at 8. '
                 'It comes from her birthday; there is nothing to set here yet.'),
@@ -648,13 +680,16 @@ class GuardianMoreScreen extends StatelessWidget {
             store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId), childAge: childAge))),
       ]),
       SettingsGroup('Account', [
+        if (local?.onConnect != null)
+          SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
+            subtitle: 'Optional. Share your family with your other devices',
+            onTap: () => local!.onConnect!(context)),
         SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',
           subtitle: 'Stops notifications on this device', onTap: () => _signOut(context)),
         SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this device',
           subtitle: 'What this phone keeps, and clear it',
           onTap: () => _open(context, ClearLocalDataScreen(
-            verifyPin: _liveVerifyWipePin(
-              baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient)))),
+            verifyPin: _wipeVerifier(context)))),
         SettingsRow(id: 'deletion', icon: Icons.delete_outline, title: 'Deletion',
           subtitle: 'What deletion means here, stated first', onTap: () => _openDeletion(context)),
       ]),
@@ -958,7 +993,7 @@ class GuardianMoreScreen extends StatelessWidget {
         HubSection(title: 'Preferences', children: [
           HubTile(key: const Key('moreSettings'), icon: Icons.tune_outlined, title: 'Settings',
             subtitle: 'Her, Family, Safety, Learn, Account in one place',
-            onTap: () => _openSettingsHub(context)),
+            onTap: () => _openSettingsHubGated(context)),
           HubTile(icon: Icons.palette_outlined, title: 'Theme',
             subtitle: 'A real palette, guardian-only, synced across your devices',
             onTap: () => _openThemePicker(context)),
@@ -975,8 +1010,7 @@ class GuardianMoreScreen extends StatelessWidget {
             title: 'Data on this device',
             subtitle: 'What this phone keeps, and clear it',
             onTap: () => _open(context, ClearLocalDataScreen(
-              verifyPin: _liveVerifyWipePin(
-                baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient)))),
+              verifyPin: _wipeVerifier(context)))),
         ]),
       ]),
     )),

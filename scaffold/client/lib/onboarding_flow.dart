@@ -54,6 +54,8 @@ import 'birthday_marked.dart';
 import 'birthday_month.dart';
 import 'calendar_logic.dart';
 import 'colour_pick.dart';
+import 'contact_labels.dart';
+import 'my_people_screen.dart';
 import 'onboarding_age.dart';
 import 'onboarding_draft.dart';
 import 'onboarding_gender.dart';
@@ -73,6 +75,11 @@ class OnboardingFlowScreen extends StatefulWidget {
     this.onDraft,
     this.includeWho = true,
     this.introLine,
+    this.grownups,
+    this.grownupsKnown = false,
+    this.nicknames,
+    this.lockAge = false,
+    this.knownAge,
   });
 
   /// What the guardian entered at setup — used only if she skips the name
@@ -107,6 +114,22 @@ class OnboardingFlowScreen extends StatefulWidget {
   /// Replaces the welcome sentence on the first card (real first-run only).
   final String? introLine;
 
+  /// Role-first first run (MASTERFILE §8.5.10): the grown-ups the "who" and "what do you call them"
+  /// steps show, from the local family ([grownupsKnown] true: real people the device knows) or two
+  /// neutral placeholders (false: nobody is named, so the "who is here" step is left out). With
+  /// [nicknames] set, the steps run after the gender question; with either null they are not run.
+  final List<GrownupContact>? grownups;
+  final bool grownupsKnown;
+  final NicknameRepository? nicknames;
+
+  /// True in the real first run: the age picker offers 5 to 15 and what she taps LOCKS her age
+  /// (contact_labels.dart `lockKidAge`). False keeps the demo tour's 2 to 17.
+  final bool lockAge;
+
+  /// An age a grown-up already locked on this device (the local family). When set and locked, the
+  /// age question is not asked: it is known.
+  final AgeLockState? knownAge;
+
   @override
   State<OnboardingFlowScreen> createState() => _OnboardingFlowScreenState();
 }
@@ -129,14 +152,25 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (nameStep == null) return setState(() => _running = false);
     final String childName = nameStep.spelled;
 
-    final AgeStep? ageStep = await nav.push<AgeStep>(MaterialPageRoute<AgeStep>(
-      builder: (c) => ObAgeScreen(
-        birthDate: null,
-        onContinue: (step) => Navigator.of(c).pop(step),
-      )));
+    final AgeLockState? known = widget.knownAge;
+    final bool ageKnown = known != null && known.locked && known.age != null;
+    final AgeStep? ageStep = ageKnown
+      ? AgeStep(selfReported: known.age, authoritative: null, disagrees: false, skipped: false)
+      : await nav.push<AgeStep>(MaterialPageRoute<AgeStep>(
+          builder: (c) => ObAgeScreen(
+            birthDate: null,
+            ageMin: widget.lockAge ? kKidAgeMin : minAge,
+            ageMax: widget.lockAge ? kKidAgeMax : maxAge,
+            locksAge: widget.lockAge,
+            onContinue: (step) => Navigator.of(c).pop(step),
+          )));
     if (!mounted) return;
     if (ageStep == null) return setState(() => _running = false);
     final int? age = effectiveAge(ageStep);
+    // The real first run LOCKS what she tapped (or what a grown-up already locked).
+    final AgeLockState ageLock = (widget.lockAge && ageStep.selfReported != null)
+      ? (ageKnown ? known : lockKidAge(ageStep.selfReported!))
+      : const AgeLockState();
 
     final GenderStep? genderStep = await nav.push<GenderStep>(MaterialPageRoute<GenderStep>(
       builder: (c) => ObGenderScreen(
@@ -160,6 +194,42 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         )));
       if (!mounted) return;
       if (whoStepResult == null) return setState(() => _running = false);
+    }
+
+    // Role-first first run: who her grown-ups are (only when the device knows them) and what she
+    // calls them. Both optional to answer; neither claims a person the device does not know.
+    final List<GrownupContact>? people = widget.grownups;
+    final NicknameRepository? nicks = widget.nicknames;
+    if (people != null && people.isNotEmpty && nicks != null) {
+      if (widget.grownupsKnown) {
+        Map<String, String> names;
+        try {
+          names = await nicks.load();
+        } catch (_) {
+          names = const <String, String>{};
+        }
+        if (!mounted) return;
+        final WhoStep? whoKnown = await nav.push<WhoStep>(MaterialPageRoute<WhoStep>(
+          builder: (c) => ObWhoScreen(
+            grownups: <Grownup>[
+              for (final GrownupContact g in people)
+                Grownup(userId: g.id, joined: true,
+                  label: ContactLabels.forChild(g, age: ageLock, nicknames: names)),
+            ],
+            onContinue: (step) => Navigator.of(c).pop(step),
+          )));
+        if (!mounted) return;
+        if (whoKnown == null) return setState(() => _running = false);
+      }
+      await nav.push(MaterialPageRoute<void>(
+        builder: (c) => MyPeopleScreen(
+          contacts: people,
+          age: ageLock,
+          nicknames: nicks,
+          firstRun: true,
+          onDone: () => Navigator.of(c).pop(),
+        )));
+      if (!mounted) return;
     }
 
     final String? colourId = await nav.push<String?>(MaterialPageRoute<String?>(
@@ -212,7 +282,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (onDraft != null) {
       await onDraft(OnboardingDraft(
         name: nameStep.skipped ? null : nameStep.spelled,
-        age: ageStep.selfReported,
+        age: ageLock.age ?? ageStep.selfReported,
+        ageLocked: ageLock.locked,
         gender: genderStep.selected,
         colourId: colourId,
         birthdayMonth: picker?.month,

@@ -70,13 +70,20 @@ void main() {
   group('B — the boot-branch decision itself, asserted against this file\'s own source', () {
     final src = File('lib/main_live.dart').readAsStringSync();
 
+    // The dart-defines moved to live_common.dart when the two live targets became one entry point.
+    final common = File('lib/live_common.dart').readAsStringSync();
+
     test('detects the dart-define via bool.hasEnvironment, never a defaultValue comparison '
-        '(the two are NOT the same question — see this file\'s own header)', () {
-      expect(src, contains("bool.hasEnvironment('OLIVE_CHILD_ID')"));
+        '(the two are NOT the same question — see live_common.dart)', () {
+      expect(common, contains("bool.hasEnvironment('OLIVE_CHILD_ID')"));
+      expect(src, contains('const _hasChildIdDartDefine = kHasChildIdDartDefine;'));
     });
 
-    test('the pairing boot branch is gated on that exact flag', () {
-      expect(src, contains('if (!_hasChildIdDartDefine)'));
+    test('the boot decision is gated on that exact flag, and nothing is read from the device first', () {
+      final String live = src.split('\n').where((l) => !l.trimLeft().startsWith('//')).join('\n');
+      expect(live, contains('hasChildDefine: _hasChildIdDartDefine'));
+      expect(live.indexOf('hasChildDefine: _hasChildIdDartDefine'),
+          lessThan(live.indexOf('DeviceIdentityStore().load()')));
     });
 
     test('a missing stored identity is what actually triggers the pairing screen', () {
@@ -104,7 +111,8 @@ void main() {
         'the dev path is opt-in and devLoginFor is never called here', () {
       expect(src, contains('session: _deviceSession(identity)'));
       expect(src, contains("deviceCredential: result['deviceCredential'] as String?"));
-      expect(src, contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+      expect(File('lib/live_common.dart').readAsStringSync(), contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+      expect(src, contains('AuthSession.devLoginEnabled = _devLoginDartDefine;'));
       expect(RegExp(r'await devLoginFor\(').hasMatch(src), isFalse);
     });
   });
@@ -118,7 +126,7 @@ void main() {
         '_bootLiveApp directly -- applies identically regardless of how '
         'identity was resolved', () {
       expect(src, contains(
-        'await _bootWithOnboardingGate(childId: stored.targetId, session: _deviceSession(stored));'));
+        'await _bootWithOnboardingGate(childId: stored!.targetId, session: _deviceSession(stored));'));
       expect(src, contains(
         'await _bootWithOnboardingGate(childId: _dartDefineChildId, session: _devSession());'));
       expect(src, contains(
@@ -185,15 +193,18 @@ void main() {
     String code(String t) =>
         t.split('\n').where((l) => !l.trimLeft().startsWith('//')).join('\n');
 
-    test('a fresh child device boots into the welcome questions (FirstRunFlow), not the bare code screen', () {
-      final start = src.indexOf('if (stored == null) {');
-      final end = src.indexOf('await _bootWithOnboardingGate(childId: stored.targetId');
+    test('a fresh Kid device boots into the welcome questions (FirstRunFlow), not the bare code screen', () {
+      final start = src.indexOf('Future<void> _startKidFirstRun()');
+      final end = src.indexOf('/// The explicit dev-login session');
       expect(start, greaterThan(-1));
       expect(end, greaterThan(start));
       final branch = src.substring(start, end);
       expect(branch, contains('_FirstRunApp('));
       expect(branch, isNot(contains('_PairingBootApp')));
       expect(src, contains('home: FirstRunFlow('));
+      // ... and the unified entry reaches it for the Kid role (live_boot_plan.dart decides).
+      expect(src, contains('case BootRoute.kidFirstRun:'));
+      expect(src, contains('await _startKidFirstRun();'));
     });
 
     test('the draft lives under the pending-device owner; the literal demo-child never appears in code', () {
@@ -226,14 +237,18 @@ void main() {
       expect(attempt, isNot(contains('devLoginFor')));
     });
 
-    test('the dev paths are untouched: OLIVE_CHILD_ID still skips identity and pairing entirely', () {
-      final main = code(src.substring(src.indexOf('Future<void> main()'), src.indexOf('AuthSession _devSession()')));
-      expect(main.indexOf('if (!_hasChildIdDartDefine) {'),
+    test('the dev paths are untouched: OLIVE_CHILD_ID still skips identity, role and pairing entirely', () {
+      final main = code(src.substring(src.indexOf('Future<void> runLive('), src.indexOf('AuthSession _devSession()')));
+      expect(main.indexOf('if (dev == BootRoute.childDev) {'),
           lessThan(main.indexOf('DeviceIdentityStore().load()')));
+      expect(main.indexOf('if (dev == BootRoute.guardianDev) {'),
+          lessThan(main.indexOf('DeviceIdentityStore().load()')));
+      expect(main.indexOf('if (dev == BootRoute.childDev) {'), lessThan(main.indexOf('_loadRole()')));
       expect(main, contains('AuthSession.devLoginEnabled = true;'));
       expect(main, contains(
           'await _bootWithOnboardingGate(childId: _dartDefineChildId, session: _devSession());'));
-      expect(src, contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+      expect(File('lib/live_common.dart').readAsStringSync(), contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+      expect(src, contains('const _devLoginDartDefine = kDevLoginDartDefine;'));
     });
 
     test('a device that was connected and cut off returns to the code screen alone, '
@@ -241,11 +256,21 @@ void main() {
       expect(src, contains('runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl))'));
     });
 
-    test('the GUARDIAN build keeps pairing first (its PIN is set through the server), and says why', () {
-      expect(guardian, contains("role: 'guardian'"));
-      expect(guardian, contains('PairingRedeemScreen('));
-      expect(guardian, isNot(contains('FirstRunFlow')));
-      expect(guardian, isNot(contains('closingStep')));
+    test('the GUARDIAN shell is local-first now (role-first, MASTERFILE 8.5.9): the local family and a local PIN '
+        'come before anything that needs a server, and Connect this device is the LAST, optional step', () {
+      final boot = File('lib/guardian_boot.dart').readAsStringSync();
+      final onboarding = File('lib/guardian_onboarding.dart').readAsStringSync();
+      expect(boot, contains('GuardianOnboardingFlow('));
+      expect(boot, contains("role: 'guardian'"));
+      expect(boot, contains('localFirst: true'));
+      expect(boot, isNot(contains('FirstRunFlow')));
+      expect(boot, isNot(contains('closingStep')));
+      // The order inside the onboarding: you, her, zone, pin, then connect (last).
+      expect(onboarding, contains('enum GuardianOnboardingStage { you, her, zone, pin, connect }'));
+      expect(onboarding, contains('localFirst: true'));
+      // The thin wrapper no longer carries a boot of its own.
+      expect(guardian, isNot(contains('PairingRedeemScreen(')));
+      // The standalone "connect first" copy is still what a cut-off guardian with no local family sees.
       final screen = File('lib/pairing_redeem_screen.dart').readAsStringSync();
       expect(screen, contains("widget.role == 'guardian'"));
       expect(screen, contains('PIN is kept safely on your account'));
