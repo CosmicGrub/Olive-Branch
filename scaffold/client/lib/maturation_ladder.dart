@@ -39,6 +39,8 @@
 // grant is ever removed from it: there is no inverse of the save.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 import 'local_services.dart';
 import 'local_store.dart';
@@ -573,7 +575,7 @@ class _RungRevealScreen extends StatelessWidget {
       body: SafeArea(child: Center(child: Padding(
         padding: const EdgeInsets.all(24),
         child: AnimatedOpacity(
-          opacity: 1, duration: const Duration(milliseconds: 260),
+          opacity: 1, duration: motionDuration(context, 260),
           child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
             Icon(grantIcon(rung.grant), size: 56, color: scheme.primary),
             const SizedBox(height: 20),
@@ -583,7 +585,7 @@ class _RungRevealScreen extends StatelessWidget {
             Text(rung.ceremony, textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4)),
             const SizedBox(height: 28),
-            SizedBox(height: 52, width: 200, child: FilledButton(
+            SizedBox(height: kChildTarget, width: 200, child: FilledButton(
               key: const Key('rungRevealDismiss'),
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Got it!'))),

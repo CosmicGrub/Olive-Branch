@@ -30,6 +30,7 @@
 //     game against the parent.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 class KimItem {
@@ -234,7 +235,7 @@ class _CalloutKim extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-    duration: const Duration(milliseconds: 200),
+    duration: motionDuration(context, 200),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,

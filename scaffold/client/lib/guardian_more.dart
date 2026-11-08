@@ -43,6 +43,7 @@ import 'her_colour_guardian.dart';
 import 'play_window_screen.dart';
 import 'handover_notes.dart';
 import 'hub_widgets.dart';
+import 'access_screen.dart';
 import 'add_device_screen.dart';
 import 'invitation_screen.dart';
 import 'paired_devices_list.dart';
@@ -549,6 +550,9 @@ class GuardianMoreScreen extends StatelessWidget {
           onTap: () => _open(context, GrowingCareHubScreen(care: false, childName: childName))),
         SettingsRow(id: 'look', icon: Icons.format_paint_outlined, title: 'How her app looks',
           subtitle: 'A palette, light or dark', onTap: () => _openThemePicker(context)),
+        SettingsRow(id: 'access', icon: Icons.accessibility_new_outlined, title: 'Accessibility for her device',
+          subtitle: 'Read aloud, motion, spacing, bigger targets, captions',
+          onTap: () => _open(context, AccessScreen(childName: childName, childAge: childAge))),
         SettingsRow(id: 'age', icon: Icons.cake_outlined, title: 'Age band',
           subtitle: '$childName is $childAge',
           onTap: () => showDialog<void>(context: context, builder: (ctx) => AlertDialog(

@@ -34,6 +34,8 @@
 // skip affordance. Flagged here for the wiring/review pass rather than
 // silently picking a side.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 
 // ============================================ §9.13.1 the closing ritual ====
 enum ClosingBeat { oneThing, whenNext, theGoodbye, done }
@@ -206,7 +208,7 @@ class _ClosingRitualScreenState extends State<ClosingRitualScreen> {
         child: Column(children: [
           const SizedBox(height: 12),
           Expanded(child: Center(child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
+            duration: motionDuration(context, 260),
             switchInCurve: Curves.easeOut,
             child: KeyedSubtree(key: ValueKey(_closing.beat),
               child: switch (_closing.beat) {
@@ -227,7 +229,7 @@ class _ClosingRitualScreenState extends State<ClosingRitualScreen> {
           // §9.13.1: forcing this on a child who wants to go and play is
           // worse than a bad ending.
           if (_closing.beat != ClosingBeat.done)
-            SizedBox(height: 48, child: TextButton(
+            SizedBox(height: kChildTarget, child: TextButton(
               onPressed: _skip,
               child: const Text('Not right now'))),
         ]),
@@ -258,7 +260,7 @@ class _OneThingBeat extends StatelessWidget {
         hintText: 'My wobbly tooth…'),
       onSubmitted: (_) => onNext()),
     const SizedBox(height: 16),
-    SizedBox(width: 220, height: 48, child: FilledButton(onPressed: onNext,
+    SizedBox(width: 220, height: kChildTarget, child: FilledButton(onPressed: onNext,
       child: const Text('Next'))),
   ]);
 }
@@ -278,7 +280,7 @@ class _WhenNextBeat extends StatelessWidget {
     Text(sub, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall
       ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
     const SizedBox(height: 24),
-    SizedBox(width: 220, height: 48, child: FilledButton(onPressed: onNext,
+    SizedBox(width: 220, height: kChildTarget, child: FilledButton(onPressed: onNext,
       child: const Text('Okay'))),
   ]);
 }
@@ -299,7 +301,7 @@ class _GoodbyeBeat extends StatelessWidget {
       ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
     const SizedBox(height: 16),
     Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
-      children: [for (final g in goodbyes) SizedBox(height: 48,
+      children: [for (final g in goodbyes) SizedBox(height: kChildTarget,
         child: OutlinedButton(onPressed: () => onChoose(g), child: Text(g)))]),
   ]);
 }

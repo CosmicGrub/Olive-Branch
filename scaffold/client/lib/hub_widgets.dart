@@ -12,8 +12,10 @@
 // silently drop out of the element tree), so this wiring pass avoids it
 // from the start rather than rediscovering it.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show guardianTargetOf;
+import 'read_aloud.dart';
 
-class HubTile extends StatelessWidget {
+class HubTile extends StatefulWidget {
   const HubTile({
     super.key,
     required this.icon,
@@ -21,6 +23,7 @@ class HubTile extends StatelessWidget {
     this.subtitle,
     required this.onTap,
     this.trailing,
+    this.readAloud = false,
   });
 
   final IconData icon;
@@ -37,8 +40,34 @@ class HubTile extends StatelessWidget {
   /// resume, not just a static chevron).
   final Widget? trailing;
 
+  /// Read-aloud for a CHILD's hub row (a speaker and long-press that read the title).
+  /// False by default: guardian hubs share this widget and have no speakers.
+  final bool readAloud;
+
+  @override
+  State<HubTile> createState() => _HubTileState();
+}
+
+class _HubTileState extends State<HubTile> {
+  ReadAloudController? _ra;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ra = ReadAloudScope.maybeOf(context);
+  }
+
+  @override
+  void dispose() {
+    _ra?.release(this);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final icon = widget.icon, title = widget.title, subtitle = widget.subtitle, onTap = widget.onTap,
+        trailing = widget.trailing;
+    final ReadAloudController? ra = widget.readAloud ? ReadAloudScope.enabledOf(context) : null;
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Card(
@@ -46,8 +75,11 @@ class HubTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
+        // Long-press reads the row's name; a plain tap still opens it.
+        onLongPress: ra == null ? null : () => ra.speak(title, owner: this),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 56),
+          // 56 always clears the 48dp guardian floor; with "larger targets" it rises to 64.
+          constraints: BoxConstraints(minHeight: guardianTargetOf(context) > 56 ? guardianTargetOf(context) : 56),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(children: [
             CircleAvatar(
@@ -62,11 +94,12 @@ class HubTile extends StatelessWidget {
                 Text(title, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                 if (subtitle != null) Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text(subtitle!, style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                  child: Text(subtitle, style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
                 ),
               ],
             )),
             const SizedBox(width: 8),
+            if (ra != null) SpeakerButton(text: title, label: 'Read "$title" out loud'),
             trailing ?? const Icon(Icons.chevron_right),
           ]),
         ),

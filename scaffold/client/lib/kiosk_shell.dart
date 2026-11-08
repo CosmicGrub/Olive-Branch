@@ -245,8 +245,8 @@ class _EscalationTrigger extends StatelessWidget {
     bottom: 4,
     child: SafeArea(
       child: SizedBox(
-        width: 40,
-        height: 40,
+        width: 48,
+        height: 48,
         child: IconButton(
           key: const Key('guardianEscalationTrigger'),
           onPressed: onTap,

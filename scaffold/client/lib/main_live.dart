@@ -47,6 +47,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'access_shell.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'child_home_live.dart';
@@ -513,6 +514,7 @@ class _OliveLiveState extends State<OliveLive> {
       final themeData = buildThemeData(_themeController.value);
       return MaterialApp(
         navigatorKey: _navigatorKey,
+        navigatorObservers: [sharedReadAloudObserver],
         title: 'Olive (live)',
         // theme: and darkTheme: are intentionally the SAME resolved scheme,
         // with themeMode PINNED to the guardian's own explicit brightness
@@ -535,7 +537,8 @@ class _OliveLiveState extends State<OliveLive> {
           data: themeData,
           duration: const Duration(milliseconds: 380),
           curve: Curves.easeInOut,
-          child: child!,
+          // Accessibility settings and read-aloud (access_shell.dart).
+          child: withAccess(child!),
         ),
         home: KioskShell(
           verifyPin: (pin) => _verifyGuardianPin(pin, childId: widget.childId),

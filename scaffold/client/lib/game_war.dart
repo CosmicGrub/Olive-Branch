@@ -32,6 +32,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show LiveLine, motionDuration;
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side, auditLiveView;
@@ -321,7 +322,7 @@ class _GameWarScreenState extends State<GameWarScreen> {
           icon: Icons.error_outline,
         );
       } else if (war != null) {
-        body = _WarView(state: war, mySide: _mySide, peerName: _pairing.peer?.name ?? 'the other side',
+        body = WarView(state: war, mySide: _mySide, peerName: _pairing.peer?.name ?? 'the other side',
           onFlip: _flip, cardScale: _cardScaleFor(posture));
       } else {
         body = switch (_pairing.phase) {
@@ -385,6 +386,17 @@ Color _suitColor(Suit s) => (s == Suit.hearts || s == Suit.diamonds) ? const Col
 String _suitSymbol(Suit s) => switch (s) {
   Suit.spades => '♠', Suit.hearts => '♥', Suit.diamonds => '♦', Suit.clubs => '♣',
 };
+/// "Queen of hearts" — what a screen reader says about a card face.
+String warCardWords(PlayingCard c) {
+  final String rank = switch (c.rank) {
+    14 => 'Ace', 13 => 'King', 12 => 'Queen', 11 => 'Jack', _ => '${c.rank}',
+  };
+  final String suit = switch (c.suit) {
+    Suit.spades => 'spades', Suit.hearts => 'hearts', Suit.diamonds => 'diamonds', Suit.clubs => 'clubs',
+  };
+  return '$rank of $suit';
+}
+
 String _rankText(int rank) => switch (rank) {
   14 => 'A', 13 => 'K', 12 => 'Q', 11 => 'J', _ => '$rank',
 };
@@ -402,7 +414,9 @@ class _PlayingCardFace extends StatelessWidget {
     final color = _suitColor(card.suit);
     final rank = _rankText(card.rank);
     final suit = _suitSymbol(card.suit);
-    return Container(
+    return Semantics(
+      image: true, label: warCardWords(card), excludeSemantics: true,
+      child: Container(
       width: width, height: height,
       decoration: BoxDecoration(
         color: Colors.white, borderRadius: BorderRadius.circular(10),
@@ -420,7 +434,7 @@ class _PlayingCardFace extends StatelessWidget {
         ]))),
         Center(child: Text(suit, style: TextStyle(color: color, fontSize: width * 0.42))),
       ]),
-    );
+    ));
   }
 }
 
@@ -429,7 +443,9 @@ class _PlayingCardBack extends StatelessWidget {
   final double width;
   final double height;
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => Semantics(
+    image: true, label: 'A card, face down', excludeSemantics: true,
+    child: Container(
     width: width, height: height,
     decoration: BoxDecoration(
       color: const Color(0xFF7A2828), borderRadius: BorderRadius.circular(10),
@@ -437,7 +453,7 @@ class _PlayingCardBack extends StatelessWidget {
     ),
     alignment: Alignment.center,
     child: Icon(Icons.style, color: Colors.white.withValues(alpha: 0.7), size: width * 0.4),
-  );
+  ));
 }
 
 /// A genuine card-flip: rotates through its own edge (a real Y-axis
@@ -453,7 +469,7 @@ class _FlipReveal extends StatelessWidget {
   final double height;
   @override
   Widget build(BuildContext context) => AnimatedSwitcher(
-    duration: const Duration(milliseconds: 320),
+    duration: motionDuration(context, 320),
     transitionBuilder: (child, animation) => AnimatedBuilder(
       animation: animation,
       builder: (context, _) {
@@ -472,8 +488,8 @@ class _FlipReveal extends StatelessWidget {
   );
 }
 
-class _WarView extends StatelessWidget {
-  const _WarView({required this.state, required this.mySide, required this.peerName, required this.onFlip, this.cardScale = 1.0});
+class WarView extends StatelessWidget {
+  const WarView({super.key, required this.state, required this.mySide, required this.peerName, required this.onFlip, this.cardScale = 1.0});
   final WarState state;
   final Side mySide;
   final String peerName;
@@ -516,25 +532,34 @@ class _WarView extends StatelessWidget {
       // behind face up (comparator) during a war, mirroring exactly what
       // two real piles look like laid out on a table mid-round.
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Stack(clipBehavior: Clip.none, children: [
-          if (myWager) Positioned(left: -6, top: -6, child: _PlayingCardBack(width: battleW, height: battleH)),
-          _FlipReveal(card: myShown, width: battleW, height: battleH),
-        ]),
+        Semantics(
+          container: true, excludeSemantics: true,
+          label: 'Your card', value: myShown == null ? 'not turned over yet' : warCardWords(myShown),
+          child: Stack(clipBehavior: Clip.none, children: [
+            if (myWager) Positioned(left: -6, top: -6, child: _PlayingCardBack(width: battleW, height: battleH)),
+            _FlipReveal(card: myShown, width: battleW, height: battleH),
+          ])),
         const SizedBox(width: 28),
-        Stack(clipBehavior: Clip.none, children: [
-          if (theirWager) Positioned(left: -6, top: -6, child: _PlayingCardBack(width: battleW, height: battleH)),
-          _FlipReveal(card: theirShown, width: battleW, height: battleH),
-        ]),
+        Semantics(
+          container: true, excludeSemantics: true,
+          label: "$peerName's card", value: theirShown == null ? 'not turned over yet' : warCardWords(theirShown),
+          child: Stack(clipBehavior: Clip.none, children: [
+            if (theirWager) Positioned(left: -6, top: -6, child: _PlayingCardBack(width: battleW, height: battleH)),
+            _FlipReveal(card: theirShown, width: battleW, height: battleH),
+          ])),
       ]),
       const SizedBox(height: 20),
       if (state.lastRoundNote != null) ...[
-        Text(state.lastRoundNote!, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
+        LiveLine(child: Text(state.lastRoundNote!, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center)),
         const SizedBox(height: 12),
       ],
       if (waitingOnMe)
         // A real tap-to-flip on your own pile, not a plain labeled button
         // — the same physical motion turning your top card over is.
-        GestureDetector(
+        Semantics(
+          button: true, container: true, excludeSemantics: true,
+          label: 'Turn over your top card', onTap: onFlip,
+          child: GestureDetector(
           onTap: onFlip,
           child: Stack(clipBehavior: Clip.none, children: [
             Positioned(left: -4, top: -4, child: _PlayingCardBack(width: battleW, height: battleH)),
@@ -542,10 +567,10 @@ class _WarView extends StatelessWidget {
             Positioned.fill(child: Center(child: Icon(Icons.touch_app_outlined,
               color: Colors.white.withValues(alpha: 0.9), size: 28 * cardScale))),
           ]),
-        )
+        ))
       else if (justRevealed)
-        Text('Waiting for $peerName to flip…', style: theme.textTheme.bodyLarge
-          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        LiveLine(child: Text('Waiting for $peerName to flip…', style: theme.textTheme.bodyLarge
+          ?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
     ]);
   }
 }
@@ -558,7 +583,10 @@ class _PileWithCount extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final w = 44 * scale, h = 62 * scale;
-    return Column(mainAxisSize: MainAxisSize.min, children: [
+    // Heard as "your pile", never with a number: how many cards each side holds is
+    // a tally, and nothing is announced that ranks the two of them (P2).
+    return Semantics(label: label == 'You' ? 'Your pile' : "$label's pile", container: true, excludeSemantics: true,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
       Stack(clipBehavior: Clip.none, children: [
         if (count > 1) Positioned(left: 3, top: 3, child: _PlayingCardBack(width: w, height: h)),
         count > 0 ? _PlayingCardBack(width: w, height: h) : SizedBox(width: w, height: h),
@@ -566,7 +594,7 @@ class _PileWithCount extends StatelessWidget {
       const SizedBox(height: 6),
       Text('$count', style: Theme.of(context).textTheme.titleMedium),
       Text(label, style: Theme.of(context).textTheme.bodySmall),
-    ]);
+    ]));
   }
 }
 

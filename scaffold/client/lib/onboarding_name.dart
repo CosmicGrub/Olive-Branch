@@ -12,6 +12,7 @@
 // honest stub: no speech-to-text engine exists in this preview build, so
 // tapping it says so rather than pretending to listen.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'onboarding_logic.dart';
 import 'onboarding_shared.dart';
 
@@ -86,7 +87,7 @@ class _ObNameScreenState extends State<ObNameScreen> {
         ValueListenableBuilder<TextEditingValue>(
           valueListenable: _controller,
           builder: (context, value, _) => AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
+            duration: motionDuration(context, 220),
             transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
             // A near-maxNameLength (24 char) single "word" at this fontSize is
             // wider than any of the four required viewports, including the

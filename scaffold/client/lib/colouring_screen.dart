@@ -27,6 +27,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart';
+import 'access_scope.dart' show reduceMotionOf;
+import 'access_settings.dart' show kChildTarget;
+import 'colour_names.dart';
 import 'form_factors.dart' as ff;
 import 'motion_rules.dart';
 import 'shared_gallery.dart';
@@ -37,6 +41,17 @@ const List<Color> _kPalette = <Color>[
   Color(0xFF2ECC71), Color(0xFF3498DB), Color(0xFF9B59B6),
   Color(0xFFE9598B), Color(0xFF6D4C41),
 ];
+
+/// The eight swatches, for tests and anything else that must agree with them.
+const List<Color> colouringPalette = _kPalette;
+
+/// What a screen reader calls each part of the picture.
+const Map<String, String> colouringRegionNames = <String, String>{
+  'sky': 'Sky', 'ground': 'Ground', 'sunRays': 'Sun rays', 'sunCore': 'Sun',
+  'stem': 'Stem', 'leafLeft': 'Left leaf', 'leafRight': 'Right leaf',
+  'petal0': 'Top petal', 'petal1': 'Upper right petal', 'petal2': 'Lower right petal',
+  'petal3': 'Lower left petal', 'petal4': 'Upper left petal', 'center': 'Middle of the flower',
+};
 
 /// Bottom-to-top paint order; hit-testing walks this reversed so the
 /// topmost shape under a finger wins.
@@ -112,16 +127,28 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
     final Map<String, Path> regions = _buildRegions(_lastSize);
     for (final String id in _kRegionOrder.reversed) {
       if (regions[id]!.contains(d.localPosition)) {
-        final Color from = _filled[id] ?? Colors.white;
-        if (from.toARGB32() == _selected.toARGB32()) return;
-        setState(() {
-          _animating[id] = _RegionAnim(from, _selected, DateTime.now());
-          _filled[id] = _selected;
-        });
-        if (!_ticker.isTicking) _ticker.start();
+        _fillRegion(id);
         return;
       }
     }
+  }
+
+  /// Colours one part with the chosen colour. Reached by a finger on the picture
+  /// and by a screen reader activating that part's own node.
+  void _fillRegion(String id) {
+    final Color from = _filled[id] ?? Colors.white;
+    if (from.toARGB32() == _selected.toARGB32()) return;
+    // Reduced motion (§8.13, a guardian setting or the OS's): the colour is
+    // simply there, no fade to wait for.
+    if (reduceMotionOf(context)) {
+      setState(() => _filled[id] = _selected);
+      return;
+    }
+    setState(() {
+      _animating[id] = _RegionAnim(from, _selected, DateTime.now());
+      _filled[id] = _selected;
+    });
+    if (!_ticker.isTicking) _ticker.start();
   }
 
   void _startOver() => setState(() {
@@ -180,7 +207,7 @@ class _ColouringScreenState extends State<ColouringScreen> with SingleTickerProv
                         onTapUp: _handleTapUp,
                         child: CustomPaint(
                           size: boardSize,
-                          painter: _ColouringPainter(filled: _filled, animating: _animating),
+                          painter: _ColouringPainter(filled: _filled, animating: _animating, onRegionTap: _fillRegion),
                         ),
                       ),
                     );
@@ -208,13 +235,16 @@ class _PaletteSwatch extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) => Semantics(
+      button: true, selected: selected, excludeSemantics: true,
+      label: 'Colour: ${colourName(color)}', onTap: onTap,
+      child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: Container(
-          // 48dp minimum touch target (§8.4) — the visible dot may look
-          // dainty; the tappable area does not.
-          width: 48, height: 48,
+          // 64dp child touch target (§8.4) — the visible dot may look dainty;
+          // the tappable area does not.
+          width: kChildTarget, height: kChildTarget,
           alignment: Alignment.center,
           child: Container(
             width: 36, height: 36,
@@ -229,13 +259,42 @@ class _PaletteSwatch extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ));
 }
 
 class _ColouringPainter extends CustomPainter {
-  const _ColouringPainter({required this.filled, required this.animating});
+  const _ColouringPainter({required this.filled, required this.animating, this.onRegionTap});
   final Map<String, Color> filled;
   final Map<String, _RegionAnim> animating;
+
+  /// When set, each part of the picture is also a semantics node (its name, its
+  /// colour so far, and an activate that colours it), so a screen reader can
+  /// colour the picture. The kept-picture thumbnail sets none.
+  final void Function(String id)? onRegionTap;
+
+  @override
+  SemanticsBuilderCallback? get semanticsBuilder => onRegionTap == null
+      ? null
+      : (Size size) {
+          if (size.width <= 0 || size.height <= 0) return const <CustomPainterSemantics>[];
+          final Map<String, Path> regions = _buildRegions(size);
+          int order = 0;
+          return <CustomPainterSemantics>[
+            for (final String id in _kRegionOrder.reversed)
+              CustomPainterSemantics(
+                key: ValueKey<String>(id),
+                rect: regions[id]!.getBounds(),
+                properties: SemanticsProperties(
+                  label: colouringRegionNames[id] ?? id,
+                  textDirection: TextDirection.ltr,
+                  value: filled[id] == null ? 'not coloured yet' : colourName(filled[id]!),
+                  button: true,
+                  onTap: () => onRegionTap!(id),
+                  sortKey: OrdinalSortKey((order++).toDouble()),
+                ),
+              ),
+          ];
+        };
 
   Color _colorFor(String id) {
     final _RegionAnim? anim = animating[id];

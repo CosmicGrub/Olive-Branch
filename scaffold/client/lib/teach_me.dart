@@ -25,6 +25,8 @@
 // a live build.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'local_services.dart';
 import 'local_store.dart';
 
@@ -339,7 +341,7 @@ class _TeachMeScreenState extends State<TeachMeScreen> {
                     onSelected: (_) => setState(() => _medium = m)),
                 ]),
                 const SizedBox(height: 16),
-                SizedBox(width: double.infinity, height: 48,
+                SizedBox(width: double.infinity, height: kChildTarget,
                   child: FilledButton.icon(
                     onPressed: _controller.text.trim().isEmpty ? null : _sendLesson,
                     icon: const Icon(Icons.send_outlined),
@@ -396,7 +398,7 @@ class _LessonTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(lesson.medium.label, style: Theme.of(context).textTheme.bodySmall
             ?.copyWith(color: scheme.onSurfaceVariant)),
-          AnimatedSwitcher(duration: const Duration(milliseconds: 300),
+          AnimatedSwitcher(duration: motionDuration(context, 300),
             child: askedAgain
               ? Padding(key: const ValueKey('asked'), padding: const EdgeInsets.only(top: 8),
                   child: Row(children: [

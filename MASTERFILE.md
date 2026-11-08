@@ -2144,6 +2144,13 @@ cannot use any product in this category.
 | **No-smartphone parents** | **SMS bridge**: receive text summaries, reply by text, receive a voice call bridge. Reduced fidelity, full participation. | Incarcerated, elderly, deployed with device restrictions, or simply poor. **If the away parent cannot participate, the product has failed at its only job.** |
 | **Low bandwidth** | Audio-only fallback, SVC/simulcast, local-first SQLite + outbox, everything async-capable | Deployed parent, rural grandparent, school wifi |
 
+**Status of this table (§8.21).** *Built and tested:* TTS on every child tile and story
+page; 64 dp child targets; reduce motion (OS and guardian); adjustable spacing
+("roomier reading", not a special face); picture input for lists and the journal;
+screen-reader semantics for the games and canvases. *Not built:* captions (a switch
+records a wish and says so), voice-driven navigation, the dyslexia-specific face (the
+evidence is mixed; spacing is built instead), live caption translation, the SMS bridge.
+
 ---
 
 ## §9 Feature specifications
@@ -5051,6 +5058,12 @@ come-back-signal applications, do not yet have a speaker button — this pass
 closed the two highest-stakes surfaces, not the full sweep. See CHANGELOG
 v0.49.10.
 
+**Extended to every child tile and story page (§8.21).** A speaker and
+long-press on every tile, a speaker on every story page, a guardian on/off switch
+(default by age), honest quiet fallback, never autonomous, stops with the screen. The
+emergency card, handover notes and call knock reach the same read-aloud when no
+callback is passed.
+
 
 ---
 
@@ -5403,6 +5416,7 @@ drift. Nothing is written that is not in it.
 | `child.<id>.ladder` | Growing-up grants reached (append-only), rungs a guardian moved later, reveals she has seen, announcements dismissed. Makes "told once" true across a restart. | No |
 | `child.<id>.colour` | Colour of the day for this device (`LocalColourStore`, same real rules as the in-memory store): the last two weeks of colour days (only the latest is used; older are dropped), the art style, and the play window. No tally of picks. | No |
 | `child.<id>.family` | Family structure a grown-up built and released on this device (`LocalStoreFamilyStore`): the append-only history, her homes and people, guardian-written stories. A failed save throws; a change is never reported recorded when it was not. | **Yes** |
+| `child.<id>.access` | Accessibility for her device, as a guardian set it: read aloud, reduce motion, roomier reading, larger targets, captions wanted. Five on/off switches (§8.21). | No |
 | `child.<id>.profile` | Offline start-up cache: her first name, age in whole years, that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
 | `child.<id>.growing` | Time capsules (note, dates, optional thumbnail), first times, pencil-mark heights, which of the eight Growing and Care suites a guardian switched off. No counts, streaks or comparison. | **Yes** |
@@ -7313,6 +7327,150 @@ step), `rhythm_voice_service_test` (every principal, both stores), and the widge
 `rhythm_screens_test`, `voice_screens_test`, `rhythm_voice_guardian_screens_test` and
 `rhythm_voice_sections_test` (344 dp, large text, 64 dp, no counters, the child shell has
 no way in).
+
+## §8.21 Accessibility for her device — read-aloud, reduced motion, roomier reading, bigger targets
+
+*Owner direction, 2026-11-07: build offline, on-device features only. This section
+adds no server route, no migration, no network call and nothing that needs a
+credential.* It makes the pre-reader and low-vision promises of §8.1 and §8.4 true
+in code where they were only written down: until now `buildSpeakCallback` had one
+caller, tiles were a Material icon with small text, the list, journal and
+guess-the-word screens were text-field only, nothing read `MediaQuery.disableAnimations`,
+and seven game and canvas screens had no semantics at all. Verified against the code
+before this pass began; every item below is held by a test.
+
+### 8.21.1 The guardian's screen, and where it is kept
+
+*Settings → Her → Accessibility for her device* (`client/lib/access_screen.dart`),
+reached inside the guardian shell like every other settings screen (her own app has
+no path to it at any depth, §8.1; `access_screen_test.dart` reads the child files to
+hold that). Five switches: **read aloud everywhere**, **reduce motion**, **roomier
+reading**, **larger targets**, **captions**. Kept on this device in LocalStore area
+`access`, one document per child, **not encrypted** (five booleans, nothing private;
+§8.16.4), through the repository pattern of `her_colour_store.dart`: an abstract
+`AccessRepository`, `MemoryAccessRepository` for tests and the preview,
+`LocalStoreAccessRepository` for the app. A save that fails is said plainly on the
+screen ("Changed for now, but this device could not keep it") and still takes
+effect for this run. If her device is a different phone from the guardian's, the
+screen says to set them there too: there is no sync (§8.16.7).
+
+### 8.21.2 Read aloud on every child tile and story page
+
+* A small speaker (`SpeakerButton`, 48dp to touch, drawn quietly: no fill, the muted
+  text colour) sits in the bottom corner of every `TieredTile` on her home, at the end
+  of every row of her *More* screen and on every game card, and **long-press** on any of
+  them reads its label. A plain tap still opens it and never speaks. On a story page
+  the speaker reads that page's text. The grown-up's own screens share these widgets
+  and opt out (`readAloud: false`, or by never passing `readAloud: true`): no speaker
+  ever appears on the guardian home, the guardian hubs or the guardian game picker.
+* **Never autonomous.** Every request goes through `admitSpeech()`, which refuses
+  `SpeechTrigger.autonomous` unconditionally; nothing in the new code passes it, and
+  no screen starts speech on its own (§8.13).
+* **Stops when the screen closes**, when the story page turns, and on any route change
+  (`ReadAloudRouteObserver`), so a reading never outlives what it was reading.
+* **Honest fallback.** With no engine, or one that fails, the speaker turns into a
+  muted icon and nothing else happens: no snackbar, no error string to a child, the
+  text never logged (§8.8.5). The accessible name changes to say it is unavailable.
+* **Default** follows her age (on below 8, off from 8, §8.8.5) until a guardian
+  chooses; "Follow her age again" hands the choice back. Off removes the speakers and
+  the long-press entirely.
+* The three older screens that already took a `speak` callback (emergency card,
+  handover notes, call knock) now fall back to the app's read-aloud when none is
+  passed, still saying "not built yet" when there is truly none. `child_home_live.dart`
+  reads through the same shared controller.
+
+### 8.21.3 Reduce motion
+
+One helper, `motionDuration(context, ms)` (`access_scope.dart`): **zero** when
+`MediaQuery.disableAnimations` is set by the OS **or** the guardian chose reduced
+motion; otherwise the duration, capped at §8.13.1's 400ms. All 94 implicit-animation
+sites in the child screens take their duration from it, so a consequence is simply
+there: an instant change, never a slide or a travel (`ConsequenceSwitcher` is the
+fade-only switcher for new code). The two animation controllers that cannot read an
+inherited value in `initState` (`birthday_marked.dart`, the Uno action glow) read it in
+`didChangeDependencies`; the colouring screen starts no fade at all when reduced. A
+source-guard test fails if any child file animates with a raw duration again. The
+guardian setting is also published as `MediaQuery.disableAnimations`, so Flutter's own
+widgets agree. **No new autonomous motion** is added; the helper starts nothing.
+
+### 8.21.4 Semantics for the games and canvases
+
+* **Connect 4:** the board is one labelled group; each of the 42 cells is a node
+  ("Column 3, row 2 from the bottom", value "your disc, a circle" / "empty"), read column
+  by column from the bottom, activatable on her turn.
+* **War:** cards are named ("Queen of hearts"), the table says "Your card" and
+  "Dad's card", piles are heard as "your pile" and never with a count, one button turns
+  her top card.
+* **The puzzle:** spots say what they are for and whether they are filled; on her turn
+  each loose piece can be placed by a screen reader's activate, into its own spot only
+  (the same move a correct drag makes).
+* **Pictionary:** the drawing surface and the finished drawing are labelled.
+* **Doodle desk and colouring:** every colour has an everyday name (`colour_names.dart`)
+  and is a selected/unselected button; brush sizes and stamps are named; each **part of
+  the colouring picture is its own node** ("Sun", "Left leaf"...) saying its colour so
+  far and colouring it on activate, so the picture can be coloured without sight.
+* **Story pages** are named ("Story page 1 of N") and carry their text.
+* **Live regions:** the turn line ("Your turn", "Waiting for Dad...", the round note) is a
+  live region (`LiveLine`). **P2-safe by test:** no digit and none of score, point,
+  streak, rank, won, lost, winner, loser appears in anything announced.
+
+### 8.21.5 Roomier reading, and text scale to 2.0
+
+*Not a special font* — the evidence for dyslexia fonts is mixed, and the body face is
+already Atkinson Hyperlegible. The option adds letter spacing (0.12em), word spacing
+(0.16em) and a 1.5 line height to **every text-theme role** through the theme
+(`roomierTextTheme`, applied by `AccessHost`), and keeps reading text left-aligned
+(story pages; short headings keep their own alignment). Hand-set styles on story pages
+go through `readingStyleOf`. `ChildHome` grows its tiles by a quarter when it is on.
+**Overflow:** `child_text_scale_test.dart` pumps nine child screens (and the game boards)
+at text scale 2.0, phone 390x844 and tablet 800x1280, with every option on, and with
+none. It found, and this pass fixed, four real overflows: the wants-and-needs card title,
+the Pictionary guess row, the handover-note header once its speaker became 48dp, and
+the Connect 4 board, which was 26dp too wide at nearly every width (its width budget
+subtracted 64 where the layout really takes 90).
+
+### 8.21.6 Targets
+
+Child controls are 64dp (`kChildTarget`; 80 with *larger targets*): tile floor, every
+button in the child screens this pass raised from 40/48/52/56, the header snapshot
+button and its floating form, doodle and colouring swatches, brush dots and stamps,
+the wants-and-needs rows and Add buttons. Guardian controls are 48dp (`kGuardianTarget`;
+64 with larger targets): the theme's button and icon-button minimums (were 44/46), the
+handover-note speaker (was 36), the guardian-colour swatches (44) and the hidden kiosk
+escalation trigger (40). *Larger targets* also lifts every Material button's minimum
+through the theme. `child_targets_test.dart` holds each one, with a source guard.
+**Not raised, on purpose:** the Connect 4 cells and the pixel garden's cells are a
+grid whose size is set by the screen width; a Connect 4 column strip is the cell plus
+its margin, 64dp and up from tablet width and about 42dp at the 344dp cover screen.
+
+### 8.21.7 Picture-first input
+
+`picture_bank.dart`: a small bank of pictures with labels. **Wants and needs** take a
+tap on a picture as well as typing (a picture adds its label, the same words typing
+would; the same picture twice is kept once, quietly); the **journal** takes a feeling
+or what-happened picture, which writes one plain first-person sentence into the page
+("I feel sad.") that she can keep or add to. Long-press on any picture reads its
+label. Typing is untouched. **P4:** no bank carries a price, brand, shop or link;
+**P2:** nothing counts, ranks or scores; **P7:** the journal gains no reader. Guess-the-
+word setup stays guardian-side (`child_no_settings_contract_test.dart` still holds it).
+
+### 8.21.8 Captions: not built
+
+The captions switch **records a wish and nothing more.** `captionsBuilt` is `false`,
+the screen says "Not built yet. This records that you would like them; nothing shows
+because of it today", and `captionsActive` is false whatever the switch says. The §8.4
+promise of captions on calls and async artifacts remains unfulfilled; calls are parked.
+
+### 8.21.9 What is deliberately not here
+
+No server route, migration, network call or credential. No dyslexia font. No voice
+navigation (the §8.4 row "voice-driven nav" is not built; it needs speech
+recognition, which is not on-device in this client). No captions. No hangman setup
+for her (guardian-side by design). No change to calls, push, delivery, invites or
+networked play. The guardian-only build (`main_live_guardian.dart`) does not install
+the child scopes. Real-device verification (TalkBack, a real synthesizer voice) has
+not been done: the engine behind `TtsChannel` is the OS's own and is exercised here
+through a fake.
 
 ---
 

@@ -39,6 +39,7 @@
 // the photograph itself is a stand-in, and the UI never claims otherwise —
 // it says "Found it!", not "Photo saved."
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 // =========================================================== ported logic ===
@@ -308,7 +309,7 @@ class _Celebration extends StatelessWidget {
     );
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 380),
+      duration: motionDuration(context, 380),
       curve: Curves.easeOutBack,
       builder: (BuildContext context, double t, Widget? child) =>
         Opacity(opacity: t.clamp(0, 1), child: Transform.scale(scale: 0.9 + 0.1 * t, child: child)),

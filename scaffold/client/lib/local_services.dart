@@ -157,6 +157,11 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'chose to show her grown-up. Sealed on the device; a grown-up sees only what she '
           'chose to show; letting one float away deletes it. Never read or tagged: no score, no count.'),
   LocalDataEntry(
+      area: 'access', scope: LocalScope.child, maxBytes: 16 * 1024,
+      what: 'Accessibility for her device, as a grown-up set it: read aloud, reduce motion, '
+          'roomier reading, larger targets, and whether captions are wanted. Five on/off '
+          'switches; nothing else.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '

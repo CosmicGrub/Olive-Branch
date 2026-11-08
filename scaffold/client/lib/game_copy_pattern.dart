@@ -41,7 +41,7 @@
 // being the very first playback of the very first round, triggered by the
 // screen opening, which is the same "opens straight into the thing" posture
 // `game_would_you_rather.dart`'s first prompt already takes. Every
-// individual highlight transition (`_transitionDuration`, 180ms) is
+// individual highlight transition (`_transitionMs`, 180ms) is
 // comfortably under the 400ms consequence-motion budget, and only ONE tile
 // animates at a time during playback — well inside §8.13.6's "two moving
 // things at once" ceiling.
@@ -72,6 +72,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 // ================================================================ engine ===
@@ -118,7 +119,7 @@ TapOutcome checkTap({required List<int> pattern, required int inputCount, requir
 
 /// Every individual highlight/press transition — comfortably under §8.13's
 /// 400ms consequence-motion budget.
-const Duration _transitionDuration = Duration(milliseconds: 180);
+const int _transitionMs = 180;
 
 enum _Phase { playback, input, wrongPause }
 
@@ -305,11 +306,11 @@ class _PatternDisplay extends StatelessWidget {
             // never a loop (§8.13.1). Both transitions settle in 180ms.
             child: AnimatedScale(
               scale: shown != null ? 1.15 : 0.85,
-              duration: _transitionDuration,
+              duration: motionDuration(context, _transitionMs),
               curve: Curves.easeOut,
               child: AnimatedOpacity(
                 opacity: shown != null ? 1.0 : 0.3,
-                duration: _transitionDuration,
+                duration: motionDuration(context, _transitionMs),
                 child: Icon(shown?.icon ?? Icons.circle, size: 84, color: shown?.color ?? scheme.outlineVariant),
               ),
             ),

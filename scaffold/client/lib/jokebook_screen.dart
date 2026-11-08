@@ -31,6 +31,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'activity_overrides.dart';
 import 'form_factors.dart' as ff;
 import 'hub_widgets.dart';
@@ -269,7 +271,7 @@ class _JokebookScreenState extends State<JokebookScreen> {
             onOpen: _openFavourite,
           );
           final switcher = AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
+            duration: motionDuration(context, 260),
             transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
             child: card,
           );
@@ -322,7 +324,7 @@ class _AskCard extends StatelessWidget {
                 ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 20),
           SizedBox(
-            height: 56,
+            height: kChildTarget,
             child: FilledButton.icon(
               onPressed: onAsk,
               icon: const Icon(Icons.play_arrow_rounded),
@@ -367,7 +369,7 @@ class _JokeCard extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurfaceVariant))),
             IconButton(
               tooltip: starred ? 'Unstar this joke' : 'Star this joke',
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              constraints: const BoxConstraints(minWidth: kChildTarget, minHeight: kChildTarget),
               onPressed: onStar,
               icon: Icon(starred ? Icons.star_rounded : Icons.star_border_rounded,
                 color: starred ? Colors.amber.shade700 : null),
@@ -380,7 +382,7 @@ class _JokeCard extends StatelessWidget {
           // The beat. Hidden behind a tap, not an auto-timer — she decides
           // when the ending lands, which is the whole timing of a joke.
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
+            duration: motionDuration(context, 220),
             transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
             child: revealed
                 ? _Punchline(key: const ValueKey('punchline'), text: joke.punchline, accent: accent)
@@ -388,12 +390,12 @@ class _JokeCard extends StatelessWidget {
           ),
           if (revealed) ...[
             const SizedBox(height: 20),
-            SizedBox(width: double.infinity, height: 52,
+            SizedBox(width: double.infinity, height: kChildTarget,
               child: FilledButton.icon(onPressed: onAnother,
                 icon: const Icon(Icons.autorenew_rounded),
                 label: const Text('Tell me another!'))),
             const SizedBox(height: 8),
-            SizedBox(width: double.infinity, height: 48,
+            SizedBox(width: double.infinity, height: kChildTarget,
               child: OutlinedButton.icon(onPressed: onTellParent,
                 icon: const Icon(Icons.record_voice_over_outlined),
                 label: Text('Tell $parentName this one'))),
@@ -492,7 +494,7 @@ class _StarredChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: Container(
-        constraints: const BoxConstraints(minHeight: 48, maxWidth: 280),
+        constraints: const BoxConstraints(minHeight: kChildTarget, maxWidth: 280),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         alignment: Alignment.centerLeft,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -518,7 +520,9 @@ class _TellParentSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-    child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    // Scrolls, so a 64dp button and a large type size never push the sheet's content past
+    // its own height (a bottom sheet is capped at 9/16 of the screen).
+    child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('Tell $parentName this one!', key: const Key('tellParentTitle'),
         style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
       const SizedBox(height: 8),
@@ -530,9 +534,9 @@ class _TellParentSheet extends StatelessWidget {
       const SizedBox(height: 16),
       Text(joke.punchline, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, height: 1.3)),
       const SizedBox(height: 24),
-      SizedBox(height: 52, child: FilledButton(
+      SizedBox(height: kChildTarget, child: FilledButton(
         onPressed: () => Navigator.of(context).pop(),
         child: const Text("Got it — I'll tell them!"))),
-    ]),
+    ])),
   );
 }

@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 
 import 'family_structure_store.dart' show FamilyChildSnapshot;
+import 'access_scope.dart' show AccessScope;
 import 'hub_widgets.dart';
 import 'picture_icons.dart';
 import 'rhythm_logic.dart';
@@ -84,7 +85,10 @@ class _RhythmVoiceSectionsState extends State<RhythmVoiceSections> {
     // At large text the tiles go one to a row, so a long label has the width it needs.
     final double scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.2);
     final bool single = scale >= 1.3;
-    final double h = single ? 72 + 30 * scale : 56 + 64 * scale;
+    // Room for the read-aloud speaker's corner (the label wraps in a narrower box) and for roomier
+    // reading's taller lines.
+    final double roomy = AccessScope.of(context).roomierReading ? 1.25 : 1.0;
+    final double h = (single ? 72 + 30 * scale : 56 + 64 * scale) * roomy + 30;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
       if (t.anyRhythm)
         HubSection(title: 'My day', children: <Widget>[

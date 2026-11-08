@@ -22,6 +22,9 @@
 // that same pipeline.
 import 'package:flutter/material.dart';
 
+import 'access_scope.dart';
+import 'read_aloud.dart';
+
 /// Honest acknowledgment for a feature this preview build doesn't implement
 /// yet, rather than a silent no-op — the same "recorded, not glossed over"
 /// posture the rest of this project already takes for unbuilt surfaces.
@@ -44,9 +47,10 @@ void _notBuiltYet(BuildContext context, String what) {
 /// replaces the InkWell child's own intrinsic sizing with an explicit
 /// height — used outside a GridView, where there is no gridDelegate-driven
 /// mainAxisExtent to size a tile.
-class TieredTile extends StatelessWidget {
+class TieredTile extends StatefulWidget {
   const TieredTile({super.key, required this.icon, required this.label, this.onTap,
-    this.badgeCount, this.unreadDot = false, this.featured = false, this.hero = false, this.height});
+    this.badgeCount, this.unreadDot = false, this.featured = false, this.hero = false, this.height,
+    this.readAloud = true});
   final IconData icon;
   final String label;
   // Defaults to the honest not-built-yet acknowledgment; tiles with a real
@@ -65,8 +69,39 @@ class TieredTile extends StatelessWidget {
   final bool featured;
   final bool hero;
   final double? height;
+
+  /// Whether this tile takes part in read-aloud (the speaker and the long-press).
+  /// True for a child's tiles; the guardian's own home passes false, since read-aloud
+  /// is for her, not for the grown-up's screens that share this widget.
+  final bool readAloud;
+  @override
+  State<TieredTile> createState() => _TieredTileState();
+}
+
+class _TieredTileState extends State<TieredTile> {
+  ReadAloudController? _ra;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ra = ReadAloudScope.maybeOf(context);
+  }
+
+  @override
+  void dispose() {
+    // Leaving the screen ends a reading that this tile started.
+    _ra?.release(this);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final icon = widget.icon, label = widget.label, onTap = widget.onTap, badgeCount = widget.badgeCount,
+        unreadDot = widget.unreadDot, featured = widget.featured, hero = widget.hero, height = widget.height;
+    // Read-aloud (§8.8.5): null when it is off for her or there is no scope, in
+    // which case this tile is exactly what it always was.
+    final ReadAloudController? ra = widget.readAloud ? ReadAloudScope.enabledOf(context) : null;
+    final double floor = childTargetOf(context);
     final scheme = Theme.of(context).colorScheme;
     // §4 constraint compliance: hierarchy is communicated by size/width/
     // type-scale only. Every fill below is a standard Material ColorScheme
@@ -86,39 +121,56 @@ class TieredTile extends StatelessWidget {
             : scheme.onPrimaryContainer;
     final Widget tile = InkWell(
       onTap: () => (onTap ?? (c) => _notBuiltYet(c, label))(context),
+      // Long-press reads the label; a plain tap still opens. Never on its own.
+      onLongPress: ra == null ? null : () => ra.speak(label, owner: this),
       child: Container(
         // §8.4 — 64dp minimum touch target for pre-readers. Every tier
         // clears this floor by construction (Standard's own base height is
         // already above it even before text-scale growth); this stays the
         // hard backstop regardless of tier or the `height` override above.
-        constraints: BoxConstraints(minHeight: height ?? 64),
+        constraints: BoxConstraints(minHeight: height ?? floor),
         height: height,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: fill),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: _withSpeaker(ra, label, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Icon(icon, size: featured ? 36 : 28, color: onFill),
             if (unreadDot) ...[
               const Spacer(),
               const _NewDot(),
-            ] else if (badgeCount != null && badgeCount! > 0) ...[
+            ] else if (badgeCount != null && badgeCount > 0) ...[
               const Spacer(),
-              _UnreadBadge(count: badgeCount!),
+              _UnreadBadge(count: badgeCount),
             ],
           ]),
           const Spacer(),
-          Text(label,
-            style: (featured
-                    ? Theme.of(context).textTheme.titleMedium
-                    : Theme.of(context).textTheme.titleSmall)
-                ?.copyWith(fontWeight: FontWeight.w600, color: onFill)),
-        ]),
+          Padding(
+            // Room for the speaker, so the label never runs under it.
+            padding: EdgeInsets.only(right: ra == null ? 0 : 44),
+            child: Text(label,
+              style: (featured
+                      ? Theme.of(context).textTheme.titleMedium
+                      : Theme.of(context).textTheme.titleSmall)
+                  ?.copyWith(fontWeight: FontWeight.w600, color: onFill)),
+          ),
+        ])),
       ),
     );
     // The Hero tile alone renders outside any GridView (no cell to fill),
     // so it needs its own explicit width — every other tier gets width from
     // its GridView cell already.
     return hero ? SizedBox(width: double.infinity, child: tile) : tile;
+  }
+
+  /// The speaker sits in the bottom corner, drawn quietly, so it neither
+  /// competes with the icon and label nor shares the badge's corner. It is a
+  /// 48dp touch target; with no read-aloud the tile is returned untouched.
+  Widget _withSpeaker(ReadAloudController? ra, String label, Widget body) {
+    if (ra == null) return body;
+    return Stack(clipBehavior: Clip.none, fit: StackFit.passthrough, children: [
+      body,
+      Positioned(right: -8, bottom: -8, child: SpeakerButton(text: label, label: 'Read "$label" out loud')),
+    ]);
   }
 }
 
@@ -136,6 +188,10 @@ class _NewDot extends StatelessWidget {
         border: Border.all(color: Theme.of(context).colorScheme.surface, width: 2))));
 }
 
+/// A count on a guardian's tile. Was the error (alarm red) colour; an unread
+/// thing is not an error, and red reads as a debt (§8.4/P2's own reasoning for
+/// the child's plain dot). Now the theme's calm primary, which stays legible on
+/// every tile fill because primary/onPrimary are a contrast-checked pair.
 class _UnreadBadge extends StatelessWidget {
   const _UnreadBadge({required this.count});
   final int count;
@@ -143,10 +199,10 @@ class _UnreadBadge extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-    decoration: BoxDecoration(color: Theme.of(context).colorScheme.error,
+    decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary,
       borderRadius: BorderRadius.circular(9)),
     alignment: Alignment.center,
     child: Text(count > 9 ? '9+' : '$count',
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: Theme.of(context).colorScheme.onError, fontWeight: FontWeight.w700)));
+        color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.w700)));
 }

@@ -30,6 +30,7 @@
 // got to N together," never who broke it.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 // =========================================================== ported logic ===
@@ -290,7 +291,7 @@ class _GameChainScreenState extends State<GameChainScreen> {
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 16),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 280),
+            duration: motionDuration(context, 280),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: _justMoved ? scheme.primaryContainer : scheme.surfaceContainerHighest,
@@ -414,7 +415,7 @@ class _ChainChip extends StatelessWidget {
     // A one-shot entrance for whichever chip is newest — a consequence of the
     // move that added it, not an ambient or looping effect (§8.13.1).
     tween: Tween<double>(begin: 0, end: 1),
-    duration: const Duration(milliseconds: 260),
+    duration: motionDuration(context, 260),
     curve: Curves.easeOutBack,
     builder: (BuildContext context, double t, Widget? child) =>
       Opacity(opacity: t.clamp(0, 1), child: Transform.scale(scale: 0.85 + 0.15 * t, child: child)),

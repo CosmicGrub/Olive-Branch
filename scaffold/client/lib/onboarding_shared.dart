@@ -11,6 +11,7 @@
 // every screen built on this scaffold inherits that absence for free.
 // §8.4 — the continue button and skip link are both sized to at least 48dp.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
 
 class ChildOnboardingScaffold extends StatelessWidget {
   const ChildOnboardingScaffold({
@@ -71,7 +72,7 @@ class ChildOnboardingScaffold extends StatelessWidget {
                 body,
                 if (showContinueButton) ...[
                   const SizedBox(height: 28),
-                  SizedBox(height: 56, child: FilledButton(
+                  SizedBox(height: kChildTarget, child: FilledButton(
                     onPressed: continueEnabled ? onContinue : null,
                     style: FilledButton.styleFrom(shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16))),

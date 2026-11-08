@@ -49,6 +49,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'capture_gate.dart';
@@ -155,7 +157,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
   /// inside its own `viewing` half instead of a second, hand-copied version
   /// that could drift from this one.
   Widget _capturedContent(int fadeMs) => AnimatedSwitcher(
-        duration: Duration(milliseconds: fadeMs),
+        duration: motionDuration(context, fadeMs),
         child: _captured
             ? Column(key: const ValueKey('problems'), children: [
                 const SizedBox(height: 8),
@@ -166,7 +168,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                 // this.
                 if (_realPhoto != null)
                   AnimatedSwitcher(
-                    duration: Duration(milliseconds: fadeMs),
+                    duration: motionDuration(context, fadeMs),
                     child: ClipRRect(
                       key: const ValueKey('realPhotoThumbnail'),
                       borderRadius: BorderRadius.circular(12),
@@ -253,7 +255,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
             _capturedContent(fadeMs),
           ]);
           final Widget captureControls = !_captured
-              ? SizedBox(width: double.infinity, height: 56,
+              ? SizedBox(width: double.infinity, height: kChildTarget,
                   child: FilledButton.icon(
                     key: const Key('takePhotoButton'),
                     onPressed: _startCapture,
@@ -278,7 +280,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
             const SizedBox(height: 20),
             if (!_captured)
               SizedBox(
-                width: double.infinity, height: 56,
+                width: double.infinity, height: kChildTarget,
                 child: FilledButton.icon(
                   key: const Key('takePhotoButton'),
                   onPressed: _startCapture,
@@ -314,11 +316,11 @@ class _ProblemCard extends StatelessWidget {
             Text(text, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             AnimatedSwitcher(
-              duration: Duration(milliseconds: fadeMs),
+              duration: motionDuration(context, fadeMs),
               child: verdict == null
                   ? SizedBox(
                       key: const ValueKey('ask'),
-                      height: 48, // §8.4 — 48dp minimum touch target
+                      height: kChildTarget, // §8.4 — 48dp minimum touch target
                       child: OutlinedButton(onPressed: onHint, child: const Text('Get a hint')))
                   : _HintBubble(key: const ValueKey('hint'), verdict: verdict!),
             ),

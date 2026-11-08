@@ -120,7 +120,7 @@ class _HerColourGuardianScreenState extends State<HerColourGuardianScreen> {
                 for (final s in palette) Semantics(button: true, label: 'Set ${s.label} as today’s colour',
                   child: InkWell(key: Key('day_${s.id}'), customBorder: const CircleBorder(),
                     onTap: () => _setDay(s.id),
-                    child: Container(width: 44, height: 44,
+                    child: Container(width: 48, height: 48,
                       decoration: BoxDecoration(color: s.color, shape: BoxShape.circle,
                         border: view.today.override && view.today.colourId == s.id
                           ? Border.all(color: theme.colorScheme.primary, width: 4) : null)))),

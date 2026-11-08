@@ -12,6 +12,7 @@
 // smuggle in a camera/gallery image.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show LiveLine;
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side, auditLiveView;
@@ -131,7 +132,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen> {
           icon: Icons.error_outline);
       } else if (_pairing.phase == PairingPhase.found || state != null) {
         _startIfNeeded();
-        body = _PuzzleView(
+        body = PuzzleView(
           state: _state!, mySide: _mySide, peerName: _pairing.peer?.name ?? 'the other side',
           onPlace: _tryPlace, celebrated: _celebrated,
           onCelebrate: () => setState(() => _celebrated = true),
@@ -178,8 +179,8 @@ const Map<String, IconData> _pieceGlyphs = {
   'sun': Icons.wb_sunny, 'tree': Icons.park, 'fence': Icons.fence,
 };
 
-class _PuzzleView extends StatelessWidget {
-  const _PuzzleView({required this.state, required this.mySide, required this.peerName,
+class PuzzleView extends StatelessWidget {
+  const PuzzleView({super.key, required this.state, required this.mySide, required this.peerName,
     required this.onPlace, required this.celebrated, required this.onCelebrate, this.pieceScale = 1.0});
   final TogetherPuzzleState state;
   final Side mySide;
@@ -201,10 +202,10 @@ class _PuzzleView extends StatelessWidget {
       Text('${state.placedPieces.length} of ${def.pieces.length} placed together',
         style: theme.textTheme.bodyMedium),
       const SizedBox(height: 8),
-      Text(
+      LiveLine(child: Text(
         state.solved ? 'Good job — you did it together!' : myTurn ? 'Your turn to place a piece' : 'Waiting for $peerName…',
         style: theme.textTheme.titleMedium, textAlign: TextAlign.center,
-      ),
+      )),
       const SizedBox(height: 16),
       // Slots grid — each slot individually meets the 64dp touch-target
       // floor (§8.4/§8.11.3), a harder constraint here than chrome buttons
@@ -222,7 +223,10 @@ class _PuzzleView extends StatelessWidget {
             builder: (context, candidates, rejected) {
               final placedPiece = def.pieces.where((p) => p.correctSlotId == slot.id && state.placedPieces.contains(p.id)).firstOrNull;
               final highlighted = candidates.isNotEmpty;
-              return Container(
+              return Semantics(
+                container: true, excludeSemantics: true, label: slot.label,
+                value: placedPiece != null ? '${placedPiece.label}, placed' : 'empty',
+                child: Container(
                 width: slotSize, height: slotSize,
                 decoration: BoxDecoration(
                   color: placedPiece != null
@@ -235,7 +239,7 @@ class _PuzzleView extends StatelessWidget {
                 child: placedPiece != null
                     ? Icon(_pieceGlyphs[placedPiece.id], size: 34 * pieceScale)
                     : Text(slot.label, style: theme.textTheme.labelSmall, textAlign: TextAlign.center),
-              );
+              ));
             },
           ),
       ]),
@@ -245,12 +249,19 @@ class _PuzzleView extends StatelessWidget {
         const SizedBox(height: 8),
         Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
           for (final piece in remaining)
-            Draggable<String>(
-              data: piece.id,
-              feedback: _PieceChip(piece: piece, elevated: true, scale: pieceScale),
-              childWhenDragging: Opacity(opacity: 0.3, child: _PieceChip(piece: piece, scale: pieceScale)),
-              child: _PieceChip(piece: piece, scale: pieceScale),
-            ),
+            // Dragging is not possible without sight and a steady finger, so a screen
+            // reader's activate puts the piece in its own spot: the same move a correct
+            // drag makes, and nothing a wrong drag could.
+            Semantics(
+              container: true, excludeSemantics: true, button: true,
+              label: '${piece.label} piece', hint: 'Double tap to put it in its spot',
+              onTap: () => onPlace(piece.id, piece.correctSlotId),
+              child: Draggable<String>(
+                data: piece.id,
+                feedback: _PieceChip(piece: piece, elevated: true, scale: pieceScale),
+                childWhenDragging: Opacity(opacity: 0.3, child: _PieceChip(piece: piece, scale: pieceScale)),
+                child: _PieceChip(piece: piece, scale: pieceScale),
+              )),
         ]),
       ],
     ]);

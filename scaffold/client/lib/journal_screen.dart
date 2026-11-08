@@ -29,10 +29,13 @@
 // readJournal() as role 'child'.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 import 'local_services.dart';
 import 'local_store.dart';
+import 'access_settings.dart' show kChildTarget;
 import 'motion_rules.dart';
+import 'picture_bank.dart';
 
 // ================= ported from packages/agency/src/agency.ts (readJournal) =
 class JournalEntry {
@@ -192,6 +195,16 @@ class _JournalScreenState extends State<JournalScreen> {
 
   void _onTextChanged() => setState(() {});
 
+  /// A picture writes its plain sentence into the page (after anything already
+  /// there), so a child who cannot type yet can still say how she feels. She can
+  /// keep the page as it is or add to it; typing works exactly as before.
+  void _addPicture(PictureChoice c) {
+    final String have = _controller.text.trim();
+    final String text = have.isEmpty ? wordsFor(c) : '$have ${wordsFor(c)}';
+    _controller.value = TextEditingValue(
+        text: text, selection: TextSelection.collapsed(offset: text.length));
+  }
+
   @override
   void dispose() {
     _controller.removeListener(_onTextChanged);
@@ -263,6 +276,10 @@ class _JournalScreenState extends State<JournalScreen> {
                 Text('Write something', style: Theme.of(context).textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
                 const SizedBox(height: 12),
+                PictureBank(choices: journalFeelingsBank, onPick: _addPicture, heading: 'How do you feel?'),
+                const SizedBox(height: 10),
+                PictureBank(choices: journalMomentsBank, onPick: _addPicture, heading: 'What happened today?'),
+                const SizedBox(height: 12),
                 TextField(
                   controller: _controller,
                   minLines: 3,
@@ -273,7 +290,7 @@ class _JournalScreenState extends State<JournalScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                SizedBox(width: double.infinity, height: 48,
+                SizedBox(width: double.infinity, height: kChildTarget,
                   child: FilledButton.icon(
                     onPressed: _controller.text.trim().isEmpty ? null : _save,
                     icon: const Icon(Icons.lock_outline),
@@ -361,7 +378,7 @@ class _JournalTile extends StatelessWidget {
     // resolving to an instant (0ms) appearance, not a timed fade.
     final int fadeMs = durationFor(quietnessOf('journal'), crossfadeMs);
     return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1), duration: Duration(milliseconds: fadeMs),
+      tween: Tween(begin: 0, end: 1), duration: motionDuration(context, fadeMs),
       builder: (context, v, child) => Opacity(opacity: v, child: child),
       child: card,
     );

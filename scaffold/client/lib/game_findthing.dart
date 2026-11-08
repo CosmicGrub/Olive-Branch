@@ -29,6 +29,7 @@
 // a paper puzzle — and a hint gives a quadrant, never the answer.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 
 // =========================================================== ported logic ===
 // packages/activities/src/activities.ts — the find-the-thing section.
@@ -317,7 +318,7 @@ class _FoundBanner extends StatelessWidget {
     // A one-shot celebration, not a loop — §8.13.1, §8.13.6.
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 380),
+      duration: motionDuration(context, 380),
       curve: Curves.easeOutBack,
       builder: (BuildContext context, double t, Widget? child) =>
         Opacity(opacity: t.clamp(0, 1), child: Transform.scale(scale: 0.9 + 0.1 * t, child: child)),

@@ -39,6 +39,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show LiveLine;
 import 'annotation_canvas.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
@@ -138,7 +139,7 @@ class GamePictionaryScreen extends StatefulWidget {
   State<GamePictionaryScreen> createState() => _GamePictionaryScreenState();
 }
 
-enum _PicPhase { drawing, waitingForGuess, waitingForDrawing, viewing, waitingForResult }
+enum PicPhase { drawing, waitingForGuess, waitingForDrawing, viewing, waitingForResult }
 
 class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
   late final LocalPairingController _pairing =
@@ -162,16 +163,16 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
   List<StrokePoint> _liveStroke = const [];
   bool _hasStarted = false;
 
-  _PicPhase get _phase {
+  PicPhase get _phase {
     if (_mySide == _drawer) {
       // Simple and total: I've either sent my finished picture this turn,
       // or I haven't. A wrong guess doesn't change this — I stay in
       // waitingForGuess, ready for another, until a correct one advances
       // the round via _drawNewWord().
-      return _hasStartedDrawingThisTurn ? _PicPhase.waitingForGuess : _PicPhase.drawing;
+      return _hasStartedDrawingThisTurn ? PicPhase.waitingForGuess : PicPhase.drawing;
     }
-    if (_revealedStrokes.isEmpty) return _PicPhase.waitingForDrawing;
-    return _awaitingResult ? _PicPhase.waitingForResult : _PicPhase.viewing;
+    if (_revealedStrokes.isEmpty) return PicPhase.waitingForDrawing;
+    return _awaitingResult ? PicPhase.waitingForResult : PicPhase.viewing;
   }
 
   bool _hasStartedDrawingThisTurn = false;
@@ -345,7 +346,7 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
   Widget build(BuildContext context) {
     // Measured once, outside any scroll view, matching every other game
     // in this expansion's now-shared discipline. UNLIKE those games, the
-    // canvas itself (_PictionaryView's own _canvasSize) deliberately does
+    // canvas itself (PictionaryView's own _canvasSize) deliberately does
     // NOT scale with posture here — see this file's own header on why: a
     // fixed LOGICAL size on both devices is what lets a raw stroke
     // coordinate drawn on one device land in the same place on the
@@ -359,7 +360,7 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
           icon: Icons.error_outline);
       } else if (_pairing.phase == PairingPhase.found || _hasStarted) {
         _startIfNeeded();
-        body = _PictionaryView(
+        body = PictionaryView(
           phase: _phase, isDrawer: _mySide == _drawer, word: _myWord, canvas: _canvas, liveStroke: _liveStroke,
           revealedStrokes: _revealedStrokes, rounds: _rounds, peerName: _pairing.peer?.name ?? 'the other side',
           lastGuessWasWrong: _lastGuessWasWrong, lastGuessText: _lastGuessText, celebrated: _celebrated,
@@ -404,15 +405,15 @@ class _Status extends StatelessWidget {
   ]);
 }
 
-class _PictionaryView extends StatelessWidget {
-  const _PictionaryView({
-    required this.phase, required this.isDrawer, required this.word, required this.canvas, required this.liveStroke,
+class PictionaryView extends StatelessWidget {
+  const PictionaryView({
+    super.key, required this.phase, required this.isDrawer, required this.word, required this.canvas, required this.liveStroke,
     required this.revealedStrokes, required this.rounds, required this.peerName,
     required this.lastGuessWasWrong, required this.lastGuessText, required this.celebrated, required this.guessController,
     required this.onPanStart, required this.onPanUpdate, required this.onPanEnd,
     required this.onShowThem, required this.onSubmitGuess, required this.onCelebrate,
   });
-  final _PicPhase phase;
+  final PicPhase phase;
   final bool isDrawer;
   /// The drawer's own secret prompt — null on the guesser's device (never
   /// sent over the wire, see this file's own header on word secrecy).
@@ -445,7 +446,7 @@ class _PictionaryView extends StatelessWidget {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Text('Round ${rounds + 1}', style: theme.textTheme.bodyMedium),
       const SizedBox(height: 8),
-      Text(_headline(), style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+      LiveLine(child: Text(_headline(), style: theme.textTheme.titleMedium, textAlign: TextAlign.center)),
       if (isDrawer && word != null) ...[
         const SizedBox(height: 8),
         Container(
@@ -460,19 +461,19 @@ class _PictionaryView extends StatelessWidget {
       const SizedBox(height: 12),
       SizedBox(
         width: _canvasSize, height: _canvasSize,
-        child: phase == _PicPhase.drawing
+        child: phase == PicPhase.drawing
             ? _LiveCanvas(canvas: canvas, liveStroke: liveStroke, onPanStart: onPanStart,
                 onPanUpdate: onPanUpdate, onPanEnd: onPanEnd)
-            : _StaticCanvas(strokes: phase == _PicPhase.waitingForGuess ? (canvas?.visible() ?? const []) : revealedStrokes),
+            : _StaticCanvas(strokes: phase == PicPhase.waitingForGuess ? (canvas?.visible() ?? const []) : revealedStrokes),
       ),
       const SizedBox(height: 16),
-      if (phase == _PicPhase.drawing)
+      if (phase == PicPhase.drawing)
         FilledButton(
           onPressed: (canvas?.visible().isNotEmpty ?? false) ? onShowThem : null,
           style: FilledButton.styleFrom(minimumSize: const Size(64, 64)),
           child: const Text('Show them'),
         )
-      else if (phase == _PicPhase.viewing)
+      else if (phase == PicPhase.viewing)
         _GuessField(controller: guessController, onSubmit: onSubmitGuess),
     ]);
   }
@@ -480,8 +481,8 @@ class _PictionaryView extends StatelessWidget {
   String _headline() {
     if (isDrawer) {
       return switch (phase) {
-        _PicPhase.drawing => 'Draw it — $peerName will guess',
-        _PicPhase.waitingForGuess => lastGuessText == null
+        PicPhase.drawing => 'Draw it — $peerName will guess',
+        PicPhase.waitingForGuess => lastGuessText == null
             ? "Waiting for $peerName's guess…"
             : lastGuessWasWrong
                 ? '"$lastGuessText" — not quite. Waiting for another guess…'
@@ -490,9 +491,9 @@ class _PictionaryView extends StatelessWidget {
       };
     }
     return switch (phase) {
-      _PicPhase.waitingForDrawing => 'Waiting for $peerName to draw…',
-      _PicPhase.viewing => lastGuessWasWrong ? "Not quite — try again" : 'What is it?',
-      _PicPhase.waitingForResult => 'Checking your guess…',
+      PicPhase.waitingForDrawing => 'Waiting for $peerName to draw…',
+      PicPhase.viewing => lastGuessWasWrong ? "Not quite — try again" : 'What is it?',
+      PicPhase.waitingForResult => 'Checking your guess…',
       _ => '',
     };
   }
@@ -508,7 +509,9 @@ class _LiveCanvas extends StatelessWidget {
   final GestureDragEndCallback onPanEnd;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => Semantics(
+    container: true, label: 'Drawing area', hint: 'Drag a finger across it to draw',
+    child: Container(
     decoration: BoxDecoration(color: const Color(0xFFFFFDF6), borderRadius: BorderRadius.circular(16),
       border: Border.all(color: Theme.of(context).colorScheme.outlineVariant, width: 1.5)),
     clipBehavior: Clip.antiAlias,
@@ -517,19 +520,21 @@ class _LiveCanvas extends StatelessWidget {
       onPanStart: onPanStart, onPanUpdate: onPanUpdate, onPanEnd: onPanEnd,
       child: CustomPaint(size: Size.infinite, painter: _InkPainter(strokes: canvas?.visible() ?? const [], live: liveStroke)),
     ),
-  );
+  ));
 }
 
 class _StaticCanvas extends StatelessWidget {
   const _StaticCanvas({required this.strokes});
   final List<Stroke> strokes;
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => Semantics(
+    container: true, image: true, label: 'The drawing',
+    child: Container(
     decoration: BoxDecoration(color: const Color(0xFFFFFDF6), borderRadius: BorderRadius.circular(16),
       border: Border.all(color: Theme.of(context).colorScheme.outlineVariant, width: 1.5)),
     clipBehavior: Clip.antiAlias,
     child: CustomPaint(size: Size.infinite, painter: _InkPainter(strokes: strokes, live: const [])),
-  );
+  ));
 }
 
 class _InkPainter extends CustomPainter {
@@ -572,10 +577,15 @@ class _GuessField extends StatelessWidget {
   final ValueChanged<String> onSubmit;
   @override
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
-    SizedBox(width: 200, child: TextField(controller: controller, onSubmitted: onSubmit,
-      decoration: const InputDecoration(hintText: 'Your guess', border: OutlineInputBorder()))),
+    // Up to 200 wide but free to shrink, so at large text the Guess button never
+    // pushes the row off a phone's edge.
+    Flexible(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 200),
+      child: TextField(controller: controller, onSubmitted: onSubmit,
+        decoration: const InputDecoration(hintText: 'Your guess', border: OutlineInputBorder())))),
     const SizedBox(width: 8),
-    FilledButton(onPressed: () => onSubmit(controller.text), child: const Text('Guess')),
+    FilledButton(
+      style: FilledButton.styleFrom(minimumSize: const Size(64, 64)),
+      onPressed: () => onSubmit(controller.text), child: const Text('Guess')),
   ]);
 }
 

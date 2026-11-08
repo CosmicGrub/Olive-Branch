@@ -16,6 +16,7 @@
 // copy never varies and the streak itself is never a parameter of this
 // widget. It has no way to render a number it was never given.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'game_logic.dart';
 
 class HandicapScreen extends StatefulWidget {
@@ -107,7 +108,7 @@ class _HandicapScreenState extends State<HandicapScreen> {
           // own tap selects a handicap (§8.13.1) — nothing here animates on
           // its own.
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
+            duration: motionDuration(context, 220),
             child: banner == null
                 ? const SizedBox.shrink(key: ValueKey('none'))
                 : _BannerPreview(key: ValueKey(_selected), text: banner),
@@ -132,7 +133,7 @@ class _HandicapTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+        duration: motionDuration(context, 150),
         constraints: const BoxConstraints(minHeight: 56), // §8.4 touch target
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(

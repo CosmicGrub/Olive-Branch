@@ -25,6 +25,8 @@
 // read counts are stored (see local_repositories.dart).
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'access_scope.dart';
+import 'read_aloud.dart' show SpeakerButton;
 import 'form_factors.dart' as ff;
 import 'hub_widgets.dart';
 import 'library_logic.dart';
@@ -270,7 +272,7 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(children: [
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
+                  duration: motionDuration(context, 260),
                   transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
                   child: reading,
                 ),
@@ -285,7 +287,7 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
               Expanded(
                 flex: 3,
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
+                  duration: motionDuration(context, 260),
                   transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
                   child: reading,
                 ),
@@ -329,7 +331,7 @@ class _AskCard extends StatelessWidget {
                 ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 20),
           SizedBox(
-            height: 56,
+            height: kChildTarget,
             child: FilledButton.icon(
               onPressed: onAsk,
               icon: const Icon(Icons.play_arrow_rounded),
@@ -378,9 +380,12 @@ class _ReadingCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
           const Expanded(child: _StorytellerAttribution()),
+          // Read this page out loud (§8.8.5): tap only, ends when the page turns
+          // or this screen closes, and absent when the guardian turned it off.
+          SpeakerButton(text: block.text, label: 'Read this page out loud'),
           IconButton(
             tooltip: starred ? 'Unstar this story' : 'Star this story',
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            constraints: const BoxConstraints(minWidth: kChildTarget, minHeight: kChildTarget),
             onPressed: onStar,
             icon: Icon(starred ? Icons.star_rounded : Icons.star_border_rounded,
               color: starred ? Colors.amber.shade700 : null),
@@ -406,11 +411,16 @@ class _ReadingCard extends StatelessWidget {
           ]),
         ),
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
+          duration: motionDuration(context, 220),
           transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-          child: block.herLine
-              ? _HerLineBlock(key: ValueKey('block-$index'), text: block.text, hint: read.hint)
-              : _NarrationBlock(key: ValueKey('block-$index'), text: block.text),
+          child: Semantics(
+            key: ValueKey('page-$index'),
+            container: true,
+            label: 'Story page ${index + 1} of ${lastIndex + 1}',
+            child: block.herLine
+                ? _HerLineBlock(key: ValueKey('block-$index'), text: block.text, hint: read.hint)
+                : _NarrationBlock(key: ValueKey('block-$index'), text: block.text),
+          ),
         ),
         SizedBox(height: block.pauseAfter ? 24 : 12),
         _Dots(total: lastIndex + 1, current: index),
@@ -420,12 +430,12 @@ class _ReadingCard extends StatelessWidget {
         // instant swap, same restraint as the per-line AnimatedSwitcher
         // above. No score/streak language involved, just the transition.
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 260),
+          duration: motionDuration(context, 260),
           transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
           child: !finished
             ? Row(key: const ValueKey('turnRow'), children: [
                 Expanded(
-                  child: SizedBox(height: 52,
+                  child: SizedBox(height: kChildTarget,
                     child: OutlinedButton.icon(
                       onPressed: index > 0 ? onPrev : null,
                       icon: const Icon(Icons.arrow_back_rounded),
@@ -433,7 +443,7 @@ class _ReadingCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: SizedBox(height: 52,
+                  child: SizedBox(height: kChildTarget,
                     child: FilledButton.icon(
                       onPressed: onNext,
                       icon: const Icon(Icons.arrow_forward_rounded),
@@ -446,7 +456,7 @@ class _ReadingCard extends StatelessWidget {
                 Text('The end', style: Theme.of(context).textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 16),
-                SizedBox(width: double.infinity, height: 52,
+                SizedBox(width: double.infinity, height: kChildTarget,
                   child: FilledButton.icon(onPressed: onAnotherStory,
                     icon: const Icon(Icons.autorenew_rounded),
                     label: const Text('Another story!'))),
@@ -455,7 +465,7 @@ class _ReadingCard extends StatelessWidget {
         if (canBookmarkHere) Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Center(child: TextButton.icon(
-            style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
+            style: TextButton.styleFrom(minimumSize: const Size(0, kChildTarget)),
             onPressed: onBookmark,
             icon: const Icon(Icons.bookmark_add_outlined),
             label: const Text('Stop here for tonight'))),
@@ -471,7 +481,11 @@ class _NarrationBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 16),
-    child: Text(text, style: const TextStyle(fontSize: 19, height: 1.4)),
+    // Roomier reading (guardian option) spaces the letters, words and lines out
+    // and keeps the text left; with it off this is exactly the old 19/1.4 text.
+    child: Text(text,
+      textAlign: readingAlign(context, TextAlign.start),
+      style: readingStyleOf(context, const TextStyle(fontSize: 19, height: 1.4))),
   );
 }
 
@@ -497,7 +511,9 @@ class _HerLineBlock extends StatelessWidget {
           fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.amber.shade900)),
       ]),
       const SizedBox(height: 8),
-      Text(text, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800, height: 1.3)),
+      Text(text,
+        textAlign: readingAlign(context, TextAlign.start),
+        style: readingStyleOf(context, const TextStyle(fontSize: 21, fontWeight: FontWeight.w800, height: 1.3))),
       const SizedBox(height: 8),
       Text(hint, style: Theme.of(context).textTheme.bodySmall
           ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
@@ -514,7 +530,7 @@ class _Dots extends StatelessWidget {
     alignment: WrapAlignment.center,
     spacing: 4,
     children: [for (int i = 0; i < total; i++) AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: motionDuration(context, 200),
       width: i == current ? 9 : 6, height: i == current ? 9 : 6,
       decoration: BoxDecoration(shape: BoxShape.circle,
         color: i <= current
@@ -538,7 +554,7 @@ class _StorytellerAttribution extends StatelessWidget {
       child: ConstrainedBox(
         // 48dp minimum tap target (§8.4) even though the visible pill is
         // smaller — the padding grows the hit area, not the label.
-        constraints: const BoxConstraints(minHeight: 48),
+        constraints: const BoxConstraints(minHeight: kChildTarget),
         child: Align(
           alignment: Alignment.centerLeft,
           child: Container(
@@ -615,7 +631,7 @@ class _Shelf extends StatelessWidget {
           subtitle: 'Pick up right where you stopped',
           onTap: () => onResumeBookmark(b),
           trailing: IconButton(icon: const Icon(Icons.close_rounded),
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            constraints: const BoxConstraints(minWidth: kChildTarget, minHeight: kChildTarget),
             tooltip: 'Remove bookmark', onPressed: () => onClearBookmark(b.code)),
         ),
         const SizedBox(height: 12),
@@ -647,7 +663,7 @@ class _StarredChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: Container(
-        constraints: const BoxConstraints(minHeight: 48),
+        constraints: const BoxConstraints(minHeight: kChildTarget),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         alignment: Alignment.centerLeft,
         child: Row(mainAxisSize: MainAxisSize.min, children: [

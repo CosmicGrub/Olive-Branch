@@ -27,6 +27,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 
 // ============================================================ RULES ENGINE ==
@@ -630,7 +631,7 @@ class _CalloutBanner extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-    duration: const Duration(milliseconds: 200),
+    duration: motionDuration(context, 200),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -665,7 +666,7 @@ class _Board extends StatelessWidget {
           key: Key('ckCell_${r}_$c'),
           onTap: () => onTapCell(r, c),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
+            duration: motionDuration(context, 150),
             color: !dark
                 ? const Color(0xFFF3E9D8)
                 : isSelected

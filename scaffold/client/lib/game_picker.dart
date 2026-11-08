@@ -22,10 +22,12 @@
 // press-in, driven 1:1 by her finger and settling well under the 400ms
 // "consequence" budget. Nothing here loops or moves on its own.
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'activity_overrides.dart';
 import 'form_factors.dart' as ff;
 import 'game_favorites_logic.dart' as fav;
 import 'game_logic.dart';
+import 'read_aloud.dart';
 
 class GamePickerScreen extends StatelessWidget {
   const GamePickerScreen({
@@ -269,7 +271,7 @@ class _RecommendedSection extends StatelessWidget {
           // still", the identical posture the design spec's own Motion
           // section states for this row specifically).
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
+            duration: motionDuration(context, 200),
             child: SizedBox(
               key: const ValueKey('recommendedRowShown'),
               height: 182 * textScale.clamp(1.0, 2.0),
@@ -440,6 +442,19 @@ class _GameCard extends StatefulWidget {
 
 class _GameCardState extends State<_GameCard> {
   bool _pressed = false;
+  ReadAloudController? _ra;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ra = ReadAloudScope.maybeOf(context);
+  }
+
+  @override
+  void dispose() {
+    _ra?.release(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -454,11 +469,15 @@ class _GameCardState extends State<_GameCard> {
         onTapCancel: () => setState(() => _pressed = false),
         onTapUp: (_) => setState(() => _pressed = false),
         onTap: widget.onTap,
+        // Read-aloud (§8.8.5), child session only: long-press reads the game's name.
+        onLongPress: widget.onToggleFavorite == null && ReadAloudScope.enabledOf(context) != null
+            ? () => ReadAloudScope.enabledOf(context)?.speak(meta.title, owner: this)
+            : null,
         // Consequence motion only — driven by her tap, settles in 120ms,
         // never a loop (§8.13.1/§8.13.6).
         child: AnimatedScale(
           scale: _pressed ? 0.96 : 1.0,
-          duration: const Duration(milliseconds: 120),
+          duration: motionDuration(context, 120),
           curve: Curves.easeOut,
           child: Container(
             constraints: const BoxConstraints(minHeight: 64), // §8.4 touch target
@@ -476,6 +495,9 @@ class _GameCardState extends State<_GameCard> {
               Row(children: [
                 Icon(_kindIcon[meta.kind], size: 30, color: onColor),
                 const Spacer(),
+                // A quiet speaker on a child's card (absent for the guardian, who has the star).
+                if (widget.onToggleFavorite == null)
+                  SpeakerButton(text: meta.title, label: 'Read "${meta.title}" out loud'),
                 // Guardian-only, per [onToggleFavorite]'s own doc comment —
                 // a null callback means this rendered from a child session
                 // (or no live session at all), and no star exists at any

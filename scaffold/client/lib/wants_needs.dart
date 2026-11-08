@@ -21,6 +21,8 @@ import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
 import 'local_services.dart';
 import 'local_store.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'picture_bank.dart';
 
 /// The wants-and-needs lists' on-device store. No price field exists in the
 /// stored shape (P4).
@@ -130,6 +132,23 @@ class _WantsNeedsScreenState extends State<WantsNeedsScreen> {
     _persist('needs', _needs);
   }
 
+  /// A picture is a second way to say the same thing: it adds the picture's plain
+  /// words, as typing them would. The same words twice are kept once (quietly: no
+  /// count, no message).
+  void _pickWant(PictureChoice c) {
+    final String text = wordsFor(c);
+    if (_wants.any((_Item i) => i.text.toLowerCase() == text.toLowerCase())) return;
+    setState(() => _wants.add(_Item(text)));
+    _persist('wants', _wants);
+  }
+
+  void _pickNeed(PictureChoice c) {
+    final String text = wordsFor(c);
+    if (_needs.any((_Item i) => i.text.toLowerCase() == text.toLowerCase())) return;
+    setState(() => _needs.add(_Item(text)));
+    _persist('needs', _needs);
+  }
+
   void _toggleWant(int i) {
     setState(() => _wants[i].done = !_wants[i].done);
     _persist('wants', _wants);
@@ -161,6 +180,8 @@ class _WantsNeedsScreenState extends State<WantsNeedsScreen> {
       hint: 'Something you want…',
       onAdd: _addWant,
       onToggle: _toggleWant,
+      bank: wantsPictureBank,
+      onPick: _pickWant,
     );
 
     // Pane B — the needs section, verbatim. The two lists stay in their own
@@ -174,6 +195,8 @@ class _WantsNeedsScreenState extends State<WantsNeedsScreen> {
       hint: 'Something you need…',
       onAdd: _addNeed,
       onToggle: _toggleNeed,
+      bank: needsPictureBank,
+      onPick: _pickNeed,
     );
 
     return Scaffold(
@@ -223,7 +246,7 @@ class _Item {
 class _ItemSection extends StatelessWidget {
   const _ItemSection({super.key, required this.title, required this.icon,
     required this.items, required this.controller, required this.hint,
-    required this.onAdd, required this.onToggle});
+    required this.onAdd, required this.onToggle, required this.bank, required this.onPick});
 
   final String title;
   final IconData icon;
@@ -232,6 +255,8 @@ class _ItemSection extends StatelessWidget {
   final String hint;
   final VoidCallback onAdd;
   final ValueChanged<int> onToggle;
+  final List<PictureChoice> bank;
+  final ValueChanged<PictureChoice> onPick;
 
   @override
   Widget build(BuildContext context) => Card(child: Padding(
@@ -240,7 +265,8 @@ class _ItemSection extends StatelessWidget {
       Row(children: [
         Icon(icon, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+        // Expanded: at large text a title wraps rather than running off the card.
+        Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
       ]),
       const SizedBox(height: 10),
       Row(children: [
@@ -249,8 +275,13 @@ class _ItemSection extends StatelessWidget {
             border: const OutlineInputBorder()),
           onSubmitted: (_) => onAdd())),
         const SizedBox(width: 8),
-        FilledButton(onPressed: onAdd, child: const Text('Add')),
+        FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size(kChildTarget, kChildTarget)),
+          onPressed: onAdd, child: const Text('Add')),
       ]),
+      const SizedBox(height: 10),
+      // Picture-first: tap a picture instead of typing. Typing still works.
+      PictureBank(choices: bank, onPick: onPick, heading: 'Or tap a picture'),
       const SizedBox(height: 8),
       if (items.isEmpty)
         // A gentle picture prompt, not an instruction: an open star and a
@@ -277,7 +308,7 @@ class _ItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InkWell(onTap: onTap,
-    child: Container(constraints: const BoxConstraints(minHeight: 44),
+    child: Container(constraints: const BoxConstraints(minHeight: kChildTarget),
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
         Checkbox(value: item.done, onChanged: (_) => onTap()),

@@ -22,6 +22,8 @@
 // or writes a line, rather than the app pretending to open a camera it does
 // not have.
 import 'package:flutter/material.dart';
+import 'access_settings.dart' show kChildTarget;
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 import 'showcase_logic.dart';
 import 'tabletop_split.dart';
@@ -116,7 +118,7 @@ class _ShowcaseScreenState extends State<ShowcaseScreen> {
       _SpontaneousButton(onTap: () => _openCapture()),
       const SizedBox(height: 20),
       AnimatedSize(
-        duration: const Duration(milliseconds: 280),
+        duration: motionDuration(context, 280),
         curve: Curves.easeOut,
         alignment: Alignment.topCenter,
         child: _openAsks.isEmpty
@@ -197,7 +199,7 @@ class _AskCard extends StatelessWidget {
         Text(ask.prompt, style: Theme.of(context).textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onTertiaryContainer)),
         const SizedBox(height: 12),
-        SizedBox(height: 48, width: double.infinity, child: FilledButton.icon(
+        SizedBox(height: kChildTarget, width: double.infinity, child: FilledButton.icon(
           onPressed: onShow, icon: const Icon(Icons.videocam), label: const Text('Show them'))),
       ])),
   );
@@ -285,7 +287,7 @@ class _CaptureSheetState extends State<_CaptureSheet> {
         decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Or tell them about it…'),
         onChanged: (_) => setState(() {})),
       const SizedBox(height: 16),
-      SizedBox(width: double.infinity, height: 48, child: FilledButton(
+      SizedBox(width: double.infinity, height: kChildTarget, child: FilledButton(
         onPressed: _canSend ? () => widget.onSend(_chosenLabel ?? _noteController.text.trim()) : null,
         child: const Text('Send it'))),
     ]),

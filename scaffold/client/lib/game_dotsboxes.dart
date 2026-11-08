@@ -56,6 +56,7 @@
 // not the narrow layout scaled up.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 import 'game_logic.dart';
 import 'handicap_screen.dart';
@@ -563,7 +564,7 @@ class _CalloutBanner extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-    duration: const Duration(milliseconds: 200),
+    duration: motionDuration(context, 200),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.tertiaryContainer,
       borderRadius: BorderRadius.circular(12)),
