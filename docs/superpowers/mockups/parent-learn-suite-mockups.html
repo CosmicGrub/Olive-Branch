@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Parent Learn Suite Mockups</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --font-display:"Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --ground:#e9eee8; --panel:#fff; --panel-2:#f3f6f2; --ink:#18261e; --muted:#56665b; --rule:#cfd9cf;
+  --accent:#3d6a49; --accent-ink:#fff; --accent-soft:#dcebdc; --bench:#d7dfd6; --code:#f0f4ef;
+  --strong:#21683a; --strong-bg:#dff1e3; --mod:#2d5f8a; --mod-bg:#e0ecf7;
+  --weak:#8a5d00; --weak-bg:#fff1cf; --cont:#8a3b8a; --cont-bg:#f5e3f5; --bad:#a8231b; --bad-bg:#fbe5e2;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#111a14; --panel:#18231c; --panel-2:#1e2b23; --ink:#e4ede5; --muted:#9db0a2; --rule:#2d3d33;
+  --accent:#8fc79d; --accent-ink:#0d1a11; --accent-soft:#213428; --bench:#0c130f; --code:#142019;
+  --strong:#8fd4a3; --strong-bg:#183024; --mod:#9cc6ee; --mod-bg:#14263a;
+  --weak:#e8bd55; --weak-bg:#2c2510; --cont:#e3a8e3; --cont-bg:#2e1b2e; --bad:#f4a8a1; --bad-bg:#2f1a18; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --ground:#111a14; --panel:#18231c; --panel-2:#1e2b23; --ink:#e4ede5; --muted:#9db0a2; --rule:#2d3d33;
+  --accent:#8fc79d; --accent-ink:#0d1a11; --accent-soft:#213428; --bench:#0c130f; --code:#142019;
+  --strong:#8fd4a3; --strong-bg:#183024; --mod:#9cc6ee; --mod-bg:#14263a;
+  --weak:#e8bd55; --weak-bg:#2c2510; --cont:#e3a8e3; --cont-bg:#2e1b2e; --bad:#f4a8a1; --bad-bg:#2f1a18; color-scheme:dark;}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--ground);color:var(--ink);font:16px/1.55 var(--font-body);padding:20px max(16px,env(safe-area-inset-right,0px)) 64px max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:1180px;margin:0 auto}
+h1,h2,h3{font-family:var(--font-display);line-height:1.1;margin:0;text-wrap:balance}
+h1{font-size:clamp(2rem,5vw,3.1rem);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:800}
+h3{font-size:1.1rem;font-weight:600}
+p{margin:.5em 0}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+code{font:.86em var(--font-mono);background:var(--code);padding:.1em .35em;border-radius:5px}
+.eyebrow{font:500 .74rem/1 var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+header.top{display:grid;gap:14px;padding:12px 0 22px;border-bottom:2px solid var(--rule)}
+.lede{max-width:70ch;color:var(--muted);font-size:1.05rem;margin:0}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font:500 .74rem/1 var(--font-mono);padding:6px 9px;border-radius:99px;background:var(--panel);border:1px solid var(--rule);color:var(--muted)}
+nav.jump{display:flex;flex-wrap:wrap;gap:6px 18px;padding:14px 0;font-weight:700}
+nav.jump a{text-decoration:none}
+section{padding:30px 0 6px}
+section>.intro{max-width:72ch;color:var(--muted);margin:8px 0 18px}
+.stage{display:flex;flex-wrap:wrap;justify-content:center;gap:30px 28px;background:var(--bench);border-radius:20px;padding:30px 14px;align-items:flex-start}
+.col{display:grid;gap:10px;justify-items:center;min-width:0;max-width:100%}
+.col .cap{text-align:center;max-width:300px}
+.col .cap b{font-family:var(--font-display);display:block}
+.col .cap span{color:var(--muted);font-size:.88rem}
+.dev{background:#0b100d;border-radius:36px;padding:10px;box-shadow:0 18px 40px rgba(0,0,0,.28),inset 0 0 0 2px #2a332d;width:316px;height:640px;flex:none}
+.scr{width:100%;height:100%;border-radius:27px;overflow:hidden;background:var(--panel);color:var(--ink);display:grid;grid-template-rows:auto minmax(0,1fr) auto;position:relative}
+.sb{display:flex;justify-content:space-between;padding:9px 16px 3px;font:500 .68rem var(--font-mono);color:var(--muted)}
+.app{padding:6px 14px 12px;overflow-y:auto;min-height:0;display:grid;gap:10px;align-content:start}
+.app h4{font:800 1.28rem/1.1 var(--font-display);margin:2px 0 0}
+.app .sub{color:var(--muted);font-size:.82rem;margin:0}
+.nav{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--rule);background:var(--panel-2);padding:6px 4px 10px}
+.nav div{text-align:center;font:700 .62rem var(--font-body);color:var(--muted);display:grid;gap:2px;justify-items:center}
+.nav i{width:22px;height:22px;border-radius:7px;background:var(--rule);display:block}
+.nav .on{color:var(--accent)}
+.nav .on i{background:var(--accent)}
+.card{background:var(--panel-2);border:1px solid var(--rule);border-radius:14px;padding:11px 12px;display:grid;gap:6px;min-width:0}
+.card b{font-size:.92rem}
+.card p{margin:0;font-size:.82rem;color:var(--muted)}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{font:700 .64rem/1 var(--font-mono);letter-spacing:.04em;text-transform:uppercase;padding:4px 7px;border-radius:99px}
+.c-strong{background:var(--strong-bg);color:var(--strong)}
+.c-mod{background:var(--mod-bg);color:var(--mod)}
+.c-weak{background:var(--weak-bg);color:var(--weak)}
+.c-cont{background:var(--cont-bg);color:var(--cont)}
+.c-priv{background:var(--accent-soft);color:var(--accent)}
+.btn{font:700 .84rem var(--font-body);padding:10px 12px;border-radius:11px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);min-height:40px;cursor:pointer;text-align:center}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:hover{border-color:var(--accent)}
+.plane{position:relative;aspect-ratio:1;border-radius:14px;border:1px solid var(--rule);background:linear-gradient(135deg,var(--accent-soft),var(--panel-2));overflow:hidden}
+.plane .q{position:absolute;width:50%;height:50%;display:grid;place-items:center;font:700 .66rem/1.2 var(--font-mono);text-transform:uppercase;color:var(--muted);text-align:center;padding:4px}
+.plane .ax{position:absolute;font:500 .6rem var(--font-mono);color:var(--muted)}
+.dot{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--accent);border:3px solid var(--panel);box-shadow:0 2px 8px rgba(0,0,0,.35);transform:translate(-50%,-50%);transition:left .15s,top .15s}
+@media(prefers-reduced-motion:reduce){.dot{transition:none}}
+.sl{display:grid;gap:3px;font-size:.78rem}
+.sl label{display:flex;justify-content:space-between;font-weight:700}
+input[type=range]{width:100%;accent-color:var(--accent);min-height:28px}
+.tabs{display:flex;gap:5px;flex-wrap:wrap}
+.tabs .btn{padding:7px 10px;min-height:34px;font-size:.76rem}
+.tabs .btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.step{display:grid;grid-template-columns:24px 1fr;gap:8px;font-size:.82rem;align-items:start}
+.step b{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font:700 .74rem var(--font-mono)}
+.lock{display:flex;gap:6px;align-items:center;font:500 .66rem var(--font-mono);color:var(--muted);padding:6px 8px;border:1px dashed var(--rule);border-radius:9px}
+.note{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px 16px;max-width:72ch}
+.note.warn{border-color:var(--weak)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:14px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:500 .72rem var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.tw{overflow-x:auto;background:var(--panel);border:1px solid var(--rule);border-radius:14px}
+.no{color:var(--bad);font-weight:700}
+.yes{color:var(--strong);font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">Olive Branch · Guardian app · Suite L (proposed)</div>
+  <h1>Parent Learn Suite</h1>
+  <p class="lede">What the parenting-styles research looks like inside the guardian app: plain cards with an evidence label on every claim, a private two-slider reflection, ages 5–7 playbooks, an optional rules checklist across households, and repair cards. Every screen below is a proposal. Nothing is built.</p>
+  <div class="pills">
+    <span class="pill">guardian app only</span>
+    <span class="pill">never in the child shell</span>
+    <span class="pill">never shown to the co-parent</span>
+    <span class="pill">sources: 7 PDFs + online cross-check</span>
+  </div>
+</header>
+<nav class="jump" aria-label="Sections">
+  <a href="#screens">Screens</a><a href="#map">Try the map</a><a href="#evidence">Evidence labels</a><a href="#corrections">What we corrected</a><a href="#rules">Rules it must keep</a><a href="#decide">Decisions</a>
+</nav>
+
+<section id="screens">
+  <h2>The twelve screens</h2>
+  <p class="intro">Order is the suggested path: land, learn the idea, see where you are today (privately), practise a moment, then repair, align, or handle conflict with the other guardian. Screens 9 to 12 come from the second research pass.</p>
+  <div class="stage">
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Guardian</span></div>
+      <div class="app">
+        <h4>Learn</h4><p class="sub">Short, sourced, and honest about what is known.</p>
+        <div class="card"><b>The big idea in one minute</b><p>Two things shape the feel of home: warmth and expectations. Most days you move around between them.</p><div class="row"><span class="chip c-strong">Strong</span><span class="chip c-priv">1 min</span></div></div>
+        <div class="card"><b>Ages 5 to 7: moments that go wrong</b><p>Bedtime stalls, hitting a sibling, big feelings at pick-up. A calm plan for each.</p><div class="row"><span class="chip c-mod">Moderate</span></div></div>
+        <div class="card"><b>When two homes do things differently</b><p>What needs to match and what does not.</p><div class="row"><span class="chip c-mod">Moderate</span></div></div>
+        <div class="card"><b>After you lost your temper</b><p>Repair cards. Everyone does this.</p><div class="row"><span class="chip c-strong">Strong</span></div></div>
+        <div class="lock">🔒 Your reading and notes here stay on you. Nobody else sees them.</div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>1 · Learn home</b><span>Four doors. No score, no streak, no "you are a…".</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Learn</span></div>
+      <div class="app">
+        <h4>Two things, not four boxes</h4>
+        <p class="sub">Warmth (how responsive) and expectations (how clear and firm).</p>
+        <div class="plane" aria-label="Warmth by expectations map">
+          <div class="q" style="left:0;top:0">Low warmth<br>High expectations</div>
+          <div class="q" style="right:0;top:0">High warmth<br>High expectations</div>
+          <div class="q" style="left:0;bottom:0">Low warmth<br>Low expectations</div>
+          <div class="q" style="right:0;bottom:0">High warmth<br>Low expectations</div>
+        </div>
+        <div class="card"><b>The four corners have names</b><p>Authoritative, authoritarian, indulgent, uninvolved. They are the corners of a map, not types of person.</p><div class="row"><span class="chip c-strong">Strong</span></div></div>
+        <div class="card"><b>Style is the climate. Practices are the tools.</b><p>The same tool (a time-out) lands differently in a warm home than a cold one.</p><div class="row"><span class="chip c-mod">Moderate</span></div></div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>2 · The map</b><span>Teaching only. No dot for you here. That is screen 4.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Learn</span></div>
+      <div class="app">
+        <h4>Warm and clear</h4>
+        <div class="row"><span class="chip c-strong">Best supported</span><span class="chip c-cont">Not risk-free</span></div>
+        <div class="card"><b>What the research links to it</b><p>Children tend to do well on school, mood and friendships when warmth and clear limits go together.</p><div class="row"><span class="chip c-mod">Correlation</span></div></div>
+        <div class="card"><b>What it does not say</b><p>Parenting does not simply cause outcomes. Children's temperament and genes also shape how adults respond. Studies of twins estimate about a quarter of the variation in parenting is child-driven.</p><div class="row"><span class="chip c-strong">Strong</span></div></div>
+        <div class="card"><b>Culture changes the meaning</b><p>A firm, high-expectation style can mean care and training in some families and coldness in others. Research found the same style predicting opposite school results in different communities.</p><div class="row"><span class="chip c-cont">Contested</span></div></div>
+        <div class="btn">See sources (3)</div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>3 · A style card</b><span>The 'not risk-free' chip fixes the overclaim in the Child Find sheet.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Private</span></div>
+      <div class="app" id="refl">
+        <h4>Where was today?</h4>
+        <p class="sub">Two sliders. No grade. Just a mirror.</p>
+        <div class="plane" style="aspect-ratio:1.5"><div class="q" style="left:0;top:0"></div><div class="dot" id="dot" style="left:60%;top:35%"></div>
+          <span class="ax" style="left:6px;bottom:4px">warmth →</span><span class="ax" style="left:6px;top:4px">↑ expectations</span></div>
+        <div class="sl"><label for="w">Warmth <span id="wv">60</span></label><input id="w" type="range" min="0" max="100" value="60"></div>
+        <div class="sl"><label for="e">Expectations <span id="ev">65</span></label><input id="e" type="range" min="0" max="100" value="65"></div>
+        <div class="card"><b id="mirror">Warm, with clear limits.</b><p id="mirror2">Notice: what made that possible today?</p></div>
+        <div class="lock">🔒 Private to you. Not shared with your co-parent or your child. Not exportable.</div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>4 · Private reflection</b><span>Live: drag the sliders. The words describe the day, never the person.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Playbook · 5–7</span></div>
+      <div class="app" id="pb">
+        <h4>A moment that went wrong</h4>
+        <div class="tabs" role="group" aria-label="Moment">
+          <button class="btn" aria-pressed="true" data-k="a">Hit a sibling</button>
+          <button class="btn" aria-pressed="false" data-k="b">Won't stop</button>
+          <button class="btn" aria-pressed="false" data-k="c">Meltdown</button>
+        </div>
+        <div id="pbBody" style="display:grid;gap:8px"></div>
+        <div class="row"><span class="chip c-strong">Calm, specific, brief</span><span class="chip c-mod">AAP-aligned</span></div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>5 · Playbook</b><span>Live: three common moments. Built from the useful parts of the handouts.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Time-out</span></div>
+      <div class="app">
+        <h4>A short, calm time-out</h4>
+        <p class="sub">About one minute for each year of age. For a 6-year-old: about 6 minutes at most.</p>
+        <div class="step"><b>1</b><span>Say what happened in plain words. "Hitting hurts."</span></div>
+        <div class="step"><b>2</b><span>Take them to a boring, safe spot. Same place each time.</span></div>
+        <div class="step"><b>3</b><span>Say nothing during it. Stay calm yourself. Take a breath.</span></div>
+        <div class="step"><b>4</b><span>When it ends, reconnect. "Ready to try again?" The debt is paid.</span></div>
+        <div class="step"><b>5</b><span>Catch them being good soon after. Be specific.</span></div>
+        <div class="card"><b>Not in the app, on purpose</b><p>Facing a wall for half an hour, punishing crying, early bedtime as a punishment. Pediatric guidance has moved away from these.</p><div class="row"><span class="chip c-cont">Handout corrected</span></div></div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>6 · Time-out, updated</b><span>Replaces the scanned "chairing" sheet.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Two homes</span></div>
+      <div class="app">
+        <h4>What should match</h4>
+        <p class="sub">Optional. Each of you edits your own copy. Nothing is compared for you.</p>
+        <div class="card"><b>Worth matching</b>
+          <div class="row"><span class="chip c-priv">Bedtime window</span><span class="chip c-priv">Screens</span><span class="chip c-priv">Homework time</span><span class="chip c-priv">Car seat / safety</span></div></div>
+        <div class="card"><b>Fine to differ</b><p>Meals, bedtime stories, how you comfort, house traditions. Children handle "different houses, different rules" well when it is calm.</p></div>
+        <div class="card"><b>The part that matters most</b><p>Low conflict between you. Research links conflict, not difference, to harder outcomes. Evidence on matching styles is mixed.</p><div class="row"><span class="chip c-mod">Moderate</span><span class="chip c-cont">Mixed</span></div></div>
+        <div class="btn pri">Send my list to Dana (she sees only this list)</div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div class="on"><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>7 · Two-household bridge</b><span>Shares a rules list you chose to send. Never a style or a reflection.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Repair</span></div>
+      <div class="app">
+        <h4>After you lost your temper</h4>
+        <p class="sub">It happens. What you do next matters more.</p>
+        <div class="step"><b>1</b><span>Calm yourself first. Breath, water, step away safely.</span></div>
+        <div class="step"><b>2</b><span>Go back and name it. "I yelled. That was not okay."</span></div>
+        <div class="step"><b>3</b><span>Say it was yours, not theirs. "That was my big feeling."</span></div>
+        <div class="step"><b>4</b><span>Reconnect. A hug if they want one. Then move on.</span></div>
+        <div class="card"><b>A line you can read aloud</b><p>"Mistakes happen. A mistake does not mean anyone is bad. We fix it and try again."</p></div>
+        <div class="row"><span class="chip c-strong">Strong</span><span class="chip c-priv">Private</span></div>
+        <div class="lock">Need support? A pediatrician or a parent line can help.</div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>8 · Repair card</b><span>Models the handout's best line without the shame.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Message check</span></div>
+      <div class="app" id="mc">
+        <h4>Check before you send</h4>
+        <p class="sub">A mirror, not a monitor. Runs on this phone. Nothing is sent, saved or shared.</p>
+        <div class="tabs" role="group" aria-label="Sample"><button class="btn" aria-pressed="true" data-m="0">Blame</button><button class="btn" aria-pressed="false" data-m="1">Question the child</button><button class="btn" aria-pressed="false" data-m="2">Already calm</button></div>
+        <div class="card"><b>Your draft</b><p id="mDraft" style="color:var(--ink)"></p></div>
+        <div class="card"><b>Notice</b><div class="row" id="mFlags"></div></div>
+        <div class="card"><b>A calmer version (Brief, Informative, Friendly, Firm)</b><p id="mRew" style="color:var(--ink)"></p></div>
+        <div class="row"><div class="btn">Keep mine</div><div class="btn pri">Use this one</div></div>
+        <div class="lock">🔒 Closing this screen clears it. No history, no export.</div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>9 · Message check (live)</b><span>Pick a sample. Offered only for messages to the other guardian, and only if you open it.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Co-parenting</span></div>
+      <div class="app">
+        <h4>Keep your child out of the middle</h4>
+        <div class="card"><b>Please don't</b><p>Use your child as a messenger. Question them about the other home. Criticise the other parent where they can hear. Ask them to keep secrets.</p></div>
+        <div class="card"><b>Try instead</b><p>Send messages parent to parent. If your child shares something, listen, then ask what they felt, not what the other parent did.</p></div>
+        <div class="card"><b>If your child says "Mum said you are…"</b><p>"I'm sorry that was hard to hear. We both love you. You don't have to carry that."</p></div>
+        <div class="row"><span class="chip c-strong">Strong</span><span class="chip c-priv">Private</span></div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>10 · Out of the middle</b><span>The most consistent finding in the conflict research, in four lines.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Arguing</span></div>
+      <div class="app">
+        <h4>When you disagree in front of your child</h4>
+        <p class="sub">Disagreement is normal. What children read is whether the family is still safe.</p>
+        <div class="card"><b>Mostly fine</b><p>Calm voices. Taking a break. Coming back to it. Working it out where they can see.</p></div>
+        <div class="card"><b>Hardest on children</b><p>Contempt, shouting, silent treatment, threats, or one of you walking out mid-fight.</p></div>
+        <div class="step"><b>1</b><span>Pause. "We need a break. We'll talk later."</span></div>
+        <div class="step"><b>2</b><span>Later, settle it away from them.</span></div>
+        <div class="step"><b>3</b><span>Tell them. "We disagreed and we worked it out."</span></div>
+        <div class="row"><span class="chip c-strong">Strong</span><span class="chip c-cont">Four horsemen: description only</span></div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>11 · Fighting in front of a child</b><span>Repair, not perfection. The four horsemen appear as a description, not a predictor.</span></div></div>
+
+    <div class="col"><div class="dev"><div class="scr"><div class="sb"><span>9:41</span><span>Playbook · 5–7</span></div>
+      <div class="app">
+        <h4>Brother and sister fight</h4>
+        <div class="step"><b>1</b><span>Step in only if someone is getting hurt. Otherwise wait a moment.</span></div>
+        <div class="step"><b>2</b><span>Name each feeling. "You're cross. You feel left out."</span></div>
+        <div class="step"><b>3</b><span>Ask. "What could you try?" Let them propose first.</span></div>
+        <div class="step"><b>4</b><span>Notice the fix. "You took turns. That worked."</span></div>
+        <div class="card"><b>Avoid</b><p>Deciding who started it. Taking sides. Comparing them.</p></div>
+        <div class="row"><span class="chip c-weak">Weak</span><span class="chip c-priv">No sibling trials found</span></div>
+        <div class="lock">Labelled Weak on purpose. It is common practice, not proven for this age.</div>
+      </div>
+      <div class="nav"><div><i></i>Home</div><div><i></i>Plan</div><div class="on"><i></i>Learn</div><div><i></i>Circle</div><div><i></i>Settings</div></div></div></div>
+      <div class="cap"><b>12 · Sibling conflict</b><span>Honest label: the handouts agree, the trials were not found.</span></div></div>
+  </div>
+</section>
+
+<section id="map">
+  <h2>The child's side: nothing</h2>
+  <p class="intro">The child shell has no settings and no adult content. This suite adds no screen, badge, tile or colour to it. A child never sees a style, a result, or a lesson meant for adults. The only way it touches the child is indirectly: a parent who has learned a calmer way to handle bedtime.</p>
+</section>
+
+<section id="evidence">
+  <h2>Evidence labels</h2>
+  <p class="intro">Every card carries one. The label is the point of the suite: it teaches parents to ask "how sure are we?"</p>
+  <div class="tw"><table>
+    <tr><th>Label</th><th>Means</th><th>Examples in this suite</th></tr>
+    <tr><td><span class="chip c-strong">Strong</span></td><td>Many studies, consistent direction, or a major body (e.g. the American Academy of Pediatrics) says it.</td><td>Neglect harms. Physical punishment is ineffective and risks harm. Warmth plus clear limits is the best-supported pairing.</td></tr>
+    <tr><td><span class="chip c-mod">Moderate</span></td><td>Several studies agree, but designs are limited or correlational.</td><td>Consistency between caregivers helps. Cooperative co-parenting links to fewer problems.</td></tr>
+    <tr><td><span class="chip c-weak">Weak</span></td><td>Mostly small pilots or parent-reported results.</td><td>Emotion coaching improving 5–7 year olds' emotion knowledge.</td></tr>
+    <tr><td><span class="chip c-cont">Contested</span></td><td>Researchers disagree, or it depends on culture.</td><td>Whether "authoritarian" is harmful across cultures. Whether matching styles matters at all.</td></tr>
+  </table></div>
+</section>
+
+<section id="corrections">
+  <h2>What we corrected from the PDFs</h2>
+  <div class="tw"><table>
+    <tr><th>In the handout</th><th>In the app</th></tr>
+    <tr><td>"Authoritative parenting: risks, none."</td><td><span class="yes">Chip: "Not risk-free".</span> Evidence is correlational and effects are modest.</td></tr>
+    <tr><td>Styles cause child outcomes.</td><td><span class="yes">"Linked to", never "produces".</span> Child temperament and genes matter too.</td></tr>
+    <tr><td>Authoritarian is always harmful.</td><td><span class="yes">Contested chip plus a culture note.</span></td></tr>
+    <tr><td>"Chairing": wall, 30 minutes, no crying, early bed.</td><td><span class="no">Not built.</span> Replaced by a short calm time-out and "time-in".</td></tr>
+    <tr><td>"Good boy for…" praise cues.</td><td><span class="yes">Specific praise prompts</span> ("You shared the red block").</td></tr>
+    <tr><td>"These kids enjoy making you mad."</td><td><span class="no">Omitted.</span> Assigning motives escalates conflict.</td></tr>
+  </table></div>
+</section>
+
+<section id="rules">
+  <h2>Rules it must keep</h2>
+  <div class="grid2">
+    <div class="note"><h3>Never</h3>
+      <p>Score, rank or label a parent.</p><p>Show a style or a reflection to the co-parent.</p><p>Offer an export of reflections (it could become dispute evidence).</p><p>Say a style causes an outcome.</p><p>Put any of this in the child shell.</p></div>
+    <div class="note"><h3>Always</h3>
+      <p>Show an evidence label and a source link.</p><p>Keep reflections private to the guardian.</p><p>Describe the day, not the person.</p><p>Offer a way to get support from a person (pediatrician or parent line).</p></div>
+  </div>
+  <div class="note warn" style="margin-top:14px"><b>Honest limit.</b> The sources behind these cards were search excerpts and teaching handouts, not full papers. Before shipping any statistic, open the original study. This is education, not clinical advice.</div>
+</section>
+
+<section id="decide">
+  <h2>Decisions that are yours</h2>
+  <div class="note"><p><b>1.</b> A Learn tab in the app, or keep this outside it?</p><p><b>2.</b> Reflection: stored privately on the device, or session-only (nothing kept)? My lean is session-only. It removes any chance of it being used later.</p><p><b>3.</b> Cultural framing default: a neutral "style is climate" frame with a culture note on every style card, or a short family-values question first?</p><p><b>4.</b> The two-home rules list: wanted, or does it push toward comparing households? My lean is to build it, send-only, with no comparison.</p></div>
+</section>
+</div>
+<script>
+(function(){
+  var w=document.getElementById('w'),e=document.getElementById('e'),dot=document.getElementById('dot');
+  function words(a,b){
+    var hw=a>=50,he=b>=50;
+    if(hw&&he)return['Warm, with clear limits.','Notice: what made that possible today?'];
+    if(!hw&&he)return['Firm today, with less warmth.','Notice: what was going on for you? One small warm moment can change the day.'];
+    if(hw&&!he)return['Warm today, with looser limits.','Notice: was it a choice, or were you tired? One clear limit may be enough.'];
+    return['Low on both today.','Notice: are you okay? Support is fine to ask for. Tomorrow is a fresh day.'];
+  }
+  function upd(){
+    var a=+w.value,b=+e.value;
+    document.getElementById('wv').textContent=a;document.getElementById('ev').textContent=b;
+    dot.style.left=a+'%';dot.style.top=(100-b)+'%';
+    var t=words(a,b);document.getElementById('mirror').textContent=t[0];document.getElementById('mirror2').textContent=t[1];
+  }
+  w.addEventListener('input',upd);e.addEventListener('input',upd);upd();
+  var DATA={
+    a:[['What to say','"Hitting hurts. We use hands for helping."'],['Then','Check on the child who was hurt first. Brief time-out for the hitter, then reconnect.'],['Later','Notice and name gentle hands. "You waited and asked. That was kind."'],['Plan ahead','Rehearse what to do when angry: stomp, squeeze a pillow, ask a grown-up.']],
+    b:[['What to say','State it once, specific and calm. "It is bedtime. Pyjamas on, then one story."'],['Then','Do not ask it as a question. Do not repeat five times. Follow through the first time.'],['Natural result','Less time for the story if getting ready took longer. Say it kindly, once.'],['Plan ahead','A picture routine they can tick off themselves.']],
+    c:[['First','Get low, stay calm, keep them safe. Few words. Big feelings are not misbehaviour.'],['Then','Name it. "You are really upset the game ended." Wait for the wave to pass.'],['After','Talk about what to do next time, when they are calm. Not during.'],['Plan ahead','Warn before transitions: "Five more minutes, then shoes."']]
+  };
+  var body=document.getElementById('pbBody'),btns=document.querySelectorAll('#pb .tabs .btn');
+  function show(k){
+    body.innerHTML='';
+    DATA[k].forEach(function(r){var d=document.createElement('div');d.className='card';var b=document.createElement('b');b.textContent=r[0];var p=document.createElement('p');p.textContent=r[1];d.appendChild(b);d.appendChild(p);body.appendChild(d);});
+    btns.forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.k===k));});
+  }
+  btns.forEach(function(x){x.addEventListener('click',function(){show(x.dataset.k);});});
+  show('a');
+
+  var M=[
+   {d:"You never listen. You always let her stay up and then I have to deal with it.",f:["Blame","'Never / always'","Contempt risk"],r:"Bedtime was late on Friday. Can we agree on 8:00 for school nights at both houses? Happy to talk tonight if easier."},
+   {d:"Ask Mia what Dad said about me when she gets back.",f:["Child as messenger","Questioning the child"],r:"Please send me anything about the schedule directly. I won't ask Mia to pass messages."},
+   {d:"Pickup is 5:30 Sunday at the library. Her swim bag is in the blue tote. Thanks.",f:["Brief","Informative","Friendly"],r:"No change needed. This is already clear."}];
+  var mb=document.querySelectorAll('#mc .tabs .btn');
+  function mshow(i){
+    document.getElementById('mDraft').textContent=M[i].d;document.getElementById('mRew').textContent=M[i].r;
+    var fl=document.getElementById('mFlags');fl.innerHTML='';
+    M[i].f.forEach(function(t){var c=document.createElement('span');c.className='chip '+(i===2?'c-strong':'c-weak');c.textContent=t;fl.appendChild(c);});
+    mb.forEach(function(x,j){x.setAttribute('aria-pressed',String(j===i));});
+  }
+  mb.forEach(function(x,j){x.addEventListener('click',function(){mshow(j);});});
+  mshow(0);
+})();
+</script>
+</body>
+</html>
