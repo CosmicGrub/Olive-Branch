@@ -91,6 +91,7 @@ totals updated.
 ### Changed
 - **Voice starts OFF** until a guardian turns it on (Settings, Family, Her voice); persisted per
   child; only an explicit true counts. Age and family-structure gating unchanged.
+- The Compass suites shelf (#147) shows Voice as off until a guardian switches it on, and says so.
 - The memory-box hub row no longer says there is no grown-up editor; it offers the marked section.
 - `tools/verify.sh` now prints the names of failing Dart tests (it printed only a count, so a CI-only
   failure could not be root-caused from the log).

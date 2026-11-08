@@ -7649,7 +7649,7 @@ gates are unchanged on top of the switch. The switch is persisted per child thro
 existing `voice` area and `LocalStoreVoiceRepository`; a child principal cannot flip it
 (`guardian_only`). Rhythm is unchanged (still on by default). *Disclosed:* a device that
 already saved a Voice document wrote `suiteOn: true` with it, so it stays on; only a device
-with no Voice document, or one that never saved, starts off.
+with no Voice document, or one that never saved, starts off (owner decision: no reset). The Compass suites shelf (§8.22) reads the same switch, so it shows Voice as **off** until a guardian switches it on and says so on the shelf ("Voice starts off and stays off until you switch it on").
 
 ### 8.23.2 The packing buddy "two homes" fallback
 

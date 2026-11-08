@@ -274,20 +274,34 @@ void main() {
       for (final ShelfSuite s in shelfSuites) {
         expect(find.byKey(Key('shelfRow_${s.key}')), findsOneWidget, reason: s.key);
         expect(find.text(s.adds), findsOneWidget, reason: s.key);
-        expect(t.widget<SwitchListTile>(find.byKey(Key('shelfSwitch_${s.key}'))).value, isTrue);
+        expect(t.widget<SwitchListTile>(find.byKey(Key('shelfSwitch_${s.key}'))).value, s.key != 'voice',
+            reason: '${s.key}: Voice starts off until a guardian switches it on');
       }
       expect(find.textContaining(RegExp(r'\d')), findsNothing);
       expect(find.textContaining(RegExp(r'streak|score|last used|times used|have not used', caseSensitive: false)), findsNothing);
       expect(find.byType(LinearProgressIndicator), findsNothing);
     });
 
+    testWidgets('Voice shows as off and says so; the shelf switch is the suite\'s own', (WidgetTester t) async {
+      await big(t);
+      final _Rig rig = _Rig();
+      await show(t, SuitesShelfScreen(childName: 'Ivy', service: rig.service(), principal: guardian));
+      expect(find.textContaining('Voice starts off and stays off until you switch it on'), findsOneWidget);
+      expect(find.textContaining('Off until you switch it on'), findsOneWidget);
+      expect(t.widget<SwitchListTile>(find.byKey(const Key('shelfSwitch_voice'))).value, isFalse);
+      await tapKey(t, 'shelfSwitch_voice');
+      expect((await rig.rhythm.loadVoice(guardian)).suiteOn, isTrue);
+    });
+
     testWidgets('each switch is the suite\'s own, and a change shows straight away', (WidgetTester t) async {
       await big(t);
       final _Rig rig = _Rig();
       await show(t, SuitesShelfScreen(childName: 'Ivy', service: rig.service(), principal: guardian));
+      await tapKey(t, 'shelfSwitch_voice'); // Voice starts off, so the first tap turns it on
+      expect((await rig.rhythm.loadVoice(guardian)).suiteOn, isTrue);
+      expect(t.widget<SwitchListTile>(find.byKey(const Key('shelfSwitch_voice'))).value, isTrue);
       await tapKey(t, 'shelfSwitch_voice');
       expect((await rig.rhythm.loadVoice(guardian)).suiteOn, isFalse);
-      expect(t.widget<SwitchListTile>(find.byKey(const Key('shelfSwitch_voice'))).value, isFalse);
       await tapKey(t, 'shelfSwitch_village');
       expect((await rig.village.loadForGuardian(guardian)).suiteOn, isFalse);
       await tapKey(t, 'shelfSwitch_care');
