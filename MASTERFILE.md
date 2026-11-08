@@ -1693,7 +1693,7 @@ sign in again." (`ApiException.userMessage`). Changing a PIN from the guardian
 setup screen collects the current PIN first.
 
 **Not in this change (open, deliberately).** Guardian *sign-in* on a fresh
-device still begins at pairing (a guardian pairs with a code from another
+device still begins at pairing (by design, §8.5.6: the PIN needs a session) (a guardian pairs with a code from another
 device); a passkey-based sign-in that mints a device credential is not built.
 `LiveChildHomeScreen`'s "Live: name and message count are real" banner, and
 the networked-checkers lobby's own dev login, are untouched.
@@ -3412,7 +3412,10 @@ enrollment. Documented in the security policy required by §10.1.
 > listed maintainers and no release in roughly three years, confirmed before
 > switching) plus the 6-digit fallback and a live countdown. A new pairing/
 > redeem screen (scan via `mobile_scanner`, or type) shown at boot whenever
-> there's no stored identity AND no dart-define set — `bool.hasEnvironment`,
+> there's no stored identity AND no dart-define set (**superseded for the child
+> build, 2026-11-08, §8.5.6:** a fresh child device now runs the welcome
+> questions first and reaches this screen as the LAST step; the guardian build
+> still opens on it) — `bool.hasEnvironment`,
 > not a defaultValue comparison, is what tells the two apart. On success,
 > `{sessionToken, deviceId, role, targetId}` persists via
 > `flutter_secure_storage` — the FIRST on-device persistence this app has
@@ -3914,7 +3917,7 @@ taxonomy. | **Not planned** — do not re-propose absent new owner direction |
 
 ### §19.1 Child device reality — stub
 
-> *Numbering: this stub was headed §8.5 until v0.50.0, which clashed with §8.5 *The child's first run*. It is §19.1 because it is a deferred item. Status at v0.50.0: the **no-install web path is not built** (the client has `android/` and `windows/` targets only, no web or iOS target); a **household-device mode** exists in part (paired devices, §5.20, and the on-device store, §8.16); **offline playback of delivered messages is not built** (no message cache is among the 27 areas in §8.16.4).*
+> *Numbering: this stub was headed §8.5 until v0.50.0, which clashed with §8.5 *The child's first run*. It is §19.1 because it is a deferred item. Status at v0.50.0: the **no-install web path is not built** (the client has `android/` and `windows/` targets only, no web or iOS target); a **household-device mode** exists in part (paired devices, §5.20, and the on-device store, §8.16); **offline playback of delivered messages is not built** (no message cache is among the 29 areas in §8.16.4).*
 
 The SMS-bridge insight (§8.4) applied to the child's side. A child may have a
 shared family tablet, a school Chromebook, a phone the *other* parent controls,
@@ -4253,6 +4256,118 @@ may fail and no step may trap her" rule does NOT extend to a REQUIRED
 policy a prior sub-project already declared (guardian PIN, v0.49.73's own
 §11 account below). Full design spec: `docs/superpowers/specs/2026-09-14
 -automatic-first-run-detection-design.md`.
+
+### 8.5.6 "Connect this device" is the last step of her first run (pairing last)
+
+**Owner request, 2026-11-08:** *make the Connect this device field the final
+step of the onboarding process.* Until now the child build opened on the code
+screen, and the welcome questions (§8.5.1 to §8.5.4) ran only after pairing,
+because the answers were saved through the new session. The order is now the
+owner's: **questions first, then Connect this device, last.** Code:
+`first_run_flow.dart` (the stage switch), `onboarding_draft.dart` (the draft,
+its delivery and its retry), `pairing_redeem_screen.dart` (`closingStep`) and
+`main_live.dart` (the boot).
+
+**What a fresh child device does (no stored identity, no `OLIVE_CHILD_ID`).**
+
+1. It opens on the welcome card and runs the existing questions **fully
+   offline**: name, age, boy or girl, colour, birthday month, birthday day.
+   Skipping is allowed on every one; the birthday month gained a "Skip for
+   now" for this flow, and skipping the day no longer sends her back to the
+   first card here. **The "who is here" step (§8.5.3) is left out before
+   pairing:** nobody is known yet, and the step would have to invent "Dad" and
+   "Mom". There is no name fallback ("Ivy") either.
+2. Every answer is written to a **local draft**, `child.pending-device
+   .onboarding` (one row in the §8.16.4 table; the owner id `pending-device`
+   stands in for a child id that does not exist yet, and the literal
+   `demo-child` is never used in a live build). It is saved the moment the
+   questions are done. **A restart resumes at the last step, not the
+   beginning**; only a quit in the middle of the questions starts those again.
+3. The last step is `PairingRedeemScreen` as `closingStep`: the same chrome as
+   every other welcome step, a grown-up with a speech bubble and a number pad
+   (the "ask a grown-up" picture), the words "A grown-up gives you a number
+   with 6 digits... There is no hurry.", the code field or the QR scan, all
+   targets **64dp**. It **cannot be skipped**, because a device cannot run
+   live without an identity. **"Not now"** goes to a calm waiting screen that
+   says her answers are safe, keeps the draft, and offers the code again.
+4. **No connection** at this step (checked when it opens, and again if the
+   redeem fails to connect): a **picture-only** state, a grown-up beside a
+   crossed-out wifi, one large retry button. No sentence about servers, no
+   exception text; the draft is kept. A wrong or used code still gets the
+   fixed per-reason copy of §5.20.
+5. **On a successful redeem** the identity is stored **first**; then the boot
+   gate (`_bootWithOnboardingGate`) delivers the draft through the new
+   authenticated session; then her home opens. Delivery asks `GET /v1/me`
+   first: if `hasOnboarded` is already true (a re-paired tablet) **the
+   server's answers win** and the draft is discarded without overwriting
+   anything. Otherwise it sends the answer the child session can write,
+   `PUT /v1/children/:id/profile` with her gender (an explicit `null` when she
+   skipped, which is also what marks her as onboarded, §8.5.5), then deletes
+   the draft. A delivered draft means the tour is done, so it is not run a
+   second time.
+6. **If delivery fails** (offline, a server error, a hang past 8 seconds) the
+   draft is **kept**, her home opens anyway, and `DraftRetry` tries again with
+   backoff (15 seconds, 1, 5, 15, 30 minutes) while the app runs; the next
+   launch starts the schedule again. Answers are never lost and nothing about
+   a failure is shown to her.
+
+**What is and is not sent.** The server has exactly one child-session route
+for these answers, `PUT .../profile` (gender). Her name, age, colour and
+birthday have never been sent anywhere by the welcome flow, in the old order
+or this one; they live in the draft until it is deleted after delivery, and
+are not copied anywhere else. That is unchanged and is listed in §22 as not
+built.
+
+**Unchanged.** `OLIVE_CHILD_ID` and `OLIVE_DEV_LOGIN` still boot straight to a
+session; a device that was connected and is later cut off returns to the code
+screen alone (it has already been through the questions); the post-pairing
+tour for a paired child who has not onboarded (§8.5.5) still runs.
+
+**The guardian build keeps pairing first, on purpose.** Its first run is
+pairing, then `GuardianSetupScreen`. The PIN is set through `POST /v1/me/pin`
+and `hasPin` is read from `GET /v1/me`: both need a session, so there is
+nothing honest to ask before a device is connected, and a local-only PIN would
+be faked and is not built. The pairing screen now says so ("Connect first.
+Your PIN is kept safely on your account...").
+
+**Prohibitions.** P2: the draft holds answers and one "finished" bit; no
+score, count, rank or progress ("step 7 of 7") is stored or shown. P3: no
+location. No raw error text reaches the child at any point. Guardian
+authority is not granted by anything she taps (§8.5.0).
+
+### 8.5.7 What she calls her grown-ups, and the age lock (naming core)
+
+Owner addition, 2026-11-08. **Built:** the pure core, `contact_labels.dart`,
+with its tests. **Not built yet, listed in §22:** the role picker, the unified
+entry, the guardian onboarding and every screen's adoption (below).
+
+- **Age lock.** The picker she sees offers **5 to 15** (`kKidAgeMin`/`Max`); a
+  guardian sets **3 to 17** (`kGuardianAgeMin`/`Max`), as in the family screens.
+  `lockKidAge()` clamps and locks; once locked, `changeAge()` refuses unless the
+  caller passes the result of the guardian PIN gate. The lock is a pure function;
+  wiring the picker to it and storing the lock is not done yet.
+- **Default words by age, one constant.** `kLittleWordsAges` (5 to 15): once the
+  age is locked inside it, the defaults are **Mommy** and **Daddy**; before the
+  lock, at 16 and over, and in any unlocked state, **Mom** and **Dad**. Only a
+  Mom or a Dad has an age default; anyone else keeps the guardian's label.
+- **Nickname layer.** Each grown-up has a guardian label and an optional
+  nickname she chose. `ContactLabels.forChild` shows nickname, else age default,
+  else guardian label. `ContactLabels.forGuardian` shows both: "Dad (Ivy calls
+  you Dada)". A bank (`kNicknameBank`: Mommy, Mama, Mum, Mom, Mummy, Daddy, Dada,
+  Papa, Pop, Dad) is offered and she may type her own (24 letters at most).
+- **Hers.** `NicknameRepository` (abstract; `MemoryNicknameRepository`;
+  `LocalNicknameRepository` over `child.<id>.nicknames`, in §8.16.4) is the only
+  writer; a guardian screen is handed a `NicknameReader`, which cannot write. A
+  guardian editing their own label never changes a nickname.
+
+**Hard-coded "Dad"/"Mom" sites found, to adopt the resolver in a follow-up:**
+`a11y_speech.dart` ("Send this to Daddy"), `exchange_screen.dart` (`_sideNames`),
+`co_view_screens.dart` (`guardianName`), `degradation_banner.dart`
+(`callerName`), and the `parentName = 'Dad'` defaults in `game_battleship`,
+`game_chain`, `game_checkers`, `game_chess`, `game_dotsboxes`,
+`game_draw_together`, `game_guess_doodle`, `game_hunt` and `game_kim`, and more `Dad`/`Mom` text in `games_hub`, `weeks_screen`, `inbox_screen`, `jokebook_screen`, `teach_me`, `handicap_screen`, `game_silly_sentence`, `game_story`, `game_tictactoe`, `game_twenty_questions`, `game_two_truths` and `game_would_you_rather` (an audit by `grep` of `client/lib`, not a full read), plus the
+"Dad" wording in `game_logic.dart` handicap text and `onboarding_flow.dart`'s
+demo who-step (not shown before pairing any more).
 
 ---
 
@@ -5422,6 +5537,8 @@ drift. Nothing is written that is not in it.
 | `child.<id>.family` | Family structure a grown-up built and released on this device (`LocalStoreFamilyStore`): the append-only history, her homes and people, guardian-written stories. A failed save throws; a change is never reported recorded when it was not. | **Yes** |
 | `child.<id>.access` | Accessibility for her device, as a guardian set it: read aloud, reduce motion, roomier reading, larger targets, captions wanted. Five on/off switches (§8.21). | No |
 | `child.<id>.profile` | Offline start-up cache: her first name, age in whole years, that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
+| `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
+| `child.<id>.nicknames` | What she calls each grown-up if she renamed one (§8.5.7): a contact id and the word she chose. Hers: a grown-up can see it, not change it. No count or ranking. | No |
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
 | `child.<id>.growing` | Time capsules (note, dates, optional thumbnail), first times, pencil-mark heights, which of the eight Growing and Care suites a guardian switched off. No counts, streaks or comparison. | **Yes** |
 | `child.<id>.memorybox` | What she chose to keep: copies of her doodles and colourings, or small photos. No totals. Under a different key prefix (`gift.`), marked as from them, the short notes or small photos a grown-up left for her (§8.24.5). | **Yes** |
@@ -6925,14 +7042,16 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **27 areas, 13 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **29 areas, 13 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
+
 
 Each row is something this document or the product's own screens might lead a reader to expect, with what exists and what is missing.
 
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
+| **Role-led first run** (owner addition 2026-11-08) | The pairing-last child flow (§8.5.6) and the naming core and age lock (§8.5.7). | The "Who is using this device?" picker (kid, Mom, Dad, and a fourth "Someone else", which is the coordinator's addition, not the owner's), the role stored per device, a unified live entry that routes to the child or guardian shell (today `main_live.dart` and `main_live_guardian.dart` are separate targets), the guardian onboarding, wiring the age lock and a rename-a-grown-up screen, and adopting the resolver in the hard-coded sites listed in §8.5.7. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |

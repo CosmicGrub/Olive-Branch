@@ -16,12 +16,15 @@ import 'onboarding_shared.dart';
 
 class BirthdayMonthScreen extends StatefulWidget {
   const BirthdayMonthScreen({super.key, required this.birthDate, required this.age,
-    required this.onMonthPicked});
+    required this.onMonthPicked, this.onSkip});
 
   /// Guardian-entered birth date, if any (authoritative — §8.5.2).
   final String? birthDate;
   final int? age;
   final ValueChanged<int> onMonthPicked;
+  /// Optional "Skip for now" (the pairing-last first run offers it; the
+  /// demo-era flow never had one).
+  final VoidCallback? onSkip;
 
   @override
   State<BirthdayMonthScreen> createState() => _BirthdayMonthScreenState();
@@ -38,6 +41,7 @@ class _BirthdayMonthScreenState extends State<BirthdayMonthScreen> {
       subtitle: "Find the month you were born.",
       continueEnabled: _selected != null,
       onContinue: () => widget.onMonthPicked(_selected!),
+      onSkip: widget.onSkip,
       body: GridView.count(
         crossAxisCount: 3,
         shrinkWrap: true,

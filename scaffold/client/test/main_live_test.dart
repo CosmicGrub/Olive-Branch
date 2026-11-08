@@ -176,6 +176,81 @@ void main() {
       expect(classBody, isNot(contains('KioskShell')));
     });
   });
+
+  group('D — pairing LAST (owner request 2026-11-08), asserted against both '
+      "entry points' own source", () {
+    final src = File('lib/main_live.dart').readAsStringSync();
+    final guardian = File('lib/main_live_guardian.dart').readAsStringSync();
+    // Code only, so a comment mentioning a name never trips an assertion.
+    String code(String t) =>
+        t.split('\n').where((l) => !l.trimLeft().startsWith('//')).join('\n');
+
+    test('a fresh child device boots into the welcome questions (FirstRunFlow), not the bare code screen', () {
+      final start = src.indexOf('if (stored == null) {');
+      final end = src.indexOf('await _bootWithOnboardingGate(childId: stored.targetId');
+      expect(start, greaterThan(-1));
+      expect(end, greaterThan(start));
+      final branch = src.substring(start, end);
+      expect(branch, contains('_FirstRunApp('));
+      expect(branch, isNot(contains('_PairingBootApp')));
+      expect(src, contains('home: FirstRunFlow('));
+    });
+
+    test('the draft lives under the pending-device owner; the literal demo-child never appears in code', () {
+      expect(src, contains("area('onboarding', ownerId: kPendingDeviceScope)"));
+      expect(code(src), isNot(contains("'demo-child'")));
+      expect(code(File('lib/first_run_flow.dart').readAsStringSync()), isNot(contains("'demo-child'")));
+    });
+
+    test('the identity is stored FIRST, then the boot gate delivers the draft, then her home', () {
+      final redeem = src.indexOf('Future<void> _completeRedeem(');
+      expect(redeem, greaterThan(-1));
+      final body = src.substring(redeem, src.indexOf('class _FirstRunApp'));
+      expect(body.indexOf('DeviceIdentityStore().save(identity)'), greaterThan(-1));
+      expect(body.indexOf('DeviceIdentityStore().save(identity)'),
+          lessThan(body.indexOf('_bootWithOnboardingGate(')));
+      final gate = src.substring(src.indexOf('Future<void> _bootWithOnboardingGate('),
+          src.indexOf('Future<void> main()'));
+      expect(gate.indexOf('deliverPendingDraft('), greaterThan(-1));
+      expect(gate.indexOf('deliverPendingDraft('), lessThan(gate.indexOf('resolveHasOnboarded(')));
+      // A waiting draft means the tour is done: straight to her home, no second tour.
+      expect(gate, contains('delivery.first != DraftSyncOutcome.nothingPending'));
+    });
+
+    test('delivery asks the server first (its profile wins), then writes through the session', () {
+      final attempt = src.substring(src.indexOf('Future<DraftSyncOutcome> _attemptDraftSync('),
+          src.indexOf('/// The Automatic First-Run Detection boot gate itself'));
+      expect(attempt, contains('syncOnboardingDraft('));
+      expect(attempt, contains('_fetchHasOnboarded('));
+      expect(attempt, contains('api.putChildGender(childId, gender)'));
+      expect(attempt, isNot(contains('devLoginFor')));
+    });
+
+    test('the dev paths are untouched: OLIVE_CHILD_ID still skips identity and pairing entirely', () {
+      final main = code(src.substring(src.indexOf('Future<void> main()'), src.indexOf('AuthSession _devSession()')));
+      expect(main.indexOf('if (!_hasChildIdDartDefine) {'),
+          lessThan(main.indexOf('DeviceIdentityStore().load()')));
+      expect(main, contains('AuthSession.devLoginEnabled = true;'));
+      expect(main, contains(
+          'await _bootWithOnboardingGate(childId: _dartDefineChildId, session: _devSession());'));
+      expect(src, contains("bool.fromEnvironment('OLIVE_DEV_LOGIN')"));
+    });
+
+    test('a device that was connected and cut off returns to the code screen alone, '
+        'without re-asking the questions', () {
+      expect(src, contains('runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl))'));
+    });
+
+    test('the GUARDIAN build keeps pairing first (its PIN is set through the server), and says why', () {
+      expect(guardian, contains("role: 'guardian'"));
+      expect(guardian, contains('PairingRedeemScreen('));
+      expect(guardian, isNot(contains('FirstRunFlow')));
+      expect(guardian, isNot(contains('closingStep')));
+      final screen = File('lib/pairing_redeem_screen.dart').readAsStringSync();
+      expect(screen, contains("widget.role == 'guardian'"));
+      expect(screen, contains('PIN is kept safely on your account'));
+    });
+  });
 }
 
 /// Mirrors kiosk_shell_test.dart's own identical helper — the event channel

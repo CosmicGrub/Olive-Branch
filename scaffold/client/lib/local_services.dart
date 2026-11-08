@@ -108,6 +108,18 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'her first name, her age in whole years, that she finished the welcome tour, and '
           "the grown-up's last hide/pace choices for her (so offline never unhides anything)."),
   LocalDataEntry(
+      area: 'onboarding', scope: LocalScope.child, maxBytes: 16 * 1024,
+      what: 'The welcome answers she gave before this device was connected (name, age, a '
+          'boy-or-girl tap, colour and birthday month and day, each optional) and that the '
+          'questions are finished, kept under the owner "pending-device" until a grown-up '
+          'connects the device; then the one answer the server takes is sent and this is '
+          'deleted. No score or count is kept.'),
+  LocalDataEntry(
+      area: 'nicknames', scope: LocalScope.child, maxBytes: 16 * 1024,
+      what: 'What she calls each of her grown-ups, if she renamed one (for example Dada or Mama): '
+          'a contact id and the word she chose. They are hers: a grown-up can see them but not '
+          'change them. No count or ranking.'),
+  LocalDataEntry(
       area: 'outbox', scope: LocalScope.child, maxBytes: 2 * _mib,
       what: 'Things she made while offline that are waiting to go, so a restart does not lose '
           'them. Never shown to her as a queue.'),

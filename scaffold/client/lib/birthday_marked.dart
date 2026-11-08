@@ -131,7 +131,7 @@ class _Marked extends StatelessWidget {
     Text('My birthday', style: Theme.of(context).textTheme.headlineSmall
       ?.copyWith(fontWeight: FontWeight.w800)),
     const SizedBox(height: 8),
-    Text('Every year, this day is $childName\'s.',
+    Text(childName.isEmpty ? 'Every year, this day is yours.' : 'Every year, this day is $childName\'s.',
       textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.bodyMedium
         ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
