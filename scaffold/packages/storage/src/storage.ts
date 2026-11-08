@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
@@ -38,10 +38,16 @@ export interface StoragePort {
 /** §11 — signed URLs are minutes, not hours; a leaked URL is a leaked child. */
 export const SIGNED_URL_TTL_SECONDS = 300;
 
+/**
+ * S-B13 -- a real HMAC-SHA256 keyed with the secret. This used to be the
+ * secret-prefix construction sha256(secret || key || exp), the shape HMAC
+ * exists to replace (length extension is not exploitable here because the
+ * fields are NUL-delimited, but there is no reason to keep the smell). Signed
+ * URLs live 5 minutes, so the change needs no migration window.
+ */
 export function signKey(secret: Buffer, key: string, expiresAt: number): string {
-  return createHash('sha256')
-    .update(secret).update('\u0000').update(key).update('\u0000')
-    .update(String(expiresAt)).digest('base64url');
+  return createHmac('sha256', secret)
+    .update(key).update('\u0000').update(String(expiresAt)).digest('base64url');
 }
 
 export function verifySignedUrl(

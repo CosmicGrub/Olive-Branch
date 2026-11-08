@@ -20,6 +20,10 @@
  */
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { FilesystemStorage } from '../../storage/src/storage.mjs';
 import { Api } from '../src/api.mjs';
 import { createPool, dbPort } from '../../db/src/pool.mjs';
 import { registerRoutes } from '../../../server/routes.mjs';
@@ -84,7 +88,17 @@ const rowCounts = async () => {
 const SECRET = Buffer.from('a'.repeat(32), 'utf8');
 const NOW = Date.now();
 const api = new Api(SECRET, dbPort(pool));
-registerRoutes(api, pool);
+// S-B9: POST .../messages only accepts a storageKey the upload route handed out
+// (children/<childId>/messages/<uuid>, recorded in the media_upload ledger), so
+// this suite uploads a real (tiny) MP4-shaped blob first, into a throwaway root.
+const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'olive-messages-route-test-'));
+registerRoutes(api, pool, new FilesystemStorage(tmpRoot));
+const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(32, 7)]);
+const keyFor = async (childId, tok) => {
+  const r = await api.handle('POST', `/v1/children/${childId}/media`,
+    { authorization: `Bearer ${tok}` }, JSON.stringify({ bytes: MP4.toString('base64') }));
+  return r.body?.storageKey ?? `children/${childId}/messages/${randomUUID()}`;
+};
 
 const dadTok = issueSession(SECRET,
   { userId: DAD, roleName: 'guardian', childId: null, escalated: false }, NOW);
@@ -105,7 +119,7 @@ const post = (childId, tok, body) => api.handle(
 {
   const before = await rowCounts();
   const res = await post(CHILD, dadTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 4200,
+    storageKey: await keyFor(CHILD, dadTok), durationMs: 4200,
   });
   check('A success', 'a valid guardian capture returns 201', res.status, 201);
   check('A success', 'response names a real artifactId',
@@ -148,7 +162,7 @@ const post = (childId, tok, body) => api.handle(
 {
   const before = await rowCounts();
   const res = await post(CHILD, dadTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 0,
+    storageKey: await keyFor(CHILD, dadTok), durationMs: 0,
   });
   check('C captureMessage rejection', 'a zero-length recording is refused, not accepted',
     res.status, 400);
@@ -164,7 +178,7 @@ const post = (childId, tok, body) => api.handle(
   // named night already in the past.
   const before2 = await rowCounts();
   const res2 = await post(CHILD, dadTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 4200, targetLocalDate: '2020-01-01',
+    storageKey: await keyFor(CHILD, dadTok), durationMs: 4200, targetLocalDate: '2020-01-01',
   });
   check('C captureMessage rejection', 'a night already past is refused', res2.status, 400);
   check('C captureMessage rejection', 'reason is target_date_in_past', res2.body.error,
@@ -180,7 +194,7 @@ const post = (childId, tok, body) => api.handle(
 {
   const before = await rowCounts();
   const res = await post(CHILD, sitterTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 4200,
+    storageKey: await keyFor(CHILD, sitterTok), durationMs: 4200,
   });
   check('D auth', 'a sitter (no message capability) is refused', res.status, 403);
   const after = await rowCounts();
@@ -188,7 +202,7 @@ const post = (childId, tok, body) => api.handle(
     before.artifacts);
 
   const otherChild = await post(CHILD_B, dadTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 4200,
+    storageKey: await keyFor(CHILD_B, dadTok), durationMs: 4200,
   });
   check('D auth', 'a guardian with no edge to this child is refused', otherChild.status, 403);
 
@@ -205,7 +219,7 @@ const post = (childId, tok, body) => api.handle(
   // `author_child_id`, never `sender_id`/`author_id`.
   const before2 = await rowCounts();
   const asChild = await post(CHILD, childTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 4200,
+    storageKey: await keyFor(CHILD, childTok), durationMs: 4200,
   });
   check('D auth', 'a child session sending about herself now succeeds', asChild.status, 201);
   const after2 = await rowCounts();
@@ -240,7 +254,7 @@ const post = (childId, tok, body) => api.handle(
   // deliberately mismatched id this gateway would never let through over
   // real HTTP) is ever reached.
   const wrongChild = await post(CHILD_B, childTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 4200,
+    storageKey: await keyFor(CHILD_B, childTok), durationMs: 4200,
   });
   check('D auth', 'a child session cannot attribute a send to a DIFFERENT child',
     wrongChild.status, 403);
@@ -253,7 +267,7 @@ const post = (childId, tok, body) => api.handle(
   // to attribute it to.
   const beforePreserve = await rowCounts();
   const childPreserve = await post(CHILD, childTok, {
-    storageKey: `device/${randomUUID()}`, durationMs: 4200, preserve: true,
+    storageKey: await keyFor(CHILD, childTok), durationMs: 4200, preserve: true,
   });
   check('D auth', 'a child cannot elect to preserve her own sent video',
     childPreserve.status, 400);

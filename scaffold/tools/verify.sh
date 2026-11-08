@@ -126,6 +126,7 @@ for spec in \
   "annotation canvas engine (undo/redo/erase)|packages/annotation/test/canvas.test.mjs" \
   "http hardening: body integrity, caps, rate limit, access log, metrics (P-05/07/08/19)|server/test/http_hardening.test.mjs" \
   "lifecycle: graceful shutdown + game-socket heartbeat (P-14/15)|server/test/lifecycle.test.mjs" \
+  "security round 2 (pure): pairing budget, strict ids, image limits, sniffing, secrets, session kid/rotation|server/test/security_round2.test.mjs" \
   "backup lib: retention, stale alarm, encryption (P-04)|tools/test/backup_lib.test.mjs" \
   "infra: Dockerfile, compose, CI hygiene (P-13/14/16)|tools/test/infra.test.mjs" \
   "design tokens: prototype kit to tokens.json + Dart, drift guard|tools/test/design_tokens.test.mjs" \
@@ -404,6 +405,8 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \
             "db RLS coverage — no table silently missing from health_check (real DB)|packages/db/test/rls_coverage.test.mjs" \
+            "db edge-based RLS: cross-family isolation, security_event, dose FK (real RLS)|packages/db/test/edge_rls.test.mjs" \
+            "security round 2 routes: IDOR, passkeys, security events, pairing budget, uploads, sweeper (real DB)|server/test/security_round2_route.test.mjs" \
             "messages route (real DB)|packages/api/test/messages_route.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \

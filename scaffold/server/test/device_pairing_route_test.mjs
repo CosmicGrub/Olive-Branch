@@ -85,9 +85,16 @@ const codes = new Map();   // id -> device_pairing_code row (snake_case fields)
 const devices = new Map(); // id -> paired_device row (snake_case fields)
 let nextCodeN = 1, nextDeviceN = 1;
 
+const securityEventInserts = [];
 function fakeQuery(sql, params = []) {
   if (/^\s*(BEGIN|COMMIT|ROLLBACK)/i.test(sql)) return [];
   if (/set_config/i.test(sql)) return [];
+  // S-B3: redeem now writes a security_event row (same transaction). Recorded
+  // here so a test can assert the trail exists; one row per call is enough.
+  if (/INSERT INTO security_event/i.test(sql)) {
+    securityEventInserts.push({ sql, params });
+    return [{ seq: securityEventInserts.length }];
+  }
 
   // -------------------------------------------------------- edgesFor() ----
   if (/FROM guardianship g/i.test(sql)) {
@@ -349,6 +356,16 @@ let redeemedDeviceId;
   check('C redeem', 'a real sessionToken comes back', typeof success.body.sessionToken, 'string');
   check('C redeem', 'a real deviceId comes back', typeof success.body.deviceId, 'string');
   redeemedDeviceId = success.body.deviceId;
+
+  // S-B3/S-B20: the pairing leaves a content-free security_event for the child's
+  // OTHER guardian to read (written in the redeem transaction itself).
+  check('C redeem', 'redeem wrote exactly one security_event row', securityEventInserts.length, 1);
+  const ev = securityEventInserts[0]?.params ?? [];
+  check('C redeem', 'the event is about CHILD_A', ev[0], CHILD_A);
+  check('C redeem', 'the actor is the guardian who minted the code (DAD)', ev[1], DAD);
+  check('C redeem', 'the kind is device_paired', ev[2], 'device_paired');
+  check('C redeem', 'the summary is the fixed child-device wording, no label or code in it',
+    ev[3], 'A child device was paired');
 
   const decoded = readSession(SECRET, success.body.sessionToken, NOW);
   check('C redeem', 'the minted session really carries roleName child', decoded.principal.roleName, 'child');

@@ -50,7 +50,9 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          activityOverridesFor, setActivityOverride, deleteActivityOverride,
          learnSettingsFor, setLearnSettings, saveReflection, listReflections,
          deleteReflection, clearReflections, setHouseRules, houseRulesFor,
-         INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
+         INVITABLE_ROLES, passkeysFor, deletePasskey, hasSecondFactorSetup,
+         recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
+         storageKeyInUse, releaseMediaUpload } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -64,6 +66,10 @@ import { mintLiveKitToken } from '../packages/session-runtime/src/livekit-token.
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
+import { assertImageWithinLimits } from '../packages/homework/src/measure.mjs';
+import { createPairingMissBudget, createUploadLimiter } from './rate_limit.mjs';
+import { parseHexSecret } from './secrets.mjs';
+import { sniffMedia } from './media_sniff.mjs';
 
 /**
  * MASTERFILE §20.2b's own gap, closed here: "`StoragePort` has no
@@ -105,8 +111,12 @@ const DEFAULT_MEDIA_STORAGE_ROOT =
 // set; falling back to a fresh random secret when unset keeps a bare local
 // dev run working exactly as before, at the same "URLs won't survive a
 // restart" cost that already existed for every deployment before this fix.
+// S-B13: a set-but-malformed value used to decode to a ZERO-length key (forgeable
+// signed URLs, no error). It now has to be valid hex of >= 32 bytes or this module
+// refuses to load; unset still means a random per-process key (dev/test only:
+// server/index.mjs refuses to boot without it outside development/test).
 const mediaSigningSecret = process.env.MEDIA_SIGNING_SECRET
-  ? Buffer.from(process.env.MEDIA_SIGNING_SECRET, 'hex')
+  ? parseHexSecret(process.env.MEDIA_SIGNING_SECRET, 'MEDIA_SIGNING_SECRET')
   : randomBytes(32);
 export const defaultMediaStorage = new FilesystemStorage(
   process.env.MEDIA_STORAGE_ROOT ?? DEFAULT_MEDIA_STORAGE_ROOT, mediaSigningSecret);
@@ -142,6 +152,9 @@ export const RP_ID = 'olivebranch.local';
 export const RP_ORIGIN = `https://${RP_ID}`;
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The tail of an upload key: children/<childId>/messages/<uuid> (S-B9). */
+const UUID_KEY_TAIL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** §12.5's pattern (packages/guardian/src/guardian.ts) applied to a note
  * field the CHILD actually reads (see AVAILABILITY_NOTE_BANNED's own header
@@ -408,7 +421,27 @@ const EXPORT_DENIAL_MESSAGES = {
  *   of this module's real, persistent `MEDIA_STORAGE_ROOT`. Every real call
  *   site (server/index.mjs) leaves this at its default.
  */
-export function registerRoutes(api, pool, storage = defaultMediaStorage) {
+/** Default per-child upload quota (S-B8): 2 GiB of unreaped media. MEDIA_CHILD_QUOTA_BYTES overrides; 0 disables. */
+const DEFAULT_MEDIA_CHILD_QUOTA_BYTES = 2 * 1024 * 1024 * 1024;
+function mediaQuotaFromEnv(env = process.env) {
+  const raw = env.MEDIA_CHILD_QUOTA_BYTES;
+  if (raw === undefined || raw === '') return DEFAULT_MEDIA_CHILD_QUOTA_BYTES;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_MEDIA_CHILD_QUOTA_BYTES;
+}
+
+export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = {}) {
+  // S-B1: global miss budget for device-pairing redeem (see rate_limit.mjs MissBudget).
+  const pairingMissBudget = opts.pairingMissBudget ?? createPairingMissBudget();
+  // S-B6: per-principal cap on concurrent media/homework body decodes.
+  const uploadLimiter = opts.uploadLimiter ?? createUploadLimiter();
+  const mediaQuotaBytes = opts.mediaChildQuotaBytes ?? mediaQuotaFromEnv();
+  /** Best-effort security-event write: the audited action already happened, the trail must not fail it. */
+  const audit = async (userId, kind, o) => {
+    try { await recordSecurityEvent(pool, userId, kind, o); }
+    catch (e) { console.error(`security_event(${kind}) not recorded:`, e?.message ?? e); }
+  };
+  const principalKey = (p) => (p.userId ? `u:${p.userId}` : `c:${p.childId}`);
   api.register({
     method: 'GET', path: '/v1/me', action: null,
     // Holds no outer pooled connection: this handler reaches Postgres only through
@@ -562,9 +595,15 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         return { status: 400, body: { error: 'invited_email_required' } };
       }
 
+      // S-B3: handing out access to a child is a step-up action -- a stolen
+      // unlocked session alone must not be able to invite itself in.
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+
       const result = await createGuardianInvite(
         pool, c.principal.userId, c.childId, role, label.trim(), invitedEmail);
       if (!result.ok) return { status: 400, body: { error: result.reason } };
+      await audit(c.principal.userId, 'invite_created', { childId: c.childId });
       return { status: 201, body: { ok: true, invite: result.invite } };
     },
   });
@@ -791,7 +830,17 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (role !== 'child' && role !== 'guardian') {
         return { status: 400, body: { error: 'invalid_role' } };
       }
+      // S-B1: a typed 6-digit code matches no row on a miss, so there is nothing
+      // to lock per code. A global per-minute miss budget (on top of the per-IP
+      // limiter in index.mjs) caps the whole server's guessing rate.
+      const budget = pairingMissBudget.check();
+      if (budget.blocked) {
+        return { status: 429, body: { error: 'pairing_rate_limited', retryAfterSec: budget.retryAfterSec } };
+      }
       const result = await redeemDevicePairingCode(pool, code, role, new Date());
+      if (!result.ok && (result.reason === 'not_found' || result.reason === 'role_mismatch')) {
+        pairingMissBudget.hit();
+      }
       if (!result.ok) {
         const status = result.reason === 'not_found' ? 404
           : result.reason === 'expired' ? 410
@@ -2124,6 +2173,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
           // A concurrent first-PIN call won between the check and the insert:
           // that caller's PIN stands, ours must prove the current one.
           if (!created) return { status: 409, body: { error: 'current_pin_required' } };
+          await audit(c.principal.userId, 'pin_changed');
           return { body: { ok: true } };
         }
         const currentPin = c.body?.currentPin;
@@ -2133,6 +2183,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         const proof = await requireOwnPin(c.principal.userId, currentPin);
         if (!proof.ok) return { status: proof.status, body: { error: proof.error } };
         await setPinCredential(pool, c.principal.userId, hash);
+        await audit(c.principal.userId, 'pin_changed');
         return { body: { ok: true } };
       } catch (e) {
         // SEC-01 follow-up — pool.ts's setPinCredential() refuses a
@@ -2193,6 +2244,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (typeof clientDataJSON !== 'string' || typeof attestationObject !== 'string') {
         return { status: 400, body: { error: 'bad_request' } };
       }
+      // S-B3: adding a passkey is a permanent-takeover primitive, so it needs the
+      // guardian PIN -- except for the very first credential of an account that
+      // has neither a PIN nor a passkey yet (invite bootstrap), where there is
+      // nothing to step up against.
+      if (await hasSecondFactorSetup(pool, c.principal.userId)) {
+        const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+        if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      }
       let clientData;
       try { clientData = JSON.parse(Buffer.from(clientDataJSON, 'base64url').toString('utf8')); }
       catch { return { status: 400, body: { error: 'bad_client_data' } }; }
@@ -2224,14 +2283,24 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         return { status: 400, body: { error: 'rpid_mismatch' } };
       }
 
+      // S-B3: the authenticator must have verified the user (UV flag, 0x04) --
+      // a passkey that "works" without a biometric/PIN on the device is a bearer token.
+      if ((authData[32] & 0x04) === 0) {
+        return { status: 400, body: { error: 'user_verification_required' } };
+      }
+
       let credentialId, publicKeyPem;
       try { ({ credentialId, publicKeyPem } = extractCredentialPublicKey(authData)); }
       catch { return { status: 400, body: { error: 'bad_public_key' } }; }
 
       try {
         await storeWebauthnCredential(pool, c.principal.userId, credentialId, publicKeyPem);
+        await audit(c.principal.userId, 'passkey_added');
         return { body: { ok: true } };
       } catch (e) {
+        if (e?.code === 'passkey_limit') {
+          return { status: 409, body: { error: 'passkey_limit' } };
+        }
         // SEC-01 follow-up — pool.ts's storeWebauthnCredential() refuses a
         // deactivated guardian, same status/body shape as devLogin's own gate.
         if (e?.code === 'account_deactivated') {
@@ -2448,13 +2517,19 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // real image bytes — a real constraint for a high-resolution phone
       // photo, flagged here rather than silently hit.
       if (bytes.length === 0) return { status: 400, body: { error: 'bad_image' } };
+      // S-B6: the declared pixel count is read from the header and refused BEFORE
+      // any decoder allocates width x height x 4 bytes.
+      try { assertImageWithinLimits(bytes); }
+      catch { return { status: 413, body: { error: 'image_too_large' } }; }
+      const releaseCapture = uploadLimiter.acquire(principalKey(c.principal));
+      if (!releaseCapture) return { status: 429, body: { error: 'too_many_uploads_in_flight' } };
       let result;
       try {
         result = await runHomeworkCapture(bytes);
       } catch (e) {
-        // decodeImage() (measure.ts) throws on anything that isn't a real
-        // PNG/JPEG — an honest 400, not a 500 masquerading as a server bug.
-        return { status: 400, body: { error: 'unsupported_image_format' } };
+        return { status: 400, body: { error: /image_too_large/.test(String(e?.message)) ? 'image_too_large' : 'unsupported_image_format' } };
+      } finally {
+        releaseCapture();
       }
       if (!result.ok) {
         // The verdict's own reason/advice, unchanged — this route invents
@@ -2546,6 +2621,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         // unlike the guardian's independently-optional two-button UX.
         return { status: 501, body: { error: 'child_self_export_not_implemented' } };
       }
+      // S-B3: the family's whole message log and media links leave the building
+      // here, so a bare 1-hour session is not enough. The PIN rides in a header
+      // (a GET has no body and a secret must never sit in the URL).
+      const pinCheck = await requireOwnPin(c.principal.userId, c.headers?.['x-guardian-pin']);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
       const kind = c.query.get('kind');
       if (kind === 'certified') {
         const result = await certifiedExportBundleFor(pool, c.principal.userId, c.childId);
@@ -2556,6 +2636,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
             ...(result.faults ? { faults: result.faults } : {}),
           } };
         }
+        await audit(c.principal.userId, 'export_taken', { childId: c.childId, variant: 'certified' });
         return { status: 200, body: {
           kind: 'certified',
           free: result.free,
@@ -2585,6 +2666,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // certified specifically.
       const result = await rawExportBundleFor(pool, c.principal, c.childId);
       if (!result.ok) return { status: 403, body: { error: result.reason } };
+      await audit(c.principal.userId, 'export_taken', { childId: c.childId, variant: 'raw' });
       // Real, was not before: each delivered artifact's storageKey is a
       // storage-layer reference, not a fetchable URL -- a guardian who
       // downloaded a raw export and opened it later found bare keys where
@@ -3024,6 +3106,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const result = await recordDose(
         pool, c.principal.roleName, c.principal.userId, c.childId,
         c.params.medicationId, localDate, slot, status);
+      // S-B5: a medication that is not THIS child's answers like one that does not exist.
+      if (!result.ok && result.notFound) {
+        return { status: 404, body: { error: 'medication_not_found' } };
+      }
       if (!result.ok) {
         // Named the parent and the local time, nothing more — §9.6.1's own
         // "no blame framing" rule, the exact same shape AlreadyAdministered
@@ -3463,6 +3549,28 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (!storageKey || durationMs === null) {
         return { status: 400, body: { error: 'storage_key_and_duration_ms_required' } };
       }
+      // S-B9: the key must be one THIS server handed out for THIS child, uploaded by
+      // THIS principal, still present, and not already attached to another message.
+      // Otherwise a message could point at another child's blob (and the retention
+      // reaper would later delete it).
+      const keyPrefix = `children/${c.childId}/messages/`;
+      if (!storageKey.startsWith(keyPrefix) || !UUID_KEY_TAIL.test(storageKey.slice(keyPrefix.length))) {
+        return { status: 400, body: { error: 'bad_storage_key' } };
+      }
+      const upload = await mediaUploadFor(pool, storageKey);
+      if (!upload || upload.childId !== c.childId) {
+        return { status: 400, body: { error: 'storage_key_unknown' } };
+      }
+      const mine = c.principal.roleName === 'child'
+        ? upload.uploaderRole === 'child'
+        : upload.uploaderUserId === c.principal.userId;
+      if (!mine) return { status: 403, body: { error: 'storage_key_not_yours' } };
+      if (!(await storage.exists(storageKey))) {
+        return { status: 400, body: { error: 'storage_key_unknown' } };
+      }
+      if (await storageKeyInUse(pool, storageKey)) {
+        return { status: 409, body: { error: 'storage_key_in_use' } };
+      }
       const captionKey = typeof body.captionKey === 'string' ? body.captionKey : undefined;
       const targetLocalDate = typeof body.targetLocalDate === 'string'
         ? body.targetLocalDate : null;
@@ -3565,6 +3673,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (typeof b64 !== 'string' || b64.length === 0) {
         return { status: 400, body: { error: 'bytes_required' } };
       }
+      // S-B6: one principal may have only a couple of these (~3x body size in RAM
+      // while decoded) in flight; the rest are refused at once, not queued.
+      const release = uploadLimiter.acquire(principalKey(c.principal));
+      if (!release) return { status: 429, body: { error: 'too_many_uploads_in_flight' } };
+      let reserved = false, key = null;
+      try {
       let bytes;
       try {
         bytes = Buffer.from(b64, 'base64');
@@ -3575,15 +3689,38 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // confusing captureMessage() `empty_recording` denial against a
       // storageKey that turned out to point at a zero-byte file.
       if (bytes.length === 0) return { status: 400, body: { error: 'bad_bytes' } };
+      // S-B8: only the containers a child's message can be, proven by magic bytes
+      // (jpeg/png/mp4/webm/m4a); the MIME recorded is the one the bytes prove.
+      const sniffed = sniffMedia(bytes);
+      if (!sniffed) return { status: 415, body: { error: 'unsupported_media_type' } };
+      if (sniffed.mime.startsWith('image/')) {
+        try { assertImageWithinLimits(bytes); }
+        catch { return { status: 413, body: { error: 'image_too_large' } }; }
+      }
 
       // children/<childId>/messages/<uuid> — mirrors the real nested-key
       // shape storage.test.mjs's own "Q nested keys" group already proves
       // FilesystemStorage handles (list()-by-prefix, no cross-child leakage).
       // childId comes from the verified path (A3), never the body — the
       // same identity discipline every other write in this file follows.
-      const key = `children/${c.childId}/messages/${randomUUID()}`;
+      key = `children/${c.childId}/messages/${randomUUID()}`;
+      // Reserve the ledger row (and enforce the per-child byte quota) BEFORE the
+      // blob exists, so an over-quota upload never lands on disk and a crash
+      // between the two leaves a row the sweeper can see, not a blob it cannot.
+      const slot = await reserveMediaUpload(pool, {
+        storageKey: key, childId: c.childId,
+        uploaderUserId: c.principal.userId ?? null, uploaderRole: c.principal.roleName,
+        mime: sniffed.mime, byteSize: bytes.length,
+      }, mediaQuotaBytes);
+      if (!slot.ok) return { status: 413, body: { error: 'media_quota_exceeded' } };
+      reserved = true;
       const put = await storage.put(key, bytes);
-      return { status: 201, body: { storageKey: put.key, etag: put.etag } };
+      reserved = false; // committed: the sweeper, not this handler, owns it from here
+      return { status: 201, body: { storageKey: put.key, etag: put.etag, mime: sniffed.mime } };
+      } finally {
+        release();
+        if (reserved && key) { try { await releaseMediaUpload(pool, key); } catch { /* sweeper */ } }
+      }
     },
   });
 
@@ -3648,6 +3785,69 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (!bytes) return { status: 404, body: { error: 'media_not_found' } };
       const signedUrl = storage.signedUrl(artifact.storageKey, SIGNED_URL_TTL_SECONDS, Date.now());
       return { body: { bytes: bytes.toString('base64'), kind: artifact.kind, signedUrl } };
+    },
+  });
+
+  // ===========================================================================
+  // SECURITY SURFACE (audit round 2: S-B3) -- passkey management + the
+  // security-event feed. Offline-first: nothing here sends anything; the feed
+  // is the durable source a later notifier can read.
+  // ===========================================================================
+
+  // GET /v1/me/passkeys -- the caller's own passkeys (never the credential id or
+  // key), so a rightful owner can SEE an intruder's.
+  api.register({
+    method: 'GET', path: '/v1/me/passkeys', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      return { body: { passkeys: await passkeysFor(pool, c.principal.userId) } };
+    },
+  });
+
+  // DELETE /v1/me/passkeys/:passkeyId -- PIN step-up (header, a DELETE has no
+  // reliable body). The last passkey cannot be removed (409 last_passkey).
+  api.register({
+    method: 'DELETE', path: '/v1/me/passkeys/:passkeyId', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const pinCheck = await requireOwnPin(c.principal.userId, c.headers?.['x-guardian-pin']);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      const out = await deletePasskey(pool, c.principal.userId, c.params.passkeyId);
+      if (out === 'not_found') return { status: 404, body: { error: 'passkey_not_found' } };
+      if (out === 'last_passkey') return { status: 409, body: { error: 'last_passkey' } };
+      await audit(c.principal.userId, 'passkey_removed');
+      return { body: { ok: true } };
+    },
+  });
+
+  // GET /v1/children/:childId/security-events -- every live guardian of the child
+  // reads the same content-free feed (who did what, never the content). `action:
+  // 'settings'` is the guardian-only capability; RLS (migration 0039) is the
+  // second lock behind it. ?limit=1..200 (default 50), ?before=<seq> keyset cursor.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/security-events', action: 'settings',
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const limit = Number(c.query.get('limit') ?? 50);
+      const beforeRaw = c.query.get('before');
+      const before = beforeRaw === null ? null : Number(beforeRaw);
+      if ((beforeRaw !== null && (!Number.isSafeInteger(before) || before < 1)) ||
+          !Number.isFinite(limit)) {
+        return { status: 400, body: { error: 'bad_query' } };
+      }
+      const events = await inSession(c, (q) =>
+        securityEventsVia(q, c.childId, { limit, beforeSeq: before }));
+      return { body: { events,
+        nextBefore: events.length ? events[events.length - 1].seq : null } };
     },
   });
 }

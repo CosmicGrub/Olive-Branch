@@ -34,7 +34,8 @@
 // whole point of a signed URL is that it needs no session/RLS-scoped
 // lookup to serve). A real per-blob Content-Type would need that field
 // added somewhere in the upload pipeline; not invented here.
-export async function serveSignedMedia(reqUrl, res, storage) {
+import { SERVABLE_MIMES } from './media_sniff.mjs';
+export async function serveSignedMedia(reqUrl, res, storage, mimeFor = null) {
   const json = (status, body) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(body));
@@ -74,8 +75,18 @@ export async function serveSignedMedia(reqUrl, res, storage) {
   if (!bytes) {
     return json(404, { error: 'media_not_found' });
   }
+  // S-B8: the MIME the upload route PROVED from the bytes (media_upload ledger),
+  // never one a client claimed; anything outside the servable set, an unknown
+  // blob, or a lookup failure falls back to octet-stream (+ nosniff below).
+  let contentType = 'application/octet-stream';
+  if (mimeFor) {
+    try {
+      const m = await mimeFor(key);
+      if (typeof m === 'string' && SERVABLE_MIMES.has(m)) contentType = m;
+    } catch { /* fall back */ }
+  }
   res.writeHead(200, {
-    'content-type': 'application/octet-stream',
+    'content-type': contentType,
     // Private and short — matches SIGNED_URL_TTL_SECONDS (5 minutes); a
     // shared/public cache holding a child's media past the URL's own real
     // expiry would defeat the entire point of a short-TTL signed URL.

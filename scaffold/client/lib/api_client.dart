@@ -346,6 +346,14 @@ class OliveApi {
   // child's own device; this one is guardian-side navigation (guardian_more
   // .dart), a normal authenticated guardian session, no escalation required.
   static const childTheme = '/v1/children/:childId/theme';
+  // --- security surface (audit round 2, S-B3). Path constants only: no client
+  // screen consumes these yet (the contract test requires every server route to
+  // have a name here). GET lists the caller's passkeys, DELETE removes one
+  // (guardian PIN in the x-guardian-pin header); the third is the security-event
+  // feed every live guardian of the child can read.
+  static const mePasskeys = '/v1/me/passkeys';
+  static const mePasskey = '/v1/me/passkeys/:passkeyId';
+  static const childSecurityEvents = '/v1/children/:childId/security-events';
   // --- game favorites + age-unlock (§9.2, Intuitivism pass sub-project 3a)
   // Real as of this pass — server/routes.mjs, packages/db/src/pool.mjs's
   // gameFavoritesFor()/setGameFavoriteKinds()/recordGamePickerOpen(),
