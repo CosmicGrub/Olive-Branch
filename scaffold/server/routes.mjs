@@ -46,7 +46,10 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          createDevicePairingCode, cancelDevicePairingCode, redeemDevicePairingCode,
          pairedDevicesForChild, revokePairedDevice,
          activityOverridesFor, setActivityOverride, deleteActivityOverride,
+         learnSettingsFor, setLearnSettings, saveReflection, listReflections,
+         deleteReflection, clearReflections, setHouseRules, houseRulesFor,
          INVITABLE_ROLES } from '../packages/db/src/pool.mjs';
+import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
 import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
@@ -231,6 +234,56 @@ function invalidProfileBody(body) {
   if (!('gender' in body)) return 'bad_gender';
   const { gender } = body;
   if (gender !== null && !CHILD_GENDERS.has(gender)) return 'bad_gender';
+  return null;
+}
+
+/**
+ * Parent Learn (db/migrations/0035_parent_learn.sql; packages/parent-learn).
+ * Same invalidXBody() convention as the validators around it: a specific 400
+ * reason, never a bare Postgres CHECK error, and nothing from a body is ever
+ * trusted — unknown keys are refused, not ignored.
+ */
+const LEARN_REFLECTION_MODES = ['off', 'session', 'saved'];
+const LEARN_FRAMINGS = ['neutral', 'culture-note', 'values-first'];
+function invalidLearnSettingsBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'body_must_be_object';
+  const allowed = ['reflection', 'framing', 'rulesList', 'messageCheck'];
+  const keys = Object.keys(body);
+  if (keys.some((k) => !allowed.includes(k))) return 'unknown_field';
+  if (!keys.length) return 'empty_body';
+  if ('reflection' in body && !LEARN_REFLECTION_MODES.includes(body.reflection)) return 'bad_reflection';
+  if ('framing' in body && !LEARN_FRAMINGS.includes(body.framing)) return 'bad_framing';
+  if ('rulesList' in body && typeof body.rulesList !== 'boolean') return 'bad_rulesList';
+  if ('messageCheck' in body && typeof body.messageCheck !== 'boolean') return 'bad_messageCheck';
+  return null;
+}
+/** YYYY-MM-DD that is a real calendar date, not before 2000, not later than tomorrow (UTC). */
+function validLearnDay(day, nowMs) {
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const t = Date.parse(day + 'T00:00:00Z');
+  if (!Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== day) return false;
+  return t >= Date.parse('2000-01-01T00:00:00Z') && t <= nowMs + 2 * 86400000;
+}
+function invalidReflectionBody(body, nowMs) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'body_must_be_object';
+  const keys = Object.keys(body);
+  if (keys.some((k) => !['day', 'warmth', 'expectations'].includes(k))) return 'unknown_field';
+  if (!validLearnDay(body.day, nowMs)) return 'bad_day';
+  for (const k of ['warmth', 'expectations']) {
+    if (!Number.isInteger(body[k]) || body[k] < 0 || body[k] > 100) return 'bad_' + k;
+  }
+  return null;
+}
+function invalidHouseRulesBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'body_must_be_object';
+  if (Object.keys(body).some((k) => k !== 'rules')) return 'unknown_field';
+  if (!Array.isArray(body.rules) || body.rules.length > 20) return 'bad_rules';
+  for (const r of body.rules) {
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return 'bad_rules';
+    if (Object.keys(r).some((k) => k !== 'category' && k !== 'text')) return 'bad_rules';
+    if (!RULE_CATEGORIES.includes(r.category)) return 'bad_rules';
+    if (typeof r.text !== 'string' || !r.text.trim() || r.text.trim().length > 200) return 'bad_rules';
+  }
   return null;
 }
 
@@ -904,6 +957,117 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       }
       await deleteActivityOverride(pool, c.principal.userId, c.childId, c.params.activityKey);
       return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // ===========================================================================
+  // PARENT LEARN — guardian-only education suite's server side
+  // (db/migrations/0035_parent_learn.sql, packages/parent-learn/src/learn.ts,
+  // rules L1-L5). Three things shape every handler below:
+  //   * GUARDIAN ONLY, fail closed — c.principal.roleName must be exactly
+  //     'guardian' with a userId. A child, sitter, step-parent, coordinator,
+  //     court or system principal gets 403 `guardian_only` BEFORE any query,
+  //     and 0035's RLS refuses them independently (a second lock).
+  //   * The guardian id is ALWAYS c.principal.userId, never from a body.
+  //   * Optional means opt-in: a reflection is only stored if the guardian's
+  //     own settings say 'saved' (409 reflection_storage_off otherwise), the
+  //     house-rules list only if rulesList is true (409 rules_list_off).
+  // The identity-scoped routes (/v1/learn/*) use `action: null` like
+  // /v1/me — there is no child in the path. The house-rules routes are
+  // child-scoped (a "family" here is the live guardians of one child) and
+  // reuse `action: 'settings'` exactly as the activity-override routes do,
+  // so an observer-only guardian is denied (§17.3) and a child reaches the
+  // handler only to be refused by guardianOnly().
+  // ===========================================================================
+  const learnGuardianOnly = (c) =>
+    (c.principal.roleName !== 'guardian' || !c.principal.userId)
+      ? { status: 403, body: { error: 'guardian_only' } } : null;
+
+  api.register({
+    method: 'GET', path: '/v1/learn/settings', action: null,
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      return { body: { settings: await learnSettingsFor(pool, c.principal.userId) } };
+    },
+  });
+
+  api.register({
+    method: 'PUT', path: '/v1/learn/settings', action: null,
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      const reason = invalidLearnSettingsBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      const settings = await setLearnSettings(pool, c.principal.userId, c.body);
+      return { status: 200, body: { settings } };
+    },
+  });
+
+  api.register({
+    method: 'GET', path: '/v1/learn/reflections', action: null,
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      return { body: { reflections: await listReflections(pool, c.principal.userId) } };
+    },
+  });
+
+  api.register({
+    method: 'PUT', path: '/v1/learn/reflections', action: null,
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      const reason = invalidReflectionBody(c.body, Date.now());
+      if (reason) return { status: 400, body: { error: reason } };
+      const r = await saveReflection(pool, c.principal.userId, c.body.day, c.body.warmth, c.body.expectations);
+      if (!r.ok) return { status: 409, body: { error: 'reflection_storage_off' } };
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // DELETE .../reflections/:day removes one day; DELETE .../reflections
+  // clears all of the caller's own. Both idempotent.
+  api.register({
+    method: 'DELETE', path: '/v1/learn/reflections/:day', action: null,
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      if (!validLearnDay(c.params.day, Date.now())) return { status: 400, body: { error: 'bad_day' } };
+      const existed = await deleteReflection(pool, c.principal.userId, c.params.day);
+      return { status: 200, body: { ok: true, existed } };
+    },
+  });
+
+  api.register({
+    method: 'DELETE', path: '/v1/learn/reflections', action: null,
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      const removed = await clearReflections(pool, c.principal.userId);
+      return { status: 200, body: { ok: true, removed } };
+    },
+  });
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/learn/house-rules', action: 'settings',
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      return { body: await houseRulesFor(pool, c.principal.userId, c.childId) };
+    },
+  });
+
+  api.register({
+    method: 'PUT', path: '/v1/children/:childId/learn/house-rules', action: 'settings',
+    handler: async (c) => {
+      const denied = learnGuardianOnly(c);
+      if (denied) return denied;
+      const reason = invalidHouseRulesBody(c.body);
+      if (reason) return { status: 400, body: { error: reason } };
+      const r = await setHouseRules(pool, c.principal.userId, c.childId, c.body.rules);
+      if (!r.ok) return { status: 409, body: { error: 'rules_list_off' } };
+      return { status: 200, body: { ok: true, count: r.count } };
     },
   });
 

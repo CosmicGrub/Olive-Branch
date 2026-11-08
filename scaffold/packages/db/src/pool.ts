@@ -17,6 +17,7 @@ import { retentionOnOpen, type ArtifactRow, type IntentRow } from '../../messagi
 import type { ChildCtx } from '../../delivery-engine/src/materialize.ts';
 import type { Platform } from '../../transport/src/push.ts';
 import type { Channel } from '../../devices/src/devices.ts';
+import { parseSettings, shareableRules, DEFAULT_SETTINGS, type LearnSettings } from '../../parent-learn/src/learn.ts';
 import {
   handover, type Child as HandoverChild, type Artifact as HandoverArtifact,
   type HandoverDenial,
@@ -4167,6 +4168,199 @@ export async function deleteActivityOverride(
         [childId, activityKey],
       );
     });
+}
+
+// ===========================================================================
+// PARENT LEARN — guardian-only education suite's server side. Migration
+// 0035_parent_learn.sql; pure rules in packages/parent-learn/src/learn.ts
+// (L1-L5). Every function opens a guardian-scoped session as the AUTHENTICATED
+// caller (`guardianId` is always c.principal.userId, never from a body), so
+// 0035's RLS is a real second lock: an absent/other guardian, a child, a
+// sitter or the system role matches no policy at all. None of these tables is
+// read by any export function in this file (certifiedExportBundleFor /
+// rawExportBundleFor) and none may ever be — see 0035's header.
+// ===========================================================================
+
+function rowToLearnSettings(r: any): LearnSettings {
+  return parseSettings({
+    reflection: r.reflection, framing: r.framing,
+    rulesList: r.rules_list, messageCheck: r.message_check,
+  });
+}
+
+/**
+ * GET /v1/learn/settings. An absent row is the (private) defaults and is NOT
+ * written — defaults are never stored.
+ */
+export async function learnSettingsFor(pool: pg.Pool, guardianId: string): Promise<LearnSettings> {
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT reflection, framing, rules_list, message_check
+         FROM guardian_learn_settings WHERE guardian_id = $1`, [guardianId]);
+    return rows.length ? rowToLearnSettings(rows[0]) : { ...DEFAULT_SETTINGS };
+  });
+}
+
+/**
+ * PUT /v1/learn/settings — partial patch merged onto the current settings
+ * (or defaults), re-validated through the pure parseSettings(), upserted.
+ * Turning `rulesList` off deletes this guardian's shared house rules in the
+ * SAME transaction: a shared list must never outlive its opt-in.
+ */
+export async function setLearnSettings(
+  pool: pg.Pool, guardianId: string, patch: Partial<LearnSettings>,
+): Promise<LearnSettings> {
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const cur = await q(
+      `SELECT reflection, framing, rules_list, message_check
+         FROM guardian_learn_settings WHERE guardian_id = $1`, [guardianId]);
+    const base: LearnSettings = cur.length ? rowToLearnSettings(cur[0]) : { ...DEFAULT_SETTINGS };
+    // Merge field by field and keep the CURRENT value for any field that is
+    // missing or invalid in the patch (a junk patch must not silently reset a
+    // stored choice to the default). The route already 400s on junk; this is
+    // the backstop for any other caller.
+    const next = parseSettings({
+      reflection: parseSettings({ reflection: patch.reflection }).reflection === patch.reflection
+        ? patch.reflection : base.reflection,
+      framing: parseSettings({ framing: patch.framing }).framing === patch.framing
+        ? patch.framing : base.framing,
+      rulesList: typeof patch.rulesList === 'boolean' ? patch.rulesList : base.rulesList,
+      messageCheck: typeof patch.messageCheck === 'boolean' ? patch.messageCheck : base.messageCheck,
+    });
+    await q(
+      `INSERT INTO guardian_learn_settings
+         (guardian_id, reflection, framing, rules_list, message_check, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (guardian_id) DO UPDATE SET
+         reflection = EXCLUDED.reflection, framing = EXCLUDED.framing,
+         rules_list = EXCLUDED.rules_list, message_check = EXCLUDED.message_check,
+         updated_at = now()`,
+      [guardianId, next.reflection, next.framing, next.rulesList, next.messageCheck]);
+    if (!next.rulesList) {
+      await q(`DELETE FROM guardian_house_rule WHERE author_guardian_id = $1`, [guardianId]);
+    }
+    return next;
+  });
+}
+
+export interface Reflection { day: string; warmth: number; expectations: number; createdAt: string }
+
+/**
+ * PUT /v1/learn/reflections — upsert one day. REFUSED unless this guardian's
+ * stored settings say reflection = 'saved' (rule L2: nothing is persisted
+ * unless they chose it). Warmth/expectations are clamped by the DB CHECK, but
+ * the route has already validated them as integers 0..100.
+ */
+export async function saveReflection(
+  pool: pg.Pool, guardianId: string, day: string, warmth: number, expectations: number,
+): Promise<{ ok: true } | { ok: false; reason: 'reflection_not_saved' }> {
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const s = await q(
+      `SELECT reflection FROM guardian_learn_settings WHERE guardian_id = $1`, [guardianId]);
+    const mode = s.length ? (s[0].reflection as string) : DEFAULT_SETTINGS.reflection;
+    if (mode !== 'saved') return { ok: false as const, reason: 'reflection_not_saved' as const };
+    await q(
+      `INSERT INTO guardian_reflection (guardian_id, day, warmth, expectations)
+       VALUES ($1, $2::date, $3, $4)
+       ON CONFLICT (guardian_id, day) DO UPDATE
+         SET warmth = EXCLUDED.warmth, expectations = EXCLUDED.expectations`,
+      [guardianId, day, warmth, expectations]);
+    return { ok: true as const };
+  });
+}
+
+/** GET /v1/learn/reflections — the caller's OWN reflections, newest first, bounded. */
+export async function listReflections(
+  pool: pg.Pool, guardianId: string, limit = 366,
+): Promise<Reflection[]> {
+  const n = Math.min(Math.max(Math.trunc(limit) || 0, 1), 366);
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT day::text AS day, warmth, expectations, created_at
+         FROM guardian_reflection WHERE guardian_id = $1
+        ORDER BY day DESC LIMIT $2`, [guardianId, n]);
+    return rows.map((r: any) => ({
+      day: r.day as string, warmth: Number(r.warmth), expectations: Number(r.expectations),
+      createdAt: new Date(r.created_at).toISOString(),
+    }));
+  });
+}
+
+/** DELETE /v1/learn/reflections/:day — idempotent; returns whether a row existed. */
+export async function deleteReflection(
+  pool: pg.Pool, guardianId: string, day: string,
+): Promise<boolean> {
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const rows = await q(
+      `DELETE FROM guardian_reflection WHERE guardian_id = $1 AND day = $2::date RETURNING id`,
+      [guardianId, day]);
+    return rows.length > 0;
+  });
+}
+
+/** DELETE /v1/learn/reflections — "clear all of mine"; returns how many were removed. */
+export async function clearReflections(pool: pg.Pool, guardianId: string): Promise<number> {
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const rows = await q(
+      `DELETE FROM guardian_reflection WHERE guardian_id = $1 RETURNING id`, [guardianId]);
+    return rows.length;
+  });
+}
+
+export interface HouseRule { id: string; authorGuardianId: string; category: string; text: string }
+
+/**
+ * PUT /v1/children/:childId/learn/house-rules — REPLACES this guardian's list
+ * for this child. Refused unless their stored settings have rules_list = true
+ * (L5). The list is re-validated through the pure shareableRules() (known
+ * categories only, trimmed, bounded) — the body is never trusted — and
+ * written in one transaction so a reader never sees a half list.
+ */
+export async function setHouseRules(
+  pool: pg.Pool, guardianId: string, childId: string, rules: unknown,
+): Promise<{ ok: true; count: number } | { ok: false; reason: 'rules_list_off' }> {
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const s = await q(
+      `SELECT reflection, framing, rules_list, message_check
+         FROM guardian_learn_settings WHERE guardian_id = $1`, [guardianId]);
+    const settings = s.length ? rowToLearnSettings(s[0]) : { ...DEFAULT_SETTINGS };
+    if (!settings.rulesList) return { ok: false as const, reason: 'rules_list_off' as const };
+    const clean = shareableRules({ kind: 'guardian', id: guardianId }, settings, rules);
+    await q(
+      `DELETE FROM guardian_house_rule WHERE author_guardian_id = $1 AND child_id = $2`,
+      [guardianId, childId]);
+    for (const r of clean) {
+      await q(
+        `INSERT INTO guardian_house_rule (child_id, author_guardian_id, category, body)
+         VALUES ($1, $2, $3, $4)`, [childId, guardianId, r.category, r.text]);
+    }
+    return { ok: true as const, count: clean.length };
+  });
+}
+
+/**
+ * GET /v1/children/:childId/learn/house-rules — `mine` (this guardian's own
+ * rows) and `others` (the OTHER live guardians' rows for the same child).
+ * RLS alone decides which rows are visible (0035: author FOR ALL, co-guardian
+ * SELECT, both requiring a live edge to the child); the split is just
+ * author_guardian_id vs the caller.
+ */
+export async function houseRulesFor(
+  pool: pg.Pool, guardianId: string, childId: string,
+): Promise<{ mine: HouseRule[]; others: HouseRule[] }> {
+  return withSession(pool, { roleName: 'guardian', userId: guardianId, childId: null }, async (q) => {
+    const rows = await q(
+      `SELECT id, author_guardian_id, category, body
+         FROM guardian_house_rule WHERE child_id = $1
+        ORDER BY created_at, id`, [childId]);
+    const all: HouseRule[] = rows.map((r: any) => ({
+      id: r.id, authorGuardianId: r.author_guardian_id, category: r.category, text: r.body,
+    }));
+    return {
+      mine: all.filter((r) => r.authorGuardianId === guardianId),
+      others: all.filter((r) => r.authorGuardianId !== guardianId),
+    };
+  });
 }
 
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */

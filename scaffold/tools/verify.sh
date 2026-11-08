@@ -372,6 +372,8 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "seed-dev.mjs satisfies both first-run gates out of the box (real DB)|server/test/seed_dev.test.mjs" \
             "db device pairing & provisioning (real RLS)|packages/db/test/device_pairing.test.mjs" \
             "db parental controls: guardian_activity_override (real RLS)|packages/db/test/guardian_activity_override.test.mjs" \
+            "db parent learn: settings, private reflections, house rules (real RLS)|packages/db/test/parent_learn.test.mjs" \
+            "route contract: parent learn (real DB, real RLS)|server/test/parent_learn_route.test.mjs" \
             "push: notify dispatch (real DB)|packages/transport/test/notify.test.mjs" \
             "db certified export (real RLS)|packages/db/test/court_export.test.mjs" \
             "db health alert (real DB)|packages/db/test/health_alert.test.mjs" \
