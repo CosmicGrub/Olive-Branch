@@ -303,6 +303,11 @@ class RhythmVoiceService {
   Future<RvResult> setRhythmSuite(FamilyPrincipal? p, bool on) =>
       _guarded(p, () async => rhythm.save((await rhythm.load()).copyWith(suiteOn: on)));
 
+  /// The guardian's local "two homes" fallback for the packing buddy (only read
+  /// when the family snapshot is unavailable).
+  Future<RvResult> setTwoHomes(FamilyPrincipal? p, bool on) =>
+      _guarded(p, () async => rhythm.save((await rhythm.load()).copyWith(twoHomes: on)));
+
   Future<RvResult> saveRoutine(FamilyPrincipal? p, Routine r) => _guarded(p, () async {
         final Routine? clean = Routine.tryFromJson(r.toJson());
         if (clean == null || clean.steps.length != r.steps.length) throw const RvRefused('bad_routine');
@@ -419,7 +424,17 @@ class RhythmVoiceService {
   /// refused here too: this is the grown-up's window, nothing else.
   Future<List<Worry>> worriesShownToGrownUp(FamilyPrincipal? p) async {
     if (!_isGuardian(p)) throw const RvRefused('guardian_only');
-    return shownToGrownUp(await worries.load());
+    final List<Worry> box = await worries.load();
+    final List<Worry> shown = shownToGrownUp(box);
+    // Remember (privately, for her) that a grown-up's window opened on these, so
+    // that taking one back can be answered honestly. A failed save never blocks
+    // the read: the grown-up still sees exactly what she chose to show.
+    if (shown.any((Worry w) => !w.seen)) {
+      try {
+        await worries.save(markShownAsSeen(box));
+      } catch (_) {}
+    }
+    return <Worry>[for (final Worry w in shown) w.forGrownUp()];
   }
 
   /// Puts a worry in. [ending] is what she chose: keep it (private), or show her
@@ -439,6 +454,20 @@ class RhythmVoiceService {
 
   Future<RvResult> showWorryToGrownUp(FamilyPrincipal? p, String id, bool show) =>
       _childOnly(p, () async => worries.save(setWorryShown(await worries.load(), id, show)));
+
+  /// "Keep it just mine": she takes a shown worry back. [grownUpSawIt] is the
+  /// truth about whether a grown-up's window opened on it while it was shown, so
+  /// the screen can say so gently instead of pretending it never happened.
+  Future<({RvResult result, bool grownUpSawIt})> takeBackWorry(FamilyPrincipal? p, String id) async {
+    bool saw = false;
+    final RvResult r = await _childOnly(p, () async {
+      final List<Worry> box = await worries.load();
+      if (!box.any((Worry w) => w.id == id)) throw const RvRefused('unknown_worry');
+      saw = box.firstWhere((Worry w) => w.id == id).seen;
+      await worries.save(setWorryShown(box, id, false));
+    });
+    return (result: r, grownUpSawIt: r.ok && saw);
+  }
 
   Future<RvResult> floatAwayWorry(FamilyPrincipal? p, String id) =>
       _childOnly(p, () async => worries.save(floatAway(await worries.load(), id)));

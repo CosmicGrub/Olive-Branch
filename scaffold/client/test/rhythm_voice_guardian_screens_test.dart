@@ -86,7 +86,7 @@ void main() {
       await t.tap(find.byKey(const Key('voiceSuite')));
       await t.pumpAndSettle();
       expect(find.text('Only a grown-up can change this.'), findsOneWidget);
-      expect((await s2.voice.load()).suiteOn, isTrue, reason: 'nothing changed');
+      expect((await s2.voice.load()).suiteOn, isFalse, reason: 'nothing changed: Voice is still off');
     });
 
     testWidgets('both are reachable from the guardian Settings hub, under Family', (WidgetTester t) async {

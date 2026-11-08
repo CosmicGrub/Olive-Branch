@@ -21,7 +21,7 @@
 // packing buddy — whether she sleeps in more than one home (`features
 // ['packingBuddy']`, which also honours the model's own `weeks` suite switch).
 // With no snapshot the structure is unknown, so the packing buddy stays off
-// rather than guessing. Content a guardian has to AUTHOR (a routine, a bag list,
+// rather than guessing, unless a guardian set the local "two homes" fallback. Content a guardian has to AUTHOR (a routine, a bag list,
 // a place plan, helpers) is shown only once it exists, so she is never handed an
 // empty screen.
 library;
@@ -30,7 +30,8 @@ import 'family_structure_logic.dart' show ChildView, bandForYears;
 import 'rhythm_logic.dart';
 import 'voice_logic.dart';
 
-/// The two switches a guardian owns for these suites. Absent means on.
+/// The two switches a guardian owns for these suites. Rhythm: absent means on.
+/// Voice: absent means OFF until a guardian turns it on.
 const List<String> rhythmVoiceSuiteKeys = <String>['rhythm', 'voice'];
 
 /// What is on for her right now.
@@ -61,7 +62,8 @@ RhythmVoiceTiles tilesFor({
   ChildView? view,
   Object? yearsOld,
   bool rhythmOn = true,
-  bool voiceOn = true,
+  bool voiceOn = false,
+  bool twoHomesSetting = false,
   Routine? routine,
   FirstThenBoard? board,
   PackingList packing = const PackingList(),
@@ -73,7 +75,10 @@ RhythmVoiceTiles tilesFor({
   // says there is no More tile for her means these tiles have nowhere to live.
   final bool hasRoom = band != 't34' && (view == null || view.hasTile('more'));
   if (!hasRoom) return RhythmVoiceTiles.none;
-  final bool twoHomes = view?.features['packingBuddy'] == true;
+  // With a family snapshot the model alone decides. Without one the structure is
+  // unknown, so only a guardian's own local "two homes" setting (off by default)
+  // can turn the packing buddy on.
+  final bool twoHomes = view != null ? view.features['packingBuddy'] == true : twoHomesSetting;
   return RhythmVoiceTiles(
     routine: rhythmOn && (routine?.steps.isNotEmpty ?? false),
     firstThen: rhythmOn && board != null,

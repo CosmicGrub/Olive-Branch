@@ -29,6 +29,7 @@ import 'court_export.dart';
 import 'degradation_banner.dart';
 import 'deletion_screen.dart';
 import 'emergency_card.dart';
+import 'emergency_card_local.dart';
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'expiry_digest.dart';
@@ -479,6 +480,8 @@ class GuardianMoreScreen extends StatelessWidget {
       childName: childName,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
       httpClient: availabilityHttpClient,
+      localService: EmergencyCardService.forChild(childId),
+      principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
     ));
   }
 
@@ -554,7 +557,8 @@ class GuardianMoreScreen extends StatelessWidget {
           onTap: () => _open(context, HerColourGuardianScreen(childName: childName, childAge: childAge))),
         SettingsRow(id: 'growing', icon: Icons.eco_outlined, title: 'Growing',
           subtitle: 'Time capsule, first times, growing marks. Kept on this device',
-          onTap: () => _open(context, GrowingCareHubScreen(care: false, childName: childName))),
+          onTap: () => _open(context, GrowingCareHubScreen(care: false, childName: childName,
+            guardianId: guardianId ?? 'local-guardian'))),
         SettingsRow(id: 'look', icon: Icons.format_paint_outlined, title: 'How her app looks',
           subtitle: 'A palette, light or dark', onTap: () => _openThemePicker(context)),
         SettingsRow(id: 'access', icon: Icons.accessibility_new_outlined, title: 'Accessibility for her device',
@@ -571,7 +575,9 @@ class GuardianMoreScreen extends StatelessWidget {
       SettingsGroup('Family', [
         SettingsRow(id: 'care', icon: Icons.health_and_safety_outlined, title: 'Care',
           subtitle: 'Care binder, hospital mode, picture stories, appointment prep. Kept on this device',
-          onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName))),
+          onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName,
+            guardianId: guardianId ?? 'local-guardian', emergency: EmergencyCardService.forChild(childId),
+            openEmergencyCard: _openEmergencyCard))),
         SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Adults and helpers',
           subtitle: 'Invite a co-parent',
           onTap: () => _open(context, InvitationScreen(

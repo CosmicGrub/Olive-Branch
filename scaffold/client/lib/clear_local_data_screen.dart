@@ -249,6 +249,8 @@ class _ClearLocalDataScreenState extends State<ClearLocalDataScreen> {
         'village' => 'Village',
         'passes' => 'Sitter pass and school summary',
         'compass' => 'Family compass',
+        'emergencycard' => 'Emergency card (grown-up side)',
+        'memorybox' => 'Her memory box',
         _ => e.area,
       };
 }

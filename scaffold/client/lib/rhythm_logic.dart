@@ -589,7 +589,7 @@ class RhythmDoc {
   const RhythmDoc({
     this.routine, this.routineTicks = const DayTicks(), this.board, this.boardState = const BoardState(),
     this.packing = const PackingList(), this.packTicks = const PackTicks(),
-    this.sensory = const SensoryProfile(), this.suiteOn = true,
+    this.sensory = const SensoryProfile(), this.suiteOn = true, this.twoHomes = false,
   });
   final Routine? routine;
   final DayTicks routineTicks;
@@ -602,10 +602,15 @@ class RhythmDoc {
   /// The guardian's switch for the whole suite on her device (default on).
   final bool suiteOn;
 
+  /// A guardian-set, local-only "she sleeps in two homes" fallback for the packing
+  /// buddy, used ONLY when the family snapshot is unavailable. Off by default;
+  /// only an explicit `true` counts.
+  final bool twoHomes;
+
   RhythmDoc copyWith({
     Routine? routine, bool clearRoutine = false, DayTicks? routineTicks, FirstThenBoard? board,
     bool clearBoard = false, BoardState? boardState, PackingList? packing, PackTicks? packTicks,
-    SensoryProfile? sensory, bool? suiteOn,
+    SensoryProfile? sensory, bool? suiteOn, bool? twoHomes,
   }) =>
       RhythmDoc(
         routine: clearRoutine ? null : (routine ?? this.routine),
@@ -614,13 +619,14 @@ class RhythmDoc {
         boardState: boardState ?? this.boardState,
         packing: packing ?? this.packing, packTicks: packTicks ?? this.packTicks,
         sensory: sensory ?? this.sensory, suiteOn: suiteOn ?? this.suiteOn,
+        twoHomes: twoHomes ?? this.twoHomes,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
         'routine': routine?.toJson(), 'routineTicks': routineTicks.toJson(),
         'board': board?.toJson(), 'boardState': boardState.toJson(),
         'packing': packing.toJson(), 'packTicks': packTicks.toJson(),
-        'sensory': sensory.toJson(), 'suiteOn': suiteOn,
+        'sensory': sensory.toJson(), 'suiteOn': suiteOn, 'twoHomes': twoHomes,
       };
 
   static RhythmDoc fromJson(Object? j) {
@@ -630,6 +636,7 @@ class RhythmDoc {
       board: FirstThenBoard.tryFromJson(j['board']), boardState: BoardState.fromJson(j['boardState']),
       packing: PackingList.tryFromJson(j['packing']), packTicks: PackTicks.fromJson(j['packTicks']),
       sensory: SensoryProfile.fromJson(j['sensory']), suiteOn: j['suiteOn'] != false,
+      twoHomes: j['twoHomes'] == true,
     );
   }
 }

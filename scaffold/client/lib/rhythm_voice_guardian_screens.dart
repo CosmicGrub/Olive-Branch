@@ -157,11 +157,12 @@ class RhythmGuardianHubScreen extends StatefulWidget {
 
 class _RhythmGuardianHubState extends State<RhythmGuardianHubScreen> with _Reporter<RhythmGuardianHubScreen> {
   bool _on = true;
+  bool _twoHomes = false;
   @override
   void initState() {
     super.initState();
     widget.service.loadRhythm(widget.principal).then((RhythmDoc d) {
-      if (mounted) setState(() => _on = d.suiteOn);
+      if (mounted) setState(() { _on = d.suiteOn; _twoHomes = d.twoHomes; });
     }).catchError((Object _) {});
   }
 
@@ -181,6 +182,17 @@ class _RhythmGuardianHubState extends State<RhythmGuardianHubScreen> with _Repor
         onChanged: (bool v) async {
           final RvResult r = await s.setRhythmSuite(p, v);
           if (r.ok) setState(() => _on = v);
+          report(r);
+        },
+      ),
+      SwitchListTile(
+        key: const Key('rhythmTwoHomes'), value: _twoHomes,
+        title: Text('$n sleeps in two homes'),
+        subtitle: const Text('A setting kept on this device only. It lets the packing buddy show when the app '
+            'cannot tell how many homes she has. Off unless you turn it on.'),
+        onChanged: (bool v) async {
+          final RvResult r = await s.setTwoHomes(p, v);
+          if (r.ok) setState(() => _twoHomes = v);
           report(r);
         },
       ),
@@ -634,7 +646,7 @@ class VoiceGuardianHubScreen extends StatefulWidget {
 }
 
 class _VoiceGuardianHubState extends State<VoiceGuardianHubScreen> with _Reporter<VoiceGuardianHubScreen> {
-  bool _on = true;
+  bool _on = false; // off until a guardian turns it on
   @override
   void initState() {
     super.initState();
@@ -656,6 +668,7 @@ class _VoiceGuardianHubState extends State<VoiceGuardianHubScreen> with _Reporte
       Text(_ageNote(n, widget.yearsOld), key: const Key('voiceAgeNote')),
       SwitchListTile(
         key: const Key('voiceSuite'), value: _on, title: Text('Show on $n\'s device'),
+        subtitle: const Text('Off until you turn it on. Nothing from Voice shows on her device before then.'),
         onChanged: (bool v) async {
           final RvResult r = await s.setVoiceSuite(p, v);
           if (r.ok) setState(() => _on = v);

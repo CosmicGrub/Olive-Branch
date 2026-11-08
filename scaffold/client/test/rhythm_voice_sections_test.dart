@@ -35,6 +35,7 @@ Future<RhythmVoiceService> authored() async {
   await s.savePacking(guardian, addPackItem(const PackingList(), newPackItem('o', 'owl')));
   await s.savePlace(guardian, makePlan('Dad\'s new place', <PlaceStop>[newStop('s', 'door', 'The door')], const <String>[]));
   await s.saveHelpers(guardian, <Helper>[makeHelper(id: 'h', name: 'Nana', picture: 'grandparent', saidYes: true)]);
+  await s.setVoiceSuite(guardian, true); // Voice starts OFF until a guardian turns it on
   return s;
 }
 
@@ -74,10 +75,45 @@ void main() {
     });
 
     testWidgets('with nothing authored only the picture tiles she owns appear: weather, worry, symbols', (WidgetTester t) async {
-      await more(t, freshService(), family: snap(twoHomes, 't57'));
+      final RhythmVoiceService s = freshService();
+      await s.setVoiceSuite(guardian, true);
+      await more(t, s, family: snap(twoHomes, 't57'));
       expectOn(<String>['rvTile_weather', 'rvTile_worry', 'rvTile_symbols']);
       expectOff(<String>[...rhythmKeys, 'rvTile_helpers']);
       expect(find.text('MY DAY'), findsNothing, reason: 'no empty section');
+    });
+
+    testWidgets('Voice starts OFF: with nothing set up and no switch turned on, no My voice section for any age', (WidgetTester t) async {
+      final RhythmVoiceService s = freshService();
+      for (final FamilyChildSnapshot? f in <FamilyChildSnapshot?>[snap(twoHomes, 't57'), snap(oneHome, 't812'), null]) {
+        await more(t, s, family: f, age: 9);
+        expectOff(voiceKeys);
+        expect(find.text('MY VOICE'), findsNothing);
+      }
+    });
+
+    testWidgets('Voice off stays off even with helpers written; turning it on shows the picture tiles', (WidgetTester t) async {
+      final RhythmVoiceService s = freshService();
+      await s.saveHelpers(guardian, <Helper>[makeHelper(id: 'h', name: 'Nana', picture: 'grandparent', saidYes: true)]);
+      await more(t, s, family: snap(twoHomes, 't57'));
+      expectOff(voiceKeys);
+      await s.setVoiceSuite(guardian, true);
+      await more(t, s, family: snap(twoHomes, 't57'));
+      expectOn(voiceKeys);
+    });
+
+    testWidgets('with no family snapshot the guardian\'s local "two homes" setting brings the bag; off by default', (WidgetTester t) async {
+      final RhythmVoiceService s = await authored();
+      await more(t, s);
+      expectOff(<String>['rvTile_packing']);
+      await s.setTwoHomes(guardian, true);
+      await more(t, s);
+      expectOn(<String>['rvTile_packing']);
+      await more(t, s, family: snap(oneHome, 't57'));
+      expectOff(<String>['rvTile_packing']);
+      await s.setTwoHomes(guardian, false);
+      await more(t, s);
+      expectOff(<String>['rvTile_packing']);
     });
 
     testWidgets('the youngest band gets nothing, whatever a guardian wrote', (WidgetTester t) async {
@@ -158,8 +194,10 @@ void main() {
     testWidgets('the speaker given to the hub reaches the screens', (WidgetTester t) async {
       final List<String> said = <String>[];
       await phone(t, w: 700, h: 3200);
+      final RhythmVoiceService on = freshService();
+      await on.setVoiceSuite(guardian, true);
       await t.pumpWidget(app(ChildMoreScreen(
-          childName: 'Ivy', childAge: 6, rhythmVoice: freshService(), family: snap(twoHomes, 't57'),
+          childName: 'Ivy', childAge: 6, rhythmVoice: on, family: snap(twoHomes, 't57'),
           speak: (String x) async => said.add(x))));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byKey(const Key('rvTile_weather')));
@@ -172,6 +210,7 @@ void main() {
     testWidgets('from the child home: More for you carries the family model through to the tiles', (WidgetTester t) async {
       await phone(t, w: 700, h: 3200);
       RhythmVoiceService.resetShared();
+      await RhythmVoiceService.forChild(null).setVoiceSuite(guardian, true);
       await t.pumpWidget(app(ChildHome(
           childName: 'Ivy', presence: null, sleepsUntilHandover: 3, unreadCount: 0, childAge: 6,
           family: snap(twoHomes, 't57'))));

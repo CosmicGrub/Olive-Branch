@@ -222,7 +222,7 @@ void main() {
   });
 
   group('the voice document', () {
-    test('round-trips; damaged parts are skipped; absent means on', () {
+    test('round-trips; damaged parts are skipped; absent means OFF (a guardian turns Voice on)', () {
       final VoiceDoc d = VoiceDoc(
           helpers: <Helper>[makeHelper(id: 'a', name: 'Nana', picture: 'grandparent', saidYes: true)],
           personalSymbols: const <String>['sym-owl'], suiteOn: false);
@@ -236,8 +236,14 @@ void main() {
       });
       expect(odd.helpers.length, 1);
       expect(odd.personalSymbols, <String>['sym-owl']);
-      expect(odd.suiteOn, isTrue);
+      expect(odd.suiteOn, isFalse);
       expect(VoiceDoc.fromJson('x').helpers, isEmpty);
+      expect(VoiceDoc.fromJson('x').suiteOn, isFalse);
+      expect(const VoiceDoc().suiteOn, isFalse);
+      for (final Object? bad in <Object?>[null, 0, 'true', 1, <Object?>[]]) {
+        expect(VoiceDoc.fromJson(<String, Object?>{'suiteOn': bad}).suiteOn, isFalse, reason: '$bad');
+      }
+      expect(VoiceDoc.fromJson(<String, Object?>{'suiteOn': true}).suiteOn, isTrue);
     });
   });
 }

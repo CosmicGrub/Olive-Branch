@@ -62,6 +62,42 @@ built.** No version bump and no new MARKUP screen row; MARKUP/DEMO totals update
   printing, her arranging her people, reshaping her home for a far-away parent, and live captions.
   Clinical and child-development review is still required before any pre-written text about a
   partner, a family change or a role.
+## [Unreleased] — Offline follow-ups: Voice off by default, two-homes fallback, honest worry take-back, local emergency card, memory box from a grown-up
+
+Described as shipped in MASTERFILE §8.23. **Owner direction 2026-11-08: offline, on-device only.**
+No server route, no migration, no network call, nothing that needs a credential; no TypeScript;
+sharing between homes stays parked. No version bump and no new MARKUP screen row; MARKUP/DEMO
+totals updated.
+
+### Added
+- **Local emergency card** — `emergency_card_local.dart`, `emergency_card_editor_screen.dart`: a
+  guardian-only editor for allergies (written by a guardian), conditions, medicines, her doctor
+  and contacts, stored sealed in the new catalogued area `emergencycard` (listed on the "Data on
+  this device" screen). A conflict-safe version counter (`stale_version`), an append-only history
+  (who, when, the previous card in full; never deleted; a full box refuses instead of dropping),
+  a child principal refused inside the service. Hospital mode and the emergency card screen read
+  it with no live session or no reach; a live build with a session still uses the server's card
+  exactly as before, and a live build never shows invented demo data ("No emergency card has been
+  written yet."). The app adds no clinical content.
+- **Memory box, from a grown-up** — a guardian can leave a note or small photo marked as from them
+  (`GrownUpMemoryDesk`, `LeaveForHerScreen`), kept under its own prefix in her sealed memory box
+  and shown in a separate "From a grown-up" screen she can read aloud; her own items stay hers (a
+  guardian cannot edit or delete them). Read-aloud speakers on the memory box.
+- **Packing buddy "two homes" fallback** — a guardian-set, local, off-by-default setting that shows
+  the packing buddy when the family snapshot is unavailable (the model alone decides otherwise).
+- **Worry box honesty** — taking back "show my grown-up" says, in her words with the grown-up
+  picture, whether a grown-up already saw it; a private `seen` bit (never given to a guardian) makes it true.
+
+### Changed
+- **Voice starts OFF** until a guardian turns it on (Settings, Family, Her voice); persisted per
+  child; only an explicit true counts. Age and family-structure gating unchanged.
+- The memory-box hub row no longer says there is no grown-up editor; it offers the marked section.
+
+### Tests
+- `offline_followups_test`, `emergency_card_local_test`, `emergency_card_local_screens_test`,
+  `memory_box_grown_up_test`; the Voice-default changes in `rhythm_voice_gate_test`,
+  `rhythm_voice_sections_test`, `voice_logic_test`, `rhythm_voice_service_test`,
+  `rhythm_voice_guardian_screens_test`.
 
 ## [Unreleased] — On-device performance pass (offline, evidence first)
 
