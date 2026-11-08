@@ -55,6 +55,8 @@ import 'maturation_ladder.dart';
 import 'meds_care.dart';
 import 'palette_logic.dart';
 import 'push_channel.dart';
+import 'rhythm_voice_guardian_screens.dart';
+import 'rhythm_voice_repositories.dart';
 import 'show_guardian.dart';
 import 'siblings_screen.dart';
 import 'storyteller_screen.dart' show StorytellerSafetyScreen;
@@ -570,6 +572,18 @@ class GuardianMoreScreen extends StatelessWidget {
             ? _open(context, PairedDevicesListScreen(baseUrl: baseUrl!, guardianId: guardianId!,
                 childId: childId, httpClient: availabilityHttpClient))
             : _needsLive(context, 'Paired devices')),
+        SettingsRow(id: 'rhythm', icon: Icons.checklist_outlined, title: 'Routine and rhythm',
+          subtitle: 'Pictures for bedtime, first-then, the bag, a new place. On this device only',
+          onTap: () => _open(context, RhythmGuardianHubScreen(childName: childName,
+            service: RhythmVoiceService.forChild(childId),
+            principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
+            yearsOld: childAge))),
+        SettingsRow(id: 'voice', icon: Icons.record_voice_over_outlined, title: 'Her voice',
+          subtitle: 'Her helpers and symbols; worries only if she shows you. On this device only',
+          onTap: () => _open(context, VoiceGuardianHubScreen(childName: childName,
+            service: RhythmVoiceService.forChild(childId),
+            principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
+            yearsOld: childAge))),
       ]),
       SettingsGroup('Safety', [
         SettingsRow(id: 'pin', icon: Icons.key_outlined, title: 'Guardian PIN',

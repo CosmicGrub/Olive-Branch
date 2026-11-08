@@ -36,7 +36,10 @@ import 'hub_widgets.dart';
 import 'journal_screen.dart';
 import 'letters_screen.dart';
 import 'maturation_ladder.dart';
+import 'picture_icons.dart' show Speak;
 import 'quieting_note.dart';
+import 'rhythm_voice_repositories.dart';
+import 'rhythm_voice_sections.dart';
 import 'shared_gallery.dart';
 import 'shared_reading.dart';
 import 'snapshot_button.dart' show AppGalleryScreen;
@@ -59,6 +62,8 @@ class ChildMoreScreen extends StatelessWidget {
     this.colourStore,
     this.family,
     this.growingCare,
+    this.speak,
+    this.rhythmVoice,
   });
   final String childName;
   final int childAge;
@@ -93,6 +98,12 @@ class ChildMoreScreen extends StatelessWidget {
   /// Where the "Keep and grow" things are kept; null uses this device's own
   /// sealed store for the current child.
   final GrowingCareStores? growingCare;
+
+  /// Read-aloud seam for the Rhythm and Voice tiles (null: no spoken names).
+  final Speak? speak;
+
+  /// Where Rhythm and Voice keep what they hold. Null: the device's own store.
+  final RhythmVoiceService? rhythmVoice;
 
   /// C-15: the maturation ladder's first rung is her tenth birthday
   /// (maturation_ladder.dart's [kLadder]); "Growing up", "The quiet corner"
@@ -148,6 +159,9 @@ class ChildMoreScreen extends StatelessWidget {
             onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: _grownUp))),
         ]),
         _KeepAndGrow(childName: childName, childAge: childAge, family: family, stores: growingCare),
+        RhythmVoiceSections(
+          service: rhythmVoice ?? RhythmVoiceService.forChild(childId),
+          family: family, yearsOld: childAge, speak: speak),
         HubSection(title: 'Make things', children: [
           if (isTileVisible(overrides, 'activity:doodle'))
             HubTile(icon: Icons.brush_outlined, title: 'Doodle desk',
