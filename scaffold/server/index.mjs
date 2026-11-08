@@ -19,18 +19,18 @@ import { createHash } from 'node:crypto';
 import { issueSession, verifyAssertion, newChallenge } from '../packages/auth/src/auth.mjs';
 import { Api, readRequestBody, MAX_UNAUTH_BODY_BYTES } from '../packages/api/src/api.mjs';
 import { createPool, dbPort, withSystemSession, createChallenge, consumeChallenge,
-         webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
+         webauthnCredentialById, updateWebauthnSignCount, mediaUploadFor } from '../packages/db/src/pool.mjs';
 import { registerRoutes, RP_ID, RP_ORIGIN, defaultMediaStorage } from './routes.mjs';
 import { serveSignedMedia } from './signed_media.mjs';
 import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
-import { createAuthLimiter, clientIp } from './rate_limit.mjs';
+import { createAuthLimiter, clientIp, createWriteLimiter } from './rate_limit.mjs';
+import { checkBootSecrets } from './secrets.mjs';
 import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PORT = Number(process.env.PORT ?? 8080);
 const DATABASE_URL = process.env.DATABASE_URL;
-const SESSION_SECRET = process.env.SESSION_SECRET;
 const DEV_LOGIN = process.env.DEV_LOGIN === '1';
 
 // Audit G-02/G-06 — dev-login is the credential-free shortcut this file's header
@@ -44,11 +44,24 @@ if (DEV_LOGIN && process.env.NODE_ENV === 'production') {
   process.exit(2);
 }
 if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
-if (!SESSION_SECRET) { console.error('SESSION_SECRET required'); process.exit(2); }
+// S-B13 -- SESSION_SECRET / MEDIA_SIGNING_SECRET must be real keys (valid hex,
+// >= 32 bytes, not a placeholder) outside NODE_ENV=development|test. See
+// server/secrets.mjs for the why.
+const boot = checkBootSecrets(process.env);
+for (const w of boot.warnings) console.warn(`WARNING: ${w}`);
+if (boot.problems.length) {
+  for (const p of boot.problems) console.error(`secret check failed: ${p}`);
+  process.exit(2);
+}
 
 const pool = createPool(DATABASE_URL);
-const secret = Buffer.from(SESSION_SECRET, 'utf8');
-const api = new Api(secret, dbPort(pool));
+const secret = boot.sessionSecret;
+// S-B16 -- two-key rotation: SESSION_SECRET signs, SESSION_SECRET_PREVIOUS only verifies.
+const sessionKeys = { current: secret, previous: boot.previousSessionSecret };
+// S-B14 strictIds: a malformed uuid path parameter is a 400, never a Postgres
+// cast error (500). S-B6 writeLimiter: per-principal throttle on authenticated writes.
+const api = new Api(sessionKeys, dbPort(pool), () => Date.now(),
+  { strictIds: true, writeLimiter: createWriteLimiter() });
 registerRoutes(api, pool);
 
 // ---- network play (checkers, live) — MASTERFILE §5.14, §5.17, §5.19 ------
@@ -72,7 +85,7 @@ async function devLogin(rawBody) {
     if (childId) {
       const rows = await q(`SELECT id FROM child WHERE id = $1`, [childId]);
       if (!rows.length) return { status: 404, body: { error: 'child_not_found' } };
-      const token = issueSession(secret,
+      const token = issueSession(sessionKeys,
         { userId: null, roleName: 'child', childId, escalated: false }, Date.now());
       return { status: 200, body: { token } };
     }
@@ -90,7 +103,7 @@ async function devLogin(rawBody) {
     if (rows[0].deactivated_at) {
       return { status: 403, body: { error: 'account_deactivated' } };
     }
-    const token = issueSession(secret,
+    const token = issueSession(sessionKeys,
       { userId, roleName: 'guardian', childId: null, escalated: false }, Date.now());
     return { status: 200, body: { token } };
   });
@@ -167,7 +180,11 @@ async function webauthnLoginVerify(rawBody) {
   const existing = await withSystemSession(pool,
     (q) => q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [userId]));
   if (existing.length && existing[0].deactivated_at) {
-    return { status: 403, body: { error: 'account_deactivated' } };
+    // S-B15 -- UNIFORM with an unknown user and a spent/expired challenge: this
+    // endpoint is unauthenticated, so a distinct 403 `account_deactivated`
+    // would tell anyone holding a userId whether that account is deactivated.
+    // The deactivated owner still cannot sign in (no token is ever issued).
+    return { status: 401, body: { error: 'challenge_expired' } };
   }
 
   let clientData;
@@ -222,7 +239,7 @@ async function webauthnLoginVerify(rawBody) {
   if (!advanced) {
     return { status: 401, body: { error: 'signcount_replay' } };
   }
-  const token = issueSession(secret,
+  const token = issueSession(sessionKeys,
     { userId, roleName: 'guardian', childId: null, escalated: false }, now);
   return { status: 200, body: { token } };
 }
@@ -327,13 +344,18 @@ const server = createServer(async (req, res) => {
     }
 
     if (method === 'GET' && pathname.startsWith('/media/')) {
-      return await serveSignedMedia(url, res, defaultMediaStorage);
+      return await serveSignedMedia(url, res, defaultMediaStorage,
+        async (key) => (await mediaUploadFor(pool, key))?.mime ?? null);
     }
 
     // P-08 -- the whole /v1/auth/ surface is unauthenticated (or, for
     // webauthn register, only just authenticated): throttle per client IP
     // BEFORE spending anything on it, body included.
-    const isAuthPath = pathname.startsWith('/v1/auth/');
+    // S-B1/S-B14 -- the pre-session pairing and invite routes are brute-force
+    // and DB-amplification surfaces of their own: same per-IP throttle.
+    const isAuthPath = pathname.startsWith('/v1/auth/')
+      || pathname.startsWith('/v1/device-pairing/')
+      || pathname.startsWith('/v1/guardian-invites/');
     if (isAuthPath) {
       const ip = authLimiter.checkIp(clientIp(req));
       if (!ip.ok) {
@@ -363,7 +385,7 @@ const server = createServer(async (req, res) => {
     if (method === 'POST' && RAW_AUTH_PATHS.has(url)) {
       const ident = loginIdentifier(raw);
       if (ident) {
-        const r = authLimiter.checkIdentifier(ident);
+        const r = authLimiter.checkIdentifier(ident, clientIp(req));
         if (!r.ok) {
           metrics.inc('rate_limited_total');
           return send({ status: 429, body: { error: 'rate_limited' } },

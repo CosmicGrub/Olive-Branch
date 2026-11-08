@@ -57,7 +57,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { Api } from '../src/api.mjs';
 import { createPool, dbPort, createGuardianInvite, getGuardianInvite } from '../../db/src/pool.mjs';
 import { registerRoutes } from '../../../server/routes.mjs';
-import { issueSession } from '../../auth/src/auth.mjs';
+import { issueSession, hashPin } from '../../auth/src/auth.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const ADMIN_DATABASE_URL = process.env.ADMIN_DATABASE_URL ?? DATABASE_URL;
@@ -139,10 +139,21 @@ const guardianTok = (userId) => issueSession(
 const childTok = (childId) => issueSession(
   SECRET, { userId: null, roleName: 'child', childId, escalated: false }, NOW);
 
+// S-B3: creating an invite is a step-up action (the caller's own guardian PIN in
+// the body). Every guardian below owns the same fixture PIN, and the helper adds
+// it unless a test passes its own `pin` key (the step-up deny paths do, in section P).
+const PIN = '482916';
+for (const u of [GUARDIAN_A, CO_GUARDIAN_A, GUARDIAN_B_ONLY]) {
+  await admin.query(
+    `INSERT INTO pin_credential (user_id, pin_hash) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL`,
+    [u, hashPin(PIN)]);
+}
 const invite = (childId, tok, payload) => api.handle(
   'POST', `/v1/children/${childId}/guardianships`,
   tok ? { authorization: `Bearer ${tok}` } : {},
-  payload === undefined ? '' : JSON.stringify(payload));
+  payload === undefined ? ''
+    : JSON.stringify(payload && typeof payload === 'object' && !('pin' in payload) ? { pin: PIN, ...payload } : payload));
 
 const VALID_BODY = { role: 'sitter', label: 'Sitter Sam', invitedEmail: 'sam@example.com' };
 
@@ -320,6 +331,36 @@ const VALID_BODY = { role: 'sitter', label: 'Sitter Sam', invitedEmail: 'sam@exa
     viaPoolDirect.ok, 'true');
   check('E2 via pool direct (RLS only)', 'and a real, wrong-child-scoped row actually lands',
     viaPoolDirect.invite?.childId, CHILD_A);
+}
+
+// ===========================================================================
+// P · S-B3 — creating an invite needs the caller's own guardian PIN
+// ===========================================================================
+{
+  const countInvites = async () => (await admin.query(
+    `SELECT count(*)::int AS n FROM guardian_invite WHERE child_id = $1 AND invited_email = 'stepup@example.com'`,
+    [CHILD_A])).rows[0].n;
+  const body = { role: 'sitter', label: 'Step Up', invitedEmail: 'stepup@example.com' };
+  const noPin = await invite(CHILD_A, guardianTok(GUARDIAN_A), { ...body, pin: undefined });
+  check('P step-up', 'no PIN in the body -> 400 pin_required', `${noPin.status}/${noPin.body?.error}`, '400/pin_required');
+  const wrong = await invite(CHILD_A, guardianTok(GUARDIAN_A), { ...body, pin: '000000' });
+  check('P step-up', 'a wrong PIN -> 403 pin_incorrect', `${wrong.status}/${wrong.body?.error}`, '403/pin_incorrect');
+  const numeric = await invite(CHILD_A, guardianTok(GUARDIAN_A), { ...body, pin: 482916 });
+  check('P step-up', 'a non-string PIN is refused like a missing one', `${numeric.status}/${numeric.body?.error}`, '400/pin_required');
+  check('P step-up', 'and none of the refused attempts created an invite row', await countInvites(), 0);
+  const noPinSet = await invite(CHILD_B, guardianTok(GUARDIAN_B_ONLY), { ...body, pin: PIN });
+  check('P step-up', "a guardian WITH a PIN set and the right PIN is admitted", noPinSet.status, 201);
+  await admin.query(`DELETE FROM pin_credential WHERE user_id = $1`, [CO_GUARDIAN_A]);
+  const noCred = await invite(CHILD_A, guardianTok(CO_GUARDIAN_A), { ...body, pin: PIN });
+  check('P step-up', 'a guardian who never set a PIN cannot invite (403 pin_not_set)', `${noCred.status}/${noCred.body?.error}`, '403/pin_not_set');
+  const ok = await invite(CHILD_A, guardianTok(GUARDIAN_A), body);
+  check('P step-up', 'the right PIN creates the invite', ok.status, 201);
+  const ev = await admin.query(
+    `SELECT kind, summary, actor_id FROM security_event WHERE child_id = $1 AND kind = 'invite_created' AND actor_id = $2`,
+    [CHILD_A, GUARDIAN_A]);
+  check('P step-up', "and writes a content-free 'invite_created' security_event the co-guardian can see",
+    `${ev.rows.length >= 1}/${ev.rows[0]?.summary}`, 'true/A guardian invite was created');
+  await admin.query(`DELETE FROM guardian_invite WHERE invited_email = 'stepup@example.com'`);
 }
 
 // ---------------------------------------------------------------------------

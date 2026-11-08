@@ -231,34 +231,77 @@ export const ESCALATION_TTL_MS = 15 * 60 * 1000;     // §8.3
  * guardianship edge (§5.19 I4), so a stale session cannot outlive a revoked
  * edge. That property is what makes a stateless token safe here.
  */
+/**
+ * S-B16 -- two-key rotation. `current` signs and verifies; `previous` (the key
+ * being retired) only VERIFIES, so rotating SESSION_SECRET does not sign every
+ * user out at once: deploy with SESSION_SECRET=new SESSION_SECRET_PREVIOUS=old,
+ * wait one session TTL (1 h), then drop the previous key. A bare Buffer is a
+ * ring with no previous key (every existing caller).
+ */
+export interface KeyRing { readonly current: Buffer; readonly previous?: Buffer | null }
+export type SessionSecret = Buffer | KeyRing;
+const ringOf = (s: SessionSecret): KeyRing => (Buffer.isBuffer(s) ? { current: s, previous: null } : s);
+
+/** Short, non-secret identifier of a signing key, carried in each token as `kid`. */
+export function keyId(key: Buffer): string {
+  return createHash('sha256').update('olive-session-kid\0').update(key).digest('base64url').slice(0, 8);
+}
+
+/**
+ * S-B16 -- the roles a session token may name. A correctly signed token
+ * carrying `system` (or anything else) is refused: the `system` database role
+ * is for server-internal sessions only and must never be reachable from a
+ * bearer token, even one the server signed by mistake.
+ */
+export const SESSION_ROLES: ReadonlySet<string> = new Set([
+  'child', 'guardian', 'trusted_adult', 'step_parent', 'sitter',
+  'coordinator', 'foster_parent', 'caseworker', 'therapist',
+]);
+
 export function issueSession(
-  secret: Buffer,
+  secret: SessionSecret,
   p: Omit<VerifiedPrincipal, 'verified' | 'expiresAt'>,
   now: number,
   ttlMs = SESSION_TTL_MS,
 ): string {
-  const body = { ...p, exp: now + ttlMs };
+  const { current } = ringOf(secret);
+  const body = { ...p, exp: now + ttlMs, kid: keyId(current) };
   const payload = Buffer.from(JSON.stringify(body)).toString('base64url');
-  const mac = createHmac('sha256', secret).update(payload).digest('base64url');
+  const mac = createHmac('sha256', current).update(payload).digest('base64url');
   return `${payload}.${mac}`;
 }
 
 export function readSession(
-  secret: Buffer, token: string, now: number,
+  secret: SessionSecret, token: string, now: number,
 ): { ok: true; principal: VerifiedPrincipal } | { ok: false; reason: string } {
   const dot = token.lastIndexOf('.');
   if (dot < 1) return { ok: false, reason: 'malformed' };
   const payload = token.slice(0, dot);
   const mac = Buffer.from(token.slice(dot + 1), 'base64url');
-  const expect = createHmac('sha256', secret).update(payload).digest();
-  if (mac.length !== expect.length || !timingSafeEqual(mac, expect)) {
-    return { ok: false, reason: 'bad_signature' };
+  const ring = ringOf(secret);
+  // The kid only SELECTS which of our own (at most two) keys to try; nothing in
+  // the payload is trusted until the MAC over it verifies.
+  let claimedKid: string | null = null;
+  try {
+    const peek = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    claimedKid = typeof peek?.kid === 'string' ? peek.kid : null;
+  } catch { /* fall through: malformed is reported after the MAC check */ }
+  const keys = [ring.current, ...(ring.previous ? [ring.previous] : [])]
+    .filter((k) => claimedKid === null || keyId(k) === claimedKid);
+  let macOk = false;
+  for (const k of keys) {
+    const expect = createHmac('sha256', k).update(payload).digest();
+    if (mac.length === expect.length && timingSafeEqual(mac, expect)) { macOk = true; break; }
   }
+  if (!macOk) return { ok: false, reason: 'bad_signature' };
   let body: any;
   try { body = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); }
   catch { return { ok: false, reason: 'malformed' }; }
   if (typeof body.exp !== 'number' || body.exp <= now) {
     return { ok: false, reason: 'expired' };
+  }
+  if (typeof body.roleName !== 'string' || !SESSION_ROLES.has(body.roleName)) {
+    return { ok: false, reason: 'bad_role' };
   }
   if (body.roleName === 'child' && !body.childId) {
     return { ok: false, reason: 'child_without_child_id' };
@@ -273,7 +316,7 @@ export function readSession(
       childId: body.childId ?? null, escalated: Boolean(body.escalated),
       expiresAt: body.exp,
       // Absent for every session-issuing path except POST
-      // /v1/device-pairing/redeem — see this interface's own doc comment.
+      // /v1/device-pairing/redeem -- see this interface's own doc comment.
       deviceId: body.deviceId ?? null,
     },
   };
@@ -281,7 +324,7 @@ export function readSession(
 
 /** §8.3 — escalation requires both factors and expires on its own clock. */
 export function escalateSession(
-  secret: Buffer, p: VerifiedPrincipal,
+  secret: SessionSecret, p: VerifiedPrincipal,
   pinOk: boolean, biometricOk: boolean, now: number,
 ): { ok: true; token: string } | { ok: false; reason: 'pin' | 'biometric' | 'role' } {
   if (p.roleName === 'child') return { ok: false, reason: 'role' };

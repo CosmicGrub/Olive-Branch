@@ -52,9 +52,16 @@ const seedCode = (id, role, targetId) => codes.set(id, { id, numeric_code: Strin
   role, target_id: targetId, created_by: DAD, expires_at: new Date(Date.now() + 600000),
   redeemed_at: null, revoked_at: null, failed_attempts: 0 });
 
+const securityEventInserts = [];
 function fakeQuery(sql, params = []) {
   if (/^\s*(BEGIN|COMMIT|ROLLBACK)/i.test(sql)) return [];
   if (/set_config/i.test(sql)) return [];
+  // S-B3: redeem now writes a security_event row (same transaction). Recorded
+  // here so a test can assert the trail exists; one row per call is enough.
+  if (/INSERT INTO security_event/i.test(sql)) {
+    securityEventInserts.push({ sql, params });
+    return [{ seq: securityEventInserts.length }];
+  }
 
   // pin_credential — same shapes as kiosk_pin_route.test.mjs's fake.
   if (/SELECT pin_hash, failed_attempts, locked_until\s+FROM pin_credential WHERE user_id = \$1/i.test(sql)) {

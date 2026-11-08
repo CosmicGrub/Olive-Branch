@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readSession, issueSession, SESSION_TTL_MS, type VerifiedPrincipal } from '../../auth/src/auth.ts';
+import { readSession, issueSession, SESSION_TTL_MS, type VerifiedPrincipal, type SessionSecret } from '../../auth/src/auth.ts';
 import { can, type Edge, type Action } from '../../family-graph/src/authorize.ts';
 import { sweep } from '../../globalaudit/src/globalaudit.ts';
 
@@ -128,6 +128,8 @@ export interface Ctx {
   body: any;
   query: URLSearchParams;
   db: DbPort;
+  /** Request headers (lower-cased by Node). Used by routes that take a step-up PIN in a header (GET/DELETE have no body). */
+  headers: Record<string, string | undefined>;
 }
 
 export interface SiblingLinkRow {
@@ -281,12 +283,38 @@ const unusedQuery: Query = async () => {
     'it is responsible for its own, correctly-scoped database session(s).');
 };
 
+/**
+ * S-B14 -- path parameters that always name a database uuid. In strict mode
+ * (server/index.mjs turns it on) a value that is not a canonical uuid never
+ * reaches a handler: Postgres would raise a cast error and the request would
+ * surface as a 500 (a cheap DB-amplification probe) instead of a plain 400.
+ * `:day`, `:activityKey` and the bag-item `:itemId` are deliberately absent:
+ * they are not uuids and their handlers validate them.
+ */
+const UUID_PARAM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_PARAMS: ReadonlySet<string> = new Set([
+  'childId', 'inviteId', 'codeId', 'deviceId', 'sessionId', 'messageId', 'expenseId',
+  'medicationId', 'letterId', 'artifactId', 'passkeyId',
+]);
+
+export interface ApiOptions {
+  /** S-B14: refuse a malformed uuid path parameter with 400 bad_path before any handler runs. */
+  strictIds?: boolean;
+  /**
+   * S-B6: per-principal write throttle. Called for every authenticated
+   * non-GET request AFTER the session verifies and BEFORE the handler; a
+   * `{ ok: false }` answer becomes 429 rate_limited.
+   */
+  writeLimiter?: (p: VerifiedPrincipal) => { ok: boolean; retryAfterSec: number };
+}
+
 export class Api {
   private routes: Route[] = [];
   constructor(
-    private secret: Buffer,
+    private secret: SessionSecret,
     private db: DbPort,
     private now: () => number = () => Date.now(),
+    private opts: ApiOptions = {},
   ) {}
 
   register(r: Route): this {
@@ -315,8 +343,13 @@ export class Api {
         if (rp[i].startsWith(':')) {
           // decodeURIComponent throws URIError on a malformed escape ("%E0%A4%A"):
           // that is a bad REQUEST (400), never a 500.
-          try { params[rp[i].slice(1)] = decodeURIComponent(pp[i]); }
+          let v: string;
+          try { v = decodeURIComponent(pp[i]); }
           catch { return { malformed: true as const }; }
+          if (this.opts.strictIds && UUID_PARAMS.has(rp[i].slice(1)) && !UUID_PARAM_RE.test(v)) {
+            return { malformed: true as const };
+          }
+          params[rp[i].slice(1)] = v;
         } else if (rp[i] !== pp[i]) { ok = false; break; }
       }
       if (ok) return { route: r, params };
@@ -383,7 +416,7 @@ export class Api {
       }
       const ctx: Ctx = { principal: null, childId: m.params.childId ?? null,
                           params: m.params, body: noSessionBody, query: u.searchParams,
-                          db: this.db };
+                          db: this.db, headers };
       try {
         // Registration already refused this route if skipOuterSession were
         // not also true (register()'s own check above), so unusedQuery is
@@ -423,6 +456,12 @@ export class Api {
       return { status: 403, body: { error: 'escalation_required' } };
     }
 
+    // S-B6: a verified session is not a licence to write without bound.
+    if (this.opts.writeLimiter && method !== 'GET') {
+      const rl = this.opts.writeLimiter(principal);
+      if (!rl.ok) return { status: 429, body: { error: 'rate_limited', retryAfterSec: rl.retryAfterSec } };
+    }
+
     // ---- authorize ----------------------------------------------------------
     // A3 — childId from the PATH only.
     const childId = m.params.childId ?? null;
@@ -455,7 +494,7 @@ export class Api {
 
     // ---- A2: run inside the session context (unless explicitly opted out) ---
     const ctx: Ctx = { principal, childId, params: m.params, body,
-                        query: u.searchParams, db: this.db };
+                        query: u.searchParams, db: this.db, headers };
     try {
       // skipOuterSession — see the Route field's own doc comment: this
       // handler manages its own, correctly-scoped session(s) (or has real

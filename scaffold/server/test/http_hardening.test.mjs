@@ -225,7 +225,7 @@ await srv.close();
     `${lim.byIp.capacity}/${lim.byId.capacity}`, '2/10');
   const long = lim.checkIdentifier('x'.repeat(100_000));
   check('D rate limit', 'an enormous identifier is clamped (no key-space bloat)', long.ok &&
-    [...lim.byId.buckets.keys()][0].length <= 3 + 128, 'true');
+    [...lim.byId.buckets.keys()][0].length <= 3 + 128 + 1 + 64, 'true');
 
   const mkReq = (headers, addr) => ({ headers, socket: { remoteAddress: addr } });
   check('D rate limit', 'X-Forwarded-For is IGNORED by default (a direct caller cannot dodge the per-IP bucket)',
@@ -239,7 +239,7 @@ const DEAD_DB = 'postgres://nobody:nopass@127.0.0.1:9/none';
 async function boot(env = {}) {
   const port = 24000 + Math.floor(Math.random() * 3000);
   const child = spawn(process.execPath, [serverEntry], {
-    env: { ...process.env, DATABASE_URL: DEAD_DB, SESSION_SECRET: 'h'.repeat(40), PORT: String(port),
+    env: { ...process.env, DATABASE_URL: DEAD_DB, SESSION_SECRET: 'h'.repeat(40), NODE_ENV: 'development', PORT: String(port),
       DB_CONNECTION_TIMEOUT_MS: '1000', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -288,9 +288,31 @@ const postJson = (base, path, body, headers = {}) => fetch(base + path, {
   check('D rate limit', 'one IP cycling through distinct identifiers is stopped by the per-IP bucket',
     statuses.join(','), '404,404,404,404,429,429');
   const healthz = await fetch(s.base + '/healthz');
-  check('D rate limit', 'the throttle is scoped to /v1/auth/*: /healthz is unaffected', healthz.status, 503);
-  const authed = await postJson(s.base, '/v1/children/x/messages', {});
+  check('D rate limit', 'the throttle covers the auth surface and /healthz stays unaffected', healthz.status, 503);
+  const authed = await postJson(s.base, '/v1/children/11111111-1111-4111-8111-111111111111/messages', {});
   check('D rate limit', 'and so are non-auth API routes (401, not 429)', authed.status, 401);
+  // S-B14: a malformed uuid path parameter is a 400 before auth or any DB cast (never a 500).
+  const badId = await postJson(s.base, '/v1/children/x/messages', {});
+  check('D rate limit', 'S-B14: a non-uuid :childId is 400 bad_path, not a Postgres cast 500', badId.status, 400);
+  check('D rate limit', 'and names bad_path', (await badId.json()).error, 'bad_path');
+  await s.stop();
+}
+{
+  // S-B1/S-B14: the pre-session pairing + invite routes sit under the SAME per-IP
+  // bucket as /v1/auth/ (they used to be unthrottled: a 6-digit pairing code could
+  // be sprayed at /redeem). The DB here is dead on purpose -- the first requests
+  // fail however they fail, the point is the 429 AFTER the bucket drains.
+  const s = await boot({ AUTH_RATE_IP_CAPACITY: '3', AUTH_RATE_IP_PER_MIN: '1', AUTH_RATE_ID_CAPACITY: '1000' });
+  const redeem = [];
+  for (let i = 0; i < 5; i++) {
+    redeem.push((await postJson(s.base, '/v1/device-pairing/redeem', { code: String(100000 + i), role: 'guardian' })).status);
+  }
+  check('D rate limit', 'S-B1: spraying /v1/device-pairing/redeem is cut off by the per-IP bucket (429 after the burst)',
+    redeem.slice(3).join(','), '429,429');
+  check('D rate limit', 'and the first requests were NOT 429 (the bucket, not a blanket block)', redeem.slice(0, 3).every((c) => c !== 429), true);
+  const inv = await fetch(s.base + '/v1/guardian-invites/11111111-1111-4111-8111-111111111111');
+  check('D rate limit', 'S-B14: /v1/guardian-invites/* shares the same drained bucket (429)', inv.status, 429);
+  check('D rate limit', 'and carries retry-after', Number(inv.headers.get('retry-after')) >= 1, true);
   await s.stop();
 }
 

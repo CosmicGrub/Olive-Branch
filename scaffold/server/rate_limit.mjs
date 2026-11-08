@@ -89,7 +89,12 @@ export function createAuthLimiter({ env = process.env, now } = {}) {
     checkIp: (ip) => byIp.take(`ip:${ip}`),
     // Identifier is attacker-controlled text: clamp length so a 16 KB "id"
     // cannot be used to bloat the key space.
-    checkIdentifier: (id) => byId.take(`id:${String(id).slice(0, 128)}`),
+    // S-B15: keyed on (identifier, caller IP), not the identifier alone. Keyed
+    // on the id alone, anyone who knew a co-guardian's userId could hold that
+    // bucket at zero from their OWN address and lock the real owner out of
+    // login. With the IP in the key the attacker only ever drains their own
+    // bucket. (The per-IP bucket above still bounds one address across ids.)
+    checkIdentifier: (id, ip = '') => byId.take(`id:${String(id).slice(0, 128)}|${String(ip).slice(0, 64)}`),
   };
 }
 
@@ -110,4 +115,91 @@ export function clientIp(req, env = process.env) {
     }
   }
   return req.socket?.remoteAddress ?? 'unknown';
+}
+
+// ---------------------------------------------------------------------------
+// Round-2 security audit (S-B1, S-B6, S-B15)
+// ---------------------------------------------------------------------------
+
+/**
+ * A global fixed-window MISS budget. Used for the one credential the server
+ * cannot attribute a wrong guess to: a typed 6-digit device-pairing code
+ * matches no row at all, so there is no per-code or per-account counter to
+ * lock. This counts every miss across ALL callers; once `limit` misses land in
+ * the current `windowMs`, `check()` reports blocked until the window rolls over
+ * and the redeem route answers 429 for everyone.
+ *
+ * The trade, stated plainly: an attacker who burns the budget can make a real
+ * pairing wait up to a minute (a nuisance, visible, and no worse than a per-IP
+ * flood), but can no longer search the 10^6 code space: at the default 20
+ * misses/min a live code survives a 10-minute attack with ~99.98% probability.
+ */
+export class MissBudget {
+  constructor({ limit, windowMs = 60_000, now = () => Date.now() }) {
+    this.limit = limit; this.windowMs = windowMs; this.now = now;
+    this.windowStart = now(); this.misses = 0;
+  }
+  _roll() {
+    const t = this.now();
+    if (t - this.windowStart >= this.windowMs) { this.windowStart = t; this.misses = 0; }
+    return t;
+  }
+  /** { blocked, retryAfterSec } */
+  check() {
+    const t = this._roll();
+    if (this.misses < this.limit) return { blocked: false, retryAfterSec: 0 };
+    return { blocked: true,
+      retryAfterSec: Math.max(1, Math.ceil((this.windowStart + this.windowMs - t) / 1000)) };
+  }
+  hit() { this._roll(); this.misses += 1; }
+}
+
+/** MissBudget for device-pairing redeem. Env: PAIRING_MISS_BUDGET_PER_MIN. */
+export function createPairingMissBudget({ env = process.env, now } = {}) {
+  return new MissBudget({ limit: posNum(env.PAIRING_MISS_BUDGET_PER_MIN, 20), now });
+}
+
+/**
+ * Per-principal limiter for AUTHENTICATED WRITE routes (S-B6): a valid but
+ * hostile or buggy session could otherwise issue unbounded POST/PUT/DELETEs.
+ * Burst 60, then 60/min per principal by default; env WRITE_RATE_CAPACITY /
+ * WRITE_RATE_PER_MIN. The returned function takes the verified principal and
+ * answers { ok, retryAfterSec } (the Api calls it for every non-GET route).
+ */
+export function createWriteLimiter({ env = process.env, now } = {}) {
+  const cap = posNum(env.WRITE_RATE_CAPACITY, 60);
+  const perMin = posNum(env.WRITE_RATE_PER_MIN, 60);
+  const buckets = new TokenBuckets({ capacity: cap, refillPerSec: perMin / 60, now });
+  const limiter = (principal) =>
+    buckets.take(principal.userId ? `u:${principal.userId}` : `c:${principal.childId}`);
+  limiter.buckets = buckets;
+  return limiter;
+}
+
+/**
+ * Per-key in-flight cap (the S-B6 upload semaphore): a base64 media body costs
+ * ~3x its size in memory while it is decoded, so one principal may have only
+ * `max` such requests running at once; the rest get 429 immediately instead of
+ * queueing (queueing would only hold the memory longer).
+ */
+export class InFlightLimiter {
+  constructor({ max }) { this.max = max; this.active = new Map(); }
+  /** Returns a release() function, or null when the key is at its cap. */
+  acquire(key) {
+    const n = this.active.get(key) ?? 0;
+    if (n >= this.max) return null;
+    this.active.set(key, n + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const m = (this.active.get(key) ?? 1) - 1;
+      if (m <= 0) this.active.delete(key); else this.active.set(key, m);
+    };
+  }
+  count(key) { return this.active.get(key) ?? 0; }
+}
+
+export function createUploadLimiter({ env = process.env } = {}) {
+  return new InFlightLimiter({ max: posNum(env.UPLOAD_MAX_IN_FLIGHT_PER_PRINCIPAL, 2) });
 }

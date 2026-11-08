@@ -224,7 +224,8 @@ jobs:
           set -eu
           docker run -d --name olive-ci -p 18080:8080 \
             -e DATABASE_URL=postgres://nobody:nopass@127.0.0.1:9/none \
-            -e SESSION_SECRET=ci-session-secret-ci-session-secret \
+            -e SESSION_SECRET=eab39cbd1deb88cc188bf88a9188aa8ad58151281e63195d872ef7b4ae12c13d \
+            -e MEDIA_SIGNING_SECRET=756dba19238d36cf236ce9b372e0a6ce334c087bb9bc12c1391ca8b096093eac \
             olive-branch:ci
           code=000
           for i in $(seq 1 40); do

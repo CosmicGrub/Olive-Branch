@@ -58,14 +58,59 @@ export interface DecodedImage {
  * client-supplied content-type, either of which an attacker (or just a
  * mislabelled upload) can lie about.
  */
+/**
+ * S-B6 -- the decoded-pixel ceiling. `PNG.sync.read` / `jpeg.decode` allocate
+ * width x height x 4 bytes BEFORE anything can object, and a 249 KB PNG that
+ * merely DECLARES 8000 x 8000 took the server to ~830 MB RSS in a probe (the
+ * prod container is capped at 512 MB). The header is read first and anything
+ * above this is refused with `image_too_large`, never decoded.
+ */
+export const MAX_IMAGE_PIXELS = 20_000_000;
+
+/** Declared { width, height } from the PNG IHDR / JPEG SOF header; null if neither or truncated. */
+export function imageDimensions(bytes: Buffer | Uint8Array): { width: number; height: number } | null {
+  const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  if (b.length >= 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+      b.toString('latin1', 12, 16) === 'IHDR') {
+    return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+  }
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const marker = b[i + 1];
+      if (marker === 0xff) { i++; continue; }                       // fill byte
+      if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) { i += 2; continue; }
+      const len = b.readUInt16BE(i + 2);
+      // SOF0..SOF15 except DHT (C4), JPG (C8), DAC (CC)
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { height: b.readUInt16BE(i + 5), width: b.readUInt16BE(i + 7) };
+      }
+      if (len < 2) return null;
+      i += 2 + len;
+    }
+  }
+  return null;
+}
+
+/** Throws `image_too_large` when the declared size exceeds MAX_IMAGE_PIXELS (or is absurd). */
+export function assertImageWithinLimits(bytes: Buffer | Uint8Array): void {
+  const d = imageDimensions(bytes);
+  if (!d) return; // not a recognisable PNG/JPEG header: decodeImage's own magic-byte check refuses it
+  if (d.width <= 0 || d.height <= 0 || d.width * d.height > MAX_IMAGE_PIXELS) {
+    throw new Error(`image_too_large: ${d.width}x${d.height} exceeds ${MAX_IMAGE_PIXELS} pixels`);
+  }
+}
+
 export function decodeImage(bytes: Buffer | Uint8Array): DecodedImage {
   const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  assertImageWithinLimits(b);
   if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
     const png = PNG.sync.read(b); // pngjs always normalises to RGBA
     return { width: png.width, height: png.height, data: Uint8ClampedArray.from(png.data) };
   }
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
-    const img = jpeg.decode(b, { useTArray: true }); // jpeg-js also always outputs RGBA
+    const img = jpeg.decode(b, { useTArray: true, maxResolutionInMP: MAX_IMAGE_PIXELS / 1_000_000 }); // jpeg-js also always outputs RGBA
     return { width: img.width, height: img.height, data: Uint8ClampedArray.from(img.data as Uint8Array) };
   }
   throw new Error('unsupported_image_format: expected PNG or JPEG magic bytes');

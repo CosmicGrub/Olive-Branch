@@ -25,11 +25,10 @@
  * packages/db/test/*.mjs (see pool.test.mjs, custody_order.test.mjs):
  * DATABASE_URL is meant to be a NOSUPERUSER NOBYPASSRLS role in a real
  * deployment, and none of health_check's underlying reads require anything
- * more — the RLS-protected tables it touches (pin_credential, expense,
- * message_log, custody_order) all default-permit any non-'child' session,
- * including one that never set app.role at all (current_role_name() IS
- * DISTINCT FROM 'child' is true when the GUC is unset), so no session setup
- * is needed here.
+ * more — the RLS-protected tables it touches are edge-scoped since
+ * migration 0040 (S-B4) and answer only to the `system` role, so this script
+ * sets app.role = 'system' for its own session before reading the view (a
+ * session with no role would see zero rows and go silently blind).
  *
  * HONEST SCOPE — read this before wiring this into anything:
  *   This script DETECTS and REPORTS. It does not send an email, does not
@@ -55,6 +54,11 @@ const client = new pg.Client({ connectionString: DATABASE_URL });
 let rows;
 try {
   await client.connect();
+  // S-B4 (migration 0040): message_log and guardianship are edge-scoped, so a
+  // session with no role would silently read ZERO rows and the checks over
+  // them would go blind. The monitor reads as `system`, like every other
+  // background reader.
+  await client.query(`SELECT set_config('app.role', 'system', false)`);
   const res = await client.query(
     'SELECT check_name, severity, observed, threshold, meaning FROM health_check ORDER BY severity, check_name;'
   );

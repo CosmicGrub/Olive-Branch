@@ -126,7 +126,12 @@ const get = (p, tok) => api.handle('GET', p,
 // A real "recorded video" -- not text pretending to be bytes: every byte
 // value 0-255 once, so a base64/UTF-8 mangling bug anywhere in the pipeline
 // (server or storage) would show up as a real mismatch, not pass by luck.
-const REAL_BYTES = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+// S-B8: the upload route proves the container from magic bytes (here an MP4
+// `ftyp` header), then every byte value 0-255 follows.
+const REAL_BYTES = Buffer.concat([
+  Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(12),
+  Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
+]);
 const b64 = REAL_BYTES.toString('base64');
 
 /** A minimal fake http.ServerResponse -- same convention

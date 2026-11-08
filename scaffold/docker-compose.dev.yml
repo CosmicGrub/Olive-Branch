@@ -76,6 +76,12 @@ services:
         condition: service_completed_successfully
     environment:
       PORT: "8123"
+      # Security round 2 (S-B13): outside NODE_ENV=development|test the server
+      # refuses to boot unless SESSION_SECRET and MEDIA_SIGNING_SECRET are valid
+      # hex of at least 32 bytes and not placeholders (server/secrets.mjs). This
+      # stack is the development one, so it says so; the prod compose already
+      # sets NODE_ENV=production and its `openssl rand -hex 32` secrets pass.
+      NODE_ENV: development
       DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
       # Both read from ./.env (untracked — see .env.example), not a literal
       # here. A committed SESSION_SECRET plus a permanently-on DEV_LOGIN

@@ -354,7 +354,7 @@ await insertFixtures();
   const secret = 'take-and-go-test-session-secret-not-for-production-use';
 
   const child = spawn(process.execPath, [serverEntry], {
-    env: { ...process.env, DATABASE_URL, SESSION_SECRET: secret, DEV_LOGIN: '1', PORT: String(port) },
+    env: { ...process.env, DATABASE_URL, SESSION_SECRET: secret, NODE_ENV: 'development', DEV_LOGIN: '1', PORT: String(port) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';

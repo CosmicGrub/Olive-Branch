@@ -58,7 +58,7 @@ import { randomUUID } from 'node:crypto';
 import { createPool, dbPort, certifiedExportBundleFor } from '../src/pool.mjs';
 import { append } from '../../ledger/src/ledger.mjs';
 import { sha256Hex } from '../../ledger/src/sha256.mjs';
-import { issueSession } from '../../auth/src/auth.mjs';
+import { issueSession, hashPin } from '../../auth/src/auth.mjs';
 import { Api } from '../../api/src/api.mjs';
 import { registerRoutes } from '../../../server/routes.mjs';
 
@@ -83,6 +83,14 @@ await admin.connect();
 // rows, for the empty-chain edge case.
 const IVY   = '77777777-7777-4777-8777-777777777777';
 const SOLO  = '88888888-8888-4888-8888-888888888888';
+// S-B3: raw/certified export is a step-up action now -- the caller's own guardian
+// PIN rides in the x-guardian-pin header. Fixture PIN for every guardian below.
+const GUARDIAN_PIN = '135790';
+const withPin = (adminClient, userId) => adminClient.query(
+  `INSERT INTO pin_credential (user_id, pin_hash) VALUES ($1, $2)
+   ON CONFLICT (user_id) DO UPDATE SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0, locked_until = NULL`,
+  [userId, hashPin(GUARDIAN_PIN)]);
+
 const DAD   = '99999999-9999-4999-8999-999999999999';
 const MOM   = 'aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa';
 // Section D only -- a real coordinator edge, regression coverage for the
@@ -318,8 +326,9 @@ const chain = await seedFamily();
     escalated: false }, NOW);
   const coordTok = issueSession(secret, { userId: COORD, roleName: 'coordinator', childId: null,
     escalated: false }, NOW);
-  const hit = (method, path, tok) =>
-    api.handle(method, path, tok ? { authorization: `Bearer ${tok}` } : {}, '');
+  for (const u of [DAD, MOM, COORD]) await withPin(admin, u);
+  const hit = (method, path, tok, extra = {}) =>
+    api.handle(method, path, tok ? { authorization: `Bearer ${tok}`, 'x-guardian-pin': GUARDIAN_PIN, ...extra } : {}, '');
 
   // This route is shared with feature/raw-export's own already-shipped
   // registration (both merged onto the same `GET .../export`, dispatched on
@@ -494,8 +503,9 @@ const chain = await seedFamily();
   const NOW = Date.now();
   const dadTok = issueSession(secret, { userId: DAD, roleName: 'guardian', childId: null,
     escalated: false }, NOW);
+  await withPin(admin, DAD);
   const routeResult = await api.handle('GET', `/v1/children/${IVY}/export?kind=certified`,
-    { authorization: `Bearer ${dadTok}` }, '');
+    { authorization: `Bearer ${dadTok}`, 'x-guardian-pin': GUARDIAN_PIN }, '');
   check('F call_log', 'the real HTTP route -> 200', routeResult.status, 200);
   check('F call_log', 'the route body carries callLog too — not silently dropped the way two other '
     + 'fields were before the real v0.49.15 fix',

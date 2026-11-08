@@ -103,7 +103,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
-import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges }
+import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges,
+         adoptUntrackedBlobs, orphanedUploads, releaseMediaUpload, MEDIA_ORPHAN_AGE_HOURS }
   from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
 import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
@@ -295,6 +296,37 @@ export async function runRematerializeSweep(pool, opts = {}) {
     scanned: pendingRows.length, materialized, expired, stillPending, skippedRows,
     batchLimitHit: pendingRows.length === batchLimit,
   };
+}
+
+// ------------------------------------------------------ sweep-orphan-media -
+/**
+ * S-B8: POST .../media writes a blob before any message exists, and a capture
+ * that is never sent used to live on disk forever (an unreferenced photo of a
+ * child is a retention exposure; reap-media works from media_artifact rows and
+ * never sees it). This job (1) adopts blobs the media_upload ledger has never
+ * heard of (uploads from before migration 0041) so they start a 24 h clock,
+ * then (2) deletes every ledger blob older than `olderThanHours` that no
+ * media_artifact row references: blob first, then its ledger row, so a failed
+ * blob delete leaves a visible row to retry (the same order reap() uses).
+ */
+export async function runOrphanMediaSweep(pool, storage, opts = {}) {
+  const olderThanHours = opts.olderThanHours ?? MEDIA_ORPHAN_AGE_HOURS;
+  const limit = opts.limit ?? 500;
+  const adopted = await adoptUntrackedBlobs(pool, await storage.list('children/'));
+  const keys = await orphanedUploads(pool, olderThanHours, limit);
+  const out = { adopted, examined: keys.length, blobsDeleted: 0, blobsAlreadyGone: 0,
+                rowsDeleted: 0, failed: [] };
+  for (const key of keys) {
+    try {
+      const existed = await storage.delete(key);
+      if (existed) out.blobsDeleted++; else out.blobsAlreadyGone++;
+      await releaseMediaUpload(pool, key);
+      out.rowsDeleted++;
+    } catch (e) {
+      out.failed.push(key); // row kept: retried next sweep
+    }
+  }
+  return out;
 }
 
 // -------------------------------------------------------------- reap-media -
@@ -521,7 +553,7 @@ export async function runBackupJob(env = process.env, opts = {}) {
 }
 
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'reap-media', 'purge-challenges', 'backup', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'backup', 'health-alert'];
 
 // One real FilesystemStorage instance, constructed once — same convention
 // as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
@@ -546,6 +578,7 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     lockResult = await withJobLock(pool, jobName, async () => {
       if (jobName === 'rematerialize') return runRematerializeSweep(pool, {});
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
+      if (jobName === 'sweep-orphan-media') return runOrphanMediaSweep(pool, storage, {});
       if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
       if (jobName === 'backup') return runBackupJob(process.env, {});
       if (jobName === 'health-alert') return runHealthAlertSubprocess(databaseUrl);
@@ -604,6 +637,17 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
       rows_deleted: r.rowsDeleted, tombstoned: r.tombstoned.length,
       skipped_preserved: r.skippedPreserved, refused_no_clock: r.refusedNoClock,
       at: DateTime.utc().toISO(),
+    });
+    return { ok: true, skipped: false };
+  }
+
+  if (jobName === 'sweep-orphan-media') {
+    const r = lockResult.result;
+    logLine({
+      event: 'end', job: jobName, status: r.failed.length ? 'partial' : 'ok', duration_ms: durationMs,
+      adopted: r.adopted, examined: r.examined, blobs_deleted: r.blobsDeleted,
+      blobs_already_gone: r.blobsAlreadyGone, rows_deleted: r.rowsDeleted,
+      failed: r.failed.length, at: DateTime.utc().toISO(),
     });
     return { ok: true, skipped: false };
   }
