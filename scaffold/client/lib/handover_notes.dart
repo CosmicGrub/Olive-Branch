@@ -1,7 +1,6 @@
-// OLIVE BRANCH — parent-to-parent handover log. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and
-// run via `flutter analyze` / `flutter test` this session). MASTERFILE P8,
-// §21.7, §8.8.5.
+// OLIVE BRANCH — parent-to-parent handover log. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE P8, §21.7, §8.8.5.
 //
 // P8: "Deletion or editing of parent<->parent log entries [is prohibited].
 // Court-tier integrity (§12 Phase 3). A log with an unsend button is not

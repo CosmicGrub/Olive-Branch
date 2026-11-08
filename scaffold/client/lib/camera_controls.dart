@@ -1,5 +1,6 @@
-// OLIVE BRANCH — the camera, the speaker, and P10. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §5.24.
+// OLIVE BRANCH — the camera, the speaker, and P10. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §5.24.
 //
 // A 1:1 semantic port of packages/live/src/camera.ts — same names, same
 // shapes, same ordering, the lock_controller.dart discipline this codebase

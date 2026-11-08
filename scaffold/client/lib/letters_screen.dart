@@ -1,6 +1,7 @@
-// OLIVE BRANCH — child shell, letters to her future self. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline). MASTERFILE
-// §21.4, §21.8. Renders MARKUP screen 'letters'.
+// OLIVE BRANCH — child shell, letters to her future self. No longer UNVERIFIED
+// — verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §21.4, §21.8.
+// Renders MARKUP screen 'letters'.
 //
 // A 1:1 semantic port of the letter functions in
 // packages/maturation/src/maturation.ts (sealLetter / openLetter /

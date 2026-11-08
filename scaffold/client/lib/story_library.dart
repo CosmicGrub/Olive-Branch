@@ -1,7 +1,7 @@
-// OLIVE BRANCH — child shell, the story library. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §9.11.6,
-// §8.14. Renders MARKUP screen 'library'.
+// OLIVE BRANCH — child shell, the story library. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.11.6, §8.14.
+// Renders MARKUP screen 'library'.
 //
 // "A shelf stays browsable to three hundred; past that it is a search
 // problem a five-year-old cannot use." This file is the one screen in the

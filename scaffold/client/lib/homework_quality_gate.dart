@@ -1,6 +1,6 @@
-// OLIVE BRANCH — homework photo quality gate + tutor hint guard. UNVERIFIED
-// (no Flutter toolchain in tools/verify.sh's automated pipeline). MASTERFILE
-// §9.1.
+// OLIVE BRANCH — homework photo quality gate + tutor hint guard. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.1.
 //
 // A semantic port of packages/homework/src/capture.ts, keeping the exact
 // measured thresholds so a photo that passes/fails here matches the

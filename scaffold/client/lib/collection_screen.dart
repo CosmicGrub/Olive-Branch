@@ -1,6 +1,7 @@
-// OLIVE BRANCH — child shell, showcase collection. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.10.
-// Renders MARKUP screen 'collection'.
+// OLIVE BRANCH — child shell, showcase collection. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.10. Renders
+// MARKUP screen 'collection'.
 //
 // "What she has shown, kept." A collection is a RECORD of what happened,
 // never a target: there is deliberately no denominator anywhere on this

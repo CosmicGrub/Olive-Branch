@@ -1,13 +1,14 @@
-// OLIVE BRANCH — Local Pictionary, the ad-hoc drawing game. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline). Network
-// resilience & ad-hoc mode roadmap, Track B Option 2, ad-hoc games
-// expansion. Third of five new local-play activities — reuses far more
-// than it builds new: live_games.dart's own Pictionary/PictionaryGuess/
-// guessDrawing()/newPictionary() (already real, already tested, built for
-// the video-call context but never wired to local play) and
-// annotation_canvas.dart's AnnotationCanvas (same engine three other
-// screens already use). Builds on local_pairing.dart for the transport,
-// same pattern as game_war.dart/game_connect4.dart.
+// OLIVE BRANCH — Local Pictionary, the ad-hoc drawing game. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml). Network resilience
+// & ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion. Third of
+// five new local-play activities — reuses far more than it builds new:
+// live_games.dart's own
+// Pictionary/PictionaryGuess/guessDrawing()/newPictionary() (already real,
+// already tested, built for the video-call context but never wired to local
+// play) and annotation_canvas.dart's AnnotationCanvas (same engine three other
+// screens already use). Builds on local_pairing.dart for the transport, same
+// pattern as game_war.dart/game_connect4.dart.
 //
 // THE ONE REAL DEVIATION FROM THE CALL-CONTEXT VERSION: LiveKind.pictionary
 // (live_games.dart) describes real-time per-stroke sync ("he watches the

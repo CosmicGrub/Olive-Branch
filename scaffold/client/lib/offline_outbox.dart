@@ -1,5 +1,6 @@
-// OLIVE BRANCH — offline outbox, the pure-logic half. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §5.22.
+// OLIVE BRANCH — offline outbox, the pure-logic half. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §5.22.
 //
 // A DELIBERATELY PARTIAL 1:1 semantic port of packages/offline/src/
 // offline.ts — same names, same shapes, same ordering, so the two stay

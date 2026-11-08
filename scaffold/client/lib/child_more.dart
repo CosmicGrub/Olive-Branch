@@ -1,5 +1,6 @@
-// OLIVE BRANCH — child shell, "more for you" hub. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). Navigation-wiring-pass
+// OLIVE BRANCH — child shell, "more for you" hub. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). Navigation-wiring-pass
 // addition, not a MARKUP screen of its own.
 //
 // child_home.dart's own grid stays at a size a young child can scan; this

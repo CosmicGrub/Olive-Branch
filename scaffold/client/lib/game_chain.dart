@@ -1,7 +1,7 @@
-// OLIVE BRANCH — word chain ("I went to the market..."). UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline — manually built
-// and run via `flutter analyze` / `flutter test` this session). MASTERFILE
-// §9.2 (Shipped v0.19.0), P2. Renders MARKUP screen 'chain'.
+// OLIVE BRANCH — word chain ("I went to the market..."). No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.2 (Shipped
+// v0.19.0), P2. Renders MARKUP screen 'chain'.
 //
 // A 1:1 semantic port of the chain section of packages/games/src/games3.ts
 // (Side, ChainStep, ChainGame, ChainError, newChain, addStep, recallStep,

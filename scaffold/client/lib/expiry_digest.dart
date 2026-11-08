@@ -1,7 +1,7 @@
-// OLIVE BRANCH — guardian shell, expiry digest. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §10.1b.
-// Renders MARKUP screen 'expiryDigest'.
+// OLIVE BRANCH — guardian shell, expiry digest. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §10.1b. Renders MARKUP screen
+// 'expiryDigest'.
 //
 // 1:1 port of packages/storage/src/retention.ts: DIGEST_LEAD_DAYS,
 // ExpiringArtifact, ExpiryDigest, expiringSoon(), digestVisibleTo(),

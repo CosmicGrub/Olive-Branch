@@ -1,5 +1,6 @@
-// OLIVE BRANCH — showcase & exchange pure logic. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.10,
+// OLIVE BRANCH — showcase & exchange pure logic. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.10,
 // §9.10.7–§9.10.11.
 //
 // A semantic port of packages/showcase/src/showcase.ts and exchange.ts,

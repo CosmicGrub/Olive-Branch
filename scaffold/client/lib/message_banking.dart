@@ -1,6 +1,6 @@
-// OLIVE BRANCH — guardian-side message banking. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). §9.5, §6.5, §8.2.8.
+// OLIVE BRANCH — guardian-side message banking. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). §9.5, §6.5, §8.2.8.
 //
 // A deploying parent records goodnight messages ahead of time; each queues
 // to deliver on one future night, at the child's bedtime, in the child's

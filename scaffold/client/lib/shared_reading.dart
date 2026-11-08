@@ -1,6 +1,6 @@
-// OLIVE BRANCH — shared reading, around the call. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §9.13.2.
+// OLIVE BRANCH — shared reading, around the call. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.13.2.
 // Renders MARKUP screen 'sharedReading'.
 //
 // "She turns the pages. He reads, but the pacing is hers." This is a

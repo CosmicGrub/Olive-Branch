@@ -1,13 +1,14 @@
-// OLIVE BRANCH — network transport for live checkers play. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline) — manually run
-// via `flutter analyze`/`flutter test` as part of this feature's own
-// security review; see networked_checkers_channel_test.dart. Extends the
-// existing local pass-and-play checkers (game_checkers.dart) to two paired
-// devices, relayed through this app's own authenticated backend server —
-// see scaffold/packages/game-sync/src/table.ts and scaffold/server/
-// game_tables.mjs for the server-side half of this contract. This is
-// explicitly NOT peer-to-peer and NOT LAN-discovered: every byte crosses
-// the same backend every other real feature in this app already trusts.
+// OLIVE BRANCH — network transport for live checkers play. No longer UNVERIFIED
+// — verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml) — manually run via `flutter
+// analyze`/`flutter test` as part of this feature's own security review; see
+// networked_checkers_channel_test.dart. Extends the existing local
+// pass-and-play checkers (game_checkers.dart) to two paired devices, relayed
+// through this app's own authenticated backend server — see
+// scaffold/packages/game-sync/src/table.ts and scaffold/server/game_tables.mjs
+// for the server-side half of this contract. This is explicitly NOT
+// peer-to-peer and NOT LAN-discovered: every byte crosses the same backend
+// every other real feature in this app already trusts.
 //
 // SECURITY NOTE — defense in depth: this class is TRANSPORT ONLY. It parses
 // and shape-checks incoming frames (never trusting a frame just because it

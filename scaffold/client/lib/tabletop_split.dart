@@ -1,8 +1,8 @@
-// OLIVE BRANCH — shared tabletop-posture layout. Intuitivism pass,
-// sub-project 3c (docs/superpowers/specs/2026-09-12-intuitivism-fold5-
-// layout-design.md, Part 2). UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline — manually built and run via
-// `flutter analyze` / `flutter test` this session).
+// OLIVE BRANCH — shared tabletop-posture layout. Intuitivism pass, sub-project
+// 3c (docs/superpowers/specs/2026-09-12-intuitivism-fold5-layout-design.md,
+// Part 2). No longer UNVERIFIED — verified by CI (`flutter analyze` and
+// `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml).
 //
 // At Posture.foldTabletop (form_factors.dart) — short, wide, landscape, the
 // Fold5 standing half-open on its own hinge — a screen's single-column

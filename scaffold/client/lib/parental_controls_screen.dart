@@ -1,7 +1,7 @@
 // OLIVE BRANCH — Parental Controls: visibility & pacing (guardian-only,
-// PIN-gated). UNVERIFIED (no Flutter toolchain in tools/verify.sh's
-// automated pipeline — manually built and run via `flutter analyze`/
-// `flutter test` this session). docs/superpowers/specs/2026-09-13-parental
+// PIN-gated). No longer UNVERIFIED — verified by CI (`flutter analyze` and
+// `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). docs/superpowers/specs/2026-09-13-parental
 // -controls-pacing-design.md ("sub-project 2: visibility & pacing"), and
 // docs/superpowers/specs/2026-09-15-parental-controls-ia-rework-design.md
 // ("UI/UX review theme #5") for the sub-grouping/search/overflow/divider

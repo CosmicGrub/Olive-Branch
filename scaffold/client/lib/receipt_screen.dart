@@ -1,7 +1,8 @@
-// OLIVE BRANCH — child shell, message receipt. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §8.2.4,
-// §9.5. Renders MARKUP screen 'receipt': "Watched at 7:04 AM her time —
-// before school." Her frame first, always.
+// OLIVE BRANCH — child shell, message receipt. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §8.2.4, §9.5. Renders MARKUP
+// screen 'receipt': "Watched at 7:04 AM her time — before school." Her frame
+// first, always.
 //
 // pipeline.ts's `openReceipt()` docstring is explicit about why: "a receipt
 // renders in HER frame, at the zone she was in when she opened it. Not the

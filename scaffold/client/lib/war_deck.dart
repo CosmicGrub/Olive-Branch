@@ -1,10 +1,10 @@
-// OLIVE BRANCH — a real, standard 52-card deck. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). Network resilience &
-// ad-hoc mode roadmap, Track B Option 2, ad-hoc games expansion (see the "Ad-Hoc
-// Play Expansion" plan) — the first real card-deck primitive in this
-// codebase, built for game_war.dart and later reused (its shuffle
-// algorithm, not its types — Uno's cards are color+type, not rank+suit) by
-// uno_deck.dart.
+// OLIVE BRANCH — a real, standard 52-card deck. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). Network resilience & ad-hoc mode roadmap,
+// Track B Option 2, ad-hoc games expansion (see the "Ad-Hoc Play Expansion"
+// plan) — the first real card-deck primitive in this codebase, built for
+// game_war.dart and later reused (its shuffle algorithm, not its types — Uno's
+// cards are color+type, not rank+suit) by uno_deck.dart.
 //
 // Hand-rolled, not a TS port: there is no existing packages/games/src
 // counterpart for a plain playing-card deck (games.ts/games2.ts/games3.ts

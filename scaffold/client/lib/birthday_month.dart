@@ -1,5 +1,6 @@
-// OLIVE BRANCH — she places her birthday, month first. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline). §8.7.2.
+// OLIVE BRANCH — she places her birthday, month first. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). §8.7.2.
 //
 // Renders MARKUP screen 'bdMonth'. Twelve named tiles, not a scroller — a
 // six-year-old finding a date six years in the past is genuinely hard, but

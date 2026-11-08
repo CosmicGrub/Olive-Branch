@@ -1,6 +1,7 @@
-// OLIVE BRANCH — in-app photo/screenshot button. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.15.
-// Renders MARKUP screen 'snapshot'.
+// OLIVE BRANCH — in-app photo/screenshot button. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.15. Renders
+// MARKUP screen 'snapshot'.
 //
 // Ports packages/homework/src/snapshot.ts's screenshot half. (The camera
 // half — quality-gated photos headed for OCR — is capture_gate.dart /

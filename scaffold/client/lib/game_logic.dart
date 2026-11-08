@@ -1,5 +1,6 @@
-// OLIVE BRANCH — game hub & handicap, ported rules. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.2, P2.
+// OLIVE BRANCH — game hub & handicap, ported rules. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.2, P2.
 //
 // A scoped port of packages/games/src/games.ts — CATALOGUE, forAge(), the
 // handicap functions, and the losing-streak trigger — kept close to the TS

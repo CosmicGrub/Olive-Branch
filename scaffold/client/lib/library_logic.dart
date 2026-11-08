@@ -1,7 +1,6 @@
-// OLIVE BRANCH — the library, and the book: pure logic. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline — manually built
-// and run via `flutter analyze` / `flutter test` this session).
-// MASTERFILE §9.11.6.
+// OLIVE BRANCH — the library, and the book: pure logic. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). MASTERFILE §9.11.6.
 //
 // A 1:1 semantic port of packages/storyteller/src/library.ts, kept close to
 // the TS original for the same reason lock_controller.dart stays close to

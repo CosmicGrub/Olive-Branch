@@ -1,5 +1,6 @@
-// OLIVE BRANCH — first-run onboarding logic. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §8.5.
+// OLIVE BRANCH — first-run onboarding logic. No longer UNVERIFIED — verified by
+// CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). MASTERFILE §8.5.
 //
 // A 1:1 semantic port of packages/onboarding/src/onboarding.ts's name/age/who
 // steps, kept close to the TS original (same function names, same shapes,

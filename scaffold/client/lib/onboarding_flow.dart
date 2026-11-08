@@ -1,6 +1,7 @@
-// OLIVE BRANCH — onboarding flow, sequenced. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). Navigation-wiring-pass
-// addition, not a MARKUP screen of its own.
+// OLIVE BRANCH — onboarding flow, sequenced. No longer UNVERIFIED — verified by
+// CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). Navigation-wiring-pass addition, not a MARKUP
+// screen of its own.
 //
 // The onboarding group's own report is explicit that every first-run screen
 // it built is "fully self-contained via constructor callbacks, so it can be

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — shared chrome for the child's first-run flow. UNVERIFIED
-// (no Flutter toolchain in tools/verify.sh's automated pipeline). §8.5.
+// OLIVE BRANCH — shared chrome for the child's first-run flow. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml). §8.5.
 //
 // One background, one continue-button pattern, one skip-link pattern, reused
 // by onboarding_name.dart / onboarding_age.dart / onboarding_who.dart /

@@ -1,6 +1,6 @@
-// OLIVE BRANCH — knocking, not ringing. The pure logic half. UNVERIFIED (no
-// Flutter toolchain in tools/verify.sh's automated pipeline — manually built
-// and run via `flutter analyze` / `flutter test` this session). MASTERFILE
+// OLIVE BRANCH — knocking, not ringing. The pure logic half. No longer
+// UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run for
+// real in tools/verify.sh and .github/workflows/verify.yml). MASTERFILE
 // §5.25.2.
 //
 // A DELIBERATELY PARTIAL 1:1 port of packages/live/src/lifecycle.ts — only

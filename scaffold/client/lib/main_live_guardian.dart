@@ -1,5 +1,6 @@
-// OLIVE BRANCH — live-backend GUARDIAN entry point. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §7.
+// OLIVE BRANCH — live-backend GUARDIAN entry point. No longer UNVERIFIED as
+// code — analysed by CI (`flutter analyze`); the on-device run of this dev-only
+// entry point is manual and not part of CI. MASTERFILE §7.
 //
 // A THIRD build target, alongside main.dart (offline preview) and
 // main_live.dart (live CHILD entry point — see that file's own header for

@@ -1,8 +1,7 @@
-// OLIVE BRANCH — two truths and a tall tale. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). MASTERFILE §9.2,
-// §8.11.1, P2. Renders MARKUP screen 'gamePicker' catalogue entry
-// 'twoTruths'.
+// OLIVE BRANCH — two truths and a tall tale. No longer UNVERIFIED — verified by
+// CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). MASTERFILE §9.2, §8.11.1, P2. Renders MARKUP
+// screen 'gamePicker' catalogue entry 'twoTruths'.
 //
 // Play Together Phase 1, Batch B (docs/superpowers/specs/
 // 2026-08-20-play-together-phase1-design.md) — third of four

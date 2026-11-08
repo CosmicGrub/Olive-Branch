@@ -1,6 +1,6 @@
-// OLIVE BRANCH — invitation, a second guardian joins. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline — manually built and run
-// via `flutter analyze` / `flutter test` this session). §8.5, §11.
+// OLIVE BRANCH — invitation, a second guardian joins. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml). §8.5, §11.
 //
 // Renders MARKUP screen 'invitation'. A second guardian accepts into an
 // existing family. This screen only states what the invitation grants and

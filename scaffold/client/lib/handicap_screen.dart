@@ -1,6 +1,7 @@
-// OLIVE BRANCH — child shell, handicap picker. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline). MASTERFILE §9.2.
-// Renders MARKUP screen 'handicap'.
+// OLIVE BRANCH — child shell, handicap picker. No longer UNVERIFIED — verified
+// by CI (`flutter analyze` and `flutter test` run for real in tools/verify.sh
+// and .github/workflows/verify.yml). MASTERFILE §9.2. Renders MARKUP screen
+// 'handicap'.
 //
 // §9.2's constitutional line: HANDICAP IS SET BY THE CHILD, not a difficulty
 // slider a parent turns for her. This screen therefore has no notion of a

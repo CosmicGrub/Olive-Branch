@@ -5,7 +5,7 @@
  * packages/db/src/pool.ts's themeFor()/setChildTheme(), routes.mjs's own
  * invalidThemeBody().
  *
- * 2026-08-24 audit (§8.16, Tier-3) — real gap this file closes: the theme
+ * 2026-08-24 audit (§8.25, Tier-3) — real gap this file closes: the theme
  * routes had a real Postgres RLS suite (packages/db/test/theme_preference
  * .test.mjs) but NOTHING exercised the ROUTE itself — no test proved
  * invalidThemeBody() actually reaches the handler and returns a specific

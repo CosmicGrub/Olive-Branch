@@ -14,11 +14,39 @@ Silent deletion is a process failure.
 
 ---
 
-## [Unreleased] — a time-of-day test flake and 2.0x text-scale overflows at 344 dp
+## [0.50.0] — 2026-11-08 — Release cut: the offline-first on-device client, a real authenticated session, server hardening, co-viewing and Parent Learn; MASTERFILE, MARKUP and DEMO brought to parity with the code
 
-No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+The first numbered version since 0.49.78 (2026-09-14). It gathers the eleven `[Unreleased]` entries that had accumulated, records the changes that merged with no entry at all, and brings the three canonical documents (MASTERFILE, MARKUP, DEMO) into step with what the code actually does. Everything below was already built and merged (pull requests #119 to #147); the only new work in this cut is documentation, the version, and comments in client file headers.
 
-### Fixed
+**What this release has, and has not, been verified by.** CI runs the server and package suites against real Postgres, `flutter analyze`, the full `flutter test` suite and the MARKUP, CHANGELOG and DEMO drift checks. **A Flutter or real-device pass has NOT been done for this release.** None of the client changes below has run on a Galaxy Z Fold 5 or a Tab S9 FE; read-aloud and TalkBack have not been exercised on hardware; no release APK has been built or signed; and nothing involving calls, push or delivery has been run against a live LiveKit, FCM or APNs endpoint (no credentials exist). MASTERFILE §22 is the plain list of what is not built.
+
+### Documentation parity (this cut)
+- **Version.** MASTERFILE header, MARKUP header and the DEMO manifest (version and spec tag) now say 0.50.0; the DEMO manifest's spec tag had been left at 0.49.76.
+- **Duplicate section numbers.** *Theme customization* was a second §8.16 and is now **§8.25**; the *Child device reality* stub was a second §8.5 and is now **§19.1**. Every cross-reference was updated (MASTERFILE, this file's older entries, MARKUP, a comment in `server/test/theme_route.test.mjs`, one design spec). Remaining §8.16 references mean *On-device data*. §8.23 and §8.24 were put in order.
+- **Stale statements corrected.** §21 said the maturation ladder was "specified, not built" (it is built, v0.31.0). The play-together Batches B and C "remain unbuilt" (built in v0.49.20 and v0.49.21). §8.17 said the Parent Learn Dart port and screens were not built (they are; the app keeps Learn data on the device and does not call the `/v1/learn` routes). §8.19.5, §8.18 and §8.6.5 said a local emergency card editor and a durable store for the family structure and for colour were not built (they are). A sentence in the pairing note said every Dart file carries an UNVERIFIED posture; now it says the files are verified by CI and by nothing on hardware. §8.25 now says there are seven palettes.
+- **§12 roadmap snapshot.** Every row was checked against the code and struck through where it shipped; what did not ship is said plainly (captions, iOS, the SMS bridge, translation, a rendered court-export PDF, a print-ready Year Book PDF, custody-order and medication entry).
+- **New sections.** §22 (a Local data index pointing at §8.16.4, and *What is not built yet*, with the credentials and reviews the owner would have to supply) and §8.26 (Read together and the refined theme).
+- **MARKUP.** 46 screens added (79 to 125) for the settings hub, Data on this device, accessibility for her device, no-signal home, the local emergency card editor, Parent Learn, the family builder and child views, colour and play window, Rhythm and Voice, Growing and Care, Village and Compass, and Read together; 20 existing entries amended where a documented claim had changed (her home, the journal, wants and needs, the gallery, the ladder, the emergency card, the theme, colour of the day, the game picker, parental controls and others); a version row.
+- **DEMO.** The manifest maps the Parent Learn, family-structure and Read together screens to demo screens and lists the others, each with its reason, as not demoed. Three nav entries (Read together, Parent Learn, Family structure) had a panel but no screen, so `go()` refused them and they opened nothing; they now open screens that render the real modules' computed values. In the bridge's UNDER_CONSTRUCTION table the school layer was described as "specified, not built" (it is built: `packages/school`, §11.5) and two stale figures ("21 assertions", "77 assertions") were removed.
+- **Client headers.** 77 Dart files in `client/lib` and one in `client/test` carried a header reading "UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated pipeline)", although CI runs Flutter for real. They now read "No longer UNVERIFIED — verified by CI"; the dev-only entry points (`main_live_*`, `main_local_*`) say only that CI analyses them, because their on-device run is manual. The word stays because the transport contract suite requires it. Comments only; no behaviour changed.
+- **A correction to an entry below.** The server-hardening entry cited migration `0038_fk_indexes.sql`; the file is `0037_fk_indexes.sql`.
+
+### Merged without a CHANGELOG entry
+- **Co-viewing, the pure core (#128).** `docs/superpowers/specs/2026-11-07-co-viewing-design.md` (owner decisions 1 to 4; sub-questions on 2 and 3 still open), two design-stage models in `tools/co-viewing-model/`, and `packages/co-view`: untrusted-message parsing, guardian-only leading, a sequence guard for safe transport switching, a clock-offset estimate, the drift controller, the bounded allowance (2 h default; the 8 h ceiling is provisional) and the channel choice. Its suite is `npm run test:co-view` (149 assertions when it landed, 168 now). MASTERFILE §8.26.
+- **Wave 1 (#129).** `buildThemeData()` and the `OliveSemantic` protected colours; bundled Bricolage Grotesque and Atkinson Hyperlegible (about 520 KB, OFL); a seventh palette, `olive`, as the default for a fresh install (migration `0034_theme_olive_palette.sql` widens the CHECK); the Dart co-view port held to golden vectors, `CoViewLeader`/`CoViewFollower` over an abstract transport and the Read together screens, which are not reachable from the app yet (§22).
+- **Parent Learn (#132 core, #133 Dart port and six screens, #134 server).** Sixteen evidence-labelled cards with a lint; optional private reflection, message check and two-home rules list, every default private. Migration `0035_parent_learn.sql` (`guardian_learn_settings`, `guardian_reflection`, `guardian_house_rule`, forced RLS) and the `/v1/learn/...` routes, with real-Postgres suites. An honest limit recorded then: `backup_reader` is BYPASSRLS, so operational backups contain reflections. MASTERFILE §8.17.
+- **Client wiring audit (#136).** `GET /v1/me` returns `yearsOld` for a child session and the live home threads it down (failing closed to five); `GET .../now` returns today's `dayParts` and My day uses them; the five ad-hoc games are listed under Play together on this table; the unbuilt memory card is hidden; child-voice wording and her real grown-up's name replace a hard-coded Dad; the Demo section and Redo the welcome tour are gone; the kiosk lock-out is picture-first with a one-tap call; the developer banner is gone and unread is a dot; the guardian home passes the live base URL, guardian and child; invented-content tiles are hidden in a live More hub; the emergency card gets `version` and `ifMatch` (428 or 409) and an append-only `medical_record_history` (migration `0036_emergency_card_versioning.sql`).
+- **Fixes.** #120: six `§8.13` motion-budget violations (the Uno action glow 700 ms to 400 ms, an unclamped overshoot in the birthday mark, the call degradation banner and a remote-view swap in the call screen no longer hard-cut). #121: Uno's two critical vsPeer bugs (a dropped connection stranded both players; a rejected peer action never told the peer, six silent dead ends) and two table-layout bugs. #122: Uno card numerals failing WCAG contrast on yellow and green, and an unlabelled Wild colour picker. #123: the Hard CPU's action-card targeting bug. #124: `childCtxFor()` ignored every child time-zone interval (a `::text` cast produced a string Luxon rejects, so resolution silently fell back to `home_tz`); fixed at the source and `resolveZone()` now throws on an unparsable bound. #125: `resolveWallClock()` returned a different instant depending on today's date (CI went red on its own after 1 November 2026); it now reads only the zone's offset table. #126: the parental-controls PIN screen froze on a spinner when its first request failed. #127: three database suites gave the server 8 s to boot and silently skipped assertions when a slow disk took longer; the ceiling is 60 s.
+- **Docs only (#130, #131, #135).** The Olive umbrella (43 proposed suites with in-app mockups), the parenting-styles research with the Parent Learn mockups, and the second round of overhaul mockups, under `docs/superpowers/`.
+
+### The entries consolidated here
+Each of the following was written when it merged and is kept as written, apart from the corrections noted above. Where one says "no version bump", it was cut here.
+
+### a time-of-day test flake and 2.0x text-scale overflows at 344 dp
+
+Cut as part of 0.50.0 (it merged with no version of its own).
+
+#### Fixed
 - **`server/test/presence_route.test.mjs` failed for about 40 minutes after local midnight**
   (CI at 08:04 UTC = 00:04 America/Los_Angeles). Root cause: the suite built its availability
   windows from the real wall clock ("started 45 / 15 / 40 / 10 minutes ago"), clamped to the
@@ -44,21 +72,21 @@ No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
   `gh release download` (the authenticated API route) when the public download URL is down; it
   was returning 504 for every tag on 2026-11-08 while the API route still worked.
 
-### Changed
+#### Changed
 - `client/test/child_text_scale_test.dart` covers every main child screen (and the child More
   hub at ages 7 and 12) at 2.0x on a 344 dp surface too; the Rhythm/Voice and Village More-hub
   tests moved from 1.6x to 2.0x on 344 dp.
 
-## [Unreleased] — Village and Compass (umbrella suites D and I), offline and on this device
+### Village and Compass (umbrella suites D and I), offline and on this device
 
 Grandparent corner, her people in pictures, a story a guardian releases, the sibling shelf, the
 sitter pass and the school summary (D); a two-question family compass with a plain rules table,
 a suites shelf and two accessibility profiles (I). Described as shipped in MASTERFILE §8.22.
 **Local only** by owner direction: no server route, no migration, no network call, no
 credential; **anything that shares between homes or contacts another person is parked and not
-built.** No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+built.** Cut as part of 0.50.0 (it merged with no version of its own).
 
-### Added
+#### Added
 - **Pure rules** `client/lib/village_logic.dart` — every bound and refusal: a grandparent page
   (up to four big buttons and a phone number kept as text, never dialled), picture stories that
   stay **held** until a guardian releases them, a sibling shelf (up to four siblings, six pictures
@@ -90,21 +118,20 @@ built.** No version bump and no new MARKUP screen row; MARKUP/DEMO totals update
   `village_sections_test`, `village_guardian_screens_test`, `compass_logic_test`,
   `compass_repositories_test`, `compass_screens_test`, `visual_alert_test`.
 
-### Local only, and not built
+#### Local only, and not built
 - Everything above stays on this device and says so. **Not built:** a sitter link that expires or
   reports being opened, a medicine log, a teacher's note reaching both homes, calling or sending a
   picture from the grandparent page, a shared sibling canvas, the step-parent role and invitations,
   printing, her arranging her people, reshaping her home for a far-away parent, and live captions.
   Clinical and child-development review is still required before any pre-written text about a
   partner, a family change or a role.
-## [Unreleased] — Offline follow-ups: Voice off by default, two-homes fallback, honest worry take-back, local emergency card, memory box from a grown-up
+### Offline follow-ups: Voice off by default, two-homes fallback, honest worry take-back, local emergency card, memory box from a grown-up
 
 Described as shipped in MASTERFILE §8.24. **Owner direction 2026-11-08: offline, on-device only.**
 No server route, no migration, no network call, nothing that needs a credential; no TypeScript;
-sharing between homes stays parked. No version bump and no new MARKUP screen row; MARKUP/DEMO
-totals updated.
+sharing between homes stays parked. Cut as part of 0.50.0 (it merged with no version of its own).
 
-### Added
+#### Added
 - **Local emergency card** — `emergency_card_local.dart`, `emergency_card_editor_screen.dart`: a
   guardian-only editor for allergies (written by a guardian), conditions, medicines, her doctor
   and contacts, stored sealed in the new catalogued area `emergencycard` (listed on the "Data on
@@ -123,7 +150,7 @@ totals updated.
 - **Worry box honesty** — taking back "show my grown-up" says, in her words with the grown-up
   picture, whether a grown-up already saw it; a private `seen` bit (never given to a guardian) makes it true.
 
-### Changed
+#### Changed
 - **Voice starts OFF** until a guardian turns it on (Settings, Family, Her voice); persisted per
   child; only an explicit true counts. Age and family-structure gating unchanged.
 - The Compass suites shelf (#147) shows Voice as off until a guardian switches it on, and says so.
@@ -131,21 +158,20 @@ totals updated.
 - `tools/verify.sh` now prints the names of failing Dart tests (it printed only a count, so a CI-only
   failure could not be root-caused from the log).
 
-### Tests
+#### Tests
 - `offline_followups_test`, `emergency_card_local_test`, `emergency_card_local_screens_test`,
   `memory_box_grown_up_test`; the Voice-default changes in `rhythm_voice_gate_test`,
   `rhythm_voice_sections_test`, `voice_logic_test`, `rhythm_voice_service_test`,
   `rhythm_voice_guardian_screens_test`.
 
-## [Unreleased] — On-device performance pass (offline, evidence first)
+### On-device performance pass (offline, evidence first)
 
 Described as shipped in MASTERFILE §8.23. **Owner direction: offline, on-device only** — no
 server route, no migration, no network call, no TypeScript. Every item below was measured or
 shown in code first (numbers in MASTERFILE §8.23 and the pull request); candidates that did not
-hold up are listed there as findings, not changed. No product behaviour or copy changes. No
-version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+hold up are listed there as findings, not changed. No product behaviour or copy changes. Cut as part of 0.50.0 (it merged with no version of its own).
 
-### Changed
+#### Changed
 - **Homework photo is scaled before it is held** — `capture_downscale.dart`
   (`kCaptureMaxEdge` 1600, `fitWithin`, pure Dart); `capture_gate.dart` asks the camera for at
   most 1600 px on the long edge (quality stays 90, EXIF kept by the plugin). A 12 MP photo
@@ -163,7 +189,7 @@ version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
 - `RELEASE_SIGNING.md` documents per-ABI APKs (`--split-per-abi`, arm64 for the Fold5 and Tab S9
   FE) and `appbundle`. The release command still targets `lib/main_live.dart`.
 
-### Fixed
+#### Fixed
 - **Room photo decoded on every rebuild** — the "new place" walk called `base64Decode` in
   `build()`, giving the framework a new image key each rebuild (re-decode, dropped cache). Now a
   `RoomPhoto` widget decodes once per photo and shows the picture glyph for bad text.
@@ -171,13 +197,13 @@ version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
   so `stop()` could not cancel it (a live platform-channel listener per pairing session, and an
   event after `stop()` would add to a closed controller). It is kept and cancelled first.
 
-### Removed
+#### Removed
 - Jitsi-era leftovers: `network_security_config.xml` (cleartext exception and dev trust anchor;
   Dart's `dart:io` traffic never read it), `res/raw/jitsi_dev_cert.pem`, the manifest attribute,
   and `client/third_party/jitsi_meet_flutter_sdk_patched/` (480 KB, referenced by nothing since
   the LiveKit migration) with its analyzer exclude. Still in git history.
 
-### Added
+#### Added
 - Tests `perf_*` (38): downscale arithmetic and a source guard that the picker passes it;
   journal laziness, rebuild count and scrolling; LocalStore lazy start and unchanged envelope;
   discovery disposal; room-photo decode count; release-config guards (assets under 1 MiB, no
@@ -185,15 +211,14 @@ version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
   (`RebuildCounter`). Five journal tests now `pump()` after `ensureVisible` (a sliver lays out
   the scrolled position on the next frame) and one finds `CustomScrollView`.
 
-## [Unreleased] — Growing and Care (suites G and F), on-device only
+### Growing and Care (suites G and F), on-device only
 
 Time capsule, first times, memory box and growing marks (G); care binder, hospital mode,
 picture stories and appointment prep (F). Described as shipped in MASTERFILE §8.19.
 **Local only** by owner direction: no server route, no migration, no network call, no
-credential; **sharing between homes is parked and not built.** No version bump and no new
-MARKUP screen row; MARKUP/DEMO totals updated.
+credential; **sharing between homes is parked and not built.** Cut as part of 0.50.0 (it merged with no version of its own).
 
-### Added
+#### Added
 - **Pure rules** `client/lib/growing_care_logic.dart` — models and every deny path: a capsule
   opens on or after its date by the device clock (said plainly on screen: changing the clock
   opens it early) or when a guardian unseals it, and its words are withheld from a guardian
@@ -220,23 +245,22 @@ MARKUP screen row; MARKUP/DEMO totals updated.
   `care_screens_test.dart` (includes source-reading checks that her files reach no care type
   and that these suites contain no network, scheduling or location code).
 
-### What is local-only and what is not here
+#### What is local-only and what is not here
 Everything is local-only. Not built: sharing or sync between homes; a local editor for the
 emergency card (hospital mode links to the existing screen, which still shows demo content
-when no live session is wired); audio in the memory box (no audio capture exists); a question
+when no live session is wired; **since built, see "Offline follow-ups" below**); audio in the memory box (no audio capture exists); a question
 box on a picture story; reminders or scheduling of any kind; any pre-written medical or
 explainer text. The app writes no care content: every word is a guardian's.
 
-## [Unreleased] — Rhythm and Voice (umbrella suites B and C), offline and on this device
+### Rhythm and Voice (umbrella suites B and C), offline and on this device
 
 Client only: **no server route, no migration, no network call, nothing that needs a
 credential** (owner direction: offline, on-device features only). **Sharing between a
 child's two homes is parked**, so every feature stores and works on this device only and
 says so in its own notes. Described as shipped in MASTERFILE §8.20 (and the five new areas
-in the §8.16.4 table). No version bump and no new MARKUP screen row; MARKUP/DEMO totals
-updated. No prohibition in §2.1 is changed; P2, P3 and P7 are held in code and tests.
+in the §8.16.4 table). Cut as part of 0.50.0 (it merged with no version of its own). No prohibition in §2.1 is changed; P2, P3 and P7 are held in code and tests.
 
-### Added
+#### Added
 - **Suite B, Rhythm** (pure logic `rhythm_logic.dart`, screens `rhythm_screens.dart`):
   **one routine** (up to 8 picture steps, shown First and Then with one Done; a tick is a
   private bit for today and is dropped the next day), **first, then** (two cards, Done turns
@@ -278,22 +302,22 @@ updated. No prohibition in §2.1 is changed; P2, P3 and P7 are held in code and 
   a commissioned set), and 10 new test files (picture library, both logic cores, the gate,
   repositories, the service, and four widget suites at 344 dp and large text).
 
-### Not built, deliberately
+#### Not built, deliberately
 - **I need help** (`needHelp`): needs clinicians and a lawyer first.
 - Sharing a routine, bag, place or helpers between a child's two homes, agreement and
   proposals between guardians, the owl-sleeps-here choice carried out in a real house, a
   "my room is ready" stamp, a quiet-corner screen, and a commissioned symbol and picture set.
 
-## [Unreleased] — Child accessibility and read-aloud (offline, on-device)
+### Child accessibility and read-aloud (offline, on-device)
 
 Described as shipped in MASTERFILE §8.21. **Owner direction 2026-11-07: offline, on-device only.**
 No server route, no migration, no network call, nothing that needs a credential; no TypeScript.
 Written after a code audit whose findings were each re-checked against the code first: the
 pre-reader promises of §8.1/§8.4 ("TTS everywhere, voice-driven nav, icon-only") were not
 implemented. This pass builds the parts that can be built on the device and says plainly which
-cannot. No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated.
+cannot. Cut as part of 0.50.0 (it merged with no version of its own).
 
-### Added
+#### Added
 - **Read aloud on every child tile and story page** — `read_aloud.dart` (`ReadAloudController`,
   `SpeakerButton`, `ReadAloudRouteObserver`) over the existing `tts_channel.dart`. A 48dp quiet
   speaker in each tile's corner, long-press on a tile reads its label, a speaker on each story
@@ -327,7 +351,7 @@ cannot. No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated
   a labelled picture as well as typing. No price, brand or count (P2, P4); the journal gains no
   reader (P7); hangman setup stays guardian-side.
 
-### Changed
+#### Changed
 - `TieredTile` and `HubTile` are `StatefulWidget`s (to release their reading on dispose) with an
   opt-in/opt-out `readAloud` flag: the child's home, More rows and game cards speak; the guardian
   home, hubs and game picker never do. `TieredTile`'s unread-count badge is the theme's calm
@@ -336,7 +360,7 @@ cannot. No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated
   semantics can be tested; behaviour unchanged.
 - `local_services.dart`'s catalogue gains `access`; MASTERFILE §8.16.4 gains its row.
 
-### Fixed
+#### Fixed
 - Connect 4's board overflowed its row at nearly every width (26dp at the default padding): its
   width budget subtracted 64 where the layout really takes 90. The cell floor is now 30dp so the
   344dp cover screen fits, and a tap in a cell's margin drops there.
@@ -349,27 +373,26 @@ cannot. No version bump and no new MARKUP screen row; MARKUP/DEMO totals updated
   for her; the pager honours roomier reading; the Rhythm tile grid grows for the speaker's corner.
   The memory box is not wired.
 
-### Not built (said plainly)
+#### Not built (said plainly)
 - Captions: the switch records a wish; the screen and `captionsActive` say nothing shows. Voice
   navigation. A dyslexia-specific typeface (the evidence is mixed). No real-device TalkBack or
   voice check yet. Connect 4 cells and the pixel garden stay under 64dp where the grid is
   width-bound.
 
-### Tests
+#### Tests
 - 219 new Flutter tests in `access_settings_test.dart`, `access_scope_test.dart`,
   `read_aloud_test.dart`, `story_read_aloud_test.dart`, `access_screen_test.dart`,
   `game_semantics_test.dart`, `picture_bank_test.dart`, `child_text_scale_test.dart`,
   `child_targets_test.dart`, `reduce_motion_screens_test.dart`, `hub_read_aloud_test.dart`, `seam_read_aloud_test.dart`. Dart only.
 
-## [Unreleased] — Family structure and age bands (suites J and K), local-first
+### Family structure and age bands (suites J and K), local-first
 
 A guardian builds the family structure; her home follows it. Described as shipped in
 MASTERFILE §8.18. **Local-first** by owner direction: no migration, no server routes, no
 network; "release to her" means visible on this device's child shell, and syncing between
-devices comes later. No version bump and no new MARKUP screen row (`check-markup.mjs`
-keys on numbered entries); MARKUP/DEMO totals updated.
+devices comes later. Cut as part of 0.50.0 (it merged with no version of its own).
 
-### Added
+#### Added
 - **Pure core** `packages/family-structure` — `deriveChildView(structure, ageBand,
   suites, rungs)`; the age-band table as data (3–4, 5–7, 8–12, 13+); change timing (now,
   hold until I've told her, on a date); per-area band overrides; the birthday preview;
@@ -385,21 +408,20 @@ keys on numbered entries); MARKUP/DEMO totals updated.
   `ChildHome`/`LiveChildHomeScreen` are driven by the derived model.
 - Demo panel "Family structure" (`demo/src/play.ts`, `demo/shell.html`).
 
-### Parked (online)
+#### Parked (online)
 - `db/migrations/0043_family_structure.sql` (six RLS tables, append-only history),
   the pool accessors and the `/v1/children/:childId/family*` routes, with a real-Postgres
   suite (175 of 179 assertions passed on a first run; the four failures were in the
   test harness, not yet fixed) — left out of this change on purpose until server sync
   is back in scope. Not in CI.
-## [Unreleased] — Colour of the day, her colour accent, art styles, colour activities, play window, Settings hub (local-first)
+### Colour of the day, her colour accent, art styles, colour activities, play window, Settings hub (local-first)
 
 Client and one pure shared module; **no server route, no migration, no network
-call** (the owner has moved the product away from online functions for now). No
-new MARKUP screen row and no version bump; described as shipped in MASTERFILE
+call** (the owner has moved the product away from online functions for now). Cut as part of 0.50.0; described as shipped in MASTERFILE
 §8.6.5 to §8.6.7. Every addition is covered by a suite registered in
 `tools/verify.sh` or by the Dart suite.
 
-### Added
+#### Added
 - **Colour of the day sync rule**, `packages/palette/src/colour_day.ts`: one
   question a day (one record per her-local date), latest answer wins, a stale
   device clock is clamped, a guardian colour day holds against her own tap and
@@ -427,7 +449,7 @@ new MARKUP screen row and no version bump; described as shipped in MASTERFILE
 - **Guardian Settings hub** (Her, Family, Safety, Learn, Account), reached from
   More; every row opens an existing real screen.
 
-### Deliberately not built
+#### Deliberately not built
 - The bottom tab bar (Today, Messages, Together, Family, Settings): too invasive
   for the guardian shell and its tests; the hub is reached from More.
 - Server persistence, cross-device sync and telling the other guardian about a
@@ -435,18 +457,16 @@ new MARKUP screen row and no version bump; described as shipped in MASTERFILE
 
 ---
 
-## [Unreleased] — On-device data: the offline-first foundation (audit C-06; owner direction 2026-11-07)
+### On-device data: the offline-first foundation (audit C-06; owner direction 2026-11-07)
 
-Client only; no server change, no new online feature, no new numbered screen (so
-no version bump and no MARKUP/DEMO row; `tools/check-markup.mjs` keys on numbered
-entries). Described as shipped in MASTERFILE §8.16.
+Client only; no server change, no new online feature, no new numbered screen of its own (cut as part of 0.50.0). Described as shipped in MASTERFILE §8.16.
 
 Owner direction: move away from online functions for now and build the
 on-device foundation. A code audit found the client had no durable storage at
 all (pubspec: only `flutter_secure_storage` and `path_provider`); sixteen shipped
 screens kept their data in memory and lost it on exit.
 
-### Added
+#### Added
 - **`LocalStore`** (`client/lib/local_store.dart`): atomic (write-to-temp then
   rename), versioned (per-namespace schema + migration hooks), size-bounded,
   corruption-safe (a damaged, newer-schema or un-migratable file is copied to
@@ -478,7 +498,7 @@ screens kept their data in memory and lost it on exit.
   quarantined copy and the encryption key; does not unpair or sign out. Nothing in
   it is added to the court export, and there is no export affordance (P7).
 
-### Changed (screens that now keep their data across a restart)
+#### Changed (screens that now keep their data across a restart)
 - **Journal** (sealed/encrypted, P7), **wants and needs**, **story stars and
   bookmarks**, **jokebook stars**, **teach me**, **collections**, **growing-up
   ladder** (grants, moved rungs, seen reveals, dismissed announcements: "told
@@ -499,14 +519,14 @@ screens kept their data in memory and lost it on exit.
 
 - **Colour of the day, art style, play window** (#140's `ChildColourStore` / `GuardianColourStore`) and the **family structure** (#139's `FamilyStore`) are now durable: `LocalColourStore` (wraps the real-rules in-memory store; keeps two weeks of colour days) and `LocalStoreFamilyStore` (encrypted; a failed save throws). `sharedColourStore` and `localFamilyService` bind to the device's child.
 
-### Prohibitions
+#### Prohibitions
 - **P2** held: no score, streak, counter or ranking is stored. A story's
   `timesRead` is dropped; a lesson's `askedAgain` is reduced to one bit; today's
   colour keeps no history. **P7** held: the journal is encrypted on the device and
   has no guardian read path. **P3/P4/P6** unchanged: no coordinates, no price, no
   financial data stored. No prohibition weakened.
 
-### Left out, deliberately
+#### Left out, deliberately
 - Game favourites (the offline picker has no favouriting mechanism by design), the
   guardian gallery and showcase (demo datasets / other-parent asks), siblings
   (family-structure work), and wiring `receipt_screen.dart`'s in-memory outbox
@@ -516,14 +536,12 @@ screens kept their data in memory and lost it on exit.
 
 ---
 
-## [Unreleased] — Server hardening (audit pass: P-01, P-04, P-05, P-07 server half, P-08, P-13 to P-19)
+### Server hardening (audit pass: P-01, P-04, P-05, P-07 server half, P-08, P-13 to P-19)
 
-Server, database, image and CI only; no client change, no new screen, so no
-version bump and no MARKUP/DEMO row (`tools/check-markup.mjs` keys on numbered
-entries). Described as shipped in MASTERFILE §7.11. Every fix is covered by a
+Server, database, image and CI only; no client change and no new screen (cut as part of 0.50.0). Described as shipped in MASTERFILE §7.11. Every fix is covered by a
 suite registered in `tools/verify.sh`.
 
-### Fixed
+#### Fixed
 - **Pool self-deadlock (P-01).** ~45 routes held the request's pooled
   connection (`api.ts`'s outer `withSession`) while calling pool-scoped
   accessors that checked out a second one from the same pool of 10; ten
@@ -555,12 +573,13 @@ suite registered in `tools/verify.sh`.
   returned 500; now 400.
 - **Migration races (P-18).** `tools/migrate.mjs` holds a Postgres advisory lock
   for the run (pg and psql modes).
-- **Missing foreign-key indexes (P-17).** Migration `0038_fk_indexes.sql`
+- **Missing foreign-key indexes (P-17).** Migration
+  `0037_fk_indexes.sql` (this entry first said 0038; the file is 0037, and 0038 is the device credential)
   (six FK columns plus `auth_challenge.issued_at`); RLS untouched.
 - **`livekit-server-sdk` was a devDependency** although `routes.mjs` imports it
   at runtime; it only worked because the image installed everything.
 
-### Added
+#### Added
 - **Backups (P-04).** Scheduler `backup` job: dump + optional media archive,
   optional AES-256-GCM encryption (`tools/backup-decrypt.mjs` to reverse it),
   7 daily + 4 weekly retention applied only after a successful backup, optional
@@ -578,7 +597,7 @@ suite registered in `tools/verify.sh`.
 - **Image (P-16).** Multi-stage Dockerfile: `npm ci --omit=dev`, no tests / demo
   / client, `USER node`, `postgresql-client-16` for the backup job.
 
-### Operator notes
+#### Operator notes
 - The image no longer runs as root. A media volume created by an earlier image
   keeps root ownership; once: `docker compose -f docker-compose.prod.yml run
   --rm --user root server chown -R node:node /app/data/media` (the dev stack's
@@ -595,17 +614,15 @@ suite registered in `tools/verify.sh`.
 
 ---
 
-## [Unreleased] — The real authenticated session (audit G-02, G-06, C-03, G-13, G-14)
+### The real authenticated session (audit G-02, G-06, C-03, G-13, G-14)
 
 Spec: MASTERFILE §7.1c. Replaces the dev-only login every guardian and child
 live screen depended on with one real session, backed by the paired device's
 own credential. Production compose has always pinned `DEV_LOGIN=0`, so before
 this change every guardian and child call from a paired device 404'd there.
-(No version number is claimed here: other in-flight changes also edit this
-file, and the version is cut when they merge — `check-markup`'s C1 reads the
-newest *numbered* entry.)
+(No version number was claimed when this merged, because other in-flight changes also edited this file; the version is cut here, in 0.50.0.)
 
-### Added
+#### Added
 - **Device credential + session refresh (server).** Migration
   `0038_paired_device_credential.sql` adds `paired_device.credential_hash`
   (SHA-256 of a 256-bit CSPRNG credential; the credential itself is returned
@@ -634,7 +651,7 @@ newest *numbered* entry.)
   `packages/db/test/device_credential.test.mjs` (44, real Postgres/RLS),
   `client/test/auth_session_test.dart`, `client/test/live_session_widget_test.dart`.
 
-### Changed
+#### Changed
 - **`POST /v1/me/pin` needs proof to change a PIN (G-13).** First PIN (none set)
   needs none, as an atomic insert-if-absent; replacing one requires
   `currentPin`, checked through the shared 5-attempt/15-minute lockout. The
@@ -651,7 +668,7 @@ newest *numbered* entry.)
 - **The child home no longer prints `401: expired`.** A failed load shows a
   plain sentence.
 
-### Not done (deliberate)
+#### Not done (deliberate)
 - The device credential is **not rotated** on use (see MASTERFILE §7.1c for why).
 - A recent passkey assertion is not accepted as proof for a PIN change (no
   helper binds an assertion to a later request).
@@ -788,7 +805,7 @@ Full design spec: `docs/superpowers/specs/2026-09-15-design-tokens-named-
 migration-design.md`. Fourth of seven themes a multi-agent UI/UX review
 surfaced; themes #1-3 (first-run boot polish, Revoke confirmation,
 hardcoded colors) already shipped. `theme.dart` catalogs color only — both
-MASTERFILE §8.16 and the originating intuitivism-foundation spec always
+MASTERFILE §8.25 (then numbered §8.16) and the originating intuitivism-foundation spec always
 scoped spacing/radius tokens as later, deferred work that never happened.
 This is that deferred half, applied ONLY to the review's own concretely-
 named problem spots — not a retrofit of the ~100 other files with their own
@@ -4104,7 +4121,7 @@ Play Together and the theme suite added this session
 ### Fixed
 - **`theme_picker_screen.dart` cited the wrong test filename.** Its own
   header said the child shell's no-settings-affordance contract was proven
-  by `child_no_settings_test.dart`; the real file — matching §8.16's own,
+  by `child_no_settings_test.dart`; the real file — matching §8.25's (then §8.16's) own,
   already-correct citation of the same test — is
   `child_no_settings_contract_test.dart`. Same class of bug as the two
   citation errors PR #41 already fixed (`game_two_truths.dart`'s fabricated
@@ -4132,7 +4149,7 @@ Play Together and the theme suite added this session
   read in full against the current source and already accurately describe
   the FINAL, fully-corrected state — nothing here was an intermediate
   snapshot left behind.
-- **§8.16's theme-customization status note** and both
+- **§8.25's (then §8.16's) theme-customization status note** and both
   `docs/superpowers/specs/` design docs were read in full: the Play
   Together spec's own "common canvas-hosting wrapper" line (~74) matches
   the real spec text verbatim (already correctly cited by MASTERFILE,

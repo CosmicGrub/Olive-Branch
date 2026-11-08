@@ -1,7 +1,9 @@
 // OLIVE BRANCH — guardian-set visibility & pacing overrides, the shared
-// client-side read path. UNVERIFIED (no Flutter toolchain in tools/verify
-// .sh's automated pipeline). docs/superpowers/specs/2026-09-13-parental-
-// controls-pacing-design.md ("sub-project 2: visibility & pacing").
+// client-side read path. No longer UNVERIFIED — verified by CI (`flutter
+// analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml).
+// docs/superpowers/specs/2026-09-13-parental-controls-pacing-design.md
+// ("sub-project 2: visibility & pacing").
 // db/migrations/0033_guardian_activity_override.sql, server/routes.mjs's
 // GET/PUT/DELETE .../activity-overrides[/:activityKey].
 //

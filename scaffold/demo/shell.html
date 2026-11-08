@@ -520,8 +520,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
 </script>
 <script type="application/json" id="tl-manifest">
 {
-  "version": "0.49.78",
-  "spec": "0.49.76",
+  "version": "0.50.0",
+  "spec": "0.50.0",
   "nodeOnly": [
     { "module": "api/api", "dep": "node:http" },
     { "module": "auth/auth", "dep": "node:crypto" },
@@ -568,7 +568,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     "gallery": "gallery", "briefing": "briefing", "careNote": "carenote",
     "closingRitual": "closing", "sharedReading": "reading", "busyFork": "busy",
     "welcome": "welcome", "guardianSetup": "guardianSetup",
-    "doodle": "doodle", "snapshot": "snapshot"
+    "doodle": "doodle", "snapshot": "snapshot",
+    "parentLearn": "parentlearn", "learnChoices": "parentlearn", "learnReflection": "parentlearn", "learnMessageCheck": "parentlearn", "learnRules": "parentlearn", "familyBuilder": "familystructure", "herPeople": "familystructure", "herBirthday": "familystructure", "ageHome34": "familystructure", "readTogether": "coview"
   },
   "notDemoed": {
     "obGender": "Child-side Flutter screen (client/lib/onboarding_gender.dart), Onboarding & Guardian Access sub-project 1 (docs/superpowers/specs/2026-09-12-onboarding-identity-pin-design.md) — persists via a new PUT /v1/children/:childId/profile route that this demo's own onboarding engine (packages/onboarding/src/onboarding.ts's begin()/advance()/greeting()/outcome(), bridged as S.onboarding above) has no equivalent step for; extending that TS engine's step sequence is out of scope for this sub-project, so this screen has no demo counterpart — same posture as jokebook/themePicker below.",
@@ -579,7 +580,43 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     "lockAdvisory": "Setup flow on a physical device; the browser has no kiosk to advise about.",
     "jokebook": "Child-side Flutter screen (client/lib/jokebook_screen.dart) reached from the game picker’s extraSections — the jokes engine itself is bridged (demo/src/play.ts, jk*) so the engine room can see it, but the demo renders no jokebook screen; same posture as themePicker.",
     "themePicker": "Guardian-only Flutter theme customization suite (client/lib/theme_picker_screen.dart) — no JS-demo engine counterpart; the demo has no guardian-configurable ColorScheme concept to render.",
-    "parentalControls": "Guardian-only, PIN-gated Flutter screen (client/lib/parental_controls_screen.dart), parental controls: visibility & pacing (docs/superpowers/specs/2026-09-13-parental-controls-pacing-design.md) — reads/writes a real guardian_activity_override row via a real POST/GET/PUT route; this demo has no server behind it at all (it's a static bridge over packages/*/src TS engines, not a running HTTP API), so there is nothing honest for a demo version of this screen to actually generate — same posture as addDevice's/themePicker's own entries, a real dependency this demo cannot fake without misrepresenting it as working."
+    "parentalControls": "Guardian-only, PIN-gated Flutter screen (client/lib/parental_controls_screen.dart), parental controls: visibility & pacing (docs/superpowers/specs/2026-09-13-parental-controls-pacing-design.md) — reads/writes a real guardian_activity_override row via a real POST/GET/PUT route; this demo has no server behind it at all (it's a static bridge over packages/*/src TS engines, not a running HTTP API), so there is nothing honest for a demo version of this screen to actually generate — same posture as addDevice's/themePicker's own entries, a real dependency this demo cannot fake without misrepresenting it as working.",
+    "settingsHub": "Guardian-only Flutter navigation hub (client/lib/guardian_settings_hub.dart): every row opens a screen the demo shows or lists on its own. It has no engine and nothing of its own to compute.",
+    "dataOnDevice": "Guardian-only Flutter screen (client/lib/clear_local_data_screen.dart) over the device's on-device store catalogue and its PIN-gated wipe (§8.16.6). This browser demo has no LocalStore, no secure storage and no server to verify a PIN against.",
+    "accessSettings": "Guardian-only Flutter screen (client/lib/access_screen.dart) with five Dart-only switches (read aloud, reduce motion, roomier reading, larger targets, captions wish). The demo's own 'Accessibility' screen renders the older packages/a11y settings and is a different surface, so it is not mapped here.",
+    "noSignalHome": "A fallback of the live child home (client/lib/child_home_live.dart) shown only when the device has no network and nothing cached. The demo runs from an always-resolved family and has no network to lose.",
+    "emergencyCardEditor": "Guardian-only Flutter editor (client/lib/emergency_card_editor_screen.dart) over a sealed on-device area with a version counter and history. The demo's Exchange screen shows the engine's emergency card, not an editor, and the demo has no on-device store.",
+    "herColour": "Guardian and child Flutter screens (client/lib/her_colour_guardian.dart, her_colour_home.dart, her_colour_art.dart). The one-question-a-day rule is packages/palette/src/colour_day.ts (its own suite, and exported by the demo bridge as palToday()); the seven art styles and the accent placements are Dart-only, and the demo's palette screens show the earlier fixed-colour picker.",
+    "colourSort": "Flutter game (client/lib/colour_sort_screen.dart) with rules in client/lib/colour_activities_logic.dart, which has no TypeScript counterpart; the board is a Flutter widget, not a browser one.",
+    "pathCode": "Flutter game (client/lib/path_code_screen.dart) with rules in client/lib/colour_activities_logic.dart, which has no TypeScript counterpart; the board is a Flutter widget, not a browser one.",
+    "colourCritter": "Flutter game (client/lib/colour_critter_screen.dart) with rules in client/lib/colour_activities_logic.dart, which has no TypeScript counterpart; the board is a Flutter widget, not a browser one.",
+    "pixelGarden": "Flutter game (client/lib/pixel_garden_screen.dart) with rules in client/lib/colour_activities_logic.dart, which has no TypeScript counterpart; the board is a Flutter widget, not a browser one.",
+    "playWindow": "Flutter gate and screen (client/lib/play_window_gate.dart, play_window_screen.dart). Its rule is in packages/palette/src/colour_day.ts and is tested there, but the demo has no games door with a window to close.",
+    "myRoutine": "Dart-only on-device suite (client/lib/rhythm_logic.dart, rhythm_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "firstThen": "Dart-only on-device suite (client/lib/rhythm_logic.dart, rhythm_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "packingBuddy": "Dart-only on-device suite (client/lib/rhythm_logic.dart, rhythm_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "newPlace": "Dart-only on-device suite (client/lib/rhythm_logic.dart, rhythm_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "rhythmEditors": "Dart-only on-device suite (client/lib/rhythm_voice_guardian_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "feelingsWeather": "Dart-only on-device suite (client/lib/voice_logic.dart, voice_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "worryBox": "Dart-only on-device suite (client/lib/voice_logic.dart, voice_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "myHelpers": "Dart-only on-device suite (client/lib/voice_logic.dart, voice_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "symbols": "Dart-only on-device suite (client/lib/voice_logic.dart, voice_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "voiceEditors": "Dart-only on-device suite (client/lib/rhythm_voice_guardian_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "keepAndGrow": "Dart-only on-device suite (client/lib/growing_care_logic.dart, growing_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "memoryBox": "Dart-only on-device suite (client/lib/growing_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "growingSuite": "Dart-only on-device suite (client/lib/growing_care_logic.dart, growing_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "careBinder": "Dart-only on-device suite (client/lib/care_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "hospitalMode": "Dart-only on-device suite (client/lib/care_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "pictureStories": "Dart-only on-device suite (client/lib/care_screens.dart, child_explainer_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "appointmentPrep": "Dart-only on-device suite (client/lib/care_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "grandparentPage": "Dart-only on-device suite (client/lib/village_logic.dart, village_guardian_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "villagePeople": "Dart-only on-device suite (client/lib/village_logic.dart, village_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "releasedStory": "Dart-only on-device suite (client/lib/village_logic.dart, village_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "siblingShelf": "Dart-only on-device suite (client/lib/village_logic.dart, village_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "villageEditors": "Dart-only on-device suite (client/lib/village_guardian_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "sitterPass": "Dart-only on-device suite (client/lib/village_logic.dart, village_guardian_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "schoolSummary": "Dart-only on-device suite (client/lib/village_logic.dart, village_guardian_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold.",
+    "familyCompass": "Dart-only on-device suite (client/lib/compass_logic.dart, compass_screens.dart), built offline and client-only by owner direction. The demo is a static bridge over the packages/*/src TypeScript engines with no on-device store, and this suite has no TypeScript counterpart, so a demo screen here would be a second, hand-written copy of rules the Dart tests already hold."
   }
 }
 </script>
@@ -2729,6 +2766,59 @@ S.video = S.game;
 function P_engine(title, body, extra){
   return '<div class="card"><h2>'+esc(title)+'</h2>'+body+(extra||'')+'</div>';
 }
+
+/** Parent Learn, Family structure and Read together had a panel and a nav button but no
+ *  screen, so go() refused them (it returns when S[id] is missing). These render the real
+ *  modules' computed values in the phone frame; nothing here is typed in. */
+var showv = function(x){ var t = typeof x === 'string' ? x : JSON.stringify(x); return esc(t.length > 150 ? t.slice(0,147)+'...' : t); };
+var drow = function(label, val){ return '<div class="row"><div class="g">'+esc(label)+'<br><span class="t">'+showv(val)+'</span></div></div>'; };
+var dhead = function(title, sub){
+  return '<div class="pad" style="padding-top:12px"><div style="font-family:var(--display);font-weight:600;font-size:17px">'
+    + esc(title)+'</div><div style="font-size:12px;color:var(--ink-2)">'+esc(sub)+'</div></div>'; };
+
+S.parentlearn = function(){
+  var v = T.parentLearnView();
+  return dhead('Learn', 'For grown-ups only. Every extra is optional and starts private.')
+    + drow('Cards, by evidence label', v.cards + ' cards: ' + v.byEvidence.map(function(e){ return e.n+' '+e.level; }).join(', '))
+    + drow('Content lint (causal claims, labels, sources)', v.lint.length ? v.lint : 'clean')
+    + drow('Cards a child sees / a grown-up sees at six', v.childSees + ' / ' + v.guardianSeesAtSix)
+    + drow('Defaults', v.defaults)
+    + drow('Can the co-guardian read my reflection? Can I?', v.coGuardianReadsMyReflection + ' / ' + v.iReadMyReflection)
+    + drow('Message check, off by default', v.messageCheckOffByDefault)
+    + drow('Message check, opted in', v.messageCheckOptedIn)
+    + drow('Rules list shared when off / when on', v.rulesOffByDefault + ' / ' + JSON.stringify(v.rulesOptedIn))
+    + '<div class="pad" style="padding-top:10px"><div class="gnote">Nothing here reaches the child shell, and a reflection is never readable by the other guardian.</div></div>';
+};
+
+S.familystructure = function(){
+  var v = T.familyStructureView();
+  return dhead('Her family', 'A grown-up builds it; her home follows it. On this device for now.')
+    + drow('The four age bands', v.bands.map(function(b){ return b.band+' '+b.name; }).join(' · '))
+    + drow('Her band at 3, 5, 8 and 13', v.herBandAtYears.map(function(h){ return h.years+':'+h.band; }).join('  '))
+    + drow('Her people, under the names a grown-up chose', v.herPeople)
+    + drow('Is the sitter shown to her?', v.sitterShownToHer)
+    + drow('Who may edit: guardian / child / sitter', v.guardianEdits + ' / ' + v.childEdits + ' / ' + v.sitterEdits)
+    + drow('A held change and a dated one', v.heldChange)
+    + drow('A court-ordered rhythm cannot be edited', v.courtOrder)
+    + drow('Birthday facts', v.birthday)
+    + drow('The quiet line', v.birthdayLine);
+};
+
+S.coview = function(){
+  var v = T.coViewView();
+  return dhead('Read together', 'The grown-up leads; her device follows. Only small messages cross the network.')
+    + drow('Drift zones', v.zones)
+    + drow('Can a child lead? Can a guardian?', v.childCanLead + ' / ' + v.guardianCanLead)
+    + drow('Can a child forge a guardian stop?', v.childCanForgeGuardianStop)
+    + drow('Allowance by default (minutes)', v.defaultAllowance)
+    + drow('A guardian raises 120 to 180', v.raise)
+    + drow('A guardian lowers 120 to 90', v.lower)
+    + drow('A child tries to change it', v.childChange)
+    + drow('What she sees as time is used', v.budget)
+    + drow('Untrusted wire messages', v.parsed)
+    + '<div class="pad" style="padding-top:10px"><div class="gnote">Built and tested, but no real transport or server exists yet, so this is not reachable from the app.</div></div>';
+};
+
 
 var PANELS = {
 childHome: function(){ var c=T.clocks(), cal=T.calendar();

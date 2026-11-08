@@ -578,7 +578,10 @@ export function streakDemo(outcomes: string[]) {
 /** Everything not yet built. Surfaced honestly rather than faked. */
 export const UNDER_CONSTRUCTION: Record<string, string> = {
   guardian_setup: 'Real account setup — passkey/WebAuthn sign-in and the real '
-       + 'family-graph invitation/consent flow (§11) — is not built in this demo. '
+       + 'family-graph invitation/consent flow (§11) — is not built in this demo. The '
+       + 'server and client do have a real PIN and passkey sign-in (v0.47.0) and invite '
+       + 'records, but accepting an invite creates no account or guardianship (§22), and '
+       + 'this browser bundle has no server. '
        + 'Shown honestly as a stub rather than faked, the same way the native '
        + 'kiosk bridges are documented as drafted and unverified rather than '
        + 'glossed over. The important property is what does NOT happen here: '
@@ -587,7 +590,9 @@ export const UNDER_CONSTRUCTION: Record<string, string> = {
        + 'guardianship edge before can() allows anything.',
   video: 'Live video needs a LiveKit server and a real device camera. Token '
        + 'minting and room lifecycle ARE verified against a running server '
-       + '(21 assertions) — the media stream is not wired into this demo.',
+       + '(the "livekit (live server)" suite in verify.sh, against a local livekit-server '
+       + 'in CI — not against LiveKit Cloud, §22) — the media stream is not wired into '
+       + 'this demo.',
   kiosk: 'The Android kiosk bridge is real and CLOSED (v0.43.0) — '
        + 'flutter analyze/test clean, live-device-verified on a real Fold5 '
        + '(startLockTask, MANUAL_VERIFY_call_lock_task.md). The Windows kiosk '
@@ -597,15 +602,25 @@ export const UNDER_CONSTRUCTION: Record<string, string> = {
        + 'development with C++" workload. Neither native side is wired into this '
        + 'browser demo, which is a stub renderer only — that half of the gap this '
        + 'entry originally described.',
-  captions: 'Live captions and translation are specified in §8.4 and not built.',
+  captions: 'Live captions and translation are specified in §8.4 and not built. The '
+          + 'captions switch on the guardian accessibility screen records a wish and '
+          + 'nothing more (§8.21.8).',
   ocr_live: 'OCR runs against real tesseract in the test suite. Wiring a camera '
           + 'into the browser demo would add nothing the quality gate does not '
           + 'already show.',
-  print: 'Year Book print fulfilment needs a partner; §19 lists it as deferred.',
-  school: 'The school layer (§9.6.4) is specified, not built.',
-  games_ui: 'Four games ship with full engines and 77 assertions. The demo '
-          + 'renders their transcripts and child views rather than an '
-          + 'interactive board — the board is a Flutter widget, not a browser one.',
+  print: 'Year Book print fulfilment needs a partner; §19 lists it as deferred. The Year '
+       + 'Book is assembled (compileYearBook) and packages/print holds trim and '
+       + 'preflight rules, but no print-ready PDF is produced (§12).',
+  school: 'The school layer is built (packages/school/src/school.ts, MASTERFILE §11.5, '
+        + 'tested by packages/school/test/school.test.mjs and shown in the engine room): '
+        + 'dates a parent types in and a shared place for the paper that comes home in '
+        + 'a bag. What is deliberately not built is any school-system integration (no '
+        + 'SIS connector, no gradebook or attendance feed) — a decision, not a gap. '
+        + 'Nothing here is under construction.',
+  games_ui: 'The turn-based game engines (packages/games: games.ts, games2.ts, games3.ts) '
+          + 'are built and tested, and many have their own demo screens. This screen '
+          + 'renders an engine transcript and child views rather than an interactive '
+          + 'board — the board is a Flutter widget, not a browser one.',
   more_games: 'Checkers, Battleship, word search with parent-hidden words, '
             + 'hangman, and chess are all real, built, and wired into '
             + 'games_hub.dart (game_checkers.dart, game_battleship.dart, '

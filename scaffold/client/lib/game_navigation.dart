@@ -1,6 +1,7 @@
-// OLIVE BRANCH — the one real switch from a GameKind to its real board.
-// UNVERIFIED (no Flutter toolchain in tools/verify.sh's automated
-// pipeline). MASTERFILE §9.2.
+// OLIVE BRANCH — the one real switch from a GameKind to its real board. No
+// longer UNVERIFIED — verified by CI (`flutter analyze` and `flutter test` run
+// for real in tools/verify.sh and .github/workflows/verify.yml). MASTERFILE
+// §9.2.
 //
 // Extracted so child_home.dart's real wiring and guardian_more.dart's own
 // (added when the two sides' "Play together" catalogues were consolidated

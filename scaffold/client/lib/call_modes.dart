@@ -1,6 +1,7 @@
-// OLIVE BRANCH — audio-only as a choice, and what she is told when a call
-// goes wrong. The pure logic half. UNVERIFIED (no Flutter toolchain in
-// tools/verify.sh's automated pipeline). MASTERFILE §5.23, §5.23.2.
+// OLIVE BRANCH — audio-only as a choice, and what she is told when a call goes
+// wrong. The pure logic half. No longer UNVERIFIED — verified by CI (`flutter
+// analyze` and `flutter test` run for real in tools/verify.sh and
+// .github/workflows/verify.yml). MASTERFILE §5.23, §5.23.2.
 //
 // A DELIBERATELY PARTIAL 1:1 port of packages/live/src/modes.ts — same
 // names, same shapes, same ordering, the same discipline call_knock.dart's

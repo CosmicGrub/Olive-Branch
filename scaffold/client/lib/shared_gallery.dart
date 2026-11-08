@@ -1,5 +1,6 @@
-// OLIVE BRANCH — shared in-app gallery instance. UNVERIFIED (no Flutter
-// toolchain in tools/verify.sh's automated pipeline).
+// OLIVE BRANCH — shared in-app gallery instance. No longer UNVERIFIED —
+// verified by CI (`flutter analyze` and `flutter test` run for real in
+// tools/verify.sh and .github/workflows/verify.yml).
 //
 // snapshot_button.dart's own wiring note asks for "one AppGallery instance
 // app-wide ... constructed once ... so saves accumulate in one place" —
