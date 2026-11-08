@@ -1,0 +1,56 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Olive Branch Overhaul Round 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="overhaul.css">
+<style>
+.ob.gal{height:auto;border-radius:22px;overflow:visible;padding:16px;display:grid;gap:14px;border:1px solid var(--outline)}
+.pv{border-radius:16px;padding:10px;display:grid;gap:8px;background:var(--bg);color:var(--ink);border:1px solid var(--outline);font-family:var(--font-body)}
+.pv .b{border-radius:12px;padding:8px 10px;font-weight:700;font-size:13px;background:var(--pri);color:var(--onPri)}
+.pv .c{border-radius:10px;padding:6px 9px;font-size:12px;font-weight:700;background:var(--priC);color:var(--onPriC)}
+.pv .s{border-radius:12px;padding:8px 10px;font-size:12px;background:var(--surface);border:1px solid var(--outline);color:var(--ink2)}
+.ctr{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px 12px;font-size:.88rem;align-items:center}
+.ctr .ok{color:var(--ok);font-weight:700}.ctr .no{color:var(--bad);font-weight:700}
+.tok{display:flex;flex-wrap:wrap;gap:8px}.tok span{background:var(--panel-2);border-radius:10px;padding:8px 12px;font:500 .78rem var(--font-mono)}
+.press{display:inline-block;transition:transform 40ms;user-select:none}.press:active{transform:translateY(1px) scale(.985)}
+.postwf{display:grid;gap:5px;background:var(--panel-2);border:2px solid var(--ink);border-radius:12px;padding:8px;width:100%}
+.postwf div{background:var(--accent-soft);border:1.5px dashed var(--accent);border-radius:7px;display:grid;place-items:center;font:500 .66rem/1.2 var(--font-mono);color:var(--ink);text-align:center;padding:4px;min-height:34px}
+</style>
+
+<div class="wrap">
+<header class="top0">
+  <div class="eyebrow">Olive Branch · full redesign · draft for review</div>
+  <h1>Olive Branch, refined</h1>
+  <p class="lede">Every screen in the app, redrawn as one calm, premium system: richer colour, a clear type scale, soft depth, a single icon family and considered detail. All of it keeps the rules the product already holds, such as no streaks, no mood readings, a child shell with no settings, and motion that follows the finger.</p>
+  <div class="pills" id="pills"></div>
+</header>
+
+<div class="bar" role="group" aria-label="Preview controls">
+  <div class="grp"><span class="lbl">Palette</span><div class="pal" id="pal"></div><span class="lbl" id="palname"></span></div>
+  <div class="grp"><span class="lbl">Mode</span><button class="btn0" data-a="mode" data-v="light" aria-pressed="true">Light</button><button class="btn0" data-a="mode" data-v="dark" aria-pressed="false">Dark</button></div>
+  <div class="grp"><span class="lbl">Device</span><button class="btn0" data-a="form" data-v="phone" aria-pressed="true">Phone</button><button class="btn0" data-a="form" data-v="cover" aria-pressed="false">Fold cover</button><button class="btn0" data-a="form" data-v="tablet" aria-pressed="false">Tablet</button></div>
+  <div class="grp"><span class="lbl">Markup</span><button class="btn0" data-a="ann" aria-pressed="false">Numbered notes</button></div>
+</div>
+
+<nav class="tabs" role="tablist" id="tabs" aria-label="Sections"></nav>
+<section class="pane" id="p-overview" role="tabpanel"></section>
+<section class="pane" id="p-system" role="tabpanel" hidden></section>
+<section class="pane" id="p-atlas" role="tabpanel" hidden></section>
+<section class="pane" id="p-flows" role="tabpanel" hidden></section>
+
+<div class="detail" id="detail" hidden role="dialog" aria-modal="true" aria-label="Screen detail"></div>
+
+<footer>Design draft, Round 2, 2026-11-07. The screens are drawn in HTML and CSS to show the intent; they are not Flutter code. Statuses, constraints and copy come from MASTERFILE and <code>MARKUP.html</code> (79 screens, all refined; about 100 more are new in Round 2). Palette and spacing rules follow <code>theme.dart</code> and <code>design_tokens.dart</code>, extended where marked as proposed.</footer>
+</div>
+
+<script src="kit.js"></script>
+<script src="screens-child.js"></script>
+<script src="screens-guardian.js"></script>
+<script src="screens-play.js"></script>
+<script src="screens-live.js"></script>
+<script src="screens-r2-start.js"></script>
+<script src="screens-r2-loop.js"></script>
+<script src="screens-r2-grow.js"></script>
+<script src="app.js"></script>
