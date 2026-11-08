@@ -35,6 +35,9 @@ Future<void> _pump(WidgetTester t, Widget w) async {
 Future<void> _typePinAndClear(WidgetTester t, String pin) async {
   await t.enterText(find.byKey(const Key('clearDataPin')), pin);
   await t.pump();
+  // The catalogue keeps growing (every new on-device area is a row), so the button
+  // can sit below any fixed surface height: scroll to it instead of assuming.
+  await t.ensureVisible(find.byKey(const Key('clearDataButton')));
   await t.tap(find.byKey(const Key('clearDataButton')));
   await t.pumpAndSettle();
 }
