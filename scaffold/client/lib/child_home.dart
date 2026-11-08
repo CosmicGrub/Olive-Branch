@@ -57,7 +57,10 @@ import 'activity_overrides.dart';
 import 'calendar_day_logic.dart';
 import 'call_screen.dart';
 import 'child_more.dart';
+import 'colouring_screen.dart';
 import 'cover_collapse.dart';
+import 'family_structure_screens.dart';
+import 'family_structure_store.dart';
 import 'form_factors.dart' as ff;
 import 'game_logic.dart' show neutralGrownUp;
 import 'game_navigation.dart';
@@ -77,7 +80,8 @@ class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
     required this.sleepsUntilHandover, required this.unreadCount,
     this.baseUrl, this.childId, this.sessionToken, this.httpClient,
-    this.childAge = 7, this.overrides, this.dayParts, this.guardianName});
+    this.childAge = 7, this.overrides, this.dayParts, this.guardianName,
+    this.family, this.speak});
 
   final String childName;
   final ParentPresence? presence;
@@ -126,8 +130,32 @@ class ChildHome extends StatelessWidget {
   final String? guardianName;
   String get _grownUp => guardianName ?? presence?.name ?? neutralGrownUp;
 
+  /// Age bands and family structure (suites J and K): her derived home, from what a guardian
+  /// built and released on this device. Null (every existing caller) renders exactly as before.
+  final FamilyChildSnapshot? family;
+  /// Read-aloud for the youngest band's icon-only home. Null = no spoken names.
+  final Future<void> Function(String)? speak;
+  bool _fam(String tile) => family == null || family!.view.hasTile(tile);
+  String get _greeting => family?.view.plainGreeting == true ? 'Hey $childName' : 'Hi $childName';
+
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    final FamilyChildSnapshot? f = family;
+    if (f != null && f.view.homeVariant == 'icons3') {
+      return AgeHome34(
+        snapshot: f, childName: childName, speak: speak,
+        onCall: (BuildContext c, String who) => Navigator.of(c).push(MaterialPageRoute<void>(
+            builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
+        onStories: (BuildContext c) => Navigator.of(c).push(MaterialPageRoute<void>(
+            builder: (_) => StorytellerScreen(childName: childName))),
+        onColour: (BuildContext c) => Navigator.of(c).push(MaterialPageRoute<void>(
+            builder: (_) => const ColouringScreen())),
+      );
+    }
+    return _standard(context);
+  }
+
+  Widget _standard(BuildContext context) => Scaffold(
     // LayoutBuilder sits ABOVE the scrollable, the same structural position
     // game_picker.dart's own posture migration (v0.49.17) already
     // established — inside it, `constraints` are the Scaffold body's real
@@ -188,7 +216,13 @@ class ChildHome extends StatelessWidget {
 
       final Widget full = SingleChildScrollView(padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
+        Text(_greeting, style: Theme.of(context).textTheme.headlineMedium),
+        if (family?.birthday?.lineShown ?? false)
+          TextButton(
+            key: const Key('birthdayLine'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => BirthdayScreen(birthday: family!.birthday!))),
+            child: Text(birthdayLine(family!.birthday!))),
         const SizedBox(height: 12),
         if (presence != null) _PresenceCard(presence!, childName: childName),
         const SizedBox(height: 12),
@@ -220,7 +254,7 @@ class ChildHome extends StatelessWidget {
             // header for why onPlay is one real shared function, not two
             // hand-copied switches (guardian_more.dart's own mirrored tile
             // uses the exact same one).
-            TieredTile(icon: Icons.extension, label: 'Play together', featured: true,
+            if (_fam('play')) TieredTile(icon: Icons.extension, label: 'Play together', featured: true,
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) {
                   final gameSections = [
@@ -251,7 +285,7 @@ class ChildHome extends StatelessWidget {
                     extraSections: gameSections, overrides: overrides,
                   );
                 }))),
-            if (isTileVisible(overrides, 'tile:messages'))
+            if (isTileVisible(overrides, 'tile:messages') && _fam('messages'))
               TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,
                 unreadDot: unreadCount > 0,
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -259,11 +293,11 @@ class ChildHome extends StatelessWidget {
                     childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
                     baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
                     httpClient: httpClient)))),
-            if (isTileVisible(overrides, 'tile:storyteller'))
+            if (isTileVisible(overrides, 'tile:storyteller') && _fam('stories'))
               TieredTile(icon: Icons.auto_stories_outlined, label: 'Storyteller', featured: true,
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => StorytellerScreen(childName: childName)))),
-            if (isTileVisible(overrides, 'tile:showAndTell'))
+            if (isTileVisible(overrides, 'tile:showAndTell') && _fam('showTell'))
               TieredTile(icon: Icons.photo_camera_outlined, label: 'Show & tell', featured: true,
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => ShowcaseScreen(childName: childName)))),
@@ -287,17 +321,21 @@ class ChildHome extends StatelessWidget {
             crossAxisCount: cross, mainAxisSpacing: 10, crossAxisSpacing: 10,
             mainAxisExtent: 84 * heightScale),
           children: [
-            if (isTileVisible(overrides, 'tile:homework'))
+            if (family != null && _fam('myPeople'))
+              TieredTile(key: const Key('childHomeMyPeople'), icon: Icons.people_outline, label: 'My people',
+                onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => MyPeopleScreen(snapshot: family!, childName: childName)))),
+            if (isTileVisible(overrides, 'tile:homework') && _fam('homework'))
               TieredTile(icon: Icons.edit, label: 'Homework',
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => HomeworkScreen(childName: childName,
                     baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
                     httpClient: httpClient)))),
-            if (isTileVisible(overrides, 'tile:myList'))
+            if (isTileVisible(overrides, 'tile:myList') && _fam('myList'))
               TieredTile(icon: Icons.star_border, label: 'My list',
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const WantsNeedsScreen()))),
-            if (isTileVisible(overrides, 'tile:more'))
+            if (isTileVisible(overrides, 'tile:more') && _fam('more'))
               TieredTile(icon: Icons.more_horiz, label: 'More for you',
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => ChildMoreScreen(childName: childName,
@@ -327,7 +365,13 @@ class ChildHome extends StatelessWidget {
       // second catalogue.
       final Widget collapsed = SingleChildScrollView(padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Hi $childName', style: Theme.of(context).textTheme.headlineMedium),
+        Text(_greeting, style: Theme.of(context).textTheme.headlineMedium),
+        if (family?.birthday?.lineShown ?? false)
+          TextButton(
+            key: const Key('birthdayLine'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => BirthdayScreen(birthday: family!.birthday!))),
+            child: Text(birthdayLine(family!.birthday!))),
         const SizedBox(height: 12),
         if (presence != null) _PresenceCard(presence!, childName: childName),
         const SizedBox(height: 12),

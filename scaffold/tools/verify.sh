@@ -58,6 +58,7 @@ for spec in \
   "time engine|packages/time-engine/test/golden.test.mjs" \
   "co-view (read/watch together core)|packages/co-view/test/coview.test.mjs" \
   "parent-learn (guardian education core)|packages/parent-learn/test/learn.test.mjs" \
+  "family-structure (age bands + family core)|packages/family-structure/test/family.test.mjs" \
   "delivery engine|packages/delivery-engine/test/delivery.test.mjs" \
   "family graph|packages/family-graph/test/graph.test.mjs" \
   "session + child lock|packages/session-runtime/test/session.test.mjs" \

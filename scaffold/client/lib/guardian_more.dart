@@ -10,6 +10,9 @@
 // screen the way child_more.dart does for the child side.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'family_structure_logic.dart' show FamilyPrincipal;
+import 'family_structure_screens.dart';
+import 'family_structure_store.dart';
 import 'parent_learn_logic.dart';
 import 'parent_learn_screens.dart';
 import 'parent_learn_store.dart';
@@ -155,6 +158,7 @@ class GuardianMoreScreen extends StatelessWidget {
     this.onThemeApplied,
     this.onCallStarted,
     this.learnStore,
+    this.familyService,
     this.showDemoTiles,
   });
   final String childName;
@@ -170,6 +174,10 @@ class GuardianMoreScreen extends StatelessWidget {
   /// Parent Learn storage. Null = the in-process store (nothing leaves this phone); a
   /// server-backed LearnStore is passed in once a live session exists.
   final LearnStore? learnStore;
+
+  /// Family structure and age bands, local-first. Null = the in-process [localFamilyService]
+  /// (nothing leaves this device; syncing between devices comes later).
+  final FamilyService? familyService;
   /// Live-session wiring for AvailabilityScreen, the family-agreement fetch,
   /// AND the Court export tile below all key off this same child —
   /// baseUrl/guardianId stay optional and default to null because nothing
@@ -748,6 +756,12 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.record_voice_over_outlined, title: 'Storyteller safety',
             subtitle: 'No synthetic parent voice, ever — what P1 forbids and why',
             onTap: () => _open(context, const StorytellerSafetyScreen())),
+          HubTile(key: const Key('moreFamily'), icon: Icons.family_restroom_outlined, title: 'Family structure',
+            subtitle: "Who is in $childName's life, her homes, and how her home grows",
+            onTap: () => _open(context, FamilyStructureScreen(ctx: FamilyContext(
+              service: familyService ?? localFamilyService,
+              principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
+              childName: childName, yearsOld: childAge)))),
         ]),
         HubSection(title: 'Coordination', children: [
           HubTile(icon: Icons.event_available_outlined, title: 'Availability',

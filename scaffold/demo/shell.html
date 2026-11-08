@@ -537,7 +537,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 9210,
+  "assertions": 9695,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -3335,6 +3335,24 @@ parentlearn: function(){ var v=T.parentLearnView();
   + real('message check, off by default', v.messageCheckOffByDefault)
   + real('message check, opted in', v.messageCheckOptedIn)
   + real('rules list shared when off / when on (a style is dropped)', v.rulesOffByDefault + ' / ' + JSON.stringify(v.rulesOptedIn))); },
+familystructure: function(){ var v=T.familyStructureView();
+  return P_engine('Family structure and age bands',
+  '<p><strong>The guardian builds the family; her home follows it.</strong> What she sees is one function of '
+  + 'the structure, her age band, the suites switched on and the ladder rungs she holds. A change can reach her now, '
+  + 'when you have told her, or on a date. Everything on this device for now: syncing between devices comes later.</p>'
+  + real('the four bands (family words, not clinical ones)', v.bands)
+  + real('her band at 3, 5, 8 and 13', v.herBandAtYears)
+  + real('her home at each band (tiles)', v.homeAtEachBand)
+  + real('her people, under the names a guardian chose', v.herPeople)
+  + real('is the sitter shown to her?', v.sitterShownToHer)
+  + real('who may edit: guardian / child / sitter', v.guardianEdits + ' / ' + v.childEdits + ' / ' + v.sitterEdits)
+  + real('a held change and a dated one: what a guardian sees, what she sees today, what she sees on the day', v.heldChange)
+  + real('timing choices (a date today is refused: that is "now")', v.timing)
+  + real('own list switched off, but she holds the rung (permanent)', v.ownListPermanent)
+  + real('a rhythm set by a court order cannot be edited', v.courtOrder)
+  + real('birthday facts for 2019-12-09 on 2026-11-07', v.birthday)
+  + real('the quiet line shows only in her last week', v.birthdayLine)
+  + real('a story is guardian-authored text; a generated flag is refused', v.story)); },
 motion: function(){ var v=T.motionView();
   return P_engine('Motion',
   '<p>Everything on her side was static. A five-year-old reads a static interface '
@@ -4062,7 +4080,7 @@ var SCREENS = [
     ['observers','Observers'],['access','Accessibility'],
   ]],
   ['Engine room', [
-    ['engineroom','All engines, live'],['ninemore','Nine more'],['devices','Device matrix'],['theten','Ten from the audit'],['callfns','Call functions'],['pane','The pane'],['motion','Motion'],['budget','Stream & budget'],['signal','Come-back signal'],['a11ymatrix','A11y matrix'],['coview','Read together'],['parentlearn','Parent Learn'],
+    ['engineroom','All engines, live'],['ninemore','Nine more'],['devices','Device matrix'],['theten','Ten from the audit'],['callfns','Call functions'],['pane','The pane'],['motion','Motion'],['budget','Stream & budget'],['signal','Come-back signal'],['a11ymatrix','A11y matrix'],['coview','Read together'],['parentlearn','Parent Learn'],['familystructure','Family structure'],
   ]],
   ['Show me', [
     ['asks','Dad asked you'],['hisworld','His world'],['gallery','The gallery'],

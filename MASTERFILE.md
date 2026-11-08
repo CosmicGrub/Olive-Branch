@@ -6802,6 +6802,84 @@ on every route for every non-guardian role, validation 400s, 409 opt-in
 refusals, author-only reflections, replace-only-my-list rules).
 
 
+## §8.18 Family structure and age bands — a guardian builds it, her home follows it (suites J and K)
+
+Design: `docs/superpowers/specs/2026-11-07-age-bands-and-family-structure-design.md`;
+mockups `docs/superpowers/mockups/overhaul2/` (`r2AgeBands`, `r2FamilyBuilder`,
+`r2FamilyHomes`, `r2ChangePreview`, `r2ChangeHistory`, `r2ChangeStory`, `r2MyPeople`,
+`r2AgeHome34`, `r2Birthday`). **Local-first.** Everything below lives on the device;
+nothing here opens a socket, and "released to her" means visible on **this device's**
+child shell. Syncing the structure between devices comes later, and the screens say
+so. **Not built, deliberately:** a migration, server routes and any server call
+(parked), a durable on-device store (a narrow seam is ready for it), the memory box
+when someone is removed, the question box on a change story, a birthday note, the
+8–12 "My weeks" calendar tile and "two skies" screens (the structure turns the
+features on; the screens that use them are other suites').
+
+**One function.** `deriveChildView(structure, ageBand, suites, rungs)` in
+`packages/family-structure/src/family.ts` — what the child sees is a function of the
+family structure a guardian built, her age band, the suites a guardian switched on and
+the ladder rungs she holds. Owner decisions 2026-11-07, each held by a test (F1–F7):
+
+- **F1** the guardian alone edits the structure — never the child, a step-parent, a
+  sitter, a trusted adult, a helper, a court principal or the system;
+- **F2** she reads only what has been released: a change reaches her *now*, when a
+  guardian has recorded *telling her* (hold-until-told, the default for a big change:
+  a person added or removed, a home, a person moving or going away, the rhythm), or *on
+  a date* (her local day reaches it; tomorrow at the earliest, two years at the most).
+  Settings changes (the birthday line, the band hold, releasing a band) cannot be held
+  or dated;
+- **F4** ladder rungs (§21) are permanent: derived from the rungs held, never from a
+  band, a hold, an override or a suite switch — switching "My list" off hides it
+  *before* rung 10 and cannot *after*. Every other age default is a proposal;
+- **F5** she sees only the label a guardian chose; no role word ("step", "half",
+  "caseworker") is ever emitted to her, a person with no label is not shown, and a
+  sitter, therapist or caseworker is never in her people (a foster parent or
+  caseworker turns *My helpers* on, with no name or role word);
+- **F6** a court order wins: a locked rhythm refuses edits, and a guardian cannot
+  claim `court_order` for a rhythm they set;
+- **F7** a story that travels with a change is **guardian-authored text only**, one to
+  six pages of at most 240 characters. The module generates no story and has no
+  template and no content about a partner (that needs clinical review).
+
+**Building blocks, not categories.** One to four homes; up to 24 people, each with the
+name she uses, a role (guardian, parent, step-parent, relative, trusted adult, sitter,
+foster parent, caseworker, therapist; only guardians see role words), a home, ways they
+reach her (live calls, messages, postcards, a voice line, supervised visits — which turn
+a call into a scheduled visit) and an optional away window with an end date; a weekly
+rhythm; per-area band overrides (reading, games, messages, calendar, people).
+
+**Age bands** are data (`BAND_TABLE`): 3–4 (three big pictures, icon-only, the call is
+the biggest thing and carries the face of the person she calls), 5–7 (pictures lead,
+every word can be heard — the current home, plus *My people*), 8–12 (words beside
+pictures, a plain greeting), 13+. Names are family words, not clinical ones. A move to
+a new band is **held until a guardian releases it** (the default): the band she was in
+the first time anything touched her is the baseline, a birthday cannot move her past it,
+and releasing is a change in the history. A **birthday is a preview, not a surprise**:
+the guardian sees what changes before it does; she gets one quiet line in her last week
+(sleeps, never a counter or task), which a guardian can hide. A Feb 29 birthday is held on
+Mar 1 in a non-leap year.
+
+**Storage seam.** `client/lib/family_structure_store.dart`: `FamilyStore` is two methods
+(`load`/`save`) over one JSON snapshot of an **append-only** history (no edit, no delete;
+an undo and a release are new entries); `MemoryFamilyStore` is the real in-process
+implementation; a durable `LocalStore` implements the same two methods later.
+`FamilyService` enforces F1/F2 itself (a refused principal throws), so a screen that
+forgot to check cannot write.
+
+**Client.** `client/lib/family_structure_screens.dart`: guardian builder (people, homes
+and rhythm, preview before change, timing, history with undo, age bands with the birthday
+preview and per-area overrides), reachable from the guardian More screen's *Family* tile;
+child *My people*, *Birthday*, the 3–4 home (`AgeHome34`); `ChildHome` takes the derived
+snapshot and the live child home (`child_home_live.dart`) loads it from the local service
+using the `yearsOld` it already reads from `GET /v1/me`. No scores or streaks (P2).
+
+**Verified** by `packages/family-structure/test/family.test.mjs` (320 assertions, with a
+child-payload sweep over every derived view and a drift guard on the golden vectors
+`tools/gen-family-vectors.mjs` writes), and by the Dart port
+(`client/test/family_structure_logic_test.dart`, run against the same vectors),
+`family_structure_store_test.dart` and `family_structure_screens_test.dart`.
+
 ---
 
 *End of MASTERFILE v0.49.73. Amend in place. Bump version. Log in CHANGELOG.
