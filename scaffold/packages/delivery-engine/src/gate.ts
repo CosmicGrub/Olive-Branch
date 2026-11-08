@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import { resolveZone } from '../../time-engine/src/time.ts';
-import { nextReachableWindow, type ChildCtx } from './materialize.ts';
+import { nextReachableWindow, activeDayPart, type ChildCtx } from './materialize.ts';
 
 export type Priority = 'normal' | 'emergency';
 
@@ -38,16 +38,10 @@ export function gate(
 
   const zone = resolveZone(ctx.tzIntervals, now, ctx.homeTz);
   const local = now.setZone(zone);
-  const dow = local.weekday % 7;
-  const hhmm = local.toFormat('HH:mm');
-
-  const current = ctx.dayParts.find(p => {
-    if (!p.daysOfWeek.includes(dow)) return false;
-    // A day-part may wrap midnight (asleep 21:00 → 06:30).
-    return p.startsLocal <= p.endsLocal
-      ? hhmm >= p.startsLocal && hhmm < p.endsLocal
-      : hhmm >= p.startsLocal || hhmm < p.endsLocal;
-  });
+  // S-D10/S-D11 — resolved by the date's own effective range, with start-day
+  // semantics for a part that wraps midnight (asleep 21:00 -> 06:30 listed on
+  // Friday is still running at Saturday 02:00).
+  const current = activeDayPart(ctx, local);
 
   if (current && !current.reachable) {
     const win = nextReachableWindow(ctx, now);

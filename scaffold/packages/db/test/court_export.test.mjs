@@ -56,7 +56,7 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { createPool, dbPort, certifiedExportBundleFor } from '../src/pool.mjs';
-import { append } from '../../ledger/src/ledger.mjs';
+import { append, canonicalJson, bundleHashOf, verifyCertifiedBundle } from '../../ledger/src/ledger.mjs';
 import { sha256Hex } from '../../ledger/src/sha256.mjs';
 import { issueSession, hashPin } from '../../auth/src/auth.mjs';
 import { Api } from '../../api/src/api.mjs';
@@ -273,16 +273,31 @@ const chain = await seedFamily();
   await admin.query('ALTER TABLE message_log ENABLE TRIGGER message_log_no_update');
 
   const tampered = await certifiedExportBundleFor(pool, DAD, IVY, new Date());
-  check('C tamper', 'a chain whose content no longer matches its own hash is refused',
-    tampered.ok, 'false');
-  check('C tamper', 'the real reason is chain_broken, not a crash or a silent export',
-    tampered.ok ? '' : tampered.reason, 'chain_broken');
-  check('C tamper', 'the real fault (content_altered) is reported, not swallowed',
-    tampered.ok ? '' : (tampered.faults ?? []).some(f => f.kind === 'content_altered'), 'true');
-  const noRecord = await admin.query(
+  // S-D13: a broken chain is no longer REFUSED -- it is exported WITH a fault
+  // report. A court is better served by the record plus a precise account of
+  // where it does not verify than by nothing.
+  check('C tamper', 'a chain whose content no longer matches its own hash is still EXPORTED', tampered.ok, 'true');
+  check('C tamper', 'the fault report says the chain is not verified',
+    tampered.ok ? tampered.faultReport.chainVerified : '', 'false');
+  check('C tamper', 'the real fault (content_altered) is reported at the right seq, not swallowed',
+    tampered.ok ? JSON.stringify(tampered.faultReport.faults) : '', JSON.stringify([{ kind: 'content_altered', seq: 0 }]));
+  check('C tamper', 'the attestation itself says VERIFICATION FAILED',
+    tampered.ok ? tampered.attestation.statement.startsWith('VERIFICATION FAILED') && tampered.attestation.chainVerified === false : '', 'true');
+  check('C tamper', 'the altered body is what is exported (the evidence is not repaired on the way out)',
+    tampered.ok ? tampered.chain[0].body : '', 'REWRITTEN AFTER THE FACT');
+  const v = tampered.ok ? verifyCertifiedBundle(tampered.bundle, tampered.bundleHash) : null;
+  check('C tamper', 'the faulty bundle is still internally consistent as a DOCUMENT (it reports its fault honestly)', v?.ok, true);
+  check('C tamper', '...and the independent verifier says the chain is NOT intact', v?.ok ? v.chainIntact : '', 'false');
+  const hiding = tampered.ok ? structuredClone(tampered.bundle) : null;
+  if (hiding) { hiding.faultReport = { chainVerified: true, faults: [] }; hiding.attestation.chainVerified = true; }
+  const hidden = hiding ? verifyCertifiedBundle(hiding) : null;
+  check('C tamper', 'an exporter who HIDES the fault is caught by the verifier',
+    hidden && !hidden.ok && hidden.reasons.some(r => r.includes('fault report does not match')), true);
+  const oneRecord = await admin.query(
     `SELECT count(*)::int AS n FROM export_record WHERE child_id = $1`, [IVY]);
-  check('C tamper', 'no export_record row was inserted for the refused export',
-    noRecord.rows[0].n, 0);
+  check('C tamper', 'the export is recorded like any other (it counts, and it is auditable)',
+    oneRecord.rows[0].n, 1);
+  await admin.query(`DELETE FROM export_record WHERE child_id = $1`, [IVY]);
 
   // Repair the row so later sections (and any re-run of this file) see a
   // real, valid chain again rather than leaving the fixture corrupted.
@@ -479,13 +494,13 @@ const chain = await seedFamily();
   // The bundleHash genuinely covers callLog, not just {chain, attestation}
   // — the same independent-recomputation discipline raw_export.test.mjs's
   // own section C already applies to the raw bundle hash.
-  const recomputedWithCallLog = result.ok
-    ? sha256Hex(JSON.stringify({ chain: result.chain, attestation: result.attestation, callLog: result.callLog }))
-    : '';
-  check('F call_log', 'bundleHash is a genuine sha256 over {chain, attestation, callLog} together',
+  // S-D13: the hash is now SHA-256 over the CANONICAL JSON of the whole v2
+  // bundle (sorted keys, stable numbers), which includes callLog.
+  const recomputedWithCallLog = result.ok ? sha256Hex(canonicalJson(result.bundle)) : '';
+  check('F call_log', 'bundleHash is a genuine sha256 over the canonical bundle (which includes callLog)',
     result.ok ? result.bundleHash : '', recomputedWithCallLog);
   const recomputedWithoutCallLog = result.ok
-    ? sha256Hex(JSON.stringify({ chain: result.chain, attestation: result.attestation }))
+    ? sha256Hex(canonicalJson({ ...result.bundle, callLog: [] }))
     : '';
   check('F call_log', 'and callLog genuinely changes the hash — dropping it would silently mismatch',
     result.ok && result.bundleHash !== recomputedWithoutCallLog, 'true');
@@ -516,6 +531,109 @@ const chain = await seedFamily();
   await admin.query(`DELETE FROM export_record WHERE requested_by = $1 AND child_id = $2`, [DAD, IVY]);
   await admin.query(`UPDATE app_user SET court_tier = false WHERE id = $1`, [DAD]);
   await admin.query(`DELETE FROM call_log WHERE child_id IN ($1, $2)`, [IVY, SOLO]);
+}
+
+
+// G · S-D13 -- the certified bundle is self-describing and reproducible:
+//     canonical JSON, a roster, and the court-relevant records beyond the log.
+{
+  await admin.query(`UPDATE app_user SET court_tier = true WHERE id = $1`, [DAD]);
+  await admin.query(`DELETE FROM export_record WHERE child_id = $1`, [IVY]);
+  const CO = randomUUID(), EXP = randomUUID(), MED = randomUUID();
+  await admin.query(
+    `INSERT INTO custody_order (id, child_id, order_tz, pattern, anchor_local_date, exchange_time, effective_from, effective_to)
+     VALUES ($1,$2,'America/New_York','2-2-3','2026-01-05','18:00','2026-01-01','2026-03-31')`, [CO, IVY]);
+  await admin.query(
+    `INSERT INTO custody_order (child_id, order_tz, pattern, anchor_local_date, exchange_time, effective_from)
+     VALUES ($1,'America/New_York','alternating_weeks','2026-04-06','18:00','2026-04-01')`, [IVY]);
+  await admin.query(
+    `INSERT INTO expense (id, child_id, paid_by, amount_cents, category, incurred_on, split_rule, description)
+     VALUES ($1,$2,$3,8900,'medical','2026-05-01','{"payerSharePercent":50}','Orthodontist co-pay')`, [EXP, IVY, DAD]);
+  await admin.query(
+    `INSERT INTO exchange_arrival_event (child_id, scheduled_at, arrived_at, delay_minutes, reported_by_user_id)
+     VALUES ($1,'2026-05-02T22:00:00Z','2026-05-02T22:12:00Z',12,$2)`, [IVY, DAD]);
+  await admin.query(
+    `INSERT INTO exchange_running_late_log (child_id, eta_minutes, reported_by_user_id) VALUES ($1,15,$2)`, [IVY, DAD]);
+  await admin.query(
+    `INSERT INTO medication (id, child_id, name, dose, slots, is_prn) VALUES ($1,$2,'Methylphenidate','10 mg','["morning"]'::jsonb,false)`, [MED, IVY]);
+  await admin.query(
+    `INSERT INTO medication_dose (medication_id, child_id, local_date, slot, administered_at, recorded_at, by_user_id, status)
+     VALUES ($1,$2,'2026-05-03','morning','2026-05-03T12:00:00Z','2026-05-03T12:00:00Z',$3,'given')`, [MED, IVY, MOM]);
+  await admin.query(
+    `INSERT INTO care_note (child_id, from_user_id, items, expires_at)
+     VALUES ($1,$2,'[{"kind":"mood","note":"slept well"}]'::jsonb, now() + interval '7 days')`, [IVY, DAD]);
+
+  const r = await certifiedExportBundleFor(pool, DAD, IVY, new Date('2026-06-02T00:00:00Z'));
+  check('G v2 bundle', 'the export succeeds', r.ok, true);
+  const b = r.ok ? r.bundle : null;
+  check('G v2 bundle', 'it is a v2 bundle for the right child', `${b?.v}|${b?.childId === IVY}`, '2|true');
+  check('G v2 bundle', 'the independent verifier accepts it against the advertised hash', verifyCertifiedBundle(b, r.bundleHash).ok, true);
+  check('G v2 bundle', 'the chain is intact', verifyCertifiedBundle(b, r.bundleHash).chainIntact, true);
+  check('G v2 bundle', 'bundleHashOf() reproduces the advertised hash', bundleHashOf(b), r.bundleHash);
+  check('G v2 bundle', 'the hash is reproducible after a JSON round trip with SHUFFLED key order (that is what canonical means)',
+    (() => { const rev = (v) => Array.isArray(v) ? v.map(rev) : (v && typeof v === 'object') ? Object.fromEntries(Object.keys(v).reverse().map(k => [k, rev(v[k])])) : v; return bundleHashOf(rev(JSON.parse(JSON.stringify(b)))) === r.bundleHash; })(), true);
+
+  check('G v2 bundle', 'custody order HISTORY: both orders, oldest first',
+    b?.custodyOrders.map(o => o.pattern).join(','), '2-2-3,alternating_weeks');
+  check('G v2 bundle', 'the superseded order keeps its end date', b?.custodyOrders[0].effective_to, '2026-03-31');
+  check('G v2 bundle', 'expenses are included, with the real amount', b?.expenses.map(e => e.amount_cents).join(','), '8900');
+  check('G v2 bundle', 'the expense HISTORY is included (the proposed event, attributed to Dad)',
+    JSON.stringify(b?.expenseEvents.map(e => [e.to_status, e.actor_id])), JSON.stringify([['proposed', DAD]]));
+  check('G v2 bundle', 'exchange arrival log is included', b?.exchangeArrivals.map(a => a.delay_minutes).join(','), '12');
+  check('G v2 bundle', 'exchange running-late log is included', b?.exchangeRunningLate.map(a => a.eta_minutes).join(','), '15');
+  check('G v2 bundle', 'doses are included with the medication named',
+    JSON.stringify(b?.doses.map(d => [d.medication_name, d.slot, d.by_user_id])), JSON.stringify([['Methylphenidate', 'morning', MOM]]));
+  check('G v2 bundle', 'care notes are included', b?.careNotes.length, 1);
+  check('G v2 bundle', 'the legacy top-level fields still equal the bundle (existing clients keep working)',
+    JSON.stringify(r.chain) === JSON.stringify(b?.chain) && r.attestation === b?.attestation, true);
+
+  check('G roster', 'the roster maps author ids to NAMES and roles',
+    JSON.stringify(b?.roster.filter(x => x.id === DAD || x.id === MOM).map(x => [x.name, x.role])),
+    JSON.stringify([['Dad', 'guardian'], ['Mom', 'not_a_guardian_of_this_child']]));
+  check('G roster', 'Mom (a dose author with no edge to this child) is on the roster too, labelled honestly',
+    b?.roster.find(x => x.id === MOM)?.role, 'not_a_guardian_of_this_child');
+  check('G roster', 'every id the bundle mentions that is a person has a roster entry',
+    (() => { const ids = new Set(b.roster.map(x => x.id)); return [DAD, MOM].every(i => ids.has(i)); })(), true);
+  check('G roster', 'the roster is sorted by id (deterministic)',
+    b?.roster.map(x => x.id).join() === [...b.roster.map(x => x.id)].sort().join(), true);
+
+  const tamperedAmount = structuredClone(b); tamperedAmount.expenses[0].amount_cents = 1;
+  check('G verifier', 'changing an expense amount after export is detected (hash differs)',
+    verifyCertifiedBundle(tamperedAmount, r.bundleHash).ok, false);
+  const noRoster = structuredClone(b); noRoster.roster = noRoster.roster.filter(x => x.id !== DAD);
+  check('G verifier', 'removing a chain author from the roster is detected',
+    JSON.stringify(verifyCertifiedBundle(noRoster).reasons?.some(x => x.includes('roster is missing'))), 'true');
+  check('G verifier', 'an unknown bundle version is rejected', verifyCertifiedBundle({ ...b, v: 3 }).ok, false);
+
+  // determinism: the same database state exports identically, whatever the session TimeZone
+  const again = await certifiedExportBundleFor(pool, DAD, IVY, new Date('2026-06-02T00:00:00Z'));
+  check('G determinism', 'a second export of the same state at the same instant has the identical hash',
+    again.ok ? again.bundleHash : '', r.bundleHash);
+
+  // the HTTP route carries the new fields
+  const secret = Buffer.from('test-secret-32-bytes-minimum-ok', 'utf8');
+  const api = new Api(secret, dbPort(pool));
+  registerRoutes(api, pool);
+  const NOWMS = Date.now();
+  const dadTok = issueSession(secret, { userId: DAD, roleName: 'guardian', childId: null, escalated: false }, NOWMS);
+  const http = await api.handle('GET', `/v1/children/${IVY}/export?kind=certified`, { authorization: `Bearer ${dadTok}` }, '');
+  check('G route', 'the route returns the v2 bundle and a hash that verifies', http.status === 200 && verifyCertifiedBundle(http.body.bundle, http.body.bundleHash).ok, true);
+  check('G route', 'and the fault report', http.body.faultReport?.chainVerified, true);
+  check('G route', 'and the legacy attestation field', typeof http.body.attestation?.headHash, 'string');
+
+  await admin.query(`DELETE FROM export_record WHERE child_id = $1`, [IVY]);
+  await admin.query(`UPDATE app_user SET court_tier = false WHERE id = $1`, [DAD]);
+  await admin.query(`DELETE FROM care_note WHERE child_id = $1`, [IVY]);
+  await admin.query(`DELETE FROM medication_dose WHERE child_id = $1`, [IVY]);
+  await admin.query(`DELETE FROM medication WHERE child_id = $1`, [IVY]);
+  await admin.query('ALTER TABLE exchange_arrival_event DISABLE TRIGGER exchange_arrival_event_no_delete');
+  await admin.query('ALTER TABLE exchange_running_late_log DISABLE TRIGGER exchange_running_late_log_no_delete');
+  await admin.query(`DELETE FROM exchange_arrival_event WHERE child_id = $1`, [IVY]);
+  await admin.query(`DELETE FROM exchange_running_late_log WHERE child_id = $1`, [IVY]);
+  await admin.query('ALTER TABLE exchange_arrival_event ENABLE TRIGGER exchange_arrival_event_no_delete');
+  await admin.query('ALTER TABLE exchange_running_late_log ENABLE TRIGGER exchange_running_late_log_no_delete');
+  await admin.query(`DELETE FROM expense WHERE child_id = $1`, [IVY]);
+  await admin.query(`DELETE FROM custody_order WHERE child_id = $1`, [IVY]);
 }
 
 await admin.query(`DELETE FROM export_record WHERE child_id IN ($1, $2)`, [IVY, SOLO]);

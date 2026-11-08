@@ -64,6 +64,7 @@ const CHILD_HTTP     = randomUUID(); // section E's own fixture
 
 const GENESIS = '0'.repeat(64);
 const fakeHash = (n) => n.toString(16).padStart(64, '0');
+let REAL_HASH;
 
 /** ISO date string for someone `years` old today, safely inside the year
  * (July 1) so this suite is never flaky around a real run's own calendar
@@ -144,9 +145,13 @@ async function insertFixtures() {
   // have a COPY (this suite's own C section asserts it lands in her
   // bundle); nothing here or in takeAndGo() ever writes to it.
   await admin.query(
-    `INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash)
-     VALUES ($1, 0, $2, 'exchange confirmed for Friday', $3, $4)`,
-    [CHILD_READY, GUARDIAN_A, GENESIS, fakeHash(1)]);
+    `INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+     VALUES ($1, 0, $2, '2026-01-01T00:00:00Z', 'exchange confirmed for Friday', $3,
+             message_log_hash_v1(0, $1::uuid, $2::uuid, '2026-01-01T00:00:00Z', 'exchange confirmed for Friday', $3))`,
+    [CHILD_READY, GUARDIAN_A, GENESIS]);
+  // 0043: the chain trigger recomputes the hash, so the fixture's hash is the
+  // REAL one; read it back for the "untouched" assertions below.
+  REAL_HASH = (await admin.query(`SELECT hash FROM message_log WHERE child_id = $1 AND seq = 0`, [CHILD_READY])).rows[0].hash;
 
   // Delivered/opened content — must appear in her bundle exactly like a
   // guardian's own raw-export pull already asserts (raw_export.test.mjs).
@@ -273,7 +278,7 @@ await insertFixtures();
     check('C success', 'the parent-to-parent log is a real copy in her bundle (1 entry) — '
       + '"she can have a copy of everything" (rungs.ts NOT_HERS_TO_DELETE)',
       r.bundle.messageLog.length, 1);
-    check('C success', 'the log entry is untouched/authentic', r.bundle.messageLog[0]?.hash, fakeHash(1));
+    check('C success', 'the log entry is untouched/authentic', r.bundle.messageLog[0]?.hash, REAL_HASH);
 
     // Hash integrity — the same "verify from the file alone" contract every
     // other export in this codebase promises.

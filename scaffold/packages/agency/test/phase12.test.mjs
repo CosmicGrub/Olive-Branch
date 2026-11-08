@@ -4,7 +4,7 @@
  */
 import { DateTime } from 'luxon';
 import { Canvas, CAN_DRAW, POINTER_TTL_MS } from '../../annotation/src/canvas.mjs';
-import { offlineBundle, auditBundle, doseKey, recordDose, prnAllowed,
+import { offlineBundle, auditBundle, doseKey, recordDose, prnAllowed, checkDose,
   manifestOrder, unpacked, recordArrival, auditArrival } from '../../care/src/care.mjs';
 import { ping, PING_LIMIT_PER_DAY, pingLimitForAge, PING_BANDS,
   readJournal, ritualsForChild,
@@ -141,6 +141,85 @@ const NYC='America/New_York', CHI='America/Chicago';
       'm2',at8.plus({hours:5}),4), 'true');
 }
 
+
+// I2 · S-D6 — the medication safety rules the SERVER enforces (checkDose).
+{
+  const NYCZ = 'America/New_York';
+  const sched = { slots: ['morning', 'evening'], isPrn: false, minGapHours: null, maxPer24h: null };
+  const prn = (over = {}) => ({ slots: ['prn'], isPrn: true, minGapHours: 4, maxPer24h: null, ...over });
+  const t0 = DateTime.fromISO('2026-03-10T08:00:00', { zone: NYCZ });
+  const rec = (slot, at, status = 'given', by = 'Dad') => ({ medicationId: 'm', localDate: at.toISODate(),
+    slot, administeredAt: at.toISO(), localTz: NYCZ, byUserName: by, status });
+  const chk = (m, slot, status, at, hist = []) => checkDose(m, slot, status, at, at.toISODate(), hist);
+
+  // slot validation
+  check('I2 dose slot', 'a slot the medication does not have is refused', chk(sched, 'lunch', 'given', t0).reason, 'unknown_slot');
+  check('I2 dose slot', 'the refusal lists the real slots', chk(sched, 'lunch', 'given', t0).allowed.join(','), 'morning,evening');
+  check('I2 dose slot', 'an empty slot is refused', chk(sched, '   ', 'given', t0).ok, 'false');
+  check('I2 dose slot', 'a skipped dose with a bogus slot is refused too', chk(sched, 'lunch', 'skipped', t0).reason, 'unknown_slot');
+  check('I2 dose slot', 'case is normalised to the CANONICAL slot', chk(sched, 'Morning', 'given', t0).slot, 'morning');
+  check('I2 dose slot', 'surrounding space is trimmed', chk(sched, '  EVENING ', 'given', t0).slot, 'evening');
+  check('I2 dose slot', 'a medication with no slots cannot be logged against any slot',
+    chk({ ...sched, slots: [] }, 'morning', 'given', t0).reason, 'unknown_slot');
+
+  // the double-dose guard now fires for "Morning" as well as "morning"
+  const given = [rec('morning', t0)];
+  const second = chk(sched, 'MORNING', 'given', t0.plus({ hours: 1 }), given);
+  check('I2 double dose', 'a differently-cased slot still hits the double-dose guard', second.reason, 'already_administered');
+  check('I2 double dose', 'names the parent', second.by, 'Dad');
+  check('I2 double dose', 'and the local time', second.atLocal, '8:00 AM EDT');
+  check('I2 double dose', 'a different slot is unaffected', chk(sched, 'evening', 'given', t0.plus({ hours: 10 }), given).ok, 'true');
+  check('I2 double dose', 'the next local day is unaffected',
+    checkDose(sched, 'morning', 'given', t0.plus({ days: 1 }), t0.plus({ days: 1 }).toISODate(), given).ok, 'true');
+  check('I2 double dose', 'a skipped entry does not consume the slot',
+    chk(sched, 'morning', 'given', t0, [rec('morning', t0, 'skipped')]).ok, 'true');
+  check('I2 double dose', 'a refused entry may be recorded after a given one (no administration)',
+    chk(sched, 'morning', 'refused', t0.plus({ hours: 1 }), given).ok, 'true');
+
+  // PRN minimum gap
+  const h = [rec('prn', t0)];
+  const early = chk(prn(), 'prn', 'given', t0.plus({ hours: 3 }), h);
+  check('I2 prn gap', 'inside the minimum gap is refused', early.reason, 'too_soon');
+  check('I2 prn gap', 'the refusal says when the next dose may stand', early.nextAllowedAt, '2026-03-10T16:00:00.000Z');
+  check('I2 prn gap', 'the gap is carried in the refusal', early.minGapHours, 4);
+  check('I2 prn gap', 'exactly at the gap is allowed', chk(prn(), 'prn', 'given', t0.plus({ hours: 4 }), h).ok, 'true');
+  check('I2 prn gap', 'one minute short of the gap is refused', chk(prn(), 'prn', 'given', t0.plus({ hours: 4 }).minus({ minutes: 1 }), h).ok, 'false');
+  check('I2 prn gap', 'PRN has no per-day slot clash: a second dose after the gap is fine',
+    chk(prn(), 'prn', 'given', t0.plus({ hours: 5 }), h).ok, 'true');
+  check('I2 prn gap', 'a BACK-DATED entry is held to the gap on the earlier side too',
+    chk(prn(), 'prn', 'given', t0.minus({ hours: 2 }), h).reason, 'too_soon');
+  check('I2 prn gap', 'a skipped PRN entry does not start the clock',
+    chk(prn(), 'prn', 'given', t0.plus({ hours: 1 }), [rec('prn', t0, 'skipped')]).ok, 'true');
+  check('I2 prn gap', 'no minimum gap configured means none is enforced',
+    chk(prn({ minGapHours: null }), 'prn', 'given', t0.plus({ minutes: 1 }), h).ok, 'true');
+  check('I2 prn gap', 'a non-given PRN status never trips the gap',
+    chk(prn(), 'prn', 'refused', t0.plus({ hours: 1 }), h).ok, 'true');
+  check('I2 prn gap', 'the nextAllowedAt follows the LATEST dose in the way',
+    chk(prn(), 'prn', 'given', t0.plus({ hours: 5 }), [rec('prn', t0), rec('prn', t0.plus({ hours: 4 }))]).nextAllowedAt,
+    '2026-03-10T20:00:00.000Z');
+
+  // PRN maximum per 24 h
+  const six = [0, 4, 8, 12, 16].map(hr => rec('prn', t0.plus({ hours: hr })));
+  const cap = prn({ maxPer24h: 5 });
+  check('I2 prn max', 'the fifth dose in 24 h is allowed under a cap of 5',
+    chk(cap, 'prn', 'given', t0.plus({ hours: 16 }), six.slice(0, 4)).ok, 'true');
+  const sixth = chk(cap, 'prn', 'given', t0.plus({ hours: 20 }), six);
+  check('I2 prn max', 'the sixth dose inside the same 24 h is refused', sixth.reason, 'daily_max');
+  check('I2 prn max', 'with the cap named', sixth.max, 5);
+  check('I2 prn max', 'once the first dose rolls out of the window it is allowed again',
+    chk(cap, 'prn', 'given', t0.plus({ hours: 24 }), six).ok, 'true');
+  check('I2 prn max', 'a back-dated entry that would overfill a LATER window is refused',
+    chk(prn({ maxPer24h: 5, minGapHours: 1 }), 'prn', 'given', t0.minus({ hours: 2 }), six).reason, 'daily_max');
+  check('I2 prn max', 'history that already exceeds the cap elsewhere does not lock the medication',
+    chk(prn({ maxPer24h: 2, minGapHours: 1 }), 'prn', 'given', t0.plus({ days: 3 }), six).ok, 'true');
+  check('I2 prn max', 'skipped entries do not count towards the cap',
+    chk(prn({ maxPer24h: 1, minGapHours: null }), 'prn', 'given', t0.plus({ hours: 1 }), [rec('prn', t0, 'skipped')]).ok, 'true');
+
+  // prnAllowed itself (the shared gap rule) now ignores non-given records
+  check('I2 prnAllowed', 'a refused record does not block', prnAllowed([rec('prn', t0, 'refused')], 'm', t0.plus({ hours: 1 }), 4), 'true');
+  check('I2 prnAllowed', 'a given record 1h later (back-dated) blocks', prnAllowed([rec('prn', t0.plus({ hours: 1 }))], 'm', t0, 4), 'false');
+  check('I2 prnAllowed', 'another medication never blocks', prnAllowed([{ ...rec('prn', t0), medicationId: 'other' }], 'm', t0, 4), 'true');
+}
 // J · EXCHANGE — manifest and arrival, P3
 {
   const items=[{id:'1',label:'Blue rabbit',essential:false,sent:false,returned:false},

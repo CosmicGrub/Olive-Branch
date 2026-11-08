@@ -43,6 +43,7 @@
 // than a label with nothing behind it. There is no edit control on it anywhere
 // — the "preview a tampered copy" switch swaps between two READ-ONLY
 // precomputed chains, it does not expose a way to alter either one from the UI.
+import 'dart:convert' show jsonEncode;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -260,15 +261,25 @@ class Attestation {
   final String statement;
 }
 
+/// canonicalJson(chain) from packages/ledger/src/ledger.ts for the one shape it
+/// is ever applied to here: an array of LogEntry objects, keys sorted
+/// (at, authorId, body, childId, hash, prevHash, seq), no whitespace, strings
+/// escaped as JSON.stringify does.
+String canonicalChainJson(List<LogEntry> chain) =>
+    '[${chain.map((LogEntry e) => '{"at":${jsonEncode(e.at)},"authorId":${jsonEncode(e.authorId)},'
+        '"body":${jsonEncode(e.body)},"childId":${jsonEncode(e.childId)},"hash":${jsonEncode(e.hash)},'
+        '"prevHash":${jsonEncode(e.prevHash)},"seq":${e.seq}}').join(',')}]';
+
 /// 1:1 port of `certify()`. The attestation carries everything a reader needs
 /// to recompute the chain themselves — head hash, count, and a hash over the
 /// whole serialized bundle — so nobody has to take our word for it.
 Attestation certify(List<LogEntry> chain, String childId, String at) {
   final ChainVerification v = verifyChain(chain);
-  final String bundle = chain
-      .map((LogEntry e) => '${e.seq}|${e.childId}|${e.authorId}|${e.at}|${e.body}|'
-          '${e.prevHash}|${e.hash}')
-      .join('\n');
+  // S-D13/S-D23 -- the TypeScript certify() hashes the CANONICAL JSON of the
+  // chain (sorted keys, no whitespace); this port used to hash a pipe-joined
+  // string, so its attestation bundleHash could never equal the server's.
+  // Fixed to match, and held there by packages/ledger/test/vectors.json.
+  final String bundle = canonicalChainJson(chain);
   return Attestation(
     childId: childId,
     generatedAt: at,

@@ -186,7 +186,7 @@ const cap = (o={}) => captureMessage({
 }
 
 // -------------------------------------------------------------------------
-// M8 — a CHILD sender (§9.5, 0019_child_message_sender.sql). Closes the
+// M8 — a CHILD sender (§9.5, 0021_child_message_sender.sql). Closes the
 // audit finding "child_async_video_sender_identity schema change": before
 // that migration, `senderRole:'child'` reached `can()` with structurally
 // empty edges (a child never holds a guardianship edge to herself) and was
@@ -248,6 +248,37 @@ const cap = (o={}) => captureMessage({
 }
 
 // -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// M12 — S-D12: a scheduling failure is NOT a permission failure.
+// -------------------------------------------------------------------------
+{
+  const noBedtime = { homeTz: NYC, tzIntervals: [], dayParts: DAYPARTS.filter(p => p.kind !== 'bedtime') };
+  const r = captureMessage({
+    childId: CHILD, senderId: DAD, senderRole: 'guardian', storageKey: 'k/1', durationMs: 42000,
+    targetLocalDate: null, daypart: 'bedtime', preserve: false }, [edge()], noBedtime, NOW);
+  check('M12 distinct denials', 'no bedtime day-part is daypart_undefined, not not_authorized', r.reason, 'daypart_undefined');
+  const r2 = captureMessage({
+    childId: CHILD, senderId: DAD, senderRole: 'guardian', storageKey: 'k/1', durationMs: 42000,
+    targetLocalDate: '2026-08-01', daypart: 'bedtime', preserve: false }, [edge()],
+    { homeTz: NYC, tzIntervals: [], dayParts: [] }, NOW);
+  check('M12 distinct denials', 'a dated send with no day-parts at all still schedules (default 20:30) -- ok',
+    r2.ok, 'true');
+  check('M12 distinct denials', 'a real permission failure is still not_authorized',
+    captureMessage({ childId: CHILD, senderId: 'stranger', senderRole: 'guardian', storageKey: 'k', durationMs: 1,
+      targetLocalDate: null, daypart: 'bedtime', preserve: false }, [], CTX, NOW).reason, 'not_authorized');
+  // zone resolution: overlapping intervals honour confidence (resolveZone), not first-listed
+  const overlap = { homeTz: NYC, dayParts: DAYPARTS, tzIntervals: [
+    { tz: NYC, start: null, end: null, confidence: 10 },
+    { tz: CHI, start: null, end: null, confidence: 90 }] };
+  const z = captureMessage({
+    childId: CHILD, senderId: DAD, senderRole: 'guardian', storageKey: 'k/1', durationMs: 42000,
+    targetLocalDate: null, daypart: 'bedtime', preserve: false }, [edge()], overlap, NOW);
+  check('M12 shared zone logic', 'capturedTz follows resolveZone: the higher-confidence interval wins', z.artifact.capturedTz, CHI);
+  check('M12 shared zone logic', 'a receipt is rendered in that same zone',
+    openReceipt(overlap, NOW, null).zone, CHI);
+}
+
 let g = '';
 for (const r of rows) {
   if (r.group !== g) { g = r.group; console.log(`\n${g}`); }

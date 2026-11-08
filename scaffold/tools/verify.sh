@@ -84,6 +84,8 @@ for spec in \
   "homework ImageStats measurement|packages/homework/test/measure.test.mjs" \
   "homework capture route (real OCR + hints)|packages/homework/test/capture-route.test.mjs" \
   "custody schedule|packages/custody/test/custody.test.mjs" \
+  "care: medication safety golden vectors shared with the Dart port (S-D6)|packages/care/test/care.test.mjs" \
+  "migrations hygiene: LF-stable checksums + references name real files (S-C8, S-D22)|tools/test/migrations_hygiene.test.mjs" \
   "phase 1-2 features|packages/agency/test/phase12.test.mjs" \
   "phase 3 court + archive|packages/ledger/test/phase3.test.mjs" \
   "showcase|packages/showcase/test/showcase.test.mjs" \
@@ -428,7 +430,9 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "db auth hardening: challenge purge + uniform login (real DB)|packages/db/test/auth_hardening.test.mjs" \
             "db fk indexes, migration 0036 (real DB)|packages/db/test/fk_indexes.test.mjs" \
             "scheduler backup job: real pg_dump, prune, alarm (real DB)|packages/db/test/backup_job.test.mjs" \
-            "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" ; do
+            "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" \
+            "db domain constraints: day-parts, time zones, enums (0042, real DB)|packages/db/test/domain_constraints.test.mjs" \
+            "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   # MASTERFILE §16.2 #6 REVERSED AGAIN — server/test/calls_route.test.mjs
   # imports routes.mjs directly, which now reads LIVEKIT_URL/LIVEKIT_

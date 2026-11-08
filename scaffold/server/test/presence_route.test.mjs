@@ -169,6 +169,8 @@ await admin.query(
    CHILD_NONE, DAD4, MOM4, CHILD_SOLE, SOLE, CHILD_SINGLE, SITTER1]);
 // CHILD_ONDUTY's custody order: anchor_local_date = TODAY (in CHILD_ZONE),
 // pattern '2-2-3' puts Side A on day-index 0 -- i.e. today, deterministically,
+// (exchange_time is 00:00 so the date's own side applies at every pinned time of
+// day; section (g) below moves it to prove the mid-day handover, S-D8)
 // regardless of what real calendar date this suite happens to run on. Side A
 // = DAD1 via the new 0024 mapping this route's own prerequisite migration
 // added.
@@ -176,7 +178,7 @@ await admin.query(
   `INSERT INTO custody_order
      (child_id, order_tz, pattern, anchor_local_date, exchange_time, effective_from,
       side_a_guardian_id, side_b_guardian_id)
-   VALUES ($1, $2, '2-2-3', $3, '18:00:00', $3, $4, $5)`,
+   VALUES ($1, $2, '2-2-3', $3, '00:00:00', $3, $4, $5)`,
   [CHILD_ONDUTY, CHILD_ZONE, local.toISODate(), DAD1, MOM1]);
 await admin.query('COMMIT');
 
@@ -354,6 +356,28 @@ const at = (min) => local.set({
     soleRes.body.free, 'null');
   check('D nobody free', 'both honest-absence shapes are byte-identical (no leaked family-shape signal)',
     JSON.stringify(noneRes.body), JSON.stringify(soleRes.body));
+}
+
+// ===========================================================================
+// (g) S-D8 -- on-duty is who holds her AT THIS INSTANT, not who holds today's
+//     date. Windows from (a) are still active: DAD1 (Side A) and MOM1 (Side B).
+//     Today is Side A's first day, so yesterday was Side B's.
+//       exchange later today  -> still the PREVIOUS side (B = MOM1) on duty,
+//                                so DAD1 is free and surfaces;
+//       exchange already past -> today's side (A = DAD1) on duty, MOM1 surfaces.
+// ===========================================================================
+{
+  const setExchange = (t) => admin.query(`UPDATE custody_order SET exchange_time = $2 WHERE child_id = $1`, [CHILD_ONDUTY, t]);
+  await admin.query(`UPDATE custody_order SET effective_from = effective_from - 30 WHERE child_id = $1`, [CHILD_ONDUTY]);   // yesterday must be inside the order
+  await setExchange('23:59:00');
+  const before = await get(CHILD_ONDUTY, dad1Tok);
+  check('G handover day', 'before the 23:59 exchange the PREVIOUS side (Mom) is still on duty, so Dad is the free parent',
+    before.body.free?.guardianId, DAD1);
+  await setExchange('00:00:00');
+  const after = await get(CHILD_ONDUTY, dad1Tok);
+  check('G handover day', 'once the exchange time has passed today\'s side (Dad) is on duty, so Mom surfaces',
+    after.body.free?.guardianId, MOM1);
+  await setExchange('00:00:00');
 }
 
 await cleanup();

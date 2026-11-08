@@ -8,9 +8,11 @@ import { writeCareNote, type CareItem } from '../../guardian/src/guardian.ts';
 import { MIN_SEAL_YEARS, MAX_SEAL_TO_AGE } from '../../maturation/src/maturation.ts';
 import type { DbPort, Query } from '../../api/src/api.ts';
 import type { Order } from '../../custody/src/schedule.ts';
+import { checkDose, type DoseRecord, type DoseStatus, type MedicationRule } from '../../care/src/care.ts';
 import {
-  verifyChain, certify, authorizeExport, append,
+  verifyChain, certify, authorizeExport, append, bundleHashOf, splitFromPayerShare,
   type LogEntry, type Attestation, type ChainFault, type ExportDenial,
+  type CertifiedBundle, type RosterEntry,
 } from '../../ledger/src/ledger.ts';
 import { sha256Hex } from '../../ledger/src/sha256.ts';
 import { retentionOnOpen, type ArtifactRow, type IntentRow } from '../../messaging/src/pipeline.ts';
@@ -305,22 +307,52 @@ export async function activeCustodyOrderFor(
         LIMIT 1`,
       [childId, nowLocalDate],
     );
-    if (!rows.length) return null;
-    const r = rows[0];
-    return {
-      pattern: r.pattern,
-      orderTz: r.order_tz,
-      anchorLocalDate: r.anchor_local_date,
-      exchangeTime: r.exchange_time,
-      holidays: r.holiday_rules ?? [],
-      effectiveFrom: r.effective_from,
-      effectiveTo: r.effective_to,
-      // db/migrations/0024_custody_order_side_guardians.sql — NULL on every
-      // legacy row (honest "unmapped", never guessed). See Order's own
-      // field comment (schedule.ts) for the full reasoning.
-      sideAGuardianId: r.side_a_guardian_id,
-      sideBGuardianId: r.side_b_guardian_id,
-    } as Order;
+    return rows.length ? custodyOrderFromRow(rows[0]) : null;
+  });
+}
+
+function custodyOrderFromRow(r: any): Order {
+  return {
+    pattern: r.pattern,
+    orderTz: r.order_tz,
+    anchorLocalDate: r.anchor_local_date,
+    exchangeTime: r.exchange_time,
+    holidays: r.holiday_rules ?? [],
+    effectiveFrom: r.effective_from,
+    effectiveTo: r.effective_to,
+    // db/migrations/0024_custody_order_side_guardians.sql — NULL on every
+    // legacy row (honest "unmapped", never guessed). See Order's own
+    // field comment (schedule.ts) for the full reasoning.
+    sideAGuardianId: r.side_a_guardian_id,
+    sideBGuardianId: r.side_b_guardian_id,
+  } as Order;
+}
+
+/**
+ * S-D9 -- the order that takes over after the one in force on `nowLocalDate`
+ * ends: the earliest order starting AFTER that date. "N sleeps" needs it so a
+ * countdown never reads past where the current order expires. Null when no
+ * later order is on file (the honest "unknown").
+ */
+export async function successorCustodyOrderFor(
+  pool: pg.Pool, childId: string, nowLocalDate: string,
+): Promise<Order | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT pattern, order_tz,
+              anchor_local_date::text AS anchor_local_date,
+              to_char(exchange_time, 'HH24:MI') AS exchange_time,
+              holiday_rules,
+              effective_from::text AS effective_from,
+              effective_to::text AS effective_to,
+              side_a_guardian_id, side_b_guardian_id
+         FROM custody_order
+        WHERE child_id = $1 AND effective_from > $2::date
+        ORDER BY effective_from ASC
+        LIMIT 1`,
+      [childId, nowLocalDate],
+    );
+    return rows.length ? custodyOrderFromRow(rows[0]) : null;
   });
 }
 
@@ -1585,10 +1617,14 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
          FROM child_tz_interval WHERE child_id = $1 ORDER BY lower(valid)`,
       [childId],
     );
-    // Only day-parts effective TODAY — mirrors day_part's own `effective
-    // daterange` column; a day-part outside its effective window is not part
-    // of her CURRENT schedule, and materialize() has no other way to exclude
-    // a superseded one.
+    // EVERY day-part, each with its own effective bounds (S-D10). This used
+    // to filter `effective @> CURRENT_DATE` -- the DATABASE's date, not the
+    // child's, and one frozen context reused for every future date, so a
+    // 60-night batch crossing a schedule change used today's bedtime for all
+    // of it. The engine (materialize.ts partsOn/activeDayPart) now resolves
+    // by the TARGET date. effective is a [) daterange, so the inclusive end
+    // the engine uses is upper - 1; NULL = open. Ordered so ties are
+    // deterministic.
     // substring(...::text from 1 for 5) truncates Postgres's second-precision
     // time cast ('12:00:00') down to gate.ts's own 'HH:mm' width ('12:00') --
     // without this, `hhmm >= p.startsLocal` string-compares a 5-char value
@@ -1598,9 +1634,12 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
     const dpRows = await q(
       `SELECT kind, substring(starts_local::text from 1 for 5) AS starts_local,
               substring(ends_local::text from 1 for 5) AS ends_local,
-              days_of_week, reachable
+              days_of_week, reachable,
+              lower(effective)::text AS effective_from,
+              (upper(effective) - 1)::text AS effective_to
          FROM day_part
-        WHERE child_id = $1 AND effective @> CURRENT_DATE`,
+        WHERE child_id = $1
+        ORDER BY lower(effective) NULLS FIRST, starts_local, kind`,
       [childId],
     );
 
@@ -1613,6 +1652,8 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
         endsLocal: r.ends_local,
         daysOfWeek: r.days_of_week,
         reachable: r.reachable,
+        effectiveFrom: r.effective_from ?? null,
+        effectiveTo: r.effective_to ?? null,
       })),
     };
   });
@@ -2708,6 +2749,17 @@ export type CertifiedExportResult =
        * per-entry chain.
        */
       callLog: CallLogEntry[];
+      /**
+       * S-D13 -- the self-describing v2 bundle (roster, fault report, custody
+       * order history, expense ledger and its history, exchange logs, doses,
+       * care notes, plus chain/attestation/callLog above) and its hash.
+       * `bundleHash` is the SHA-256 of canonicalJson(bundle): a third party
+       * reproduces it from the file alone (ledger.ts verifyCertifiedBundle).
+       * A broken message chain no longer refuses the export -- it is exported
+       * WITH `faultReport` (and attestation.chainVerified = false).
+       */
+      bundle: CertifiedBundle;
+      faultReport: { chainVerified: boolean; faults: ChainFault[] };
       bundleHash: string;
       exportRecordId: string;
     }
@@ -2872,6 +2924,14 @@ export interface Expense {
   incurredOn: string;
   receiptKey: string | null;
   splitRule: { payerSharePercent: number };
+  /** S-D19 -- ISO-4217 code (migration 0044); every historic row is USD. */
+  currency: string;
+  /**
+   * S-D19 -- the split per participant, in basis points summing to 10000
+   * (migration 0044 CHECK). null on a row written before 0044, which carries
+   * only the legacy two-party `splitRule.payerSharePercent`.
+   */
+  splitBp: Record<string, number> | null;
   status: string;
   createdAt: string;
 }
@@ -2879,7 +2939,7 @@ export interface Expense {
 const EXPENSE_ROW_COLUMNS = `
   id, child_id, paid_by, description, amount_cents, category,
   to_char(incurred_on, 'YYYY-MM-DD') AS incurred_on,
-  receipt_key, split_rule, status,
+  receipt_key, split_rule, currency, split_bp, status,
   to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
 `;
 
@@ -2889,7 +2949,8 @@ function rowToExpense(r: any, paidByName: string | null = null): Expense {
     description: r.description,
     amountCents: Number(r.amount_cents), category: r.category,
     incurredOn: r.incurred_on, receiptKey: r.receipt_key,
-    splitRule: r.split_rule, status: r.status, createdAt: r.created_at,
+    splitRule: r.split_rule, currency: r.currency ?? 'USD', splitBp: r.split_bp ?? null,
+    status: r.status, createdAt: r.created_at,
   };
 }
 
@@ -2906,15 +2967,42 @@ function rowToExpense(r: any, paidByName: string | null = null): Expense {
 export async function proposeExpense(
   pool: pg.Pool, actorRole: string, actorUserId: string, childId: string,
   input: { description: string; amountCents: number; category: string; incurredOn: string;
-           receiptKey?: string | null; payerSharePercent: number },
-): Promise<Expense> {
+           receiptKey?: string | null; payerSharePercent: number;
+           /** S-D19 -- ISO-4217, default USD. */
+           currency?: string;
+           /** S-D19 -- explicit split in basis points over live guardians of this
+            *  child (must total 10000). Omitted: derived from payerSharePercent. */
+           participants?: { userId: string; bp: number }[] },
+): Promise<Expense | { error: 'bad_participants' }> {
   return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    // S-D19 -- who can be on the split: the live PARENT guardians of this child.
+    const live = (await q(
+      `SELECT DISTINCT user_id::text AS id FROM effective_guardianship
+        WHERE child_id = $1 AND role = 'guardian'`, [childId])).map((r: any) => r.id as string);
+    let splitBp: Record<string, number>;
+    if (input.participants) {
+      const ids = input.participants.map(p => p.userId);
+      if (new Set(ids).size !== ids.length || !ids.every(i => live.includes(i)) ||
+          !input.participants.every(p => Number.isInteger(p.bp) && p.bp >= 0) ||
+          input.participants.reduce((s2, p) => s2 + p.bp, 0) !== 10000 ||
+          !ids.includes(actorUserId)) {
+        return { error: 'bad_participants' as const };
+      }
+      splitBp = Object.fromEntries(input.participants.map(p => [p.userId, p.bp]));
+    } else {
+      // Legacy two-party input: the payer keeps payerSharePercent, the other
+      // live guardians share the rest (integer basis points, remainder to the
+      // lowest ids). Nobody else on file: the payer owes nobody.
+      splitBp = splitFromPayerShare(actorUserId, live, input.payerSharePercent);
+    }
     const rows = await q(
-      `INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on, receipt_key, split_rule)
-       VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8::jsonb)
+      `INSERT INTO expense (child_id, paid_by, description, amount_cents, category, incurred_on,
+                            receipt_key, split_rule, currency, split_bp)
+       VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8::jsonb, $9, $10::jsonb)
        RETURNING ${EXPENSE_ROW_COLUMNS}`,
       [childId, actorUserId, input.description, input.amountCents, input.category, input.incurredOn,
-       input.receiptKey ?? null, JSON.stringify({ payerSharePercent: input.payerSharePercent })],
+       input.receiptKey ?? null, JSON.stringify({ payerSharePercent: input.payerSharePercent }),
+       input.currency ?? 'USD', JSON.stringify(splitBp)],
     );
     return rowToExpense(rows[0]);
   });
@@ -2937,7 +3025,7 @@ export async function expensesFor(pool: pg.Pool, childId: string): Promise<Expen
       `SELECT e.id, e.child_id, e.paid_by, u.display_name AS paid_by_name,
               e.description, e.amount_cents, e.category,
               to_char(e.incurred_on, 'YYYY-MM-DD') AS incurred_on,
-              e.receipt_key, e.split_rule, e.status,
+              e.receipt_key, e.split_rule, e.currency, e.split_bp, e.status,
               to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
          FROM expense e JOIN app_user u ON u.id = e.paid_by
         WHERE e.child_id = $1 ORDER BY e.created_at DESC`,
@@ -2978,20 +3066,51 @@ export const EXPENSE_RESOLUTIONS: Record<string, string> = {
  * honest "not found," not a 500, mirroring `recordCallEnd()`'s own
  * `WHERE ended_at IS NULL` idempotent-miss shape.
  */
+export type ResolveExpenseResult =
+  | { ok: true; expense: Expense }
+  | { ok: false; reason: 'not_found' }
+  /** the expense is not in a state this action may start from */
+  | { ok: false; reason: 'invalid_transition'; status: string }
+  /** the proposer tried to accept or dispute their own expense */
+  | { ok: false; reason: 'own_expense' };
+
+/**
+ * S-D14 -- a status change is a guarded, recorded TRANSITION, not a free
+ * UPDATE. Only proposed -> accepted|disputed and accepted -> reimbursed are
+ * legal; the person who proposed an expense cannot accept or dispute it; and
+ * every change lands in the append-only expense_event table with the actor and
+ * the time (migration 0043, whose triggers are the real enforcement -- the
+ * checks here only produce the plain-language refusal first). The row is
+ * locked FOR UPDATE and the UPDATE repeats the expected prior status, so two
+ * guardians resolving at once cannot both succeed.
+ */
 export async function resolveExpense(
   pool: pg.Pool, actorRole: string, actorUserId: string,
   childId: string, expenseId: string, action: string,
-): Promise<Expense | null> {
+): Promise<ResolveExpenseResult> {
   const status = EXPENSE_RESOLUTIONS[action];
   if (!status) throw Object.assign(new Error(`unknown expense resolution: ${action}`),
     { code: 'unknown_resolution' });
   return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
-    const rows = await q(
-      `UPDATE expense SET status = $1 WHERE id = $2 AND child_id = $3
-       RETURNING ${EXPENSE_ROW_COLUMNS}`,
-      [status, expenseId, childId],
+    const cur = await q(
+      `SELECT status, paid_by FROM expense WHERE id = $1 AND child_id = $2 FOR UPDATE`,
+      [expenseId, childId],
     );
-    return rows.length ? rowToExpense(rows[0]) : null;
+    if (!cur.length) return { ok: false, reason: 'not_found' };
+    const from: string = cur[0].status;
+    const legal = (from === 'proposed' && (status === 'accepted' || status === 'disputed')) ||
+      (from === 'accepted' && status === 'reimbursed');
+    if (!legal) return { ok: false, reason: 'invalid_transition', status: from };
+    if ((status === 'accepted' || status === 'disputed') && cur[0].paid_by === actorUserId) {
+      return { ok: false, reason: 'own_expense' };
+    }
+    const rows = await q(
+      `UPDATE expense SET status = $1 WHERE id = $2 AND child_id = $3 AND status = $4
+       RETURNING ${EXPENSE_ROW_COLUMNS}`,
+      [status, expenseId, childId, from],
+    );
+    if (!rows.length) return { ok: false, reason: 'invalid_transition', status: from };
+    return { ok: true, expense: rowToExpense(rows[0]) };
   });
 }
 
@@ -3006,24 +3125,28 @@ export async function resolveExpense(
  */
 export interface Medication {
   id: string; name: string; dose: string; slots: string[];
-  isPrn: boolean; minGapHours: number | null;
+  isPrn: boolean; minGapHours: number | null; maxDosesPer24h: number | null;
 }
 
 export interface DoseEntry {
   id: string; medicationId: string; localDate: string; slot: string;
   administeredAt: string; byUserId: string; byUserName: string; status: string;
+  /** S-D6: when the server learned of the dose; differs from administeredAt
+   *  (the claimed time) exactly when `backdated` is true. */
+  recordedAt?: string; backdated?: boolean;
 }
 
 /** The query half of medicationsFor(), runnable inside a caller's OWN session. */
 async function medicationsVia(q: Query, childId: string): Promise<Medication[]> {
   const rows = await q(
-    `SELECT id, name, dose, slots, is_prn, min_gap_hours
+    `SELECT id, name, dose, slots, is_prn, min_gap_hours, max_doses_per_24h
        FROM medication WHERE child_id = $1 AND active ORDER BY created_at ASC`,
     [childId],
   );
   return rows.map((r: any): Medication => ({
     id: r.id, name: r.name, dose: r.dose, slots: r.slots, isPrn: r.is_prn,
     minGapHours: r.min_gap_hours === null ? null : Number(r.min_gap_hours),
+    maxDosesPer24h: r.max_doses_per_24h ?? null,
   }));
 }
 
@@ -3044,6 +3167,8 @@ export async function dosesForDate(
     const rows = await q(
       `SELECT d.id, d.medication_id, to_char(d.local_date, 'YYYY-MM-DD') AS local_date,
               d.slot, to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at,
+              to_char(d.recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS recorded_at,
+              d.backdated,
               d.by_user_id, u.display_name AS by_user_name, d.status
          FROM medication_dose d JOIN app_user u ON u.id = d.by_user_id
         WHERE d.child_id = $1 AND d.local_date = $2::date
@@ -3053,26 +3178,27 @@ export async function dosesForDate(
     return rows.map((r: any): DoseEntry => ({
       id: r.id, medicationId: r.medication_id, localDate: r.local_date, slot: r.slot,
       administeredAt: r.administered_at, byUserId: r.by_user_id, byUserName: r.by_user_name,
-      status: r.status,
+      status: r.status, recordedAt: r.recorded_at, backdated: r.backdated,
     }));
   });
 }
 
 /**
- * Real result shape, mirroring `RecordDoseResult`/`AlreadyAdministered`
- * (meds_care.dart, packages/care/src/care.ts) exactly, so the route's own
- * 409 body can carry the same "$by gave this dose at $atLocal" facts the
- * client's pure `recordDose()` already computes for the demo path — named
- * the parent and the local time, nothing more (§9.6.1's own "no blame
- * framing" rule).
+ * Real result shape. The `already_administered` variant mirrors
+ * `AlreadyAdministered` (meds_care.dart, packages/care/src/care.ts) exactly,
+ * so the route's own 409 body can carry the same "$by gave this dose at
+ * $atLocal" facts the client's pure `recordDose()` already computes for the
+ * demo path — named the parent and the local time, nothing more (§9.6.1's own
+ * "no blame framing" rule). The other variants are the S-D6 medication safety
+ * refusals (see recordDose below).
  */
 export type RecordDoseResult =
   | { ok: true; dose: DoseEntry }
-  // S-B5: the medication id in the path is not a medication of THIS child
-  // (another family's, or none at all). Indistinguishable from "no such
-  // medication" on purpose, and never discloses a display name.
-  | { ok: false; notFound: true }
-  | { ok: false; blockedBy: string; blockedAtIso: string };
+  | { ok: false; reason: 'already_administered'; blockedBy: string; blockedAtIso: string }
+  | { ok: false; reason: 'unknown_medication' }
+  | { ok: false; reason: 'unknown_slot'; allowed: string[] }
+  | { ok: false; reason: 'too_soon'; nextAllowedAt: string; minGapHours: number }
+  | { ok: false; reason: 'daily_max'; max: number };
 
 /**
  * `local_date` is ALWAYS computed here from [localDate] (the caller — the
@@ -3083,45 +3209,115 @@ export type RecordDoseResult =
  * date would let a wrong-timezone device silently create a second dose
  * record for what is, in the child's own frame, the same slot on the same
  * day. `medication_dose_no_double_given`'s own partial unique index
- * (migration 0026) is the real backstop underneath this — a race between
+ * (migrations 0026/0042) is the real backstop underneath this — a race between
  * two guardians logging at the exact same moment is caught by Postgres
  * itself, not just by this function having queried first (a real TOCTOU
  * gap `ON CONFLICT` closes that a plain SELECT-then-INSERT would not).
+ *
+ * S-D6 — the medication safety rules run HERE, on the server, not only in the
+ * client (packages/care/src/care.ts `checkDose`, golden-vectored against the
+ * Dart port):
+ *   - the medication must exist, be active and belong to THIS child (the route
+ *     used to accept any medication id under any child's path);
+ *   - the slot must be one the medication has (case/space-insensitive; the
+ *     CANONICAL spelling is stored, so "Morning" can no longer slip past the
+ *     double-dose guard as a different slot);
+ *   - a PRN medication honours its minimum gap and its maximum doses in any
+ *     rolling 24 h; the check and the insert happen under a per-medication
+ *     advisory lock so two guardians cannot both pass it;
+ *   - [givenAt] (optional) records a dose given EARLIER: administered_at is the
+ *     claimed time, recorded_at the real one, backdated = true, and the same
+ *     rules are applied around the claimed time. A retroactive entry is audited,
+ *     never indistinguishable from a live one.
  */
 export async function recordDose(
   pool: pg.Pool, actorRole: string, actorUserId: string, childId: string,
   medicationId: string, localDate: string, slot: string, status: string,
+  givenAt: Date | null = null,
 ): Promise<RecordDoseResult> {
   return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
-    // S-B5: the medication must belong to THIS child. The composite FK
-    // (migration 0039) is the database's own backstop; checking here turns
-    // the violation into an ordinary 404 instead of a 500, and keeps the
-    // conflict lookup below from ever reading another family's dose log.
-    const owned = await q(
-      `SELECT 1 FROM medication WHERE id = $1 AND child_id = $2`,
+    const meds = await q(
+      `SELECT slots, is_prn, min_gap_hours, max_doses_per_24h
+         FROM medication WHERE id = $1 AND child_id = $2 AND active`,
       [medicationId, childId],
     );
-    if (!owned.length) return { ok: false, notFound: true };
+    if (!meds.length) return { ok: false, reason: 'unknown_medication' };
+    const med = meds[0];
+
+    // One logger at a time per medication, for the whole check-then-insert.
+    await q(`SELECT pg_advisory_xact_lock(hashtextextended($1, 26))`, [medicationId]);
+
+    const nowRow = await q(
+      `SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS n`);
+    const at = givenAt
+      ? DateTime.fromJSDate(givenAt, { zone: 'utc' })
+      : DateTime.fromISO(nowRow[0].n, { zone: 'utc' });
+
+    const hist = await q(
+      `SELECT to_char(d.local_date, 'YYYY-MM-DD') AS local_date, d.slot, d.status,
+              to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at,
+              u.display_name AS by_user_name
+         FROM medication_dose d JOIN app_user u ON u.id = d.by_user_id
+        WHERE d.medication_id = $1 AND d.status = 'given'
+          AND (d.local_date = $2::date
+               OR d.administered_at BETWEEN $3::timestamptz - interval '24 hours'
+                                        AND $3::timestamptz + interval '24 hours')`,
+      [medicationId, localDate, at.toUTC().toISO()],
+    );
+    const history: DoseRecord[] = hist.map((r: any) => ({
+      medicationId, localDate: r.local_date, slot: r.slot,
+      administeredAt: r.administered_at, localTz: 'UTC', byUserName: r.by_user_name,
+      status: r.status,
+    }));
+
+    const rule: MedicationRule = {
+      slots: Array.isArray(med.slots) ? med.slots : [],
+      isPrn: med.is_prn,
+      minGapHours: med.min_gap_hours === null ? null : Number(med.min_gap_hours),
+      maxPer24h: med.max_doses_per_24h ?? null,
+    };
+    const verdict = checkDose(rule, slot, status as DoseStatus, at, localDate, history);
+    if (!verdict.ok) {
+      switch (verdict.reason) {
+        case 'unknown_slot': return { ok: false, reason: 'unknown_slot', allowed: verdict.allowed };
+        case 'too_soon': return { ok: false, reason: 'too_soon',
+          nextAllowedAt: verdict.nextAllowedAt, minGapHours: verdict.minGapHours };
+        case 'daily_max': return { ok: false, reason: 'daily_max', max: verdict.max };
+        case 'already_administered': {
+          const clash = history.find(d => d.localDate === localDate && d.byUserName === verdict.by &&
+            d.status === 'given');
+          return { ok: false, reason: 'already_administered', blockedBy: verdict.by,
+            blockedAtIso: clash?.administeredAt ?? '' };
+        }
+      }
+    }
+
+    const backdated = givenAt !== null;
     const rows = await q(
       `INSERT INTO medication_dose
-         (medication_id, child_id, local_date, slot, administered_at, by_user_id, status)
-       VALUES ($1, $2, $3::date, $4, now(), $5, $6)
-       ON CONFLICT (medication_id, local_date, slot) WHERE status = 'given' DO NOTHING
+         (medication_id, child_id, local_date, slot, administered_at, recorded_at,
+          backdated, is_prn, by_user_id, status)
+       VALUES ($1, $2, $3::date, $4,
+               CASE WHEN $7::boolean THEN $8::timestamptz ELSE now() END,
+               now(), $7::boolean, $9::boolean, $5, $6)
+       ON CONFLICT (medication_id, local_date, slot) WHERE status = 'given' AND NOT is_prn DO NOTHING
        RETURNING id, medication_id,
                  to_char(local_date, 'YYYY-MM-DD') AS local_date, slot,
                  to_char(administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at,
-                 by_user_id, status`,
-      [medicationId, childId, localDate, slot, actorUserId, status],
+                 to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS recorded_at,
+                 backdated, by_user_id, status`,
+      [medicationId, childId, localDate, verdict.slot, actorUserId, status,
+       backdated, at.toUTC().toISO(), med.is_prn],
     );
     if (rows.length) {
       const r = rows[0];
       return { ok: true, dose: { id: r.id, medicationId: r.medication_id,
         localDate: r.local_date, slot: r.slot, administeredAt: r.administered_at,
+        recordedAt: r.recorded_at, backdated: r.backdated,
         byUserId: r.by_user_id, byUserName: '', status: r.status } };
     }
-    // Blocked — a real 'given' dose already exists for this exact
-    // medication/day/slot. Look it up to name who and when, the same way
-    // the pure recordDose() (care.ts) already does for the demo path.
+    // Blocked by the unique index although the in-transaction check passed
+    // (a writer that does not take the advisory lock). Name who and when.
     const clash = await q(
       `SELECT d.by_user_id, u.display_name AS by_user_name,
               to_char(d.administered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS administered_at
@@ -3129,9 +3325,10 @@ export async function recordDose(
         WHERE d.medication_id = $1 AND d.child_id = $4
           AND d.local_date = $2::date AND d.slot = $3 AND d.status = 'given'
         LIMIT 1`,
-      [medicationId, localDate, slot, childId],
+      [medicationId, localDate, verdict.slot, childId],
     );
-    return { ok: false, blockedBy: clash[0]?.by_user_name ?? 'another guardian',
+    return { ok: false, reason: 'already_administered',
+      blockedBy: clash[0]?.by_user_name ?? 'another guardian',
       blockedAtIso: clash[0]?.administered_at ?? '' };
   });
 }
@@ -3148,7 +3345,7 @@ export interface MedicalRecord {
   guardians: { userId: string; name: string; phone: string | null }[];
   medications: Medication[];
   /**
-   * G-11 (migration 0038) — optimistic-concurrency token. 0 when no card has
+   * G-11 (migration 0036) — optimistic-concurrency token. 0 when no card has
    * ever been written; otherwise the medical_record.version this read saw.
    * setMedicalRecord() requires it back.
    */
@@ -3225,7 +3422,7 @@ export class StaleMedicalRecordError extends Error {
   constructor(currentVersion: number) { super('stale_version'); this.currentVersion = currentVersion; }
 }
 
-/** One append-only history row (medical_record_history, migration 0038). */
+/** One append-only history row (medical_record_history, migration 0036). */
 export interface MedicalRecordHistoryEntry {
   version: number;
   changedById: string;
@@ -3888,41 +4085,76 @@ export async function certifiedExportBundleFor(
     });
     if (!auth.ok) return { ok: false, reason: auth.reason };
 
-    // 3 · the real chain, read, never assembled from a fixture.
+    // 3 · the real chain, read, never assembled from a fixture. Every
+    // timestamp the sections below render is UTC, so the same database state
+    // exports byte-identically whatever the session TimeZone happens to be.
+    await q(`SELECT set_config('TimeZone', 'UTC', true)`);
     const chain = await loadMessageChain(q, childId);
 
-    // 4 · verify for real. message_log's own triggers (0006) make a broken
-    // chain structurally impossible to write via a normal INSERT/UPDATE —
-    // this is defense-in-depth on top of that guarantee, not decoration; see
-    // packages/db/test/court_export.test.mjs for the one way this suite can
-    // even construct a broken chain to prove this path (deliberately
-    // disabling the trigger, since no ordinary write can produce one).
+    // 4 · verify for real, and REPORT -- S-D13. A broken chain used to return
+    // `chain_broken` and no export at all; a court is better served by the
+    // record plus a precise account of where it does not verify. message_log's
+    // own triggers (0006, 0043) make a broken chain structurally hard to write;
+    // this is the defence-in-depth path, exercised by disabling a trigger.
     const verification = verifyChain(chain);
-    if (!verification.ok) {
-      return { ok: false, reason: 'chain_broken', faults: verification.faults };
-    }
+    const faults: ChainFault[] = verification.ok ? [] : verification.faults;
+    const faultReport = { chainVerified: verification.ok, faults };
 
-    // 5 · real call metadata (0018_call_log.sql) — loadCallLog()'s own
-    // header explains why this is the identical query
-    // assembleRawExportBundle() runs for the raw-export half of this
-    // feature, and why it is NOT run through verifyChain()/certify(): those
-    // two exist to hash-chain-verify message_log specifically, and
-    // call_log has no chain of its own to verify. `q` here is the
-    // system-scoped session this whole function already opened
-    // (withSystemSession above), which call_log_system_all (0018) admits
-    // unconditionally — the RBAC "first lock" already ran, above, so this
-    // is not a client-reachable widening, the same reasoning this
-    // function's own header already gives for reading `app_user.court_tier`
-    // and `export_record` under the same system session.
+    // 5 · everything else a hearing asks for. Each section is the table's own
+    // row, as JSON, in a deterministic order -- the export carries what the
+    // database holds, not a re-interpretation of it.
     const callLog = await loadCallLog(q, childId);
+    const section = async (sql: string): Promise<unknown[]> =>
+      (await q(sql, [childId])).map((r: any) => r.j);
+    const custodyOrders = await section(
+      `SELECT to_jsonb(t) AS j FROM custody_order t WHERE child_id = $1 ORDER BY effective_from, id`);
+    const expenses = await section(
+      `SELECT to_jsonb(t) AS j FROM expense t WHERE child_id = $1 ORDER BY created_at, id`);
+    const expenseEvents = await section(
+      `SELECT to_jsonb(t) AS j FROM expense_event t WHERE child_id = $1 ORDER BY at, expense_id, seq`);
+    const exchangeArrivals = await section(
+      `SELECT to_jsonb(t) AS j FROM exchange_arrival_event t WHERE child_id = $1 ORDER BY created_at, id`);
+    const exchangeRunningLate = await section(
+      `SELECT to_jsonb(t) AS j FROM exchange_running_late_log t WHERE child_id = $1 ORDER BY logged_at, id`);
+    const doses = await section(
+      `SELECT to_jsonb(d) || jsonb_build_object('medication_name', m.name, 'medication_dose', m.dose) AS j
+         FROM medication_dose d JOIN medication m ON m.id = d.medication_id
+        WHERE d.child_id = $1 ORDER BY d.administered_at, d.id`);
+    const careNotes = await section(
+      `SELECT to_jsonb(t) AS j FROM care_note t WHERE child_id = $1 ORDER BY created_at, id`);
 
     const attestation = certify(chain, childId, now.toISOString());
-    // Covers callLog too, not just {chain, attestation} — see
-    // CertifiedExportResult's own `callLog` field doc for why folding it in
-    // here (rather than into the message_log-specific chain/attestation
-    // machinery) is the honest way to make a later edit to a call record
-    // detectable without pretending call_log has a hash chain it doesn't.
-    const bundleHash = sha256Hex(JSON.stringify({ chain, attestation, callLog }));
+
+    // The roster: every id that appears anywhere in the bundle, plus everyone
+    // who has ever held an edge to this child, with the roles they held.
+    const seen = new Set<string>([requestedBy, ...chain.map(e => e.authorId)]);
+    const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+    for (const sec of [callLog, custodyOrders, expenses, expenseEvents, exchangeArrivals,
+                       exchangeRunningLate, doses, careNotes]) {
+      for (const m of JSON.stringify(sec).matchAll(uuid)) seen.add(m[0].toLowerCase());
+    }
+    const rosterRows = await q(
+      `SELECT u.id::text AS id, u.display_name AS name,
+              COALESCE((SELECT string_agg(DISTINCT g.role, ',' ORDER BY g.role)
+                          FROM guardianship g WHERE g.child_id = $1 AND g.user_id = u.id),
+                       'not_a_guardian_of_this_child') AS role
+         FROM app_user u
+        WHERE u.id = ANY($2::uuid[])
+           OR u.id IN (SELECT user_id FROM guardianship WHERE child_id = $1)
+        ORDER BY u.id`,
+      [childId, [...seen]],
+    );
+    const roster: RosterEntry[] = rosterRows.map((r: any) => ({ id: r.id, name: r.name, role: r.role }));
+
+    const bundle: CertifiedBundle = {
+      v: 2, childId, generatedAt: now.toISOString(), requestedBy, roster, chain, attestation,
+      faultReport, callLog, custodyOrders, expenses, expenseEvents, exchangeArrivals,
+      exchangeRunningLate, doses, careNotes,
+    };
+    // SHA-256 over the CANONICAL serialisation (sorted keys, stable numbers):
+    // reproducible by a third party from the file alone. JSON.stringify of the
+    // same content hashed differently depending on key insertion order.
+    const bundleHash = bundleHashOf(bundle);
 
     const inserted = await q(
       `INSERT INTO export_record (child_id, requested_by, kind, was_free, head_hash, bundle_hash)
@@ -3932,7 +4164,7 @@ export async function certifiedExportBundleFor(
     );
 
     return {
-      ok: true, free: auth.free, chain, attestation, callLog, bundleHash,
+      ok: true, free: auth.free, chain, attestation, callLog, bundle, faultReport, bundleHash,
       exportRecordId: inserted[0].id,
     };
   });

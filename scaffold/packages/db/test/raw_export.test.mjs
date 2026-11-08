@@ -147,13 +147,17 @@ await admin.query(
 await admin.query(
   `INSERT INTO child_journal_entry (child_id, body) VALUES ($1, 'a private thought only Ivy should see')`,
   [IVY]);
+// 0043: the chain trigger recomputes each hash, so the fixture carries REAL hashes.
 await admin.query(
-  `INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash) VALUES
-     ($1, 0, $2, 'pickup moved to 4:30', repeat('0',64), repeat('a',64))`,
+  `INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+   SELECT $1::uuid, 0, $2::uuid, '2026-01-01T00:00:00Z', 'pickup moved to 4:30', repeat('0',64),
+          message_log_hash_v1(0, $1::uuid, $2::uuid, '2026-01-01T00:00:00Z', 'pickup moved to 4:30', repeat('0',64))`,
   [IVY, MOM]);
 await admin.query(
-  `INSERT INTO message_log (child_id, seq, author_id, body, prev_hash, hash) VALUES
-     ($1, 1, $2, 'got it, thanks', repeat('a',64), repeat('b',64))`,
+  `INSERT INTO message_log (child_id, seq, author_id, at, body, prev_hash, hash)
+   SELECT $1::uuid, 1, $2::uuid, '2026-01-01T00:05:00Z', 'got it, thanks', h,
+          message_log_hash_v1(1, $1::uuid, $2::uuid, '2026-01-01T00:05:00Z', 'got it, thanks', h)
+     FROM (SELECT hash AS h FROM message_log WHERE child_id = $1 AND seq = 0) x`,
   [IVY, DAD]);
 
 // Real call metadata (0018_call_log.sql) — two IVY calls (proving multi-row

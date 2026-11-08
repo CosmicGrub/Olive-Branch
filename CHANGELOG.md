@@ -44,6 +44,19 @@ A second server audit (S-B1 to S-B20) was re-verified in code before anything wa
 - **Tokens (S-B16, partial).** Session tokens carry a `kid`; `SESSION_SECRET_PREVIOUS` allows two-key rotation; only the nine real roles are accepted.
 - **Not shipped:** S-B2, S-B7, S-B10, S-B11, S-B12, `jti` and the device-credential idle expiry, S-B17 to S-B19, and the consent half of S-B20. They are listed in §7.12 with reasons.
 
+### Domain-correctness pass (`fix/domain-correctness`)
+Fixes from the data-model and reliability audits, re-verified in code first. Migrations 0042 to 0044. Offline-first: the delivery worker, push and sync are untouched. MASTERFILE §7.12 has the detail; by finding id:
+- **S-D6 medication safety, server side.** Slot validated against the medication (canonical spelling stored), PRN minimum gap checked on both sides of the claimed time, rolling-24-hour cap (`medication.max_doses_per_24h`), per-medication lock, optional audited `given_at` (`recorded_at`, `backdated`), medication must belong to the child. `checkDose()` in packages/care and meds_care.dart with golden vectors. The unique index now covers scheduled doses only.
+- **S-D7/S-D8/S-D9 custody.** A holiday window across New Year is keyed on its start year; `sideAtInstant` (used by presence); "N sleeps" stops at `effectiveTo` or answers from the successor order. Dart port and vectors.
+- **S-D10/S-D11/S-D12 day-parts.** Resolved by the target date's effective range; EXCLUDE on overlapping same-kind parts; `days_of_week` CHECK; zone resolved at the candidate instant; wrapped parts use start-day semantics; `when_reachable` inside a window is now; `daypart_undefined` and friends are no longer `not_authorized`; `ctxZone` removed in favour of `resolveZone`.
+- **S-D2 preservation.** A guardian's message is preserved unless `preserve:false`; the client omits the field by default. Pure `digestRecordFor` and a scheduler job `expiry-digest` that only records `expiry_digest` rows (no push).
+- **S-D14/S-D15 evidence.** `message_log` hash recomputed in the trigger (`hash_version`, TRUNCATE refused, existing chains verified or the migration fails). Guarded, attributed expense transitions with an append-only `expense_event`; append-only exchange logs. **Behaviour change:** reimbursing an unaccepted expense is now `409`.
+- **S-D13 certified export.** Canonical JSON, v2 bundle with roster and the other court records, `verifyCertifiedBundle`; a broken chain is exported with a fault report instead of refused. The Dart `certify()` hash now matches the server's.
+- **S-D19 expenses.** Integer `allocate()`; `currency` and `split_bp`; two-party requests unchanged.
+- **S-D20/S-D21/S-D22/S-C8.** Per-row isolation in the rematerialise sweep; time-zone and enum CHECKs; catalog-driven `rls_unforced` with `rls_allow_list`; wrong migration references fixed and a CI test for them; `*.sql text eol=lf` and CRLF-insensitive checksums.
+- **S-D23 vectors.** gen-custody/care/ledger/delivery-vectors with drift guards; new Dart tests for custody, care and the ledger chain.
+- **Not done:** see the end of MASTERFILE §7.12.
+
 ---
 ### Fixed (wave 1a: places the client broke the product's prohibitions)
 - **Messages can never be hidden (MASTERFILE §8.1).** Removed from the parental-controls catalogue; the write path refuses it (`never_hideable`) before any request; the child shell ignores a stored hide. Server route unchanged. Tests include a legacy stored hide being ignored.

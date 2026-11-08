@@ -22,7 +22,7 @@
  *      failure leaves the schema at a known version rather than half-applied.
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { migrationChecksum } from './migrate_lib.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
 
@@ -34,7 +34,7 @@ if (!PSQL && !DATABASE_URL) {
   process.exit(2);
 }
 
-const sha = (s) => createHash('sha256').update(s).digest('hex');
+const sha = migrationChecksum;   // CRLF-insensitive (S-C8), see migrate_lib.mjs
 
 // Two backends, same M1-M4 guarantees either way, same return shape (a plain
 // string, one line per row -- the only query this file ever runs against a

@@ -80,10 +80,18 @@ export interface DoseRecord extends DoseKey {
 }
 
 export class AlreadyAdministered extends Error {
-  constructor(readonly by: string, readonly atLocal: string) {
+  // Explicit fields rather than `constructor(readonly by: string, ...)`: this
+  // module is now imported by packages/db/src/pool.ts, and Node's type
+  // stripping (which loads .ts imports as-is) rejects TypeScript parameter
+  // properties. Keep this file to erasable syntax.
+  readonly by: string;
+  readonly atLocal: string;
+  constructor(by: string, atLocal: string) {
     // §9.6.1 — name the parent and the local time, state what is next, stop.
     // Any further framing reads as an accusation, and none of it is the child's.
     super(`${by} gave this dose at ${atLocal}.`);
+    this.by = by;
+    this.atLocal = atLocal;
   }
 }
 
@@ -112,13 +120,100 @@ export function recordDose(
   return { ok: true, record: { ...k, ...rec } };
 }
 
-/** PRN (as-needed) doses are not slot-bound and must not collide. */
+/**
+ * PRN (as-needed) doses are not slot-bound and must not collide.
+ *
+ * Only doses that were actually GIVEN count (S-D6): a skipped, refused or
+ * missed entry administered nothing, so it must not start a minimum-gap clock.
+ * The gap is checked on BOTH sides of `at` so a retroactive "given at" entry
+ * cannot slip in beside a later dose either.
+ */
 export function prnAllowed(existing: DoseRecord[], medicationId: string,
   at: DateTime, minGapHours: number): boolean {
-  const last = existing.filter(d => d.medicationId === medicationId)
-    .sort((a, b) => b.administeredAt.localeCompare(a.administeredAt))[0];
-  if (!last) return true;
-  return at.diff(DateTime.fromISO(last.administeredAt), 'hours').hours >= minGapHours;
+  return !existing.some(d => d.medicationId === medicationId && d.status === 'given' &&
+    Math.abs(at.diff(DateTime.fromISO(d.administeredAt), 'hours').hours) < minGapHours);
+}
+
+// ============================================== server-side dose validation ==
+/** What the server (and the Dart port) knows about a medication when a dose
+ *  is logged. `maxPer24h` null = no explicit cap. */
+export interface MedicationRule {
+  slots: string[];
+  isPrn: boolean;
+  minGapHours: number | null;
+  maxPer24h: number | null;
+}
+
+export type DoseCheck =
+  | { ok: true; slot: string }
+  | { ok: false; reason: 'unknown_slot'; allowed: string[] }
+  | { ok: false; reason: 'already_administered'; by: string; atLocal: string }
+  | { ok: false; reason: 'too_soon'; nextAllowedAt: string; minGapHours: number }
+  | { ok: false; reason: 'daily_max'; max: number };
+
+/**
+ * S-D6 — the medication safety rules, in ONE place that the server's
+ * `recordDose` and the client's offline path both run.
+ *
+ *   1. The slot must be one the medication actually has. Matching ignores case
+ *      and surrounding space and RETURNS THE CANONICAL spelling: logging
+ *      "Morning" instead of "morning" used to create a second row beside the
+ *      real one and defeat the double-dose guard.
+ *   2. A scheduled medication has one 'given' dose per child-local day per slot.
+ *   3. A PRN medication is not slot-bound but honours its minimum gap and its
+ *      maximum number of doses in any rolling 24 hours (checked around `at`,
+ *      on both sides, so a back-dated entry is held to the same rules).
+ *
+ * Statuses other than 'given' administer nothing, so only rule 1 applies.
+ * `history` is every dose of THIS medication (any status) near `at`;
+ * `localDate` is the child-local date of `at`.
+ */
+export function checkDose(
+  med: MedicationRule, slot: string, status: DoseStatus, at: DateTime,
+  localDate: string, history: DoseRecord[],
+): DoseCheck {
+  const want = slot.trim().toLowerCase();
+  const canonical = med.slots.find(s => s.trim().toLowerCase() === want);
+  if (!canonical) return { ok: false, reason: 'unknown_slot', allowed: [...med.slots] };
+  if (status !== 'given') return { ok: true, slot: canonical };
+
+  const given = history.filter(d => d.status === 'given');
+  if (!med.isPrn) {
+    const clash = given.find(d => d.localDate === localDate && d.slot === canonical);
+    if (clash) {
+      return { ok: false, reason: 'already_administered', by: clash.byUserName,
+        atLocal: DateTime.fromISO(clash.administeredAt).setZone(clash.localTz)
+          .toFormat('h:mm a ZZZZ') };
+    }
+    return { ok: true, slot: canonical };
+  }
+
+  const gap = med.minGapHours;
+  if (gap !== null && gap > 0) {
+    const near = given.filter(d =>
+      Math.abs(at.diff(DateTime.fromISO(d.administeredAt), 'hours').hours) < gap);
+    if (near.length) {
+      // The earliest moment this entry could stand: the gap after the LATEST
+      // of the doses in the way.
+      const latest = Math.max(...near.map(d => DateTime.fromISO(d.administeredAt).toMillis()));
+      return { ok: false, reason: 'too_soon', minGapHours: gap,
+        nextAllowedAt: DateTime.fromMillis(latest).plus({ hours: gap }).toUTC().toISO()! };
+    }
+  }
+  if (med.maxPer24h !== null && med.maxPer24h > 0) {
+    const times = [...given.map(d => DateTime.fromISO(d.administeredAt).toMillis()),
+      at.toMillis()].sort((x, y) => x - y);
+    const DAY = 24 * 3600 * 1000;
+    // Every 24h window (t - 24h, t] that ends on a dose time AND contains this
+    // entry: only those can be made worse by it (history that already broke
+    // the cap elsewhere must not lock the medication forever).
+    const atMs = at.toMillis();
+    for (const t of times.filter(x => x >= atMs && x < atMs + DAY)) {
+      const n = times.filter(x => x > t - DAY && x <= t).length;
+      if (n > med.maxPer24h) return { ok: false, reason: 'daily_max', max: med.maxPer24h };
+    }
+  }
+  return { ok: true, slot: canonical };
 }
 
 // =============================================================== the exchange =

@@ -1,0 +1,2685 @@
+{
+ "orders": {
+  "plain": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "holidays": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [
+    {
+     "name": "Christmas",
+     "startMonthDay": "12-24",
+     "endMonthDay": "12-26",
+     "evenYearSide": "A",
+     "priority": 10
+    },
+    {
+     "name": "Thanksgiving",
+     "startMonthDay": "11-26",
+     "endMonthDay": "11-29",
+     "evenYearSide": "B",
+     "priority": 10
+    },
+    {
+     "name": "New Year",
+     "startMonthDay": "12-31",
+     "endMonthDay": "01-02",
+     "evenYearSide": "B",
+     "priority": 10
+    }
+   ],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "newYearOnly": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [
+    {
+     "name": "New Year",
+     "startMonthDay": "12-31",
+     "endMonthDay": "01-02",
+     "evenYearSide": "B",
+     "priority": 10
+    }
+   ],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "stacked": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [
+    {
+     "name": "Christmas",
+     "startMonthDay": "12-24",
+     "endMonthDay": "12-26",
+     "evenYearSide": "A",
+     "priority": 10
+    },
+    {
+     "name": "Christmas Day",
+     "startMonthDay": "12-25",
+     "endMonthDay": "12-25",
+     "evenYearSide": "B",
+     "priority": 20
+    },
+    {
+     "name": "New Year",
+     "startMonthDay": "12-31",
+     "endMonthDay": "01-02",
+     "evenYearSide": "B",
+     "priority": 10
+    }
+   ],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "longWinter": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [
+    {
+     "name": "Winter",
+     "startMonthDay": "12-20",
+     "endMonthDay": "02-29",
+     "evenYearSide": "A",
+     "priority": 5
+    }
+   ],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "alternating": {
+   "pattern": "alternating_weeks",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "ends": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": "2026-01-06",
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "endsLater": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2020-01-01",
+   "effectiveTo": "2026-01-10",
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "starts": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2026-01-07",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "successorA": {
+   "pattern": "alternating_weeks",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-07",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2026-01-07",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "successorB": {
+   "pattern": "alternating_weeks",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2025-12-31",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2026-01-07",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B",
+    "B"
+   ]
+  },
+  "successorLate": {
+   "pattern": "2-2-3",
+   "orderTz": "America/New_York",
+   "anchorLocalDate": "2026-01-05",
+   "exchangeTime": "18:00",
+   "holidays": [],
+   "effectiveFrom": "2026-01-20",
+   "effectiveTo": null,
+   "cycle": [
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B",
+    "B",
+    "B"
+   ]
+  }
+ },
+ "sideOn": [
+  {
+   "order": "plain",
+   "date": "2025-12-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2025-12-31",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-01",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-02",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-05",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-07",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-19",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-02-15",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-02-28",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-11-26",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-11-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-11-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-12-20",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-12-24",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-12-25",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-12-26",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-12-27",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-12-30",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-12-31",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2027-01-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2027-01-02",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2027-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2027-02-15",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2027-12-24",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2027-12-25",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2027-12-31",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2028-01-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2028-01-02",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2028-02-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2028-03-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2025-12-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2025-12-31",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-01-01",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-01-02",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-01-05",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-01-07",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-01-19",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-02-15",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-02-28",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-11-26",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Thanksgiving"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-11-29",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Thanksgiving"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-11-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-20",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-24",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-25",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-26",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-27",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-30",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-31",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2027-01-01",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2027-01-02",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2027-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2027-02-15",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2027-12-24",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2027-12-25",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2027-12-31",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2028-01-01",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2028-01-02",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2028-02-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2028-03-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2025-12-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2025-12-31",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-01-01",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-01-02",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-01-05",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-01-07",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-01-19",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-02-15",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-02-28",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-11-26",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-11-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-11-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-20",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-24",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-25",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-26",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-27",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-30",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-31",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-01-01",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-01-02",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-02-15",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-12-24",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-12-25",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-12-31",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2028-01-01",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2028-01-02",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2028-02-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2028-03-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2025-12-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2025-12-31",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-01-01",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-01-02",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-01-05",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-01-07",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-01-19",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-02-15",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-02-28",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-11-26",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-11-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-11-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-12-20",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-12-24",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-12-25",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Christmas Day"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-12-26",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-12-27",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-12-30",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2026-12-31",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2027-01-01",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2027-01-02",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2027-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2027-02-15",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2027-12-24",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2027-12-25",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas Day"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2027-12-31",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2028-01-01",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2028-01-02",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2028-02-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "stacked",
+   "date": "2028-03-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2025-12-30",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2025-12-31",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-01-01",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-01-02",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-01-03",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-01-05",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-01-07",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-01-19",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-02-15",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-02-28",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-11-26",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-11-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-11-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-12-20",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-12-24",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-12-25",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-12-26",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-12-27",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-12-30",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2026-12-31",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2027-01-01",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2027-01-02",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2027-01-03",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2027-02-15",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2027-12-24",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2027-12-25",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2027-12-31",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2028-01-01",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2028-01-02",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2028-02-29",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "Winter"
+   }
+  },
+  {
+   "order": "longWinter",
+   "date": "2028-03-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2025-12-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2025-12-31",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-01-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-01-02",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-01-05",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-01-07",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-01-19",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-02-15",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-02-28",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-11-26",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-11-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-11-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-12-20",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-12-24",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-12-25",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-12-26",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-12-27",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-12-30",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2026-12-31",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2027-01-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2027-01-02",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2027-01-03",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2027-02-15",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2027-12-24",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2027-12-25",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2027-12-31",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2028-01-01",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2028-01-02",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2028-02-29",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "alternating",
+   "date": "2028-03-01",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  }
+ ],
+ "blocks": [
+  {
+   "order": "holidays",
+   "from": "2026-12-20",
+   "to": "2027-01-06",
+   "expect": [
+    {
+     "side": "B",
+     "start": "2026-12-20",
+     "end": "2026-12-20",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-12-21",
+     "end": "2026-12-22",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-12-23",
+     "end": "2026-12-23",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-12-24",
+     "end": "2026-12-26",
+     "source": "holiday",
+     "holidayName": "Christmas"
+    },
+    {
+     "side": "A",
+     "start": "2026-12-27",
+     "end": "2026-12-27",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-12-28",
+     "end": "2026-12-29",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-12-30",
+     "end": "2026-12-30",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-12-31",
+     "end": "2027-01-02",
+     "source": "holiday",
+     "holidayName": "New Year"
+    },
+    {
+     "side": "B",
+     "start": "2027-01-03",
+     "end": "2027-01-03",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2027-01-04",
+     "end": "2027-01-05",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2027-01-06",
+     "end": "2027-01-06",
+     "source": "pattern",
+     "holidayName": null
+    }
+   ]
+  },
+  {
+   "order": "newYearOnly",
+   "from": "2026-12-29",
+   "to": "2027-01-04",
+   "expect": [
+    {
+     "side": "B",
+     "start": "2026-12-29",
+     "end": "2026-12-29",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-12-30",
+     "end": "2026-12-30",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-12-31",
+     "end": "2027-01-02",
+     "source": "holiday",
+     "holidayName": "New Year"
+    },
+    {
+     "side": "B",
+     "start": "2027-01-03",
+     "end": "2027-01-03",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2027-01-04",
+     "end": "2027-01-04",
+     "source": "pattern",
+     "holidayName": null
+    }
+   ]
+  },
+  {
+   "order": "plain",
+   "from": "2026-01-05",
+   "to": "2026-01-31",
+   "expect": [
+    {
+     "side": "A",
+     "start": "2026-01-05",
+     "end": "2026-01-06",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-07",
+     "end": "2026-01-08",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-09",
+     "end": "2026-01-11",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-12",
+     "end": "2026-01-13",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-14",
+     "end": "2026-01-15",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-16",
+     "end": "2026-01-18",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-19",
+     "end": "2026-01-20",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-21",
+     "end": "2026-01-22",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-23",
+     "end": "2026-01-25",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-26",
+     "end": "2026-01-27",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-28",
+     "end": "2026-01-29",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-30",
+     "end": "2026-01-31",
+     "source": "pattern",
+     "holidayName": null
+    }
+   ]
+  },
+  {
+   "order": "alternating",
+   "from": "2026-01-05",
+   "to": "2026-02-08",
+   "expect": [
+    {
+     "side": "A",
+     "start": "2026-01-05",
+     "end": "2026-01-11",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-12",
+     "end": "2026-01-18",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-19",
+     "end": "2026-01-25",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-26",
+     "end": "2026-02-01",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-02-02",
+     "end": "2026-02-08",
+     "source": "pattern",
+     "holidayName": null
+    }
+   ]
+  },
+  {
+   "order": "ends",
+   "from": "2026-01-01",
+   "to": "2026-01-12",
+   "expect": [
+    {
+     "side": "A",
+     "start": "2026-01-01",
+     "end": "2026-01-01",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-02",
+     "end": "2026-01-04",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-05",
+     "end": "2026-01-06",
+     "source": "pattern",
+     "holidayName": null
+    }
+   ]
+  },
+  {
+   "order": "starts",
+   "from": "2026-01-01",
+   "to": "2026-01-12",
+   "expect": [
+    {
+     "side": "B",
+     "start": "2026-01-07",
+     "end": "2026-01-08",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "A",
+     "start": "2026-01-09",
+     "end": "2026-01-11",
+     "source": "pattern",
+     "holidayName": null
+    },
+    {
+     "side": "B",
+     "start": "2026-01-12",
+     "end": "2026-01-12",
+     "source": "pattern",
+     "holidayName": null
+    }
+   ]
+  }
+ ],
+ "sleeps": [
+  {
+   "order": "plain",
+   "today": "2026-01-05",
+   "successor": null,
+   "expect": {
+    "sleeps": 2,
+    "nextSide": "B",
+    "onLocalDate": "2026-01-07"
+   }
+  },
+  {
+   "order": "plain",
+   "today": "2026-01-07",
+   "successor": null,
+   "expect": {
+    "sleeps": 2,
+    "nextSide": "A",
+    "onLocalDate": "2026-01-09"
+   }
+  },
+  {
+   "order": "alternating",
+   "today": "2026-01-05",
+   "successor": null,
+   "expect": {
+    "sleeps": 7,
+    "nextSide": "B",
+    "onLocalDate": "2026-01-12"
+   }
+  },
+  {
+   "order": "holidays",
+   "today": "2026-12-23",
+   "successor": null,
+   "expect": {
+    "sleeps": 1,
+    "nextSide": "A",
+    "onLocalDate": "2026-12-24"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "today": "2026-12-30",
+   "successor": null,
+   "expect": {
+    "sleeps": 1,
+    "nextSide": "B",
+    "onLocalDate": "2026-12-31"
+   }
+  },
+  {
+   "order": "ends",
+   "today": "2026-01-05",
+   "successor": null,
+   "expect": null
+  },
+  {
+   "order": "ends",
+   "today": "2026-01-05",
+   "successor": "successorA",
+   "expect": {
+    "sleeps": 9,
+    "nextSide": "B",
+    "onLocalDate": "2026-01-14"
+   }
+  },
+  {
+   "order": "ends",
+   "today": "2026-01-05",
+   "successor": "successorB",
+   "expect": {
+    "sleeps": 2,
+    "nextSide": "B",
+    "onLocalDate": "2026-01-07"
+   }
+  },
+  {
+   "order": "ends",
+   "today": "2026-01-05",
+   "successor": "successorLate",
+   "expect": null
+  },
+  {
+   "order": "endsLater",
+   "today": "2026-01-05",
+   "successor": null,
+   "expect": {
+    "sleeps": 2,
+    "nextSide": "B",
+    "onLocalDate": "2026-01-07"
+   }
+  },
+  {
+   "order": "endsLater",
+   "today": "2026-01-09",
+   "successor": "successorB",
+   "expect": {
+    "sleeps": 2,
+    "nextSide": "B",
+    "onLocalDate": "2026-01-11"
+   }
+  }
+ ],
+ "sideAtOrderLocal": [
+  {
+   "order": "plain",
+   "date": "2026-01-06",
+   "hhmm": "09:00",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-07",
+   "hhmm": "00:00",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-07",
+   "hhmm": "10:00",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-07",
+   "hhmm": "17:59",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-07",
+   "hhmm": "18:00",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-07",
+   "hhmm": "23:59",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-08",
+   "hhmm": "17:59",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-09",
+   "hhmm": "17:59",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "plain",
+   "date": "2026-01-09",
+   "hhmm": "18:00",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-24",
+   "hhmm": "09:00",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-24",
+   "hhmm": "18:00",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-27",
+   "hhmm": "09:00",
+   "expect": {
+    "side": "A",
+    "source": "holiday",
+    "holidayName": "Christmas"
+   }
+  },
+  {
+   "order": "holidays",
+   "date": "2026-12-27",
+   "hhmm": "18:00",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-31",
+   "hhmm": "17:59",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2026-12-31",
+   "hhmm": "18:00",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-01-01",
+   "hhmm": "09:00",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-01-03",
+   "hhmm": "09:00",
+   "expect": {
+    "side": "B",
+    "source": "holiday",
+    "holidayName": "New Year"
+   }
+  },
+  {
+   "order": "newYearOnly",
+   "date": "2027-01-03",
+   "hhmm": "18:00",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "ends",
+   "date": "2026-01-06",
+   "hhmm": "23:59",
+   "expect": {
+    "side": "A",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "ends",
+   "date": "2026-01-07",
+   "hhmm": "09:00",
+   "expect": null
+  },
+  {
+   "order": "starts",
+   "date": "2026-01-06",
+   "hhmm": "23:00",
+   "expect": null
+  },
+  {
+   "order": "starts",
+   "date": "2026-01-07",
+   "hhmm": "09:00",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  },
+  {
+   "order": "starts",
+   "date": "2026-01-07",
+   "hhmm": "18:00",
+   "expect": {
+    "side": "B",
+    "source": "pattern",
+    "holidayName": null
+   }
+  }
+ ]
+}

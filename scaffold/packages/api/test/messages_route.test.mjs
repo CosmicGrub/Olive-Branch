@@ -278,6 +278,41 @@ const post = (childId, tok, body) => api.handle(
     afterPreserve.artifacts, beforePreserve.artifacts);
 }
 
+
+// ===========================================================================
+// P · S-D2 -- "preservation is a standing rule" (MASTERFILE §16.2 #5, v0.23.0).
+//     A message a GUARDIAN sends is kept unless she explicitly opts out. This
+//     used to need `preserve: true`, so a client that omitted the field gave
+//     every parent's message a ~97-day clock and it was reaped silently.
+// ===========================================================================
+{
+  const art = async (id) => (await admin.query(
+    `SELECT preserved, preserved_by, preserved_at IS NOT NULL AS has_at, expires_at FROM media_artifact WHERE id = $1`, [id])).rows[0];
+
+  const dflt = await post(CHILD, dadTok, { storageKey: `device/${randomUUID()}`, durationMs: 4200 });
+  const a = await art(dflt.body.artifactId);
+  check('P preservation default', 'a guardian message with NO preserve field is PRESERVED', a.preserved, true);
+  check('P preservation default', 'it has no expiry clock', a.expires_at, null);
+  check('P preservation default', 'it is attributed to the guardian who sent it (the schema requires it)', a.preserved_by !== null && a.has_at, true);
+
+  const explicitTrue = await post(CHILD, dadTok, { storageKey: `device/${randomUUID()}`, durationMs: 4200, preserve: true });
+  check('P preservation default', 'an explicit preserve:true is preserved too', (await art(explicitTrue.body.artifactId)).preserved, true);
+
+  const optOut = await post(CHILD, dadTok, { storageKey: `device/${randomUUID()}`, durationMs: 4200, preserve: false });
+  const o = await art(optOut.body.artifactId);
+  check('P preservation default', 'an EXPLICIT preserve:false still opts out (the guardian chose it)', o.preserved, false);
+  check('P preservation default', 'and then carries an expiry clock', o.expires_at !== null, true);
+
+  const weird = await post(CHILD, dadTok, { storageKey: `device/${randomUUID()}`, durationMs: 4200, preserve: 'no' });
+  check('P preservation default', 'a non-boolean preserve value does not silently opt out', (await art(weird.body.artifactId)).preserved, true);
+
+  const kid = await post(CHILD, childTok, { storageKey: `device/${randomUUID()}`, durationMs: 4200 });
+  check('P preservation default', "a CHILD's reply with no preserve field is NOT preserved (children's material keeps its clock)",
+    (await art(kid.body.artifactId)).preserved, false);
+  const kidTrue = await post(CHILD, childTok, { storageKey: `device/${randomUUID()}`, durationMs: 4200, preserve: true });
+  check('P preservation default', 'a child cannot preserve (still refused)', `${kidTrue.status}:${kidTrue.body.error}`, '400:child_cannot_preserve');
+}
+
 for (const cid of [CHILD, CHILD_B]) {
   await admin.query(`DELETE FROM delivery_intent WHERE child_id = $1`, [cid]);
   await admin.query(`DELETE FROM media_artifact WHERE child_id = $1`, [cid]);

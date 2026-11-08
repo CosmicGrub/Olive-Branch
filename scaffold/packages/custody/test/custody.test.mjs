@@ -2,8 +2,11 @@
  * custody — schedule engine. MASTERFILE §9.4, §5.4, §4.1, §8.2.5.
  */
 import { DateTime } from 'luxon';
+import { readFileSync } from 'node:fs';
+import { generate as generateVectors } from '../../../tools/gen-custody-vectors.mjs';
 import { patternSideOn, holidayOn, sideOn, blocks, exchanges,
-  sleepsUntilSideChange, childCalendarLabel, freeGuardianNow } from '../src/schedule.mjs';
+  sleepsUntilSideChange, childCalendarLabel, freeGuardianNow,
+  sideAtInstant, sideAtOrderLocal } from '../src/schedule.mjs';
 
 let pass=0,fail=0;const rows=[];
 const check=(g,n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;
@@ -244,6 +247,111 @@ const order=(o={})=>({pattern:'2-2-3',orderTz:NYC,anchorLocalDate:'2026-01-05',
     freeGuardianNow([dad], [w('dad-1', 'Dad', 0, '08:00', '09:00')], 1, '08:30'), 'null');
 }
 
+
+// H · S-D7 — a holiday window spanning New Year is ONE holiday, keyed on the
+// year it STARTS in. Keyed on each date's own year (the old behaviour) 31 Dec
+// 2026 and 1-2 Jan 2027 went to opposite parents inside a single window.
+{
+  const o=order({holidays:[NEWYEAR]});               // 12-31 -> 01-02, even year = B
+  const sides=['2026-12-30','2026-12-31','2027-01-01','2027-01-02','2027-01-03']
+    .map(d=>sideOn(o,d));
+  check('H new-year window','window started in an EVEN year (2026): all three days are B',
+    ['2026-12-31','2027-01-01','2027-01-02'].map(d=>sideOn(o,d).side).join(''), 'BBB');
+  check('H new-year window','the three days are all one holiday source',
+    ['2026-12-31','2027-01-01','2027-01-02'].every(d=>sideOn(o,d).source==='holiday'), 'true');
+  check('H new-year window','the day before the window is the plain pattern',
+    sides[0].source, 'pattern');
+  check('H new-year window','the day after the window is the plain pattern',
+    sides[4].source, 'pattern');
+  check('H new-year window','window started in an ODD year (2027) flips to A, all three days',
+    ['2027-12-31','2028-01-01','2028-01-02'].map(d=>sideOn(o,d).side).join(''), 'AAA');
+  check('H new-year window','blocks() shows ONE contiguous holiday block across the boundary',
+    blocks(o,'2026-12-29','2027-01-04').filter(b=>b.source==='holiday').length, 1);
+  const hb=blocks(o,'2026-12-29','2027-01-04').find(b=>b.source==='holiday');
+  check('H new-year window','that block runs 12-31 through 01-02',
+    `${hb.startLocalDate}..${hb.endLocalDate}`, '2026-12-31..2027-01-02');
+  // A non-wrapping window keeps its own-year behaviour.
+  const x=order({holidays:[XMAS]});
+  check('H new-year window','non-wrapping Christmas: 2026 (even) = A, 2027 (odd) = B',
+    `${sideOn(x,'2026-12-25').side}${sideOn(x,'2027-12-25').side}`, 'AB');
+  const feb=order({holidays:[{name:'Winter',startMonthDay:'12-20',endMonthDay:'02-29',
+    evenYearSide:'A',priority:5}]});
+  check('H new-year window','long wrapped window: Feb of the following (odd) year follows the even start year',
+    `${sideOn(feb,'2026-12-20').side}${sideOn(feb,'2027-02-15').side}`, 'AA');
+}
+
+// I · S-D8 — who holds her AT an instant, not on a date. Exchange is 18:00 NYC.
+{
+  const o=order({holidays:[]});
+  // 2026-01-07 is index 2 of the cycle: B takes over from A on that date.
+  check('I side at instant','precondition: 01-06 is A and 01-07 is B',
+    `${patternSideOn(o,'2026-01-06')}${patternSideOn(o,'2026-01-07')}`, 'AB');
+  const at=(iso)=>sideAtInstant(o, DateTime.fromISO(iso,{zone:NYC}));
+  check('I side at instant','10:00 on handover day: still the PREVIOUS side (A)',
+    at('2026-01-07T10:00:00').side, 'A');
+  check('I side at instant','17:59 on handover day: still A', at('2026-01-07T17:59:00').side, 'A');
+  check('I side at instant','18:00 on handover day: now B', at('2026-01-07T18:00:00').side, 'B');
+  check('I side at instant','23:59 on handover day: B', at('2026-01-07T23:59:00').side, 'B');
+  check('I side at instant','a non-handover day is the same all day (01-06 09:00)',
+    at('2026-01-06T09:00:00').side, 'A');
+  check('I side at instant','the instant is read in the ORDER zone, not UTC: 22:30Z is 17:30 NYC = A',
+    sideAtInstant(o, DateTime.fromISO('2026-01-07T22:30:00Z',{zone:'utc'})).side, 'A');
+  check('I side at instant','...and 23:00Z is 18:00 NYC = B',
+    sideAtInstant(o, DateTime.fromISO('2026-01-07T23:00:00Z',{zone:'utc'})).side, 'B');
+  check('I side at instant','before effectiveFrom there is no side',
+    sideAtInstant(order({effectiveFrom:'2026-02-01'}), DateTime.fromISO('2026-01-07T12:00:00',{zone:NYC})), 'null');
+  check('I side at instant','after effectiveTo there is no side',
+    sideAtInstant(order({effectiveTo:'2026-01-06'}), DateTime.fromISO('2026-01-07T12:00:00',{zone:NYC})), 'null');
+  check('I side at instant','first effective day before exchange time uses the day own side (no prior day under this order)',
+    sideAtInstant(order({effectiveFrom:'2026-01-07'}), DateTime.fromISO('2026-01-07T09:00:00',{zone:NYC})).side, 'B');
+  const h=order({holidays:[XMAS]});
+  check('I side at instant','holiday start day, before 18:00: previous (pattern) side, not the holiday side',
+    `${sideAtInstant(h, DateTime.fromISO('2026-12-24T09:00:00',{zone:NYC})).source}`, 'pattern');
+  check('I side at instant','holiday start day, from 18:00: the holiday',
+    `${sideAtInstant(h, DateTime.fromISO('2026-12-24T18:00:00',{zone:NYC})).source}`, 'holiday');
+  check('I side at instant','sideAtOrderLocal is the pure core (no zone): 01-07 17:59 = A',
+    sideAtOrderLocal(o,'2026-01-07','17:59').side, 'A');
+}
+
+// J · S-D9 — "N sleeps" must not read past where the order ends.
+{
+  const o=order({holidays:[],effectiveTo:'2026-01-06'});   // 01-06 is A, 01-07 would be B
+  check('J sleeps vs effectiveTo','the order ends before the rotation changes: no countdown to a handover it will never perform',
+    sleepsUntilSideChange(o,'2026-01-05'), 'null');
+  check('J sleeps vs effectiveTo','with no end date the same query still counts (2 sleeps to B)',
+    sleepsUntilSideChange(order({holidays:[]}),'2026-01-05').sleeps, 2);
+  const succ=order({holidays:[],pattern:'alternating_weeks',effectiveFrom:'2026-01-07',effectiveTo:null,
+    anchorLocalDate:'2026-01-07'});                          // starts on A for 7 days
+  const r=sleepsUntilSideChange(o,'2026-01-05',60,succ);
+  check('J sleeps vs effectiveTo','a successor that starts on A: first change is when its week ends',
+    `${r.sleeps}:${r.nextSide}`, '9:B');
+  const succB=order({holidays:[],pattern:'alternating_weeks',effectiveFrom:'2026-01-07',effectiveTo:null,
+    anchorLocalDate:'2025-12-31'});                          // 01-07 is index 7 = B
+  const r2=sleepsUntilSideChange(o,'2026-01-05',60,succB);
+  check('J sleeps vs effectiveTo','a successor that starts on the other side: the next sleep is the successor side',
+    `${r2.sleeps}:${r2.nextSide}:${r2.onLocalDate}`, '2:B:2026-01-07');
+  check('J sleeps vs effectiveTo','a gap between the orders (successor starts later) is unknown, not a guess',
+    sleepsUntilSideChange(o,'2026-01-05',60,order({holidays:[],effectiveFrom:'2026-01-20'})), 'null');
+  check('J sleeps vs effectiveTo','a change that happens BEFORE the end date is still reported',
+    sleepsUntilSideChange(order({holidays:[],effectiveTo:'2026-01-10'}),'2026-01-05').sleeps, 2);
+}
+
+// K · golden vectors shared with the Dart port (client/test/custody_vectors_test.dart)
+{
+  const g = 'K golden vectors';
+  const onDisk = JSON.parse(readFileSync(new URL('./vectors.json', import.meta.url), 'utf8'));
+  check(g, 'vectors.json equals a fresh generation (run: node tools/gen-custody-vectors.mjs)',
+    JSON.stringify(onDisk) === JSON.stringify(generateVectors()), true);
+  check(g, 'the vectors carry the new-year boundary days for the wrapped window',
+    onDisk.sideOn.filter(v => v.order === 'newYearOnly' && ['2026-12-31', '2027-01-01', '2027-01-02'].includes(v.date))
+      .map(v => v.expect.side).join(''), 'BBB');
+  check(g, 'the vectors include a sleeps case that stops at effectiveTo',
+    onDisk.sleeps.some(v => v.order === 'ends' && v.successor === null && v.expect === null), true);
+  check(g, 'the vectors include a sleeps case answered by the successor order',
+    onDisk.sleeps.some(v => v.successor === 'successorB' && v.expect && v.expect.nextSide === 'B'), true);
+  check(g, 'the vectors include a before-exchange-time side-at case',
+    onDisk.sideAtOrderLocal.some(v => v.order === 'plain' && v.hhmm === '17:59' && v.expect.side === 'A'), true);
+}
 let g='';
 for(const r of rows){if(r.g!==g){g=r.g;console.log(`\n${g}`);}
   console.log(`  ${r.ok?'PASS':'FAIL'}  ${r.n}`+(r.ok?'':`\n         expected ${r.e}, got ${r.a}`));}

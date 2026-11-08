@@ -102,11 +102,97 @@ RecordDoseResult recordDose(List<DoseRecord> existing, DoseKey k,
 }
 
 /// PRN (as-needed) doses are not slot-bound and must not collide.
+///
+/// Only doses actually GIVEN count (S-D6): a skipped/refused/missed entry
+/// administered nothing, so it must not start a minimum-gap clock. The gap is
+/// checked on both sides of [at], so a back-dated entry is held to it too.
+/// Mirrors packages/care/src/care.ts `prnAllowed` (shared golden vectors).
 bool prnAllowed(List<DoseRecord> existing, String medicationId, DateTime at, double minGapHours) {
-  final List<DoseRecord> forMed = existing.where((DoseRecord d) => d.medicationId == medicationId)
-    .toList()..sort((DoseRecord a, DoseRecord b) => b.administeredAt.compareTo(a.administeredAt));
-  if (forMed.isEmpty) return true;
-  return at.difference(forMed.first.administeredAt).inMinutes >= minGapHours * 60;
+  return !existing.any((DoseRecord d) => d.medicationId == medicationId &&
+    d.status == DoseStatus.given &&
+    at.difference(d.administeredAt).inMicroseconds.abs() < minGapHours * 3600 * 1000000);
+}
+
+/// What the server knows about a medication when a dose is logged
+/// (care.ts `MedicationRule`). `maxPer24h` null = no explicit cap.
+class MedicationRule {
+  const MedicationRule({required this.slots, required this.isPrn, this.minGapHours, this.maxPer24h});
+  final List<String> slots;
+  final bool isPrn;
+  final double? minGapHours;
+  final int? maxPer24h;
+}
+
+enum DoseRefusal { unknownSlot, alreadyAdministered, tooSoon, dailyMax }
+
+class DoseCheck {
+  const DoseCheck.ok(this.slot) : refusal = null, by = null, nextAllowedAt = null,
+    minGapHours = null, max = null, allowed = null;
+  const DoseCheck.refused(this.refusal, {this.by, this.nextAllowedAt, this.minGapHours,
+    this.max, this.allowed}) : slot = null;
+  final String? slot;
+  final DoseRefusal? refusal;
+  final String? by;
+  final DateTime? nextAllowedAt;
+  final double? minGapHours;
+  final int? max;
+  final List<String>? allowed;
+  bool get ok => refusal == null;
+}
+
+/// S-D6 — the medication safety rules (care.ts `checkDose`), run by the server
+/// and by this client's offline path: slot validated against the
+/// medication's own slots (case/space-insensitive, returns the canonical
+/// spelling), one 'given' dose per scheduled slot per child-local day, and
+/// for PRN the minimum gap plus a maximum count in any rolling 24 hours.
+DoseCheck checkDose(MedicationRule med, String slot, DoseStatus status, DateTime at,
+  String localDate, List<DoseRecord> history) {
+  final String want = slot.trim().toLowerCase();
+  String? canonical;
+  for (final String s in med.slots) {
+    if (s.trim().toLowerCase() == want) { canonical = s; break; }
+  }
+  if (canonical == null) {
+    return DoseCheck.refused(DoseRefusal.unknownSlot, allowed: List<String>.of(med.slots));
+  }
+  if (status != DoseStatus.given) return DoseCheck.ok(canonical);
+
+  final List<DoseRecord> given =
+    history.where((DoseRecord d) => d.status == DoseStatus.given).toList();
+  if (!med.isPrn) {
+    for (final DoseRecord d in given) {
+      if (d.localDate == localDate && d.slot == canonical) {
+        return DoseCheck.refused(DoseRefusal.alreadyAdministered, by: d.byUserName);
+      }
+    }
+    return DoseCheck.ok(canonical);
+  }
+
+  final double? gap = med.minGapHours;
+  if (gap != null && gap > 0) {
+    final List<DoseRecord> near = given.where((DoseRecord d) =>
+      at.difference(d.administeredAt).inMicroseconds.abs() < gap * 3600 * 1000000).toList();
+    if (near.isNotEmpty) {
+      final DateTime latest = near.map((DoseRecord d) => d.administeredAt)
+        .reduce((DateTime a, DateTime b) => a.isAfter(b) ? a : b);
+      return DoseCheck.refused(DoseRefusal.tooSoon, minGapHours: gap,
+        nextAllowedAt: latest.add(Duration(microseconds: (gap * 3600 * 1000000).round())));
+    }
+  }
+  final int? cap = med.maxPer24h;
+  if (cap != null && cap > 0) {
+    final List<int> times = <int>[
+      ...given.map((DoseRecord d) => d.administeredAt.millisecondsSinceEpoch),
+      at.millisecondsSinceEpoch,
+    ]..sort();
+    const int day = 24 * 3600 * 1000;
+    final int atMs = at.millisecondsSinceEpoch;
+    for (final int t in times.where((int x) => x >= atMs && x < atMs + day)) {
+      final int n = times.where((int x) => x > t - day && x <= t).length;
+      if (n > cap) return DoseCheck.refused(DoseRefusal.dailyMax, max: cap);
+    }
+  }
+  return DoseCheck.ok(canonical);
 }
 
 String _clock(DateTime d) {
@@ -235,7 +321,10 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
   Future<void> _logDose(_Medication med, String slot, {required DoseStatus status}) async {
     if (!widget._isLive) {
       if (med.isPrn) {
-        final bool ok = prnAllowed(_records, med.id, DateTime.now(), med.minGapHours);
+        final bool ok = checkDose(MedicationRule(slots: med.slots, isPrn: true,
+          minGapHours: med.minGapHours), slot, status, DateTime.now(),
+          doseKey(med.id, slot, _today).localDate,
+          _records.where((DoseRecord r) => r.medicationId == med.id).toList()).ok;
         if (!ok) {
           setState(() => _banner = "Too soon for another ${med.name} dose — "
             'wait at least ${med.minGapHours.toStringAsFixed(0)} hours between doses.');
@@ -276,6 +365,13 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
           await api.recordMedicationDose(widget.childId!, med.id, slot, status: status.name);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
+      if (row['error'] == 'too_soon' || row['error'] == 'daily_max') {
+        setState(() => _banner = row['error'] == 'too_soon'
+          ? 'Too soon for another ${med.name} dose — wait at least '
+            '${(row['minGapHours'] as num?)?.toStringAsFixed(0) ?? 'a few'} hours between doses.'
+          : "That's the most ${med.name} doses allowed in 24 hours.");
+        return;
+      }
       if (row['error'] == 'already_administered') {
         final String by = row['by'] as String? ?? 'Another guardian';
         final DateTime? atIso = DateTime.tryParse(row['atIso'] as String? ?? '');

@@ -55,7 +55,7 @@ import { DateTime } from 'luxon';
 import { createPool, childCtxFor } from '../src/pool.mjs';
 import { materialize } from '../../delivery-engine/src/materialize.mjs';
 import {
-  withJobLock, runRematerializeSweep, runMediaReapSweep, runNamedJob,
+  withJobLock, runRematerializeSweep, runMediaReapSweep, runNamedJob, runExpiryDigestJob,
 } from '../../../tools/scheduler.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -185,7 +185,7 @@ await clearFixture();
        ($3, $6, $7, 'video_msg', $10, 'on_local_date',
         $4::date, 'bedtime', 'pending', $8::timestamptz),
        ($5, $6, $7, 'video_msg', $11, 'at_daypart',
-        NULL, 'no_such_daypart_kind', 'pending', $8::timestamptz)`,
+        NULL, 'activity', 'pending', $8::timestamptz)`,
     [INTENT_READY, tomorrow, INTENT_EXPIRE, farPast, INTENT_STILL_PENDING, CHILD_R, DAD,
      NOW.plus({ days: 90 }).toISO(), PAYLOAD_READY, PAYLOAD_EXPIRE, PAYLOAD_PENDING],
   );
@@ -569,6 +569,128 @@ await clearFixture();
       + 'breach in the shared verify_run database — not this suite\'s own fixture '
       + '(already cleared above), and not a locking defect. Informational only.');
   }
+}
+
+
+// ===========================================================================
+// E · S-D20 -- ONE bad row must not abort the sweep for every other family.
+//     A child whose time-zone name is invalid (legacy data; migration 0042's
+//     CHECK now prevents new ones, so it is dropped for this fixture and put
+//     back after) threw inside resolveWallClock and unwound the whole loop.
+// ===========================================================================
+{
+  const BAD_CHILD = 'a0000000-0000-0000-0000-0000000000e1';
+  const GOOD_CHILD = 'a0000000-0000-0000-0000-0000000000e2';
+  const BAD_INTENT = 'a0000000-0000-0000-0000-0000000000e3';
+  const GOOD_INTENT = 'a0000000-0000-0000-0000-0000000000e4';
+  const clearE = async () => {
+    await admin.query(`DELETE FROM delivery_intent WHERE child_id = ANY($1::uuid[])`, [[BAD_CHILD, GOOD_CHILD]]);
+    await admin.query(`DELETE FROM child WHERE id = ANY($1::uuid[])`, [[BAD_CHILD, GOOD_CHILD]]);
+  };
+  await clearE();
+  await admin.query(`ALTER TABLE child DROP CONSTRAINT child_home_tz_valid`);
+  try {
+    await admin.query(
+      `INSERT INTO child (id, display_name, birth_date, home_tz) VALUES
+         ($1,'BadZone','2016-04-02','Not/AZone'), ($2,'GoodZone','2016-04-02','America/New_York')`,
+      [BAD_CHILD, GOOD_CHILD]);
+    await admin.query(`INSERT INTO app_user (id, display_name, home_tz) VALUES ($1,'Dad','America/New_York') ON CONFLICT DO NOTHING`, [DAD]);
+    const target = NOW.plus({ days: 3 }).toISODate();
+    // the BAD row is the OLDEST, so the loop reaches it first
+    await admin.query(
+      `INSERT INTO delivery_intent (id, child_id, sender_id, payload_kind, payload_ref, policy,
+                                    target_local_date, target_daypart, state, expires_at, created_at)
+       VALUES ($1,$3,$5,'video_msg',gen_random_uuid(),'on_local_date',$6::date,'bedtime','pending',$7::timestamptz, now() - interval '2 hours'),
+              ($2,$4,$5,'video_msg',gen_random_uuid(),'on_local_date',$6::date,'bedtime','pending',$7::timestamptz, now() - interval '1 hour')`,
+      [BAD_INTENT, GOOD_INTENT, BAD_CHILD, GOOD_CHILD, DAD, target, NOW.plus({ days: 90 }).toISO()]);
+
+    const origErr = console.error; const errLines = [];
+    console.error = (...a) => { errLines.push(a.join(' ')); };
+    let r;
+    try { r = await runRematerializeSweep(pool, { now: NOW }); } finally { console.error = origErr; }
+
+    const state = async (id) => (await admin.query(`SELECT state FROM delivery_intent WHERE id = $1`, [id])).rows[0].state;
+    check('E bad row', 'the sweep completes instead of throwing', r !== undefined, true);
+    check('E bad row', 'the healthy family\'s intent is materialised AFTER the bad row', await state(GOOD_INTENT), 'ready');
+    check('E bad row', 'the bad row is left pending (a data problem, not a time-past one), never expired', await state(BAD_INTENT), 'pending');
+    check('E bad row', 'exactly one error is counted', r.errored, 1);
+    check('E bad row', 'it is logged with the intent id so an operator can find it',
+      errLines.some(l => l.includes('row_error') && l.includes(BAD_INTENT)), true);
+    check('E bad row', 'the log names the child too', errLines.some(l => l.includes(BAD_CHILD)), true);
+    const again = await runRematerializeSweep(pool, { now: NOW });
+    check('E bad row', 'a second sweep does not re-touch the resolved row and still reports the bad one', `${again.materialized}|${again.errored}`, '0|1');
+  } finally {
+    await clearE();
+    await admin.query(`ALTER TABLE child ADD CONSTRAINT child_home_tz_valid CHECK (olive_valid_tz(home_tz))`);
+  }
+}
+
+
+// ===========================================================================
+// F · S-D2 -- the 14-day expiry digest job: records, never sends.
+// ===========================================================================
+{
+  const FC = 'a0000000-0000-0000-0000-0000000000f1';
+  const FC2 = 'a0000000-0000-0000-0000-0000000000f2';
+  const clearF = async () => {
+    await admin.query(`DELETE FROM expiry_digest WHERE child_id = ANY($1::uuid[])`, [[FC, FC2]]);
+    await admin.query(`DELETE FROM media_artifact WHERE child_id = ANY($1::uuid[])`, [[FC, FC2]]);
+    await admin.query(`DELETE FROM child WHERE id = ANY($1::uuid[])`, [[FC, FC2]]);
+  };
+  await clearF();
+  await admin.query(`INSERT INTO app_user (id, display_name, home_tz) VALUES ($1,'Dad','America/New_York') ON CONFLICT DO NOTHING`, [DAD]);
+  await admin.query(`INSERT INTO child (id, display_name, birth_date, home_tz) VALUES ($1,'DigestKid','2016-04-02','America/New_York'),($2,'QuietKid','2016-04-02','America/New_York')`, [FC, FC2]);
+  const NOWD = new Date('2026-09-01T12:00:00Z');
+  const day = (n) => new Date(NOWD.getTime() + n * 86_400_000).toISOString();
+  const mk = (child, kind, preserved, exp, key) => admin.query(
+    `INSERT INTO media_artifact (child_id, author_id, kind, storage_key, captured_at, captured_tz, preserved, preserved_by, preserved_at, expires_at)
+     VALUES ($1,$2,$3,$4,'2026-08-01T00:00:00Z','America/New_York',$5, CASE WHEN $5::boolean THEN $2::uuid END, CASE WHEN $5::boolean THEN now() END, $6::timestamptz)`,
+    [child, DAD, kind, key, preserved, exp]);
+  await mk(FC, 'call_clip', false, day(3), 'f/a');
+  await mk(FC, 'photo', false, day(13), 'f/b');
+  await mk(FC, 'photo', false, day(20), 'f/outside-window');
+  await mk(FC, 'photo', true, null, 'f/preserved');
+  await mk(FC, 'photo', false, day(-1), 'f/already-gone');
+  await mk(FC2, 'photo', true, null, 'f/quiet');
+
+  const r1 = await runExpiryDigestJob(pool, { now: NOWD });
+  check('F expiry digest', 'one digest is recorded, for the one child with something expiring', `${r1.recorded}|${r1.children}`, '1|1');
+  const d = (await admin.query(`SELECT * FROM expiry_digest WHERE child_id = $1`, [FC])).rows;
+  check('F expiry digest', 'exactly one row exists for her', d.length, 1);
+  check('F expiry digest', 'it counts only the two unpreserved artifacts inside 14 days', d[0].item_count, 2);
+  check('F expiry digest', 'the lead window is 14 days', d[0].lead_days, 14);
+  check('F expiry digest', 'items are soonest first, with days left',
+    d[0].digest.items.map(i => `${i.kind}:${i.daysLeft}`).join(','), 'call_clip:3,photo:13');
+  check('F expiry digest', 'the audience is the guardian, never the child', d[0].digest.audience, 'guardian');
+  check('F expiry digest', 'NO caption or storage key is kept on the row (it must not outlive the artifact)',
+    /caption":\s*"|storage|f\/a/.test(JSON.stringify(d[0].digest)), false);
+  check('F expiry digest', 'the child with only preserved material gets no row',
+    Number((await admin.query(`SELECT count(*) AS n FROM expiry_digest WHERE child_id = $1`, [FC2])).rows[0].n), 0);
+
+  const r2 = await runExpiryDigestJob(pool, { now: NOWD });
+  check('F expiry digest', 'running again with nothing changed records nothing new (idempotent)', `${r2.recorded}|${r2.unchanged}`, '0|1');
+  check('F expiry digest', 'still one row', Number((await admin.query(`SELECT count(*) AS n FROM expiry_digest WHERE child_id = $1`, [FC])).rows[0].n), 1);
+
+  await mk(FC, 'voice_note', false, day(5), 'f/c');
+  const r3 = await runExpiryDigestJob(pool, { now: NOWD });
+  check('F expiry digest', 'a NEW expiring artifact makes a new digest', r3.recorded, 1);
+  check('F expiry digest', 'now two rows (history of what was warned about)', Number((await admin.query(`SELECT count(*) AS n FROM expiry_digest WHERE child_id = $1`, [FC])).rows[0].n), 2);
+
+  let childVisible = null;
+  const sess = await pool.connect();
+  try {
+    await sess.query('BEGIN');
+    await sess.query(`SELECT set_config('app.role','child',true), set_config('app.child_id',$1,true)`, [FC]);
+    childVisible = Number((await sess.query(`SELECT count(*) AS n FROM expiry_digest`)).rows[0].n);
+    await sess.query('ROLLBACK');
+  } finally { sess.release(); }
+  check('F expiry digest', 'a child session sees no digest rows at all (RLS), though two exist', childVisible, 0);
+
+  const later = await runExpiryDigestJob(pool, { now: new Date(NOWD.getTime() + 90 * 86_400_000) });
+  check('F expiry digest', 'rows whose artifacts expired long ago are purged', later.purged, 2);
+  const named = await runNamedJob(pool, DATABASE_URL, 'expiry-digest');
+  check('F expiry digest', 'the job runs through the real runner under its lock', `${named.ok}/${named.skipped}`, 'true/false');
+  await clearF();
 }
 
 await clearFixture();

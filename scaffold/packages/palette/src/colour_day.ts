@@ -5,10 +5,13 @@
  * Why a module of its own rather than more of palette.ts: palette.ts answers
  * "which colours exist and where may one appear". This file answers "what is
  * today's colour, who may change it, and how do two devices agree". It is the
- * one place those rules are written; the server (server/routes.mjs) calls it
- * before every write, migration 0042 re-states the same rules as a trigger so a
- * second writer cannot bypass them, and client/lib/colour_day_logic.dart is a
- * line-by-line port held to golden vectors (tools/gen-colour-vectors.mjs).
+ * one place those rules are written. NOT YET PERSISTED (S-D22: this comment
+ * used to claim a server route and a trigger that do not
+ * exist): there is no colour-day table and no colour-day route today. When
+ * they are added, the route must call this module before every write and a
+ * migration should re-state the same rules as a trigger so a second writer
+ * cannot bypass them. client/lib/colour_day_logic.dart is a line-by-line port
+ * held to golden vectors (tools/gen-colour-vectors.mjs).
  *
  * THE SYNC RULE, in one paragraph. She is asked one question a day: "which do
  * you like more today?". The answer is one row per (child, her-local-date), so
@@ -224,7 +227,7 @@ export function guardianView(days: DayColour[], localDate: string): ParentColour
   return parentView(toChoices(days), `${localDate}T12:00:00.000Z`);
 }
 
-/** The twelve ids, in palette order. Migration 0042's CHECK is generated from this. */
+/** The twelve ids, in palette order. A future colour-day table's CHECK should be generated from this. */
 export const COLOUR_IDS: string[] = PALETTE.map((s) => s.id);
 
 // ========================================================= the play window ==

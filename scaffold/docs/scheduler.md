@@ -34,8 +34,8 @@ I turn it on" half.
 
 ## What it runs
 
-Five named jobs, run in this order (`rematerialize`, `reap-media`,
-`purge-challenges`, `backup`, then `health-alert` — `JOB_NAMES` in
+Six named jobs, run in this order (`rematerialize`, `reap-media`,
+`purge-challenges`, `expiry-digest`, `backup`, then `health-alert` — `JOB_NAMES` in
 `tools/scheduler.mjs`; `health-alert` is last so it sees the backup that just
 ran). This page said "two named jobs" from `reap-media`'s own real addition
 (v0.49.46) until this project's own post-tier audit caught the miss — a
@@ -48,6 +48,7 @@ read to understand what that service does:
 |---|---|
 | `rematerialize` | Sweeps every `delivery_intent` row still `state='pending'`, calls the real `materialize()` against a real `ChildCtx` loaded from Postgres, and writes the result back (`ready` + `scheduled_at`, `expired`, or left `pending` for a config gap that might still get fixed). |
 | `reap-media` | Runs the real COPPA retention reaper (`packages/storage/src/storage.ts`'s `reap()`) against every `media_artifact` row `artifacts_due_for_reaping()` returns — deletes the real blob first, then the row, and writes a `reap_tombstone` on a genuine failure so a stuck row stays discoverable and gets retried, never silently re-attempted forever or silently dropped. |
+| `expiry-digest` | Records, per child, the unpreserved artifacts expiring within 14 days as one `expiry_digest` row per distinct set (ids, kinds, dates; no captions). Records only; sends nothing. Per-child failures are counted and the job reports not-ok. |
 | `purge-challenges` | Deletes `auth_challenge` rows (WebAuthn ceremony nonces) older than their 5-minute TTL plus a 1-hour grace. They were written on every login/registration start and never deleted, and the login-challenge endpoint is unauthenticated. |
 | `backup` | Dumps the database (and the media volume), optionally encrypts, prunes to 7 daily + 4 weekly, optionally runs `BACKUP_SYNC_COMMAND`. **Skipped (not failed) unless `BACKUP_DIR` and `BACKUP_DATABASE_URL` are set.** Exactly what is and is not automatic: `docs/backup-and-restore.md`. |
 | `health-alert` | Runs the real `tools/health-alert.mjs` as a subprocess against the same database and reports its exit code. When `BACKUP_DIR` is set it also raises `ALERT check_name=backup_stale` if the newest database dump is missing or older than `BACKUP_MAX_AGE_HOURS` (default 36). |

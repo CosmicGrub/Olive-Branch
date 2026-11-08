@@ -1984,7 +1984,7 @@ automatic is stated, command by command, in `scaffold/docs/backup-and-restore.md
 Not built: a restore drill on a schedule, and any default off-host destination —
 no credential is invented.
 
-**Schema and tooling (P-17, P-18, P-19).** Migration `0038_fk_indexes.sql`
+**Schema and tooling (P-17, P-18, P-19).** Migration `0037_fk_indexes.sql`
 indexes `guardianship(user_id)`, `call_log(child_id)`,
 `medication_dose(child_id)`, `media_artifact(author_id)`,
 `intent_batch(child_id)`, `export_record(child_id)` and
@@ -2162,6 +2162,133 @@ before the first PIN (follow-up). A client change is
 needed before the exports and invite creation work from the app: they now require
 the PIN (header or body), and `client/lib/api_client.dart` gained only the three
 new path constants.
+
+### 7.13 Domain correctness — as shipped (audit pass `fix/domain-correctness`)
+
+Every item below was re-verified in the code before it was changed, and each rule
+is an assertion in a suite (custody, care, ledger, delivery-engine, messaging,
+and the real-Postgres suites for migrations 0042 to 0044). Finding ids are the
+data-model audit's (`S-D`) and the reliability audit's (`S-C`).
+
+**Medication safety is enforced by the server (S-D6).** `POST
+.../medications/:medicationId/doses` now refuses: a medication that is not this
+child's or not active (`404 medication_not_found`; before, any medication id was
+accepted under any child's path); a slot the medication does not have
+(`400 unknown_slot`, listing the real slots; matching ignores case and space and
+the canonical spelling is what is stored, so `"Morning"` can no longer slip past
+the double-dose guard as a second slot); a PRN dose inside `min_gap_hours` of
+another given dose, on either side of the claimed time (`409 too_soon`, with
+`nextAllowedAt`); and a PRN dose that would exceed the new
+`medication.max_doses_per_24h` in any rolling 24 hours (`409 daily_max`). The
+check and the insert run under a per-medication advisory lock. An optional
+`given_at` (ISO-8601 with an offset, not more than five minutes ahead, not more
+than 72 hours old) records a dose given earlier: `administered_at` is the
+claimed time, `recorded_at` the real one, `backdated` is true, and a CHECK keeps
+a live row from being relabelled. The same rules are `checkDose()` in
+`packages/care` and in `client/lib/meds_care.dart`, held together by golden
+vectors (`packages/care/test/vectors.json`). The partial unique index covers
+scheduled doses only, so a second legitimate PRN dose on the same day is no
+longer impossible. `prnAllowed()` counts only doses actually given.
+
+**Custody (S-D7, S-D8, S-D9).** A holiday window that wraps the new year (for
+example 12-31 to 01-02) is one holiday: even and odd are keyed on the year the
+window STARTS in, not each date's own year, which had split it between parents.
+`sideAtInstant()` / `sideAtOrderLocal()` answer who holds her at a wall-clock
+moment: before the exchange time on a handover day it is still the previous
+side. `sleepsUntilSideChange()` stops at `effectiveTo` and answers from a
+successor order when one is on file (otherwise null). The Dart port
+(`exchange_screen.dart`) carries all three; `packages/custody/test/vectors.json`
+holds them together. The presence route resolves "on duty" with `sideAtInstant()`, and `GET .../now`
+passes the successor order (`successorCustodyOrderFor`) to the countdown.
+
+**Day-parts and delivery (S-D10, S-D11, S-D12).** `childCtxFor()` returns every
+day-part with its effective bounds and the engine resolves by the TARGET date
+(`partsOn`, `activeDayPart`), not by the database's `CURRENT_DATE`; a batch that
+crosses a schedule change uses the bedtime in force on each night. The zone for
+a wall-clock target is resolved at the candidate instant (`zonedWallClock`), so
+a same-day flight is timed in the arrival zone; a wall clock the flight skipped
+resolves to the later instant. A day-part that wraps midnight is attributed to
+its start day (asleep 21:00 to 06:30 listed on Friday is running at Saturday
+02:00). A `when_reachable` intent created inside a reachable window is scheduled
+now. Migration 0042 adds an EXCLUDE so two day-parts of the same kind cannot
+overlap in effective dates, weekdays and time of day, and a CHECK that
+`days_of_week` is 0 to 6. `captureMessage()` reports `daypart_undefined`,
+`already_expired` or `delivery_unresolvable` instead of `not_authorized`, and
+uses the shared `resolveZone` (its private copy ignored confidence).
+
+**Preservation is the default for a guardian (S-D2).** `POST
+.../messages` preserves a guardian's message unless the body says
+`preserve:false`; a child's reply is never preserved by default and
+`preserve:true` from a child is still refused. The client sends no `preserve`
+unless asked. `digestRecordFor()` (packages/storage) is the pure 14-day expiry
+digest; the scheduler job `expiry-digest` records one `expiry_digest` row (ids,
+kinds and dates, never a caption) per child per distinct set, guardian-only,
+and sends nothing.
+
+**Evidence integrity (S-D14, S-D15).** Migration 0043: `enforce_log_chain()`
+recomputes the `message_log` hash with pgcrypto (same length-prefixed framing,
+UTF-16 length), `hash_version` is 1, and TRUNCATE is refused; the migration first
+verifies every existing chain and FAILS, naming child and seq, if one does not.
+Expense status changes are guarded (`proposed` to `accepted` or `disputed`,
+`accepted` to `reimbursed`; the proposer cannot accept or dispute their own;
+only `status` can change) and recorded with actor and time in the append-only
+`expense_event` table, whose CHECK admits only legal transitions; a route that
+used to flip `proposed` straight to `reimbursed` now answers `409
+invalid_transition`. `exchange_arrival_event` and `exchange_running_late_log` are
+append-only.
+
+**Certified export (S-D13).** The bundle is v2 and self-describing: a roster of
+id, name and role; the message chain with its attestation; a `faultReport`; the
+call log; the custody order history; expenses and their event history; exchange
+arrival and running-late logs; doses; care notes. `bundleHash` is SHA-256 of
+`canonicalJson(bundle)` (sorted keys, ECMAScript number form, `-0` as `0`,
+non-finite a hard error), which a third party reproduces from the file;
+`verifyCertifiedBundle()` checks the hash, that the fault report matches a
+recomputation, the attestation and the roster. A broken chain is exported WITH
+its faults (and `attestation.chainVerified = false`) instead of being refused.
+The attestation's chain hash is now over the canonical chain, and the Dart port's
+`certify()` was corrected to match (it hashed a pipe-joined string).
+
+**Expenses in basis points (S-D19).** `allocate()` uses integer remainders (no
+floats); `expense.currency` (ISO-4217, default USD) and `expense.split_bp`
+(participant to basis points, totalling 10000, CHECKed) are new. A two-party
+request is unchanged and is stored as basis points over the child's live parent
+guardians (`splitFromPayerShare`); an optional `participants` list gives an
+explicit split. Rows written before 0044 keep only `payerSharePercent`
+(`participants: null`).
+
+**Schema and operations (S-D20, S-D21, S-D22, S-C8).** One invalid time zone no
+longer aborts a whole scheduler sweep: each row is isolated, counted (`errored`)
+and logged, and the job reports not-ok. `child.home_tz`, `custody_order.order_tz`
+and `child_tz_interval.tz` are validated against `pg_timezone_names`;
+`delivery_intent.payload_kind`, `target_daypart` and `intent_batch.daypart` are
+constrained. `health_check.rls_unforced` reads the catalog: any public table
+without ENABLE and FORCE row-level security fails unless it is named, with a
+reason, in `rls_allow_list` (seeded with today's unforced tables; a migration
+that adds RLS deletes its row). Migration-number references in code and docs are
+checked against the file list by `tools/test/migrations_hygiene.test.mjs`, and
+four wrong ones were fixed (`0019_child_message_sender` is `0021`, card
+versioning is `0036`, `0038_fk_indexes` is `0037`, and a comment claimed a
+colour-day migration 0042 and route that do not exist). `.gitattributes` pins
+`*.sql` to LF and the migration runner hashes CRLF-insensitively, so a Windows
+checkout verifies the same checksums (a CRLF copy of every migration is tested).
+
+**Golden vectors (S-D23).** `tools/gen-custody-vectors.mjs`,
+`gen-care-vectors.mjs`, `gen-ledger-vectors.mjs` and `gen-delivery-vectors.mjs`
+write `vectors.json` beside their suites; each suite fails if the file differs
+from a fresh generation. Dart asserts custody, care and the ledger chain; there
+is no Dart port of the gate or materialiser (the client does no zone maths), so
+the delivery vectors are a contract for any future port.
+
+**Not done in this pass** (each stays in the audits): the delivery worker and
+anything that needs a push provider (parked); delivery timestamps and receipts
+(S-D3); a child's reply recipient (S-D4); write paths for day-parts, time-zone
+intervals and custody orders (S-D5); the 6 to 12 month deletion window (S-D16);
+take-and-go breadth (S-D17); succession behaviour (S-D18); the polymorphic uuid
+foreign keys and `media_artifact` size, MIME and hash columns (S-D20, the rest of
+it); the game referee (S-D24); the tesseract language data (S-D25); the family
+tenant (S-D26); property and mutation testing (S-D27); and the reliability
+findings S-C1 to S-C7 and S-C9 to S-C19.
 
 ---
 

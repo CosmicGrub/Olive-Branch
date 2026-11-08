@@ -1,0 +1,1900 @@
+{
+ "chains": {
+  "empty": {
+   "entries": [],
+   "hashes": [],
+   "verify": {
+    "ok": true,
+    "faults": []
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 0,
+    "firstSeq": null,
+    "lastSeq": null,
+    "headHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "bundleHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "chainVerified": true,
+    "statement": "Each entry carries a SHA-256 hash over its own contents and the hash of the entry before it. Recomputing the chain from this file reproduces the head hash shown above. Any alteration, deletion, reordering, or insertion changes it."
+   }
+  },
+  "single": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "only",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "b80ae069b81f6289bfaf529a2beabc5469dd504ebb3df134669756aa7d1be83c"
+    }
+   ],
+   "hashes": [
+    "b80ae069b81f6289bfaf529a2beabc5469dd504ebb3df134669756aa7d1be83c"
+   ],
+   "verify": {
+    "ok": true,
+    "faults": []
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 1,
+    "firstSeq": 0,
+    "lastSeq": 0,
+    "headHash": "b80ae069b81f6289bfaf529a2beabc5469dd504ebb3df134669756aa7d1be83c",
+    "bundleHash": "af1f86df26e9dde03244a4652a164acea2b54ceabc286fed5a6b2cb91bc72aa8",
+    "chainVerified": true,
+    "statement": "Each entry carries a SHA-256 hash over its own contents and the hash of the entry before it. Recomputing the chain from this file reproduces the head hash shown above. Any alteration, deletion, reordering, or insertion changes it."
+   }
+  },
+  "good": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "first",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "second",
+     "prevHash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+     "hash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983"
+    },
+    {
+     "seq": 2,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:02:00.000Z",
+     "body": "third",
+     "prevHash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+     "hash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+    }
+   ],
+   "hashes": [
+    "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+    "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+    "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+   ],
+   "verify": {
+    "ok": true,
+    "faults": []
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 3,
+    "firstSeq": 0,
+    "lastSeq": 2,
+    "headHash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a",
+    "bundleHash": "8b56f722fd8223739724f6470a9d56210baecf6a08c4e1237264a02ea3304f14",
+    "chainVerified": true,
+    "statement": "Each entry carries a SHA-256 hash over its own contents and the hash of the entry before it. Recomputing the chain from this file reproduces the head hash shown above. Any alteration, deletion, reordering, or insertion changes it."
+   }
+  },
+  "unicode": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "café déjà vu",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "cb1bc907f97eca068e77310a6a11cc06c824eb304396253c780f564580ab05d5"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "日本語のメッセージ",
+     "prevHash": "cb1bc907f97eca068e77310a6a11cc06c824eb304396253c780f564580ab05d5",
+     "hash": "480cab8225b078b3cdb3a62a39e30dee38382f6a6b4b93ff49f0ce9357b54696"
+    },
+    {
+     "seq": 2,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:02:00.000Z",
+     "body": "emoji 😀 and 👨‍👩‍👧",
+     "prevHash": "480cab8225b078b3cdb3a62a39e30dee38382f6a6b4b93ff49f0ce9357b54696",
+     "hash": "57c77052c68d356b9fba2cec0330339ce129b2717b9fb83baa4ee0298f562223"
+    },
+    {
+     "seq": 3,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:03:00.000Z",
+     "body": "line\nbreak\r\nand\ttab",
+     "prevHash": "57c77052c68d356b9fba2cec0330339ce129b2717b9fb83baa4ee0298f562223",
+     "hash": "29c7a92d428331377c8f817af76c614111785193cd010c13e29e9012bca5d272"
+    },
+    {
+     "seq": 4,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:04:00.000Z",
+     "body": "\"quoted\" \\ back",
+     "prevHash": "29c7a92d428331377c8f817af76c614111785193cd010c13e29e9012bca5d272",
+     "hash": "344651c1aa889f9dfd29f821bfa449ce4e05d37218099f6dc0304662b78edf92"
+    }
+   ],
+   "hashes": [
+    "cb1bc907f97eca068e77310a6a11cc06c824eb304396253c780f564580ab05d5",
+    "480cab8225b078b3cdb3a62a39e30dee38382f6a6b4b93ff49f0ce9357b54696",
+    "57c77052c68d356b9fba2cec0330339ce129b2717b9fb83baa4ee0298f562223",
+    "29c7a92d428331377c8f817af76c614111785193cd010c13e29e9012bca5d272",
+    "344651c1aa889f9dfd29f821bfa449ce4e05d37218099f6dc0304662b78edf92"
+   ],
+   "verify": {
+    "ok": true,
+    "faults": []
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 5,
+    "firstSeq": 0,
+    "lastSeq": 4,
+    "headHash": "344651c1aa889f9dfd29f821bfa449ce4e05d37218099f6dc0304662b78edf92",
+    "bundleHash": "c3f62c5234bc318f0e7bc4c2f267ddcbbbd379e07f451489b627f61db8fa7c9f",
+    "chainVerified": true,
+    "statement": "Each entry carries a SHA-256 hash over its own contents and the hash of the entry before it. Recomputing the chain from this file reproduces the head hash shown above. Any alteration, deletion, reordering, or insertion changes it."
+   }
+  },
+  "tamperedBody": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "first",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "edited after the fact",
+     "prevHash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+     "hash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983"
+    },
+    {
+     "seq": 2,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:02:00.000Z",
+     "body": "third",
+     "prevHash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+     "hash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+    }
+   ],
+   "hashes": [
+    "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+    "545c74c84969af6e1f404b4ebc5e55ab76af0d1b10c222a4d44560df7e794993",
+    "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+   ],
+   "verify": {
+    "ok": false,
+    "faults": [
+     {
+      "kind": "content_altered",
+      "seq": 1
+     }
+    ]
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 3,
+    "firstSeq": 0,
+    "lastSeq": 2,
+    "headHash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a",
+    "bundleHash": "6ce50f5fbb47a3c6a48b8a1f10bdecdfe157927f6a3cd21b5d288610180ba4f8",
+    "chainVerified": false,
+    "statement": "VERIFICATION FAILED. This export does not form an unbroken chain and must not be relied upon."
+   }
+  },
+  "brokenLink": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "first",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "second",
+     "prevHash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+     "hash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983"
+    },
+    {
+     "seq": 2,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:02:00.000Z",
+     "body": "third",
+     "prevHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+     "hash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+    }
+   ],
+   "hashes": [
+    "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+    "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+    "4d4a271c3aaebcc6d595c230196e0e098082b750c76e089be0a181000a001291"
+   ],
+   "verify": {
+    "ok": false,
+    "faults": [
+     {
+      "kind": "content_altered",
+      "seq": 2
+     },
+     {
+      "kind": "chain_broken",
+      "seq": 2
+     }
+    ]
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 3,
+    "firstSeq": 0,
+    "lastSeq": 2,
+    "headHash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a",
+    "bundleHash": "123d3895f2d123f6681c96cf1736d3a88a8e355792be9b6b85130dc669b006cb",
+    "chainVerified": false,
+    "statement": "VERIFICATION FAILED. This export does not form an unbroken chain and must not be relied upon."
+   }
+  },
+  "gap": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "first",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "second",
+     "prevHash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+     "hash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983"
+    },
+    {
+     "seq": 5,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:02:00.000Z",
+     "body": "third",
+     "prevHash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+     "hash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+    }
+   ],
+   "hashes": [
+    "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+    "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+    "4672a0f514b7a3c0041a80624a62fd5b81261e59535d1d8fe80ea5c58f959dd1"
+   ],
+   "verify": {
+    "ok": false,
+    "faults": [
+     {
+      "kind": "content_altered",
+      "seq": 5
+     },
+     {
+      "kind": "sequence_gap",
+      "seq": 5
+     }
+    ]
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 3,
+    "firstSeq": 0,
+    "lastSeq": 5,
+    "headHash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a",
+    "bundleHash": "32fdce179be0addc2bf6baeed91ab47c47a64d154d48e5fa715c2dcc60e4b40a",
+    "chainVerified": false,
+    "statement": "VERIFICATION FAILED. This export does not form an unbroken chain and must not be relied upon."
+   }
+  },
+  "badGenesis": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "first",
+     "prevHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+     "hash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "second",
+     "prevHash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d",
+     "hash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983"
+    },
+    {
+     "seq": 2,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:02:00.000Z",
+     "body": "third",
+     "prevHash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+     "hash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+    }
+   ],
+   "hashes": [
+    "7e044fe4235739312bac2cf2ae530dbd773c60f1166e0bf5273f321183b9b4bc",
+    "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+    "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+   ],
+   "verify": {
+    "ok": false,
+    "faults": [
+     {
+      "kind": "bad_genesis"
+     },
+     {
+      "kind": "content_altered",
+      "seq": 0
+     }
+    ]
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 3,
+    "firstSeq": 0,
+    "lastSeq": 2,
+    "headHash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a",
+    "bundleHash": "63959fc5de1568260c8ca1005813ac1a160f9e7ba27aa055179adc6ffebfa64f",
+    "chainVerified": false,
+    "statement": "VERIFICATION FAILED. This export does not form an unbroken chain and must not be relied upon."
+   }
+  },
+  "timeTravel": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "a",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "406901c439ef92b5db53643c29f3d74902ab7652dfbfed9c68d9f98dda83dd9e"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "b",
+     "prevHash": "406901c439ef92b5db53643c29f3d74902ab7652dfbfed9c68d9f98dda83dd9e",
+     "hash": "316436faecca19eb35c262e8377ece4cf56430b1876fd30a347efd1b896b5ce2"
+    },
+    {
+     "seq": 2,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2025-12-31T00:00:00.000Z",
+     "body": "c",
+     "prevHash": "316436faecca19eb35c262e8377ece4cf56430b1876fd30a347efd1b896b5ce2",
+     "hash": "ef03a9f18005c49a62cb83afb0fe6cd49d0af18dfd4dcfb8af829977d2281e4f"
+    }
+   ],
+   "hashes": [
+    "406901c439ef92b5db53643c29f3d74902ab7652dfbfed9c68d9f98dda83dd9e",
+    "316436faecca19eb35c262e8377ece4cf56430b1876fd30a347efd1b896b5ce2",
+    "68e0d3015dc79f037ff24bc2fcbee5a027cf9131895bb20582195ca56e167d22"
+   ],
+   "verify": {
+    "ok": false,
+    "faults": [
+     {
+      "kind": "content_altered",
+      "seq": 2
+     },
+     {
+      "kind": "time_travel",
+      "seq": 2
+     }
+    ]
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 3,
+    "firstSeq": 0,
+    "lastSeq": 2,
+    "headHash": "ef03a9f18005c49a62cb83afb0fe6cd49d0af18dfd4dcfb8af829977d2281e4f",
+    "bundleHash": "28060542a71242ef8bba6ebcf57d228aeb81fe66044954f108b243ff0291f0b8",
+    "chainVerified": false,
+    "statement": "VERIFICATION FAILED. This export does not form an unbroken chain and must not be relied upon."
+   }
+  },
+  "manyFaults": {
+   "entries": [
+    {
+     "seq": 0,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:00:00.000Z",
+     "body": "x",
+     "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+     "hash": "451c5da95e02aca1ae0ea6b288adbeb4ed97a37a2dbed8132393057fd00df59d"
+    },
+    {
+     "seq": 1,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "22222222-2222-4222-8222-222222222222",
+     "at": "2026-01-01T00:01:00.000Z",
+     "body": "second",
+     "prevHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "hash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983"
+    },
+    {
+     "seq": 9,
+     "childId": "33333333-3333-4333-8333-333333333333",
+     "authorId": "11111111-1111-4111-8111-111111111111",
+     "at": "2026-01-01T00:02:00.000Z",
+     "body": "third",
+     "prevHash": "c7f5439db1763b3ec0c262d129fa5c882bed5a0f17fa5cfc6721bc150801b983",
+     "hash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a"
+    }
+   ],
+   "hashes": [
+    "5929f010a43a3275d172db136bc69a7697bc3bbf64d64a4f53b9ca7f51af7b65",
+    "bd0661df8ccb1b97033532ab15bc507b16ead1a42b8d7a732c9872d473e130d0",
+    "5c857cd283eec00049b698b6905b077d209bd0bf2907234565f8615b4ab195ee"
+   ],
+   "verify": {
+    "ok": false,
+    "faults": [
+     {
+      "kind": "content_altered",
+      "seq": 0
+     },
+     {
+      "kind": "content_altered",
+      "seq": 1
+     },
+     {
+      "kind": "chain_broken",
+      "seq": 1
+     },
+     {
+      "kind": "content_altered",
+      "seq": 9
+     },
+     {
+      "kind": "sequence_gap",
+      "seq": 9
+     }
+    ]
+   },
+   "attestation": {
+    "childId": "33333333-3333-4333-8333-333333333333",
+    "generatedAt": "2026-02-01T00:00:00.000Z",
+    "entryCount": 3,
+    "firstSeq": 0,
+    "lastSeq": 9,
+    "headHash": "b8ff21c2b38d89e86efe26b855a9ca63ebd76a7b632b5ef0ac22a1e04bafc86a",
+    "bundleHash": "381f8257af431f4666f7207d7bb9dcd420fb590bb8bf83a63fb1db4498298c89",
+    "chainVerified": false,
+    "statement": "VERIFICATION FAILED. This export does not form an unbroken chain and must not be relied upon."
+   }
+  }
+ },
+ "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+ "allocate": [
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 0,
+   "expect": {
+    "dad": 0,
+    "mom": 0
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 1,
+   "expect": {
+    "dad": 1,
+    "mom": 0
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 2,
+   "expect": {
+    "dad": 1,
+    "mom": 1
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 3,
+   "expect": {
+    "dad": 2,
+    "mom": 1
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 7,
+   "expect": {
+    "dad": 4,
+    "mom": 3
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 99,
+   "expect": {
+    "dad": 50,
+    "mom": 49
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 100,
+   "expect": {
+    "dad": 50,
+    "mom": 50
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 101,
+   "expect": {
+    "dad": 51,
+    "mom": 50
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 8900,
+   "expect": {
+    "dad": 4450,
+    "mom": 4450
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 10001,
+   "expect": {
+    "dad": 5001,
+    "mom": 5000
+   }
+  },
+  {
+   "rule": "even",
+   "bp": {
+    "dad": 5000,
+    "mom": 5000
+   },
+   "cents": 123456789,
+   "expect": {
+    "dad": 61728395,
+    "mom": 61728394
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 0,
+   "expect": {
+    "dad": 0,
+    "mom": 0
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 1,
+   "expect": {
+    "dad": 1,
+    "mom": 0
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 2,
+   "expect": {
+    "dad": 1,
+    "mom": 1
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 3,
+   "expect": {
+    "dad": 2,
+    "mom": 1
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 7,
+   "expect": {
+    "dad": 4,
+    "mom": 3
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 99,
+   "expect": {
+    "dad": 59,
+    "mom": 40
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 100,
+   "expect": {
+    "dad": 60,
+    "mom": 40
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 101,
+   "expect": {
+    "dad": 61,
+    "mom": 40
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 8900,
+   "expect": {
+    "dad": 5340,
+    "mom": 3560
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 10001,
+   "expect": {
+    "dad": 6001,
+    "mom": 4000
+   }
+  },
+  {
+   "rule": "sixty",
+   "bp": {
+    "dad": 6000,
+    "mom": 4000
+   },
+   "cents": 123456789,
+   "expect": {
+    "dad": 74074073,
+    "mom": 49382716
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 0,
+   "expect": {
+    "a": 0,
+    "b": 0,
+    "c": 0
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 1,
+   "expect": {
+    "a": 0,
+    "b": 0,
+    "c": 1
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 2,
+   "expect": {
+    "a": 1,
+    "b": 0,
+    "c": 1
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 3,
+   "expect": {
+    "a": 1,
+    "b": 1,
+    "c": 1
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 7,
+   "expect": {
+    "a": 2,
+    "b": 2,
+    "c": 3
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 99,
+   "expect": {
+    "a": 33,
+    "b": 33,
+    "c": 33
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 100,
+   "expect": {
+    "a": 33,
+    "b": 33,
+    "c": 34
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 101,
+   "expect": {
+    "a": 34,
+    "b": 33,
+    "c": 34
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 8900,
+   "expect": {
+    "a": 2967,
+    "b": 2966,
+    "c": 2967
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 10001,
+   "expect": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3335
+   }
+  },
+  {
+   "rule": "thirds",
+   "bp": {
+    "a": 3333,
+    "b": 3333,
+    "c": 3334
+   },
+   "cents": 123456789,
+   "expect": {
+    "a": 41148148,
+    "b": 41148148,
+    "c": 41160493
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 0,
+   "expect": {
+    "a": 0,
+    "b": 0
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 1,
+   "expect": {
+    "a": 0,
+    "b": 1
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 2,
+   "expect": {
+    "a": 0,
+    "b": 2
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 3,
+   "expect": {
+    "a": 0,
+    "b": 3
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 7,
+   "expect": {
+    "a": 0,
+    "b": 7
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 99,
+   "expect": {
+    "a": 0,
+    "b": 99
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 100,
+   "expect": {
+    "a": 0,
+    "b": 100
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 101,
+   "expect": {
+    "a": 0,
+    "b": 101
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 8900,
+   "expect": {
+    "a": 1,
+    "b": 8899
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 10001,
+   "expect": {
+    "a": 1,
+    "b": 10000
+   }
+  },
+  {
+   "rule": "lopsided",
+   "bp": {
+    "a": 1,
+    "b": 9999
+   },
+   "cents": 123456789,
+   "expect": {
+    "a": 12346,
+    "b": 123444443
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 0,
+   "expect": {
+    "a": 0,
+    "b": 0,
+    "c": 0
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 1,
+   "expect": {
+    "a": 1,
+    "b": 0,
+    "c": 0
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 2,
+   "expect": {
+    "a": 1,
+    "b": 1,
+    "c": 0
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 3,
+   "expect": {
+    "a": 1,
+    "b": 1,
+    "c": 1
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 7,
+   "expect": {
+    "a": 3,
+    "b": 2,
+    "c": 2
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 99,
+   "expect": {
+    "a": 49,
+    "b": 25,
+    "c": 25
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 100,
+   "expect": {
+    "a": 50,
+    "b": 25,
+    "c": 25
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 101,
+   "expect": {
+    "a": 51,
+    "b": 25,
+    "c": 25
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 8900,
+   "expect": {
+    "a": 4450,
+    "b": 2225,
+    "c": 2225
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 10001,
+   "expect": {
+    "a": 5001,
+    "b": 2500,
+    "c": 2500
+   }
+  },
+  {
+   "rule": "quarters",
+   "bp": {
+    "a": 5000,
+    "b": 2500,
+    "c": 2500
+   },
+   "cents": 123456789,
+   "expect": {
+    "a": 61728395,
+    "b": 30864197,
+    "c": 30864197
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 0,
+   "expect": {
+    "a": 0
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 1,
+   "expect": {
+    "a": 1
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 2,
+   "expect": {
+    "a": 2
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 3,
+   "expect": {
+    "a": 3
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 7,
+   "expect": {
+    "a": 7
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 99,
+   "expect": {
+    "a": 99
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 100,
+   "expect": {
+    "a": 100
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 101,
+   "expect": {
+    "a": 101
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 8900,
+   "expect": {
+    "a": 8900
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 10001,
+   "expect": {
+    "a": 10001
+   }
+  },
+  {
+   "rule": "solo",
+   "bp": {
+    "a": 10000
+   },
+   "cents": 123456789,
+   "expect": {
+    "a": 123456789
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 0,
+   "expect": {
+    "zed": 0,
+    "amy": 0
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 1,
+   "expect": {
+    "zed": 0,
+    "amy": 1
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 2,
+   "expect": {
+    "zed": 1,
+    "amy": 1
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 3,
+   "expect": {
+    "zed": 1,
+    "amy": 2
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 7,
+   "expect": {
+    "zed": 3,
+    "amy": 4
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 99,
+   "expect": {
+    "zed": 49,
+    "amy": 50
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 100,
+   "expect": {
+    "zed": 50,
+    "amy": 50
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 101,
+   "expect": {
+    "zed": 50,
+    "amy": 51
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 8900,
+   "expect": {
+    "zed": 4450,
+    "amy": 4450
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 10001,
+   "expect": {
+    "zed": 5000,
+    "amy": 5001
+   }
+  },
+  {
+   "rule": "tie",
+   "bp": {
+    "zed": 5000,
+    "amy": 5000
+   },
+   "cents": 123456789,
+   "expect": {
+    "zed": 61728394,
+    "amy": 61728395
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 0,
+   "expect": {
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 1,
+   "expect": {
+    "x": 1,
+    "y": 0,
+    "z": 0,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 2,
+   "expect": {
+    "x": 1,
+    "y": 1,
+    "z": 0,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 3,
+   "expect": {
+    "x": 1,
+    "y": 1,
+    "z": 1,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 7,
+   "expect": {
+    "x": 3,
+    "y": 2,
+    "z": 2,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 99,
+   "expect": {
+    "x": 33,
+    "y": 33,
+    "z": 33,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 100,
+   "expect": {
+    "x": 34,
+    "y": 33,
+    "z": 33,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 101,
+   "expect": {
+    "x": 34,
+    "y": 34,
+    "z": 33,
+    "w": 0
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 8900,
+   "expect": {
+    "x": 2967,
+    "y": 2966,
+    "z": 2966,
+    "w": 1
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 10001,
+   "expect": {
+    "x": 3334,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   }
+  },
+  {
+   "rule": "four",
+   "bp": {
+    "x": 3333,
+    "y": 3333,
+    "z": 3333,
+    "w": 1
+   },
+   "cents": 123456789,
+   "expect": {
+    "x": 41148148,
+    "y": 41148148,
+    "z": 41148148,
+    "w": 12345
+   }
+  }
+ ],
+ "allocateRefused": [
+  {
+   "cents": 10.5,
+   "bp": {
+    "a": 5000,
+    "b": 5000
+   },
+   "refused": true
+  },
+  {
+   "cents": -1,
+   "bp": {
+    "a": 5000,
+    "b": 5000
+   },
+   "refused": true
+  },
+  {
+   "cents": 10,
+   "bp": {
+    "a": 5000.5,
+    "b": 4999.5
+   },
+   "refused": true
+  },
+  {
+   "cents": 10,
+   "bp": {
+    "a": 11000,
+    "b": -1000
+   },
+   "refused": true
+  },
+  {
+   "cents": 10,
+   "bp": {},
+   "refused": true
+  },
+  {
+   "cents": 10,
+   "bp": {
+    "a": 5000,
+    "b": 4000
+   },
+   "refused": true
+  }
+ ],
+ "splitFromPayerShare": [
+  {
+   "payer": "dad",
+   "others": [
+    "mom"
+   ],
+   "pct": 50,
+   "expect": {
+    "dad": 5000,
+    "mom": 5000
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [
+    "mom"
+   ],
+   "pct": 60,
+   "expect": {
+    "dad": 6000,
+    "mom": 4000
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [
+    "mom"
+   ],
+   "pct": 0,
+   "expect": {
+    "dad": 0,
+    "mom": 10000
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [
+    "mom"
+   ],
+   "pct": 100,
+   "expect": {
+    "dad": 10000,
+    "mom": 0
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [],
+   "pct": 50,
+   "expect": {
+    "dad": 10000
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [
+    "zoe",
+    "amy"
+   ],
+   "pct": 50,
+   "expect": {
+    "dad": 5000,
+    "amy": 2500,
+    "zoe": 2500
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [
+    "b",
+    "a"
+   ],
+   "pct": 33,
+   "expect": {
+    "dad": 3300,
+    "a": 3350,
+    "b": 3350
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [
+    "dad",
+    "mom"
+   ],
+   "pct": 50,
+   "expect": {
+    "dad": 5000,
+    "mom": 5000
+   }
+  },
+  {
+   "payer": "dad",
+   "others": [
+    "a",
+    "b",
+    "c"
+   ],
+   "pct": 25,
+   "expect": {
+    "dad": 2500,
+    "a": 2500,
+    "b": 2500,
+    "c": 2500
+   }
+  }
+ ],
+ "canonicalJson": [
+  {
+   "value": {
+    "b": 1,
+    "a": {
+     "d": 1,
+     "c": 2
+    }
+   },
+   "expect": "{\"a\":{\"c\":2,\"d\":1},\"b\":1}"
+  },
+  {
+   "value": [
+    3,
+    1,
+    2
+   ],
+   "expect": "[3,1,2]"
+  },
+  {
+   "value": {
+    "a": [
+     1,
+     {
+      "b": 2
+     }
+    ]
+   },
+   "expect": "{\"a\":[1,{\"b\":2}]}"
+  },
+  {
+   "value": [
+    0,
+    0,
+    1.5,
+    1e+21,
+    0.1,
+    100
+   ],
+   "expect": "[0,0,1.5,1e+21,0.1,100]"
+  },
+  {
+   "value": "a\"b\né😀",
+   "expect": "\"a\\\"b\\né😀\""
+  },
+  {
+   "value": {
+    "é": 1,
+    "z": 2,
+    "a": 3,
+    "B": 4
+   },
+   "expect": "{\"B\":4,\"a\":3,\"z\":2,\"é\":1}"
+  },
+  {
+   "value": {
+    "a": null,
+    "b": true,
+    "c": false,
+    "d": ""
+   },
+   "expect": "{\"a\":null,\"b\":true,\"c\":false,\"d\":\"\"}"
+  },
+  {
+   "value": {
+    "nested": {
+     "z": [
+      {
+       "y": 1,
+       "x": 2
+      }
+     ],
+     "a": {}
+    }
+   },
+   "expect": "{\"nested\":{\"a\":{},\"z\":[{\"x\":2,\"y\":1}]}}"
+  }
+ ]
+}

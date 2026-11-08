@@ -28,7 +28,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          rawExportBundleFor, edgesFor, childCtxFor,
          persistCapturedMessage, mediaArtifactFor, registerDeviceToken,
          unregisterDeviceToken,
-         certifiedExportBundleFor,
+         certifiedExportBundleFor, successorCustodyOrderFor,
          createGuardianInvite, getGuardianInvite,
          acceptGuardianInvite, revokeGuardianInvite, bootstrapGuardianInvite,
          takeAndGo, themeFor, setChildTheme,
@@ -54,8 +54,9 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
          storageKeyInUse, releaseMediaUpload } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
-import { sleepsUntilSideChange, sideOn, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
+import { sleepsUntilSideChange, sideOn, sideAtInstant, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
+import { partsOn } from '../packages/delivery-engine/src/materialize.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
@@ -1548,8 +1549,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // Honest absence: a child with no active custody order gets null here,
       // never a guessed/fabricated countdown (db/migrations/0007's own
       // reasoning; see custody_order.test.mjs's NOORDER fixture).
+      // S-D9 -- stops where the order ends; answered from the successor order
+      // when one is on file, otherwise null (never a countdown past the end).
+      const successor = order?.effectiveTo
+        ? await successorCustodyOrderFor(pool, c.childId, nowLocalDate) : null;
       const sleepsUntilHandover = order
-        ? sleepsUntilSideChange(order, nowLocalDate)?.sleeps ?? null
+        ? sleepsUntilSideChange(order, nowLocalDate, 60, successor)?.sleeps ?? null
         : null;
       // Day-part classification, real as of this pass — MASTERFILE §7.2's
       // own documented /now contract shape. childCtxFor() is the same
@@ -1572,7 +1577,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // (Sun=0..Sat=6) and HH:MM truncation as /ribbon. Empty array, not a
       // guess, when she has no schedule rows.
       const nowWeekday = local.weekday % 7;
-      const dayParts = (ctx?.dayParts ?? [])
+      const dayParts = (ctx ? partsOn(ctx, nowLocalDate) : [])
         .filter(p => p.daysOfWeek.includes(nowWeekday))
         .map(p => ({ kind: p.kind, startsLocal: p.startsLocal.slice(0, 5),
           endsLocal: p.endsLocal.slice(0, 5), reachable: p.reachable }));
@@ -1749,7 +1754,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const order = await activeCustodyOrderFor(pool, c.childId, nowLocalDate);
       let onDutyGuardianId = null;
       if (order) {
-        const side = sideOn(order, nowLocalDate).side;
+        // S-D8 -- who holds her RIGHT NOW, not who holds today's date: on a
+        // handover day, before the exchange time (in the decree's zone) it is
+        // still the previous side. Falls back to the date only when the instant
+        // is outside the order's effective range.
+        const side = (sideAtInstant(order, nowUtc) ?? sideOn(order, nowLocalDate)).side;
         onDutyGuardianId = side === 'A'
           ? (order.sideAGuardianId ?? null)
           : (order.sideBGuardianId ?? null);
@@ -1823,6 +1832,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const tz = await childTzFor(c, nowUtc);
       if (!tz) return { status: 404, body: { error: 'child_not_found' } };
       const local = nowUtc.setZone(tz);
+      const nowLocalDate = local.toISODate();
       // Sun=0..Sat=6, matching /presence's own nowWeekday convention just
       // above (packages/delivery-engine/src/materialize.ts,
       // 0010_availability.sql's weekday column) — NOT Luxon's native
@@ -1831,10 +1841,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
 
       // childCtxFor() already runs the real, tested day-part query
       // materialize()/tools/scheduler.mjs rely on — reused exactly, not
-      // reimplemented. Its own effective-date filter (WHERE effective @>
-      // CURRENT_DATE) is unrelated to child-local "today": that's a
-      // pre-existing property of this shared function, not introduced here
-      // (see this route's own README-adjacent disclosure below). This route
+      // reimplemented. It returns every day-part with its effective bounds
+      // (S-D10); this route resolves them against the child-local date and
       // ADDITIONALLY filters to today's WEEKDAY specifically — a filter
       // childCtxFor()'s other two callers (tools/scheduler.mjs, POST
       // .../messages) have no use for, since they resolve one specific
@@ -1842,14 +1850,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // filter belongs here, not inside childCtxFor() itself.
       const ctx = await childCtxFor(pool, c.childId);
       if (!ctx) return { status: 404, body: { error: 'child_not_found' } };
-      // DISCLOSED, not silently papered over: childCtxFor()'s own day_part
-      // query filters on Postgres CURRENT_DATE (server date), not the
-      // child-local date `local`/`nowLocalDate` resolve just above — near a
-      // midnight boundary this route's `dayParts` could reflect a different
-      // calendar day than its own /now sibling's `childLocalTime` does. A
-      // real, pre-existing property of a function this route reuses rather
-      // than something this route introduces; fixing it would also affect
-      // childCtxFor()'s other two callers and is out of scope here.
+      // (Formerly DISCLOSED here: childCtxFor() filtered day_part on the
+      // database's CURRENT_DATE. Fixed by S-D10 -- it now returns every
+      // day-part with its effective bounds and this route resolves today's
+      // schedule by the child-local date, below.)
       // day_part.days_of_week is NOT NULL and, per every real seed/fixture
       // in this repo (db/test/0002_seed.sql), always an explicit, fully-
       // populated array ('{0,1,2,3,4,5,6}' for an every-day part) — never
@@ -1867,7 +1871,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // reformatting childCtxFor() itself (a shared function with two other
       // real callers this route has no business reformatting output for).
       const hhmm = (t) => t.slice(0, 5);
-      const dayParts = ctx.dayParts
+      // S-D10: childCtxFor() now returns EVERY day-part with its effective
+      // bounds; today's schedule is resolved here by the child-local date
+      // (the disclosed CURRENT_DATE mismatch above no longer exists).
+      const dayParts = partsOn(ctx, nowLocalDate)
         .filter(p => p.daysOfWeek.includes(nowWeekday))
         .map(p => ({ kind: p.kind, startsLocal: hhmm(p.startsLocal), endsLocal: hhmm(p.endsLocal),
           reachable: p.reachable }));
@@ -2652,6 +2659,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           // real field the backend already computed, never wired to the one
           // response that was supposed to carry it.
           callLog: result.callLog,
+          // S-D13 -- the self-describing v2 bundle: roster (id -> name/role),
+          // fault report, custody order history, expense ledger + history,
+          // exchange logs, doses, care notes. \`bundleHash\` is the SHA-256 of
+          // its CANONICAL JSON (ledger.ts canonicalJson), reproducible from
+          // this object alone with verifyCertifiedBundle(). A broken message
+          // chain is exported WITH faultReport instead of being refused.
+          bundle: result.bundle,
+          faultReport: result.faultReport,
           bundleHash: result.bundleHash,
           exportRecordId: result.exportRecordId,
         } };
@@ -2910,6 +2925,18 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         && typeof body.receiptKey !== 'string') {
       return 'bad_receiptKey';
     }
+    // S-D19 -- both optional, so the existing two-party client keeps working.
+    if (body.currency !== undefined && !(typeof body.currency === 'string' && /^[A-Z]{3}$/.test(body.currency))) {
+      return 'bad_currency';
+    }
+    if (body.participants !== undefined) {
+      if (!Array.isArray(body.participants) || body.participants.length < 1 || body.participants.length > 12
+          || !body.participants.every(p => p && typeof p.userId === 'string'
+               && Number.isInteger(p.bp) && p.bp >= 0 && p.bp <= 10000)
+          || body.participants.reduce((a, p) => a + p.bp, 0) !== 10000) {
+        return 'bad_participants';
+      }
+    }
     return null;
   }
 
@@ -2919,6 +2946,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       description: e.description,
       amountCents: e.amountCents, category: e.category, incurredOn: e.incurredOn,
       receiptKey: e.receiptKey, payerSharePercent: e.splitRule?.payerSharePercent ?? null,
+      // S-D19 -- additive: older clients ignore these.
+      currency: e.currency,
+      participants: e.splitBp
+        ? Object.entries(e.splitBp).map(([userId, bp]) => ({ userId, bp })).sort((a, b) => a.userId.localeCompare(b.userId))
+        : null,
       status: e.status, createdAt: e.createdAt,
     };
   }
@@ -2961,7 +2993,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         amountCents: c.body.amountCents, category: c.body.category,
         incurredOn: c.body.incurredOn, receiptKey: c.body.receiptKey ?? null,
         payerSharePercent: c.body.payerSharePercent,
+        currency: c.body.currency, participants: c.body.participants,
       });
+      if ('error' in e) return { status: 400, body: { error: e.error } };
       return { status: 201, body: expenseToWire(e) };
     },
   });
@@ -2982,13 +3016,22 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           return { status: 403, body: { error: 'P6_child_financial' } };
         }
         if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
-        const e = await resolveExpense(pool, c.principal.roleName, c.principal.userId,
+        const r = await resolveExpense(pool, c.principal.roleName, c.principal.userId,
           c.childId, c.params.expenseId, action);
         // Honest 404 — a wrong/foreign expenseId (see resolveExpense()'s own
         // doc comment for why the child_id check inside that query is the
         // real lateral-privilege boundary here), never a silent 200.
-        if (!e) return { status: 404, body: { error: 'expense_not_found' } };
-        return { body: expenseToWire(e) };
+        if (!r.ok && r.reason === 'not_found') {
+          return { status: 404, body: { error: 'expense_not_found' } };
+        }
+        // S-D14 -- a recorded, guarded transition (migration 0043).
+        if (!r.ok && r.reason === 'invalid_transition') {
+          return { status: 409, body: { error: 'invalid_transition', status: r.status } };
+        }
+        if (!r.ok) {
+          return { status: 403, body: { error: 'cannot_resolve_own_expense' } };
+        }
+        return { body: expenseToWire(r.expense) };
       },
     });
   }
@@ -3010,19 +3053,23 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // rather than shared — doseKey()'s own doc comment (meds_care.dart,
   // packages/care/src/care.ts) is explicit that dose collisions are keyed
   // on the CHILD's local day, never the server's or a client device's.
-  async function resolveChildLocalDate(q, childId) {
+  // `atMs` (S-D6): the child-local date of an INSTANT other than now -- a
+  // back-dated dose belongs to the child-local day it was GIVEN on, in the zone
+  // she was in then.
+  async function resolveChildLocalDate(q, childId, atMs = null) {
+    const at = atMs === null ? DateTime.utc() : DateTime.fromMillis(atMs, { zone: 'utc' });
     const interval = await q(
       `SELECT tz FROM child_tz_interval
-        WHERE child_id = $1 AND valid @> now()
+        WHERE child_id = $1 AND valid @> $2::timestamptz
         ORDER BY confidence DESC LIMIT 1`,
-      [childId],
+      [childId, at.toISO()],
     );
     let tz = interval[0]?.tz;
     if (!tz) {
       const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [childId]);
       tz = child[0]?.home_tz ?? 'UTC';
     }
-    return DateTime.utc().setZone(tz).toISODate();
+    return at.setZone(tz).toISODate();
   }
 
   // P-01 -- routes that ALSO call pool-scoped accessors must never hold the
@@ -3074,12 +3121,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         localDate,
         medications: medications.map(m => ({
           id: m.id, name: m.name, dose: m.dose, slots: m.slots,
-          isPrn: m.isPrn, minGapHours: m.minGapHours,
+          isPrn: m.isPrn, minGapHours: m.minGapHours, maxDosesPer24h: m.maxDosesPer24h,
         })),
         doses: doses.map(d => ({
           id: d.id, medicationId: d.medicationId, localDate: d.localDate, slot: d.slot,
           administeredAt: d.administeredAt, byUserId: d.byUserId, byUserName: d.byUserName,
-          status: d.status,
+          status: d.status, recordedAt: d.recordedAt, backdated: d.backdated,
         })),
       } };
     },
@@ -3102,26 +3149,60 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (!slot) return { status: 400, body: { error: 'slot_required' } };
       const status = c.body?.status ?? 'given';
       if (!DOSE_STATUSES.has(status)) return { status: 400, body: { error: 'bad_status' } };
-      const localDate = await localDateFor(c);
+
+      // S-D6 -- an OPTIONAL, audited "given at". It must carry an explicit UTC
+      // offset (a bare local time is ambiguous across the child's two zones),
+      // cannot be in the future (5 min of clock skew allowed) and cannot be
+      // more than 72 hours ago. The row stores it as administered_at, the real
+      // time as recorded_at, and backdated = true.
+      let givenAt = null;
+      const rawGiven = c.body?.given_at;
+      if (rawGiven !== undefined && rawGiven !== null) {
+        const parsed = typeof rawGiven === 'string' && /(Z|[+-]\d\d:?\d\d)$/.test(rawGiven)
+          ? DateTime.fromISO(rawGiven, { setZone: true }) : null;
+        if (!parsed || !parsed.isValid) {
+          return { status: 400, body: { error: 'bad_given_at', detail: 'iso_with_offset_required' } };
+        }
+        const nowMs = Date.now();
+        if (parsed.toMillis() > nowMs + 5 * 60_000) {
+          return { status: 400, body: { error: 'bad_given_at', detail: 'in_the_future' } };
+        }
+        if (parsed.toMillis() < nowMs - 72 * 3600_000) {
+          return { status: 400, body: { error: 'bad_given_at', detail: 'too_old' } };
+        }
+        givenAt = parsed.toJSDate();
+      }
+      const localDate = givenAt
+        ? await inSession(c, (q) => resolveChildLocalDate(q, c.childId, givenAt.getTime()))
+        : await localDateFor(c);
       const result = await recordDose(
         pool, c.principal.roleName, c.principal.userId, c.childId,
-        c.params.medicationId, localDate, slot, status);
-      // S-B5: a medication that is not THIS child's answers like one that does not exist.
-      if (!result.ok && result.notFound) {
-        return { status: 404, body: { error: 'medication_not_found' } };
-      }
+        c.params.medicationId, localDate, slot, status, givenAt);
       if (!result.ok) {
-        // Named the parent and the local time, nothing more — §9.6.1's own
-        // "no blame framing" rule, the exact same shape AlreadyAdministered
-        // (care.ts, meds_care.dart) already gives the demo path.
-        return { status: 409, body: {
-          error: 'already_administered', by: result.blockedBy, atIso: result.blockedAtIso,
-        } };
+        switch (result.reason) {
+          case 'unknown_medication':
+            return { status: 404, body: { error: 'medication_not_found' } };
+          case 'unknown_slot':
+            return { status: 400, body: { error: 'unknown_slot', allowed: result.allowed } };
+          case 'too_soon':
+            return { status: 409, body: { error: 'too_soon',
+              nextAllowedAt: result.nextAllowedAt, minGapHours: result.minGapHours } };
+          case 'daily_max':
+            return { status: 409, body: { error: 'daily_max', max: result.max } };
+          default:
+            // Named the parent and the local time, nothing more — §9.6.1's own
+            // "no blame framing" rule, the exact same shape AlreadyAdministered
+            // (care.ts, meds_care.dart) already gives the demo path.
+            return { status: 409, body: {
+              error: 'already_administered', by: result.blockedBy, atIso: result.blockedAtIso,
+            } };
+        }
       }
       return { status: 201, body: {
         id: result.dose.id, medicationId: result.dose.medicationId,
         localDate: result.dose.localDate, slot: result.dose.slot,
         administeredAt: result.dose.administeredAt, status: result.dose.status,
+        recordedAt: result.dose.recordedAt, backdated: result.dose.backdated,
       } };
     },
   });
@@ -3575,7 +3656,16 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const targetLocalDate = typeof body.targetLocalDate === 'string'
         ? body.targetLocalDate : null;
       const daypart = typeof body.daypart === 'string' ? body.daypart : 'bedtime';
-      const preserve = body.preserve === true;
+      // S-D2 -- "preservation is a standing rule" (MASTERFILE §16.2 #5, settled
+      // v0.23.0): anything a GUARDIAN sends is kept unless she explicitly opts
+      // OUT with preserve:false. This used to be `body.preserve === true`, so
+      // a client that simply omitted the field (the default) quietly gave every
+      // parent's message a ~97-day clock. A CHILD's material is the opposite:
+      // it is never preserved by default (and preserve:true from a child is
+      // refused by captureMessage -- preservation is a guardian election).
+      const preserve = c.principal.roleName === 'child'
+        ? body.preserve === true
+        : body.preserve !== false;
       const batchId = typeof body.batchId === 'string' ? body.batchId : undefined;
       const batchSeq = typeof body.batchSeq === 'number' ? body.batchSeq : undefined;
 
