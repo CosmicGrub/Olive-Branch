@@ -6818,6 +6818,41 @@ only.
 
 ## [Unreleased]
 
+### Fixed — client wiring audit (child shell C-05/C-10…C-24, guardian G-08/G-11/G-12)
+- **Child age gate was inert.** `LiveChildHomeScreen` never passed an age, so
+  every live child got the defaults (7/9/7). `GET /v1/me` now returns
+  `yearsOld` for a child session (computed server-side; named `yearsOld` because
+  the child-payload sweep forbids the key `age`) and the live home threads it
+  down. A missing value fails closed to the youngest catalogue.
+- **"My day" showed demo hours to a live child.** `GET .../now` now returns
+  today's `dayParts` in her zone; the demo hours remain only offline.
+- **Ad-hoc table games unreachable.** War, Connect 4, Uno, Draw-and-guess and
+  Puzzle together are listed under "Play together on this table" (child and
+  guardian hubs) and open the existing local-play screens.
+- **Child wording and honesty.** Adult/spec wording rewritten in a child voice
+  across the games hub and More; hard-coded "Dad" replaced by the real
+  grown-up's name or "your grown-up"; the unbuilt memory card is hidden; board
+  games say they play against the game on this screen; the "Demo" section,
+  "Redo the welcome tour" and the guardian-setup games (Word search, Guess the
+  word) are off the child shell; Growing up / The quiet corner / Take your
+  things with you appear only from age 10; the unread badge is a dot; the
+  "Live:" developer banner is gone; the kiosk lock-out screen is picture-first
+  with a one-tap Call (existing call screen, still fail-closed).
+- **GuardianHome tiles showed demo data** (a made-up peanut allergy) to a real
+  parent: Meds & care, Emergency card, Handover notes, Exchange and Expenses now
+  get the live `(baseUrl, guardianId, childId)`; a half-wired session refuses
+  rather than opening demo data. The live guardian More hub hides the tiles that
+  render invented content unless `showDemoTiles` is set.
+- **Emergency card last-write-wins.** `medical_record.version` + `ifMatch`
+  (428/409) and an append-only `medical_record_history` table (migration 0036);
+  the card shows "Last changed by X".
+- **Not done:** co-viewing screens (no real transport/route yet), an
+  emergency-card edit screen (the 409 UX needs one), and the child "My weeks"
+  / "Story library" / "Saved pictures" demo fixtures in a live build, and the
+  catalogue card blurbs in `game_logic.dart` (TS-parity wording, still partly
+  third-person).
+  Assertions: Dart 2907 → 2957, server/DB +33 (computed total 8668 at the time of writing).
+
 ### Added
 - **Secure network play (checkers, live) — `packages/game-sync`.** Every
   existing game (§9.2) was pass-and-play: one device, two turns. A guardian

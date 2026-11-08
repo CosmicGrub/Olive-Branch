@@ -19,7 +19,13 @@ import 'package:flutter/material.dart';
 import 'game_logic.dart';
 
 class HandicapScreen extends StatefulWidget {
-  const HandicapScreen({super.key, required this.kind, this.currentHandicapId, this.onChanged});
+  const HandicapScreen({super.key, required this.kind, this.currentHandicapId, this.onChanged,
+    this.parentName = 'Dad'});
+
+  /// The real grown-up's name (C-13). 'Dad' is only the legacy default the
+  /// TS-ported catalogue wording uses; the child shell always passes a real
+  /// name or [neutralGrownUp].
+  final String parentName;
 
   final GameKind kind;
 
@@ -59,9 +65,10 @@ class _HandicapScreenState extends State<HandicapScreen> {
   @override
   Widget build(BuildContext context) {
     final meta = catalogueFor(widget.kind);
-    final offer = handicapOffer(widget.kind);
+    final offer = handicapOffer(widget.kind, parentName: widget.parentName);
     final cs = Theme.of(context).colorScheme;
-    final banner = handicapBanner(widget.kind, _selected);
+    final banner = handicapBanner(widget.kind, _selected,
+        parentName: widget.parentName == 'Dad' ? null : widget.parentName);
     return Scaffold(
       appBar: AppBar(title: Text('Make it fair · ${meta.title}')),
       body: SafeArea(
@@ -70,7 +77,7 @@ class _HandicapScreenState extends State<HandicapScreen> {
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Text(
-            'Pick something for him to deal with. You can change your mind any time — even mid-game.',
+            'Pick something tricky for ${widget.parentName} to deal with. You can change your mind any time — even mid-game.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 24),
@@ -83,7 +90,7 @@ class _HandicapScreenState extends State<HandicapScreen> {
           for (final h in offer.options) ...[
             const SizedBox(height: 8),
             _HandicapTile(
-              label: h.label,
+              label: withParentName(h.label, widget.parentName),
               icon: Icons.bolt_rounded,
               selected: _selected == h.id,
               onTap: () => _choose(h.id),

@@ -118,8 +118,15 @@ class GamePickerScreen extends StatelessWidget {
   final Map<String, ActivityOverride>? overrides;
 
   void _surpriseMe(BuildContext context) {
-    final picked = onSurpriseMe?.call();
-    if (picked != null) (onPlay ?? _notBuiltYet)(context, picked.kind);
+    // C-12: a random pick must never land on a game with no board (it would
+    // answer "not built yet"); ask again a few times, then give up quietly.
+    GameMeta? picked = onSurpriseMe?.call();
+    for (int i = 0; picked != null && unbuiltGameKinds.contains(picked.kind) && i < 8; i++) {
+      picked = onSurpriseMe?.call();
+    }
+    if (picked != null && !unbuiltGameKinds.contains(picked.kind)) {
+      (onPlay ?? _notBuiltYet)(context, picked.kind);
+    }
   }
 
   @override
@@ -136,7 +143,7 @@ class GamePickerScreen extends StatelessWidget {
     // reimplements `forAge`'s own `childAge >= defaultMinAge` comparison
     // as its own no-override fallback path, so filtering the FULL
     // [catalogue] through it once is both correct and non-redundant.
-    final games = catalogue.where((g) => effectiveVisibility(
+    final games = catalogue.where((g) => !unbuiltGameKinds.contains(g.kind) && effectiveVisibility(
           overrides: overrides,
           activityKey: 'game:${g.kind.name}',
           childAge: childAge,

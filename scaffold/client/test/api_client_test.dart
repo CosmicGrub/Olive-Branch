@@ -19,6 +19,43 @@ void main() {
       expect(body['roleName'], 'guardian');
     });
 
+    test('fetchMe exposes the child yearsOld the age gate reads (C-05)', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'roleName': 'child', 'yearsOld': 5}), 200));
+      final api = OliveApi('http://api.test', 'tok', client: mock);
+      expect((await api.fetchMe())['yearsOld'], 5);
+    });
+
+    test('putEmergencyCard sends ifMatch; a stale write surfaces as a 409 '
+        'ApiException (G-11)', () async {
+      Map<String, dynamic>? sent;
+      final mock = MockClient((req) async {
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        expect(req.method, 'PUT');
+        expect(req.url.path, '/v1/children/child-a/emergency-card');
+        return http.Response(jsonEncode({'error': 'stale_version', 'currentVersion': 4}), 409);
+      });
+      final api = OliveApi('http://api.test', 'tok', client: mock);
+      await expectLater(
+        api.putEmergencyCard('child-a', ifMatch: 3, allergies: <String>['Egg']),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 409)
+            .having((e) => e.error, 'error', 'stale_version')));
+      expect(sent!['ifMatch'], 3);
+      expect(sent!['allergies'], <String>['Egg']);
+    });
+
+    test('fetchEmergencyCardHistory hits the history path (G-11)', () async {
+      Uri? seen;
+      final mock = MockClient((req) async {
+        seen = req.url;
+        return http.Response(jsonEncode({'entries': <dynamic>[]}), 200);
+      });
+      final api = OliveApi('http://api.test', 'tok', client: mock);
+      await api.fetchEmergencyCardHistory('child-a');
+      expect(seen!.path, '/v1/children/child-a/emergency-card/history');
+    });
+
     test('fetchNow substitutes :childId into the path', () async {
       Uri? seen;
       final mock = MockClient((req) async {

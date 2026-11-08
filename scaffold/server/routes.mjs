@@ -36,6 +36,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          appendHandoverNote, handoverNotesFor,
          expensesFor, proposeExpense, resolveExpense,
          medicationsFor, dosesForDate, recordDose, medicalRecordFor, setMedicalRecord,
+         medicalRecordHistoryFor, StaleMedicalRecordError,
          bagItemsFor, setBagItemStatus, runningLateLogFor, logRunningLate,
          arrivalEventFor, recordExchangeArrival,
          careNotesFor, writeCareNoteRow,
@@ -444,6 +445,19 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       const hasOnboarded = c.principal.roleName === 'child'
         ? (await q(`SELECT 1 FROM child_profile WHERE child_id = $1`, [c.principal.childId])).length > 0
         : null;
+      // yearsOld — audit C-05 (the child age gate was inert because no live
+      // client ever learned her age). Whole years, computed HERE from
+      // child.birth_date against her own home-zone calendar date — the
+      // birth date itself never leaves the server. Named `yearsOld`, not
+      // `age`: `age` is on packages/globalaudit's GLOBAL_CHILD_FORBIDDEN
+      // list, and Api.handle()'s child-payload sweep would 500 this route
+      // for every child session. `null` for a guardian caller (this is a
+      // per-child signal, same shape as hasOnboarded above).
+      const yearsOld = c.principal.roleName === 'child'
+        ? ((await q(
+            `SELECT date_part('year', age((now() AT TIME ZONE home_tz)::date, birth_date))::int AS years
+               FROM child WHERE id = $1`, [c.principal.childId]))[0]?.years ?? null)
+        : null;
       return { body: {
         userId: c.principal.userId,
         childId: c.principal.childId,
@@ -452,6 +466,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         displayName: displayName ?? null,
         hasPin,
         hasOnboarded,
+        yearsOld,
       } };
     },
   });
@@ -1388,6 +1403,17 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       // branch is irrelevant here since /now has no priority concept.
       const ctx = await childCtxFor(pool, c.childId);
       const g = ctx ? gate(ctx, nowUtc) : null;
+      // dayParts — audit C-10: today's ordered day-part schedule in her own
+      // zone, so ChildHome's "My day" renders the real schedule instead of
+      // the demo hours. /ribbon carries the same list but is guardian-only;
+      // a child session is allowed here already. Same weekday filter
+      // (Sun=0..Sat=6) and HH:MM truncation as /ribbon. Empty array, not a
+      // guess, when she has no schedule rows.
+      const nowWeekday = local.weekday % 7;
+      const dayParts = (ctx?.dayParts ?? [])
+        .filter(p => p.daysOfWeek.includes(nowWeekday))
+        .map(p => ({ kind: p.kind, startsLocal: p.startsLocal.slice(0, 5),
+          endsLocal: p.endsLocal.slice(0, 5), reachable: p.reachable }));
       return { body: {
         childLocalTime: local.toFormat('h:mm a'),
         zoneAbbr: local.toFormat('ZZZZ'),
@@ -1395,6 +1421,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
         dayPart: g?.reason ?? null,
         reachable: g?.allow ?? null,
         sleepsUntilHandover,
+        dayParts,
       } };
     },
   });
@@ -2855,6 +2882,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       medications: r.medications.map(m => ({
         id: m.id, name: m.name, dose: m.dose, slots: m.slots, isPrn: m.isPrn,
       })),
+      // G-11 — the concurrency token (send it back as `ifMatch`) and who
+      // last changed the card, for "Last changed by X".
+      version: r.version,
+      lastChange: r.lastChange
+        ? { byName: r.lastChange.byName, at: r.lastChange.atIso } : null,
     };
   }
 
@@ -2883,16 +2915,47 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage) {
       if (body.conditions !== undefined && !Array.isArray(body.conditions)) {
         return { status: 400, body: { error: 'bad_conditions' } };
       }
-      await setMedicalRecord(pool, c.principal.roleName, c.principal.userId, c.childId, {
-        bloodType: body.bloodType ?? null, allergies: body.allergies ?? [],
-        conditions: body.conditions ?? [], pediatricianName: body.pediatricianName ?? null,
-        pediatricianPractice: body.pediatricianPractice ?? null,
-        pediatricianPhone: body.pediatricianPhone ?? null,
-        insuranceProvider: body.insuranceProvider ?? null,
-        insuranceMemberId: body.insuranceMemberId ?? null,
-      });
+      // G-11 — optimistic concurrency (If-Match semantics, carried in the
+      // body as `ifMatch` because handlers do not see request headers): the
+      // `version` the caller read from GET (0 = no card yet). Required — no
+      // unconditional-overwrite path remains.
+      if (!Number.isInteger(body.ifMatch) || body.ifMatch < 0) {
+        return { status: 428, body: { error: 'if_match_required' } };
+      }
+      try {
+        await setMedicalRecord(pool, c.principal.roleName, c.principal.userId, c.childId, {
+          bloodType: body.bloodType ?? null, allergies: body.allergies ?? [],
+          conditions: body.conditions ?? [], pediatricianName: body.pediatricianName ?? null,
+          pediatricianPractice: body.pediatricianPractice ?? null,
+          pediatricianPhone: body.pediatricianPhone ?? null,
+          insuranceProvider: body.insuranceProvider ?? null,
+          insuranceMemberId: body.insuranceMemberId ?? null,
+        }, body.ifMatch);
+      } catch (e) {
+        if (e instanceof StaleMedicalRecordError) {
+          return { status: 409, body: { error: 'stale_version', currentVersion: e.currentVersion } };
+        }
+        throw e;
+      }
       const record = await medicalRecordFor(pool, c.childId);
       return { body: medicalRecordToWire(record) };
+    },
+  });
+
+  // GET .../emergency-card/history — G-11's append-only trail, newest
+  // first: who changed the card, when, and the values each write replaced.
+  // Same capability as reading the card; a child session is refused.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/emergency-card/history', action: 'emergency_card.view',
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const rows = await medicalRecordHistoryFor(pool, c.childId);
+      return { body: { entries: rows.map(h => ({
+        version: h.version, changedBy: h.changedByName, changedById: h.changedById,
+        at: h.changedAtIso, priorValues: h.priorValues,
+      })) } };
     },
   });
 

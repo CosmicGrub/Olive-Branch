@@ -214,6 +214,7 @@ const putCard = (childId, tok, body) => api.handle(
     conditions: ['Mild asthma'], pediatricianName: 'Dr. Priya Nair',
     pediatricianPractice: 'Riverbend Pediatrics', pediatricianPhone: '(617) 555-0177',
     insuranceProvider: 'BlueBridge Family Health', insuranceMemberId: 'BBH-7734-2201',
+    ifMatch: 0,
   });
   check('F emergency card', 'a real guardian can PUT the card -> 200', putRes.status, 200);
   check('F emergency card', 'bloodType round-trips', putRes.body.bloodType, 'O positive');
@@ -245,7 +246,7 @@ const putCard = (childId, tok, body) => api.handle(
   const sitterGetRes = await getCard(CHILD, sitterTok);
   check('G write guard', 'a sitter CAN view the card -- the real narrow read carve-out',
     sitterGetRes.status, 200);
-  const sitterPutRes = await putCard(CHILD, sitterTok, { bloodType: 'should not land' });
+  const sitterPutRes = await putCard(CHILD, sitterTok, { bloodType: 'should not land', ifMatch: 1 });
   check('G write guard', 'a sitter CANNOT edit it', sitterPutRes.status, 403);
 
   const stillReal = await getCard(CHILD, dadTok);
@@ -268,6 +269,72 @@ const putCard = (childId, tok, body) => api.handle(
 
   const putCardRes = await putCard(CHILD, childTok, { bloodType: 'nope' });
   check('H child refused', 'PUT .../emergency-card refused', putCardRes.status, 403);
+  const histChild = await api.handle('GET', `/v1/children/${CHILD}/emergency-card/history`,
+    { authorization: `Bearer ${childTok}` }, '');
+  check('H child refused', 'GET .../emergency-card/history refused', histChild.status, 403);
+}
+
+// ===========================================================================
+// I · G-11 — optimistic concurrency + append-only history (migration 0036).
+// ===========================================================================
+{
+  const first = await getCard(CHILD, dadTok);
+  check('I versioning', 'GET returns the version the first PUT produced (1)', first.body.version, 1);
+  check('I versioning', 'GET returns lastChange.byName = the real writer',
+    first.body.lastChange?.byName, 'Dad');
+
+  const noMatch = await putCard(CHILD, dadTok, { bloodType: 'A' });
+  check('I versioning', 'a PUT with no ifMatch is refused 428, not silently applied',
+    noMatch.status, 428);
+
+  // Mom saves from the version both of them read...
+  const momSave = await putCard(CHILD, momTok, { bloodType: 'O positive', allergies: ['Peanuts', 'Egg'],
+    ifMatch: 1 });
+  check('I versioning', 'first writer from version 1 wins -> 200', momSave.status, 200);
+  check('I versioning', 'and the card is now version 2', momSave.body.version, 2);
+  check('I versioning', 'attributed to the second guardian', momSave.body.lastChange?.byName, 'Mom');
+
+  // ...Dad, still on version 1, must NOT overwrite it.
+  const dadStale = await putCard(CHILD, dadTok, { bloodType: 'B', allergies: [], ifMatch: 1 });
+  check('I versioning', 'a stale writer is refused 409', dadStale.status, 409);
+  check('I versioning', '409 body names stale_version', dadStale.body.error, 'stale_version');
+  check('I versioning', '409 body carries the current version so the client can reload',
+    dadStale.body.currentVersion, 2);
+  const afterStale = await getCard(CHILD, dadTok);
+  check('I versioning', 'the stale write changed nothing (allergies kept)',
+    JSON.stringify(afterStale.body.allergies), '["Peanuts","Egg"]');
+
+  // Two writers racing on the same version: exactly one wins.
+  const [r1, r2] = await Promise.all([
+    putCard(CHILD, dadTok, { bloodType: 'AB', ifMatch: 2 }),
+    putCard(CHILD, momTok, { bloodType: 'O', ifMatch: 2 }),
+  ]);
+  check('I versioning', 'concurrent writers on one version: exactly one 200 and one 409',
+    [r1.status, r2.status].sort().join(','), '200,409');
+
+  const hist = await api.handle('GET', `/v1/children/${CHILD}/emergency-card/history`,
+    { authorization: `Bearer ${dadTok}` }, '');
+  check('I history', 'a guardian can read the history -> 200', hist.status, 200);
+  check('I history', 'one history row per successful write (1,2,3)',
+    hist.body.entries.map(e => e.version).join(','), '3,2,1');
+  const v1 = hist.body.entries.find(e => e.version === 1);
+  check('I history', 'the first write replaced nothing (priorValues null)', v1.priorValues, null);
+  const v2 = hist.body.entries.find(e => e.version === 2);
+  check('I history', 'v2 records the writer by display name', v2.changedBy, 'Mom');
+  check('I history', 'v2 keeps the values it replaced (the original single allergy)',
+    JSON.stringify(v2.priorValues.allergies), '["Peanuts — carries an EpiPen"]');
+
+  // Append-only is enforced by the database, not by route politeness.
+  let updRefused = false;
+  try { await admin.query(`UPDATE medical_record_history SET version = 99 WHERE child_id = $1`, [CHILD]); }
+  catch { updRefused = true; }
+  check('I append-only', 'UPDATE on the history table is refused (even for the superuser)', updRefused, true);
+  let delRefused = false;
+  try { await admin.query(`DELETE FROM medical_record_history WHERE child_id = $1`, [CHILD]); }
+  catch { delRefused = true; }
+  check('I append-only', 'a direct DELETE on the history table is refused', delRefused, true);
+  const cnt = await admin.query(`SELECT count(*)::int AS n FROM medical_record_history WHERE child_id = $1`, [CHILD]);
+  check('I append-only', 'all three rows are still there', cnt.rows[0].n, 3);
 }
 
 await cleanup();

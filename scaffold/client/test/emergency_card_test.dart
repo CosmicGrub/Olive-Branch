@@ -242,6 +242,51 @@ void main() {
       expect(find.textContaining('RC-0001'), findsOneWidget);
     });
 
+    testWidgets('G-11: shows "Last changed by X on <date>" from the live card; '
+        'the demo card never claims an author', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        return http.Response(jsonEncode({
+          'bloodType': null, 'allergies': ['Egg'], 'conditions': <dynamic>[],
+          'pediatricianName': null, 'pediatricianPractice': null, 'pediatricianPhone': null,
+          'insuranceProvider': null, 'insuranceMemberId': null,
+          'guardians': <dynamic>[], 'medications': <dynamic>[],
+          'version': 3, 'lastChange': {'byName': 'Mom', 'at': '2026-11-02T09:15:00.000Z'},
+        }), 200);
+      });
+      await pumpTall(t, EmergencyCardScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      await t.pumpAndSettle();
+      expect(find.text('Last changed by Mom on 2026-11-02'), findsOneWidget);
+
+      await pumpTall(t, const EmergencyCardScreen());
+      expect(find.byKey(const Key('lastChangedBy')), findsNothing);
+    });
+
+    testWidgets('G-11: a live card never written yet (lastChange null) shows no '
+        'invented author', (t) async {
+      final MockClient mock = MockClient((http.Request req) async {
+        if (req.url.path == '/v1/auth/dev-login') {
+          return http.Response(jsonEncode({'token': 'tok'}), 200);
+        }
+        return http.Response(jsonEncode({
+          'bloodType': null, 'allergies': <dynamic>[], 'conditions': <dynamic>[],
+          'pediatricianName': null, 'pediatricianPractice': null, 'pediatricianPhone': null,
+          'insuranceProvider': null, 'insuranceMemberId': null,
+          'guardians': <dynamic>[], 'medications': <dynamic>[],
+          'version': 0, 'lastChange': null,
+        }), 200);
+      });
+      await pumpTall(t, EmergencyCardScreen(
+        baseUrl: 'http://api.test', guardianId: 'dad-1', childId: 'child-a',
+        httpClient: mock));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('lastChangedBy')), findsNothing);
+    });
+
     testWidgets('the real live speak callback reads the real fetched fields, '
         'allergy-first, not the demo const text', (t) async {
       final List<String> spoken = <String>[];

@@ -87,12 +87,13 @@ void main() {
       expect(button.height, greaterThanOrEqualTo(48.0));
     });
 
-    testWidgets('unread count reaches the Messages tile as a badge, not '
-        'silently dropped', (t) async {
+    testWidgets('unread messages reach the Messages tile as a DOT (C-24: a '
+        'shape, never a red number), not silently dropped', (t) async {
       await t.pumpWidget(wrap(const ChildHome(
         childName: 'Maya', presence: null,
         sleepsUntilHandover: 3, unreadCount: 2)));
-      expect(find.text('2'), findsOneWidget);
+      expect(find.byKey(const Key('newDot')), findsOneWidget);
+      expect(find.text('2'), findsNothing);
     });
 
     testWidgets('a zero unread count shows no badge', (t) async {
@@ -100,6 +101,7 @@ void main() {
         childName: 'Maya', presence: null,
         sleepsUntilHandover: 3, unreadCount: 0)));
       expect(find.text('0'), findsNothing);
+      expect(find.byKey(const Key('newDot')), findsNothing);
     });
 
     testWidgets('presence secondary text and the sleeps caption use the '

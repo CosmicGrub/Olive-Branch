@@ -30,7 +30,11 @@
 // into this screen at all — the guardian-facing "set the emergency card"
 // affordance is a real, disclosed follow-up; this pass closes the READ
 // side, which is what §8.13.5's own "read once, in a hurry" framing is
-// actually for.
+// actually for. G-11: the server now versions the card (If-Match style
+// `ifMatch`, 409 `stale_version`) and keeps an append-only history; the
+// live screen shows "Last changed by X on <date>" from it, and
+// OliveApi.putEmergencyCard requires the version, so the future edit
+// surface cannot silently overwrite a co-guardian's change.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
@@ -112,6 +116,10 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
   List<_LiveGuardian> _guardians = <_LiveGuardian>[];
   String? _pediatricianName, _pediatricianPractice, _pediatricianPhone;
   String? _insuranceProvider, _insuranceMemberId;
+  // G-11: who last changed the card. Null before any write. (The card's
+  // `version` is deliberately not kept: this screen has no edit surface to
+  // send it back from — see OliveApi.putEmergencyCard's `ifMatch`.)
+  String? _lastChangedBy, _lastChangedAt;
 
   @override
   void initState() {
@@ -154,6 +162,9 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
         _pediatricianPhone = result['pediatricianPhone'] as String?;
         _insuranceProvider = result['insuranceProvider'] as String?;
         _insuranceMemberId = result['insuranceMemberId'] as String?;
+        final Map<String, dynamic>? change = result['lastChange'] as Map<String, dynamic>?;
+        _lastChangedBy = change?['byName'] as String?;
+        _lastChangedAt = change?['at'] as String?;
         _loadState = _LoadState.ready;
       });
     } catch (e) {
@@ -309,6 +320,16 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
                       Text('Member ID: $_insuranceMemberId', style: const TextStyle(fontSize: 18)),
                     ],
                   ])),
+              ],
+              // G-11 — who last changed this card, from the append-only
+              // history. Absent (not a made-up name) before the first write.
+              if (_lastChangedAt != null) ...[
+                const SizedBox(height: 8),
+                Text(key: const Key('lastChangedBy'),
+                  'Last changed by ${_lastChangedBy ?? 'a guardian'} on '
+                  '${_lastChangedAt!.split('T').first}',
+                  style: TextStyle(fontSize: 14,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
               const SizedBox(height: 12),
             ])

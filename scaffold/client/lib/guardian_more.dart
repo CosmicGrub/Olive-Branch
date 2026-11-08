@@ -141,9 +141,18 @@ class GuardianMoreScreen extends StatelessWidget {
     this.onThemeApplied,
     this.onCallStarted,
     this.learnStore,
+    this.showDemoTiles,
   });
   final String childName;
   final int childAge;
+  /// G-12: whether the tiles that render INVENTED family content (a hard-
+  /// coded colour history, a made-up Year book/Gallery/The book, and the
+  /// "(demo)" call-feature walkthroughs) are listed. Null (the default) means
+  /// "only in the offline demo build": a hub with a live session (baseUrl and
+  /// guardianId) hides them, so a real parent never sees family history this
+  /// app invented. A dev verification entry point can pass true explicitly.
+  final bool? showDemoTiles;
+  bool get _showDemo => showDemoTiles ?? !(baseUrl != null && guardianId != null);
   /// Parent Learn storage. Null = the in-process store (nothing leaves this phone); a
   /// server-backed LearnStore is passed in once a live session exists.
   final LearnStore? learnStore;
@@ -484,15 +493,17 @@ class GuardianMoreScreen extends StatelessWidget {
                 ? LiveCourtExportScreen(
                     baseUrl: baseUrl!, guardianId: guardianId!, childId: childId)
                 : const CourtExportScreen())),
-          HubTile(icon: Icons.auto_stories_outlined, title: 'Year book',
-            subtitle: "A year of $childName, preserved",
-            onTap: () => _open(context, const YearBookScreen())),
-          HubTile(icon: Icons.photo_library_outlined, title: 'Gallery',
-            subtitle: 'Year-grouped works, paginated by era',
-            onTap: () => _open(context, const GalleryScreen())),
-          HubTile(icon: Icons.menu_book, title: 'The book',
-            subtitle: 'The stories you read together, bound',
-            onTap: () => _open(context, TheBookScreen.demo(childName: childName))),
+          if (_showDemo) ...[
+            HubTile(icon: Icons.auto_stories_outlined, title: 'Year book',
+              subtitle: "A year of $childName, preserved",
+              onTap: () => _open(context, const YearBookScreen())),
+            HubTile(icon: Icons.photo_library_outlined, title: 'Gallery',
+              subtitle: 'Year-grouped works, paginated by era',
+              onTap: () => _open(context, const GalleryScreen())),
+            HubTile(icon: Icons.menu_book, title: 'The book',
+              subtitle: 'The stories you read together, bound',
+              onTap: () => _open(context, TheBookScreen.demo(childName: childName))),
+          ],
         ]),
         HubSection(title: 'Learn', children: [
           HubTile(key: const Key('moreLearn'), icon: Icons.school_outlined, title: 'Learn',
@@ -534,7 +545,8 @@ class GuardianMoreScreen extends StatelessWidget {
             // side effect of its own.
             onTap: () => _open(context, () {
               final gameSections = [
-                MoreGamesSections(childName: childName),
+                MoreGamesSections(childName: childName, childAge: childAge,
+                  guardianSide: true, localRole: 'dad'),
                 JokebookSection(childName: childName),
               ];
               final onPlay = buildGameNavigator(childName);
@@ -566,18 +578,21 @@ class GuardianMoreScreen extends StatelessWidget {
               : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('Calling needs a live session — no backend in this preview build.'),
                   duration: Duration(seconds: 3)))),
-          HubTile(icon: Icons.waving_hand_outlined, title: 'Closing ritual (demo)',
-            subtitle: 'Calls end the same way every time',
-            onTap: () => _open(context, ClosingRitualScreen(childName: childName, callerName: 'Dad'))),
+          if (_showDemo)
+            HubTile(icon: Icons.waving_hand_outlined, title: 'Closing ritual (demo)',
+              subtitle: 'Calls end the same way every time',
+              onTap: () => _open(context, ClosingRitualScreen(childName: childName, callerName: 'Dad'))),
           HubTile(icon: Icons.verified_user_outlined, title: 'Call security',
             subtitle: 'Opaque rooms, single-room tokens, verified on the wire',
             onTap: () => _open(context, const CallSecurityInfoScreen())),
-          HubTile(icon: Icons.signal_cellular_alt, title: 'Live call quality (demo)',
-            subtitle: 'Quick to shed, six times slower to restore',
-            onTap: () => _open(context, LiveDegradeScreen(childName: childName))),
-          HubTile(icon: Icons.event_busy_outlined, title: 'Busy fork (demo)',
-            subtitle: "He's busy: the ask forks to async, never silently drops",
-            onTap: () => _open(context, BusyForkScreen(childName: childName))),
+          if (_showDemo) ...[
+            HubTile(icon: Icons.signal_cellular_alt, title: 'Live call quality (demo)',
+              subtitle: 'Quick to shed, six times slower to restore',
+              onTap: () => _open(context, LiveDegradeScreen(childName: childName))),
+            HubTile(icon: Icons.event_busy_outlined, title: 'Busy fork (demo)',
+              subtitle: "He's busy: the ask forks to async, never silently drops",
+              onTap: () => _open(context, BusyForkScreen(childName: childName))),
+          ],
         ]),
         HubSection(title: 'Family setup', children: [
           HubTile(icon: Icons.person_add_alt_outlined, title: 'Invite a co-parent',
@@ -683,16 +698,18 @@ class GuardianMoreScreen extends StatelessWidget {
           HubTile(icon: Icons.push_pin_outlined, title: 'Kiosk lock advisory',
             subtitle: 'What this platform actually guarantees, honestly',
             onTap: () => _open(context, const LockAdvisoryScreen())),
-          HubTile(icon: Icons.color_lens_outlined, title: "$childName's colour",
-            subtitle: 'Her choice — you can see it, never change it',
-            onTap: () => _open(context, ColourParentScreen(
-              childName: childName,
-              history: const <ColourChoice>[
-                ColourChoice(colourId: 'sea', chosenAt: '2026-06-02', via: 'first_run'),
-                ColourChoice(colourId: 'grape', chosenAt: '2026-07-21', via: 'daily'),
-              ],
-              today: '2026-08-04',
-            ))),
+          // Hard-coded colour picks and dates (invented, not hers): demo only.
+          if (_showDemo)
+            HubTile(icon: Icons.color_lens_outlined, title: "$childName's colour",
+              subtitle: 'Her choice — you can see it, never change it',
+              onTap: () => _open(context, ColourParentScreen(
+                childName: childName,
+                history: const <ColourChoice>[
+                  ColourChoice(colourId: 'sea', chosenAt: '2026-06-02', via: 'first_run'),
+                  ColourChoice(colourId: 'grape', chosenAt: '2026-07-21', via: 'daily'),
+                ],
+                today: '2026-08-04',
+              ))),
           HubTile(icon: Icons.timeline_outlined, title: 'Growing-up ladder',
             subtitle: 'Irreversible by design — see why here',
             onTap: () => _open(context, MaturationLadderScreen(

@@ -159,6 +159,7 @@ class OliveApi {
   // [_post]'s single-`:childId` substitution the way [medications] above does.
   static const medicationDoses = '/v1/children/:childId/medications/:medicationId/doses';
   static const emergencyCard = '/v1/children/:childId/emergency-card';
+  static const emergencyCardHistory = '/v1/children/:childId/emergency-card/history';
   // --- parent-to-parent handover log (message_log, real for the first time
   // as of this pass -- see server/routes.mjs's own route-registration
   // comment for the full account, and handover_notes.dart's file header for
@@ -462,7 +463,18 @@ class OliveApi {
     return body;
   }
 
+  /// `{userId, childId, roleName, escalated, displayName, hasPin,
+  /// hasOnboarded, yearsOld}` — GET [mePath]. `yearsOld` (audit C-05) is the
+  /// child's whole-years age, computed server-side from her birth date (which
+  /// is never sent); an int for a child session, null for a guardian. It is
+  /// NOT called `age` because the server's child-payload sweep bans that key.
   Future<Map<String, dynamic>> fetchMe() => _get(mePath);
+
+  /// `{childLocalTime, zoneAbbr, zone, dayPart, reachable, sleepsUntilHandover,
+  /// dayParts: [{kind, startsLocal, endsLocal, reachable}, ...]}` — GET
+  /// [childNow]. `dayParts` (audit C-10) is TODAY's schedule in the child's
+  /// own zone ("HH:mm", 24h); an empty list when she has none — feed it to
+  /// My day instead of the demo hours.
   Future<Map<String, dynamic>> fetchNow(String childId) => _get(childNow, childId: childId);
   Future<Map<String, dynamic>> fetchInbox(String childId) => _get(inbox, childId: childId);
 
@@ -664,8 +676,19 @@ class OliveApi {
   /// route's own migration header for why). Throws [ApiException] on any
   /// non-2xx response -- notably 403 `not_a_child_surface` for a child
   /// session, matching [fetchMedications]'s identical posture.
+  ///
+  /// G-11: the response also carries `version` (int, 0 = never written —
+  /// send it back as `ifMatch` on [putEmergencyCard]) and `lastChange`
+  /// (`{byName, at}` or null) for "Last changed by X".
   Future<Map<String, dynamic>> fetchEmergencyCard(String childId) =>
       _get(emergencyCard, childId: childId);
+
+  /// `{entries: [{version, changedBy, changedById, at, priorValues}, ...]}`,
+  /// newest first — GET [emergencyCardHistory], the append-only trail of
+  /// who changed the card and the values each write replaced (G-11).
+  /// Guardian-side only; a child session gets 403 `not_a_child_surface`.
+  Future<Map<String, dynamic>> fetchEmergencyCardHistory(String childId) =>
+      _get(emergencyCardHistory, childId: childId);
 
   /// Replace-all write of [childId]'s real medical_record -- PUT
   /// [emergencyCard], server/routes.mjs's real handler (setMedicalRecord(),
@@ -677,8 +700,17 @@ class OliveApi {
   /// financial). Returns the updated record verbatim, same shape
   /// [fetchEmergencyCard] returns, so a caller can render the just-saved
   /// card immediately without a second round trip.
+  ///
+  /// [ifMatch] (G-11) is the `version` the caller last READ from
+  /// [fetchEmergencyCard] (0 when no card existed) and is REQUIRED: the
+  /// server refuses a write without it (428 `if_match_required`) and a write
+  /// from a stale version with 409 `stale_version` — surfaced here as an
+  /// [ApiException] whose `statusCode == 409`, which a caller should show as
+  /// "someone else changed this — reload" and then re-fetch, never retry
+  /// blindly.
   Future<Map<String, dynamic>> putEmergencyCard(
     String childId, {
+    required int ifMatch,
     String? bloodType,
     List<String>? allergies,
     List<String>? conditions,
@@ -689,6 +721,7 @@ class OliveApi {
     String? insuranceMemberId,
   }) =>
       _put(emergencyCard, childId: childId, body: {
+        'ifMatch': ifMatch,
         'bloodType': ?bloodType, 'allergies': ?allergies, 'conditions': ?conditions,
         'pediatricianName': ?pediatricianName, 'pediatricianPractice': ?pediatricianPractice,
         'pediatricianPhone': ?pediatricianPhone, 'insuranceProvider': ?insuranceProvider,

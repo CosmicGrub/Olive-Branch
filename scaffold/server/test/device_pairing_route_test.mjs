@@ -227,6 +227,14 @@ function fakeQuery(sql, params = []) {
     return childProfiles.has(childId) ? [{ '?column?': 1 }] : [];
   }
 
+  // GET /v1/me's yearsOld (audit C-05) — the real age arithmetic is proven
+  // against a real Postgres in server/test/me_route.test.mjs; here the fake
+  // only has to answer so this file's own /me calls keep working.
+  if (/date_part\('year', age\(/i.test(sql)) {
+    const [childId] = params;
+    return children.has(childId) ? [{ years: 8 }] : [];
+  }
+
   throw new Error(`fake query: unexpected sql: ${sql}`);
 }
 

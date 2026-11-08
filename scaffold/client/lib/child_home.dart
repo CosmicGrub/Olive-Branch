@@ -59,6 +59,7 @@ import 'call_screen.dart';
 import 'child_more.dart';
 import 'cover_collapse.dart';
 import 'form_factors.dart' as ff;
+import 'game_logic.dart' show neutralGrownUp;
 import 'game_navigation.dart';
 import 'game_picker.dart';
 import 'games_hub.dart';
@@ -76,7 +77,7 @@ class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
     required this.sleepsUntilHandover, required this.unreadCount,
     this.baseUrl, this.childId, this.sessionToken, this.httpClient,
-    this.childAge = 7, this.overrides});
+    this.childAge = 7, this.overrides, this.dayParts, this.guardianName});
 
   final String childName;
   final ParentPresence? presence;
@@ -112,6 +113,18 @@ class ChildHome extends StatelessWidget {
   // map never hides anything.
   final int childAge;
   final Map<String, ActivityOverride>? overrides;
+
+  /// Today's real day parts in HER zone, from GET .../now (C-10). Null means
+  /// "not supplied": the offline/demo build (no [baseUrl]) then shows the
+  /// demo hours, while a live build with none supplied shows an honest empty
+  /// day rather than invented hours.
+  final List<DayPartLite>? dayParts;
+
+  /// The real display name of the grown-up the child talks to (C-13), when a
+  /// live session knows one. Null falls back to who is free right now
+  /// ([presence]) and finally to [neutralGrownUp] — never a guessed "Dad".
+  final String? guardianName;
+  String get _grownUp => guardianName ?? presence?.name ?? neutralGrownUp;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -168,7 +181,9 @@ class ChildHome extends StatelessWidget {
         hero: true, height: 140 * heightScale,
         onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) => MyDayScreen(
-            childName: childName, parts: demoDayParts, nowLocal: hhmmNow()))),
+            childName: childName,
+            parts: dayParts ?? (baseUrl == null ? demoDayParts : const <DayPartLite>[]),
+            nowLocal: hhmmNow()))),
       );
 
       final Widget full = SingleChildScrollView(padding: const EdgeInsets.all(16),
@@ -209,10 +224,12 @@ class ChildHome extends StatelessWidget {
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) {
                   final gameSections = [
-                    MoreGamesSections(childName: childName, childAge: childAge, overrides: overrides),
-                    JokebookSection(childName: childName, childAge: childAge, overrides: overrides),
+                    MoreGamesSections(childName: childName, parentName: _grownUp,
+                      childAge: childAge, overrides: overrides),
+                    JokebookSection(childName: childName, parentName: _grownUp,
+                      childAge: childAge, overrides: overrides),
                   ];
-                  final onPlay = buildGameNavigator(childName);
+                  final onPlay = buildGameNavigator(childName, parentName: _grownUp);
                   // Intuitivism pass, sub-project 3a (docs/superpowers/specs/
                   // 2026-09-12-intuitivism-gamepicker-recommended-design.md)
                   // — her own Recommended row/Surprise-me button need a real
@@ -236,7 +253,7 @@ class ChildHome extends StatelessWidget {
                 }))),
             if (isTileVisible(overrides, 'tile:messages'))
               TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,
-                badgeCount: unreadCount,
+                unreadDot: unreadCount > 0,
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => InboxScreen(
                     childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
@@ -285,7 +302,8 @@ class ChildHome extends StatelessWidget {
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => ChildMoreScreen(childName: childName,
                     baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                    httpClient: httpClient, childAge: childAge, overrides: overrides)))),
+                    httpClient: httpClient, childAge: childAge, overrides: overrides,
+                    guardianName: _grownUp)))),
           ],
         ),
 

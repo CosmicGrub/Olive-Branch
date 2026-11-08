@@ -76,6 +76,27 @@ void _openAvailability(BuildContext context, {
     duration: Duration(seconds: 3)));
 }
 
+/// G-08: the five coordination tiles below used to pass no live identity at
+/// all, so a REAL session's home grid opened each screen's built-in demo data
+/// (a made-up peanut allergy on the user's own child). Now they thread the
+/// same (baseUrl, guardianId, childId) triple guardian_more.dart's own hub
+/// does. A session that has a baseUrl but is missing the guardian or child id
+/// is half-wired: opening the screen would silently fall back to its demo
+/// fixture, so that case gives honest feedback instead — the demo path is
+/// unreachable in a live build.
+void _openCoordination(BuildContext context, {
+  required String? baseUrl, required String? guardianId, required String? childId,
+  required Widget Function() builder,
+}) {
+  if (baseUrl != null && (guardianId == null || childId == null)) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('This needs your signed-in family — not connected yet.'),
+      duration: Duration(seconds: 3)));
+    return;
+  }
+  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => builder()));
+}
+
 class RibbonBand {
   const RibbonBand(this.startFraction, this.widthFraction, this.color, this.label);
   final double startFraction, widthFraction;
@@ -413,20 +434,35 @@ List<_TileSpec> _kGuardianTiles({
         childLocalTime: childLocalTime, zoneAbbr: childZoneAbbr,
         dayPart: dayPart, reachable: reachable)))),
   _TileSpec(icon: Icons.medical_services_outlined, label: 'Meds & care', tier: _Tier.featured,
-    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => MedsCareScreen(childName: childName)))),
+    onTap: (context) => _openCoordination(context,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      builder: () => MedsCareScreen(childName: childName,
+        baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+        httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.medical_information, label: 'Emergency card', tier: _Tier.featured,
-    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => const EmergencyCardScreen()))),
+    onTap: (context) => _openCoordination(context,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      builder: () => EmergencyCardScreen(childName: childName,
+        baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+        httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.receipt_long, label: 'Handover notes', tier: _Tier.standard,
-    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => const HandoverNotesScreen()))),
+    onTap: (context) => _openCoordination(context,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      builder: () => HandoverNotesScreen(
+        baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+        httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.swap_horiz, label: 'Exchange', tier: _Tier.standard,
-    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ExchangeScreen(childName: childName)))),
+    onTap: (context) => _openCoordination(context,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      builder: () => ExchangeScreen(childName: childName,
+        baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+        httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.account_balance_wallet, label: 'Expenses', tier: _Tier.standard,
-    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ExpensesScreen(childName: childName)))),
+    onTap: (context) => _openCoordination(context,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      builder: () => ExpensesScreen(childName: childName,
+        baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+        httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.wb_twilight, label: 'Morning briefing', tier: _Tier.standard,
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => const MorningBriefingScreen()))),

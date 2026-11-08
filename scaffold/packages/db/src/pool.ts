@@ -2755,6 +2755,14 @@ export interface MedicalRecord {
   insuranceMemberId: string | null;
   guardians: { userId: string; name: string; phone: string | null }[];
   medications: Medication[];
+  /**
+   * G-11 (migration 0036) — optimistic-concurrency token. 0 when no card has
+   * ever been written; otherwise the medical_record.version this read saw.
+   * setMedicalRecord() requires it back.
+   */
+  version: number;
+  /** Who last changed the card and when — null before the first write. */
+  lastChange: { byName: string | null; atIso: string } | null;
 }
 
 /**
@@ -2772,9 +2780,12 @@ export interface MedicalRecord {
 export async function medicalRecordFor(pool: pg.Pool, childId: string): Promise<MedicalRecord> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT blood_type, allergies, conditions, pediatrician_name, pediatrician_practice,
-              pediatrician_phone, insurance_provider, insurance_member_id
-         FROM medical_record WHERE child_id = $1`,
+      `SELECT m.blood_type, m.allergies, m.conditions, m.pediatrician_name, m.pediatrician_practice,
+              m.pediatrician_phone, m.insurance_provider, m.insurance_member_id, m.version,
+              u.display_name AS changed_by_name,
+              to_char(m.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS updated_at_iso
+         FROM medical_record m LEFT JOIN app_user u ON u.id = m.updated_by
+        WHERE m.child_id = $1`,
       [childId],
     );
     const guardianRows = await q(
@@ -2799,7 +2810,51 @@ export async function medicalRecordFor(pool: pg.Pool, childId: string): Promise<
       guardians: guardianRows.map((g: any) => (
         { userId: g.user_id, name: g.display_name, phone: g.phone_e164 })),
       medications,
+      version: r ? Number(r.version) : 0,
+      lastChange: r ? { byName: r.changed_by_name ?? null, atIso: r.updated_at_iso } : null,
     };
+  });
+}
+
+/**
+ * Thrown by setMedicalRecord() when the caller's `expectedVersion` is not the
+ * stored one (G-11) — the route maps it to 409 `stale_version`.
+ */
+export class StaleMedicalRecordError extends Error {
+  code = 'stale_version';
+  currentVersion: number;
+  // No TS parameter property: pool.mjs loads this file under Node's
+  // strip-only type stripping, which rejects that syntax.
+  constructor(currentVersion: number) { super('stale_version'); this.currentVersion = currentVersion; }
+}
+
+/** One append-only history row (medical_record_history, migration 0036). */
+export interface MedicalRecordHistoryEntry {
+  version: number;
+  changedById: string;
+  changedByName: string | null;
+  changedAtIso: string;
+  /** The values this write replaced; null for the first write. */
+  priorValues: Record<string, unknown> | null;
+}
+
+/** Newest first. Guardian-facing only (RLS also refuses a child session). */
+export async function medicalRecordHistoryFor(
+  pool: pg.Pool, childId: string, limit = 50,
+): Promise<MedicalRecordHistoryEntry[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT h.version, h.changed_by, u.display_name,
+              to_char(h.changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS changed_at_iso,
+              h.prior_values
+         FROM medical_record_history h JOIN app_user u ON u.id = h.changed_by
+        WHERE h.child_id = $1 ORDER BY h.version DESC LIMIT $2`,
+      [childId, limit],
+    );
+    return rows.map((r: any) => ({
+      version: Number(r.version), changedById: r.changed_by, changedByName: r.display_name ?? null,
+      changedAtIso: r.changed_at_iso, priorValues: r.prior_values ?? null,
+    }));
   });
 }
 
@@ -2816,13 +2871,37 @@ export async function setMedicalRecord(
             pediatricianName?: string | null; pediatricianPractice?: string | null;
             pediatricianPhone?: string | null; insuranceProvider?: string | null;
             insuranceMemberId?: string | null },
-): Promise<void> {
-  await withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+  /**
+   * G-11: the `version` the caller last read (0 = "no card existed").
+   * A mismatch throws [StaleMedicalRecordError] and writes nothing. Required —
+   * there is no unconditional-overwrite path.
+   */
+  expectedVersion: number,
+): Promise<number> {
+  return withSession(pool, { roleName: actorRole, userId: actorUserId, childId: null }, async (q) => {
+    // FOR UPDATE: two concurrent writers with the same expectedVersion
+    // serialise here, so exactly one wins and the other sees the bumped
+    // version and gets the 409.
+    const cur = await q(
+      `SELECT blood_type, allergies, conditions, pediatrician_name, pediatrician_practice,
+              pediatrician_phone, insurance_provider, insurance_member_id, version
+         FROM medical_record WHERE child_id = $1 FOR UPDATE`,
+      [childId],
+    );
+    const currentVersion = cur[0] ? Number(cur[0].version) : 0;
+    if (currentVersion !== expectedVersion) throw new StaleMedicalRecordError(currentVersion);
+    const nextVersion = currentVersion + 1;
+    const prior = cur[0] ? {
+      bloodType: cur[0].blood_type, allergies: cur[0].allergies, conditions: cur[0].conditions,
+      pediatricianName: cur[0].pediatrician_name, pediatricianPractice: cur[0].pediatrician_practice,
+      pediatricianPhone: cur[0].pediatrician_phone, insuranceProvider: cur[0].insurance_provider,
+      insuranceMemberId: cur[0].insurance_member_id,
+    } : null;
     await q(
       `INSERT INTO medical_record
          (child_id, blood_type, allergies, conditions, pediatrician_name, pediatrician_practice,
-          pediatrician_phone, insurance_provider, insurance_member_id, updated_at, updated_by)
-       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, now(), $10)
+          pediatrician_phone, insurance_provider, insurance_member_id, updated_at, updated_by, version)
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, now(), $10, $11)
        ON CONFLICT (child_id) DO UPDATE SET
          blood_type = EXCLUDED.blood_type, allergies = EXCLUDED.allergies,
          conditions = EXCLUDED.conditions, pediatrician_name = EXCLUDED.pediatrician_name,
@@ -2830,12 +2909,19 @@ export async function setMedicalRecord(
          pediatrician_phone = EXCLUDED.pediatrician_phone,
          insurance_provider = EXCLUDED.insurance_provider,
          insurance_member_id = EXCLUDED.insurance_member_id,
-         updated_at = now(), updated_by = EXCLUDED.updated_by`,
+         updated_at = now(), updated_by = EXCLUDED.updated_by, version = EXCLUDED.version`,
       [childId, fields.bloodType ?? null, JSON.stringify(fields.allergies ?? []),
        JSON.stringify(fields.conditions ?? []), fields.pediatricianName ?? null,
        fields.pediatricianPractice ?? null, fields.pediatricianPhone ?? null,
-       fields.insuranceProvider ?? null, fields.insuranceMemberId ?? null, actorUserId],
+       fields.insuranceProvider ?? null, fields.insuranceMemberId ?? null, actorUserId,
+       nextVersion],
     );
+    await q(
+      `INSERT INTO medical_record_history (child_id, version, changed_by, prior_values)
+       VALUES ($1, $2, $3, $4::jsonb)`,
+      [childId, nextVersion, actorUserId, prior === null ? null : JSON.stringify(prior)],
+    );
+    return nextVersion;
   });
 }
 

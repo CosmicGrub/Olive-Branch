@@ -38,6 +38,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'guardian_escalation_screen.dart';
+import 'call_screen.dart';
 import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
@@ -52,6 +53,7 @@ class KioskShell extends StatefulWidget {
     this.channel,
     this.pinDigits = 4,
     this.childName = 'your child',
+    this.callerName = 'there',
   });
 
   /// The unlocked child surface — typically a ChildHome.
@@ -70,6 +72,11 @@ class KioskShell extends StatefulWidget {
   /// Injectable for widget tests; defaults to the real platform channel.
   final KioskChannel? channel;
   final int pinDigits;
+  /// The child's own display name for the "Call" button on the lock-out
+  /// screen (C-22) — what the child's own call screen calls her. Distinct
+  /// from [childName], which is the guardian-facing label on the escalation
+  /// screen.
+  final String callerName;
 
   @override
   State<KioskShell> createState() => _KioskShellState();
@@ -205,6 +212,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
       return _LockedOutScreen(
         cooldownUntil: _state.cooldownUntil,
         onBreakGlass: _attemptBreakGlass,
+        onCall: () => Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => CallScreen(who: 'ivy', displayName: widget.callerName))),
       );
     }
     if (lock.canRender(_state, lock.Surface.guardianEscalation, now)) {
@@ -258,39 +267,64 @@ class _EscalationTrigger extends StatelessWidget {
   );
 }
 
+/// The cooldown screen after repeated wrong PINs. C-22: it is shown to a
+/// child, so it leads with a picture and a few big words, and gives her one
+/// tap to reach a grown-up — the SAME call she already has on her home
+/// screen (CallScreen, who: 'ivy'; no new server route) — instead of only
+/// text she may not be able to read. Calling never changes the lock: this
+/// screen stays fail-closed, the PIN gate still guards the guardian way back
+/// in, and the call opens as a normal route on top of it.
 class _LockedOutScreen extends StatelessWidget {
-  const _LockedOutScreen({required this.cooldownUntil, required this.onBreakGlass});
+  const _LockedOutScreen({
+    required this.cooldownUntil, required this.onBreakGlass, required this.onCall});
   final DateTime? cooldownUntil;
   final VoidCallback onBreakGlass;
+  final VoidCallback onCall;
 
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: KioskLockColors.background,
     body: SafeArea(
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.hourglass_bottom, color: KioskLockColors.tertiaryText, size: 32),
-            const SizedBox(height: 14),
-            const Text(
-              'Take a little break',
-              style: TextStyle(color: KioskLockColors.primaryText, fontSize: 19, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Ask a grown-up if you need back in sooner',
-              style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 12.5),
-            ),
-            const SizedBox(height: 24),
-            TextButton(
-              onPressed: onBreakGlass,
-              child: const Text(
-                "I'm the grown-up",
-                style: TextStyle(color: KioskLockColors.quaternaryText, fontSize: 12),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.bedtime_outlined, color: KioskLockColors.secondaryText, size: 96),
+              const SizedBox(height: 20),
+              const Text(
+                'Take a little break',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: KioskLockColors.primaryText, fontSize: 30, fontWeight: FontWeight.w700),
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              const Text(
+                'Need someone? Tap to call.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 22),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: 240, height: 72,
+                child: FilledButton.icon(
+                  key: const Key('lockedOutCall'),
+                  onPressed: onCall,
+                  icon: const Icon(Icons.call, size: 32),
+                  label: const Text('Call', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 28),
+              TextButton(
+                onPressed: onBreakGlass,
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                child: const Text(
+                  "I'm the grown-up",
+                  style: TextStyle(color: KioskLockColors.quaternaryText, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ),

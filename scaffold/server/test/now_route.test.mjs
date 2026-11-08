@@ -189,6 +189,33 @@ const get = (childId, tok) => api.handle(
   check('C auth', 'reason is wrong_child', wrongChild.body.error, 'wrong_child');
 }
 
+// ===========================================================================
+// D · dayParts (audit C-10) — today's real schedule for the child's own My
+//     day, filtered to TODAY's weekday in HER zone, readable by her own
+//     session without tripping the child-payload sweep.
+// ===========================================================================
+{
+  const localWd = DateTime.fromMillis(NOW, { zone: 'utc' }).setZone('America/Los_Angeles').weekday % 7;
+  const otherWd = (localWd + 3) % 7;
+  await admin.query(
+    `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+     VALUES ($1,'school','08:30','15:00',$2::smallint[],false,daterange(current_date - 30, null)),
+            ($1,'dinner','17:30','18:30',$2::smallint[],true,daterange(current_date - 30, null)),
+            ($1,'activity','16:00','17:00',$3::smallint[],true,daterange(current_date - 30, null))`,
+    [CHILD_REAL_TZ, `{${localWd}}`, `{${otherWd}}`]);
+  const asChild = await get(CHILD_REAL_TZ, childTok);
+  check('D dayParts', 'child session still 200 (sweep passes)', asChild.status, 200);
+  check('D dayParts', 'returns only the parts scheduled for today in her zone',
+    asChild.body.dayParts.map(p => p.kind).sort().join(','), 'dinner,school');
+  const school = asChild.body.dayParts.find(p => p.kind === 'school');
+  check('D dayParts', 'times are HH:MM, her local clock',
+    `${school.startsLocal}-${school.endsLocal}`, '08:30-15:00');
+  check('D dayParts', 'carries reachable per part', school.reachable, false);
+  const none = await get(CHILD_FALLBACK, dadTok);
+  check('D dayParts', 'a child with no schedule gets an honest empty list, not demo hours',
+    JSON.stringify(none.body.dayParts), '[]');
+}
+
 await cleanup();
 await admin.end();
 await pool.end();
