@@ -37,6 +37,9 @@ import 'game_navigation.dart';
 import 'game_picker.dart';
 import 'games_hub.dart';
 import 'guardian_setup.dart';
+import 'guardian_settings_hub.dart';
+import 'her_colour_guardian.dart';
+import 'play_window_screen.dart';
 import 'handover_notes.dart';
 import 'hub_widgets.dart';
 import 'add_device_screen.dart';
@@ -501,6 +504,77 @@ class GuardianMoreScreen extends StatelessWidget {
     }
   }
 
+
+  void _needsLive(BuildContext context, String what) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('$what needs a live session — no backend in this preview build.'),
+        duration: const Duration(seconds: 3)));
+
+  /// The Settings hub: every row opens the real screen that already exists for
+  /// it. Nothing here is a new setting, and nothing is new online (see
+  /// guardian_settings_hub.dart's header).
+  void _openSettingsHub(BuildContext context) {
+    final live = baseUrl != null && guardianId != null;
+    _open(context, GuardianSettingsHubScreen(childName: childName, groups: [
+      SettingsGroup('Her', [
+        SettingsRow(id: 'colour', icon: Icons.palette_outlined, title: 'Colour and art',
+          subtitle: 'Colour of the day, art style, coding activities',
+          onTap: () => _open(context, HerColourGuardianScreen(childName: childName, childAge: childAge))),
+        SettingsRow(id: 'look', icon: Icons.format_paint_outlined, title: 'How her app looks',
+          subtitle: 'A palette, light or dark', onTap: () => _openThemePicker(context)),
+        SettingsRow(id: 'age', icon: Icons.cake_outlined, title: 'Age band',
+          subtitle: '$childName is $childAge',
+          onTap: () => showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+            title: const Text('Age band'),
+            content: Text('$childName is $childAge. Her age sets what opens for her, like the pixel garden at 8. '
+                'It comes from her birthday; there is nothing to set here yet.'),
+            actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))]))),
+      ]),
+      SettingsGroup('Family', [
+        SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Adults and helpers',
+          subtitle: 'Invite a co-parent',
+          onTap: () => _open(context, InvitationScreen(
+            childName: childName, inviterLabel: 'Dad', yourLabel: 'Mom',
+            onAccept: () => Navigator.of(context).pop(), onDecline: () => Navigator.of(context).pop()))),
+        SettingsRow(id: 'devices', icon: Icons.devices_other_outlined, title: 'Devices',
+          subtitle: live ? 'See and revoke paired devices' : 'Needs a live session',
+          onTap: () => live
+            ? _open(context, PairedDevicesListScreen(baseUrl: baseUrl!, guardianId: guardianId!,
+                childId: childId, httpClient: availabilityHttpClient))
+            : _needsLive(context, 'Paired devices')),
+      ]),
+      SettingsGroup('Safety', [
+        SettingsRow(id: 'pin', icon: Icons.key_outlined, title: 'Guardian PIN',
+          subtitle: 'Set or change your PIN',
+          onTap: () => _open(context, GuardianSetupScreen(
+            setGuardianPin: _liveSetGuardianPin(baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient),
+            checkExistingPin: _liveCheckExistingPin(baseUrl: baseUrl, guardianId: guardianId, httpClient: availabilityHttpClient)))),
+        SettingsRow(id: 'controls', icon: Icons.shield_outlined, title: 'Parental controls',
+          subtitle: live ? 'Hide or pace anything $childName sees' : 'Needs a live session',
+          onTap: () => live
+            ? _open(context, ParentalControlsScreen(baseUrl: baseUrl!, guardianId: guardianId!,
+                childId: childId, childName: childName, httpClient: availabilityHttpClient))
+            : _needsLive(context, 'Parental controls')),
+        SettingsRow(id: 'window', icon: Icons.bedtime_outlined, title: 'Play window',
+          subtitle: 'When games are open, and the bedtime wind-down',
+          onTap: () => _open(context, PlayWindowScreen(childName: childName))),
+      ]),
+      SettingsGroup('Learn', [
+        SettingsRow(id: 'learn', icon: Icons.school_outlined, title: 'Parent Learn choices',
+          subtitle: 'Private to you',
+          onTap: () => _open(context, LearnHomeScreen(
+            principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
+            store: learnStore ?? _localLearnStore, childAge: childAge))),
+      ]),
+      SettingsGroup('Account', [
+        SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',
+          subtitle: 'Stops notifications on this device', onTap: () => _signOut(context)),
+        SettingsRow(id: 'deletion', icon: Icons.delete_outline, title: 'Deletion',
+          subtitle: 'What deletion means here, stated first', onTap: () => _openDeletion(context)),
+      ]),
+    ]));
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('More')),
@@ -794,6 +868,9 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _openExchange(context)),
         ]),
         HubSection(title: 'Preferences', children: [
+          HubTile(key: const Key('moreSettings'), icon: Icons.tune_outlined, title: 'Settings',
+            subtitle: 'Her, Family, Safety, Learn, Account in one place',
+            onTap: () => _openSettingsHub(context)),
           HubTile(icon: Icons.palette_outlined, title: 'Theme',
             subtitle: 'A real palette, guardian-only, synced across your devices',
             onTap: () => _openThemePicker(context)),

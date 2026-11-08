@@ -44,6 +44,47 @@ keys on numbered entries); MARKUP/DEMO totals updated.
   suite (175 of 179 assertions passed on a first run; the four failures were in the
   test harness, not yet fixed) — left out of this change on purpose until server sync
   is back in scope. Not in CI.
+## [Unreleased] — Colour of the day, her colour accent, art styles, colour activities, play window, Settings hub (local-first)
+
+Client and one pure shared module; **no server route, no migration, no network
+call** (the owner has moved the product away from online functions for now). No
+new MARKUP screen row and no version bump; described as shipped in MASTERFILE
+§8.6.5 to §8.6.7. Every addition is covered by a suite registered in
+`tools/verify.sh` or by the Dart suite.
+
+### Added
+- **Colour of the day sync rule**, `packages/palette/src/colour_day.ts`: one
+  question a day (one record per her-local date), latest answer wins, a stale
+  device clock is clamped, a guardian colour day holds against her own tap and
+  clearing it hands the question back. Dart port `client/lib/colour_day_logic.dart`
+  held to it by golden vectors (`tools/gen-colour-vectors.mjs`, drift guard in the
+  TypeScript suite). Also the art-style settings rules (pixel opens at 8) and the
+  play-window rules.
+- **Her colour, for real.** The hard-coded `sea` tile on her More screen is gone:
+  the daily question, her colour stated as a fact, and her colour as a
+  placement-budgeted accent (stripe, ring, flourish; max three; never a surface,
+  never an emotion label). State sits behind `ChildColourStore` /
+  `GuardianColourStore` with an in-process `MemoryColourStore`; a durable
+  on-device store swaps in behind the same interfaces.
+- **Seven code-drawn art styles** (paper cut, sticker, crayon, watercolour, felt,
+  line art, pixel) and the **four colour activities** (Colour sort, Path code,
+  Colour critter, Pixel garden) as real screens. No scores, streaks, timers,
+  levels or counters (P2). Path code from 5, its repeat block and Pixel garden
+  from 8; the guardian can switch coding off.
+- **Guardian "Her colour and art"**: today's colour as a fact, set or clear a
+  colour day, the daily question and coding toggles, default and allowed art
+  styles.
+- **Play window and gentle ending**: the guardian sets when games open and a
+  0/15/30 minute wind-down; on her device one calm sentence during the tail and a
+  goodnight card after it. Games only; calls and family messages are never gated.
+- **Guardian Settings hub** (Her, Family, Safety, Learn, Account), reached from
+  More; every row opens an existing real screen.
+
+### Deliberately not built
+- The bottom tab bar (Today, Messages, Together, Family, Settings): too invasive
+  for the guardian shell and its tests; the hub is reached from More.
+- Server persistence, cross-device sync and telling the other guardian about a
+  lengthened play window: parked as online work.
 
 ## [Unreleased] — Server hardening (audit pass: P-01, P-04, P-05, P-07 server half, P-08, P-13 to P-19)
 

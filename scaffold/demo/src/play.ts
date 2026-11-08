@@ -506,6 +506,7 @@ import { begin, advance, goBack, greeting, outcome, whoStep, toggleWho,
 import { PALETTE, swatch, dailyPair, choose, currentColour, parentView,
   applyColour, textColourFor, coloursForYearBook, auditColourPayload,
   MAX_PLACEMENTS_PER_SCREEN } from '../../packages/palette/src/palette.ts';
+import * as ColourDay from '../../packages/palette/src/colour_day.ts';
 
 S.colourHistory = [
   { colourId:'sunny', chosenAt:'2026-07-20T09:00:00Z', via:'first_run' },
@@ -1969,6 +1970,11 @@ export function bdCalendarMonth(year: number, month: number): Any {
   return monthGrid(year, month, { today: new Date(), markers });
 }
 export { MONTHS, DOW_SHORT };
+
+/** §8.6.5 — today's colour and whether the one daily question is still to be asked. */
+export function palToday(days: Any[], localDate: string): Any {
+  return { colour: ColourDay.colourToday(days, localDate), ask: ColourDay.needsQuestion(days, localDate, true) };
+}
 
 export function palStart(): Any { return { palette: PALETTE,
   current: currentColour(S.colourHistory) }; }

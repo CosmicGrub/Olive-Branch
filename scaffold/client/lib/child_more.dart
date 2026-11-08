@@ -19,7 +19,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
 import 'collection_screen.dart';
-import 'colour_daily.dart';
+import 'her_colour_accent.dart';
+import 'her_colour_home.dart';
+import 'her_colour_store.dart';
 import 'colouring_screen.dart';
 import 'doodle_desk.dart';
 import 'game_logic.dart' show neutralGrownUp;
@@ -47,6 +49,7 @@ class ChildMoreScreen extends StatelessWidget {
     this.httpClient,
     this.overrides,
     this.guardianName,
+    this.colourStore,
   });
   final String childName;
   final int childAge;
@@ -68,6 +71,9 @@ class ChildMoreScreen extends StatelessWidget {
   /// back to [neutralGrownUp] — never a hard-coded "Dad".
   final String? guardianName;
   String get _grownUp => guardianName ?? neutralGrownUp;
+
+  /// Where today's colour comes from; null uses the process-wide in-memory store.
+  final ChildColourStore? colourStore;
 
   /// C-15: the maturation ladder's first rung is her tenth birthday
   /// (maturation_ladder.dart's [kLadder]); "Growing up", "The quiet corner"
@@ -146,9 +152,7 @@ class ChildMoreScreen extends StatelessWidget {
             onTap: () => _open(context, StoryLibraryScreen.demo(childName: childName))),
         ]),
         HubSection(title: 'Colour', children: [
-          HubTile(icon: Icons.color_lens_outlined, title: "Today's colour",
-            subtitle: 'Pick yours',
-            onTap: () => _open(context, ColourDailyScreen(currentColourId: 'sea', onChoose: (_) {}))),
+          _ColourTile(store: colourStore, childName: childName, childAge: childAge),
         ]),
         // §9.8.4, §21.2 rung 17, §21.7 — the SCREEN states the real, honest
         // outcome (including "not yet" for an under-age tap), never this hub
@@ -165,4 +169,62 @@ class ChildMoreScreen extends StatelessWidget {
       ]),
     )),
   );
+}
+
+/// "Today's colour": shows what today's colour is as a plain fact (or that the
+/// question is waiting) and opens her colour screen. Her colour appears here as
+/// ONE placement, the tile's border; nothing else on this hub is tinted.
+class _ColourTile extends StatefulWidget {
+  const _ColourTile({required this.store, required this.childName, required this.childAge});
+  final ChildColourStore? store;
+  final String childName;
+  final int childAge;
+
+  @override
+  State<_ColourTile> createState() => _ColourTileState();
+}
+
+class _ColourTileState extends State<_ColourTile> {
+  late final ChildColourStore _store = widget.store ?? sharedColourStore;
+  TodayColour? _today;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final t = await _store.today();
+    if (mounted) setState(() => _today = t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _today;
+    final accent = HerColourAccent.of(t?.swatch?.id, const ['collection_tile']);
+    final subtitle = t == null || t.swatch == null
+        ? 'Pick yours'
+        : (t.ask ? 'Which do you like more today?' : 'Today: ${t.swatch!.label}');
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: accent.has('collection_tile')
+          ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: accent.color!, width: 2))
+          : null,
+      child: ListTile(
+        key: const Key('colourTile'),
+        leading: const Icon(Icons.color_lens_outlined),
+        title: const Text("Today's colour"),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () async {
+          await Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => HerColourScreen(
+                  childName: widget.childName, childAge: widget.childAge, store: widget.store)));
+          await _refresh();
+        },
+      ),
+    );
+  }
 }
