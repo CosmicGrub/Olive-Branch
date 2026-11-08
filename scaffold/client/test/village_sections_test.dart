@@ -133,7 +133,7 @@ void main() {
     });
 
     testWidgets('at large text (1.6x) and a 344dp cover screen every label fits, one tile to a row', (WidgetTester t) async {
-      await more(t, await authored(), family: snap(twoHomes, 't57'), scale: 1.6, w: 344);
+      await more(t, await authored(), family: snap(twoHomes, 't57'), scale: 2.0, w: 344);
       expect(t.takeException(), isNull);
       final double a = t.getTopLeft(find.byKey(const Key('vilTile_tree'))).dy;
       final double b = t.getTopLeft(find.byKey(const Key('vilTile_story_out'))).dy;
@@ -144,7 +144,7 @@ void main() {
       final VillageService s = freshVillage();
       await s.saveStory(guardian, sampleStory(title: 'A very long name for a story'));
       await s.releaseStory(guardian, 's1');
-      await more(t, s, scale: 1.6, w: 344);
+      await more(t, s, scale: 2.0, w: 344);
       expect(t.takeException(), isNull);
       expect(find.byKey(const Key('vilTile_story_s1')), findsOneWidget);
     });

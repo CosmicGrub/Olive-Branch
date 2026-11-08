@@ -39,6 +39,8 @@ class _Engine implements ReadAloudEngine {
 
 const Size phone = Size(390, 844);
 const Size tablet = Size(800, 1280);
+/// The Fold's cover screen: 344 dp wide, the narrowest surface the app targets.
+const Size foldCover = Size(344, 882);
 
 Future<void> pumpAt(WidgetTester t, Widget screen, Size size,
     {double scale = 2.0, AccessSettings settings = const AccessSettings(readAloud: true, roomierReading: true, largerTargets: true)}) async {
@@ -71,6 +73,8 @@ void main() {
   final Map<String, Widget Function()> screens = <String, Widget Function()>{
     'ChildHome': _home,
     'ChildMoreScreen': () => const ChildMoreScreen(childName: 'Ivy', childAge: 7),
+    // Ten and over also gets "Growing up", "The quiet corner" and "Take your things with you".
+    'ChildMoreScreen (age 12)': () => const ChildMoreScreen(childName: 'Ivy', childAge: 12),
     'StorytellerScreen (ask)': () => const StorytellerScreen(childName: 'Ivy'),
     'WantsNeedsScreen': () => const WantsNeedsScreen(),
     'JournalScreen': () => const JournalScreen(childName: 'Ivy'),
@@ -81,7 +85,7 @@ void main() {
   };
 
   for (final MapEntry<String, Widget Function()> s in screens.entries) {
-    for (final MapEntry<String, Size> size in <String, Size>{'phone 390x844': phone, 'tablet 800x1280': tablet}.entries) {
+    for (final MapEntry<String, Size> size in <String, Size>{'phone 390x844': phone, 'tablet 800x1280': tablet, 'fold cover 344x882': foldCover}.entries) {
       testWidgets('${s.key} at text scale 2.0, ${size.key}, every option on: no overflow', (WidgetTester t) async {
         await pumpAt(t, s.value(), size.value);
         expect(t.takeException(), isNull);
@@ -89,7 +93,7 @@ void main() {
     }
   }
 
-  for (final MapEntry<String, Size> size in <String, Size>{'phone 390x844': phone, 'tablet 800x1280': tablet}.entries) {
+  for (final MapEntry<String, Size> size in <String, Size>{'phone 390x844': phone, 'tablet 800x1280': tablet, 'fold cover 344x882': foldCover}.entries) {
     testWidgets('StorytellerScreen reading a story at text scale 2.0, ${size.key}: no overflow, speaker present',
         (WidgetTester t) async {
       await pumpAt(t, const StorytellerScreen(childName: 'Ivy'), size.value);
@@ -137,6 +141,10 @@ void main() {
     for (final MapEntry<String, Widget Function()> s in screens.entries) {
       testWidgets('${s.key} at 2.0, phone, defaults', (WidgetTester t) async {
         await pumpAt(t, s.value(), phone, settings: AccessSettings.defaults);
+        expect(t.takeException(), isNull);
+      });
+      testWidgets('${s.key} at 2.0, fold cover 344, defaults', (WidgetTester t) async {
+        await pumpAt(t, s.value(), foldCover, settings: AccessSettings.defaults);
         expect(t.takeException(), isNull);
       });
     }

@@ -224,10 +224,13 @@ void main() {
   });
 
   group('every width', () {
-    testWidgets('no overflow at the 344dp cover screen, with all eight tiles and large text', (WidgetTester t) async {
-      await more(t, await authored(), family: snap(twoHomes, 't57'), scale: 1.6, w: 344);
+    testWidgets('no overflow at the 344dp cover screen, with all eight tiles and 2.0x text', (WidgetTester t) async {
+      await more(t, await authored(), family: snap(twoHomes, 't57'), scale: 2.0, w: 344);
       expect(t.takeException(), isNull);
       expectOn(<String>[...rhythmKeys, ...voiceKeys]);
+      for (final String k in <String>[...rhythmKeys, ...voiceKeys]) {
+        expect(heightOf(t, find.byKey(Key(k))), greaterThanOrEqualTo(64), reason: '$k keeps its 64dp target');
+      }
     });
 
     testWidgets('two tiles to a row, and one per row once the text is large', (WidgetTester t) async {

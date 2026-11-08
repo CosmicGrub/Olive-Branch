@@ -41,7 +41,7 @@
  *       to two DIFFERENT, real zones from the child's own.
  */
 import pg from 'pg';
-import { DateTime } from 'luxon';
+import { DateTime, Settings } from 'luxon';
 import { Api } from '../../packages/api/src/api.mjs';
 import { createPool, dbPort } from '../../packages/db/src/pool.mjs';
 import { registerRoutes } from '../routes.mjs';
@@ -101,7 +101,27 @@ async function cleanup() {
 await cleanup();
 
 const SECRET = Buffer.from('p'.repeat(32), 'utf8');
-const NOW = Date.now();
+// A FIXED instant, not Date.now(): today's calendar date in the child's own
+// zone, at a pinned local time of day (default 12:00:30, mid-day, nowhere near
+// a day boundary). The route handler reads its clock from luxon
+// (`DateTime.utc()` in server/routes.mjs), NOT from the Api instance's clock
+// argument, so pinning only the Api's `() => NOW` would leave the route on the
+// real wall clock; `Settings.now` pins luxon's too, so the route and every
+// window below see the SAME instant. This suite previously used the real
+// time of day and failed for roughly the first 40 minutes after local
+// midnight (CI at 08:04 UTC = 00:04 America/Los_Angeles): its "start 45/15/40/
+// 10 minutes ago" windows had to be clamped to the same calendar day, and
+// near 00:00 the clamped starts of two guardians collapsed onto the same
+// 00:00, turning section (c)'s "earlier start wins" into a tie that fell back
+// to the guardianId sort. The date stays "today" so DB rows keyed on real
+// now() (guardianship ranges) remain valid.
+// PRESENCE_TEST_LOCAL_HHMM=HH:MM overrides the pinned time of day, to prove
+// the suite is green at 00:05, 12:00, 23:55 and so on.
+const PINNED_HHMM = process.env.PRESENCE_TEST_LOCAL_HHMM ?? '12:00';
+const [pinH, pinM] = PINNED_HHMM.split(':').map(Number);
+const NOW = DateTime.now().setZone(CHILD_ZONE)
+  .set({ hour: pinH, minute: pinM, second: 30, millisecond: 0 }).toMillis();
+Settings.now = () => NOW;
 const api = new Api(SECRET, dbPort(pool), () => NOW);
 registerRoutes(api, pool);
 
@@ -181,26 +201,18 @@ async function setWindow(guardianId, weekday, startLocal, endLocal) {
     [guardianId, weekday, startLocal, endLocal]);
 }
 
-// Real bug, found live in CI (section D below has the full account): real
-// wall-clock arithmetic (.plus()/.minus()) can cross a real calendar-day
-// boundary, and guardian_availability_window's own CHECK constraint
-// (end_local > start_local, migration 0010) then rejects the INSERT
-// outright whenever that happens. Every window below that brackets "now"
-// (as opposed to section D's now-unrelated far-weekday construction) is
-// clamped to stay within the SAME calendar day as `local` -- this changes
-// nothing about what a test proves (the clamped instant is still validly
-// "before now" or "after now": `local` is by definition always within its
-// own day, so clamping can only ever shrink a window while still leaving
-// `local` inside it), it only removes the crossing-midnight failure mode
-// entirely, rather than merely making it rarer. One honestly-disclosed
-// residual: section C's own tie-break specifically compares two DIFFERENT
-// clamped start times; if `local` ever falls within about 10 real minutes
-// of local midnight, both starts could clamp to the same 00:00 and the
-// test would need re-running rather than asserting a false result -- an
-// astronomically rarer window than the bug this fix actually closes, and
-// not worth a more elaborate construction to close entirely.
-const clampToDay = (dt) => dt.hasSame(local, 'day') ? dt
-  : (dt < local ? local.startOf('day') : local.endOf('day'));
+// guardian_availability_window's CHECK (end_local > start_local, migration
+// 0010) forbids a window that crosses midnight, so every window that brackets
+// "now" is built in minutes-of-day and clamped to 00:00..23:59 of the SAME
+// calendar day as `local`. A clamped window still contains `local` (the route
+// treats a window as active for start <= now < end on HH:mm), so clamping only
+// ever shrinks it. Sections that compare two starts keep them DISTINCT
+// (see (c)) instead of letting both clamp onto 00:00. Valid for any pinned time
+// from 00:01 to 23:58.
+const nowMin = local.hour * 60 + local.minute;
+const at = (min) => local.set({
+  hour: Math.floor(Math.max(0, Math.min(1439, min)) / 60),
+  minute: Math.max(0, Math.min(1439, min)) % 60, second: 0, millisecond: 0 });
 
 // ===========================================================================
 // (a) on-duty exclusion — DAD1 (on duty, Side A) AND MOM1 both have windows
@@ -209,10 +221,8 @@ const clampToDay = (dt) => dt.hasSame(local, 'day') ? dt
 //     the only possible winner is MOM1.
 // ===========================================================================
 {
-  await setWindow(DAD1, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 45 }))),
-    hhmm(clampToDay(local.plus({ minutes: 45 }))));
-  await setWindow(MOM1, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 15 }))),
-    hhmm(clampToDay(local.plus({ minutes: 45 }))));
+  await setWindow(DAD1, nowWeekday, hhmm(at(nowMin - 45)), hhmm(at(nowMin + 45)));
+  await setWindow(MOM1, nowWeekday, hhmm(at(nowMin - 15)), hhmm(at(nowMin + 45)));
 
   const res = await get(CHILD_ONDUTY, dad1Tok);
   check('A on-duty exclusion', 'authorized guardian -> 200', res.status, 200);
@@ -236,8 +246,8 @@ const clampToDay = (dt) => dt.hasSame(local, 'day') ? dt
 //     the CHILD's zone, never either guardian's own.
 // ===========================================================================
 {
-  const end = clampToDay(local.plus({ minutes: 37 }));
-  await setWindow(MOM2, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 5 }))), hhmm(end));
+  const end = at(nowMin + 37);
+  await setWindow(MOM2, nowWeekday, hhmm(at(nowMin - 5)), hhmm(end));
   // DAD2 has no window at all for CHILD_SINGLE -- not a candidate this route
   // would ever surface here regardless of exclusion logic.
 
@@ -282,10 +292,12 @@ const clampToDay = (dt) => dt.hasSame(local, 'day') ? dt
 //     silently pick DAD3 and be caught here, not accidentally pass.
 // ===========================================================================
 {
-  await setWindow(MOM3, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 40 }))),
-    hhmm(clampToDay(local.plus({ minutes: 40 }))));
-  await setWindow(DAD3, nowWeekday, hhmm(clampToDay(local.minus({ minutes: 10 }))),
-    hhmm(clampToDay(local.plus({ minutes: 40 }))));
+  // DAD3's start must be strictly later than MOM3's (and still <= now), even
+  // right after midnight where "now - 40" and "now - 10" would both clamp to 00:00.
+  const momStart = Math.max(0, nowMin - 40);
+  const dadStart = Math.max(momStart + 1, nowMin - 10);
+  await setWindow(MOM3, nowWeekday, hhmm(at(momStart)), hhmm(at(nowMin + 40)));
+  await setWindow(DAD3, nowWeekday, hhmm(at(dadStart)), hhmm(at(nowMin + 40)));
 
   const res = await get(CHILD_TIE, dad3Tok);
   check('C tie-break', 'authorized guardian -> 200', res.status, 200);

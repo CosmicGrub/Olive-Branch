@@ -125,9 +125,18 @@ jobs:
       # livekit-server is a real dependency of the live suite, not optional.
       # verify.sh treats a missing binary as a gap, not a skip.
       - name: fetch livekit-server
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -sL -o /tmp/lk.tar.gz \
-            https://github.com/livekit/livekit/releases/download/v1.8.0/livekit_1.8.0_linux_amd64.tar.gz
+          # Two independent routes to the same pinned release asset. The public
+          # download URL (github.com/.../releases/download/...) answered 504 for
+          # every tag for a stretch of 2026-11-08, while the authenticated API
+          # route (gh release download) kept working, and an earlier run saved a
+          # non-gzip error body as the "tarball" because curl had no -f.
+          # -f makes an HTTP error a failure; the gh route is the fallback.
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o /tmp/lk.tar.gz \
+            https://github.com/livekit/livekit/releases/download/v1.8.0/livekit_1.8.0_linux_amd64.tar.gz \
+            || gh release download v1.8.0 -R livekit/livekit -p livekit_1.8.0_linux_amd64.tar.gz -O /tmp/lk.tar.gz --clobber
           tar xzf /tmp/lk.tar.gz -C /tmp
           printf 'port: 7880\nrtc:\n  tcp_port: 7881\n  port_range_start: 50000\n  port_range_end: 50020\n  use_external_ip: false\nkeys:\n  devkey: devsecret_at_least_32_chars_long_xx\nlogging:\n  level: warn\n' > /tmp/lk.yaml
       # Strict (P-13): the old `npm ci || npm install` fell back to a lockfile-
