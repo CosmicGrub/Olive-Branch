@@ -15,15 +15,22 @@
 // LettersScreen — the first live-wiring this hub has ever carried. See
 // letters_screen.dart's own file header for why that screen reuses this
 // session directly rather than minting its own via devLoginFor().
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
+import 'child_explainer_screens.dart';
 import 'collection_screen.dart';
 import 'her_colour_accent.dart';
 import 'her_colour_home.dart';
 import 'her_colour_store.dart';
 import 'colouring_screen.dart';
 import 'doodle_desk.dart';
+import 'family_structure_store.dart' show FamilyChildSnapshot;
+import 'growing_care_logic.dart';
+import 'growing_care_store.dart';
+import 'growing_screens.dart';
 import 'game_logic.dart' show neutralGrownUp;
 import 'hub_widgets.dart';
 import 'journal_screen.dart';
@@ -50,6 +57,8 @@ class ChildMoreScreen extends StatelessWidget {
     this.overrides,
     this.guardianName,
     this.colourStore,
+    this.family,
+    this.growingCare,
   });
   final String childName;
   final int childAge;
@@ -74,6 +83,16 @@ class ChildMoreScreen extends StatelessWidget {
 
   /// Where today's colour comes from; null uses the process-wide in-memory store.
   final ChildColourStore? colourStore;
+
+  /// Her derived view (age bands and family structure). It decides whether the
+  /// "Keep and grow" section exists at all: the youngest band has no More hub,
+  /// and a guardian can switch each suite off. Null falls back to [childAge]
+  /// (an unknown age fails closed to 5, see childSuitesFor).
+  final FamilyChildSnapshot? family;
+
+  /// Where the "Keep and grow" things are kept; null uses this device's own
+  /// sealed store for the current child.
+  final GrowingCareStores? growingCare;
 
   /// C-15: the maturation ladder's first rung is her tenth birthday
   /// (maturation_ladder.dart's [kLadder]); "Growing up", "The quiet corner"
@@ -128,6 +147,7 @@ class ChildMoreScreen extends StatelessWidget {
             subtitle: 'One book, two of you',
             onTap: () => _open(context, SharedReadingScreen(childName: childName, readerName: _grownUp))),
         ]),
+        _KeepAndGrow(childName: childName, childAge: childAge, family: family, stores: growingCare),
         HubSection(title: 'Make things', children: [
           if (isTileVisible(overrides, 'activity:doodle'))
             HubTile(icon: Icons.brush_outlined, title: 'Doodle desk',
@@ -226,5 +246,84 @@ class _ColourTileState extends State<_ColourTile> {
         },
       ),
     );
+  }
+}
+
+/// "Keep and grow": her memory box, and the few things a guardian chose to show
+/// her (a doorframe picture, firsts, an opened letter, picture stories). Each
+/// guardian-authored tile exists only when there is something to see, and the
+/// whole section only when the age-band model and the guardian's switches say
+/// so. Care information is never here.
+class _KeepAndGrow extends StatefulWidget {
+  const _KeepAndGrow({required this.childName, required this.childAge, required this.family, required this.stores});
+  final String childName;
+  final int childAge;
+  final FamilyChildSnapshot? family;
+  final GrowingCareStores? stores;
+
+  @override
+  State<_KeepAndGrow> createState() => _KeepAndGrowState();
+}
+
+class _KeepAndGrowState extends State<_KeepAndGrow> {
+  GrowingCareStores? _s;
+  ChildGrowingLens? _lens;
+  ChildSuites _suites = ChildSuites.none;
+  bool _marks = false, _firsts = false, _letters = false, _stories = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final GrowingCareStores s = widget.stores ?? GrowingCareStores.forChild();
+      final ChildSuites suites = childSuitesFor(
+          view: widget.family?.view, yearsOld: widget.childAge, switches: await s.switches.load());
+      final ChildGrowingLens lens = s.childLens();
+      final bool marks = suites.pencilMarks && (await lens.growth()).isNotEmpty;
+      final bool firsts = suites.firstTimes && (await lens.shownFirsts()).isNotEmpty;
+      final bool letters = suites.timeCapsule && (await lens.openedLetters()).isNotEmpty;
+      final bool stories = suites.explainerCards && (await s.childExplainers().shown()).isNotEmpty;
+      if (!mounted) return;
+      setState(() {
+        _s = s; _lens = lens; _suites = suites;
+        _marks = marks; _firsts = firsts; _letters = letters; _stories = stories;
+      });
+    } catch (_) {
+      // Fail closed: if the device store cannot be read, the section is simply absent.
+    }
+  }
+
+  void _open(Widget screen) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_suites.any) return const SizedBox.shrink();
+    return HubSection(title: 'Keep and grow', children: [
+      if (_suites.memoryBox)
+        HubTile(key: const Key('childMemoryBox'), icon: Icons.inventory_2_outlined, title: 'My memory box',
+          subtitle: 'Things you chose to keep',
+          onTap: () => _open(MemoryBoxScreen(childName: widget.childName, stores: _s))),
+      if (_marks)
+        HubTile(key: const Key('childDoorframe'), icon: Icons.straighten, title: 'My doorframe',
+          subtitle: 'Look how you are growing',
+          onTap: () => _open(GrowthPictureScreen(childName: widget.childName, lens: _lens))),
+      if (_firsts)
+        HubTile(key: const Key('childFirsts'), icon: Icons.star_outline, title: 'Something new',
+          subtitle: 'Times you did something new',
+          onTap: () => _open(MyFirstsScreen(lens: _lens))),
+      if (_letters)
+        HubTile(key: const Key('childLetters'), icon: Icons.mail_outline, title: 'A letter for you',
+          subtitle: 'Ready to open',
+          onTap: () => _open(LettersOpenedScreen(lens: _lens))),
+      if (_stories)
+        HubTile(key: const Key('childStories'), icon: Icons.menu_book_outlined, title: 'Stories for you',
+          subtitle: 'Someone who loves you wrote these',
+          onTap: () => _open(ExplainerStoriesScreen(reader: _s?.childExplainers()))),
+    ]);
   }
 }

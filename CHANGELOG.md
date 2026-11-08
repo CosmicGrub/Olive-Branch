@@ -14,6 +14,48 @@ Silent deletion is a process failure.
 
 ---
 
+## [Unreleased] — Growing and Care (suites G and F), on-device only
+
+Time capsule, first times, memory box and growing marks (G); care binder, hospital mode,
+picture stories and appointment prep (F). Described as shipped in MASTERFILE §8.19.
+**Local only** by owner direction: no server route, no migration, no network call, no
+credential; **sharing between homes is parked and not built.** No version bump and no new
+MARKUP screen row; MARKUP/DEMO totals updated.
+
+### Added
+- **Pure rules** `client/lib/growing_care_logic.dart` — models and every deny path: a capsule
+  opens on or after its date by the device clock (said plainly on screen: changing the clock
+  opens it early) or when a guardian unseals it, and its words are withheld from a guardian
+  while sealed; firsts carry no count, streak or to-do; heights run 30 to 220 cm and her own
+  picture shows month labels only (no number, no percentile, no comparison); a story is one
+  to six pages of at most 240 characters; one photo is at most 48 KiB; text and count bounds
+  on everything. `childSuitesFor(view, yearsOld, switches)` gates her side from the
+  family-structure model (the youngest band has no More hub, so it gets nothing; unknown age
+  fails closed to 5).
+- **Repositories** `growing_care_store.dart` — abstract `ItemRepository`, in-memory and
+  LocalStore-backed, per child, with refusals that leave stored data untouched. Four new
+  catalogued, **sealed** areas: `growing`, `memorybox`, `care`, `explainers`
+  (`localDataCatalogue`, so the wipe screen and docs list them). Her side reads through
+  narrower types (`ChildGrowingLens`, `ChildExplainerReader`) that cannot reach care data.
+- **Grown-up screens** — Settings hub, Her group: "Growing" (time capsule, first times,
+  growing marks); Family group: "Care" (care binder with print view and copy, hospital mode
+  with a door to the existing emergency card, picture-story editor, appointment prep), each
+  hub with a per-suite switch.
+- **Her screens** — "Keep and grow" in the child More hub: memory box (pictures she made, or
+  small photos; 64 dp buttons), her doorframe, firsts a guardian chose to show, opened
+  letters, picture stories a guardian chose to show (read-only).
+- Tests: `growing_care_logic_test.dart`, `growing_care_store_test.dart` (restart survival,
+  sealed on disk, per-child, full-box, wipe), `growing_screens_test.dart`,
+  `care_screens_test.dart` (includes source-reading checks that her files reach no care type
+  and that these suites contain no network, scheduling or location code).
+
+### What is local-only and what is not here
+Everything is local-only. Not built: sharing or sync between homes; a local editor for the
+emergency card (hospital mode links to the existing screen, which still shows demo content
+when no live session is wired); audio in the memory box (no audio capture exists); a question
+box on a picture story; reminders or scheduling of any kind; any pre-written medical or
+explainer text. The app writes no care content: every word is a guardian's.
+
 ## [Unreleased] — Family structure and age bands (suites J and K), local-first
 
 A guardian builds the family structure; her home follows it. Described as shipped in

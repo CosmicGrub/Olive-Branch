@@ -112,6 +112,26 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'Things she made while offline that are waiting to go, so a restart does not lose '
           'them. Never shown to her as a queue.'),
   LocalDataEntry(
+      area: 'growing', scope: LocalScope.child, encrypted: true, maxBytes: 8 * _mib,
+      what: 'Growing (grown-up side): time capsules a guardian sealed (a note, the opening date, '
+          'an optional small photo), first times a guardian kept (title, date, note, small photo), '
+          'pencil-mark heights a guardian recorded, and which of these suites are switched on. '
+          'No counts, streaks or comparison with other children. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
+      area: 'memorybox', scope: LocalScope.child, encrypted: true, maxBytes: 6 * _mib,
+      what: 'Her memory box: pictures she chose to keep (a copy of a doodle or colouring, or a small '
+          'photo) with an optional short caption. No totals. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
+      area: 'care', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
+      what: 'Care binder (grown-up side only): sections and contacts a guardian wrote, hospital-mode '
+          'notes, and appointment checklists and question lists. Every word is a guardian\'s; the app '
+          'adds no medical text. Never shown in her app. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
+      area: 'explainers', scope: LocalScope.child, encrypted: true, maxBytes: 3 * _mib,
+      what: 'Picture stories a guardian wrote for her: a title, up to six short pages, an optional '
+          'small photo, and whether it is shown to her. The app writes none. Sealed on the device; '
+          'never uploaded.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '

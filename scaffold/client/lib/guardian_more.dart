@@ -20,6 +20,7 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
+import 'care_screens.dart';
 import 'call_screen.dart';
 import 'call_security_info.dart';
 import 'closing_ritual.dart';
@@ -541,6 +542,9 @@ class GuardianMoreScreen extends StatelessWidget {
         SettingsRow(id: 'colour', icon: Icons.palette_outlined, title: 'Colour and art',
           subtitle: 'Colour of the day, art style, coding activities',
           onTap: () => _open(context, HerColourGuardianScreen(childName: childName, childAge: childAge))),
+        SettingsRow(id: 'growing', icon: Icons.eco_outlined, title: 'Growing',
+          subtitle: 'Time capsule, first times, growing marks. Kept on this device',
+          onTap: () => _open(context, GrowingCareHubScreen(care: false, childName: childName))),
         SettingsRow(id: 'look', icon: Icons.format_paint_outlined, title: 'How her app looks',
           subtitle: 'A palette, light or dark', onTap: () => _openThemePicker(context)),
         SettingsRow(id: 'age', icon: Icons.cake_outlined, title: 'Age band',
@@ -552,6 +556,9 @@ class GuardianMoreScreen extends StatelessWidget {
             actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))]))),
       ]),
       SettingsGroup('Family', [
+        SettingsRow(id: 'care', icon: Icons.health_and_safety_outlined, title: 'Care',
+          subtitle: 'Care binder, hospital mode, picture stories, appointment prep. Kept on this device',
+          onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName))),
         SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Adults and helpers',
           subtitle: 'Invite a co-parent',
           onTap: () => _open(context, InvitationScreen(
