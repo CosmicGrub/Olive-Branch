@@ -2230,7 +2230,11 @@ recomputes the `message_log` hash with pgcrypto (same length-prefixed framing,
 UTF-16 length), `hash_version` is 1, and TRUNCATE is refused; the migration first
 verifies every existing chain and FAILS, naming child and seq, if one does not.
 Expense status changes are guarded (`proposed` to `accepted` or `disputed`,
-`accepted` to `reimbursed`; the proposer cannot accept or dispute their own;
+`accepted` to `reimbursed`; since migration 0045 also `disputed` to `accepted`;
+the proposer cannot accept or dispute their own, except that a family with exactly
+ONE live guardian lets that guardian accept their own proposal, recorded with an
+explicit `self_accept` marker on the `expense_event` row (disputing your own stays
+refused; reimbursing an unaccepted expense stays `409 invalid_transition`);
 only `status` can change) and recorded with actor and time in the append-only
 `expense_event` table, whose CHECK admits only legal transitions; a route that
 used to flip `proposed` straight to `reimbursed` now answers `409
@@ -4022,7 +4026,9 @@ principle §2.11:
   portable files. **Free, all tiers, unlimited, including after cancellation.**
 - **Certified export** — tamper-evident, court-formatted, hash-chained, with an
   attestation page. **Court tier**, with **one free certified export per guardian
-  per rolling 12 months.**
+  per rolling 12 months.** A certified export of a broken message chain (exported
+  with its fault report) does not use up that allowance (migration 0046,
+  `export_record.chain_verified`).
 
 Rationale: pricing the evidence of your own life behind a paywall is both
 ethically indefensible and a reputational liability, and the free annual

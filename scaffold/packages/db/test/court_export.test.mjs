@@ -295,8 +295,26 @@ const chain = await seedFamily();
     hidden && !hidden.ok && hidden.reasons.some(r => r.includes('fault report does not match')), true);
   const oneRecord = await admin.query(
     `SELECT count(*)::int AS n FROM export_record WHERE child_id = $1`, [IVY]);
-  check('C tamper', 'the export is recorded like any other (it counts, and it is auditable)',
-    oneRecord.rows[0].n, 1);
+  check('C tamper', 'the export is recorded (auditable)', oneRecord.rows[0].n, 1);
+  check('C tamper', 'but it is marked chain_verified = false', (await admin.query(
+    `SELECT chain_verified FROM export_record WHERE child_id = $1`, [IVY])).rows[0].chain_verified, false);
+  // 0046: a faulted export must not consume the one free certified export per year.
+  const again = await certifiedExportBundleFor(pool, DAD, IVY, new Date());
+  check('C tamper', 'a second certified export is STILL free: the faulted one did not use the allowance',
+    again.ok ? again.free : again.reason, true);
+  await admin.query(`DELETE FROM export_record WHERE child_id = $1`, [IVY]);
+  await admin.query('ALTER TABLE message_log DISABLE TRIGGER message_log_no_update');
+  await admin.query(`UPDATE message_log SET body = $2 WHERE child_id = $1 AND seq = 0`, [IVY, chain[0].body]);
+  await admin.query('ALTER TABLE message_log ENABLE TRIGGER message_log_no_update');
+  const clean = await certifiedExportBundleFor(pool, DAD, IVY, new Date());
+  check('C tamper', 'a verified export is free the first time and then uses the allowance',
+    clean.ok ? clean.free : clean.reason, true);
+  const second = await certifiedExportBundleFor(pool, DAD, IVY, new Date());
+  check('C tamper', 'so the next verified export is refused (tier_required) without Court tier',
+    second.ok ? 'ok' : second.reason, 'tier_required');
+  await admin.query('ALTER TABLE message_log DISABLE TRIGGER message_log_no_update');
+  await admin.query(`UPDATE message_log SET body = 'REWRITTEN AFTER THE FACT' WHERE child_id = $1 AND seq = 0`, [IVY]);
+  await admin.query('ALTER TABLE message_log ENABLE TRIGGER message_log_no_update');
   await admin.query(`DELETE FROM export_record WHERE child_id = $1`, [IVY]);
 
   // Repair the row so later sections (and any re-run of this file) see a
