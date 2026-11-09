@@ -104,6 +104,12 @@ back to an untargeted one — verify it stays correct with `node
 tools/check-release-target.mjs` before trusting any release cut from these
 instructions.
 
+**Cutting a versioned preview.** `node tools/cut-release.mjs X.Y.Z` (from `scaffold/`; runbook
+`docs/RELEASING.md`) runs this build for you, debug-signed and with no server address, and prints the
+SHA-256. The app version in `pubspec.yaml` is `<spec version>+<build>`, where the build number is
+`major*10000 + minor*100 + patch` and becomes the Android `versionCode`; `tools/test/version_sync.test.mjs`
+fails CI if it drifts. A real-key release is still done by hand from this section.
+
 `build.gradle.kts` detects `key.properties` automatically and signs with
 your real key instead of the debug one. No other flag or step is needed.
 To confirm which key actually signed the output:
