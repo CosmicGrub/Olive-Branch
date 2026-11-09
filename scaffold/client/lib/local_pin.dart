@@ -34,6 +34,7 @@
 // the slow hash only makes each guess cost more. The sealing key lives in the OS
 // keystore and a wipe erases it.
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -45,10 +46,24 @@ const int kLocalPinMinDigits = 4, kLocalPinMaxDigits = 8;
 const int kLocalPinMaxAttempts = 5;
 const Duration kLocalPinLockout = Duration(minutes: 15);
 
-/// PBKDF2 rounds. A check runs on the phone's UI isolate in pure Dart, so this is
-/// a deliberate middle: tens of times the cost of one hash per guess, a fraction
-/// of a second per check on a phone.
+/// PBKDF2 rounds. The hash is pure Dart and runs in a BACKGROUND isolate (see
+/// [kLocalPinOffThreadRounds]), so the screen keeps drawing while it works; the
+/// rounds are unchanged from when it ran on the UI isolate: tens of times the
+/// cost of one hash per guess, a fraction of a second per check on a phone.
 const int kLocalPinIterations = 100000;
+
+/// At or above this many rounds the hash runs in a background isolate. Below it (the
+/// small counts tests pass to stay fast) it runs inline: an isolate costs more than the
+/// hash, and a widget test's fake clock cannot await an isolate. The bytes are the same
+/// either way; production's [kLocalPinIterations] is far above it.
+const int kLocalPinOffThreadRounds = 20000;
+
+/// PBKDF2-HMAC-SHA256, 256 bits. Top-level and closure-free so [Isolate.run] can send it.
+Future<List<int>> localPinDerive(String pin, List<int> salt, int rounds) async {
+  final Pbkdf2 algo = Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: rounds, bits: 256);
+  final SecretKey key = await algo.deriveKeyFromPassword(password: pin, nonce: salt);
+  return key.extractBytes();
+}
 
 /// The server's own wording for its lockout (guardian_setup.dart `pin_locked`).
 const String kLocalPinLockedMessage = 'Too many wrong tries. Try again in 15 minutes.';
@@ -200,10 +215,10 @@ class LocalPinService {
 
   Future<bool> isSet() async => (await _record()) != null;
 
-  Future<List<int>> _derive(String pin, List<int> salt, int rounds) async {
-    final Pbkdf2 algo = Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: rounds, bits: 256);
-    final SecretKey key = await algo.deriveKeyFromPassword(password: pin, nonce: salt);
-    return key.extractBytes();
+  Future<List<int>> _derive(String pin, List<int> salt, int rounds) {
+    if (rounds < kLocalPinOffThreadRounds) return localPinDerive(pin, salt, rounds);
+    final List<int> s = List<int>.of(salt);
+    return Isolate.run<List<int>>(() => localPinDerive(pin, s, rounds));
   }
 
   /// Sets the PIN (or replaces it). Throws [ArgumentError] for a code that is not 4 to

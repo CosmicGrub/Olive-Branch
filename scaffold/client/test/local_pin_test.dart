@@ -80,6 +80,26 @@ void main() {
       expect((await later.verify('2469')).outcome, PinOutcome.wrong);
     });
 
+    test('production rounds run in a background isolate and give the same bytes as the inline hash', () async {
+      expect(kLocalPinIterations, greaterThanOrEqualTo(kLocalPinOffThreadRounds));
+      final _FlakyRepo repo = _FlakyRepo();
+      final LocalPinService service = LocalPinService(repo, random: Random(3)); // default rounds: the isolate path
+      await service.setPin('480516');
+      final LocalPinRecord rec = repo.record!;
+      expect(rec.iterations, kLocalPinIterations);
+      // Same function, run right here on this isolate: byte-identical (deterministic, not isolate-dependent).
+      expect(await localPinDerive('480516', rec.salt, rec.iterations), rec.hash);
+      expect((await service.verify('480516')).ok, isTrue);
+      expect((await service.verify('480517')).outcome, PinOutcome.wrong);
+    });
+
+    test('small test rounds stay inline (a widget test fake clock cannot await an isolate)', () async {
+      expect(1000, lessThan(kLocalPinOffThreadRounds));
+      final _FlakyRepo repo = _FlakyRepo();
+      await LocalPinService(repo, iterations: 1000, random: Random(3)).setPin('1357');
+      expect(repo.record!.hash, await localPinDerive('1357', repo.record!.salt, 1000));
+    });
+
     test('the default is a slow hash, not a fast one', () {
       expect(kLocalPinIterations, greaterThanOrEqualTo(100000));
     });

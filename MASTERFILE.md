@@ -4912,7 +4912,7 @@ onboarding runs again.
 
 **The local PIN** (`guardian.local-guardian.localpin`, sealed). A 4 to 8 digit code, **separate from the server PIN.**
 **Every guardian PIN is 4 to 8 digits, everywhere:** setup, change PIN, the adult-only keypad (`PinGate`, digits 0-9, confirmed with OK, which waits for 4 digits), the kiosk gate for the server PIN as well as the local one (the old fixed 4-digit keypad is gone), and the server (`hashPin` accepts 4 to 8; `kiosk-pin/verify` hardcodes no length).
-- *Kept as:* PBKDF2-HMAC-SHA256 over a fresh 16-byte random salt, 100,000 rounds (the pinned pure-Dart `cryptography` package that
+- *Kept as:* PBKDF2-HMAC-SHA256 over a fresh 16-byte random salt, 100,000 rounds, computed in a background isolate (`Isolate.run`; rounds unchanged) so the screen keeps drawing (the pinned pure-Dart `cryptography` package that
   already seals the private areas), the salt and the round count stored with the hash. The PIN itself is never stored. Compared in
   constant time. The sealed area adds a second layer.
 - *Limited as:* five wrong tries lock it for 15 minutes, in the server's words ("Too many wrong tries. Try again in 15 minutes."); the
