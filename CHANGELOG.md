@@ -24,9 +24,9 @@ Silent deletion is a process failure.
 ### Changed
 - **Connect 4 for two devices is dealer-validated** (it was lockstep: each side applied its own move before the other had it). The asking device's board changes when the dealer's answer arrives.
 - **Uno's two-device play** moved from `game_uno.dart` into `uno_play.dart`: the state is numbered, a stale one is dropped, and every ask is answered by the controller. War's deal is now the dealer's first ordered move, accepted only from the dealer and only when no game is under way.
-- `LocalPairingController.sendTurn` now returns whether the turn was handed over and takes `failureIsError` (default unchanged); `LocalSessionServer` refuses a POST over 256 KiB.
+- `LocalPairingController.sendTurn` now returns whether the turn was handed over and takes `failureIsError` (default unchanged).
 ### Not changed (read before relying on this)
-- **Pairing admission is not part of this change** (it waits for #167): any device on the same network can still POST to the local server, and the discovery label is still the child's name. The envelope's sender rule is only as strong as that transport.
+- Pairing admission is separate work (#171); this change does not alter it. The envelope's sender rule is only as strong as the transport under it.
 - Not run on a Fold 5 or a Tab S9 FE. The wording of the away, ended, resume and rematch lines is a draft for the owner to approve.
 
 ---
