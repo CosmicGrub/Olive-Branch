@@ -8,19 +8,21 @@ TLS-inspection box, a malicious VPN). Design:
 
 ## What is pinned
 
-The SHA-256 of a certificate's SubjectPublicKeyInfo (the SPKI hash), base64
-encoded. It is matched against any certificate in the chain the server
-presents, so you can pin the leaf key, an intermediate, or both. Pinning the
-intermediate survives routine leaf renewal with a new key; pinning the leaf key
-requires keeping that key across renewals. Recommended: pin the **intermediate**
-plus a **backup pin** for a key you hold offline.
+The SHA-256 of the server certificate's SubjectPublicKeyInfo (the SPKI hash),
+base64 encoded. **It is matched against the leaf (server) certificate only**:
+Dart's `SecureSocket` exposes the leaf and not the rest of the chain, so an
+intermediate cannot be pinned from Dart. The consequence for operators: the
+pinned thing is the server's *key*, so renew certificates **reusing the same
+key** (`certbot renew --reuse-key`, or Caddy with a fixed key) and move to a new
+key only through the backup-pin procedure below. A renewal that generates a new
+key without that procedure locks out every installed app.
 
 ## Rules the client enforces
 
 * Pinning applies only to a `https://` base URL that is not loopback or
   `10.0.2.2`. Dev base URLs are never pinned.
 * Release builds with pinning requested need **at least two pins** (a primary
-  and a backup pin). With fewer, the transport refuses to be created: a single
+  and a backup pin). With fewer, every request is refused (fails closed): a single
   pin that is lost bricks every installed app.
 * Release builds refuse any `http://` base URL, loopback included.
 * A pin mismatch fails the request before any byte (including the bearer token)

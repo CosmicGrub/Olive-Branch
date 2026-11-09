@@ -169,17 +169,19 @@ loopback-bound port 8123. The server therefore enforces what it can:
     only, no path), require `TRUST_PROXY=1` and a `TRUST_PROXY_HOPS` integer
     1-4, and when `DATABASE_URL` has a non-local host, require
     `sslmode=verify-full|verify-ca`. `ALLOW_INSECURE_TRANSPORT=1` downgrades
-    the first three to warnings and is refused in production by the
-    compose file (literal, like `DEV_LOGIN`). CI's image smoke test has no
+    the transport problems to warnings; the compose file pins it to the literal
+    `"0"` (like `DEV_LOGIN`). CI's image smoke test has no
     `NODE_ENV`, so it is unaffected.
   - `requestIsSecure(req, env)`: with `TRUST_PROXY=1`, true only when the
     `X-Forwarded-Proto` entry that the Nth-from-right proxy added is `https`;
     without it, true only for a loopback socket in dev.
   - In production every request that is not `requestIsSecure` (except
     `/healthz`, which the in-container probe calls on loopback) is answered
-    `421`-free: a `308` is wrong for an API (clients would re-POST on a
-    different scheme), so the answer is a generic `400 {"error":"https_required"}`
-    and a metric increment. Plain HTTP is never served content.
+    refused. A `308` redirect is wrong for an API (a client would re-send the
+    POST body and its bearer token), so the answer is a generic
+    `400 {"error":"https_required"}` and a metric increment. The exemptions
+    are the in-container probes: a direct loopback request with no proxy header
+    to `/healthz` or `/internal/metrics`. Plain HTTP is never served content.
   - `SECURITY_HEADERS`: `strict-transport-security: max-age=63072000;
     includeSubDomains` (preload only when the operator sets
     `HSTS_PRELOAD=1`, because preload is irreversible for a domain),
@@ -197,16 +199,18 @@ loopback-bound port 8123. The server therefore enforces what it can:
     the host is loopback, `10.0.2.2` or `localhost` AND the build is not
     release. A release build refuses cleartext to every host including
     loopback (loopback is only for debug).
-  - `PinSet`: SPKI SHA-256 pins, at least one primary and one backup, matching
-    on any certificate in the presented chain (so rotating the leaf does not
-    break it while the key is kept; rotating the key needs the backup
-    already shipped). Pinning is off for dev base URLs. A release build with
-    pinning enabled and an empty or single-element pin set fails closed at
-    construction. Pin values are not invented here: they are injected with
+  - `PinSet`: SPKI SHA-256 pins, at least one primary and one backup in a
+    release build. dart:io exposes only the LEAF certificate of a connection, so
+    pins name the server's leaf key (not an intermediate); certificates are
+    renewed with the same key and a key change goes through the backup-pin
+    procedure. Pinning is off for dev base URLs. A release build with pinning
+    requested and fewer than two well-formed pins refuses every request
+    (fails closed). Pin values are not invented here: they are injected with
     `--dart-define=OLIVE_API_PINS=pin1,pin2` at build time (decision D-2).
   - `createPinnedClient(...)` wires the verification into an `HttpClient`
-    via `SecurityContext` plus a post-handshake check before any bytes are
-    written (see 4.1.1).
+    through `connectionFactory` and a post-handshake check before any bytes are
+    written (see 4.1.1). `OliveTransport.clientFor(baseUrl)` is the one place
+    `api_client.dart` and `auth_session.dart` get their default client.
   - Android `network_security_config.xml` (main: cleartext off, system CAs
     only, user CAs not trusted) and a debug-only override that permits
     `localhost` and `10.0.2.2`.
@@ -214,9 +218,12 @@ loopback-bound port 8123. The server therefore enforces what it can:
 4.1.1 Why a post-handshake check: `badCertificateCallback` only fires for
 certificates that already failed validation, so it cannot implement pinning on
 a valid chain. The pinned client uses `HttpClient.connectionFactory` to open a
-`SecureSocket`, read `peerCertificate`, compare the SPKI hash and close the
-socket on mismatch before the request is written. Chain-level verification by
-the platform still runs first.
+`SecureSocket` (the SDK uses a factory's socket as-is for direct https, which
+was checked in `http_impl.dart`), read `peerCertificate`, compare the SPKI hash
+and destroy the socket on mismatch before the request is written. Chain-level
+verification and hostname checks by the platform still run first. A unit test
+proves it against a real local TLS server: on a mismatch the server's request
+counter stays at zero.
 
 ### 4.2 Game confidentiality: the sealed relay envelope
 
@@ -281,8 +288,8 @@ the AEAD plaintext. Nothing in this PR changes `coview.ts`.
 - `server/netid.mjs`: `anonKey(req, env, now)` returns
   `HMAC-SHA256(saltOfTheDay, normalisedAddress)` truncated to 16 bytes, base64url.
   The salt is 32 random bytes generated at boot and rotated every 24 hours
-  (current plus previous kept only to straddle a rotation boundary, never
-  written anywhere). IPv4 keeps /32, IPv6 is reduced to its /64. Limiters
+  (a rotation simply resets the rate-limit buckets, which a restart already
+  does; the salt is never written anywhere). IPv4 keeps /32, IPv6 is reduced to its /64. Limiters
   (`rate_limit.mjs`) take this key, never the address; the address never
   becomes a string that outlives the request handler.
 - `clientIp` is replaced by `peerAddress(req, env)` with proper hop counting:
