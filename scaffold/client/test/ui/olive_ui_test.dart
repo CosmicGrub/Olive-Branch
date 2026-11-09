@@ -495,8 +495,8 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Next month'));
       expect([sel, prev, next], [17, 1, 1]);
       expect(find.bySemanticsLabel(RegExp('8, today')), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('1, Mom’s house')), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('5, Dad’s house')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('1, House A')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('5, House B')), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('4, handover day')), findsOneWidget);
       expect(find.text('November 2026'), findsOneWidget);
       handle.dispose();

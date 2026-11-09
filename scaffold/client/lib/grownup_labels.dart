@@ -86,6 +86,15 @@ class GrownupLabels {
     return ContactLabels.forGuardian(c, childName: childName, nicknames: nicknames);
   }
 
+  /// "Mommy and Daddy" in her own words when two grown-ups are known; otherwise the neutral "your grown-ups".
+  /// For prototype copy that says "Mom and Dad" (see [prototypeBothWords]).
+  String bothNames() => contacts.length >= 2
+      ? '${nameFor(contacts[0].id)} and ${nameFor(contacts[1].id)}'
+      : 'your grown-ups';
+
+  /// The words in prototype copy that [bothNames] stands in for.
+  static const String prototypeBothWords = 'Mom and Dad';
+
   /// Names for a two-home rhythm (the weeks screen): the first two grown-ups
   /// as she says them, padded with neutral placeholders.
   List<String> twoNames() => <String>[

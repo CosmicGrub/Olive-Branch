@@ -395,6 +395,15 @@ void main() {
       expect(find.byKey(const Key('growLaterCard')), findsNothing);
     });
 
+    testWidgets('the 15 page never hard-codes Mom and Dad: her words with two grown-ups, else "your grown-ups"', (WidgetTester t) async {
+      await big(t, const Size(800, 3000));
+      final ChildGrowth g = await grown(14, 15);
+      await t.pumpWidget(app(kidHome(await snap(years: 15), years: 15, growth: g), years: 15, family: false));
+      await t.pumpAndSettle();
+      expect(find.text('Set them. You see what your grown-ups will see.'), findsOneWidget);
+      expect(find.textContaining('Mom and Dad'), findsNothing);
+    });
+
     testWidgets('the 13 page is plain, says nobody else is told, and has no button for a screen that does not exist yet', (WidgetTester t) async {
       await big(t, const Size(800, 3000));
       final ChildGrowth g = await grown(12, 13);
