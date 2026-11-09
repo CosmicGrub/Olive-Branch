@@ -71,6 +71,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'onboarding': 'Welcome answers',
   'nicknames': 'What she calls her grown-ups',
   'homegrowth': 'When her home last grew',
+  'playsave': 'Games in progress',
   'role': 'Who uses this device',
   'localfamily': 'Your family, set up on this phone',
   'localpin': 'Your PIN for this phone',

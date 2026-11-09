@@ -167,7 +167,8 @@ class UnoPlayGame extends PlayGame {
     link?.broadcastState();
   }
 
-  void _commit(UnoSession next) {
+  /// Take a new table (from the screen's own rules code), save it and send the other device its view.
+  void commit(UnoSession next) {
     session = next;
     notifyListeners();
     link?.broadcastState();
@@ -178,7 +179,7 @@ class UnoPlayGame extends PlayGame {
     if (s == null) return false;
     final r = playCard(s, mySeat, card, chosenColor: color, rand: _rand);
     if (!r.accepted) return false;
-    _commit(r.session);
+    commit(r.session);
     return true;
   }
 
@@ -187,14 +188,14 @@ class UnoPlayGame extends PlayGame {
     if (s == null) return false;
     final r = drawCard(s, mySeat, _rand);
     if (!r.accepted) return false;
-    _commit(r.session);
+    commit(r.session);
     return true;
   }
 
   void declareAsAuthority() {
     final s = session;
     if (s == null) return;
-    _commit(declareUno(s, mySeat));
+    commit(declareUno(s, mySeat));
   }
 
   bool catchAsAuthority() {
@@ -202,7 +203,7 @@ class UnoPlayGame extends PlayGame {
     if (s == null) return false;
     final r = catchMissedUno(s, mySeat, _rand);
     if (!r.accepted) return false;
-    _commit(r.session);
+    commit(r.session);
     return true;
   }
 
@@ -211,7 +212,7 @@ class UnoPlayGame extends PlayGame {
     if (s == null) return false;
     final r = acceptWildDrawFour(s, mySeat, _rand);
     if (!r.accepted) return false;
-    _commit(r.session);
+    commit(r.session);
     return true;
   }
 
@@ -220,7 +221,7 @@ class UnoPlayGame extends PlayGame {
     if (s == null) return false;
     final r = challengeWildDrawFour(s, mySeat, _rand);
     if (!r.accepted) return false;
-    _commit(r.session);
+    commit(r.session);
     return true;
   }
 

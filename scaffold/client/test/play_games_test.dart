@@ -4,6 +4,7 @@
 //
 // Device 'a' is the guest, device 'b' is the dealer (the authority).
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -313,6 +314,13 @@ void main() {
       await t.dealer.broadcastState();
       expect(await store.load('uno'), isNull);
     });
+  });
+
+  test('source guard: the Uno screen runs computer seats only at the one-device table (they used to run after every dealer action in vs-peer play)', () {
+    final src = File('lib/game_uno.dart').readAsStringSync().replaceAll('\r\n', '\n');
+    final i = src.indexOf('void _maybeRunCpuTurn() {');
+    expect(i, greaterThan(0));
+    expect(src.substring(i, i + 700), contains('if (_mode != _Mode.vsCpu) return;'));
   });
 
   group('the registry: every game on the contract', () {

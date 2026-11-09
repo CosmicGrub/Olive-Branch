@@ -69,10 +69,18 @@ import 'grownup_labels.dart' show GrownupLabelScope;
 import 'access_scope.dart' show motionDuration;
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
-import 'live_games.dart' show Side, auditLiveView;
+import 'live_games.dart' show Side;
 import 'local_pairing.dart';
+import 'local_services.dart';
+import 'play_game.dart';
+import 'play_notice.dart';
+import 'play_save.dart';
+import 'play_session.dart';
+import 'play_transport.dart';
+import 'play_widgets.dart';
 import 'uno_bot.dart';
 import 'uno_deck.dart';
+import 'uno_play.dart';
 import 'uno_session.dart';
 
 /// foldTabletop's own outer padding — real-device-tested minimum,
@@ -129,14 +137,6 @@ const double _userCardScaleMax = 1.6;
 /// pretending every device has the same room to spare.
 double _userScaleMinFor(ff.Posture posture) => (1.0 / _cardScaleFor(posture)).clamp(_userCardScaleMin, 1.0);
 
-String _encodeColor(UnoColor c) => switch (c) {
-  UnoColor.red => 'red', UnoColor.yellow => 'yellow', UnoColor.green => 'green', UnoColor.blue => 'blue',
-};
-UnoColor? _decodeColor(Object? v) => switch (v) {
-  'red' => UnoColor.red, 'yellow' => UnoColor.yellow, 'green' => UnoColor.green, 'blue' => UnoColor.blue,
-  _ => null,
-};
-
 enum _Mode { none, vsCpu, vsPeer }
 
 class GameUnoScreen extends StatefulWidget {
@@ -151,7 +151,14 @@ class GameUnoScreen extends StatefulWidget {
 class _GameUnoScreenState extends State<GameUnoScreen> {
   late final LocalPairingController _pairing =
       LocalPairingController(role: widget.role, displayName: widget.displayName);
-  StreamSubscription<LocalTurnPayload>? _turnSub;
+  // The two-device conversation (envelope, order, resend, resume, rematch, save) is the shared session's job:
+  // play_session.dart. This screen only draws, and asks _game to act.
+  late final LocalPairingTransport _transport = LocalPairingTransport(_pairing);
+  late final UnoPlayGame _game = UnoPlayGame(PlayContext(
+    mode: PlayMode.pair, localSeatId: _transport.mySeat, authoritySeatId: 'b', seatIds: const ['a', 'b']));
+  late final PlaySessionController _session = PlaySessionController(
+    spec: unoSpec, game: _game, transport: _transport,
+    store: LocalPlaySaveStore(LocalServices.current.area('playsave')));
   final _rand = Random();
 
   _Mode _mode = _Mode.none;
@@ -166,21 +173,32 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
   // before either one starts.
   double _userCardScale = 1.0;
 
-  // Authoritative path (vsCpu always; vsPeer when I dealt).
-  UnoSession? _authoritySession;
-  bool _amAuthority = false;
+  // Authoritative path (vsCpu always; vsPeer when I dealt). In vsPeer the session lives in _game, and setting it here
+  // saves it and sends the other device its view; in vsCpu it stays on this device.
+  UnoSession? _cpuSession;
+  UnoSession? get _authoritySession => _mode == _Mode.vsPeer ? _game.session : _cpuSession;
+  set _authoritySession(UnoSession? v) {
+    if (_mode == _Mode.vsPeer) {
+      if (v != null) _game.commit(v);
+    } else {
+      _cpuSession = v;
+    }
+  }
 
-  // Redacted peer-view path (vsPeer, when the OTHER device dealt).
-  List<UnoCard>? _peerMyHand;
-  UnoCard? _peerDiscardTop;
-  List<UnoCard> _peerDiscardTrail = const [];
-  UnoColor? _peerCurrentColor;
-  String? _peerTurn;
-  int _peerOpponentHandCount = 0;
-  String? _peerWinner;
-  String? _peerUnoVulnerableSeatId;
-  bool _peerPendingWildDrawFour = false;
-  bool _peerAwaitingResult = false;
+  bool get _amAuthority => _mode == _Mode.vsCpu || (_mode == _Mode.vsPeer && _game.ctx.isAuthority);
+
+  // Redacted peer-view path (vsPeer, when the OTHER device dealt): read straight from the game.
+  UnoPeerView? get _pv => _game.view;
+  List<UnoCard>? get _peerMyHand => _pv?.myHand;
+  UnoCard? get _peerDiscardTop => _pv?.discardTop;
+  List<UnoCard> get _peerDiscardTrail => _pv?.discardTrail ?? const [];
+  UnoColor? get _peerCurrentColor => _pv?.currentColor;
+  String? get _peerTurn => _pv?.turn;
+  int get _peerOpponentHandCount => _pv?.opponentHandCount ?? 0;
+  String? get _peerWinner => _pv?.winner;
+  String? get _peerUnoVulnerableSeatId => _pv?.unoVulnerableSeatId;
+  bool get _peerPendingWildDrawFour => _pv?.pendingWildDrawFour ?? false;
+  bool get _peerAwaitingResult => _game.awaiting;
 
   Side get _mySide => _pairing.mySide;
   /// vsCpu has no real pairing/networking meaning at all — the human is
@@ -194,12 +212,18 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
   void initState() {
     super.initState();
     _pairing.addListener(_onPairingChanged);
-    _turnSub = _pairing.incomingTurns.listen(_handleIncomingTurn);
+    _game.addListener(_onPairingChanged);
+    _session.addListener(_onPairingChanged);
+    _session.start();
     unawaited(_pairing.start());
   }
 
   void _onPairingChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      // The other device dealt: this one is in the game whether or not its own picker was used.
+      if (_mode == _Mode.none && _game.view != null) _mode = _Mode.vsPeer;
+    });
   }
 
   // ---------------------------------------------------------------- vs CPU
@@ -210,7 +234,6 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
     setState(() {
       _mode = _Mode.vsCpu;
       _authoritySession = session;
-      _amAuthority = true;
     });
     _maybeRunCpuTurn();
   }
@@ -235,6 +258,10 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
   /// difficulty-scaled guesses (uno_bot.dart's own header) — never
   /// omniscient about the human's real intentions or hand.
   void _maybeRunCpuTurn() {
+    // Computer seats exist ONLY at the one-device table. Against the other device there is no CPU seat: the seat
+    // whose turn it is belongs to a person on the other device, and this device (the dealer) must never play it.
+    // (This used to run after every dealer action in vs-peer play, with no mode check.)
+    if (_mode != _Mode.vsCpu) return;
     final s = _authoritySession;
     if (s == null || s.winner != null) return;
 
@@ -306,168 +333,29 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
 
   // --------------------------------------------------------------- vs peer
 
+  /// The dealer deals. Everything after this (the view going across, the other device's asks, resending when it
+  /// returns, the save) is the shared session's job.
   Future<void> _dealForPeer() async {
-    final session = dealUno(const ['a', 'b'], _rand);
-    setState(() {
-      _mode = _Mode.vsPeer;
-      _authoritySession = session;
-      _amAuthority = true;
-    });
-    await _sendStateDelta(session);
+    setState(() => _mode = _Mode.vsPeer);
+    _game.deal();
   }
 
-  Future<void> _sendStateDelta(UnoSession session) async {
-    final peerSeatId = _mySeatId == 'a' ? 'b' : 'a';
-    final trail = _trailFor(session.discardPile);
-    final payload = <String, dynamic>{
-      'type': 'uno_state_delta',
-      'myHandForPeer': [for (final c in session.hands[peerSeatId]!) c.code],
-      'opponentHandCount': session.hands[_mySeatId]!.length,
-      'discardTopCardId': session.topDiscard.code,
-      'discardTrail': [for (final c in trail) c.code],
-      'currentColor': _encodeColor(session.currentColor),
-      // Already real wire-safe seatId strings ('a'/'b') — no encode step
-      // needed now that uno_session.dart tracks turn/winner as real
-      // seatIds rather than a Side enum.
-      'mover': session.turnSeatId,
-      'winner': session.winner,
-      'unoVulnerableSeatId': session.unoVulnerableSeatId,
-      'pendingWildDrawFour': session.pendingWildDrawFour != null,
-    };
-    final audit = auditLiveView(payload);
-    if (!audit.ok) {
-      debugPrint('game_uno: refusing to send a payload with forbidden keys: ${audit.leaks}');
-      return;
+  /// "Play nearby". A dealer with a saved game is asked whether to carry on with it.
+  Future<void> _chooseNearby() async {
+    setState(() => _mode = _Mode.vsPeer);
+    if (await _session.hasSavedGame() && mounted) {
+      final carryOn = await askResumeSavedGame(context, 'Uno');
+      if (carryOn) {
+        await _session.resumeSavedGame();
+      } else {
+        await _session.discardSavedGame();
+      }
     }
-    await _pairing.sendTurn(payload);
   }
 
+  /// The other device asks the dealer to act; the table changes when the dealer's answer comes back.
   Future<void> _peerRequestAction({UnoCard? card, UnoColor? color, bool draw = false, String? specialAction}) async {
-    setState(() => _peerAwaitingResult = true);
-    final payload = <String, dynamic>{
-      'type': 'uno_action',
-      'action': specialAction ?? (draw ? 'draw' : 'playCard'),
-      if (card != null) 'cardCode': card.code,
-      if (color != null) 'chosenColor': _encodeColor(color),
-    };
-    await _pairing.sendTurn(payload);
-  }
-
-  void _handleIncomingTurn(LocalTurnPayload payload) {
-    final type = payload['type'];
-    // ALWAYS reply to a real 'uno_action' request, accepted or refused —
-    // real bug, found by review. Every branch below used to just `return`
-    // silently on refusal (wrong turn, an illegal play, a Catch that
-    // missed its window, a malformed card, an already-resolved Wild Draw
-    // Four). The peer's own _peerAwaitingResult flag — which disables its
-    // whole board — is only ever cleared by a SUBSEQUENT uno_state_delta,
-    // and a silently-rejected request had none coming: the peer was
-    // stuck on "Sending…" for the rest of the round with no timeout and
-    // no way out short of restarting. Every PlayResult/DrawResult/
-    // ChallengeResult/CatchResult already carries the unchanged session
-    // back on refusal (see uno_session.dart), so resending it costs
-    // nothing and is enough to unstick the peer via the normal
-    // uno_state_delta handler — the same always-reply shape declareUno's
-    // own branch already used, just generalized to every branch here.
-    if (type == 'uno_action' && _amAuthority) {
-      final session = _authoritySession;
-      if (session == null) return;
-      final peerSeatId = _mySeatId == 'a' ? 'b' : 'a';
-      final action = payload['action'];
-
-      // declareUno/catchMissedUno are real, deliberately OUT-OF-TURN
-      // actions (see uno_session.dart's own header) — gating them on
-      // session.turnSeatId the way playCard/draw are below would refuse
-      // exactly the real thing this mechanic is supposed to allow.
-      if (action == 'declareUno') {
-        final next = declareUno(session, peerSeatId);
-        setState(() => _authoritySession = next);
-        unawaited(_sendStateDelta(next));
-        return;
-      }
-      if (action == 'catchUno') {
-        final r = catchMissedUno(session, peerSeatId, _rand);
-        if (r.accepted) setState(() => _authoritySession = r.session);
-        unawaited(_sendStateDelta(r.session));
-        return;
-      }
-      if (action == 'acceptWD4') {
-        final r = acceptWildDrawFour(session, peerSeatId, _rand);
-        if (r.accepted) setState(() => _authoritySession = r.session);
-        unawaited(_sendStateDelta(r.session));
-        return;
-      }
-      if (action == 'challengeWD4') {
-        final r = challengeWildDrawFour(session, peerSeatId, _rand);
-        if (r.accepted) setState(() => _authoritySession = r.session);
-        unawaited(_sendStateDelta(r.session));
-        return;
-      }
-
-      if (session.turnSeatId != peerSeatId) {
-        // Not their turn — refuse, matches every other game's
-        // re-validation. Still reply (see this method's own header) so a
-        // request that raced an unrelated turn change doesn't strand the
-        // peer either.
-        unawaited(_sendStateDelta(session));
-        return;
-      }
-      UnoSession? next;
-      if (action == 'draw') {
-        final r = drawCard(session, peerSeatId, _rand);
-        if (r.accepted) next = r.session;
-      } else if (action == 'playCard') {
-        final card = UnoCard.fromCode(payload['cardCode'] as String?);
-        // A null card (malformed cardCode) falls straight through to the
-        // always-reply tail below with next still null, same as any
-        // other refusal — no separate early return needed.
-        if (card != null) {
-          final color = _decodeColor(payload['chosenColor']);
-          final r = playCard(session, peerSeatId, card, chosenColor: color, rand: _rand);
-          if (r.accepted) next = r.session;
-        }
-      }
-      if (next != null) setState(() => _authoritySession = next);
-      unawaited(_sendStateDelta(next ?? session));
-      return;
-    }
-    if (type == 'uno_state_delta' && !_amAuthority) {
-      final handRaw = payload['myHandForPeer'];
-      if (handRaw is! List) return;
-      final hand = <UnoCard>[];
-      for (final c in handRaw) {
-        final card = UnoCard.fromCode(c as String?);
-        if (card == null) return;
-        hand.add(card);
-      }
-      final trailRaw = payload['discardTrail'];
-      final trail = <UnoCard>[];
-      if (trailRaw is List) {
-        for (final c in trailRaw) {
-          final card = UnoCard.fromCode(c as String?);
-          if (card != null) trail.add(card);
-        }
-      }
-      final top = UnoCard.fromCode(payload['discardTopCardId'] as String?);
-      final color = _decodeColor(payload['currentColor']);
-      final mover = payload['mover'] as String?;
-      if (top == null || color == null || mover == null) return;
-      if (mounted) {
-        setState(() {
-          _mode = _Mode.vsPeer;
-          _peerMyHand = hand;
-          _peerDiscardTop = top;
-          _peerDiscardTrail = trail;
-          _peerCurrentColor = color;
-          _peerTurn = mover;
-          _peerOpponentHandCount = (payload['opponentHandCount'] as num?)?.toInt() ?? 0;
-          _peerWinner = payload['winner'] as String?;
-          _peerUnoVulnerableSeatId = payload['unoVulnerableSeatId'] as String?;
-          _peerPendingWildDrawFour = payload['pendingWildDrawFour'] == true;
-          _peerAwaitingResult = false;
-        });
-      }
-    }
+    _game.request(card: card, color: color, draw: draw, special: specialAction);
   }
 
   // ------------------------------------------------------------- UI actions
@@ -478,7 +366,6 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
     final r = playCard(s, _mySeatId, card, chosenColor: color, rand: _rand);
     if (!r.accepted) return;
     setState(() => _authoritySession = r.session);
-    if (_mode == _Mode.vsPeer) await _sendStateDelta(r.session);
     _maybeRunCpuTurn();
   }
 
@@ -488,7 +375,6 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
     final r = drawCard(s, _mySeatId, _rand);
     if (!r.accepted) return;
     setState(() => _authoritySession = r.session);
-    if (_mode == _Mode.vsPeer) await _sendStateDelta(r.session);
     _maybeRunCpuTurn();
   }
 
@@ -520,7 +406,6 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       if (s == null) return;
       final next = declareUno(s, _mySeatId);
       setState(() => _authoritySession = next);
-      if (_mode == _Mode.vsPeer) await _sendStateDelta(next);
     } else {
       await _peerRequestAction(specialAction: 'declareUno');
     }
@@ -533,7 +418,6 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       final r = catchMissedUno(s, _mySeatId, _rand);
       if (!r.accepted) return;
       setState(() => _authoritySession = r.session);
-      if (_mode == _Mode.vsPeer) await _sendStateDelta(r.session);
       _maybeRunCpuTurn();
     } else {
       await _peerRequestAction(specialAction: 'catchUno');
@@ -547,7 +431,6 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       final r = acceptWildDrawFour(s, _mySeatId, _rand);
       if (!r.accepted) return;
       setState(() => _authoritySession = r.session);
-      if (_mode == _Mode.vsPeer) await _sendStateDelta(r.session);
       _maybeRunCpuTurn();
     } else {
       await _peerRequestAction(specialAction: 'acceptWD4');
@@ -561,7 +444,6 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       final r = challengeWildDrawFour(s, _mySeatId, _rand);
       if (!r.accepted) return;
       setState(() => _authoritySession = r.session);
-      if (_mode == _Mode.vsPeer) await _sendStateDelta(r.session);
       _maybeRunCpuTurn();
     } else {
       await _peerRequestAction(specialAction: 'challengeWD4');
@@ -614,7 +496,11 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
   @override
   void dispose() {
     _cpuActionTimer?.cancel();
-    unawaited(_turnSub?.cancel());
+    _game.removeListener(_onPairingChanged);
+    _session.removeListener(_onPairingChanged);
+    _session.dispose();
+    _game.dispose();
+    _transport.dispose();
     _pairing.removeListener(_onPairingChanged);
     _pairing.dispose();
     super.dispose();
@@ -656,13 +542,15 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
         // so this must never interrupt it.
         body = _MessageView(message: _pairing.errorMessage ?? "Can't play locally right now.",
           icon: Icons.error_outline);
+      } else if (_mode == _Mode.vsPeer && _session.endedForGood) {
+        body = PlaySessionNotice(kind: PlayNoticeKind.ended, onLeave: () => Navigator.of(context).maybePop());
       } else if (_amAuthority && _authoritySession != null) {
         // A real game already under way, as authority (vsCpu always, or
         // vsPeer as the dealer) — takes priority regardless of live pairing
         // state. vsCpu in particular never depended on pairing succeeding
         // at all, so a later pairing hiccup must never interrupt it.
         final s = _authoritySession!;
-        body = _UnoBoard(
+        final board = _UnoBoard(
           mySeatId: _mySeatId,
           myHand: s.hands[_mySeatId]!,
           opponents: _opponentsFrom(s),
@@ -675,9 +563,10 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
           onAcceptWD4: _onAcceptWD4Tap, onChallengeWD4: _onChallengeWD4Tap,
           availableWidth: constraints.maxWidth, posture: posture, userCardScale: _userCardScale,
         );
+        body = _mode == _Mode.vsPeer ? _withSession(board) : board;
       } else if (!_amAuthority && _peerMyHand != null) {
         final peerSeatId = _mySeatId == 'a' ? 'b' : 'a';
-        body = _UnoBoard(
+        final board = _UnoBoard(
           mySeatId: _mySeatId,
           myHand: _peerMyHand!,
           opponents: [_OpponentSeat(seatId: peerSeatId, name: _peerName(), handCount: _peerOpponentHandCount)],
@@ -690,6 +579,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
           onAcceptWD4: _onAcceptWD4Tap, onChallengeWD4: _onChallengeWD4Tap,
           availableWidth: constraints.maxWidth, posture: posture, userCardScale: _userCardScale,
         );
+        body = _withSession(board);
       } else if (_mode == _Mode.vsPeer) {
         // Chose "play together" but no game has started yet — THIS branch
         // is genuinely pairing-dependent (there is no vsCpu fallback once
@@ -699,8 +589,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
           PairingPhase.found => _amDealer()
               ? FilledButton(onPressed: _dealForPeer, child: const Text('Deal the cards'))
               : _Status(message: 'Waiting for ${GrownupLabelScope.of(context).nameFor()} to deal…'),
-          PairingPhase.peerLost =>
-            _MessageView(message: _pairing.errorMessage!, icon: Icons.wifi_off_outlined),
+          PairingPhase.peerLost => const PlaySessionNotice(kind: PlayNoticeKind.away),
           // Handled above, before this switch is ever reached — matches
           // every sibling local-play screen's identical idiom.
           PairingPhase.error => throw StateError('handled above'),
@@ -720,7 +609,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
           onCardScaleChanged: (v) => setState(() => _userCardScale = v),
           posture: posture,
           onStartVsCpu: _startVsCpu,
-          onPlayNearby: () => setState(() => _mode = _Mode.vsPeer),
+          onPlayNearby: _chooseNearby,
           peerFound: _pairing.phase == PairingPhase.found, peerName: _pairing.peer?.name,
         );
       }
@@ -730,7 +619,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       // a taller screen.
       final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
       return Scaffold(
-        appBar: AppBar(title: const Text('Uno')),
+        appBar: AppBar(title: const Text('Uno'), actions: [if (_mode == _Mode.vsPeer) PlayFinishButton(session: _session)]),
         // SingleChildScrollView, not a bare Center — real-device testing at
         // foldTabletop's ~420dp height (landscape, hands-free call posture)
         // overflowed by nearly 300px: a full seat tag + pile row + status
@@ -746,6 +635,14 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       );
     });
   }
+
+  /// A table played with the other device: one calm line above it while they are away, and the rematch ask under it
+  /// once the game is over. Neither is drawn for the one-device table.
+  Widget _withSession(Widget board) => Column(mainAxisSize: MainAxisSize.min, children: [
+        PlayAwayBanner(session: _session),
+        board,
+        if (_game.finished) PlayRematchBar(session: _session),
+      ]);
 
   /// The real, seat-ordered list of every OTHER seat at the table, each
   /// carrying only the real public information any seat may see (name,

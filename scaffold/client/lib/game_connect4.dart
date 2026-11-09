@@ -26,8 +26,16 @@ import 'connect4_bot.dart';
 import 'connect4_engine.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
-import 'live_games.dart' show Side, auditLiveView;
+import 'live_games.dart' show Side;
+import 'connect4_play.dart';
 import 'local_pairing.dart';
+import 'local_services.dart';
+import 'play_game.dart';
+import 'play_notice.dart';
+import 'play_save.dart';
+import 'play_session.dart';
+import 'play_transport.dart';
+import 'play_widgets.dart';
 
 /// foldTabletop's own outer padding — real-device-tested minimum (this
 /// screen's 6-row board overflowed at foldTabletop's ~420dp height above
@@ -51,7 +59,12 @@ enum _Mode { none, vsCpu, vsPeer }
 
 class _GameConnect4ScreenState extends State<GameConnect4Screen> {
   LocalPairingController? _pairing;
-  StreamSubscription<LocalTurnPayload>? _turnSub;
+  // The two-device game: the dealing device (Side.b, which also opens) holds the only board that counts, and the
+  // shared session (play_session.dart) carries the conversation, the away notice, the rematch and the save. The
+  // vs-computer game below never touches any of it.
+  LocalPairingTransport? _transport;
+  Connect4PlayGame? _game;
+  PlaySessionController? _session;
   final _rand = Random();
 
   _Mode _mode = _Mode.none;
@@ -60,8 +73,6 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
   Connect4Outcome _outcome = Connect4Outcome.none;
   Side? _winner;
   CpuDifficulty _difficulty = CpuDifficulty.medium;
-
-  Side get _mySide => widget.role == 'ivy' ? Side.a : Side.b;
 
   void _startVsCpu() {
     setState(() {
@@ -77,10 +88,34 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
   void _startVsPeer() {
     final pairing = LocalPairingController(role: widget.role, displayName: widget.displayName);
     _pairing = pairing;
+    final transport = LocalPairingTransport(pairing);
+    _transport = transport;
+    final game = Connect4PlayGame(PlayContext(
+      mode: PlayMode.pair, localSeatId: transport.mySeat, authoritySeatId: 'b', seatIds: const ['a', 'b']));
+    _game = game;
+    final session = PlaySessionController(
+      spec: connect4Spec, game: game, transport: transport,
+      store: LocalPlaySaveStore(LocalServices.current.area('playsave')));
+    _session = session;
     pairing.addListener(_onPairingChanged);
-    _turnSub = pairing.incomingTurns.listen(_handleIncomingTurn);
+    game.addListener(_onPairingChanged);
+    session.addListener(_onPairingChanged);
     setState(() => _mode = _Mode.vsPeer);
+    session.start();
     unawaited(pairing.start());
+    unawaited(_offerSavedGame());
+  }
+
+  /// A dealer with a saved game is asked whether to carry on with it (play_save.dart).
+  Future<void> _offerSavedGame() async {
+    final session = _session;
+    if (session == null || !await session.hasSavedGame() || !mounted) return;
+    final carryOn = await askResumeSavedGame(context, 'Connect 4');
+    if (carryOn) {
+      await session.resumeSavedGame();
+    } else {
+      await session.discardSavedGame();
+    }
   }
 
   void _onPairingChanged() {
@@ -125,40 +160,8 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
       _applyLocalMove(col, Side.b);
       return;
     }
-    // vsPeer
-    if (_toMove != _mySide) return;
-    final result = applyMove(_board, col, _mySide);
-    if (!result.applied) return;
-    setState(() {
-      _board = result.board;
-      _outcome = result.outcome;
-      _winner = result.winner;
-      _toMove = _mySide == Side.a ? Side.b : Side.a;
-    });
-    final payload = <String, dynamic>{'type': 'connect4_move', 'column': col};
-    final audit = auditLiveView(payload);
-    if (!audit.ok) {
-      debugPrint('game_connect4: refusing to send a payload with forbidden keys: ${audit.leaks}');
-      return;
-    }
-    await _pairing?.sendTurn(payload);
-  }
-
-  void _handleIncomingTurn(LocalTurnPayload payload) {
-    if (payload['type'] != 'connect4_move') return;
-    final col = payload['column'];
-    if (col is! int) return;
-    final side = _toMove; // whoever's turn it locally is must be who just moved on the wire
-    final result = applyMove(_board, col, side);
-    if (!result.applied) return; // a stale/foreign move must never crash local state
-    if (mounted) {
-      setState(() {
-        _board = result.board;
-        _outcome = result.outcome;
-        _winner = result.winner;
-        _toMove = side == Side.a ? Side.b : Side.a;
-      });
-    }
+    // vsPeer: the dealer plays it; the other device ASKS the dealer, and its board changes when the answer comes back.
+    _game?.tapColumn(col);
   }
 
   void _playAgain() {
@@ -173,7 +176,11 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
 
   @override
   void dispose() {
-    unawaited(_turnSub?.cancel());
+    _game?.removeListener(_onPairingChanged);
+    _session?.removeListener(_onPairingChanged);
+    _session?.dispose();
+    _game?.dispose();
+    _transport?.dispose();
     _pairing?.removeListener(_onPairingChanged);
     _pairing?.dispose();
     super.dispose();
@@ -211,35 +218,39 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
         );
       } else {
         final pairing = _pairing!;
-        final haveStartedPlaying = _board.discCount > 0 || _outcome != Connect4Outcome.none;
+        final session = _session!;
+        final game = _game!;
         if (pairing.phase == PairingPhase.error) {
           body = _MessageView(message: pairing.errorMessage ?? "Can't play locally right now.",
             icon: Icons.error_outline);
-        } else if (haveStartedPlaying || pairing.phase == PairingPhase.found) {
-          // No "deal" step needed here, unlike War — an empty board is
-          // fully, deterministically derivable by both devices with zero
-          // network round-trip, so "found" goes straight to a playable
-          // board. A resumed peer (found again after a transient peerLost)
-          // with a game already under way also lands here, not back at
-          // searching — the same resume-not-restart pattern
-          // local_play_screen.dart/game_war.dart already establish.
-          body = _BoardView(
-            board: _board, outcome: _outcome, winner: _winner, toMove: _toMove,
-            mySide: _mySide, peerName: pairing.peer?.name ?? 'the other side',
-            onTapColumn: _tapColumn, onPlayAgain: _playAgain, cpuThinking: false, cellSize: cellSize,
-          );
+        } else if (session.endedForGood) {
+          body = PlaySessionNotice(kind: PlayNoticeKind.ended, onLeave: () => Navigator.of(context).maybePop());
+        } else if (session.hasMetPeer || pairing.phase == PairingPhase.found) {
+          // No "deal" step needed here, unlike War — an empty board is fully, deterministically derivable by both
+          // devices with zero network round-trip, so finding each other goes straight to a playable board. When the
+          // other device is away the board stays on screen with one calm line above it, and play carries on from
+          // exactly here when they find each other again.
+          body = Column(mainAxisSize: MainAxisSize.min, children: [
+            PlayAwayBanner(session: session),
+            _BoardView(
+              board: game.board, outcome: game.outcome, winner: game.winner, toMove: game.toMove,
+              mySide: game.mySide, peerName: pairing.peer?.name ?? 'the other side',
+              onTapColumn: _tapColumn, onPlayAgain: null, cpuThinking: false, cellSize: cellSize,
+              waitingOnAnswer: game.awaiting,
+            ),
+            if (game.finished) PlayRematchBar(session: session),
+          ]);
         } else {
           body = switch (pairing.phase) {
             PairingPhase.searching => const _Status(message: 'Looking nearby…'),
-            PairingPhase.peerLost =>
-              _MessageView(message: pairing.errorMessage!, icon: Icons.wifi_off_outlined),
+            PairingPhase.peerLost => const PlaySessionNotice(kind: PlayNoticeKind.away),
             PairingPhase.found => throw StateError('handled above'),
             PairingPhase.error => throw StateError('handled above'),
           };
         }
       }
       return Scaffold(
-        appBar: AppBar(title: const Text('Connect 4')),
+        appBar: AppBar(title: const Text('Connect 4'), actions: [if (_session != null) PlayFinishButton(session: _session!)]),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own
         // build() for why: real-device testing at foldTabletop's ~420dp
         // height overflowed there, and this screen's 6-row board is just as
@@ -299,7 +310,7 @@ class _BoardView extends StatelessWidget {
   const _BoardView({
     required this.board, required this.outcome, required this.winner, required this.toMove,
     required this.mySide, required this.peerName, required this.onTapColumn, required this.onPlayAgain,
-    required this.cpuThinking, required this.cellSize,
+    required this.cpuThinking, required this.cellSize, this.waitingOnAnswer = false,
   });
   final Connect4Board board;
   final Connect4Outcome outcome;
@@ -308,7 +319,9 @@ class _BoardView extends StatelessWidget {
   final Side mySide;
   final String peerName;
   final void Function(int col) onTapColumn;
-  final VoidCallback onPlayAgain;
+  /// Null for the two-device game, which asks the other side through the rematch bar instead.
+  final VoidCallback? onPlayAgain;
+  final bool waitingOnAnswer;
   final bool cpuThinking;
   final double cellSize;
 
@@ -316,7 +329,7 @@ class _BoardView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final finished = outcome != Connect4Outcome.none;
-    final myTurn = !finished && toMove == mySide;
+    final myTurn = !finished && toMove == mySide && !waitingOnAnswer;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       // A live region: a screen reader announces a turn change without her
       // having to go looking. Plain words only; no score is ever spoken (P2).
@@ -327,7 +340,7 @@ class _BoardView extends StatelessWidget {
             style: theme.textTheme.titleMedium)),
       const SizedBox(height: 16),
       _Board(board: board, canPlay: myTurn, onTapColumn: onTapColumn, cellSize: cellSize, mySide: mySide),
-      if (finished) ...[
+      if (finished && onPlayAgain != null) ...[
         const SizedBox(height: 20),
         FilledButton(onPressed: onPlayAgain, child: const Text('Play again')),
       ],
