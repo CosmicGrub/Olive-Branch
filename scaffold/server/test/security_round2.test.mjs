@@ -77,7 +77,7 @@ const hex = (n) => randomBytes(n).toString('hex');
   check('B ip scope', 'and /v1/guardian-invites/', /pathname\.startsWith\('\/v1\/guardian-invites\/'\)/.test(src), true);
   check('B ip scope', 'the Api is built with strictIds', /strictIds:\s*true/.test(src), true);
   check('B ip scope', 'and with the authenticated-write limiter', /writeLimiter:\s*createWriteLimiter\(\)/.test(src), true);
-  check('B ip scope', 'the login identifier bucket is keyed with the caller IP', /checkIdentifier\(ident, clientIp\(req\)\)/.test(src), true);
+  check('B ip scope', 'the login identifier bucket is keyed with the caller pseudonym (salted hash of the IP, never the raw address)', /checkIdentifier\(ident, netId\.anonKey\(req\)\)/.test(src), true);
 }
 
 // ===========================================================================

@@ -18,6 +18,8 @@
 // more. The map is bounded: when it exceeds `maxKeys`, buckets that have
 // fully refilled (idle callers) are dropped first, then the oldest.
 
+import { peerAddress } from './netid.mjs';
+
 export class TokenBuckets {
   /**
    * @param {{capacity:number, refillPerSec:number, maxKeys?:number, now?:()=>number}} o
@@ -107,14 +109,10 @@ export function createAuthLimiter({ env = process.env, now } = {}) {
  * per-IP bucket.
  */
 export function clientIp(req, env = process.env) {
-  if (env.TRUST_PROXY === '1') {
-    const xff = req.headers['x-forwarded-for'];
-    if (typeof xff === 'string' && xff.trim()) {
-      const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
-      if (parts.length) return parts[parts.length - 1];
-    }
-  }
-  return req.socket?.remoteAddress ?? 'unknown';
+  // Delegates to netid.mjs (hop counting, IP-literal validation). The result
+  // must feed netid's anonKey(), never a map key or a log line: raw addresses
+  // are not kept (server-snoop hardening, spec 4.3).
+  return peerAddress(req, env);
 }
 
 // ---------------------------------------------------------------------------

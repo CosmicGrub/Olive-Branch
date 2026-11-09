@@ -36,6 +36,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'device_identity.dart';
+import 'server_transport_policy.dart';
 
 typedef Clock = DateTime Function();
 
@@ -53,7 +54,7 @@ class AuthSession {
     this.onSignedOut,
   })  : _identity = identity,
         _store = store ?? DeviceIdentityStore(),
-        _client = client ?? http.Client(),
+        _client = client ?? OliveTransport.clientFor(baseUrl),
         _now = now ?? DateTime.now,
         _token = identity.sessionToken,
         userId = null,
@@ -74,7 +75,7 @@ class AuthSession {
     this.onSignedOut,
   })  : _identity = null,
         _store = null,
-        _client = client ?? http.Client(),
+        _client = client ?? OliveTransport.clientFor(baseUrl),
         _now = now ?? DateTime.now,
         _token = null,
         _refreshableDev = refreshable,

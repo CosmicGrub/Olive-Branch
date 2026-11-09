@@ -139,7 +139,7 @@ for spec in \
   "child homes: per-age tiles, renames, More, your-home-grows, drift guard|tools/test/child_home_vectors.test.mjs" \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
   "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
-  "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
+  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
@@ -439,7 +439,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" \
             "migrate as the NON-superuser app_owner: full set, trusted extensions, no custom-GUC proconfig (real DB)|tools/test/migrate_nonsuper.test.mjs" \
             "db domain constraints: day-parts, time zones, enums (0042, real DB)|packages/db/test/domain_constraints.test.mjs" \
-            "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs" ; do
+            "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs"             "snoop hardening routes: relay IDOR tripwire, uniform answers, revocation, live-schema sweep (real DB)|server/test/snoop_api_route.test.mjs"             "snoop hardening e2e: booted server refuses bad deploys, https-only, headers, CORS closed, no leakage (real DB)|server/test/snoop_boot_e2e.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   # MASTERFILE §16.2 #6 REVERSED AGAIN — server/test/calls_route.test.mjs
   # imports routes.mjs directly, which now reads LIVEKIT_URL/LIVEKIT_

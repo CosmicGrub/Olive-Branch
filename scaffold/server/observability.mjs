@@ -14,6 +14,7 @@
 //   3. In-process counters, exposed by GET /internal/metrics behind
 //      isInternalRequest() -- never public.
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { hasProxyMarker } from './transport.mjs';
 
 const SAFE_ID = /^[A-Za-z0-9._-]{8,64}$/;
 
@@ -92,7 +93,8 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
  */
 export function isInternalRequest(req, env = process.env) {
   const h = req.headers;
-  if (h['x-forwarded-for'] || h['forwarded'] || h['x-real-ip']) return false;
+  // Fail closed on ANY header a proxy or CDN stamps on public traffic.
+  if (hasProxyMarker(req)) return false;
   const token = env.INTERNAL_METRICS_TOKEN;
   if (token) {
     const got = String(h['x-internal-token'] ?? '');

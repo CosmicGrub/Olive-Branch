@@ -16,6 +16,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'activity_overrides.dart' show refuseHide;
 import 'auth_session.dart';
+import 'server_transport_policy.dart';
 
 class ApiException implements Exception {
   ApiException(this.statusCode, this.error, {this.message, this.faults});
@@ -133,7 +134,7 @@ class OliveApi {
   /// used verbatim, exactly as before (tests, the explicit dev path, the
   /// pre-session invite/pairing calls).
   OliveApi(this.baseUrl, this.sessionToken, {http.Client? client, this.session})
-      : _client = client ?? http.Client();
+      : _client = client ?? OliveTransport.clientFor(baseUrl);
 
   final String baseUrl;
   final String sessionToken;
@@ -1636,7 +1637,7 @@ Future<Map<String, dynamic>> webauthnLoginChallenge(
   String userId, {
   http.Client? client,
 }) async {
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.webauthnLoginChallenge}'),
     headers: {'content-type': 'application/json'},
@@ -1664,7 +1665,7 @@ Future<String> webauthnLoginVerify(
   required String signature,
   http.Client? client,
 }) async {
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.webauthnLoginVerify}'),
     headers: {'content-type': 'application/json'},
@@ -1696,7 +1697,7 @@ Future<Map<String, dynamic>?> fetchGuardianInvite(
   String inviteId, {
   http.Client? client,
 }) async {
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.get(
     Uri.parse('$baseUrl${OliveApi.guardianInvite.replaceFirst(':inviteId', inviteId)}'));
   if (res.statusCode == 404) return null;
@@ -1718,7 +1719,7 @@ Future<Map<String, dynamic>> acceptGuardianInvite(
   String inviteId, {
   http.Client? client,
 }) async {
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.guardianInviteAccept.replaceFirst(':inviteId', inviteId)}'),
     headers: {'content-type': 'application/json'},
@@ -1744,7 +1745,7 @@ Future<void> revokeGuardianInvite(
   String sessionToken, {
   http.Client? client,
 }) async {
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.guardianInviteRevoke.replaceFirst(':inviteId', inviteId)}'),
     headers: {
@@ -1782,7 +1783,7 @@ Future<Map<String, dynamic>> bootstrapGuardianInvite(
   String displayName, {
   http.Client? client,
 }) async {
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.guardianInviteBootstrap.replaceFirst(':inviteId', inviteId)}'),
     headers: {'content-type': 'application/json'},
@@ -1818,7 +1819,7 @@ Future<Map<String, dynamic>> redeemDevicePairingCode(
   String role, {
   http.Client? client,
 }) async {
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.devicePairingRedeem}'),
     headers: {'content-type': 'application/json'},
@@ -1848,7 +1849,7 @@ Future<String> devLoginFor(
   http.Client? client,
 }) async {
   if (!AuthSession.devLoginEnabled) throw UnauthorizedException('dev_login_disabled');
-  final c = client ?? http.Client();
+  final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.devLoginPath}'),
     headers: {'content-type': 'application/json'},

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Server-snoop hardening (docs/superpowers/specs/2026-11-08-server-snoop-
+  hardening-design.md section 4.1). Release builds: no cleartext traffic to
+  any host, and only the platform's own certificate authorities are trusted
+  (a user-installed CA, the usual tool of a TLS-inspecting access point, is
+  NOT trusted by the platform stack: WebViews and plugins that use it).
+
+  dart:io does not read this file; lib/server_transport_policy.dart enforces the
+  same rule (https only in release, optional SPKI pinning) for the API client.
+  The debug source set overrides this file to allow localhost and 10.0.2.2.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

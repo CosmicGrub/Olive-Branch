@@ -192,6 +192,20 @@ services:
       # scaling this service past one replica — found by this project's own
       # post-tier audit.
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — see .env.prod.example (openssl rand -hex 32) — use a DIFFERENT value than any dev .env}
+      # Server-snoop hardening (docs/superpowers/specs/2026-11-08-server-snoop-
+      # hardening-design.md section 4.1). The server never terminates TLS; a
+      # reverse proxy does (docs/operators/proxy-and-tls.md). With NODE_ENV=
+      # production the process REFUSES TO START unless it is told it sits
+      # behind one: PUBLIC_BASE_URL is the https:// origin clients use,
+      # TRUST_PROXY=1 makes it read X-Forwarded-Proto/-For, TRUST_PROXY_HOPS is
+      # how many trusted proxies sit in front (CDN + ingress = 2). Anything
+      # that did not arrive over TLS is answered 400 https_required.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set - the https:// origin clients reach this server at, see .env.prod.example}
+      TRUST_PROXY: "1"
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      # Like DEV_LOGIN above, a LITERAL: no .env entry can switch the plain-
+      # HTTP escape hatch on in this file.
+      ALLOW_INSECURE_TRANSPORT: "0"
     ports:
       - "127.0.0.1:${SERVER_HOST_PORT:-8123}:8123"
     volumes:

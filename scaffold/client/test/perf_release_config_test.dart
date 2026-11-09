@@ -72,9 +72,23 @@ void main() {
 
   group('the Jitsi-era leftovers are gone from the main source set', () {
     test('no cleartext network-security config or dev certificate', () {
-      expect(File('android/app/src/main/res/xml/network_security_config.xml').existsSync(), isFalse);
+      // The Jitsi-era config PERMITTED cleartext and trusted a dev certificate. The
+      // server-snoop hardening config (docs/operators/certificate-pinning.md) is
+      // the opposite: cleartext off, system CAs only. A config may exist in the
+      // main source set only if it is that one.
+      final File cfg = File('android/app/src/main/res/xml/network_security_config.xml');
+      if (cfg.existsSync()) {
+        final String xml = cfg.readAsStringSync().replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
+        expect(xml, contains('<base-config cleartextTrafficPermitted="false">'));
+        expect(xml, isNot(contains('cleartextTrafficPermitted="true"')));
+        expect(xml, isNot(contains('src="user"')));
+        expect(xml, isNot(contains('src="@raw')));
+      }
       expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').existsSync(), isFalse);
-      expect(read('android/app/src/main/AndroidManifest.xml'), isNot(contains('networkSecurityConfig')));
+      final String manifest = read('android/app/src/main/AndroidManifest.xml');
+      if (manifest.contains('networkSecurityConfig')) {
+        expect(cfg.existsSync(), isTrue, reason: 'the manifest must point at a config that exists');
+      }
     });
 
     test('the vendored jitsi_meet_flutter_sdk copy is gone and nothing references it', () {

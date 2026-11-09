@@ -219,6 +219,19 @@ jobs:
           docker run --rm olive-branch:ci sh -c '! test -e demo && ! test -e client && ! find . -path ./node_modules -prune -o -type d -name test -print | grep -q .'
           docker run --rm olive-branch:ci sh -c 'touch /app/data/media/.w && rm /app/data/media/.w'
           docker run --rm olive-branch:ci sh -c '! test -d node_modules/esbuild && ! test -d node_modules/jsdom'
+      # Server-snoop hardening: the image runs NODE_ENV=production, so a deployment
+      # that does not say it sits behind a TLS-terminating proxy must refuse to start.
+      - name: Production refuses a deployment with no TLS-proxy contract
+        run: |
+          set +e
+          out=$(docker run --rm \
+            -e DATABASE_URL=postgres://nobody:nopass@127.0.0.1:9/none \
+            -e SESSION_SECRET=eab39cbd1deb88cc188bf88a9188aa8ad58151281e63195d872ef7b4ae12c13d \
+            -e MEDIA_SIGNING_SECRET=756dba19238d36cf236ce9b372e0a6ce334c087bb9bc12c1391ca8b096093eac \
+            olive-branch:ci 2>&1); rc=$?
+          echo "$out"
+          [ "$rc" = "2" ] && echo "$out" | grep -q 'PUBLIC_BASE_URL required'
+
       - name: Boot it, then SIGTERM it
         run: |
           set -eu
@@ -226,10 +239,12 @@ jobs:
             -e DATABASE_URL=postgres://nobody:nopass@127.0.0.1:9/none \
             -e SESSION_SECRET=eab39cbd1deb88cc188bf88a9188aa8ad58151281e63195d872ef7b4ae12c13d \
             -e MEDIA_SIGNING_SECRET=756dba19238d36cf236ce9b372e0a6ce334c087bb9bc12c1391ca8b096093eac \
+            -e PUBLIC_BASE_URL=https://olive.example.test -e TRUST_PROXY=1 -e TRUST_PROXY_HOPS=1 \
             olive-branch:ci
           code=000
           for i in $(seq 1 40); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/healthz || true)
+            # as a TLS-terminating proxy would present it
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' http://127.0.0.1:18080/healthz || true)
             [ "$code" = "503" ] && break
             sleep 0.5
           done

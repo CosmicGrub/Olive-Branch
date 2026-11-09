@@ -53,7 +53,7 @@ import { can, type Edge, type Role, type Deny } from '../../family-graph/src/aut
 
 // ============================================================ principals ===
 
-export type TableGame = 'checkers';
+export type TableGame = 'checkers' | 'sealed-v1';
 
 /** Which of the two seats at the table. Seat 0 always moves first. */
 export type Seat = 0 | 1;
@@ -330,6 +330,8 @@ export interface SeatState {
   readonly tokenConsumed: boolean;
   readonly connected: boolean;
   readonly rate: RateBucket;
+  /** Sealed tables only: highest `seq` accepted from this seat (-1 before any). */
+  readonly lastSeq: number;
 }
 
 export interface TableState {
@@ -383,7 +385,7 @@ export function createTable(input: {
   }
   const ttl = input.joinTtlSeconds ?? TABLE_TOKEN_TTL_SECONDS;
   const seat = (p: TablePrincipal): SeatState =>
-    ({ principal: p, tokenConsumed: false, connected: false, rate: newRateBucket(input.now) });
+    ({ principal: p, tokenConsumed: false, connected: false, rate: newRateBucket(input.now), lastSeq: -1 });
   return {
     id,
     game: input.game,
@@ -464,6 +466,33 @@ export function isPastMaxLifetime(table: TableState, now: number): boolean {
   return now > table.createdAt + TABLE_MAX_LIFETIME_SECONDS * 1000;
 }
 
+export type SealedDenyReason =
+  | 'table_not_active' | 'wrong_mode' | 'seq_not_increasing' | 'rate_limited';
+
+export type ApplySealedResult =
+  | { ok: true; table: TableState }
+  | { ok: false; reason: SealedDenyReason; table: TableState };
+
+/**
+ * Sealed (end-to-end encrypted) tables: the ONLY things the relay checks are
+ * that the table is live and sealed, the seat is under its rate cap, and `seq`
+ * strictly increases per direction. It has no idea whose turn it is or what a
+ * frame means; that is inside the AEAD and is the devices' business.
+ */
+export function applySealedFrame(
+  table: TableState, seat: Seat, seq: number, now: number,
+): ApplySealedResult {
+  if (table.game !== 'sealed-v1') return { ok: false, reason: 'wrong_mode', table };
+  if (table.status !== 'active') return { ok: false, reason: 'table_not_active', table };
+  const s = table.seats[seat];
+  if (seq <= s.lastSeq) return { ok: false, reason: 'seq_not_increasing', table };
+  const { ok, bucket } = takeRateToken(s.rate, now);
+  const seats: [SeatState, SeatState] = [table.seats[0], table.seats[1]];
+  seats[seat] = { ...s, rate: bucket, lastSeq: ok ? seq : s.lastSeq };
+  if (!ok) return { ok: false, reason: 'rate_limited', table: { ...table, seats } };
+  return { ok: true, table: { ...table, seats } };
+}
+
 export type MoveDenyReason =
   | 'table_not_active' | 'out_of_turn' | 'rate_limited' | 'invalid_continuation';
 
@@ -513,6 +542,7 @@ export function applyIncomingMove(
   msg: ClientMoveMessage,
   now: number,
 ): ApplyMoveResult {
+  if (table.game === 'sealed-v1') return { ok: false, reason: 'table_not_active', table };
   if (table.status !== 'active') return { ok: false, reason: 'table_not_active', table };
   if (seat !== table.turnSeat) return { ok: false, reason: 'out_of_turn', table };
 

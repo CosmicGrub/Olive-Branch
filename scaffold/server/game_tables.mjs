@@ -25,10 +25,21 @@ import {
   canOpenTable, createTable, redeemJoin, onSeatDisconnected,
   isExpiredUnjoined, isPastMaxLifetime, applyIncomingMove, parseClientMessage,
   messageTooLarge, mintJoinToken, readJoinToken, TABLE_TOKEN_TTL_SECONDS,
-  MAX_MESSAGE_BYTES,
+  MAX_MESSAGE_BYTES, applySealedFrame,
 } from '../packages/game-sync/src/table.mjs';
+import {
+  SEALED_GAME, MAX_ENVELOPE_FRAME_BYTES, parseEnvelope, toRelayed,
+} from '../packages/game-sync/src/relay_envelope.mjs';
 
-const SUPPORTED_GAMES = new Set(['checkers']);
+// 'checkers' is the one PLAINTEXT game: its board is public and the server
+// reads each move for turn tracking. 'sealed-v1' is the end-to-end encrypted
+// courier mode every hidden-hand game and co-view must use (relay_envelope.ts).
+// A table is exactly one mode for its whole life: no downgrade mid-room.
+const SUPPORTED_GAMES = new Set(['checkers', SEALED_GAME]);
+export const PLAINTEXT_GAMES = Object.freeze(['checkers']);
+
+/** Subprotocol the WS handshake echoes. The join token rides as a second offered value and is NEVER echoed. */
+export const WS_SUBPROTOCOL = 'olive.v1';
 
 /**
  * MEDIUM finding fix (protocol/safety review) — `POST /v1/game-tables` and
@@ -183,22 +194,23 @@ export function registerGameTableRoutes(api, { secret, tables, now = () => Date.
     skipOuterSession: true, // P-01, same reason as POST /v1/game-tables above
     handler: async (c) => {
       const tableId = c.params.tableId;
-      const entry = tables.get(tableId);
-      if (!entry) return { status: 404, body: { error: 'table_not_found' } };
-      if (entry.state.status !== 'pending') {
-        return { status: 409, body: { error: 'table_not_pending' } };
-      }
-
       const caller = principalFromSession(c.principal);
 
       // MEDIUM finding fix — same per-principal cap as table creation,
-      // checked before any DB round trip.
+      // checked before any lookup AND any DB round trip. Server-snoop
+      // hardening: it now also runs BEFORE the table lookup, so probing ids
+      // spends the prober's own budget.
       if (!checkHttpRateLimit(httpRateBuckets, caller, now())) {
         return { status: 429, body: { error: 'rate_limited' } };
       }
 
-      const seatIndex = entry.state.seats.findIndex((s) => samePrincipal(s.principal, caller));
-      if (seatIndex === -1) return { status: 403, body: { error: 'not_a_participant' } };
+      // No existence oracle: an unknown table, a table that is not the
+      // caller's, and a table that is no longer pending are one answer. All
+      // three are in-memory checks, so there is no timing difference either.
+      const entry = tables.get(tableId);
+      const seatIndex = entry && entry.state.status === 'pending'
+        ? entry.state.seats.findIndex((s) => samePrincipal(s.principal, caller)) : -1;
+      if (!entry || seatIndex === -1) return { status: 404, body: { error: 'not_found' } };
       const seat = seatIndex;
       const otherPrincipal = entry.state.seats[seat === 0 ? 1 : 0].principal;
 
@@ -229,6 +241,15 @@ export function registerGameTableRoutes(api, { secret, tables, now = () => Date.
 
 const WS_PATH_RE = /^\/v1\/game-tables\/([^/]+)\/socket$/;
 
+/** Extracts the join token from a `Sec-WebSocket-Protocol: olive.v1, <token>` offer, or null. */
+export function tokenFromSubprotocol(header) {
+  if (typeof header !== 'string') return null;
+  const parts = header.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!parts.includes(WS_SUBPROTOCOL)) return null;
+  const tok = parts.find((p) => p !== WS_SUBPROTOCOL);
+  return tok ?? null;
+}
+
 /**
  * CRITICAL + HIGH finding fix (protocol/safety review), extracted so the
  * whole upgrade-time auth sequence is independently unit-testable with a
@@ -245,7 +266,12 @@ export function handleTableUpgrade({ tables, secret, now, wssLike, tableId, req,
   if (!entry) { socket.destroy(); return; }
 
   const url = new URL(req.url, 'http://x');
-  const token = url.searchParams.get('token') ?? '';
+  // Preferred carrier: the Sec-WebSocket-Protocol header (`olive.v1, <token>`),
+  // which reverse proxies and CDNs do not write to access logs. The legacy
+  // `?token=` query parameter is still accepted so shipped clients keep
+  // working; operators must not log query strings (docs/operators).
+  const token = tokenFromSubprotocol(req.headers?.['sec-websocket-protocol'])
+    ?? url.searchParams.get('token') ?? '';
   const decoded = readJoinToken(secret, token, now());
   if (!decoded.ok) { socket.destroy(); return; }
   const joined = redeemJoin(entry.state, decoded, now());
@@ -315,6 +341,9 @@ export const GAME_PONG_TIMEOUT_MS = 10_000;
 export function attachGameSocketServer(httpServer, {
   secret, tables, now = () => Date.now(),
   pingIntervalMs = GAME_PING_INTERVAL_MS, pongTimeoutMs = GAME_PONG_TIMEOUT_MS,
+  // Server-snoop hardening: in production a WebSocket upgrade that did not
+  // arrive over TLS is destroyed before any token is even read.
+  upgradeAllowed = () => true,
 }) {
   const wss = new WebSocketServer({
     noServer: true,
@@ -333,11 +362,16 @@ export function attachGameSocketServer(httpServer, {
     // described. Set explicitly anyway, purely as defense in depth against
     // a future ws upgrade changing that default, and to make the intent
     // here explicit rather than implicit.
-    maxPayload: MAX_MESSAGE_BYTES * 4,
+    // Sealed frames are bigger (a 4 KiB bucket is ~5.5 KB of base64url); plain
+    // tables still enforce MAX_MESSAGE_BYTES on every raw frame below.
+    maxPayload: Math.max(MAX_MESSAGE_BYTES * 4, MAX_ENVELOPE_FRAME_BYTES + 256),
     perMessageDeflate: false,
+    // Echo only our own marker; never the token that rides beside it.
+    handleProtocols: (protocols) => (protocols.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false),
   });
 
   httpServer.on('upgrade', (req, socket, head) => {
+    if (!upgradeAllowed(req)) { socket.destroy(); return; }
     let pathname;
     try { pathname = new URL(req.url, 'http://x').pathname; } catch { socket.destroy(); return; }
     const m = WS_PATH_RE.exec(pathname);
@@ -368,7 +402,11 @@ export function attachGameSocketServer(httpServer, {
       if (sock && sock.readyState === sock.OPEN) sock.send(JSON.stringify(msg));
     };
 
-    safeSend(ws, { type: 'welcome', seat, status: entry.state.status, turnSeat: entry.state.turnSeat });
+    const sealed = entry.state.game === SEALED_GAME;
+    // A sealed table never reveals turn bookkeeping: it has none.
+    safeSend(ws, sealed
+      ? { type: 'welcome', seat, status: entry.state.status }
+      : { type: 'welcome', seat, status: entry.state.status, turnSeat: entry.state.turnSeat });
     if (entry.state.status === 'active') {
       safeSend(entry.sockets[otherSeat], { type: 'peer_joined' });
       safeSend(ws, { type: 'peer_joined' });
@@ -378,12 +416,31 @@ export function attachGameSocketServer(httpServer, {
       const cur = tables.get(tableId);
       if (!cur) { ws.close(1011, 'table_gone'); return; }
 
+      const isSealed = cur.state.game === SEALED_GAME;
       // T6 — size cap on the RAW frame, before any parsing.
-      if (messageTooLarge(raw)) { ws.close(1009, 'message_too_large'); return; }
+      if (isSealed ? raw.byteLength > MAX_ENVELOPE_FRAME_BYTES : messageTooLarge(raw)) {
+        ws.close(1009, 'message_too_large'); return;
+      }
 
       let json;
       try { json = JSON.parse(raw.toString('utf8')); }
       catch { ws.close(1003, 'malformed_json'); return; }
+
+      if (isSealed) {
+        // End-to-end encrypted courier mode: the only thing the server reads
+        // is the routing frame. No move, hand or position field exists.
+        const env = parseEnvelope(json);
+        if (!env.ok) { ws.close(1003, 'malformed_message'); return; }
+        const applied = applySealedFrame(cur.state, seat, env.env.seq, now());
+        cur.state = applied.table;
+        if (!applied.ok) {
+          safeSend(ws, { type: 'error', reason: applied.reason });
+          ws.close(1008, applied.reason);
+          return;
+        }
+        safeSend(cur.sockets[otherSeat], toRelayed(env.env, seat));
+        return;
+      }
 
       const parsed = parseClientMessage(json);
       if (!parsed.ok) { ws.close(1003, 'malformed_message'); return; }
