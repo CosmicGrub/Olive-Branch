@@ -50,6 +50,9 @@ scaffold/data/
 .DS_Store
 Thumbs.db
 
+# Release tool output (APK, SHA256SUMS, release notes): tools/cut-release.mjs
+scaffold/out/
+
 # Loose scratch/archive dumps, not part of the tracked source tree
 *.zip
 /budget.ts

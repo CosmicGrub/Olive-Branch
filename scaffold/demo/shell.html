@@ -520,8 +520,8 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
 </script>
 <script type="application/json" id="tl-manifest">
 {
-  "version": "0.50.0",
-  "spec": "0.50.0",
+  "version": "0.51.0",
+  "spec": "0.51.0",
   "nodeOnly": [
     { "module": "api/api", "dep": "node:http" },
     { "module": "auth/auth", "dep": "node:crypto" },
@@ -537,7 +537,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 13505,
+  "assertions": 13576,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -574,6 +574,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
   "notDemoed": {
     "obGender": "Child-side Flutter screen (client/lib/onboarding_gender.dart), Onboarding & Guardian Access sub-project 1 (docs/superpowers/specs/2026-09-12-onboarding-identity-pin-design.md) — persists via a new PUT /v1/children/:childId/profile route that this demo's own onboarding engine (packages/onboarding/src/onboarding.ts's begin()/advance()/greeting()/outcome(), bridged as S.onboarding above) has no equivalent step for; extending that TS engine's step sequence is out of scope for this sub-project, so this screen has no demo counterpart — same posture as jokebook/themePicker below.",
     "addDevice": "Guardian-only Flutter screen (client/lib/add_device_screen.dart), device pairing & provisioning (docs/superpowers/specs/2026-09-12-device-pairing-provisioning-design.md) — generates a REAL, server-minted device_pairing_code row (a genuine 10-minute-expiry QR id + 6-digit code) via a real POST route; this demo has no server behind it at all (it's a static bridge over packages/*/src TS engines, not a running HTTP API), so there is nothing honest for a demo version of this screen to actually generate — same posture as guardianSetup's own passkey section, a real dependency this demo cannot fake without misrepresenting it as working.",
+    "roleChooser": "Flutter screen (client/lib/role_picker_screen.dart) shown at BOOT, before any family or role exists — the demo starts from an established family with a role already chosen, so there is no first-run question to ask; and picking a role is stored on a real device, which a browser demo has no equivalent of.",
     "pairingRedeem": "Flutter screen (client/lib/pairing_redeem_screen.dart) shown at BOOT, before any identity or session exists — this demo has no boot sequence of its own to insert an equivalent state into (it renders screens on request from an already-resolved, always-provisioned demo family), and, like addDevice above, redeeming a code needs a real server round trip this demo cannot honestly fake.",
     "pairedDevicesList": "Guardian-only Flutter screen (client/lib/paired_devices_list.dart) — lists real paired_device rows from a real database; same \"no real server behind this demo\" reasoning as addDevice above, and the same guardian-only settings posture themePicker already has (no JS-demo engine counterpart exists for on-device-paired-hardware state).",
     "invitation": "Onboarding flow — the demo starts from an established family, so there is no invitation to accept.",
