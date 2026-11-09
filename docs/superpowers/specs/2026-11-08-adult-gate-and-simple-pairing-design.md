@@ -72,7 +72,7 @@ Available and rejected: pub.dev `spake2plus` (SPAKE2+, FFI to OpenSSL, desktop o
 
 Chosen: **CPace-X25519-SHA512 (draft-irtf-cfrg-cpace)**, a balanced PAKE designed to need only X25519 plus a hash. The needed elements are all present in `cryptography` (X25519 with an arbitrary u-coordinate, SHA-512, HKDF, HMAC); the missing piece is the Elligator2 map from hash output to a curve point (about 40 lines of BigInt field arithmetic mod 2^255-19). This map is therefore **implemented by us, not imported**. This is custom cryptographic code and is stated as such here, in the file header and in the CHANGELOG. Controls:
 
-- the implementation follows the draft's `map_to_curve_elligator2_curve25519`, `calculate_generator` and `ISK` derivation, with the low-order-point and zero-output rejections the draft requires;
+- the construction follows the STRUCTURE of the draft (hash the password, session id and channel identifier to a field element, Elligator2 to a curve point, X25519 each way, derive the key from the transcript) with the all-zero DH output rejected. It is NOT byte-compatible with the draft and has NOT been checked against the draft's official vectors (they were not available offline); the labels, length-prefix layout and key derivation are ours (`OliveCPace255`);
 - an independent second implementation in Node (`tools/gen-pake-vectors.mjs`, written from the draft, using Node's built-in X25519) generates golden vectors; Dart and Node must agree byte for byte (`test/pake_vectors_test.dart`, `tools/test/pake_vectors.test.mjs`), plus property tests (same password -> same key, one wrong digit -> different key and failed confirmation, tampered transcript field -> failure);
 - the construction is isolated behind a small `Pake` interface so a vetted library can replace it without touching the protocol;
 - **it needs an external review by a cryptographer before it ships to real families**; this is decision D2.
@@ -84,7 +84,7 @@ Setup, adult device (A) side: `sid`, `fid`, `afp`, adult name `an`, expiry, atte
 1. `hello`: C -> A: `{v:1, sid, cpk, dn}` where `dn` is a plain device name ("Tablet"). A answers `{v:1, afp, apk, an, ok}` and nothing else. If `sid` is unknown, closed or expired, A does not answer (indistinguishable from no listener).
 2. CPace round: `ci = H(sid || fid || afp || cpk || an)` (channel identifier), `sid_cpace = sid`, password `prs` is the PIN (typed on C; typed on A when the window opened and held in memory for the window only) or the QR secret `qs`. Each side sends its public share `Ya`/`Yb`; each derives `ISK`.
 3. Key confirmation, both directions: `HMAC(ISK, "A-confirm" || transcript)` and `HMAC(ISK, "C-confirm" || transcript)`. A checks C's confirmation first; a bad confirmation decrements the attempt budget ON A and A closes the exchange (no oracle beyond pass/fail). After 5 failed confirmations the session is dead; the adult opens a new one.
-4. Human confirmation: both compute `sas = HKDF(ISK, "sas")` mapped to one word from a 256-word list plus one of 16 pictures. Both screens show the adult's name (C picture-first plus name, A "Ivy's tablet") and the pair. A's approve button is required.
+4. Human confirmation: both compute `sas = HKDF(ISK, "sas")` mapped to one of 16 words plus one of 16 pictures (256 combinations; an attacker who must beat it also needs the PIN-derived key, so it is a human check, not the authenticator). Both screens show the adult's name (C picture-first plus name, A "Ivy's tablet") and the pair. A's approve button is required.
 5. Credential: over `ISK`-derived AES-GCM, A sends the signed certificate `Cert = Sign(ak, {cpk, fid, cid, afp, iat, certId})`, the adult's public key, and the unlock verifier (7.3). C pins them, stores `{cert, apk, fid, cid, verifier}` in a sealed area, and acknowledges. A stores `{certId, cpk, dn, iat}` in the sealed `pairedkids` list.
 
 Properties: replaying any recorded message fails (fresh nonces/shares per attempt, session id single use, `ISK` unknown to the replayer); an on-path attacker or rogue advertiser gets at most ONE password guess per session attempt (and must be answered by A, which counts it); the PIN is never derivable offline; two sessions never interoperate because `sid` and `ci` differ.
@@ -166,3 +166,23 @@ Totals and docs: MASTERFILE (8.3 PIN rules, 8.5 onboarding, 8.13 pairing, 22), C
 - D4. Lockout for the on-device unlock path lives on the child device (adult may be out of range). Recommend accept, with escalating lockouts and reporting to the adult device.
 - D5. Online relay for pairing windows (server migration and routes). Recommend a follow-up PR after you review this model.
 - D6. Biometric as the adult's unlock factor on the adult device. Recommend follow-up; the local PIN is the factor now.
+
+## 13. What this PR builds, and what it does not (as of the last commit)
+
+Built and tested headless: the adult-gate card and keypad rule (with the source-level guard); `KioskShell` on it; the
+PAKE with Node golden vectors; the adult window state machine (budget, expiry, single use, QR secret burn);
+the child client; the signed certificate; the confirmation word and picture; the LAN transport (HTTP half over
+loopback sockets, LAN-only source check, bounded bodies; mDNS half written, unverified); the adult screen
+(Guardian More > "Connect a child's device"), the child connect step in the first run (with the older
+account-code option behind the grown-up tap); the child-side unlock verifier with its 5-tries/15-minutes lock; the
+boot route for a locally paired Kid device; four new sealed storage areas; the isolation tests (two families, two
+sessions, replay, wrong PIN, rogue advertiser).
+
+Not built (honest): the optional challenge-response "use my phone" unlock QR screens (the logic for the cert and
+signature primitives exists; the screens do not), "Forget this tablet" and the revocation list, relaying a window
+through the server (no migration or route added), biometric for the grown-up, a server session for a locally paired
+device, MARKUP/DEMO screens for the new surfaces, and any run on real devices (mDNS and the offline child home).
+
+A note on a limit found while building: a person on the same Wi-Fi who learns a window's session id (it is in the
+mDNS record) can send wrong confirmations and burn the window's five attempts. That is a denial of service the
+grown-up cures by opening a new window; it cannot pair a device.

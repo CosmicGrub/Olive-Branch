@@ -1,9 +1,15 @@
 {
  "note": "The parity ratchet. A unit that is implemented here may never regress; pending and differs counts may never rise. When progress lowers them, regenerate with PARITY_UPDATE_BASELINE=1 flutter test test/parity/scenario_parity_test.dart and commit.",
  "totals": {
+<<<<<<< HEAD
   "implemented": 59,
   "pending": 130,
   "differs": 10
+=======
+  "implemented": 58,
+  "pending": 132,
+  "differs": 9
+>>>>>>> 3d25f85 (Docs (MASTERFILE 8.5.11, CHANGELOG, PARITY), catalogue names, PAKE node suite in verify.sh, test fixes for the adult gate)
  },
  "units": {
   "birthday.01#a0": "implemented",

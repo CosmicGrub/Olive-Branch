@@ -119,14 +119,19 @@ void main() {
       expect(all, contains('journal'));
     });
 
-    test('the only device-wide area is the role (one word, not personal data); coordinates are never a field (P3)', () {
-      // Owner requirement 2026-11-08: the role is kept once per device. It is the ONLY area that is
-      // not owned by a child or a grown-up, and it holds one word. Everything personal stays scoped.
+    test('the only device-wide areas are the role and the three device pairing records; coordinates are never a field (P3)', () {
+      // Owner requirement 2026-11-08: the role is kept once per device and holds one word. The pairing records
+      // (2026-11-08, section 8.5.11) are the only other areas not owned by a child or a grown-up: a signing
+      // key, the certificate a grown-up's device signed, and a PIN verifier. All sealed, all small, no PIN.
       final List<LocalDataEntry> device =
           localDataCatalogue.where((LocalDataEntry e) => e.scope == LocalScope.device).toList();
-      expect(device.map((LocalDataEntry e) => e.area).toList(), <String>['role']);
-      expect(device.single.maxBytes, lessThanOrEqualTo(4 * 1024));
-      expect(device.single.what.toLowerCase(), contains('not a name'));
+      expect(device.map((LocalDataEntry e) => e.area).toList(),
+          <String>['role', 'devicekey', 'childpairing', 'adultunlock']);
+      for (final LocalDataEntry e in device) {
+        expect(e.maxBytes, lessThanOrEqualTo(8 * 1024));
+        if (e.area != 'role') expect(e.encrypted, isTrue, reason: '${e.area} is sealed');
+      }
+      expect(device.first.what.toLowerCase(), contains('not a name'));
       expect(describeLocalData().toLowerCase(), isNot(contains('location')));
     });
 

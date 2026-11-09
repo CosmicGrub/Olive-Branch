@@ -857,28 +857,6 @@ class GuardianMoreScreen extends StatelessWidget {
               : ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('Adding a device needs a live session — no backend in this preview build.'),
                   duration: Duration(seconds: 3)))),
-          // Connect a child's device on the SAME network, no account or connection needed: you type your PIN here,
-          // pick your name on her device and type it there (a key exchange; the PIN is never sent), then say yes.
-          // Spec 2026-11-08-adult-gate-and-simple-pairing-design.md.
-          HubTile(icon: Icons.phonelink_lock_outlined, title: "Connect a child's device",
-            subtitle: 'Open a short window here, then use "A grown-up does this" on her device',
-            onTap: () {
-              final local = GuardianLocalScope.maybeOf(context);
-              if (local == null) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Connecting a device needs a PIN on this device. Set one up first.'),
-                  duration: Duration(seconds: 3)));
-                return;
-              }
-              final services = LocalServices.current;
-              _open(context, ConnectChildScreen(
-                pin: local.services.pin,
-                deviceKeys: LocalStoreDeviceKeyRepository(services.area('devicekey')),
-                kids: LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope)),
-                adultName: local.family?.guardianName ?? 'A grown-up',
-                childName: childName,
-              ));
-            }),
           HubTile(icon: Icons.devices_other_outlined, title: 'Paired devices',
             subtitle: baseUrl != null
               ? 'See and revoke every device paired to this family'
@@ -990,6 +968,30 @@ class GuardianMoreScreen extends StatelessWidget {
               service: familyService ?? localFamilyService,
               principal: FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian'),
               childName: childName, yearsOld: childAge)))),
+        ]),
+        HubSection(title: 'Connect a device', children: [
+          // Connect a child's device on the SAME network, no account or connection needed: you type your PIN here,
+          // pick your name on her device and type it there (a key exchange; the PIN is never sent), then say yes.
+          // Spec 2026-11-08-adult-gate-and-simple-pairing-design.md.
+          HubTile(icon: Icons.phonelink_lock_outlined, title: "Connect a child's device",
+            subtitle: 'Open a short window here, then use "A grown-up does this" on her device',
+            onTap: () {
+              final local = GuardianLocalScope.maybeOf(context);
+              if (local == null) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Connecting a device needs a PIN on this device. Set one up first.'),
+                  duration: Duration(seconds: 3)));
+                return;
+              }
+              final services = LocalServices.current;
+              _open(context, ConnectChildScreen(
+                pin: local.services.pin,
+                deviceKeys: LocalStoreDeviceKeyRepository(services.area('devicekey')),
+                kids: LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope)),
+                adultName: local.family?.guardianName ?? 'A grown-up',
+                childName: childName,
+              ));
+            }),
         ]),
         HubSection(title: 'Coordination', children: [
           HubTile(icon: Icons.event_available_outlined, title: 'Availability',

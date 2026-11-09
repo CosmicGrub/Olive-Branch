@@ -8,7 +8,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:olive_client/adult_gate.dart';
 import 'package:olive_client/guardian_escalation_screen.dart';
 import 'package:olive_client/kiosk_channel.dart';
 import 'package:olive_client/kiosk_shell.dart';

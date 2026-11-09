@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:olive_client/cpace.dart';
 import 'package:olive_client/device_keys.dart';
 import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/pairing_protocol.dart';
