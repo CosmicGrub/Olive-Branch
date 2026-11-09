@@ -100,6 +100,27 @@ void main() {
       expect(repo.record!.hash, await localPinDerive('1357', repo.record!.salt, 1000));
     });
 
+    test('easy-guess PINs: same digit, and straight runs up or down (wrapping past 9), are refused; ordinary ones are not', () {
+      for (final String easy in <String>['0000', '1111', '99999999', '1234', '4321', '0123', '3210', '3456789', '7890', '9012', '87654321']) {
+        expect(isEasyGuessLocalPin(easy), isTrue, reason: easy);
+      }
+      for (final String fine in <String>['2468', '1235', '1243', '4821', '1212', '1357', '5019', '123457', '2580']) {
+        expect(isEasyGuessLocalPin(fine), isFalse, reason: fine);
+      }
+      expect(isEasyGuessLocalPin('12'), isFalse, reason: 'not a PIN shape at all: the length rule speaks, not this one');
+    });
+
+    test('changing to an easy-guess PIN is refused before the old PIN is even checked; the old PIN keeps working', () async {
+      final _FlakyRepo repo = _FlakyRepo();
+      final LocalPinService s = LocalPinService(repo, iterations: 1000, random: Random(5));
+      await s.setPin('2468');
+      await expectLater(s.change('2468', '1234'), throwsA(isA<EasyGuessPinException>()));
+      await expectLater(s.change('0000', '4321'), throwsA(isA<EasyGuessPinException>()));
+      expect((await s.verify('2468')).ok, isTrue, reason: 'unchanged, and no failed attempt was counted');
+      expect((await s.change('2468', '1243')).ok, isTrue);
+      expect((await s.verify('1243')).ok, isTrue);
+    });
+
     test('the default is a slow hash, not a fast one', () {
       expect(kLocalPinIterations, greaterThanOrEqualTo(100000));
     });
@@ -159,11 +180,11 @@ void main() {
     test('changing the PIN needs the current one; the old one stops working', () async {
       final LocalPinService s = svc(_FlakyRepo(), Clock());
       await s.setPin('1111');
-      expect((await s.change('0000', '2222')).outcome, PinOutcome.wrong);
-      expect((await s.verify('2222')).outcome, PinOutcome.wrong, reason: 'a failed change changes nothing');
-      expect((await s.change('1111', '2222')).ok, isTrue);
+      expect((await s.change('0000', '2582')).outcome, PinOutcome.wrong);
+      expect((await s.verify('2582')).outcome, PinOutcome.wrong, reason: 'a failed change changes nothing');
+      expect((await s.change('1111', '2582')).ok, isTrue);
       expect((await s.verify('1111')).outcome, PinOutcome.wrong);
-      expect((await s.verify('2222')).ok, isTrue);
+      expect((await s.verify('2582')).ok, isTrue);
     });
 
     test('clear removes it', () async {

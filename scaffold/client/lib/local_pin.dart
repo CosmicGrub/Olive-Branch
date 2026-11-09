@@ -75,6 +75,28 @@ final RegExp _pinShape = RegExp(r'^\d{4,8}$');
 
 bool isValidLocalPin(String pin) => _pinShape.hasMatch(pin);
 
+/// Owner decision 2026-11-08: a guardian PIN may not be an obvious one. Refused: every digit the same
+/// (0000, 7777) and straight runs up or down by one (1234, 4321, 0123, 3456789; 7890 and 9012 count, the
+/// run wraps past 9 to 0). Applies when a guardian CHOOSES a PIN (setup, change); checking an existing PIN
+/// never calls it, and a child never sets one.
+bool isEasyGuessLocalPin(String pin) {
+  if (!isValidLocalPin(pin)) return false;
+  final List<int> d = pin.codeUnits.map((int c) => c - 48).toList();
+  int step(int i) => (d[i + 1] - d[i]) % 10;
+  final Set<int> steps = <int>{for (int i = 0; i + 1 < d.length; i++) step(i)};
+  return steps.length == 1 && (steps.first == 0 || steps.first == 1 || steps.first == 9);
+}
+
+/// What the guardian is told, in plain adult words.
+const String kEasyGuessPinMessage = 'That PIN is easy to guess. Please choose one that is harder for someone else to work out.';
+
+/// Thrown by [LocalPinService.change] for an easy-guess new PIN (before the old PIN is even checked).
+class EasyGuessPinException implements Exception {
+  const EasyGuessPinException();
+  @override
+  String toString() => kEasyGuessPinMessage;
+}
+
 /// Compares in time that depends only on the longer length, never on where the
 /// first difference is.
 bool constantTimeEquals(List<int> a, List<int> b) {
@@ -273,6 +295,7 @@ class LocalPinService {
   /// Replaces the PIN, proving the current one first. Returns the check of the OLD pin;
   /// the new one is only set when that is ok.
   Future<PinCheck> change(String current, String next) async {
+    if (isEasyGuessLocalPin(next)) throw const EasyGuessPinException();
     final PinCheck c = await verify(current);
     if (c.ok) await setPin(next);
     return c;
