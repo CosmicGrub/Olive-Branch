@@ -4944,6 +4944,19 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
 
 **NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT (owner accepted 2026-11-08).**
 
+**Use my phone to unlock, phone-only, and forgetting a tablet (built, headless-tested).** On the tablet the gate
+offers "Type my code" and "Use my phone". Phone: the tablet shows a one-time challenge (random nonce, its own key
+fingerprint, the purpose, a 2 minute expiry); the grown-up's phone (More > "Unlock a child's device with my phone")
+checks it names a tablet that phone connected and has not forgotten, asks for the grown-up's PIN, and signs exactly
+those fields; the tablet verifies the signature against the grown-up key it pinned at pairing, that the nonce is the
+single outstanding one and unexpired, and consumes it. A photographed picture is useless afterwards
+(`unlock_challenge.dart`). **Phone-only** (a switch when connecting, or later in More > "Connected child devices"):
+the tablet is never given a PIN check at all, or deletes it when the next signed answer carries the flag; the
+keypad is not offered. It only ever turns on; turning it off needs the tablet connected afresh. **Forget this
+tablet** removes it from the phone's list so the phone stops answering it; the tablet keeps its connection until it
+is disconnected from the tablet itself ("Disconnect this tablet" behind the grown-up button, answered by the phone)
+or its data is cleared. The connection grants no account or server access.
+
 **Honest limits.** `cpace.dart` is custom cryptographic code (the Elligator2 map and transcript) that follows the
 CFRG CPace draft's structure but is not byte-compatible with it and has not been checked against its vectors; it
 agrees byte for byte with an independent Node implementation (`tools/pake_cpace.mjs`, golden vectors in
@@ -4951,7 +4964,7 @@ agrees byte for byte with an independent Node implementation (`tools/pake_cpace.
 it**. The child device keeps a salted slow hash of the grown-up's PIN (so a grown-up can type it there to leave the
 lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its keystore could brute-force a
 short PIN. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
-challenge-response "use my phone to unlock" option and the online relay of windows through the server are **not
+online relay of windows through the server is **not
 built**; the server pairing routes are unchanged and still work. No device has run this yet.
 
 ## §8.6 Her colour
@@ -7643,7 +7656,7 @@ Each row is something this document or the product's own screens might lead a re
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
 | **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
-| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange needs an external cryptographic review. (3) "Use my phone to unlock" (a fresh signed challenge as a QR) and "Forget this tablet" screens. (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
+| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange needs an external cryptographic review. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |

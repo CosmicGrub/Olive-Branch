@@ -71,7 +71,9 @@ import 'live_boot_plan.dart';
 import 'live_common.dart';
 import 'local_family.dart';
 import 'local_pin.dart';
+import 'adult_gate.dart' show PhoneUnlock;
 import 'pairing_protocol.dart' show ChildPairing;
+import 'unlock_challenge.dart' show ChildUnlockHost;
 import 'pairing_records.dart';
 import 'local_repositories.dart';
 import 'local_services.dart';
@@ -466,11 +468,26 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
   await _openLocalStorage(p.cert.childId);
   final LocalPinService unlock = LocalPinService(
       LocalStoreLocalPinRepository(LocalServices.current.area('adultunlock')));
+  final LocalStoreChildPairingRepository repo = _childPairingRepo() as LocalStoreChildPairingRepository;
+  final DeviceKey childKey = await DeviceKey.loadOrCreate(
+      LocalStoreDeviceKeyRepository(LocalServices.current.area('devicekey')));
+  // "Use my phone": a fresh signed answer to a one-time challenge (unlock_challenge.dart). A phone-only tablet
+  // has no PIN check at all; a verified phone-only flag deletes it; a verified "disconnect" clears the pairing.
+  final ChildUnlockHost host = ChildUnlockHost(
+    childKey: childKey,
+    adultKey: p.adultKey,
+    onPhoneOnly: repo.makePhoneOnly,
+    onForget: () async {
+      await repo.clear();
+      unawaited(_startKidFirstRun());
+    },
+  );
   runApp(OliveLive(
     initialTheme: defaultAppTheme,
     childId: p.cert.childId,
     session: null,
     verifyPin: unlock.verifyBool,
+    phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly),
   ));
 }
 
@@ -676,7 +693,7 @@ class _OnboardingBootApp extends StatelessWidget {
 
 class OliveLive extends StatefulWidget {
   const OliveLive({super.key, this.initialTheme = defaultAppTheme,
-    required this.childId, required this.session, this.verifyPin});
+    required this.childId, required this.session, this.verifyPin, this.phoneUnlock});
 
   /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
   /// fail-closed to [defaultAppTheme] on any failure -- this widget never
@@ -697,6 +714,9 @@ class OliveLive extends StatefulWidget {
   /// The adult gate's PIN check. Null = the server's (a connected device). A device a grown-up approved on
   /// the same network passes its own local verifier.
   final Future<bool> Function(String pin)? verifyPin;
+
+  /// The grown-up's phone as another way to unlock (a locally paired tablet only).
+  final PhoneUnlock? phoneUnlock;
 
   @override
   State<OliveLive> createState() => _OliveLiveState();
@@ -767,6 +787,7 @@ class _OliveLiveState extends State<OliveLive> {
         ),
         home: KioskShell(
           variableLengthPin: widget.verifyPin != null,
+          phoneUnlock: widget.phoneUnlock,
           verifyPin: widget.verifyPin ?? (pin) => _verifyGuardianPin(pin, childId: widget.childId),
           verifyBiometric: _liveVerifyBiometricStub,
           child: LiveChildHomeScreen(

@@ -188,3 +188,11 @@ device, MARKUP/DEMO screens for the new surfaces, and any run on real devices (m
 A note on a limit found while building: a person on the same Wi-Fi who learns a window's session id (it is in the
 mDNS record) can send wrong confirmations and burn the window's five attempts. That is a denial of service the
 grown-up cures by opening a new window; it cannot pair a device.
+
+## 14. Follow-up PR: phone unlock, phone-only, forget (built on top of section 13)
+
+Built: `unlock_challenge.dart` (one-time challenge, signed answer, consumed on first matching use, expiry, purpose
+bound, forgotten tablets unanswered); the gate's "Use my phone" and "Disconnect this tablet"; phone-only (chosen at
+connecting: no PIN verifier is ever sent; or later: the flag rides a signed answer and the tablet deletes its
+verifier; one way only); the grown-up screens "Unlock a child's device with my phone" and "Connected child devices"
+(forget, phone-only). Still not built: a server-side revocation list, biometric, the online relay (D5, D6).
