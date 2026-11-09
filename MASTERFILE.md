@@ -4942,6 +4942,8 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
    the same exchange with that secret instead of a typed PIN. It works once, only while the window is open, and
    the adult device answers only LAN source addresses.
 
+**NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT (owner accepted 2026-11-08).**
+
 **Honest limits.** `cpace.dart` is custom cryptographic code (the Elligator2 map and transcript) that follows the
 CFRG CPace draft's structure but is not byte-compatible with it and has not been checked against its vectors; it
 agrees byte for byte with an independent Node implementation (`tools/pake_cpace.mjs`, golden vectors in

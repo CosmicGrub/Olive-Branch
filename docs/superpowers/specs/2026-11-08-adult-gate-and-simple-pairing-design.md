@@ -1,7 +1,9 @@
 # Adult gate and simple pairing (design)
 
-Status: DRAFT for owner review. Branch `feat/adult-gate-and-simple-pairing`. Date 2026-11-08.
+Status: DECISIONS ACCEPTED by the owner 2026-11-08 ("do what you recommend"); PR still a draft until CI is green. Branch `feat/adult-gate-and-simple-pairing`. Date 2026-11-08.
 Nothing here is merged. Owner decisions are listed in section 12 with a recommendation each.
+
+> **NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT.** The key exchange (`client/lib/cpace.dart`) is custom code over vetted primitives, not a vetted library. Accepted by the owner 2026-11-08 on that condition.
 
 ## 1. What the owner asked for
 
@@ -158,14 +160,14 @@ Parity: `test/parity` ledger and baseline ratchet re-run; `pairing.codeShape` an
 
 Totals and docs: MASTERFILE (8.3 PIN rules, 8.5 onboarding, 8.13 pairing, 22), CHANGELOG, MARKUP/DEMO, check-markup totals from CI's computed total. Node/db suites: none touched (no server change in this PR).
 
-## 12. Open owner decisions (recommendation each)
+## 12. Owner decisions (accepted by owner 2026-11-08, as recommended)
 
-- D1. Is a literal static family QR acceptable at all? Recommend NO; use short-lived adult-opened windows (this design). It matches your refinement (QR optional, proximity-only).
-- D2. The PAKE is custom code over vetted primitives (no maintained Dart PAKE library exists). Recommend: accept for this build, require an external crypto review before families use it, keep it behind the `Pake` interface.
-- D3. Unlock-by-PIN verifier on the child device (needed for offline unlock; an offline-brute-force exposure for stolen+rooted tablets). Recommend accept; offer "phone only" unlock as a parent setting for the cautious.
-- D4. Lockout for the on-device unlock path lives on the child device (adult may be out of range). Recommend accept, with escalating lockouts and reporting to the adult device.
-- D5. Online relay for pairing windows (server migration and routes). Recommend a follow-up PR after you review this model.
-- D6. Biometric as the adult's unlock factor on the adult device. Recommend follow-up; the local PIN is the factor now.
+- D1. ACCEPTED 2026-11-08 (as recommended). Is a literal static family QR acceptable at all? Recommend NO; use short-lived adult-opened windows (this design). It matches your refinement (QR optional, proximity-only).
+- D2. ACCEPTED 2026-11-08 (as recommended; **an external cryptographic review is required before families rely on it**). The PAKE is custom code over vetted primitives (no maintained Dart PAKE library exists). Recommend: accept for this build, require an external crypto review before families use it, keep it behind the `Pake` interface.
+- D3. ACCEPTED 2026-11-08 (as recommended, with a phone-only unlock setting). Unlock-by-PIN verifier on the child device (needed for offline unlock; an offline-brute-force exposure for stolen+rooted tablets). Recommend accept; offer "phone only" unlock as a parent setting for the cautious.
+- D4. ACCEPTED 2026-11-08 (as recommended). Lockout for the on-device unlock path lives on the child device (adult may be out of range). Recommend accept, with escalating lockouts and reporting to the adult device.
+- D5. ACCEPTED 2026-11-08 (as recommended; follow-up PR). Online relay for pairing windows (server migration and routes). Recommend a follow-up PR after you review this model.
+- D6. ACCEPTED 2026-11-08 (as recommended; follow-up PR). Biometric as the adult's unlock factor on the adult device. Recommend follow-up; the local PIN is the factor now.
 
 ## 13. What this PR builds, and what it does not (as of the last commit)
 
