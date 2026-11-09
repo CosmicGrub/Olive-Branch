@@ -58,7 +58,7 @@ check(
   // guard actually cares about — `_verifyGuardianPin` is genuinely what
   // `verifyPin:` invokes, not merely present somewhere else in the file —
   // holds either way.
-  /verifyPin:\s*(?:\(\w+\)\s*=>\s*)?_verifyGuardianPin\b/.test(liveSrc) && /_verifyGuardianPin/.test(liveSrc),
+  /verifyPin:\s*(?:widget\.verifyPin\s*\?\?\s*)?(?:\(\w+\)\s*=>\s*)?_verifyGuardianPin\b/.test(liveSrc) && /_verifyGuardianPin/.test(liveSrc),
   `Expected main_live.dart to still call verifyPin: _verifyGuardianPin (directly, or via a single` +
     `-param closure that calls it) — if the real check moved elsewhere, update BOTH this guard ` +
     `and RELEASE_SIGNING.md to point at wherever it lives now.`
