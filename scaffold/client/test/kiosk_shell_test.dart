@@ -76,6 +76,8 @@ void main() {
         await t.tap(find.text('$d').first);
         await t.pump();
       }
+      await t.tap(find.byKey(const Key('pinGateConfirm')));
+      await t.pump();
       await t.pumpAndSettle();
 
       expect(find.byType(GuardianEscalationScreen), findsOneWidget);
@@ -102,6 +104,8 @@ void main() {
         await t.tap(find.text('$d').first);
         await t.pump();
       }
+      await t.tap(find.byKey(const Key('pinGateConfirm')));
+      await t.pump();
       // Deliberately NOT pumpAndSettle() here: the SnackBar's own 2-second
       // display duration would run to completion (and dismiss itself) before
       // settling, so this catches it still on screen instead. A single pump
@@ -134,6 +138,8 @@ void main() {
         await t.tap(find.text('$d').first);
         await t.pump();
       }
+      await t.tap(find.byKey(const Key('pinGateConfirm')));
+      await t.pump();
       await t.pumpAndSettle();
 
       expect(find.byType(GuardianEscalationScreen), findsNothing);
@@ -158,6 +164,8 @@ void main() {
         await t.tap(find.text('$d').first);
         await t.pump();
       }
+      await t.tap(find.byKey(const Key('pinGateConfirm')));
+      await t.pump();
       await t.pumpAndSettle();
       expect(find.textContaining('pin'), findsNothing);
       expect(find.textContaining('biometric'), findsNothing);
@@ -191,6 +199,8 @@ void main() {
         await t.tap(find.text('$d').first);
         await t.pump();
       }
+      await t.tap(find.byKey(const Key('pinGateConfirm')));
+      await t.pump();
       await t.pumpAndSettle();
       expect(find.byType(GuardianEscalationScreen), findsOneWidget);
 

@@ -43,6 +43,7 @@ import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
 import 'adult_gate.dart';
+import 'local_pin.dart' show kLocalPinMaxDigits;
 import 'unlock_challenge.dart' show kPhoneProof;
 
 class KioskShell extends StatefulWidget {
@@ -52,8 +53,6 @@ class KioskShell extends StatefulWidget {
     required this.verifyPin,
     required this.verifyBiometric,
     this.channel,
-    this.pinDigits = 4,
-    this.variableLengthPin = false,
     this.phoneUnlock,
     this.childName = 'your child',
     this.callerName = 'there',
@@ -74,11 +73,6 @@ class KioskShell extends StatefulWidget {
   final String childName;
   /// Injectable for widget tests; defaults to the real platform channel.
   final KioskChannel? channel;
-  final int pinDigits;
-
-  /// True when the grown-up's code is the on-device PIN (4 to 8 digits, confirmed with OK) rather than the
-  /// server's fixed-length one.
-  final bool variableLengthPin;
 
   /// The grown-up's phone as another way to unlock this tablet (null = no phone paired).
   final PhoneUnlock? phoneUnlock;
@@ -147,8 +141,10 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
     }
   }
 
-  int get _digits => widget.variableLengthPin ? 8 : widget.pinDigits;
-  String? get _confirm => widget.variableLengthPin ? 'OK' : null;
+  // One rule for every guardian PIN, local or server: 4 to 8 digits, confirmed with OK (a fixed-length keypad
+  // locked out anyone whose PIN was not exactly the length it expected).
+  int get _digits => kLocalPinMaxDigits;
+  String? get _confirm => 'OK';
 
   /// A grown-up proof is either a typed code the injected check accepts, or the phone's verified signed answer
   /// (the gate only produces [kPhoneProof] after the signature, nonce and expiry checked out).

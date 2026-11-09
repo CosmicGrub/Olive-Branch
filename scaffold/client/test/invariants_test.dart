@@ -259,9 +259,9 @@ void main() {
   });
 
   group('PIN gate — §8.3', () {
-    testWidgets('renders nine keys', (t) async {
+    testWidgets('renders ten keys (1-9 and 0)', (t) async {
       await t.pumpWidget(wrap(PinGate(digits: 4, onComplete: (_) {})));
-      expect(find.byType(TextButton), findsNWidgets(9));
+      expect(find.byType(TextButton), findsNWidgets(10));
     });
 
     testWidgets('the keypad is SHUFFLED — the child is watching', (t) async {
@@ -288,7 +288,7 @@ void main() {
               of: find.byType(TextButton), matching: find.byType(Text)))
           .map((Text w) => w.data!)
           .join();
-      expect(order, '123456789');
+      expect(order, '1234567890');
     });
 
     testWidgets('entry fires onComplete at the right length and clears',
@@ -304,6 +304,30 @@ void main() {
       await t.tap(find.text('4'));
       await t.pump();
       expect(got, '1234');
+    });
+
+    testWidgets('the keypad can type a 0 and a PIN of 4 to 8 digits (confirmed with OK; OK waits for 4)', (t) async {
+      String? got;
+      await t.pumpWidget(wrap(PinGate(digits: 8, shuffle: false, confirmLabel: 'OK', onComplete: (String v) => got = v)));
+      Future<void> ok() => t.tap(find.byKey(const Key('pinGateConfirm')));
+      for (final String d in <String>['1', '0', '2']) {
+        await t.tap(find.text(d));
+        await t.pump();
+      }
+      await ok();
+      expect(got, isNull, reason: 'three digits is not a PIN');
+      for (final String d in <String>['0', '9', '8', '7']) {
+        await t.tap(find.text(d));
+        await t.pump();
+      }
+      await ok();
+      expect(got, '1020987', reason: 'seven digits, with zeros, is accepted');
+      for (final String d in <String>['1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+        await t.tap(find.text(d));
+        await t.pump();
+      }
+      await ok();
+      expect(got!.length, 8, reason: 'never more than 8');
     });
 
     testWidgets('no error text is ever shown after a kiosk defeat', (t) async {
@@ -379,6 +403,7 @@ void main() {
         await t.tap(find.text(d));
         await t.pump();
       }
+      await t.tap(find.byKey(const Key('pinGateConfirm')));
       await t.pumpAndSettle();
       expect(find.byWidget(child), findsOneWidget);
     });
@@ -402,6 +427,7 @@ void main() {
           await t.tap(find.text(d).first);
           await t.pump();
         }
+        await t.tap(find.byKey(const Key('pinGateConfirm')));
         await t.pumpAndSettle();
       }
       expect(find.byType(PinGate), findsNothing,
