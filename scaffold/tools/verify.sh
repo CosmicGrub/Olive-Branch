@@ -57,6 +57,7 @@ npm run --silent build >/dev/null 2>&1 || { echo "  BUILD FAILED"; exit 2; }
 for spec in \
   "time engine|packages/time-engine/test/golden.test.mjs" \
   "co-view (read/watch together core)|packages/co-view/test/coview.test.mjs" \
+  "play envelope (versioned, sequenced ad-hoc play messages)|packages/play-envelope/test/envelope.test.mjs" \
   "parent-learn (guardian education core)|packages/parent-learn/test/learn.test.mjs" \
   "family-structure (age bands + family core)|packages/family-structure/test/family.test.mjs" \
   "colour of the day (sync rule, art settings, play window)|packages/palette/test/colour_day.test.mjs" \

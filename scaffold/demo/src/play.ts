@@ -2111,3 +2111,14 @@ export function gfNewlyUnlocked(age: number, ageAtLastOpen: number | null): Any 
 export function gfSurpriseMe(age: number, excludeKind?: string): Any {
   return randomGame(GAMES_AS_META, age, excludeKind ?? null);
 }
+
+// ------------------------------- play envelope: two-device play messages -----
+// The demo has no second device, so this only shows the envelope parsing a message and refusing a forbidden key;
+// it is exported so the module is wired into the bundle (the shell does not draw it yet).
+import * as PlayEnvelope from '../../packages/play-envelope/src/envelope.ts';
+
+export function playEnvelopeView(): Any {
+  const ok = PlayEnvelope.parseEnvelope(JSON.stringify({ v: 1, sid: '9f2c41d07a3b88e1', n: 1, ack: 0, t: 'move', g: 'connect4', p: { column: 3 } }));
+  const refused = PlayEnvelope.parseEnvelope(JSON.stringify({ v: 1, sid: '9f2c41d07a3b88e1', n: 1, ack: 0, t: 'move', g: 'connect4', p: { score: 3 } }));
+  return { accepted: ok.ok, refusedReason: refused.ok ? null : refused.reason };
+}

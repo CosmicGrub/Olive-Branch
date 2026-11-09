@@ -227,20 +227,30 @@ class LocalPairingController extends ChangeNotifier {
   }
 
   /// Sends one turn to the current peer, whatever shape the calling game
-  /// gives it — this controller has no opinion on payload contents. A real,
-  /// honest send failure ([LocalSessionException]) moves to
+  /// gives it — this controller has no opinion on payload contents. Returns
+  /// whether the turn was actually handed to the peer (false when there is no
+  /// peer right now, or the send did not get through) so a caller that keeps
+  /// its own copy (play_session.dart) can resend it when the peer returns.
+  /// A real, honest send failure ([LocalSessionException]) moves to
   /// [PairingPhase.error] the same way it always did in
   /// local_play_screen.dart, which takes priority over any game already in
-  /// progress (unlike a transient peer-lost blip — see this file's header).
-  Future<void> sendTurn(LocalTurnPayload payload) async {
+  /// progress (unlike a transient peer-lost blip — see this file's header) —
+  /// unless the caller passes [failureIsError] false, as the play envelope
+  /// does: there a send that did not get through simply means the other
+  /// device is away, which is a calm notice, never an error screen.
+  Future<bool> sendTurn(LocalTurnPayload payload, {bool failureIsError = true}) async {
     final peer = _peer;
-    if (peer == null) return;
+    if (peer == null) return false;
     try {
       await LocalSessionClient(peer, session: _session).sendTurn(payload);
+      return true;
     } on LocalSessionException catch (e) {
-      _phase = PairingPhase.error;
-      _errorMessage = e.message;
-      _notify();
+      if (failureIsError) {
+        _phase = PairingPhase.error;
+        _errorMessage = e.message;
+        _notify();
+      }
+      return false;
     }
   }
 

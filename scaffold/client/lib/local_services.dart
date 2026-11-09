@@ -208,6 +208,12 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'would help) and which of the two accessibility profiles are on. Guardian side only. '
           'Sealed on the device; no score and no label about her; nothing is sent.'),
   LocalDataEntry(
+      area: 'playsave', scope: LocalScope.child, encrypted: true, maxBytes: 64 * 1024,
+      what: 'A game in progress on the dealing phone only (Uno, Connect 4), so it can carry on after the app is '
+          'closed: the cards or the board and whose turn it is. There is no winner, result or score in it, it is '
+          'deleted when the game ends or a grown-up chooses Finish for now, and the other phone keeps nothing. '
+          'Sealed on the device; never uploaded.'),
+  LocalDataEntry(
       area: 'role', scope: LocalScope.device, maxBytes: 4 * 1024,
       what: 'Who is using this device, chosen on the very first screen: one word, kid, mom, dad or '
           'someone else. It decides which app opens. It is not a name and grants a grown-up nothing; '
