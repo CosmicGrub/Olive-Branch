@@ -16,7 +16,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
@@ -92,7 +91,7 @@ class AdultWindow extends ChangeNotifier {
     required this.familyId,
     required this.childId,
     required this.childName,
-    required String pin,
+    required String? pin,
     required this.sid,
     required this.qrSecret,
     required this.expiresAt,
@@ -100,8 +99,8 @@ class AdultWindow extends ChangeNotifier {
     required DateTime Function() now,
     required this.makeUnlockVerifier,
     required this.onPaired,
-  })  : _pin = pin,
-        _now = now,
+  })  : _pin = pin, // ignore: prefer_initializing_formals
+        _now = now, // ignore: prefer_initializing_formals
         attemptsLeft = maxAttempts;
 
   final DeviceKey adultKey;

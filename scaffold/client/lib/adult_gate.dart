@@ -27,6 +27,7 @@ class AdultGate extends StatefulWidget {
     required this.onPin,
     this.startOpen = false,
     this.onClose,
+    this.confirmLabel,
   });
 
   /// The PIN length the keypad collects.
@@ -42,6 +43,9 @@ class AdultGate extends StatefulWidget {
   /// Shown on the keypad as a way back to the calm card (and out of a pushed route).
   final VoidCallback? onClose;
 
+  /// Variable-length code (4 to [digits]) with an OK button; null = completes at [digits].
+  final String? confirmLabel;
+
   @override
   State<AdultGate> createState() => _AdultGateState();
 }
@@ -53,7 +57,7 @@ class _AdultGateState extends State<AdultGate> {
   Widget build(BuildContext context) {
     if (_stage == AdultGateStage.keypad) {
       return Stack(children: <Widget>[
-        PinGate(digits: widget.digits, onComplete: widget.onPin),
+        PinGate(digits: widget.digits, onComplete: widget.onPin, confirmLabel: widget.confirmLabel),
         Positioned(
           left: 4,
           top: 4,
