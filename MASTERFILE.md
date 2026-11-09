@@ -2355,7 +2355,7 @@ Owner requirement: the server must build in security against those who try to pe
 
 **What is drawn comes from one table.** `client/lib/child_home_bands.dart` is the Flutter twin of the live prototype's tile registry (`TL`), `BANDSET`, `MORE` and `GROW` (`docs/superpowers/mockups/live/mod-child.js`). A vector file (`client/test/parity/vectors/child_home_bands.json`) is produced by `tools/gen-child-home-vectors.mjs`, which boots the prototype headless, sets her age from 3 to 17 and records the tiles the home and the More page really draw (id, title, tier); `tools/test/child_home_vectors.test.mjs` fails if it is stale and `child_home_bands_test.dart` holds the Dart tables equal to it, so the prototype and the client cannot drift without a test saying so.
 
-**The four homes.** *3 to 4*: the icon-only home (`AgeHome34`, unchanged). *5 to 7*: a greeting over 'Hi, <name>', her grown-up's card and the sleeps line when the live shell knows them, the **My day** hero, **Play together / Messages / Stories / Show & tell** as four featured tiles, **My people / Colour / More** as three standard ones. *8 to 12*: 'Good morning, <name>' over the weekday, the **My weeks** strip, **Messages / Games / My list / Storyteller** featured, **My people / Show & tell / Journal / More** standard (four across, two on a narrow screen). *13 and up*: unchanged until wave 2b (Today, Downtime, Studio, Calendar and Privacy are in the table already). The renames are the registry's: Play together is Games at 8 to 12 and Downtime at 13 to 17; Colour and Draw & colour are Studio at 13 to 17; My day is Today at 13 to 17.
+**The four homes.** *3 to 4*: the icon-only home (`AgeHome34`, unchanged). *5 to 7*: a greeting over 'Hi, <name>', her grown-up's card and the sleeps line when the live shell knows them, the **My day** hero, **Play together / Messages / Stories / Show & tell** as four featured tiles, **My people / Colour / More** as three standard ones. *8 to 12*: 'Good morning, <name>' over the weekday, the **My weeks** strip (hidden until a family exists, on the home and in More, so it never shows the 'Grown-up one / Grown-up two' placeholders), **Messages / Games / My list / Storyteller** featured, **My people / Show & tell / Journal / More** standard (four across, two on a narrow screen). *13 and up*: unchanged until wave 2b (Today, Downtime, Studio, Calendar and Privacy are in the table already). The renames are the registry's: Play together is Games at 8 to 12 and Downtime at 13 to 17; Colour and Draw & colour are Studio at 13 to 17; My day is Today at 13 to 17.
 
 **When the band home is used.** Only with a family structure released on the device (`ChildHome.family`, the same snapshot that decided the home before); with none the older home is drawn exactly as before. A tile is drawn only if (1) its destination exists in the client (`kTilesWithDestination`; Calendar, Privacy, Feelings, My things and the grown-up door do not yet), (2) a guardian has not hidden it, and (3) the family structure has not switched it off. **Messages is never hideable.** News is a dot, never a number. No settings affordance exists at any depth (§8.1); every tile keeps its 64 dp floor, its quiet speaker and its long-press reading.
 
@@ -4773,8 +4773,8 @@ with its tests, its **adoption by every child-facing screen** through `grownup_l
   Mom or a Dad has an age default; anyone else keeps the guardian's label.
 - **Nickname layer.** Each grown-up has a guardian label and an optional
   nickname she chose. `ContactLabels.forChild` shows nickname, else age default,
-  else guardian label. `ContactLabels.forGuardian` shows both: "Dad (Ivy calls
-  you Dada)". A bank (`kNicknameBank`: Mommy, Mama, Mum, Mom, Mummy, Daddy, Dada,
+  else guardian label. `ContactLabels.forGuardian` says it in the
+  prototype's words: "Ivy calls you Dada" (the guardian's own label is the row's title). A bank (`kNicknameBank`: Mommy, Mama, Mum, Mom, Mummy, Daddy, Dada,
   Papa, Pop, Dad) is offered and she may type her own (24 letters at most).
 - **Hers.** `NicknameRepository` (abstract; `MemoryNicknameRepository`;
   `LocalNicknameRepository` over `child.<id>.nicknames`, in §8.16.4) is the only
@@ -4800,7 +4800,7 @@ grown-up it wins, so her nickname beats the grown-up's own display name. A name
 that starts a sentence is raised with `asSubject` ("Your grown-up hid these
 around the house"); the TS-ported handicap wording is rewritten with
 `withParentName`. A guardian's own screens keep the guardian's labels
-(`GrownupLabels.forGuardian` gives "Dad (Ivy calls you Dada)" where a nickname
+(`GrownupLabels.forGuardian` gives "Ivy calls you Dada" where a nickname
 exists; the exchange screen shows the guardians' own labels).
 
 **Sites adopted:** `a11y_speech.dart` (the read-aloud label is "Send this to your
@@ -4970,7 +4970,7 @@ the step after "who is here" ("What do you call your grown-ups?", optional, "Nex
 
 **Hers.** `NicknameRepository` is the only writer and only the child's own screens hold it; a guardian screen is handed a
 `NicknameReader` that cannot write (a test fails if any guardian-side file mentions the writer). `ContactLabels.forGuardian` renders
-"Dad (Ivy calls you Dada)". **The guardian-side row that shows it is not built:** nicknames live on the child's device and there is no
+"Ivy calls you Dada" (the prototype's wording; "Ivy calls Sam Dada" for the other grown-up's row). **The guardian-side row that shows it is not built:** nicknames live on the child's device and there is no
 sync between a family's devices (§8.16.7), so on any one device today there is nothing for it to show.
 
 ---
