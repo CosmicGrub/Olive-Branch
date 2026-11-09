@@ -104,6 +104,30 @@ const serviceBlock = (text, name) => {
   check('C compose', 'the compose grace period leaves headroom over the code\'s shutdown deadline', grace * 1000 > deadline, 'true');
 }
 
+// ---- C2 · server-snoop hardening: the TLS-terminator contract --------------------
+{
+  const server = serviceBlock(PROD, 'server');
+  const env = code(server);
+  check('C2 transport', 'prod `server` requires PUBLIC_BASE_URL (`:?`), so compose fails fast without it',
+    /PUBLIC_BASE_URL:\s*\$\{PUBLIC_BASE_URL:\?/.test(env), 'true');
+  check('C2 transport', 'prod `server` pins TRUST_PROXY to the literal "1"', /^\s*TRUST_PROXY:\s*"1"/m.test(env), 'true');
+  check('C2 transport', 'TRUST_PROXY_HOPS defaults to 1 and is operator-settable', /TRUST_PROXY_HOPS:\s*\$\{TRUST_PROXY_HOPS:-1\}/.test(env), 'true');
+  check('C2 transport', 'ALLOW_INSECURE_TRANSPORT is the literal "0" (no .env entry can enable plain HTTP)',
+    /^\s*ALLOW_INSECURE_TRANSPORT:\s*"0"/m.test(env), 'true');
+  check('C2 transport', 'prod `server` still sets NODE_ENV=production (the switch the strict checks key on)',
+    /^\s*NODE_ENV:\s*production/m.test(env), 'true');
+  check('C2 transport', 'the server port is published on loopback only (the proxy is the only public listener)',
+    /"127\.0\.0\.1:\$\{SERVER_HOST_PORT:-8123\}:8123"/.test(env), 'true');
+  check('C2 transport', 'the database port is published on loopback only', /"127\.0\.0\.1:\$\{DB_HOST_PORT:-5434\}:5432"/.test(code(serviceBlock(PROD, 'db'))), 'true');
+  check('C2 transport', '.env.prod.example documents PUBLIC_BASE_URL', /^PUBLIC_BASE_URL=/m.test(rd(SCAFFOLD + '.env.prod.example')), 'true');
+  const doc = rd(ROOT + 'docs/operators/proxy-and-tls.md');
+  check('C2 transport', 'the operator doc covers HSTS, X-Forwarded-Proto, the hop count, blocking /internal/ and not logging query strings',
+    ['Strict-Transport-Security', 'X-Forwarded-Proto', 'TRUST_PROXY_HOPS', '/internal/', 'query string'].every((s) => doc.includes(s)), 'true');
+  const pin = rd(ROOT + 'docs/operators/certificate-pinning.md');
+  check('C2 transport', 'the pin-rotation doc exists and names the backup pin and OLIVE_API_PINS',
+    /backup pin/i.test(pin) && pin.includes('OLIVE_API_PINS'), 'true');
+}
+
 // ---- D · CI workflow + verify.sh -------------------------------------------------------
 {
   const w = code(WORKFLOW);

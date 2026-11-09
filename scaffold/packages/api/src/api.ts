@@ -277,6 +277,39 @@ export interface Route {
   handler: (c: Ctx, q: Query) => Promise<{ status?: number; body?: any }>;
 }
 
+/**
+ * Server-snoop hardening (spec 4.3): the server never learns a family's network
+ * identity. No request body may carry an address, SSID/BSSID, MAC, hostname,
+ * LAN address or coordinates, at any depth: the client has no reason to send
+ * one, and refusing them means no route (present or future) can store one by
+ * accident. Keys are compared case-insensitively with `_`/`-` removed.
+ */
+export const NETWORK_IDENTITY_KEYS: ReadonlySet<string> = new Set([
+  'ip', 'ipaddress', 'ipv4', 'ipv6', 'localip', 'privateip', 'publicip', 'lanip', 'lanaddress',
+  'remoteaddress', 'peeraddress', 'clientip', 'ssid', 'bssid', 'wifi', 'wifiname', 'networkname',
+  'mac', 'macaddress', 'hostname', 'devicehostname', 'latitude', 'longitude', 'lat', 'lng', 'lon',
+  'geo', 'geolocation', 'gps',
+]);
+
+/** First network-identity key found in a parsed JSON value (depth/size bounded), or null. */
+export function findNetworkIdentityKey(v: unknown): string | null {
+  let budget = 20000;
+  const walk = (x: unknown, depth: number): string | null => {
+    if (x === null || typeof x !== 'object' || depth > 12 || budget-- <= 0) return null;
+    if (Array.isArray(x)) {
+      for (const e of x) { const r = walk(e, depth + 1); if (r) return r; }
+      return null;
+    }
+    for (const k of Object.keys(x as object)) {
+      if (NETWORK_IDENTITY_KEYS.has(k.toLowerCase().replace(/[_-]/g, ''))) return k;
+      const r = walk((x as Record<string, unknown>)[k], depth + 1);
+      if (r) return r;
+    }
+    return null;
+  };
+  return walk(v, 0);
+}
+
 const unusedQuery: Query = async () => {
   throw new Error(
     'this route is registered with skipOuterSession: true and must not call q — ' +
@@ -413,6 +446,9 @@ export class Api {
       if (rawBody) {
         try { noSessionBody = JSON.parse(rawBody); }
         catch { return { status: 400, body: { error: 'bad_json' } }; }
+        if (findNetworkIdentityKey(noSessionBody)) {
+          return { status: 400, body: { error: 'network_identity_not_accepted' } };
+        }
       }
       const ctx: Ctx = { principal: null, childId: m.params.childId ?? null,
                           params: m.params, body: noSessionBody, query: u.searchParams,
@@ -490,6 +526,9 @@ export class Api {
     if (rawBody) {
       try { body = JSON.parse(rawBody); }
       catch { return { status: 400, body: { error: 'bad_json' } }; }
+      if (findNetworkIdentityKey(body)) {
+        return { status: 400, body: { error: 'network_identity_not_accepted' } };
+      }
     }
 
     // ---- A2: run inside the session context (unless explicitly opted out) ---

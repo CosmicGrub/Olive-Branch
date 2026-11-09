@@ -23,7 +23,10 @@ import { createPool, dbPort, withSystemSession, createChallenge, consumeChalleng
 import { registerRoutes, RP_ID, RP_ORIGIN, defaultMediaStorage } from './routes.mjs';
 import { serveSignedMedia } from './signed_media.mjs';
 import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
-import { createAuthLimiter, clientIp, createWriteLimiter } from './rate_limit.mjs';
+import { createAuthLimiter, createWriteLimiter } from './rate_limit.mjs';
+import { createNetIdentity } from './netid.mjs';
+import { checkBootTransport, httpsRequired, securityHeaders } from './transport.mjs';
+import { errorLine } from './safe_log.mjs';
 import { checkBootSecrets } from './secrets.mjs';
 import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
@@ -53,6 +56,17 @@ if (boot.problems.length) {
   for (const p of boot.problems) console.error(`secret check failed: ${p}`);
   process.exit(2);
 }
+
+// Server-snoop hardening: a production process must be configured as the HTTPS
+// back end of a TLS-terminating proxy (PUBLIC_BASE_URL, TRUST_PROXY and
+// TRUST_PROXY_HOPS) or it refuses to start. See server/transport.mjs.
+const bootTransport = checkBootTransport(process.env);
+for (const w of bootTransport.warnings) console.warn(`WARNING: ${w}`);
+if (bootTransport.problems.length) {
+  for (const p of bootTransport.problems) console.error(`transport check failed: ${p}`);
+  process.exit(2);
+}
+const netId = createNetIdentity();
 
 const pool = createPool(DATABASE_URL);
 const secret = boot.sessionSecret;
@@ -282,6 +296,9 @@ const server = createServer(async (req, res) => {
   const id = requestIdFor(req);
   const label = routeLabel(method, pathname, url);
   res.setHeader('x-request-id', id);
+  // Baseline security headers on EVERY response, including the signed-media
+  // handler that writes its own head (writeHead's explicit values win).
+  for (const [k, v] of Object.entries(securityHeaders(req))) res.setHeader(k, v);
   res.on('finish', () => {
     const ms = performance.now() - startedAt;
     metrics.record({ method, route: label, status: res.statusCode, ms });
@@ -308,6 +325,13 @@ const server = createServer(async (req, res) => {
   };
 
   try {
+    // Server-snoop hardening: in production nothing is served that did not
+    // arrive over TLS (the loopback /healthz probe is the lone exemption).
+    if (httpsRequired(req, process.env, pathname)) {
+      metrics.inc('https_required_total');
+      return send({ status: 400, body: { error: 'https_required' } }, { connection: 'close' });
+    }
+
     // Docker healthcheck target (docker-compose.dev.yml / .prod.yml's
     // `server` service) — see this pass's CHANGELOG entry for why a real
     // HTTP check matters here: `depends_on: condition: service_healthy`
@@ -328,8 +352,10 @@ const server = createServer(async (req, res) => {
         ]);
         return send({ status: 200, body: { status: 'ok' } });
       } catch (e) {
-        console.error('healthz: database unreachable', e);
-        return send({ status: 503, body: { status: 'db_unreachable' } });
+        console.error(errorLine(e, { msg: 'healthz: database unreachable' }));
+        // Same shape as the 200: an unauthenticated caller learns up/down and
+        // nothing about WHY (the 503 status is what probes key on).
+        return send({ status: 503, body: { status: 'unavailable' } });
       }
     }
 
@@ -357,7 +383,7 @@ const server = createServer(async (req, res) => {
       || pathname.startsWith('/v1/device-pairing/')
       || pathname.startsWith('/v1/guardian-invites/');
     if (isAuthPath) {
-      const ip = authLimiter.checkIp(clientIp(req));
+      const ip = authLimiter.checkIp(netId.anonKey(req));
       if (!ip.ok) {
         metrics.inc('rate_limited_total');
         return send({ status: 429, body: { error: 'rate_limited' } },
@@ -385,7 +411,7 @@ const server = createServer(async (req, res) => {
     if (method === 'POST' && RAW_AUTH_PATHS.has(url)) {
       const ident = loginIdentifier(raw);
       if (ident) {
-        const r = authLimiter.checkIdentifier(ident, clientIp(req));
+        const r = authLimiter.checkIdentifier(ident, netId.anonKey(req));
         if (!r.ok) {
           metrics.inc('rate_limited_total');
           return send({ status: 429, body: { error: 'rate_limited' } },
@@ -401,7 +427,7 @@ const server = createServer(async (req, res) => {
     }
     send(await api.handle(method, url, req.headers, raw));
   } catch (e) {
-    console.error(e);
+    console.error(errorLine(e, { msg: 'request failed' }));
     if (!res.headersSent) send({ status: 500, body: { error: 'internal' } });
   }
 });
@@ -409,7 +435,10 @@ const server = createServer(async (req, res) => {
 // Node's own upgrade event on the SAME http.Server and SAME port — no second
 // listener, no LAN-broadcast/discovery mechanism of any kind. Every table
 // connection is relayed through this one authenticated process.
-const { wss, stopSweep } = attachGameSocketServer(server, { secret: gameTableSecret, tables: gameTables });
+const { wss, stopSweep } = attachGameSocketServer(server, {
+  secret: gameTableSecret, tables: gameTables,
+  upgradeAllowed: (req) => !httpsRequired(req, process.env, '/ws'),
+});
 
 server.listen(PORT, () => {
   console.log(`olive-branch server listening on :${PORT}` + (DEV_LOGIN ? ' (DEV_LOGIN enabled)' : ''));
@@ -425,7 +454,7 @@ const shutdown = createShutdown({
   log: (line) => console.log(line),
 });
 const onSignal = (sig) => {
-  shutdown(sig).then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
+  shutdown(sig).then(() => process.exit(0), (e) => { console.error(errorLine(e, { msg: 'shutdown failed' })); process.exit(1); });
 };
 process.on('SIGINT', () => onSignal('SIGINT'));
 process.on('SIGTERM', () => onSignal('SIGTERM'));
@@ -435,18 +464,12 @@ process.on('SIGTERM', () => onSignal('SIGTERM'));
 // silent either: log it as one structured line and count it.
 process.on('unhandledRejection', (reason) => {
   metrics.inc('unhandled_rejection_total');
-  console.error(JSON.stringify({
-    ts: new Date().toISOString(), level: 'error', msg: 'unhandledRejection',
-    error: reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
-  }));
+  console.error(errorLine(reason, { msg: 'unhandledRejection' }));
 });
 // An uncaught exception IS undefined state: log it, then shut down cleanly
 // (so the pool drains and websockets get a close frame) and exit non-zero so
 // the orchestrator restarts a fresh process.
 process.on('uncaughtException', (err) => {
-  console.error(JSON.stringify({
-    ts: new Date().toISOString(), level: 'fatal', msg: 'uncaughtException',
-    error: err?.stack ?? String(err),
-  }));
+  console.error(errorLine(err, { msg: 'uncaughtException' }));
   shutdown('uncaughtException').finally(() => process.exit(1));
 });
