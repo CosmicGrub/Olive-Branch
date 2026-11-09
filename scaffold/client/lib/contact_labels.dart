@@ -10,7 +10,7 @@
 // ([GrownupContact.guardianLabel]) and an optional child-chosen nickname.
 // ALL child-facing text shows, in this order: her nickname, else the
 // age-default word for a Mom or a Dad, else the guardian's label. The
-// guardian's own screens show both ("Ivy calls you Dada"). The nickname is the
+// guardian's own screens say "Ivy calls you Dada". The nickname is the
 // CHILD'S data: [NicknameRepository] has the only writer, and
 // [NicknameReader] (all a guardian screen gets) cannot write.
 //
@@ -87,11 +87,13 @@ class ContactLabels {
     return nick ?? ageDefault(c.kind, age) ?? c.guardianLabel;
   }
 
-  /// What a GUARDIAN sees: their own label, and how she says it if she renamed it.
-  static String forGuardian(GrownupContact c, {required String childName, Map<String, String> nicknames = const {}}) {
+  /// What a GUARDIAN sees, in the prototype's words (live/live-core.js L.labels.forGuardian): when she has
+  /// renamed this person, "Ivy calls you Dada" (or "Ivy calls Sam Dada" when [viewerIsSelf] is false, i.e. the
+  /// other grown-up's row); otherwise just their own label. The label itself is the row's title elsewhere.
+  static String forGuardian(GrownupContact c, {required String childName, Map<String, String> nicknames = const {}, bool viewerIsSelf = true}) {
     final String? nick = cleanNickname(nicknames[c.id]);
     if (nick == null || nick == c.guardianLabel) return c.guardianLabel;
-    return '${c.guardianLabel} ($childName calls you $nick)';
+    return '$childName calls ${viewerIsSelf ? 'you' : c.guardianLabel} $nick';
   }
 
   /// Trimmed, non-empty, at most [kMaxNicknameLength]; otherwise null.

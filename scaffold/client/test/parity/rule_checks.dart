@@ -56,7 +56,7 @@ final List<RuleCheck> ruleChecks = <RuleCheck>[
     final bool ok = ContactLabels.forChild(_mom, age: const AgeLockState(age: 9, locked: true), nicknames: <String, String>{'mom': 'Mama'}) == 'Mama';
     return ok && _m(r['labels'])['nicknameWins'] == true ? const Res.ok() : const Res.differs('a nickname does not win');
   }),
-  RuleCheck('labels.guardianView', <String>['sub:labels.forGuardian (\'Ivy calls you Dada\')'], UnitStatus.differs, (Map<String, Object?> r) async {
+  RuleCheck('labels.guardianView', <String>['sub:labels.forGuardian (\'Ivy calls you Dada\')'], UnitStatus.implemented, (Map<String, Object?> r) async {
     final String got = ContactLabels.forGuardian(_mom, childName: 'Ivy', nicknames: <String, String>{'mom': 'Dada'});
     return got == 'Ivy calls you Dada' ? const Res.ok() : Res.differs('Flutter shows "$got", the prototype "Ivy calls you Dada"');
   }),

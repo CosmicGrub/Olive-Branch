@@ -41,8 +41,18 @@ Future<FamilyChildSnapshot> snap({int years = 7, bool people = true}) async {
   return s.childSnapshot(childP, childId: 'c1', yearsOld: years);
 }
 
-Widget app(Widget home, {int years = 7, bool locked = true}) => MaterialApp(
-    home: GrownupLabelScope(labels: GrownupLabels(age: AgeLockState(age: years, locked: locked)), child: home));
+Widget app(Widget home, {int years = 7, bool locked = true, bool family = true}) => MaterialApp(
+    home: GrownupLabelScope(
+        labels: GrownupLabels(
+            // "My weeks" is hidden until a family exists, so the default test child has one.
+            contacts: family
+                ? const <GrownupContact>[
+                    GrownupContact(id: 'g1', guardianLabel: 'Mom', kind: GrownupKind.mom),
+                    GrownupContact(id: 'g2', guardianLabel: 'Dad', kind: GrownupKind.dad),
+                  ]
+                : const <GrownupContact>[],
+            age: AgeLockState(age: years, locked: locked)),
+        child: home));
 
 ChildHome kidHome(FamilyChildSnapshot f, {int years = 7, ChildGrowth? growth, MemoryNicknameRepository? nicks,
     Map<String, ActivityOverride>? overrides, int unread = 0, DateTime? at}) =>
@@ -168,6 +178,18 @@ void main() {
       await t.tap(find.byKey(const Key('bandTile.weeks')));
       await t.pumpAndSettle();
       expect(find.byType(WeeksScreen), findsOneWidget);
+    });
+
+    testWidgets('My weeks is hidden until a family exists, and never shows the placeholder names', (WidgetTester t) async {
+      await big(t);
+      await t.pumpWidget(app(kidHome(await snap(years: 9), years: 9), years: 9, family: false));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('bandTile.weeks')), findsNothing);
+      expect(find.text('My weeks'), findsNothing);
+      expect(find.text('Grown-up one'), findsNothing);
+      await t.pumpWidget(app(kidHome(await snap(years: 9), years: 9), years: 9));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('bandTile.weeks')), findsOneWidget);
     });
 
     testWidgets('13 and up keeps the older home until wave 2b (the table says which bands it draws)', (WidgetTester t) async {

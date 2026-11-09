@@ -1,9 +1,9 @@
 {
  "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
  "totals": {
-  "implemented": 59,
+  "implemented": 60,
   "pending": 130,
-  "differs": 10
+  "differs": 9
  },
  "groups": {
   "birthday": {
@@ -77,9 +77,9 @@
    }
   },
   "rules": {
-   "implemented": 9,
+   "implemented": 10,
    "pending": 4,
-   "differs": 8
+   "differs": 7
   }
  },
  "units": {
@@ -2037,11 +2037,10 @@
    "group": "rules",
    "kind": "rule",
    "label": "labels.guardianView",
-   "status": "differs",
+   "status": "implemented",
    "rows": [
     "sub:labels.forGuardian ('Ivy calls you Dada')"
-   ],
-   "note": "Flutter shows \"Mom (Ivy calls you Dada)\", the prototype \"Ivy calls you Dada\""
+   ]
   },
   "rules#labels.nicknameWins": {
    "group": "rules",

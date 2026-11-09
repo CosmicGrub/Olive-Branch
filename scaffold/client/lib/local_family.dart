@@ -19,7 +19,7 @@
 // THE GUARDIAN IS A CONTACT. [grownups] turns the record into the
 // [GrownupContact]s the kid screens use, with a stable id ([kLocalGuardianContactId]),
 // so a nickname she gave that contact ("Dada") keeps applying, and the guardian sees
-// "Dad (Ivy calls you Dada)" but can never write the nickname.
+// "Ivy calls you Dada" but can never write the nickname.
 //
 // SYNC: none. The record is local to this device until the device is connected;
 // connecting does not upload it (no route takes it). Nothing here is a score, a

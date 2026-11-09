@@ -187,12 +187,12 @@ void main() {
       // What a guardian screen is handed: a NicknameReader. It has load() and nothing else.
       final NicknameReader asGuardianSeesIt = repo;
       final Map<String, String> seen = await asGuardianSeesIt.load();
-      expect(ContactLabels.forGuardian(f.guardian, childName: 'Ivy', nicknames: seen), 'Dad (Ivy calls you Dada)');
+      expect(ContactLabels.forGuardian(f.guardian, childName: 'Ivy', nicknames: seen), 'Ivy calls you Dada');
       // The guardian's own label is theirs to edit, and editing it never touches the nickname.
       final LocalFamily renamed = LocalFamily.fromAnswers(
           guardianName: 'Sam', guardianLabel: 'Papa', guardianKind: GrownupKind.other, childName: 'Ivy', age: 7);
       expect(await repo.load(), <String, String>{kLocalGuardianContactId: 'Dada'});
-      expect(ContactLabels.forGuardian(renamed.guardian, childName: 'Ivy', nicknames: seen), 'Papa (Ivy calls you Dada)');
+      expect(ContactLabels.forGuardian(renamed.guardian, childName: 'Ivy', nicknames: seen), 'Ivy calls you Dada');
     });
 
     test('the guardian-side code has no path to the writer (source guard)', () {

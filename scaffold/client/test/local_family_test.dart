@@ -130,7 +130,7 @@ void main() {
       final LocalFamily f = family(age: 7, label: 'Dad');
       final Map<String, String> nicks = <String, String>{kLocalGuardianContactId: 'Dada'};
       expect(ContactLabels.forChild(f.guardian, age: f.ageLock, nicknames: nicks), 'Dada');
-      expect(ContactLabels.forGuardian(f.guardian, childName: f.childName, nicknames: nicks), 'Dad (Ivy calls you Dada)');
+      expect(ContactLabels.forGuardian(f.guardian, childName: f.childName, nicknames: nicks), 'Ivy calls you Dada');
       expect(f.grownups.single.id, kLocalGuardianContactId);
     });
   });

@@ -209,9 +209,11 @@ class ChildHome extends StatelessWidget {
   }
 
   /// Tile ids a guardian hid with a switch (Messages is never one of them).
-  Set<String> get _hiddenIds => <String>{
+  Set<String> _hiddenIdsFor(BuildContext context) => <String>{
         for (final MapEntry<String, String> e in kTileOverrideKey.entries)
           if (!isTileVisible(overrides, e.value) && tileHideable(e.key)) e.key,
+        // "My weeks" needs two named grown-ups; with no family it would print placeholders, so it waits for one.
+        if (!GrownupLabelScope.of(context).hasFamily) 'weeks',
       };
 
   NicknameRepository _nicknameRepo() {
@@ -303,7 +305,7 @@ class ChildHome extends StatelessWidget {
   }
 
   Widget _bandMore(BuildContext context, FamilyChildSnapshot f, String band) => ChildBandMoreScreen(
-        band: band, age: childAge, hasBirthday: f.birthday != null, hidden: _hiddenIds,
+        band: band, age: childAge, hasBirthday: f.birthday != null, hidden: _hiddenIdsFor(context),
         loadHidden: _suiteHidden,
         destination: (BuildContext c, String id) => _bandDestination(c, id, f, band),
         speak: null,
@@ -332,7 +334,7 @@ class ChildHome extends StatelessWidget {
     final ChildGrowth? gr = growth;
     return BandHome(
       band: band, age: childAge, childName: childName,
-      tileIds: visibleHomeIds(band, childAge, viewTiles: f.view.tiles, hidden: _hiddenIds),
+      tileIds: visibleHomeIds(band, childAge, viewTiles: f.view.tiles, hidden: _hiddenIdsFor(context)),
       destination: (BuildContext x, String id) => _bandDestination(x, id, f, band),
       unreadDot: unreadCount > 0, clock: clock,
       presence: presence == null ? null : _PresenceCard(presence!, childName: childName),
