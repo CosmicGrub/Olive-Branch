@@ -7974,7 +7974,7 @@ a new band is **held until a guardian releases it** (the default): the band she 
 the first time anything touched her is the baseline, a birthday cannot move her past it,
 and releasing is a change in the history. A **birthday is a preview, not a surprise**:
 the guardian sees what changes before it does; she gets one quiet line in her last week
-(sleeps, never a counter or task), which a guardian can hide. A Feb 29 birthday is held on
+(the caption "Your birthday is this week.", with NO number on her home, as in the prototype; the count of sleeps is on the My birthday screen only; never a counter or task), which a guardian can hide. A Feb 29 birthday is held on
 Mar 1 in a non-leap year.
 
 **Storage seam.** `client/lib/family_structure_store.dart`: `FamilyStore` is two methods
