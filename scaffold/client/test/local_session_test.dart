@@ -12,7 +12,7 @@ void main() {
   group('LocalSessionServer / LocalSessionClient — a real HTTP round-trip', () {
     test('a real turn payload is received exactly as sent', () async {
       LocalTurnPayload? received;
-      final server = LocalSessionServer(onTurnReceived: (p) => received = p);
+      final server = LocalSessionServer(onTurnReceived: (p) => received = p, bindAddresses: [InternetAddress.loopbackIPv4], allowLoopback: true);
       await server.start();
       addTearDown(server.stop);
 
@@ -29,7 +29,7 @@ void main() {
 
     test('multiple real turns arrive in order, each one replacing the last', () async {
       final receivedRounds = <int>[];
-      final server = LocalSessionServer(onTurnReceived: (p) => receivedRounds.add(p['rounds'] as int));
+      final server = LocalSessionServer(onTurnReceived: (p) => receivedRounds.add(p['rounds'] as int), bindAddresses: [InternetAddress.loopbackIPv4], allowLoopback: true);
       await server.start();
       addTearDown(server.stop);
 
@@ -44,7 +44,7 @@ void main() {
 
     test('a malformed payload is refused, not crashed on', () async {
       var receivedCount = 0;
-      final server = LocalSessionServer(onTurnReceived: (_) => receivedCount++);
+      final server = LocalSessionServer(onTurnReceived: (_) => receivedCount++, bindAddresses: [InternetAddress.loopbackIPv4], allowLoopback: true);
       await server.start();
       addTearDown(server.stop);
 
@@ -53,7 +53,7 @@ void main() {
       // "a foreign/malformed sender" case this server's own doc comment
       // says must never crash it.
       final client = HttpClient();
-      final request = await client.postUrl(Uri.parse('http://127.0.0.1:${server.port}/turn'));
+      final request = await client.postUrl(Uri.parse('http://127.0.0.1:${server.port}/t'));
       request.write('not json');
       final response = await request.close();
       expect(response.statusCode, 400);
@@ -62,7 +62,7 @@ void main() {
     });
 
     test('an unknown path is refused with 404, not silently accepted', () async {
-      final server = LocalSessionServer(onTurnReceived: (_) {});
+      final server = LocalSessionServer(onTurnReceived: (_) {}, bindAddresses: [InternetAddress.loopbackIPv4], allowLoopback: true);
       await server.start();
       addTearDown(server.stop);
 
@@ -77,7 +77,7 @@ void main() {
       // A server that was started and stopped -- the real "peer went
       // offline" case, using a genuinely closed real socket rather than a
       // guessed unused port.
-      final server = LocalSessionServer(onTurnReceived: (_) {});
+      final server = LocalSessionServer(onTurnReceived: (_) {}, bindAddresses: [InternetAddress.loopbackIPv4], allowLoopback: true);
       await server.start();
       final closedPort = server.port!;
       await server.stop();

@@ -33,69 +33,90 @@
 library;
 
 import 'dart:async';
+import 'dart:convert' show base64Url;
 import 'dart:io';
+import 'dart:math' show Random;
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
-/// RFC 6763: ASCII letters/digits/hyphens only, 1-15 chars, no leading/
-/// trailing/doubled hyphen. "olivebranch" (11) fits with room to spare.
-const String localServiceType = '_olivebranch._tcp';
+import 'play_admission.dart';
 
-/// A real, resolved peer on the local network — host and port this device
-/// can actually open a connection to, not just a name that was seen.
+/// The mDNS service type. RFC 6763: ASCII letters, digits and hyphens, 1-15 characters. Chosen to reveal as little as a
+/// type can: no app or brand name, no word like "family" or "child" (it was `_olivebranch._tcp`). It is still a constant,
+/// so "some app advertises this type" remains unavoidably observable to anyone on the same network; everything else
+/// about a session is a seat label and a random per-lobby token that changes every time.
+const String localServiceType = '_gp._tcp';
+
+/// A real, resolved peer on the local network — host and port this device can actually open a connection to.
+/// Nothing in it is a name: [name] is only a seat label ("Player one"), [token] the peer's per-lobby random key.
 class LocalPeer {
-  const LocalPeer({required this.host, required this.port, required this.role, required this.name});
+  const LocalPeer({required this.host, required this.port, required this.role, required this.name, this.token});
   final String host;
   final int port;
-  /// 'dad' or 'ivy' — same real identity vocabulary call_screen.dart
-  /// already uses, carried in the mDNS TXT record so each side knows who
-  /// it found without a separate handshake round-trip.
+
+  /// 'seat1' / 'seat2' (older callers compared against 'ivy' / 'dad'; nothing identifying travels any more).
   final String role;
   final String name;
 
+  /// The peer's lobby token (random, per lobby, rotates): what tells two nearby lobbies apart. Null for a test peer.
+  final String? token;
+
   @override
-  String toString() => 'LocalPeer($name, $role, $host:$port)';
+  String toString() => 'LocalPeer($name)';
 }
 
-/// Advertises THIS device on the local network and, at the same time,
-/// listens for the other side. Symmetric by design — a same-room pairing
-/// has no natural "server" and "client" role at the discovery layer, only
-/// at the small HTTP hop local_session.dart builds on top of once a peer
-/// is found.
+/// Advertises THIS device on the local network and, at the same time, listens for the other side. Symmetric by design.
+///
+/// WHAT IT BROADCASTS (owner requirement 2026-11-08): the instance name is the seat label "Player one" or "Player two";
+/// the TXT record has exactly two entries, `s` (the seat digit) and `k` (a random per-lobby token, the lobby's public key
+/// from play_admission.dart when there is one). No name, no model, no family or device id, no role, and nothing that is
+/// the same from one session to the next. Peers disambiguate by token and the admission handshake, never by names.
+/// The seat is random per lobby; if two nearby devices show the same seat, the one with the smaller token flips.
 class LocalDiscovery {
-  LocalDiscovery({required this.role, required this.displayName, required this.servePort});
+  LocalDiscovery({required this.role, required this.displayName, required this.servePort, this.lobbyToken, int? seat})
+      : _seat = seat ?? randomSeat();
 
+  /// Kept for call compatibility; NEVER put on the wire.
   final String role;
   final String displayName;
   final int servePort;
+
+  /// The lobby's public key token (play_admission.dart). Null makes a random one (no admission configured).
+  final String? lobbyToken;
+  int _seat;
+  late final String _token = lobbyToken ?? _randomToken();
+
+  static String _randomToken() => base64Url.encode(List<int>.generate(24, (_) => Random.secure().nextInt(256))).replaceAll('=', '');
 
   BonsoirBroadcast? _broadcast;
   BonsoirDiscovery? _discovery;
   StreamSubscription<BonsoirDiscoveryEvent>? _eventSub;
   final _peers = StreamController<LocalPeer>.broadcast();
   final _lost = StreamController<String>.broadcast();
+  final Map<String, String> _shown = <String, String>{};
 
-  /// A real, resolved peer, once found. May fire more than once for the
-  /// same peer (a service can be re-resolved) — callers dedupe on
-  /// [LocalPeer.host] the same "not equal to what I've already seen"
-  /// pattern this codebase already uses for its dev-only pending-call poll
-  /// (main_live_child_call_test.dart's own `_lastSeenKey`).
+  int get seat => _seat;
+  String get seatName => seatLabel(_seat);
+
+  /// A real, resolved peer, once found. May fire more than once for the same peer.
   Stream<LocalPeer> get peers => _peers.stream;
 
-  /// The peer's own [LocalPeer.name], when a previously-found service goes
-  /// away (wifi dropped, the other app closed) — real, not inferred from a
-  /// timeout, since bonsoir surfaces this as its own event type.
+  /// The seat label of a previously-found peer that went away.
   Stream<String> get lost => _lost.stream;
 
-  Future<void> start() async {
-    final broadcast = BonsoirBroadcast(
-      service: BonsoirService(
-        name: '$displayName-$role',
+  /// What this device puts on the network, exposed so a test can prove it names nothing.
+  @visibleForTesting
+  BonsoirService advertisedService() => _service();
+
+  BonsoirService _service() => BonsoirService(
+        name: seatLabel(_seat),
         type: localServiceType,
         port: servePort,
-        attributes: {'role': role, 'name': displayName},
-      ),
-    );
+        attributes: <String, String>{'s': '$_seat', 'k': _token},
+      );
+
+  Future<void> start() async {
+    final broadcast = BonsoirBroadcast(service: _service());
     _broadcast = broadcast;
     await broadcast.ready;
     await broadcast.start();
@@ -107,53 +128,66 @@ class LocalDiscovery {
     await discovery.start();
   }
 
-  /// Subscribes to a discovery event stream and KEEPS the subscription so
-  /// [stop] can cancel it. (It used to be dropped on the floor: bonsoir's
-  /// stream is an EventChannel broadcast, so every pairing session left a live
-  /// listener behind that still held this object, and an event arriving after
-  /// [stop] closed the controllers would have thrown "Cannot add event after
-  /// closing".) Public only so a test can feed it a fake stream.
+  /// Subscribes to a discovery event stream and KEEPS the subscription so [stop] can cancel it. Public only so a test
+  /// can feed it a fake stream.
   @visibleForTesting
   void listenToEvents(Stream<BonsoirDiscoveryEvent>? events) {
     unawaited(_eventSub?.cancel());
     _eventSub = events?.listen(_handleDiscoveryEvent);
   }
 
+  Future<void> _flipSeat(int next) async {
+    _seat = next;
+    try {
+      await _broadcast?.stop();
+      final broadcast = BonsoirBroadcast(service: _service());
+      _broadcast = broadcast;
+      await broadcast.ready;
+      await broadcast.start();
+    } catch (_) {
+      // Advertising again failed; the next lobby starts clean.
+    }
+  }
+
   void _handleDiscoveryEvent(BonsoirDiscoveryEvent event) {
     switch (event.type) {
       case BonsoirDiscoveryEventType.discoveryServiceFound:
-        // Not yet connectable — no host until resolved. Resolving is what
-        // actually reaches the network a second time, so this is not
-        // skippable busywork; a "found" event alone is not enough to dial.
+        // Not yet connectable — no host until resolved.
         unawaited(event.service?.resolve(discovery!.serviceResolver));
       case BonsoirDiscoveryEventType.discoveryServiceResolved:
         final service = event.service;
         if (service is ResolvedBonsoirService && service.host != null) {
-          // Never a peer talking to itself — this device's own broadcast is
-          // visible to its own discovery browse on some platforms, and a
-          // same-room pairing with exactly one other real person has no use
-          // for that.
-          if (service.name == '$displayName-$role') return;
+          final token = service.attributes['k'];
+          // Never a peer talking to itself: our own token is how we recognise our own broadcast.
+          if (token == null || token == _token) return;
+          // Everything a peer sends is untrusted: only a plain digit seat and an opaque token are read, and the only
+          // text ever shown is OUR seat label for that digit.
+          final peerSeat = parseSeat(service.attributes['s']) ?? 0;
+          final shown = peerSeat == 0 ? kNeutralPeerName : seatLabel(peerSeat);
+          _shown[service.name] = shown;
+          if (peerSeat != 0) {
+            final next = seatAfterClash(mySeat: _seat, myToken: _token, peerSeat: peerSeat, peerToken: token);
+            if (next != _seat) unawaited(_flipSeat(next));
+          }
           _peers.add(LocalPeer(
             host: service.host!,
             port: service.port,
-            role: service.attributes['role'] ?? 'unknown',
-            name: service.attributes['name'] ?? service.name,
+            role: 'seat$peerSeat',
+            name: shown,
+            token: token,
           ));
         }
       case BonsoirDiscoveryEventType.discoveryServiceLost:
-        final name = event.service?.attributes['name'];
-        if (name != null) _lost.add(name);
+        final svc = event.service;
+        final name = svc == null ? null : _shown.remove(svc.name);
+        if (name != null && !_lost.isClosed) _lost.add(name);
       default:
         return;
     }
   }
 
-  /// Exposed only so [_handleDiscoveryEvent] can reach the same
-  /// [ServiceResolver] instance bonsoir minted for this discovery session —
-  /// resolving through a different one is a real, documented bonsoir
-  /// footgun (each platform's own resolver instance owns the in-flight
-  /// resolve state), not a style preference.
+  /// Exposed only so [_handleDiscoveryEvent] can reach the same ServiceResolver instance bonsoir minted for this
+  /// discovery session.
   BonsoirDiscovery? get discovery => _discovery;
 
   Future<void> stop() async {
@@ -161,8 +195,16 @@ class LocalDiscovery {
     final StreamSubscription<BonsoirDiscoveryEvent>? sub = _eventSub;
     _eventSub = null;
     await sub?.cancel();
-    await _broadcast?.stop();
-    await _discovery?.stop();
+    try {
+      await _broadcast?.stop();
+    } catch (_) {
+      // Nothing to stop (never started, or the platform is gone).
+    }
+    try {
+      await _discovery?.stop();
+    } catch (_) {
+      // Same.
+    }
     await _peers.close();
     await _lost.close();
   }

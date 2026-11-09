@@ -137,6 +137,7 @@ for spec in \
   "version sync + release tooling helpers (docs/RELEASING.md)|tools/test/version_sync.test.mjs" \
   "child homes: per-age tiles, renames, More, your-home-grows, drift guard|tools/test/child_home_vectors.test.mjs" \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
+  "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)

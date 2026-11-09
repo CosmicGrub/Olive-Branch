@@ -40,7 +40,11 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'lan_bind.dart';
+import 'lan_pairing_transport.dart' show isLanAddress;
 import 'local_discovery.dart';
+import 'play_admission.dart';
 
 /// A locally-received turn payload, handed to whoever is listening —
 /// opaque JSON at this layer, given shape by the caller (see
@@ -48,64 +52,115 @@ import 'local_discovery.dart';
 /// currently defines).
 typedef LocalTurnPayload = Map<String, dynamic>;
 
-/// Runs on THIS device, listening for the other side's turns. One real
-/// endpoint, `POST /turn`, matching this file's own "deliberately dumb"
-/// posture — no auth beyond "you found this device on the local network
-/// you are both physically on," the same trust boundary a same-room
-/// hand-off already carries.
+/// Runs on THIS device, listening for the other side's turns.
+///
+/// PRIVACY (owner requirement 2026-11-08). It listens ONLY on the addresses of real LAN interfaces (lan_bind.dart),
+/// never on every interface, a VPN tunnel or a cellular link; it answers only a LAN source address; it is stopped by
+/// [stop] when the game ends or the app leaves the foreground (play_lifecycle.dart); and its responses and requests
+/// carry no `Server` or `User-Agent` header and no app-specific header or path (`/h` hello, `/t` turn).
+///
+/// Without an [admission] it keeps the older, open behaviour (single-device previews and legacy tests). With one, a
+/// turn is accepted only as an encrypted frame from an admitted peer (play_admission.dart, play_frame.dart).
 class LocalSessionServer {
-  LocalSessionServer({required this.onTurnReceived});
+  LocalSessionServer({
+    required this.onTurnReceived,
+    this.admission,
+    this.bindAddresses,
+    this.allowLoopback = false,
+  });
 
   final void Function(LocalTurnPayload payload) onTurnReceived;
+  final PlayAdmission? admission;
 
-  HttpServer? _server;
-  int? get port => _server?.port;
+  /// Addresses to listen on. Null = the active LAN interfaces ([lanBindAddresses]). Tests pass loopback.
+  final List<InternetAddress>? bindAddresses;
 
-  /// Binds to port 0 (OS-assigned) on every local interface at once —
-  /// deliberately not scoped to whichever single address the caller thinks
-  /// is "this device's own." Confirmed real, on real hardware, why that
-  /// matters: a device can have more than one active network path
-  /// simultaneously (real Wi-Fi plus, say, an always-on personal VPN's own
-  /// tunnel interface), and there is no reliable way to know in advance
-  /// which one local_discovery.dart's mDNS broadcast will end up advertising
-  /// as this device's reachable host — that choice is bonsoir/the OS's mDNS
-  /// stack's own, made independently of whatever local_play_screen.dart
-  /// might separately guess via ownLocalIPv4(). The two disagreeing is
-  /// exactly the failure this two-device test caught: the server bound only
-  /// to a VPN tunnel address while mDNS kept advertising the real Wi-Fi
-  /// address, so the peer's POST to that real, advertised address hit a
-  /// closed port — "Connection refused", confirmed via a direct curl probe
-  /// from the other device, not guessed. Binding to every interface at once
-  /// means whichever address mDNS ends up advertising, this server is
-  /// already listening there — nothing here has to guess right.
+  /// Tests only: also answer loopback sources.
+  final bool allowLoopback;
+
+  final List<HttpServer> _servers = <HttpServer>[];
+  int? get port => _servers.isEmpty ? null : _servers.first.port;
+  bool get isListening => _servers.isNotEmpty;
+
+  /// Binds one shared OS-assigned port on every LAN address at once (see lan_bind.dart for why every one, and only
+  /// those). Throws [LocalSessionException] when the device is on no LAN: there is nothing safe to listen on.
   Future<void> start() async {
-    final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
-    _server = server;
-    server.listen((request) async {
-      if (request.method != 'POST' || request.uri.path != '/turn') {
-        request.response.statusCode = HttpStatus.notFound;
-        await request.response.close();
+    final List<InternetAddress> addrs = bindAddresses ?? await lanBindAddresses();
+    if (addrs.isEmpty) {
+      throw const LocalSessionException("Can't find a local network to play on right now.");
+    }
+    int shared = 0;
+    for (final InternetAddress a in addrs) {
+      final HttpServer server = await HttpServer.bind(a, shared);
+      shared = server.port;
+      server.serverHeader = null;
+      _servers.add(server);
+      server.listen(_handle);
+    }
+  }
+
+  Future<void> _handle(HttpRequest request) async {
+    final HttpResponse res = request.response;
+    try {
+      final InternetAddress? from = request.connectionInfo?.remoteAddress;
+      final bool hello = request.uri.path == '/h' && admission != null;
+      final bool turn = request.uri.path == '/t';
+      if (request.method != 'POST' || !(hello || turn) || from == null || !isLanAddress(from, allowLoopback: allowLoopback)) {
+        res.statusCode = HttpStatus.notFound;
+        await res.close();
         return;
       }
-      try {
-        final body = await utf8.decoder.bind(request).join();
-        final payload = jsonDecode(body) as Map<String, dynamic>;
-        onTurnReceived(payload);
-        request.response.statusCode = HttpStatus.ok;
-      } catch (e) {
-        // A malformed payload from a genuine peer must never crash this
-        // device's own game state — same "never blame a foreign payload"
-        // posture call_screen.dart's own DataReceivedEvent handler already
-        // holds itself to.
-        request.response.statusCode = HttpStatus.badRequest;
+      // Size cap (413) before anything is parsed: a declared length over the cap, or a chunked body that grows past
+      // it, is refused without being buffered whole. The cap holds with or without admission.
+      if (request.contentLength > kMaxTurnBytes) {
+        res.statusCode = HttpStatus.requestEntityTooLarge;
+        await res.close();
+        return;
       }
-      await request.response.close();
-    });
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in request) {
+        builder.add(chunk);
+        if (builder.length > kMaxTurnBytes) {
+          res.statusCode = HttpStatus.requestEntityTooLarge;
+          await res.close();
+          return;
+        }
+      }
+      final bytes = builder.takeBytes();
+      final remote = from.address;
+      if (hello) {
+        final answer = await admission!.handleHello(jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>, remote);
+        if (answer == null) {
+          res.statusCode = HttpStatus.noContent; // silence is indistinguishable from nobody listening
+        } else {
+          res.headers.contentType = ContentType.binary;
+          res.write(jsonEncode(answer));
+        }
+        await res.close();
+        return;
+      }
+      final List<int>? plain = admission == null ? bytes : await admission!.openTurn(bytes, remote);
+      if (plain == null) {
+        res.statusCode = HttpStatus.unauthorized;
+        await res.close();
+        return;
+      }
+      final payload = jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
+      onTurnReceived(payload);
+      res.statusCode = HttpStatus.ok;
+    } catch (e) {
+      // A malformed payload from a genuine peer must never crash this device's own game state.
+      res.statusCode = HttpStatus.badRequest;
+    }
+    await res.close();
   }
 
   Future<void> stop() async {
-    await _server?.close(force: true);
-    _server = null;
+    final List<HttpServer> all = List<HttpServer>.of(_servers);
+    _servers.clear();
+    for (final HttpServer s in all) {
+      await s.close(force: true);
+    }
   }
 }
 
@@ -119,17 +174,47 @@ class LocalSessionServer {
 /// make per activity, the same way call_screen.dart's own reconnect budget
 /// is a call-specific choice, not a transport-layer default.
 class LocalSessionClient {
-  LocalSessionClient(this.peer);
+  LocalSessionClient(this.peer, {this.session});
   final LocalPeer peer;
 
-  Future<void> sendTurn(LocalTurnPayload payload) async {
-    final client = HttpClient();
+  /// The authenticated, encrypting session from [PlaySession.hello]; null sends the legacy plain turn.
+  final PlaySession? session;
+
+  HttpClient _client() => HttpClient()..userAgent = null;
+
+  /// One POST of JSON to `/h` for [PlaySession.hello]: the answer, or null for silence or any failure.
+  Future<Map<String, dynamic>?> postHello(Map<String, dynamic> body) async {
+    final client = _client();
     try {
       final request = await client
-          .postUrl(Uri.parse('http://${peer.host}:${peer.port}/turn'))
+          .postUrl(Uri.parse('http://${peer.host}:${peer.port}/h'))
           .timeout(const Duration(seconds: 5));
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(payload));
+      request.headers.contentType = ContentType.binary;
+      request.write(jsonEncode(body));
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      if (response.statusCode != HttpStatus.ok) {
+        await response.drain<void>();
+        return null;
+      }
+      final decoded = jsonDecode(await utf8.decoder.bind(response).join());
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> sendTurn(LocalTurnPayload payload) async {
+    final client = _client();
+    try {
+      final request = await client
+          .postUrl(Uri.parse('http://${peer.host}:${peer.port}/t'))
+          .timeout(const Duration(seconds: 5));
+      request.headers.contentType = ContentType.binary;
+      final plain = utf8.encode(jsonEncode(payload));
+      final s = session;
+      request.add(s == null ? plain : await s.sealTurn(plain));
       final response = await request.close().timeout(const Duration(seconds: 5));
       if (response.statusCode != HttpStatus.ok) {
         throw LocalSessionException('Peer refused the turn (${response.statusCode}).');
@@ -137,8 +222,10 @@ class LocalSessionClient {
       await response.drain<void>();
     } on LocalSessionException {
       rethrow;
+    } on ArgumentError {
+      throw const LocalSessionException('That move is too big to send.');
     } catch (e) {
-      throw LocalSessionException("Couldn't reach ${peer.name} right now.");
+      throw const LocalSessionException("Couldn't reach the other player right now.");
     } finally {
       client.close();
     }
