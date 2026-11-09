@@ -62,14 +62,14 @@ void main() {
   group('text and labels', () {
     test('sanitizePeerText strips control, bidi and zero-width characters and limits length', () {
       expect(sanitizePeerText('Ivy\u0000\u0007'), 'Ivy');
-      expect(sanitizePeerText('‮evil‬'), 'evil');
-      expect(sanitizePeerText('a​b⁦c'), 'a b c');
+      expect(sanitizePeerText('\u202eevil\u202c'), 'evil');
+      expect(sanitizePeerText('a\u200bb\u2066c'), 'a b c');
       expect(sanitizePeerText('  lots   of\n\tspace '), 'lots of space');
       expect(sanitizePeerText('x' * 100).length, 24);
-      expect(sanitizePeerText('‮\u0000'), kNeutralPeerName);
+      expect(sanitizePeerText('\u202e\u0000'), kNeutralPeerName);
       expect(sanitizePeerText(null), kNeutralPeerName);
       expect(sanitizePeerText('Zoe \u{1F600}'), 'Zoe \u{1F600}');
-      expect(sanitizePeerText('${'\u{1F600}' * 40}', max: 5).runes.length, 5, reason: 'limits characters, never splits one');
+      expect(sanitizePeerText('\u{1F600}' * 40, max: 5).runes.length, 5, reason: 'limits characters, never splits one');
     });
 
     test('the neutral label is olive-xxxx and says nothing', () {
@@ -87,7 +87,7 @@ void main() {
           service: ResolvedBonsoirService(name: name, type: '_x._tcp', port: 9, host: '10.0.0.7', attributes: attrs));
       d.listenToEvents(Stream<BonsoirDiscoveryEvent>.fromIterable(<BonsoirDiscoveryEvent>[
         resolved('olive-ab12', <String, String>{'r': 'g'}),
-        resolved('old', <String, String>{'name': '‮Mallory\u0000', 'role': 'dad'}),
+        resolved('old', <String, String>{'name': '\u202eMallory\u0000', 'role': 'dad'}),
       ]));
       await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(seen.first.name, kNeutralPeerName);

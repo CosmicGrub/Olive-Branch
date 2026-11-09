@@ -15,7 +15,7 @@ void main() {
     final PlayAdmission adm = PlayAdmission.forAdult(adult, <PairedKid>[
       PairedKid(certId: 'c', childDeviceKey: child.publicKey, childId: 'k', deviceName: 'T', issuedAtMs: 1)
     ])..openWindow();
-    await t.pumpWidget(MaterialApp(home: Scaffold(body: PlayConfirmCard(admission: adm, peerLabel: '‮Dad\u0000'))));
+    await t.pumpWidget(MaterialApp(home: Scaffold(body: PlayConfirmCard(admission: adm, peerLabel: '\u202eDad\u0000'))));
     expect(find.byKey(const Key('playConfirmCard')), findsNothing);
     final PlaySession? s = await t.runAsync<PlaySession?>(() async {
       Map<String, dynamic>? sent;
