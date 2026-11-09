@@ -205,3 +205,8 @@ rebuilt here: the child shows an adult-gate card (no keypad until a grown-up tap
 grown-up-opened window with a PIN-based key exchange and a confirmation word and picture
 (MASTERFILE section 8.5.11). The ledger rule `pairing.codeShape` still describes the server's 6-digit code, which is
 unchanged and still available as the account-code option.
+
+**Pairing-code alphabet, resolved (2026-11-08).** The owner chose 0-9. The server issues 0-9 zero-padded and the client
+field accepts 0-9; the prototype's generator (`codeOf()` in live-core.js, 1-9 so a nine-key pad could type any code) is a
+prototype simplification and is not the rule. `pairing.codeShape` is therefore `implemented`, and the generator note in
+LIVE-API.md is superseded by this paragraph. The same change gave the adult keypad a 0 key.

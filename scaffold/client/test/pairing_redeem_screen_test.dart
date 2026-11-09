@@ -25,6 +25,12 @@ void main() {
     expect(find.byKey(const Key('pairingScanQrButton')), findsOneWidget);
   });
 
+  testWidgets('the code field takes digits 0 to 9 (owner decision: the server issues 0-9, not the prototype 1-9), six at most, nothing else', (tester) async {
+    await pump(tester, client: MockClient((req) async => http.Response('{}', 404)), onRedeemed: (_) {});
+    await tester.enterText(find.byKey(const Key('pairingCodeField')), '0a1-2 3045678');
+    expect(tester.widget<TextField>(find.byKey(const Key('pairingCodeField'))).controller!.text, '012304');
+  });
+
   testWidgets('tapping "scan QR code" swaps in the camera view', (tester) async {
     await pump(tester, client: MockClient((req) async => http.Response('{}', 404)),
       onRedeemed: (_) {});

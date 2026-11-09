@@ -101,13 +101,15 @@ final List<RuleCheck> ruleChecks = <RuleCheck>[
     final Map<String, Object?> fifth = _m((_m(r['pinLockout'])['attempts']! as List<Object?>)[4]);
     return is403 && fifth['status'] == 403 ? const Res.ok() : Res.differs('real server answers 403 pin_locked and pin_incorrect; the prototype answers ${fifth['status']} ${fifth['code']} and invalid_pin');
   }),
-  RuleCheck('pairing.codeShape', <String>['sub:pairing-code rules'], UnitStatus.differs, (Map<String, Object?> r) async {
+  RuleCheck('pairing.codeShape', <String>['sub:pairing-code rules'], UnitStatus.implemented, (Map<String, Object?> r) async {
     final String s = _text('lib/pairing_redeem_screen.dart');
     final bool six = s.contains('maxLength: 6');
     final bool anyDigit = s.contains('FilteringTextInputFormatter.digitsOnly');
     final Map<String, Object?> p = _m(r['pairing']);
     if (!six || p['codeLength'] != 6) return const Res.differs('code length differs');
-    return anyDigit && p['alphabet'] == '1-9' ? const Res.differs('the field accepts 0 to 9; the prototype codes are 1 to 9 only (owner decision open: alphabet)') : const Res.ok();
+    // RESOLVED (owner, 2026-11-08): 0-9. The server issues 0-9 (pool.ts generateNumericCode) and the field accepts 0-9;
+    // the prototype generator's 1-9 is a prototype simplification, not the rule.
+    return anyDigit ? const Res.ok() : const Res.differs('the code field no longer accepts digits');
   }),
   RuleCheck('messages.watchedMeansPlayedThrough', <String>['rule:watched-played-through'], UnitStatus.pending, (Map<String, Object?> r) async {
     final bool built = _libHas('not_played_through') || _libHas('playedThrough');
