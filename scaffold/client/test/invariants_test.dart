@@ -11,6 +11,7 @@ import 'package:olive_client/child_home.dart';
 import 'package:olive_client/guardian_home.dart';
 import 'package:olive_client/kiosk_channel.dart';
 import 'package:olive_client/kiosk_shell.dart';
+import 'package:olive_client/adult_gate.dart';
 import 'package:olive_client/pin_gate.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -349,7 +350,9 @@ void main() {
       await t.pumpAndSettle();
       ch.emit(KioskChannel.eExited);
       await t.pumpAndSettle();
-      expect(find.byType(PinGate), findsOneWidget);
+      // After a defeat the CHILD sees the calm card, never the adult keypad.
+      expect(find.byType(AdultGateCard), findsOneWidget);
+      expect(find.byType(PinGate), findsNothing);
       expect(find.byWidget(child), findsNothing);
     });
 
@@ -359,7 +362,8 @@ void main() {
       await t.pumpAndSettle();
       ch.emit(KioskChannel.eBackground);
       await t.pumpAndSettle();
-      expect(find.byType(PinGate), findsOneWidget);
+      expect(find.byType(AdultGateCard), findsOneWidget);
+      expect(find.byType(PinGate), findsNothing);
     });
 
     testWidgets('the correct PIN after a defeat returns to the child surface',
@@ -368,6 +372,8 @@ void main() {
       await t.pumpWidget(shellWith(ch, pin: '5193'));
       await t.pumpAndSettle();
       ch.emit(KioskChannel.eExited);
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('adultGateGrownUp')));
       await t.pumpAndSettle();
       for (final d in ['5', '1', '9', '3']) {
         await t.tap(find.text(d));
@@ -383,6 +389,8 @@ void main() {
       await t.pumpWidget(shellWith(ch, pin: '9999'));
       await t.pumpAndSettle();
       ch.emit(KioskChannel.eExited);
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('adultGateGrownUp')));
       await t.pumpAndSettle();
       for (var attempt = 0; attempt < 5; attempt++) {
         final keys = t

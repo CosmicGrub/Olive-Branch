@@ -4,7 +4,7 @@
 //
 // Wraps the child side of the app. Owns a LockController-driven LockState,
 // engages the native lock on mount via kiosk_channel.dart, and renders
-// exactly one of ChildHome / PinGate / a locked-out screen / the guardian
+// exactly one of ChildHome / AdultGate / a locked-out screen / the guardian
 // escalation surface through canRender()'s deny-by-default gate — never
 // anything else, and the guardian surface only after a real PIN+biometric
 // escalation, never by falling through.
@@ -26,7 +26,7 @@
 //
 // Guardian escalation (`escalate()` in lock_controller.dart, PIN+biometric ->
 // `guardian_escalation`) is now wired end to end: a small persistent
-// affordance over the locked child surface starts it, PinGate collects the
+// affordance over the locked child surface starts it, the AdultGate (calm card, then the adult-only PinGate keypad) collects the
 // PIN (reused as-is — it never knows whose code it is), [verifyBiometric]
 // runs the real factor, and a successful `escalate()` lands on
 // guardian_escalation_screen.dart — the "guardian settings reachable from
@@ -42,7 +42,7 @@ import 'call_screen.dart';
 import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
-import 'pin_gate.dart';
+import 'adult_gate.dart';
 
 class KioskShell extends StatefulWidget {
   const KioskShell({
@@ -144,11 +144,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   }
 
   Future<void> _attemptBreakGlass() async {
-    final code = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        builder: (_) => PinGate(digits: widget.pinDigits, onComplete: Navigator.of(context).pop),
-      ),
-    );
+    // The grown-up already tapped "I'm the grown-up" on the locked-out screen: straight to the keypad.
+    final code = await askAdultPin(context, digits: widget.pinDigits, startOpen: true);
     if (code == null || !mounted) return;
     if (await widget.verifyPin(code) && mounted) {
       setState(() => _state = lock.breakGlass(_state, DateTime.now()).state);
@@ -161,11 +158,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   /// cooldown) gets one deliberately generic message: the child sitting
   /// there watching (§8.3's own framing) never learns which factor failed.
   Future<void> _attemptEscalation() async {
-    final pin = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        builder: (_) => PinGate(digits: widget.pinDigits, onComplete: Navigator.of(context).pop),
-      ),
-    );
+    // The shield is reachable by a child: she gets the calm card first, never a keypad.
+    final pin = await askAdultPin(context, digits: widget.pinDigits);
     if (pin == null || !mounted) return;
     final pinOk = await widget.verifyPin(pin);
     if (!mounted) return;
@@ -206,7 +200,7 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
       ]);
     }
     if (lock.canRender(_state, lock.Surface.pinGate, now)) {
-      return PinGate(digits: widget.pinDigits, onComplete: _onPinComplete);
+      return AdultGate(digits: widget.pinDigits, onPin: _onPinComplete);
     }
     if (lock.canRender(_state, lock.Surface.lockedOut, now)) {
       return _LockedOutScreen(
