@@ -40,6 +40,7 @@ import 'device_identity.dart';
 import 'device_role.dart';
 import 'guardian_home_live.dart';
 import 'guardian_local_scope.dart';
+import 'play_notice.dart' show PlayAudience, PlayAudienceScope;
 import 'guardian_onboarding.dart';
 import 'guardian_setup.dart';
 import 'live_boot_plan.dart';
@@ -301,7 +302,9 @@ Widget _guardianApp({
               curve: Curves.easeInOut,
               child: child!,
             );
-            return local == null ? animated : GuardianLocalScope(controller: local, child: animated);
+            // The guardian shell speaks the adult's voice in the ad-hoc play notices (play_notice.dart).
+            final Widget voiced = PlayAudienceScope(audience: PlayAudience.adult, child: animated);
+            return local == null ? voiced : GuardianLocalScope(controller: local, child: voiced);
           },
           home: home,
         );

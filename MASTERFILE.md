@@ -5328,6 +5328,19 @@ Eleven phrases are banned from a child's screen, including **"failed"**, **"poor
 connection"** and **"check your network"** — a five-year-old cannot check her
 network and should not be asked to.
 
+**Ad-hoc play notices have two voices** (owner, 2026-11-08: "softer words for kids and normal words for the adult side"; `play_notice.dart`, `PlayWords`). The voice follows the DEVICE ROLE (`PlayAudienceScope`: the guardian shell is adult, everything else, and a missing scope, is the child's), never anything a peer sends. Same semantics, different words; neither names the child. The child's voice has no digits, names, blame, error words or pressure and never tells a no; the adult is told plainly.
+
+| Moment | Child | Adult |
+|---|---|---|
+| Other device away | *Your game is resting. It will wake up when you are together again.* | *The other device is out of range. The game is saved and will resume when it reconnects.* |
+| Game ended | *All done for now. We can play again whenever you like.* (Okay) | *The game was ended. It is saved if you want to resume it.* (OK) |
+| Finish for now | *Finish for now* / *Keep playing*; *Your game will be saved. We can play again whenever you like.* | *Finish for now* / *Keep playing*; *The game is saved. You can start a new one or resume it later.* |
+| Saved game found | *Your Uno game is still here.* Carry on / Start a new one | *A saved game of Uno was found on this device.* Resume / Start a new game |
+| Rematch offered | *Play again?* Yes / Not now | *The other player asked to play again.* Accept / Decline |
+| Rematch asked | *Asking to play again...* Never mind | *Asking to play again...* Cancel |
+
+A decline is never relayed: the asker only sees that it asked. (The child's saved-game line says "still here", not "waiting": "wait" is one of the banned pressure words.)
+
 The **degradation ladder** is HD → SD → audio-only → banked. The call falls *down*
 the ladder rather than off it, and the bottom rung always works.
 
