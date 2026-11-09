@@ -31,6 +31,8 @@
  * produces an authentication failure on the receiving device.
  */
 
+import { Buffer } from 'node:buffer';
+
 export const ENVELOPE_VERSION = 1;
 export const SEALED_GAME = 'sealed-v1';
 /** Allowed decoded ciphertext sizes, in bytes. */
