@@ -1,9 +1,9 @@
 {
  "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
  "totals": {
-  "implemented": 61,
-  "pending": 130,
-  "differs": 8
+  "implemented": 65,
+  "pending": 128,
+  "differs": 6
  },
  "groups": {
   "birthday": {
@@ -67,19 +67,19 @@
    }
   },
   "play": {
-   "implemented": 9,
-   "pending": 2,
-   "differs": 1,
+   "implemented": 12,
+   "pending": 0,
+   "differs": 0,
    "steps": {
-    "implemented": 4,
-    "pending": 1,
-    "differs": 1
+    "implemented": 6,
+    "pending": 0,
+    "differs": 0
    }
   },
   "rules": {
-   "implemented": 11,
+   "implemented": 12,
    "pending": 4,
-   "differs": 6
+   "differs": 5
   }
  },
  "units": {
@@ -1831,21 +1831,19 @@
    "group": "play",
    "kind": "act",
    "label": "go g-play",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "play.window"
-   ],
-   "note": "PlayWindowScreen exists but drops the time pickers for 15-minute dropdowns: driven through the store instead"
+   ]
   },
   "play.01#e:screen.g": {
    "group": "play",
    "kind": "assert",
    "label": "screen.g = g-play",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "play.window"
-   ],
-   "note": "blocked: an action in play.01 is pending"
+   ]
   },
   "play.02#a0": {
    "group": "play",
@@ -1914,11 +1912,10 @@
    "group": "play",
    "kind": "assert",
    "label": "play.state = winding",
-   "status": "differs",
+   "status": "implemented",
    "rows": [
     "play.window"
-   ],
-   "note": "Flutter says closed, prototype says winding (the prototype winds down AFTER the rest time, Flutter winds down BEFORE it)"
+   ]
   },
   "play.07#a0": {
    "group": "play",
@@ -2131,11 +2128,10 @@
    "group": "rules",
    "kind": "rule",
    "label": "playWindow.states",
-   "status": "differs",
+   "status": "implemented",
    "rows": [
     "play.window"
-   ],
-   "note": "wind-down is placed differently (prototype AFTER the rest time, Flutter BEFORE it): 19:29: Flutter winding, prototype open; 19:30: Flutter closed, prototype winding; 19:44: Flutter closed, prototype winding"
+   ]
   }
  }
 }

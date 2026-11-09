@@ -1,9 +1,9 @@
 {
  "note": "The parity ratchet. A unit that is implemented here may never regress; pending and differs counts may never rise. When progress lowers them, regenerate with PARITY_UPDATE_BASELINE=1 flutter test test/parity/scenario_parity_test.dart and commit.",
  "totals": {
-  "implemented": 61,
-  "pending": 130,
-  "differs": 8
+  "implemented": 65,
+  "pending": 128,
+  "differs": 6
  },
  "units": {
   "birthday.01#a0": "implemented",
@@ -172,8 +172,8 @@
   "offline.05#e:net.k.online": "pending",
   "offline.05#e:screen.k": "pending",
   "offline.06#a0": "pending",
-  "play.01#a0": "pending",
-  "play.01#e:screen.g": "pending",
+  "play.01#a0": "implemented",
+  "play.01#e:screen.g": "implemented",
   "play.02#a0": "implemented",
   "play.02#a1": "implemented",
   "play.02#a2": "implemented",
@@ -181,7 +181,7 @@
   "play.03#a0": "implemented",
   "play.05#a0": "implemented",
   "play.06#a0": "implemented",
-  "play.06#e:play.state": "differs",
+  "play.06#e:play.state": "implemented",
   "play.07#a0": "implemented",
   "play.07#e:play.state": "implemented",
   "rules#ageLock.lockedStaysLocked": "implemented",
@@ -204,6 +204,6 @@
   "rules#pin.lockedAnswer": "differs",
   "rules#pin.lockoutThresholds": "implemented",
   "rules#pin.lockoutThroughTheRealScreen": "implemented",
-  "rules#playWindow.states": "differs"
+  "rules#playWindow.states": "implemented"
  }
 }
