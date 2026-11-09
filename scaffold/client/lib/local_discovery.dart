@@ -37,6 +37,8 @@ import 'dart:io';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import 'play_admission.dart';
+
 /// RFC 6763: ASCII letters/digits/hyphens only, 1-15 chars, no leading/
 /// trailing/doubled hyphen. "olivebranch" (11) fits with room to spare.
 const String localServiceType = '_olivebranch._tcp';
@@ -63,7 +65,15 @@ class LocalPeer {
 /// at the small HTTP hop local_session.dart builds on top of once a peer
 /// is found.
 class LocalDiscovery {
-  LocalDiscovery({required this.role, required this.displayName, required this.servePort});
+  LocalDiscovery({required this.role, required this.displayName, required this.servePort, this.neutral = true});
+
+  /// When true (the default) NOTHING identifying is broadcast: the service name is a random `olive-xxxx` label
+  /// and the TXT record carries only a coarse role, never [displayName] (the child's name must not go out to every
+  /// device on the Wi-Fi). [displayName] is then used only for the older shape. Set false only for a test that
+  /// needs it.
+  final bool neutral;
+  late final String _label = neutralServiceName();
+  final Map<String, String> _shown = <String, String>{};
 
   final String role;
   final String displayName;
@@ -90,10 +100,12 @@ class LocalDiscovery {
   Future<void> start() async {
     final broadcast = BonsoirBroadcast(
       service: BonsoirService(
-        name: '$displayName-$role',
+        name: neutral ? _label : '$displayName-$role',
         type: localServiceType,
         port: servePort,
-        attributes: {'role': role, 'name': displayName},
+        attributes: neutral
+            ? {'r': role == 'ivy' || role == 'child' ? 'c' : 'g'}
+            : {'role': role, 'name': displayName},
       ),
     );
     _broadcast = broadcast;
@@ -133,17 +145,23 @@ class LocalDiscovery {
           // visible to its own discovery browse on some platforms, and a
           // same-room pairing with exactly one other real person has no use
           // for that.
-          if (service.name == '$displayName-$role') return;
+          if (service.name == (neutral ? _label : '$displayName-$role')) return;
+          // Peer text is untrusted: a neutral peer has no name at all, an older one is sanitised.
+          final shown = sanitizePeerText(service.attributes['name']);
+          _shown[service.name] = shown;
+          final r = service.attributes['r'];
           _peers.add(LocalPeer(
             host: service.host!,
             port: service.port,
-            role: service.attributes['role'] ?? 'unknown',
-            name: service.attributes['name'] ?? service.name,
+            role: service.attributes['role'] ?? (r == 'c' ? 'ivy' : r == 'g' ? 'dad' : 'unknown'),
+            name: shown,
           ));
         }
       case BonsoirDiscoveryEventType.discoveryServiceLost:
-        final name = event.service?.attributes['name'];
-        if (name != null) _lost.add(name);
+        final svc = event.service;
+        final name = (svc == null ? null : _shown.remove(svc.name)) ??
+            (svc?.attributes['name'] == null ? null : sanitizePeerText(svc!.attributes['name']));
+        if (name != null && !_lost.isClosed) _lost.add(name);
       default:
         return;
     }

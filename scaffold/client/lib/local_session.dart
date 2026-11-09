@@ -40,7 +40,9 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'local_discovery.dart';
+import 'play_admission.dart';
 
 /// A locally-received turn payload, handed to whoever is listening —
 /// opaque JSON at this layer, given shape by the caller (see
@@ -54,7 +56,11 @@ typedef LocalTurnPayload = Map<String, dynamic>;
 /// you are both physically on," the same trust boundary a same-room
 /// hand-off already carries.
 class LocalSessionServer {
-  LocalSessionServer({required this.onTurnReceived});
+  LocalSessionServer({required this.onTurnReceived, this.admission});
+
+  /// When set, the server answers `POST /hello` and accepts a turn ONLY from an admitted, authenticated peer
+  /// (play_admission.dart). Null keeps the older open behaviour (tests and the pre-pairing preview).
+  final PlayAdmission? admission;
 
   final void Function(LocalTurnPayload payload) onTurnReceived;
 
@@ -82,14 +88,56 @@ class LocalSessionServer {
     final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
     _server = server;
     server.listen((request) async {
-      if (request.method != 'POST' || request.uri.path != '/turn') {
+      final bool hello = request.method == 'POST' && request.uri.path == '/hello' && admission != null;
+      if (request.method != 'POST' || (request.uri.path != '/turn' && !hello)) {
         request.response.statusCode = HttpStatus.notFound;
         await request.response.close();
         return;
       }
       try {
-        final body = await utf8.decoder.bind(request).join();
-        final payload = jsonDecode(body) as Map<String, dynamic>;
+        // Size cap (413) before anything is parsed: a declared length over the cap, or a chunked body that grows
+        // past it, is refused without being buffered whole.
+        if (request.contentLength > kMaxTurnBytes) {
+          request.response.statusCode = HttpStatus.requestEntityTooLarge;
+          await request.response.close();
+          return;
+        }
+        final builder = BytesBuilder(copy: false);
+        await for (final chunk in request) {
+          builder.add(chunk);
+          if (builder.length > kMaxTurnBytes) {
+            request.response.statusCode = HttpStatus.requestEntityTooLarge;
+            await request.response.close();
+            return;
+          }
+        }
+        final bytes = builder.takeBytes();
+        final remote = request.connectionInfo?.remoteAddress.address;
+        if (hello) {
+          final answer = await admission!.handleHello(jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>, remote);
+          if (answer == null) {
+            // Silence is indistinguishable from nobody listening.
+            request.response.statusCode = HttpStatus.noContent;
+          } else {
+            request.response.headers.contentType = ContentType.json;
+            request.response.write(jsonEncode(answer));
+          }
+          await request.response.close();
+          return;
+        }
+        if (admission != null &&
+            !await admission!.authorizeTurn(
+              sid: request.headers.value('x-olive-sid'),
+              seq: request.headers.value('x-olive-seq'),
+              mac: request.headers.value('x-olive-mac'),
+              body: bytes,
+              remote: remote,
+            )) {
+          request.response.statusCode = HttpStatus.unauthorized;
+          await request.response.close();
+          return;
+        }
+        final payload = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
         onTurnReceived(payload);
         request.response.statusCode = HttpStatus.ok;
       } catch (e) {
@@ -119,8 +167,34 @@ class LocalSessionServer {
 /// make per activity, the same way call_screen.dart's own reconnect budget
 /// is a call-specific choice, not a transport-layer default.
 class LocalSessionClient {
-  LocalSessionClient(this.peer);
+  LocalSessionClient(this.peer, {this.session});
   final LocalPeer peer;
+
+  /// The authenticated session from [PlaySession.hello]; null sends turns unsigned (older behaviour).
+  final PlaySession? session;
+
+  /// One POST of JSON to `/hello` for [PlaySession.hello]: the answer, or null for silence or any failure.
+  Future<Map<String, dynamic>?> postHello(Map<String, dynamic> body) async {
+    final client = HttpClient();
+    try {
+      final request = await client
+          .postUrl(Uri.parse('http://${peer.host}:${peer.port}/hello'))
+          .timeout(const Duration(seconds: 5));
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(body));
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      if (response.statusCode != HttpStatus.ok) {
+        await response.drain<void>();
+        return null;
+      }
+      final decoded = jsonDecode(await utf8.decoder.bind(response).join());
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
 
   Future<void> sendTurn(LocalTurnPayload payload) async {
     final client = HttpClient();
@@ -129,7 +203,12 @@ class LocalSessionClient {
           .postUrl(Uri.parse('http://${peer.host}:${peer.port}/turn'))
           .timeout(const Duration(seconds: 5));
       request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(payload));
+      final bodyText = jsonEncode(payload);
+      final s = session;
+      if (s != null) {
+        (await s.headersFor(utf8.encode(bodyText))).forEach(request.headers.set);
+      }
+      request.write(bodyText);
       final response = await request.close().timeout(const Duration(seconds: 5));
       if (response.statusCode != HttpStatus.ok) {
         throw LocalSessionException('Peer refused the turn (${response.statusCode}).');

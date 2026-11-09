@@ -2782,6 +2782,20 @@ notification, no account, nothing leaving the WiFi network. Capped at
 exactly 2 physical devices, no mesh; a device can locally host more than
 one seat (a human plus one or more CPU seats).
 
+**Admission for local play (2026-11-08; research `docs/superpowers/research/gamesuite-multiplayer-for-play-together.md`
+section 5.2).** Before this, any device on the same Wi-Fi could POST a turn, the body was read without a limit, and the
+child's name went out over mDNS to the whole network. Now (`play_admission.dart`, `local_session.dart`,
+`local_discovery.dart`): the service name is a neutral `olive-xxxx` label with no name and no model, and any peer text
+shown goes through `sanitizePeerText`. A session opens only for a device that holds the pairing credential from the
+adult gate work (§8.5.11): an ephemeral key exchange signed with the pinned device keys gives a per-session key; every
+turn carries a counter and an HMAC over its raw body, checked in constant time, with a strictly rising counter, the
+sender's address pinned to the one that said hello, and a 64 KiB body cap (413, even with no admission). The lobby
+must be open, holds one peer, and on the **grown-up's** device the first connection of a peer waits for a plain-words
+confirmation (the same word and picture on both screens, `PlayConfirmCard`); the child's device never asks. **Honest
+limits:** turns are authenticated, not encrypted (a listener on the same Wi-Fi can read a move, not forge or replay
+one); two never-paired devices cannot play through this layer; the confirm card is built and tested but not yet wired
+into `LocalPairingController`, and the message formats belong to the play-envelope work; mDNS not run on two devices.
+
 **Uno** (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`/`uno_deck.dart`)
 is the deepest of the five: a real seat-based 2–4 seat engine, not
 hardcoded to 2; 3-tier CPU opponents that only ever see public information
