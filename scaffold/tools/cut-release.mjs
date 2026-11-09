@@ -9,7 +9,8 @@
  *   --out <dir>        where the APK, SHA256SUMS and release-notes.md go (default scaffold/out/release/<version>/, git-ignored)
  *   --skip-build       reuse the APK already in --out (only to re-publish; the hash is re-checked against SHA256SUMS)
  *   --base-url <url>   bake ONE public https server address into the build. Default: none (see below)
- *   --prerelease       mark the GitHub release as a pre-release
+ *   --stable           publish as a normal release. Default: a GitHub PRE-RELEASE, because every cut is a debug-signed preview
+ *   --prerelease       accepted for compatibility; already the default
  *
  * What it will and will not do
  *   - It builds exactly what RELEASE_SIGNING.md §3 documents: `flutter build apk --release`, lib/main_live.dart (never the
@@ -32,7 +33,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, statS
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  REPO, parseVersion, buildNumber, readVersions, versionProblems, changelogSection, baseUrlProblem, releaseNotes,
+  REPO, isPrerelease, parseVersion, buildNumber, readVersions, versionProblems, changelogSection, baseUrlProblem, releaseNotes,
 } from './release_lib.mjs';
 
 const SCAFFOLD = join(REPO, 'scaffold');
@@ -68,12 +69,13 @@ const bad = (m, fatalOnlyWhenPublishing = false, publishing = false) => {
 const die = (m) => { console.error(`\ncut-release: ${m}`); process.exit(1); };
 
 function parseArgs(argv) {
-  const o = { publish: false, skipBuild: false, prerelease: false, out: null, baseUrl: null, version: null };
+  const o = { publish: false, skipBuild: false, prerelease: false, stable: false, out: null, baseUrl: null, version: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--publish') o.publish = true;
     else if (a === '--skip-build') o.skipBuild = true;
     else if (a === '--prerelease') o.prerelease = true;
+    else if (a === '--stable') o.stable = true;
     else if (a === '--out') o.out = argv[++i];
     else if (a === '--base-url') o.baseUrl = argv[++i];
     else if (a === '-h' || a === '--help') { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace(/^\/\*\*\n|^ \* ?/gm, '')); process.exit(0); }
@@ -87,7 +89,7 @@ function sha256File(p) { return createHash('sha256').update(readFileSync(p)).dig
 
 function main() {
   const o = parseArgs(process.argv.slice(2));
-  if (!o.version) die('usage: node tools/cut-release.mjs <version> [--publish] [--out dir] [--base-url https://...] [--skip-build] [--prerelease]');
+  if (!o.version) die('usage: node tools/cut-release.mjs <version> [--publish] [--out dir] [--base-url https://...] [--skip-build] [--stable]');
   const version = o.version.replace(/^v/, '');
   parseVersion(version);
   const publishing = o.publish;
@@ -164,7 +166,7 @@ function main() {
   const treeAfter = treeDirt();
   if (treeAfter !== status.out) bad(`the build changed tracked or untracked files in the tree:\n${treeAfter}`);
 
-  const notes = releaseNotes({ version, date: v.changelog.date, title: v.changelog.title, section, sha: head, apk: apkName, sha256: digest, size, baseUrl: o.baseUrl, prerelease: o.prerelease });
+  const notes = releaseNotes({ version, date: v.changelog.date, title: v.changelog.title, section, sha: head, apk: apkName, sha256: digest, size, baseUrl: o.baseUrl, prerelease: isPrerelease(o) });
   const notesPath = join(outDir, 'release-notes.md');
   writeFileSync(notesPath, notes);
 
@@ -189,7 +191,7 @@ function main() {
   const existing = sh('gh', ['release', 'view', `v${version}`, '--repo', GH_REPO], { shell: false });
   if (existing.code === 0) die(`a GitHub release v${version} already exists`);
   const args = ['release', 'create', `v${version}`, apkOut, sumsPath, '--repo', GH_REPO, '--target', head,
-    '--title', `v${version} — ${v.changelog.title.split(':')[0].slice(0, 80)}`, '--notes-file', notesPath, ...(o.prerelease ? ['--prerelease'] : [])];
+    '--title', `v${version} — ${v.changelog.title.split(':')[0].slice(0, 80)}`, '--notes-file', notesPath, ...(isPrerelease(o) ? ['--prerelease'] : [])];
   const r = sh('gh', args, { shell: false });
   if (r.code !== 0) die(`gh release create failed:\n${r.err || r.out}`);
   console.log(`  ${r.out}`);

@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   REPO, parseVersion, buildNumber, pubspecVersionFor, isNewer, changelogTop, changelogSection, readVersions,
-  versionProblems, baseUrlProblem, releaseNotes,
+  versionProblems, baseUrlProblem, releaseNotes, isPrerelease,
 } from '../release_lib.mjs';
 
 let pass = 0, fail = 0; const rows = [];
@@ -89,6 +89,9 @@ check('changelog', 'a missing section is an error', throws(() => changelogSectio
 check('changelog', 'text with no numbered entry is an error', throws(() => changelogTop('## [Unreleased]\n')), true);
 
 // ------------------------------------------------------------- the server-address guard
+check('prerelease', 'a cut is a pre-release by default', isPrerelease({}), true);
+check('prerelease', '--stable opts out', isPrerelease({ stable: true }), false);
+check('prerelease', '--prerelease still works', isPrerelease({ prerelease: true, stable: true }), true);
 check('url', 'a public https name passes', baseUrlProblem('https://api.example.com'), null);
 for (const [u, why] of [
   ['http://api.example.com', 'plain http'], ['https://localhost:8123', 'localhost'], ['https://10.0.0.5', 'a private IP literal'],
