@@ -198,8 +198,11 @@ class PlayEnvelopeSession {
   bool overflowed = false;
 
   /// Build the next outgoing envelope and keep it if it must be kept.
+  ///
+  /// A control message (`hello`, `req_state`) carries the highest `n` used so far WITHOUT using a new one, so asking for
+  /// the state in the middle of a game never makes the next move look like it skipped one.
   PlayEnvelope stamp(PlayKind t, String g, {Map<String, dynamic>? p, String? d}) {
-    sendN += 1;
+    if (t != PlayKind.hello && t != PlayKind.reqState) sendN += 1;
     final PlayEnvelope env = PlayEnvelope(sid: sid, n: sendN, ack: lastPeerN, t: t, g: g, p: p, d: d);
     if (t.retained) {
       unacked.add(env);
@@ -226,26 +229,30 @@ class PlayEnvelopeSession {
     if (env.t == PlayKind.state && senderSeat != authoritySeat) return const PlayVerdict.no('wrong_sender');
 
     if (env.t == PlayKind.hello) {
-      if (env.ack > sendN) return const PlayVerdict.no('bad_ack');
+      // The ack on a hello only means something inside the session we share; across a restart it is the old session's.
+      final bool sameSession = env.sid == sid;
+      if (sameSession && env.ack > sendN) return const PlayVerdict.no('bad_ack');
       if (role == PlayRole.guest) {
         if (senderSeat != authoritySeat) return const PlayVerdict.no('wrong_sender');
-        if (env.sid != sid) {
-          // A new authority session (first contact, or the dealer was restarted from its save): adopt it.
+        if (!sameSession) {
+          // A new authority session (first contact, or the dealer was restarted from its save): adopt it and count from
+          // where it says it is. What we sent to the old session is not carried over: the state is the truth.
           sid = env.sid;
           lastPeerN = env.n;
-        } else if (env.n > lastPeerN) {
-          lastPeerN = env.n;
+          peerAck = 0;
+          unacked = <PlayEnvelope>[];
+          overflowed = false;
+        } else {
+          _takeAck(env.ack);
         }
-        _takeAck(env.ack);
         return const PlayVerdict.control();
       }
       // The authority hears a guest. A guest with no memory of this session starts counting again.
-      if (env.sid != sid) {
+      if (!sameSession) {
         lastPeerN = env.n;
-      } else if (env.n > lastPeerN) {
-        lastPeerN = env.n;
+      } else {
+        _takeAck(env.ack);
       }
-      _takeAck(env.ack);
       return const PlayVerdict.control();
     }
 

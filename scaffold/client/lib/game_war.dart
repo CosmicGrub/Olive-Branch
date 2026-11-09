@@ -36,8 +36,14 @@ import 'package:flutter/material.dart';
 import 'access_scope.dart' show LiveLine, motionDuration;
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
-import 'live_games.dart' show Side, auditLiveView;
+import 'game_logic.dart' show localPlayMinAge;
+import 'live_games.dart' show Side;
 import 'local_pairing.dart';
+import 'play_game.dart';
+import 'play_notice.dart';
+import 'play_session.dart';
+import 'play_transport.dart';
+import 'play_widgets.dart';
 import 'war_deck.dart';
 
 /// foldTabletop's own outer padding — real-device-tested minimum,
@@ -197,6 +203,106 @@ WarState _resolveIfReady(WarState s) {
 }
 
 // ==================================================================
+// ==== two-device conversation — a PlayGame over the engine above ====
+// ==================================================================
+
+/// War for two devices as a [PlayGame] (play_game.dart). Each device keeps its own pile (the engine above is
+/// unchanged); the dealing device (Side.b) deals once and the two flip and reveal to each other.
+///
+/// Everything War says is an ordered MOVE (the deal included: it is the dealer's first move, carrying the other
+/// device's 26 cards), because War has no single authority copy of the game: each pile is hidden from the other
+/// device by design. That is why it never uses a `state`, and why it is NOT saved across an app kill (see the PR's list
+/// of follow-ups).
+///
+/// What the shared session now gives War that it did not have: a move that cannot be delivered (the other device is
+/// away) is kept and resent when it returns, in order, instead of vanishing; a move is applied once even if it
+/// arrives twice; and a deal is accepted only from the dealer and only when this device has no game under way (the old
+/// code let any POST at any time replace the game with a new deal).
+class WarPlayGame extends PlayGame {
+  WarPlayGame(super.ctx);
+
+  WarState? war;
+
+  Side get mySide => ctx.localSeatId == 'a' ? Side.a : Side.b;
+  @override
+  bool get started => war != null;
+  @override
+  bool get finished => war != null && war!.phase != WarPhase.playing;
+  bool get canFlip => war != null && war!.phase == WarPhase.playing && war!.myPending == null;
+
+  /// The dealing device deals: its own 26 cards stay here, the other 26 go across as its first move.
+  void deal() {
+    if (!ctx.isAuthority) return;
+    _dealAndSend();
+  }
+
+  void _dealAndSend() {
+    final dealt = dealWar(ctx.rng);
+    war = newWarFromDeal(dealt.forMe);
+    notifyListeners();
+    link?.sendMove(<String, dynamic>{'deal': [for (final c in dealt.forPeer) c.code]});
+  }
+
+  /// Flip my next card (or the wager and comparator in a war) and tell the other device what I played.
+  void flip() {
+    final current = war;
+    if (current == null) return;
+    final result = playMyNext(current);
+    if (result.played.isEmpty) return;
+    war = result.state;
+    notifyListeners();
+    link?.sendMove(<String, dynamic>{
+      'round': current.roundNumber,
+      'played': [for (final c in result.played) c.code],
+    });
+  }
+
+  static List<PlayingCard>? _cards(Object? raw, {required int min, required int max}) {
+    if (raw is! List || raw.length < min || raw.length > max) return null;
+    final cards = <PlayingCard>[];
+    for (final c in raw) {
+      final card = PlayingCard.fromCode(c is String ? c : null);
+      if (card == null) return null; // malformed: never half-apply
+      cards.add(card);
+    }
+    return cards;
+  }
+
+  @override
+  PlayMoveOutcome onMove(String senderSeat, Map<String, dynamic> payload) {
+    if (senderSeat == ctx.localSeatId) return PlayMoveOutcome.refused;
+    if (payload.containsKey('deal')) {
+      // Only the dealer deals, and only to a device with no game under way (a finished game takes the new deal).
+      if (senderSeat != ctx.authoritySeatId || ctx.isAuthority) return PlayMoveOutcome.refused;
+      final cards = _cards(payload['deal'], min: 26, max: 26);
+      if (cards == null) return PlayMoveOutcome.refused;
+      if (war != null && war!.phase == WarPhase.playing) return PlayMoveOutcome.refused;
+      war = newWarFromDeal(cards);
+      notifyListeners();
+      return PlayMoveOutcome.applied;
+    }
+    final current = war;
+    if (current == null) return PlayMoveOutcome.ignored;
+    final cards = _cards(payload['played'], min: 1, max: 2);
+    if (cards == null) return PlayMoveOutcome.refused;
+    war = receiveTheirs(current, cards);
+    notifyListeners();
+    return PlayMoveOutcome.applied;
+  }
+
+  @override
+  void startRematch() => _dealAndSend();
+}
+
+/// War's registration (play_game.dart). The age comes from the one table the hub already uses.
+final PlayGameSpec warSpec = PlayGameSpec(
+  id: 'war', title: 'War', minAge: localPlayMinAge['war']!, minSeats: 2, maxSeats: 2,
+  modes: const {PlayMode.pair}, create: (ctx) => WarPlayGame(ctx),
+  // Each device's pile is its own; the dealer never sends its pile, only the other device's deal.
+  hiddenInfo: true, hiddenKeys: const ['myPile', 'pile'], authorityModel: false,
+);
+
+// ==================================================================
 // ==== widget ====
 // ==================================================================
 
@@ -212,10 +318,13 @@ class GameWarScreen extends StatefulWidget {
 class _GameWarScreenState extends State<GameWarScreen> {
   late final LocalPairingController _pairing =
       LocalPairingController(role: widget.role, displayName: widget.displayName);
-  StreamSubscription<LocalTurnPayload>? _turnSub;
+  late final LocalPairingTransport _transport = LocalPairingTransport(_pairing);
+  late final WarPlayGame _game = WarPlayGame(PlayContext(
+    mode: PlayMode.pair, localSeatId: _transport.mySeat, authoritySeatId: 'b', seatIds: const ['a', 'b']));
+  late final PlaySessionController _session =
+      PlaySessionController(spec: warSpec, game: _game, transport: _transport);
 
-  WarState? _war;
-  final _rand = Random();
+  WarState? get _war => _game.war;
 
   Side get _mySide => _pairing.mySide;
   /// Fixed dealer, matching local_play_screen.dart's own Side.b-leads
@@ -226,7 +335,9 @@ class _GameWarScreenState extends State<GameWarScreen> {
   void initState() {
     super.initState();
     _pairing.addListener(_onPairingChanged);
-    _turnSub = _pairing.incomingTurns.listen(_handleIncomingTurn);
+    _game.addListener(_onPairingChanged);
+    _session.addListener(_onPairingChanged);
+    _session.start();
     unawaited(_pairing.start());
   }
 
@@ -234,75 +345,16 @@ class _GameWarScreenState extends State<GameWarScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _deal() async {
-    final dealt = dealWar(_rand);
-    setState(() => _war = newWarFromDeal(dealt.forMe));
-    await _send({
-      'type': 'war_deal',
-      'dealtCards': [for (final c in dealt.forPeer) c.code],
-    });
-  }
-
-  Future<void> _flip() async {
-    final current = _war;
-    if (current == null) return;
-    final result = playMyNext(current);
-    if (result.played.isEmpty) return;
-    setState(() => _war = result.state);
-    await _send({
-      'type': 'war_reveal',
-      'roundNumber': current.roundNumber,
-      'played': [for (final c in result.played) c.code],
-    });
-  }
-
-  Future<void> _send(Map<String, dynamic> payload) async {
-    final audit = auditLiveView(payload);
-    if (!audit.ok) {
-      // A real, wired safety net, not just a comment — see this codebase's
-      // own liveForbidden/auditLiveView (live_games.dart). War's own
-      // payload keys never should trip this; if a future edit ever adds a
-      // field that does, this is the guard that catches it before it goes
-      // out, not a promise that it never will.
-      debugPrint('game_war: refusing to send a payload with forbidden keys: ${audit.leaks}');
-      return;
-    }
-    await _pairing.sendTurn(payload);
-  }
-
-  void _handleIncomingTurn(LocalTurnPayload payload) {
-    final type = payload['type'];
-    if (type == 'war_deal') {
-      final codes = payload['dealtCards'];
-      if (codes is! List) return;
-      final cards = <PlayingCard>[];
-      for (final c in codes) {
-        final card = PlayingCard.fromCode(c as String?);
-        if (card == null) return; // malformed — never half-apply a bad deal
-        cards.add(card);
-      }
-      if (cards.length != 26) return;
-      if (mounted) setState(() => _war = newWarFromDeal(cards));
-      return;
-    }
-    if (type == 'war_reveal') {
-      final current = _war;
-      if (current == null) return;
-      final playedRaw = payload['played'];
-      if (playedRaw is! List) return;
-      final cards = <PlayingCard>[];
-      for (final c in playedRaw) {
-        final card = PlayingCard.fromCode(c as String?);
-        if (card == null) return;
-        cards.add(card);
-      }
-      if (mounted) setState(() => _war = receiveTheirs(current, cards));
-    }
-  }
+  void _deal() => _game.deal();
+  void _flip() => _game.flip();
 
   @override
   void dispose() {
-    unawaited(_turnSub?.cancel());
+    _game.removeListener(_onPairingChanged);
+    _session.removeListener(_onPairingChanged);
+    _session.dispose();
+    _game.dispose();
+    _transport.dispose();
     _pairing.removeListener(_onPairingChanged);
     _pairing.dispose();
     super.dispose();
@@ -322,22 +374,30 @@ class _GameWarScreenState extends State<GameWarScreen> {
           message: _pairing.errorMessage ?? "Can't play locally right now.",
           icon: Icons.error_outline,
         );
+      } else if (_session.endedForGood) {
+        body = PlaySessionNotice(kind: PlayNoticeKind.ended, onLeave: () => Navigator.of(context).maybePop());
       } else if (war != null) {
-        body = WarView(state: war, mySide: _mySide, peerName: _pairing.peer?.name ?? 'the other side',
-          onFlip: _flip, cardScale: _cardScaleFor(posture));
+        // The game stays on screen while the other device is away, with one calm line above it.
+        body = Column(mainAxisSize: MainAxisSize.min, children: [
+          PlayAwayBanner(session: _session),
+          WarView(state: war, mySide: _mySide, peerName: 'the other side',
+            onFlip: _flip, cardScale: _cardScaleFor(posture)),
+          if (_game.finished) PlayRematchBar(session: _session),
+        ]);
+      } else if (_session.hasMetPeer && _session.notice != PlayNoticeKind.none) {
+        body = PlaySessionNotice(kind: _session.notice);
       } else {
         body = switch (_pairing.phase) {
           PairingPhase.searching => const _Status(message: 'Looking nearby…'),
           PairingPhase.found => _FoundView(
-              peerName: _pairing.peer!.name, amDealer: _amDealer, onDeal: _deal),
-          PairingPhase.peerLost =>
-            _MessageView(message: _pairing.errorMessage!, icon: Icons.wifi_off_outlined),
+              peerName: _pairing.peer?.name ?? 'the other side', amDealer: _amDealer, onDeal: _deal),
+          PairingPhase.peerLost => const PlaySessionNotice(kind: PlayNoticeKind.away),
           PairingPhase.error => throw StateError('handled above'),
         };
       }
       final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
       return Scaffold(
-        appBar: AppBar(title: const Text('War')),
+        appBar: AppBar(title: const Text('War'), actions: [PlayFinishButton(session: _session)]),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own
         // build() for why: real-device testing at foldTabletop's ~420dp
         // height overflowed there. Same child_home.dart/care_note.dart

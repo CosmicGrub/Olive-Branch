@@ -181,9 +181,16 @@ export function makeSid(bytes: readonly number[]): string {
   return s;
 }
 
-/** Build the next outgoing envelope and keep it if it must be kept. Mutates the session. */
+/** Kinds that carry the sender's current counter without using one up (they are repeatable requests, not part of the order). */
+export const CONTROL_KINDS: readonly Kind[] = ['hello', 'req_state'];
+
+/**
+ * Build the next outgoing envelope and keep it if it must be kept. Mutates the session. A control message
+ * (`hello`, `req_state`) carries the highest `n` we have used so far WITHOUT using a new one, so asking for the
+ * state in the middle of a game never makes the next move look like it skipped one.
+ */
 export function stamp(s: PlaySession, t: Kind, g: string, p?: Payload, d?: string): Envelope {
-  s.sendN += 1;
+  if (!CONTROL_KINDS.includes(t)) s.sendN += 1;
   const env: Envelope = { v: PROTOCOL_VERSION, sid: s.sid, n: s.sendN, ack: s.lastPeerN, t, g };
   if (p !== undefined) env.p = p;
   if (d !== undefined) env.d = d;
@@ -221,22 +228,24 @@ export function receive(s: PlaySession, env: Envelope, senderSeat: string): Verd
   if (env.t === 'state' && senderSeat !== s.authoritySeat) return no('wrong_sender');
 
   if (env.t === 'hello') {
-    if (env.ack > s.sendN) return no('bad_ack');
+    // The ack on a hello only means something inside the session we share; across a restart it is the old session's.
+    const sameSession = env.sid === s.sid;
+    if (sameSession && env.ack > s.sendN) return no('bad_ack');
     if (s.role === 'guest') {
       if (senderSeat !== s.authoritySeat) return no('wrong_sender');
-      if (env.sid !== s.sid) {
-        // A new authority session (first contact, or the dealer was restarted from its save): adopt it.
-        s.sid = env.sid; s.lastPeerN = env.n;
-      } else if (env.n > s.lastPeerN) {
-        s.lastPeerN = env.n;
+      if (!sameSession) {
+        // A new authority session (first contact, or the dealer was restarted from its save): adopt it and count
+        // from where it says it is. What we sent to the old session is not carried over: the state is the truth.
+        s.sid = env.sid; s.lastPeerN = env.n; s.peerAck = 0; s.unacked = []; s.overflowed = false;
+      } else {
+        takeAck(s, env.ack);
       }
-      takeAck(s, env.ack);
       return { accept: true, control: true };
     }
-    // The authority hears a guest. A guest with no memory of this session (empty or stale sid) starts counting again.
-    if (env.sid !== s.sid) s.lastPeerN = env.n;
-    else if (env.n > s.lastPeerN) s.lastPeerN = env.n;
-    takeAck(s, env.ack);
+    // The authority hears a guest. A guest with no memory of this session (empty or stale sid) starts counting again
+    // from its own counter; a guest that knows the session is a resume and changes no counter.
+    if (!sameSession) s.lastPeerN = env.n;
+    else takeAck(s, env.ack);
     return { accept: true, control: true };
   }
 

@@ -74,64 +74,74 @@ export function generate() {
   const tx = (t, p, d) => ({ op: 'stamp', t, p, d });
   const hello = (o) => env({ t: 'hello', p: {}, ...o });
 
+  // A hello carries the sender's counter WITHOUT using one up (n = how many ordered messages it has sent so far).
   run('guest hears the authority hello, then ordered messages arrive in order', G, [
-    rx(hello({ n: 1 }), 'b'),
-    rx(env({ t: 'state', n: 2, p: { toMove: 'b' } }), 'b'),
+    rx(hello({ n: 0 }), 'b'),
+    rx(env({ t: 'state', n: 1, p: { toMove: 'b' } }), 'b'),
+    rx(env({ n: 2 }), 'b'),
     rx(env({ n: 3 }), 'b'),
-    rx(env({ n: 4 }), 'b'),
   ]);
   run('guest: a message before any hello is for an unknown session', G, [rx(env({ n: 1 }), 'b'), rx(env({ t: 'state', n: 1, p: {} }), 'b')]);
-  run('guest: wrong session id is dropped', G, [rx(hello({ n: 1 }), 'b'), rx(env({ sid: OTHER, n: 2 }), 'b')]);
+  run('guest: wrong session id is dropped', G, [rx(hello({ n: 0 }), 'b'), rx(env({ sid: OTHER, n: 1 }), 'b')]);
   run('duplicates and older messages are dropped (replay)', A, [
-    rx(hello({ sid: '', n: 1 }), 'a'), rx(env({ n: 2 }), 'a'), rx(env({ n: 2 }), 'a'), rx(env({ n: 3 }), 'a'),
-    rx(env({ n: 2 }), 'a'), rx(env({ n: 1 }), 'a'), rx(env({ n: 4 }), 'a'),
+    rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ n: 1 }), 'a'), rx(env({ n: 1 }), 'a'), rx(env({ n: 2 }), 'a'),
+    rx(env({ n: 1 }), 'a'), rx(env({ n: 0 }), 'a'), rx(env({ n: 3 }), 'a'),
   ]);
   run('a skipped message is held back and the receiver is told to ask for the state', A, [
-    rx(hello({ sid: '', n: 1 }), 'a'), rx(env({ n: 2 }), 'a'), rx(env({ n: 4 }), 'a'), rx(env({ n: 3 }), 'a'), rx(env({ n: 4 }), 'a'),
+    rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ n: 1 }), 'a'), rx(env({ n: 3 }), 'a'), rx(env({ n: 2 }), 'a'), rx(env({ n: 3 }), 'a'),
   ]);
   run('a state snapshot is idempotent: the newest wins, an older one is dropped', G, [
-    rx(hello({ n: 1 }), 'b'), rx(env({ t: 'state', n: 5, p: {} }), 'b'), rx(env({ t: 'state', n: 3, p: {} }), 'b'),
+    rx(hello({ n: 0 }), 'b'), rx(env({ t: 'state', n: 5, p: {} }), 'b'), rx(env({ t: 'state', n: 3, p: {} }), 'b'),
     rx(env({ t: 'state', n: 5, p: {} }), 'b'), rx(env({ t: 'state', n: 6, p: {} }), 'b'), rx(env({ n: 7 }), 'b'),
   ]);
   run('a state snapshot repairs a gap in the ordered messages', G, [
-    rx(hello({ n: 1 }), 'b'), rx(env({ n: 3 }), 'b'), rx(env({ t: 'state', n: 4, p: {} }), 'b'), rx(env({ n: 5 }), 'b'),
+    rx(hello({ n: 0 }), 'b'), rx(env({ n: 2 }), 'b'), rx(env({ t: 'state', n: 3, p: {} }), 'b'), rx(env({ n: 4 }), 'b'),
   ]);
-  run('only the authority may send state', A, [rx(hello({ sid: '', n: 1 }), 'a'), rx(env({ t: 'state', n: 2, p: {} }), 'a')]);
-  run('a guest refuses a state from anyone but the authority seat', G, [rx(hello({ n: 1 }), 'b'), rx(env({ t: 'state', n: 2, p: {} }), 'c')]);
-  run('a guest ignores a hello that is not from the authority', G, [rx(hello({ n: 1 }), 'c')]);
-  run('our own message coming back is dropped', A, [rx(hello({ sid: '', n: 1 }), 'b'), rx(env({ n: 2 }), 'b')]);
+  run('only the authority may send state', A, [rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ t: 'state', n: 1, p: {} }), 'a')]);
+  run('a guest refuses a state from anyone but the authority seat', G, [rx(hello({ n: 0 }), 'b'), rx(env({ t: 'state', n: 1, p: {} }), 'c')]);
+  run('a guest ignores a hello that is not from the authority', G, [rx(hello({ n: 0 }), 'c')]);
+  run('our own message coming back is dropped', A, [rx(hello({ sid: '', n: 0 }), 'b'), rx(env({ n: 1 }), 'b')]);
   run('req_state is accepted as a control message and does not move the counter', A, [
-    rx(hello({ sid: '', n: 1 }), 'a'), rx(env({ t: 'req_state', n: 5, p: undefined }), 'a'), rx(env({ n: 2 }), 'a'),
+    rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ n: 1 }), 'a'), rx(env({ t: 'req_state', n: 1, p: undefined }), 'a'), rx(env({ n: 2 }), 'a'),
   ]);
-  run('req_state for an unknown session is dropped', A, [rx(env({ t: 'req_state', sid: OTHER, n: 1, p: undefined }), 'a')]);
+  run('req_state for an unknown session is dropped', A, [rx(env({ t: 'req_state', sid: OTHER, n: 0, p: undefined }), 'a')]);
   run('sent moves are kept until the peer acknowledges them', A, [
     tx('move', { column: 1 }), tx('move', { column: 2 }), tx('state', { x: 1 }), tx('move', { column: 3 }),
-    rx(hello({ sid: '', n: 1, ack: 0 }), 'a'),
-    rx(env({ n: 2, ack: 2 }), 'a'), rx(env({ n: 3, ack: 4 }), 'a'),
+    rx(hello({ n: 0, ack: 0 }), 'a'),
+    rx(env({ n: 1, ack: 2 }), 'a'), rx(env({ n: 2, ack: 4 }), 'a'),
   ]);
-  run('an ack beyond what we sent is refused', A, [tx('move', { column: 1 }), rx(hello({ sid: '', n: 1, ack: 9 }), 'a')]);
+  run('an ack beyond what we sent is refused', A, [tx('move', { column: 1 }), rx(hello({ n: 0, ack: 9 }), 'a')]);
   run('an ack beyond what we sent is refused on a move too', A, [
-    rx(hello({ sid: '', n: 1 }), 'a'), tx('move', { c: 1 }), rx(env({ n: 2, ack: 5 }), 'a'),
+    rx(hello({ sid: '', n: 0 }), 'a'), tx('move', { c: 1 }), rx(env({ n: 1, ack: 5 }), 'a'),
   ]);
   run('ack never goes backwards', A, [
-    tx('move', { c: 1 }), tx('move', { c: 2 }), rx(hello({ sid: '', n: 1, ack: 2 }), 'a'), rx(env({ n: 2, ack: 1 }), 'a'),
+    tx('move', { c: 1 }), tx('move', { c: 2 }), rx(hello({ n: 0, ack: 2 }), 'a'), rx(env({ n: 1, ack: 1 }), 'a'),
   ]);
-  run('stamp carries the session id, our counter and what we have seen', A, [
-    rx(hello({ sid: '', n: 7 }), 'a'), tx('hello', { resume: true }), tx('state', { toMove: 'a' }, '9f3a1c2e'), tx('bye'),
+  run('stamp: a control message carries the counter without using one up', A, [
+    rx(hello({ sid: '', n: 7 }), 'a'), tx('hello', { resume: true }), tx('state', { toMove: 'a' }, '9f3a1c2e'), tx('req_state'), tx('move', { c: 1 }), tx('hello', { resume: true }), tx('bye'),
   ]);
   run('the authority restarted from its save: the guest adopts the new session and counts again', G, [
-    rx(hello({ n: 1 }), 'b'), rx(env({ n: 2 }), 'b'), rx(hello({ sid: OTHER, n: 1 }), 'b'), rx(env({ sid: OTHER, n: 2 }), 'b'), rx(env({ sid: OTHER, n: 3 }), 'b'),
+    rx(hello({ n: 0 }), 'b'), rx(env({ n: 1 }), 'b'), rx(hello({ sid: OTHER, n: 0 }), 'b'), rx(env({ sid: OTHER, n: 1 }), 'b'), rx(env({ sid: OTHER, n: 2 }), 'b'),
   ]);
-  run('the same hello again is a resume: counters are kept', G, [
-    rx(hello({ n: 1 }), 'b'), rx(env({ n: 2 }), 'b'), rx(hello({ n: 3, p: { resume: true } }), 'b'), rx(env({ n: 4 }), 'b'),
+  run('the same hello again is a resume: counters are kept and a lost message is not hidden', G, [
+    rx(hello({ n: 0 }), 'b'), rx(env({ n: 1 }), 'b'), rx(hello({ n: 3, p: { resume: true } }), 'b'), rx(env({ n: 3 }), 'b'), rx(env({ n: 2 }), 'b'),
   ]);
   run('a guest that restarted says hello with no session and the authority counts it afresh', A, [
-    rx(hello({ sid: '', n: 1 }), 'a'), rx(env({ n: 2 }), 'a'), rx(env({ n: 3 }), 'a'),
-    rx(hello({ sid: '', n: 1 }), 'a'), rx(env({ n: 2 }), 'a'),
+    rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ n: 1 }), 'a'), rx(env({ n: 2 }), 'a'),
+    rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ n: 1 }), 'a'),
+  ]);
+  run('a guest that knows the session says hello again: a resume, no counter reset', A, [
+    rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ n: 1 }), 'a'), rx(hello({ n: 1 }), 'a'), rx(env({ n: 1 }), 'a'), rx(env({ n: 2 }), 'a'),
+  ]);
+  run('a hello from an older session carries an ack that means nothing here: it is not refused for it', A, [
+    tx('state', { x: 1 }), rx(hello({ sid: OTHER, n: 3, ack: 99 }), 'a'), rx(env({ n: 4 }), 'a'),
+  ]);
+  run('a new dealer session drops what we had sent to the old one', G, [
+    rx(hello({ n: 0 }), 'b'), tx('move', { c: 1 }), tx('move', { c: 2 }), rx(hello({ sid: OTHER, n: 0, ack: 77 }), 'b'), tx('move', { c: 3 }),
   ]);
   run('rematch and rematch_ok are ordered like moves; bye too', A, [
-    rx(hello({ sid: '', n: 1 }), 'a'), rx(env({ t: 'rematch', n: 2, p: undefined }), 'a'),
-    rx(env({ t: 'rematch', n: 2, p: undefined }), 'a'), rx(env({ t: 'bye', n: 3, p: undefined }), 'a'), rx(env({ t: 'rematch_ok', n: 5, p: undefined }), 'a'),
+    rx(hello({ sid: '', n: 0 }), 'a'), rx(env({ t: 'rematch', n: 1, p: undefined }), 'a'),
+    rx(env({ t: 'rematch', n: 1, p: undefined }), 'a'), rx(env({ t: 'bye', n: 2, p: undefined }), 'a'), rx(env({ t: 'rematch_ok', n: 4, p: undefined }), 'a'),
   ]);
 
   // The retained list is bounded: more than MAX_UNACKED unacknowledged moves drops the oldest.

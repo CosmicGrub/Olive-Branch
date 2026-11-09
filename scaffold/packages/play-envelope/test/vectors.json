@@ -609,7 +609,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -622,12 +622,27 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "state",
       "g": "connect4",
       "p": {
        "toMove": "b"
+      }
+     },
+     "from": "b"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 2,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
       }
      },
      "from": "b"
@@ -646,21 +661,6 @@
       }
      },
      "from": "b"
-    },
-    {
-     "op": "receive",
-     "env": {
-      "v": 1,
-      "sid": "9f2c41d07a3b88e1",
-      "n": 4,
-      "ack": 0,
-      "t": "move",
-      "g": "connect4",
-      "p": {
-       "column": 3
-      }
-     },
-     "from": "b"
     }
    ],
    "results": [
@@ -668,6 +668,20 @@
      "verdict": {
       "accept": true,
       "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
@@ -701,20 +715,6 @@
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
       "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 4,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -807,7 +807,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -820,7 +820,7 @@
      "env": {
       "v": 1,
       "sid": "0123456789abcdef",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -840,7 +840,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -855,7 +855,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -877,11 +877,41 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
       "p": {}
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
      },
      "from": "a"
     },
@@ -905,7 +935,22 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 0,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -929,51 +974,6 @@
       }
      },
      "from": "a"
-    },
-    {
-     "op": "receive",
-     "env": {
-      "v": 1,
-      "sid": "9f2c41d07a3b88e1",
-      "n": 2,
-      "ack": 0,
-      "t": "move",
-      "g": "connect4",
-      "p": {
-       "column": 3
-      }
-     },
-     "from": "a"
-    },
-    {
-     "op": "receive",
-     "env": {
-      "v": 1,
-      "sid": "9f2c41d07a3b88e1",
-      "n": 1,
-      "ack": 0,
-      "t": "move",
-      "g": "connect4",
-      "p": {
-       "column": 3
-      }
-     },
-     "from": "a"
-    },
-    {
-     "op": "receive",
-     "env": {
-      "v": 1,
-      "sid": "9f2c41d07a3b88e1",
-      "n": 4,
-      "ack": 0,
-      "t": "move",
-      "g": "connect4",
-      "p": {
-       "column": 3
-      }
-     },
-     "from": "a"
     }
    ],
    "results": [
@@ -981,6 +981,35 @@
      "verdict": {
       "accept": true,
       "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": false,
+      "reason": "duplicate",
+      "needState": false
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
@@ -1008,7 +1037,22 @@
     {
      "verdict": {
       "accept": false,
-      "reason": "duplicate",
+      "reason": "stale",
+      "needState": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 2,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": false,
+      "reason": "stale",
       "needState": false
      },
      "state": {
@@ -1029,50 +1073,6 @@
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
       "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": false,
-      "reason": "stale",
-      "needState": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": false,
-      "reason": "stale",
-      "needState": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 4,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1094,7 +1094,7 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1107,22 +1107,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
-      "ack": 0,
-      "t": "move",
-      "g": "connect4",
-      "p": {
-       "column": 3
-      }
-     },
-     "from": "a"
-    },
-    {
-     "op": "receive",
-     "env": {
-      "v": 1,
-      "sid": "9f2c41d07a3b88e1",
-      "n": 4,
+      "n": 1,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -1152,7 +1137,22 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 4,
+      "n": 2,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 3,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -1168,6 +1168,35 @@
      "verdict": {
       "accept": true,
       "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": false,
+      "reason": "gap",
+      "needState": true
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
@@ -1194,21 +1223,6 @@
     },
     {
      "verdict": {
-      "accept": false,
-      "reason": "gap",
-      "needState": true
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 2,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
       "accept": true,
       "control": false
      },
@@ -1216,20 +1230,6 @@
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
       "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 4,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1251,7 +1251,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1336,7 +1336,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1430,7 +1430,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1443,7 +1443,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 3,
+      "n": 2,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -1458,7 +1458,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 4,
+      "n": 3,
       "ack": 0,
       "t": "state",
       "g": "connect4",
@@ -1471,7 +1471,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 5,
+      "n": 4,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -1491,7 +1491,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1506,7 +1506,21 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 3,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1521,20 +1535,6 @@
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
       "lastPeerN": 4,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 5,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1556,7 +1556,7 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1569,7 +1569,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "state",
       "g": "connect4",
@@ -1587,7 +1587,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1602,7 +1602,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1624,7 +1624,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1637,7 +1637,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "state",
       "g": "connect4",
@@ -1655,7 +1655,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1670,7 +1670,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -1692,7 +1692,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1733,7 +1733,7 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1746,7 +1746,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -1804,7 +1804,7 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1817,7 +1817,22 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 5,
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
       "ack": 0,
       "t": "req_state",
       "g": "connect4"
@@ -1845,6 +1860,20 @@
      "verdict": {
       "accept": true,
       "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
@@ -1899,7 +1928,7 @@
      "env": {
       "v": 1,
       "sid": "0123456789abcdef",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "req_state",
       "g": "connect4"
@@ -1966,8 +1995,8 @@
      "op": "receive",
      "env": {
       "v": 1,
-      "sid": "",
-      "n": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -1980,7 +2009,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 2,
       "t": "move",
       "g": "connect4",
@@ -1995,7 +2024,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 3,
+      "n": 2,
       "ack": 4,
       "t": "move",
       "g": "connect4",
@@ -2111,7 +2140,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 4,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [
        1,
@@ -2129,7 +2158,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 4,
-      "lastPeerN": 2,
+      "lastPeerN": 1,
       "peerAck": 2,
       "unacked": [
        4
@@ -2145,7 +2174,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 4,
-      "lastPeerN": 3,
+      "lastPeerN": 2,
       "peerAck": 4,
       "unacked": [],
       "overflowed": false
@@ -2173,8 +2202,8 @@
      "op": "receive",
      "env": {
       "v": 1,
-      "sid": "",
-      "n": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 0,
       "ack": 9,
       "t": "hello",
       "g": "connect4",
@@ -2240,7 +2269,7 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -2260,7 +2289,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 5,
       "t": "move",
       "g": "connect4",
@@ -2280,7 +2309,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -2291,7 +2320,7 @@
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
       "n": 1,
-      "ack": 1,
+      "ack": 0,
       "t": "move",
       "g": "connect4",
       "p": {
@@ -2301,7 +2330,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 1,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [
        1
@@ -2318,7 +2347,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 1,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [
        1
@@ -2355,8 +2384,8 @@
      "op": "receive",
      "env": {
       "v": 1,
-      "sid": "",
-      "n": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 0,
       "ack": 2,
       "t": "hello",
       "g": "connect4",
@@ -2369,7 +2398,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 1,
       "t": "move",
       "g": "connect4",
@@ -2436,7 +2465,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 2,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 2,
       "unacked": [],
       "overflowed": false
@@ -2450,7 +2479,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 2,
-      "lastPeerN": 2,
+      "lastPeerN": 1,
       "peerAck": 2,
       "unacked": [],
       "overflowed": false
@@ -2459,7 +2488,7 @@
    ]
   },
   {
-   "name": "stamp carries the session id, our counter and what we have seen",
+   "name": "stamp: a control message carries the counter without using one up",
    "init": {
     "role": "authority",
     "mySeat": "b",
@@ -2497,6 +2526,24 @@
     },
     {
      "op": "stamp",
+     "t": "req_state"
+    },
+    {
+     "op": "stamp",
+     "t": "move",
+     "p": {
+      "c": 1
+     }
+    },
+    {
+     "op": "stamp",
+     "t": "hello",
+     "p": {
+      "resume": true
+     }
+    },
+    {
+     "op": "stamp",
      "t": "bye"
     }
    ],
@@ -2519,13 +2566,53 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 7,
       "t": "hello",
       "g": "connect4",
       "p": {
        "resume": true
       }
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 7,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 7,
+      "t": "state",
+      "g": "connect4",
+      "p": {
+       "toMove": "a"
+      },
+      "d": "9f3a1c2e"
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 1,
+      "lastPeerN": 7,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 7,
+      "t": "req_state",
+      "g": "connect4"
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
@@ -2542,19 +2629,43 @@
       "sid": "9f2c41d07a3b88e1",
       "n": 2,
       "ack": 7,
-      "t": "state",
+      "t": "move",
       "g": "connect4",
       "p": {
-       "toMove": "a"
-      },
-      "d": "9f3a1c2e"
+       "c": 1
+      }
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 2,
       "lastPeerN": 7,
       "peerAck": 0,
-      "unacked": [],
+      "unacked": [
+       2
+      ],
+      "overflowed": false
+     }
+    },
+    {
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 2,
+      "ack": 7,
+      "t": "hello",
+      "g": "connect4",
+      "p": {
+       "resume": true
+      }
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 2,
+      "lastPeerN": 7,
+      "peerAck": 0,
+      "unacked": [
+       2
+      ],
       "overflowed": false
      }
     },
@@ -2572,7 +2683,9 @@
       "sendN": 3,
       "lastPeerN": 7,
       "peerAck": 0,
-      "unacked": [],
+      "unacked": [
+       2
+      ],
       "overflowed": false
      }
     }
@@ -2592,7 +2705,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -2605,7 +2718,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -2620,7 +2733,7 @@
      "env": {
       "v": 1,
       "sid": "0123456789abcdef",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -2633,7 +2746,7 @@
      "env": {
       "v": 1,
       "sid": "0123456789abcdef",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -2648,7 +2761,7 @@
      "env": {
       "v": 1,
       "sid": "0123456789abcdef",
-      "n": 3,
+      "n": 2,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -2668,7 +2781,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 1,
+      "lastPeerN": 0,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -2682,7 +2795,7 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 2,
+      "lastPeerN": 1,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -2696,6 +2809,20 @@
      "state": {
       "sid": "0123456789abcdef",
       "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "0123456789abcdef",
+      "sendN": 0,
       "lastPeerN": 1,
       "peerAck": 0,
       "unacked": [],
@@ -2715,25 +2842,11 @@
       "unacked": [],
       "overflowed": false
      }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "0123456789abcdef",
-      "sendN": 0,
-      "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
     }
    ]
   },
   {
-   "name": "the same hello again is a resume: counters are kept",
+   "name": "the same hello again is a resume: counters are kept and a lost message is not hidden",
    "init": {
     "role": "guest",
     "mySeat": "a",
@@ -2746,7 +2859,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -2759,7 +2872,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -2789,7 +2902,22 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 4,
+      "n": 3,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
+     },
+     "from": "b"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 2,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -2809,6 +2937,49 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": false,
+      "reason": "gap",
+      "needState": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
       "lastPeerN": 1,
       "peerAck": 0,
       "unacked": [],
@@ -2824,34 +2995,6 @@
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
       "lastPeerN": 2,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": true
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 4,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false
@@ -2873,11 +3016,26 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
       "p": {}
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
      },
      "from": "a"
     },
@@ -2900,8 +3058,132 @@
      "op": "receive",
      "env": {
       "v": 1,
+      "sid": "",
+      "n": 0,
+      "ack": 0,
+      "t": "hello",
+      "g": "connect4",
+      "p": {}
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 3,
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
+     },
+     "from": "a"
+    }
+   ],
+   "results": [
+    {
+     "verdict": {
+      "accept": true,
+      "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 2,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    }
+   ]
+  },
+  {
+   "name": "a guest that knows the session says hello again: a resume, no counter reset",
+   "init": {
+    "role": "authority",
+    "mySeat": "b",
+    "authoritySeat": "b",
+    "sid": "9f2c41d07a3b88e1"
+   },
+   "steps": [
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "",
+      "n": 0,
+      "ack": 0,
+      "t": "hello",
+      "g": "connect4",
+      "p": {}
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
       "ack": 0,
       "t": "move",
       "g": "connect4",
@@ -2915,12 +3197,27 @@
      "op": "receive",
      "env": {
       "v": 1,
-      "sid": "",
+      "sid": "9f2c41d07a3b88e1",
       "n": 1,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
       "p": {}
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
      },
      "from": "a"
     },
@@ -2949,6 +3246,20 @@
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
       "lastPeerN": 1,
       "peerAck": 0,
       "unacked": [],
@@ -2958,35 +3269,22 @@
     {
      "verdict": {
       "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 2,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
       "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": false,
+      "reason": "duplicate",
+      "needState": false
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
@@ -3014,6 +3312,261 @@
    ]
   },
   {
+   "name": "a hello from an older session carries an ack that means nothing here: it is not refused for it",
+   "init": {
+    "role": "authority",
+    "mySeat": "b",
+    "authoritySeat": "b",
+    "sid": "9f2c41d07a3b88e1"
+   },
+   "steps": [
+    {
+     "op": "stamp",
+     "t": "state",
+     "p": {
+      "x": 1
+     }
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "0123456789abcdef",
+      "n": 3,
+      "ack": 99,
+      "t": "hello",
+      "g": "connect4",
+      "p": {}
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 4,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "column": 3
+      }
+     },
+     "from": "a"
+    }
+   ],
+   "results": [
+    {
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 0,
+      "t": "state",
+      "g": "connect4",
+      "p": {
+       "x": 1
+      }
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 1,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 1,
+      "lastPeerN": 3,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 1,
+      "lastPeerN": 4,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    }
+   ]
+  },
+  {
+   "name": "a new dealer session drops what we had sent to the old one",
+   "init": {
+    "role": "guest",
+    "mySeat": "a",
+    "authoritySeat": "b",
+    "sid": ""
+   },
+   "steps": [
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 0,
+      "ack": 0,
+      "t": "hello",
+      "g": "connect4",
+      "p": {}
+     },
+     "from": "b"
+    },
+    {
+     "op": "stamp",
+     "t": "move",
+     "p": {
+      "c": 1
+     }
+    },
+    {
+     "op": "stamp",
+     "t": "move",
+     "p": {
+      "c": 2
+     }
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "0123456789abcdef",
+      "n": 0,
+      "ack": 77,
+      "t": "hello",
+      "g": "connect4",
+      "p": {}
+     },
+     "from": "b"
+    },
+    {
+     "op": "stamp",
+     "t": "move",
+     "p": {
+      "c": 3
+     }
+    }
+   ],
+   "results": [
+    {
+     "verdict": {
+      "accept": true,
+      "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "c": 1
+      }
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 1,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [
+       1
+      ],
+      "overflowed": false
+     }
+    },
+    {
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 2,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "c": 2
+      }
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 2,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [
+       1,
+       2
+      ],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": true
+     },
+     "state": {
+      "sid": "0123456789abcdef",
+      "sendN": 2,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "env": {
+      "v": 1,
+      "sid": "0123456789abcdef",
+      "n": 3,
+      "ack": 0,
+      "t": "move",
+      "g": "connect4",
+      "p": {
+       "c": 3
+      }
+     },
+     "state": {
+      "sid": "0123456789abcdef",
+      "sendN": 3,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [
+       3
+      ],
+      "overflowed": false
+     }
+    }
+   ]
+  },
+  {
    "name": "rematch and rematch_ok are ordered like moves; bye too",
    "init": {
     "role": "authority",
@@ -3027,7 +3580,7 @@
      "env": {
       "v": 1,
       "sid": "",
-      "n": 1,
+      "n": 0,
       "ack": 0,
       "t": "hello",
       "g": "connect4",
@@ -3040,7 +3593,19 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 2,
+      "n": 1,
+      "ack": 0,
+      "t": "rematch",
+      "g": "connect4"
+     },
+     "from": "a"
+    },
+    {
+     "op": "receive",
+     "env": {
+      "v": 1,
+      "sid": "9f2c41d07a3b88e1",
+      "n": 1,
       "ack": 0,
       "t": "rematch",
       "g": "connect4"
@@ -3053,18 +3618,6 @@
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
       "n": 2,
-      "ack": 0,
-      "t": "rematch",
-      "g": "connect4"
-     },
-     "from": "a"
-    },
-    {
-     "op": "receive",
-     "env": {
-      "v": 1,
-      "sid": "9f2c41d07a3b88e1",
-      "n": 3,
       "ack": 0,
       "t": "bye",
       "g": "connect4"
@@ -3076,7 +3629,7 @@
      "env": {
       "v": 1,
       "sid": "9f2c41d07a3b88e1",
-      "n": 5,
+      "n": 4,
       "ack": 0,
       "t": "rematch_ok",
       "g": "connect4"
@@ -3089,6 +3642,35 @@
      "verdict": {
       "accept": true,
       "control": true
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 0,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": true,
+      "control": false
+     },
+     "state": {
+      "sid": "9f2c41d07a3b88e1",
+      "sendN": 0,
+      "lastPeerN": 1,
+      "peerAck": 0,
+      "unacked": [],
+      "overflowed": false
+     }
+    },
+    {
+     "verdict": {
+      "accept": false,
+      "reason": "duplicate",
+      "needState": false
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
@@ -3116,42 +3698,13 @@
     {
      "verdict": {
       "accept": false,
-      "reason": "duplicate",
-      "needState": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 2,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": true,
-      "control": false
-     },
-     "state": {
-      "sid": "9f2c41d07a3b88e1",
-      "sendN": 0,
-      "lastPeerN": 3,
-      "peerAck": 0,
-      "unacked": [],
-      "overflowed": false
-     }
-    },
-    {
-     "verdict": {
-      "accept": false,
       "reason": "gap",
       "needState": true
      },
      "state": {
       "sid": "9f2c41d07a3b88e1",
       "sendN": 0,
-      "lastPeerN": 3,
+      "lastPeerN": 2,
       "peerAck": 0,
       "unacked": [],
       "overflowed": false

@@ -156,7 +156,7 @@ const verdict = (s, e, from) => { const v = receive(s, e, from); return v.accept
   stamp(a, 'move', 'connect4', { c: 1 }); stamp(a, 'move', 'connect4', { c: 2 }); stamp(a, 'state', 'connect4', { x: 1 }); stamp(a, 'move', 'connect4', { c: 3 });
   check(g, 'moves are kept, a state snapshot is not', a.unacked.map((e) => e.n).join(','), '1,2,4');
   check(g, 'pendingResend lists them in order', pendingResend(a).map((e) => e.n).join(','), '1,2,4');
-  receive(a, env({ t: 'hello', sid: '', n: 1, ack: 2, p: {} }), 'a');
+  receive(a, env({ t: 'hello', n: 1, ack: 2, p: {} }), 'a');
   check(g, 'an ack frees what the peer has seen', a.unacked.map((e) => e.n).join(','), '4');
   check(g, 'an ack beyond what we sent is refused', verdict(a, env({ n: 2, ack: 99 }), 'a'), 'bad_ack');
   check(g, 'a refused ack frees nothing', a.unacked.length, 1);
@@ -164,23 +164,32 @@ const verdict = (s, e, from) => { const v = receive(s, e, from); return v.accept
   check(g, 'ack never goes backwards', a.peerAck, 2);
   const b = authority();
   const e1 = stamp(b, 'hello', 'connect4', { resume: true });
-  check(g, 'a stamped message has our id, count, and what we have seen', j([e1.sid, e1.n, e1.ack, e1.v]), j([SID, 1, 0, 1]));
+  check(g, 'a hello carries the counter without using one up', j([e1.sid, e1.n, e1.ack, e1.v]), j([SID, 0, 0, 1]));
+  check(g, 'the next ordered message is number 1, so a hello or req_state in between never looks like a skipped move', (() => { const x = authority(); stamp(x, 'hello', 'connect4', {}); stamp(x, 'req_state', 'connect4'); return stamp(x, 'move', 'connect4', { c: 1 }).n; })(), 1);
   check(g, 'a hello is not retained', b.unacked.length, 0);
   for (let i = 0; i < MAX_UNACKED + 3; i++) stamp(b, 'move', 'connect4', { c: i });
   check(g, 'the retained list is bounded', b.unacked.length, MAX_UNACKED);
   check(g, 'and says when it dropped one', b.overflowed, true);
-  check(g, 'the oldest were the ones dropped', b.unacked[0].n, 5);
+  check(g, 'the oldest were the ones dropped', b.unacked[0].n, 4);
 }
 {
   const g = 'resume across a restart';
   const gu = guest();
   receive(gu, env({ t: 'hello', n: 1, p: {} }), 'b'); receive(gu, env({ n: 2 }), 'b');
-  check(g, 'the same hello again is a resume and keeps the count', (() => { receive(gu, env({ t: 'hello', n: 3, p: { resume: true } }), 'b'); return gu.lastPeerN; })(), 3);
+  check(g, 'the same hello again is a resume and keeps the count (a lost message is not hidden by it)', (() => { receive(gu, env({ t: 'hello', n: 3, p: { resume: true } }), 'b'); return gu.lastPeerN; })(), 2);
   receive(gu, env({ t: 'hello', sid: '0123456789abcdef', n: 1, p: {} }), 'b');
   check(g, 'a dealer restarted from its save has a new id: adopted', gu.sid, '0123456789abcdef');
   check(g, 'and its counter starts again', gu.lastPeerN, 1);
   check(g, 'the new session accepts the next message', verdict(gu, env({ sid: '0123456789abcdef', n: 2 }), 'b'), 'accept');
   check(g, 'the old session is now unknown', verdict(gu, env({ n: 3 }), 'b'), 'unknown_sid');
+  const old = authority();
+  stamp(old, 'state', 'connect4', { x: 1 });
+  check(g, 'a hello from an older session carries an ack that means nothing here, so a big ack does not refuse it', verdict(old, env({ t: 'hello', sid: '0123456789abcdef', n: 3, ack: 99, p: {} }), 'a'), 'accept');
+  check(g, 'and the same big ack inside our own session IS refused', verdict(old, env({ t: 'hello', n: 3, ack: 99, p: {} }), 'a'), 'bad_ack');
+  const dropped = guest();
+  receive(dropped, env({ t: 'hello', n: 0, p: {} }), 'b'); stamp(dropped, 'move', 'connect4', { c: 1 }); stamp(dropped, 'move', 'connect4', { c: 2 });
+  receive(dropped, env({ t: 'hello', sid: '0123456789abcdef', n: 0, ack: 77, p: {} }), 'b');
+  check(g, 'a new dealer session drops what the guest had sent to the old one', dropped.unacked.length, 0);
   const a = authority();
   receive(a, env({ t: 'hello', sid: '', n: 1, p: {} }), 'a'); receive(a, env({ n: 2 }), 'a'); receive(a, env({ n: 3 }), 'a');
   receive(a, env({ t: 'hello', sid: '', n: 1, p: {} }), 'a');
