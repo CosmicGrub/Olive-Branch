@@ -37,9 +37,12 @@ import 'grownup_roster.dart';
 import 'onboarding_draft.dart';
 import 'onboarding_flow.dart';
 import 'onboarding_shared.dart' show ChildOnboardingScaffold;
+import 'child_connect_screen.dart';
+import 'device_keys.dart';
+import 'pairing_protocol.dart' show ChildPairing;
 import 'pairing_redeem_screen.dart';
 
-enum FirstRunStage { loading, questions, connect, waiting }
+enum FirstRunStage { loading, questions, connect, accountCode, waiting }
 
 class FirstRunFlow extends StatefulWidget {
   const FirstRunFlow({
@@ -50,6 +53,8 @@ class FirstRunFlow extends StatefulWidget {
     this.httpClient,
     this.roster,
     this.nicknames,
+    this.deviceKeys,
+    this.onPairedLocally,
   });
 
   final String baseUrl;
@@ -64,6 +69,12 @@ class FirstRunFlow extends StatefulWidget {
   final NicknameRepository? nicknames;
   final void Function(Map<String, dynamic> result) onRedeemed;
   final http.Client? httpClient;
+
+  /// Where this device's own pairing key lives. With [onPairedLocally] set, the last step is the adult-gate
+  /// connect (a calm card; a grown-up picks their name and types THEIR PIN, or scans). Null keeps the older
+  /// account-code step as the only way (tests of the older shape).
+  final DeviceKeyRepository? deviceKeys;
+  final Future<void> Function(ChildPairing pairing)? onPairedLocally;
 
   @override
   State<FirstRunFlow> createState() => _FirstRunFlowState();
@@ -124,6 +135,19 @@ class _FirstRunFlowState extends State<FirstRunFlow> {
         onComplete: () async {
           if (mounted) setState(() => _stage = FirstRunStage.connect);
         },
+      ),
+    FirstRunStage.connect when widget.deviceKeys != null && widget.onPairedLocally != null => ChildConnectScreen(
+        deviceKeys: widget.deviceKeys!,
+        onPaired: widget.onPairedLocally!,
+        onAccountCode: () => setState(() => _stage = FirstRunStage.accountCode),
+      ),
+    FirstRunStage.accountCode => PairingRedeemScreen(
+        baseUrl: widget.baseUrl,
+        role: 'child',
+        httpClient: widget.httpClient,
+        closingStep: true,
+        onRedeemed: widget.onRedeemed,
+        onNotNow: () => setState(() => _stage = FirstRunStage.connect),
       ),
     FirstRunStage.connect => PairingRedeemScreen(
         baseUrl: widget.baseUrl,

@@ -15,6 +15,7 @@ BootRoute route({
   DeviceRole? role,
   bool family = false,
   bool pin = false,
+  bool childPairing = false,
 }) =>
     decideBoot(BootFacts(
       target: target,
@@ -24,9 +25,21 @@ BootRoute route({
       role: role,
       hasLocalFamily: family,
       hasLocalPin: pin,
+      hasLocalChildPairing: childPairing,
     ));
 
 void main() {
+  group('a Kid device a grown-up approved on the same network', () {
+    test('opens her home, not the first run', () {
+      expect(route(role: DeviceRole.kid, childPairing: true), BootRoute.childPairedLocal);
+    });
+    test('a pairing without the Kid role (or a server identity) changes nothing else', () {
+      expect(route(childPairing: true), BootRoute.rolePicker);
+      expect(route(role: DeviceRole.mom, childPairing: true), BootRoute.guardianOnboarding);
+      expect(route(stored: 'child', childPairing: true), BootRoute.childPaired);
+    });
+  });
+
   group('step 0: no identity and no role asks who is using the device', () {
     test('a fresh device opens the role picker', () {
       expect(route(), BootRoute.rolePicker);

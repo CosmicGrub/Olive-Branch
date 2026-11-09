@@ -142,10 +142,12 @@ class AdultGateCard extends StatelessWidget {
 
 /// Pushes the gate as a route and returns the typed code, or null when it was closed. [startOpen] skips the
 /// card when the grown-up already chose to be here.
-Future<String?> askAdultPin(BuildContext context, {required int digits, bool startOpen = false}) =>
+Future<String?> askAdultPin(BuildContext context,
+        {required int digits, bool startOpen = false, String? confirmLabel}) =>
     Navigator.of(context).push<String>(MaterialPageRoute<String>(
       builder: (BuildContext ctx) => AdultGate(
         digits: digits,
+        confirmLabel: confirmLabel,
         startOpen: startOpen,
         onPin: Navigator.of(ctx).pop,
         onClose: () => Navigator.of(ctx).pop(),

@@ -60,6 +60,7 @@ import 'auth_session.dart';
 import 'child_home_live.dart';
 import 'contact_labels.dart';
 import 'device_identity.dart';
+import 'device_keys.dart';
 import 'device_role.dart';
 import 'first_run_flow.dart';
 import 'grownup_roster.dart';
@@ -69,7 +70,9 @@ import 'kiosk_shell.dart';
 import 'live_boot_plan.dart';
 import 'live_common.dart';
 import 'local_family.dart';
-import 'local_pin.dart' show kLocalGuardianScope;
+import 'local_pin.dart';
+import 'pairing_protocol.dart' show ChildPairing;
+import 'pairing_records.dart';
 import 'local_repositories.dart';
 import 'local_services.dart';
 import 'my_people_entry.dart' show KidLabelsHost;
@@ -394,7 +397,7 @@ Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
   // was given on its first screen decides.
   final stored = await DeviceIdentityStore().load();
   DeviceRole? role;
-  bool hasFamily = false, hasPin = false;
+  bool hasFamily = false, hasPin = false, hasChildPairing = false;
   if (stored == null) {
     // Storage opens under the pending-device owner (never the literal 'demo-child').
     await _openLocalStorage(kPendingDeviceScope);
@@ -403,6 +406,8 @@ Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
       final GuardianLocalServices local = GuardianLocalServices.from(LocalServices.current);
       hasFamily = await _safeBool(() async => (await local.families.load()) != null);
       hasPin = await _safeBool(local.pin.isSet);
+    } else if (role != null) {
+      hasChildPairing = await _safeBool(() async => (await _childPairingRepo().load()) != null);
     }
   }
   final BootRoute route = decideBoot(BootFacts(
@@ -411,6 +416,7 @@ Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
     role: role,
     hasLocalFamily: hasFamily,
     hasLocalPin: hasPin,
+    hasLocalChildPairing: hasChildPairing,
   ));
   switch (route) {
     case BootRoute.childPaired:
@@ -421,6 +427,13 @@ Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
       runApp(const _RolePickerApp(onPicked: _onRolePicked));
     case BootRoute.kidFirstRun:
       await _startKidFirstRun();
+    case BootRoute.childPairedLocal:
+      final ChildPairing? p = await _childPairingRepo().load();
+      if (p == null) {
+        await _startKidFirstRun();
+      } else {
+        await _bootLocalPaired(p);
+      }
     case BootRoute.guardianOnboarding:
     case BootRoute.guardianOffline:
       await bootGuardianFlow(role!, reuseStorage: true);
@@ -428,6 +441,37 @@ Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
     case BootRoute.guardianDev:
       break; // handled above; unreachable without a define
   }
+}
+
+/// The child device's record of the grown-up that approved it on the same network (pairing_protocol.dart):
+/// the certificate, and the grown-up's PIN verifier (a salted slow hash; a child device never holds a PIN).
+ChildPairingRepository _childPairingRepo() => LocalStoreChildPairingRepository(
+    LocalServices.current.area('childpairing'),
+    LocalStoreLocalPinRepository(LocalServices.current.area('adultunlock')));
+
+/// A grown-up approved this Kid device on the same network. Keep it, then open her home. There is NO server
+/// session here: her home runs on what the device has (its offline home) and the adult gate checks the
+/// grown-up's PIN against the verifier this device was given, with its own 5-tries-then-15-minutes lock.
+/// UNVERIFIED on a real device (the offline child home with no session is exercised by its own tests).
+Future<void> _completeLocalPair(ChildPairing p) async {
+  try {
+    await _childPairingRepo().save(p);
+  } catch (e) {
+    debugPrint('[olive.pairing] could not keep the pairing on this device: $e');
+  }
+  await _bootLocalPaired(p);
+}
+
+Future<void> _bootLocalPaired(ChildPairing p) async {
+  await _openLocalStorage(p.cert.childId);
+  final LocalPinService unlock = LocalPinService(
+      LocalStoreLocalPinRepository(LocalServices.current.area('adultunlock')));
+  runApp(OliveLive(
+    initialTheme: defaultAppTheme,
+    childId: p.cert.childId,
+    session: null,
+    verifyPin: unlock.verifyBool,
+  ));
 }
 
 Future<bool> _safeBool(Future<bool> Function() f) async {
@@ -473,6 +517,7 @@ Future<void> _startKidFirstRun() async {
     draftRepository: LocalOnboardingDraftRepository(s.area('onboarding', ownerId: kPendingDeviceScope)),
     roster: roster,
     nicknames: LocalNicknameRepository(s.area('nicknames', ownerId: kPendingDeviceScope)),
+    deviceKeys: LocalStoreDeviceKeyRepository(s.area('devicekey')),
   ));
 }
 
@@ -501,8 +546,9 @@ Future<void> _completeRedeem(Map<String, dynamic> result) async {
 /// ([FirstRunFlow]). Same bare-MaterialApp shape as [_PairingBootApp].
 class _FirstRunApp extends StatelessWidget {
   const _FirstRunApp({
-    required this.baseUrl, required this.draftRepository, this.roster, this.nicknames});
+    required this.baseUrl, required this.draftRepository, this.roster, this.nicknames, this.deviceKeys});
   final String baseUrl;
+  final DeviceKeyRepository? deviceKeys;
   final OnboardingDraftRepository draftRepository;
   final KidRoster? roster;
   final NicknameRepository? nicknames;
@@ -517,6 +563,8 @@ class _FirstRunApp extends StatelessWidget {
       roster: roster,
       nicknames: nicknames,
       onRedeemed: (result) => unawaited(_completeRedeem(result)),
+      deviceKeys: deviceKeys,
+      onPairedLocally: (p) => _completeLocalPair(p),
     ),
   );
 }
@@ -628,7 +676,7 @@ class _OnboardingBootApp extends StatelessWidget {
 
 class OliveLive extends StatefulWidget {
   const OliveLive({super.key, this.initialTheme = defaultAppTheme,
-    required this.childId, required this.session});
+    required this.childId, required this.session, this.verifyPin});
 
   /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
   /// fail-closed to [defaultAppTheme] on any failure -- this widget never
@@ -645,6 +693,10 @@ class OliveLive extends StatefulWidget {
   /// apiFor() reads). Held here so the tree depends on it explicitly, and null
   /// only in a widget test that supplies its own transport.
   final AuthSession? session;
+
+  /// The adult gate's PIN check. Null = the server's (a connected device). A device a grown-up approved on
+  /// the same network passes its own local verifier.
+  final Future<bool> Function(String pin)? verifyPin;
 
   @override
   State<OliveLive> createState() => _OliveLiveState();
@@ -714,7 +766,8 @@ class _OliveLiveState extends State<OliveLive> {
           child: KidLabelsHost(childId: widget.childId, child: withAccess(child!)),
         ),
         home: KioskShell(
-          verifyPin: (pin) => _verifyGuardianPin(pin, childId: widget.childId),
+          variableLengthPin: widget.verifyPin != null,
+          verifyPin: widget.verifyPin ?? (pin) => _verifyGuardianPin(pin, childId: widget.childId),
           verifyBiometric: _liveVerifyBiometricStub,
           child: LiveChildHomeScreen(
             baseUrl: _dartDefineBaseUrl,
