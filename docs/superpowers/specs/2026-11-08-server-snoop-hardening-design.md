@@ -127,7 +127,7 @@ Severity: H = breaks a stated asset, M = weakens it, L = hygiene.
   must stay 503 (the CI smoke job and Docker healthchecks key on it), but the
   body can be a fixed generic shape.
 - F-31 (L) 401 bodies name the reason (`no_session` vs `expired` vs
-  `bad_signature`, `api.ts:430-432`). Acceptable (the client needs `expired`
+  `bad_signature`, `api.ts:435-438`). Acceptable (the client needs `expired`
   to refresh) and not an oracle for another user's data. Documented, not
   changed.
 - F-32 (ok) Verified good, tests kept or added: constant-time compares for
