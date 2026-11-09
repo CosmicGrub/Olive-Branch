@@ -120,6 +120,10 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'a contact id and the word she chose. They are hers: a grown-up can see them but not '
           'change them. No count or ranking.'),
   LocalDataEntry(
+      area: 'homegrowth', scope: LocalScope.child, maxBytes: 8 * 1024,
+      what: 'The age her home last showed and, after a birthday, whether the "your home grows" page is waiting, '
+          'was seen, or was put off with Not now. Nothing else: no count, no streak, no reward.'),
+  LocalDataEntry(
       area: 'outbox', scope: LocalScope.child, maxBytes: 2 * _mib,
       what: 'Things she made while offline that are waiting to go, so a restart does not lose '
           'them. Never shown to her as a queue.'),

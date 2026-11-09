@@ -80,11 +80,11 @@ class _MyPeopleScreenState extends State<MyPeopleScreen> {
   String _nameOf(GrownupContact c) => ContactLabels.forChild(c, age: widget.age, nicknames: _nicks);
 
   Future<void> _edit(GrownupContact c) async {
-    final _Picked? picked = await showModalBottomSheet<_Picked>(
+    final NicknamePick? picked = await showModalBottomSheet<NicknamePick>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (BuildContext ctx) => _NameSheet(
+      builder: (BuildContext ctx) => NicknameSheet(
         shown: _nameOf(c),
         hasNickname: ContactLabels.cleanNickname(_nicks[c.id]) != null,
       ),
@@ -179,22 +179,23 @@ class _MyPeopleScreenState extends State<MyPeopleScreen> {
   }
 }
 
-/// What the sheet reports: a name, or null for "go back to the usual word".
-class _Picked {
-  const _Picked(this.name);
+/// What the sheet reports: a name, or null for "go back to the usual word". Also used by the My people
+/// screen's call / message / rename sheet (family_structure_screens.dart).
+class NicknamePick {
+  const NicknamePick(this.name);
   final String? name;
 }
 
-class _NameSheet extends StatefulWidget {
-  const _NameSheet({required this.shown, required this.hasNickname});
+class NicknameSheet extends StatefulWidget {
+  const NicknameSheet({super.key, required this.shown, required this.hasNickname});
   final String shown;
   final bool hasNickname;
 
   @override
-  State<_NameSheet> createState() => _NameSheetState();
+  State<NicknameSheet> createState() => _NicknameSheetState();
 }
 
-class _NameSheetState extends State<_NameSheet> {
+class _NicknameSheetState extends State<NicknameSheet> {
   final TextEditingController _own = TextEditingController();
 
   @override
@@ -205,7 +206,7 @@ class _NameSheetState extends State<_NameSheet> {
 
   void _useOwn() {
     final String? n = ContactLabels.cleanNickname(_own.text);
-    if (n != null) Navigator.of(context).pop(_Picked(n));
+    if (n != null) Navigator.of(context).pop(NicknamePick(n));
   }
 
   @override
@@ -227,7 +228,7 @@ class _NameSheetState extends State<_NameSheet> {
                   label: w,
                   selected: w == widget.shown,
                   minSide: kChildTarget,
-                  onTap: () => Navigator.of(context).pop(_Picked(w)),
+                  onTap: () => Navigator.of(context).pop(NicknamePick(w)),
                 ),
             ]),
             const SizedBox(height: 20),
@@ -260,7 +261,7 @@ class _NameSheetState extends State<_NameSheet> {
                 height: kChildTarget,
                 child: TextButton(
                   key: const Key('nameReset'),
-                  onPressed: () => Navigator.of(context).pop(const _Picked(null)),
+                  onPressed: () => Navigator.of(context).pop(const NicknamePick(null)),
                   style: TextButton.styleFrom(foregroundColor: scheme.onSurfaceVariant),
                   child: const Text('Use the usual word'),
                 ),

@@ -135,6 +135,7 @@ for spec in \
   "olive UI art drift guard (kit icons, scenes, spots to Dart)|tools/test/olive_art.test.mjs" \
   "parity scenarios: prototype scenarios + rule table, drift guard|tools/test/parity_scenarios.test.mjs" \
   "version sync + release tooling helpers (docs/RELEASING.md)|tools/test/version_sync.test.mjs" \
+  "child homes: per-age tiles, renames, More, your-home-grows, drift guard|tools/test/child_home_vectors.test.mjs" \
   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)

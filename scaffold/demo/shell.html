@@ -537,7 +537,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 13576,
+  "assertions": 13784,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",
@@ -569,7 +569,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     "closingRitual": "closing", "sharedReading": "reading", "busyFork": "busy",
     "welcome": "welcome", "guardianSetup": "guardianSetup",
     "doodle": "doodle", "snapshot": "snapshot",
-    "parentLearn": "parentlearn", "learnChoices": "parentlearn", "learnReflection": "parentlearn", "learnMessageCheck": "parentlearn", "learnRules": "parentlearn", "familyBuilder": "familystructure", "herPeople": "familystructure", "herBirthday": "familystructure", "ageHome34": "familystructure", "readTogether": "coview"
+    "parentLearn": "parentlearn", "learnChoices": "parentlearn", "learnReflection": "parentlearn", "learnMessageCheck": "parentlearn", "learnRules": "parentlearn", "familyBuilder": "familystructure", "herPeople": "familystructure", "herBirthday": "familystructure", "ageHome34": "familystructure", "ageHome57": "familystructure", "ageHome812": "familystructure", "herHomeGrows": "familystructure", "readTogether": "coview"
   },
   "notDemoed": {
     "obGender": "Child-side Flutter screen (client/lib/onboarding_gender.dart), Onboarding & Guardian Access sub-project 1 (docs/superpowers/specs/2026-09-12-onboarding-identity-pin-design.md) — persists via a new PUT /v1/children/:childId/profile route that this demo's own onboarding engine (packages/onboarding/src/onboarding.ts's begin()/advance()/greeting()/outcome(), bridged as S.onboarding above) has no equivalent step for; extending that TS engine's step sequence is out of scope for this sub-project, so this screen has no demo counterpart — same posture as jokebook/themePicker below.",

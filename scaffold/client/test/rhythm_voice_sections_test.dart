@@ -215,7 +215,10 @@ void main() {
           childName: 'Ivy', presence: null, sleepsUntilHandover: 3, unreadCount: 0, childAge: 6,
           family: snap(twoHomes, 't57'))));
       await t.pumpAndSettle();
-      await t.tap(find.text('More for you'));
+      // Wave 2a: the 5-7 home's More tile opens the band's More page; Everything else is the older More for you hub.
+      await t.tap(find.byKey(const Key('bandTile.more')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('moreEverything')));
       await t.pumpAndSettle();
       expect(find.byKey(const Key('rvTile_weather')), findsOneWidget);
       expect(find.byKey(const Key('rvTile_packing')), findsNothing, reason: 'nothing authored yet');
