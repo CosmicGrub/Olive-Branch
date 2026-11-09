@@ -33,7 +33,13 @@ Future<FamilyChildSnapshot> snap(int years) async {
 Widget app(Widget home, double scale, int years) => MaterialApp(
       theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple), useMaterial3: true),
       builder: (BuildContext c, Widget? w) => MediaQuery(data: MediaQuery.of(c).copyWith(textScaler: TextScaler.linear(scale)), child: w!),
-      home: GrownupLabelScope(labels: GrownupLabels(age: AgeLockState(age: years, locked: true)), child: home),
+      home: GrownupLabelScope(labels: GrownupLabels(
+          // "My weeks" waits for a family, so the posture child has one.
+          contacts: const <GrownupContact>[
+            GrownupContact(id: 'g1', guardianLabel: 'Mom', kind: GrownupKind.mom),
+            GrownupContact(id: 'g2', guardianLabel: 'Dad', kind: GrownupKind.dad),
+          ],
+          age: AgeLockState(age: years, locked: true)), child: home),
     );
 
 Future<void> size(WidgetTester t, double w, double h) async {

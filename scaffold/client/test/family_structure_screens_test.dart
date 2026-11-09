@@ -440,7 +440,8 @@ void main() {
       await t.pumpWidget(wrap(ChildHome(childName: 'Ivy', presence: null, sleepsUntilHandover: null, unreadCount: 0,
           family: await s.childSnapshot(child, childId: 'c1', yearsOld: 6))));
       await t.pumpAndSettle();
-      expect(find.text('5 sleeps until your birthday'), findsOneWidget);
+      expect(find.text('Your birthday is this week.'), findsOneWidget);
+      expect(find.textContaining('sleeps until'), findsNothing, reason: 'the home shows a caption, never the count');
       await t.tap(find.byKey(const Key('birthdayLine')));
       await t.pumpAndSettle();
       expect(find.text('December 9'), findsOneWidget);

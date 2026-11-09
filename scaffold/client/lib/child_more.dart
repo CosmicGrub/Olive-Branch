@@ -161,10 +161,11 @@ class ChildMoreScreen extends StatelessWidget {
           ],
         ]),
         HubSection(title: 'Together', children: [
-          HubTile(readAloud: true, icon: Icons.nights_stay_outlined, title: 'My weeks',
-            subtitle: 'Where you sleep, night by night',
-            onTap: () => _open(context, WeeksScreen(
-              childName: childName, nights: demoCustodyNights(names: GrownupLabelScope.read(context).twoNames()), guardianColors: demoGuardianColorsFor(GrownupLabelScope.read(context).twoNames())))),
+          if (GrownupLabelScope.of(context).hasFamily)
+            HubTile(readAloud: true, icon: Icons.nights_stay_outlined, title: 'My weeks',
+              subtitle: 'Where you sleep, night by night',
+              onTap: () => _open(context, WeeksScreen(
+                childName: childName, nights: demoCustodyNights(names: GrownupLabelScope.read(context).twoNames()), guardianColors: demoGuardianColorsFor(GrownupLabelScope.read(context).twoNames())))),
           HubTile(readAloud: true, icon: Icons.school_outlined, title: 'Teach ${_grownUpIn(context, watch: true)} something',
             subtitle: 'You be the teacher',
             onTap: () => _open(context, TeachMeScreen(childName: childName, childAge: childAge,

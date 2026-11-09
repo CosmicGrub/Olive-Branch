@@ -252,6 +252,22 @@ const hit = (childId, tok, body) => api.handle(
 }
 
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// G · a guardian PIN is 4 to 8 digits everywhere: the route hardcodes no length
+// ===========================================================================
+{
+  for (const pin of ['0042', '123456', '12345678']) {
+    setCred(MOM_A, pin);
+    const ok = await hit(CHILD_A, childTok(CHILD_A), { pin });
+    check('G length', `a ${pin.length}-digit PIN (${pin}) verifies through the route`, ok.body.ok, 'true');
+  }
+  setCred(MOM_A, '4242');
+  let threw = false; try { hashPin('123'); } catch { threw = true; }
+  check('G length', 'a 3-digit PIN cannot be stored', threw, true);
+  threw = false; try { hashPin('123456789'); } catch { threw = true; }
+  check('G length', 'a 9-digit PIN cannot be stored', threw, true);
+}
+
 let g = '';
 for (const r of rows) { if (r.g !== g) { g = r.g; console.log(`\n${g}`); }
   console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.n}` + (r.ok ? '' : `\n         expected ${r.e}, got ${r.a}`)); }

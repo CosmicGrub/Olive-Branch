@@ -65,12 +65,13 @@ const MOM = '22222222-2222-4222-9222-000000000002';
 const STRANGER = '33333333-3333-4333-9333-000000000002';
 const CHILD = '55555555-5555-4555-9555-000000000002';
 const OTHER_CHILD = '66666666-6666-4666-9666-000000000002';
+const SOLO_CHILD = '77777777-7777-4777-9777-000000000002'; // a family with exactly one guardian (Dad)
 const COORDINATOR = '44444444-4444-4444-9444-000000000002';
 
 async function cleanup() {
-  await admin.query(`DELETE FROM expense WHERE child_id = ANY($1::uuid[])`, [[CHILD, OTHER_CHILD]]);
-  await admin.query(`DELETE FROM guardianship WHERE child_id = ANY($1::uuid[])`, [[CHILD, OTHER_CHILD]]);
-  await admin.query(`DELETE FROM child WHERE id = ANY($1::uuid[])`, [[CHILD, OTHER_CHILD]]);
+  await admin.query(`DELETE FROM expense WHERE child_id = ANY($1::uuid[])`, [[CHILD, OTHER_CHILD, SOLO_CHILD]]);
+  await admin.query(`DELETE FROM guardianship WHERE child_id = ANY($1::uuid[])`, [[CHILD, OTHER_CHILD, SOLO_CHILD]]);
+  await admin.query(`DELETE FROM child WHERE id = ANY($1::uuid[])`, [[CHILD, OTHER_CHILD, SOLO_CHILD]]);
   await admin.query(`DELETE FROM app_user WHERE id = ANY($1::uuid[])`, [[DAD, MOM, STRANGER, COORDINATOR]]);
 }
 await cleanup();
@@ -84,15 +85,17 @@ await admin.query(
 await admin.query(
   `INSERT INTO child (id, display_name, birth_date, home_tz) VALUES
      ($1,'Ivy','2016-04-02','America/Los_Angeles'),
-     ($2,'OtherKid','2016-04-02','America/Los_Angeles')`,
-  [CHILD, OTHER_CHILD]);
+     ($2,'OtherKid','2016-04-02','America/Los_Angeles'),
+     ($3,'SoloKid','2016-04-02','America/Los_Angeles')`,
+  [CHILD, OTHER_CHILD, SOLO_CHILD]);
 await admin.query(
   `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
      ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null)),
      ($1, $3, 'guardian', '{}', tstzrange(now() - interval '1 year', null)),
      ($1, $5, 'coordinator', '{}', tstzrange(now() - interval '1 year', null)),
-     ($4, $3, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`,
-  [CHILD, DAD, MOM, OTHER_CHILD, COORDINATOR]);
+     ($4, $3, 'guardian', '{}', tstzrange(now() - interval '1 year', null)),
+     ($6, $2, 'guardian', '{}', tstzrange(now() - interval '1 year', null))`,
+  [CHILD, DAD, MOM, OTHER_CHILD, COORDINATOR, SOLO_CHILD]);
 // Mom (not Dad) holds the live edge to OTHER_CHILD too — deliberately, so
 // section J below tests a guardian who genuinely passes the OUTER
 // action:'expense.resolve' gate for OTHER_CHILD's own path, then tries to
@@ -347,7 +350,19 @@ let disputeId;
   const disputed = await mk();
   await resolve(CHILD, disputed, 'dispute', momTok);
   const fromDisputed = await resolve(CHILD, disputed, 'accept', momTok);
-  check('L transitions', 'a disputed expense cannot be quietly accepted later', fromDisputed.status, 409);
+  check('L transitions', 'a disputed expense CAN be accepted later (owner, 0045), and it is recorded', fromDisputed.status, 200);
+  const disputedEv = (await admin.query(`SELECT from_status, to_status, actor_id, self_accept FROM expense_event WHERE expense_id = $1 ORDER BY seq`, [disputed])).rows;
+  check('L transitions', 'history: proposed, disputed, accepted (disputed -> accepted)',
+    disputedEv.map(e => `${e.from_status ?? 'null'}>${e.to_status}`).join(','), 'null>proposed,proposed>disputed,disputed>accepted');
+  check('L transitions', 'a two-guardian accept is not a self-accept', disputedEv.some(e => e.self_accept), false);
+  const proposerAgain = await resolve(CHILD, disputed, 'accept', dadTok);
+  check('L transitions', 'the proposer still cannot accept in a two-guardian family (409: already accepted, not a bypass)', proposerAgain.status, 409);
+  const disputed2 = await mk();
+  await resolve(CHILD, disputed2, 'dispute', momTok);
+  const ownFromDisputed = await resolve(CHILD, disputed2, 'accept', dadTok);
+  check('L transitions', 'two guardians: the proposer cannot accept a disputed expense either (403)', ownFromDisputed.status, 403);
+  const unaccepted = await resolve(CHILD, disputed2, 'reimburse', momTok);
+  check('L transitions', 'reimbursing a disputed (unaccepted) expense is 409 invalid_transition', `${unaccepted.status}:${unaccepted.body.error}`, '409:invalid_transition');
 
   const ev = (await admin.query(
     `SELECT seq, from_status, to_status, actor_id, at, backfilled FROM expense_event WHERE expense_id = $1 ORDER BY seq`, [id])).rows;
@@ -360,7 +375,7 @@ let disputeId;
     ev.every((e, i) => e.at && (i === 0 || e.at >= ev[i - 1].at)), true);
   check('L history', 'none of this history is a backfill', ev.some(e => e.backfilled), false);
   check('L history', 'a refused attempt leaves NO event behind',
-    (await admin.query(`SELECT count(*)::int AS n FROM expense_event WHERE expense_id = $1`, [disputed])).rows[0].n, 2);
+    (await admin.query(`SELECT count(*)::int AS n FROM expense_event WHERE expense_id = $1`, [disputed])).rows[0].n, 3);
 
   // the database is the real enforcement, whatever the application does
   const run = async (sql, params = [], actor = null) => {
@@ -476,6 +491,56 @@ let disputeId;
   check('M db checks', 'a valid split is accepted', await ins(JSON.stringify({ [DAD]: 3333, [MOM]: 6667 })), null);
   check('M db checks', 'a bad currency code is refused', await ins(null, 'usd'), 'expense_currency_iso4217');
   await admin.query('ROLLBACK');
+}
+// ===========================================================================
+// N · a SOLE guardian may accept their own proposal (recorded as self_accept);
+//     a family with two or more guardians keeps proposer-cannot-accept.
+// ===========================================================================
+{
+  const mk = async (child, tok) => (await post(child, tok, { description: 'Solo guardian expense',
+    amountCents: 4200, category: 'other', incurredOn: '2026-08-01', payerSharePercent: 100 })).body.id;
+  const id = await mk(SOLO_CHILD, dadTok);
+  const events = async (x) => (await admin.query(
+    `SELECT from_status, to_status, actor_id, self_accept, backfilled FROM expense_event WHERE expense_id = $1 ORDER BY seq`, [x])).rows;
+
+  const ownDispute = await resolve(SOLO_CHILD, id, 'dispute', dadTok);
+  check('N solo', 'a sole guardian still cannot DISPUTE their own expense (403)', ownDispute.status, 403);
+  const selfAccept = await resolve(SOLO_CHILD, id, 'accept', dadTok);
+  check('N solo', 'a sole guardian can accept their own proposal (200)', selfAccept.status, 200);
+  check('N solo', 'status is accepted', selfAccept.body.status, 'accepted');
+  const ev = await events(id);
+  check('N solo', 'the accept is recorded with the actor', ev.map(e => `${e.to_status}:${e.actor_id}`).join(','), `proposed:${DAD},accepted:${DAD}`);
+  check('N solo', 'and an explicit self_accept marker on that event only', ev.map(e => e.self_accept).join(','), 'false,true');
+  const reim = await resolve(SOLO_CHILD, id, 'reimburse', dadTok);
+  check('N solo', 'a self-accepted expense can then be reimbursed', reim.status, 200);
+  check('N solo', 'reimbursing carries no self_accept marker', (await events(id)).map(e => e.self_accept).join(','), 'false,true,false');
+
+  // disputed -> accepted, solo family: dispute is by someone else only, so use the DB path for the disputer
+  const unaccepted = await mk(SOLO_CHILD, dadTok);
+  const early = await resolve(SOLO_CHILD, unaccepted, 'reimburse', dadTok);
+  check('N solo', 'reimbursing an unaccepted expense is still 409 invalid_transition', `${early.status}:${early.body.error}`, '409:invalid_transition');
+
+  // two guardians: unchanged
+  const two = await mk(CHILD, dadTok);
+  const refused = await resolve(CHILD, two, 'accept', dadTok);
+  check('N two', 'with two guardians the proposer still cannot accept (403 cannot_resolve_own_expense)', `${refused.status}:${refused.body.error}`, '403:cannot_resolve_own_expense');
+  check('N two', 'and nothing was recorded', (await events(two)).length, 1);
+
+  // the database is the enforcement
+  const run = async (sql, params, actor) => {
+    await admin.query('BEGIN');
+    try { await admin.query(`SELECT set_config('app.user_id', $1, true)`, [actor]); await admin.query(sql, params); await admin.query('COMMIT'); return null; }
+    catch (e) { await admin.query('ROLLBACK'); return e.message; }
+  };
+  const viaDb = await mk(SOLO_CHILD, dadTok); 
+  check('N db', 'a direct UPDATE by the sole guardian to accepted passes the trigger', await run(`UPDATE expense SET status = 'accepted' WHERE id = $1`, [viaDb], DAD), null);
+  check('N db', 'and the trigger marked it self_accept', (await events(viaDb)).at(-1).self_accept, true);
+  const viaDb2 = await mk(SOLO_CHILD, dadTok);
+  check('N db', 'a direct UPDATE by the sole guardian to disputed is refused',
+    (await run(`UPDATE expense SET status = 'disputed' WHERE id = $1`, [viaDb2], DAD))?.includes('expense_own_proposal'), true);
+  check('N db', 'self_accept cannot be set on a non-accept event',
+    (await run(`INSERT INTO expense_event (expense_id, child_id, seq, from_status, to_status, self_accept) VALUES ($1,$2,99,'accepted','reimbursed',true)`, [viaDb2, SOLO_CHILD], DAD))
+      ?.includes('expense_event_self_accept_shape'), true);
 }
 await cleanup();
 await admin.end();

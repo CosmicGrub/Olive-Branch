@@ -77,6 +77,9 @@ CHANGELOG paragraph below has to be true.
   server-dependent features (pairing, delivery, calls, push) are unavailable; the on-device half is what it exercises. If a
   cut should talk to a real server, pass `--base-url https://<public name>` (https, public name, no credentials, no query);
   the tool refuses anything else.
+- **Pre-release by default.** Every cut is debug-signed, so `--publish` creates a GitHub *pre-release*; `--stable` opts out
+  (only for a release-signed build, which this tool does not yet make). A release with no base URL is a preview in any case:
+  it cannot reach a server. v0.51.0 was published as a normal release before this rule; it is left as it is.
 - No `OLIVE_DEV_LOGIN`, `OLIVE_CHILD_ID` or `OLIVE_GUARDIAN_ID`: a shipped file can never reach the credential-free dev login.
 - It refuses if `android/key.properties` exists (a real keystore would sign the file, and the notes would be wrong) or if
   `android/app/google-services.json` exists (it would be compiled into a public file).

@@ -18,9 +18,10 @@ class PlayAwayBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (session.notice == PlayNoticeKind.none) return const SizedBox.shrink();
+    final PlayWords words = PlayAudienceScope.wordsOf(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: LiveLine(child: Text(playNoticeLine(session.notice), textAlign: TextAlign.center,
+      child: LiveLine(child: Text(words.line(session.notice), textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
     );
   }
@@ -34,23 +35,24 @@ class PlayRematchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final PlayWords words = PlayAudienceScope.wordsOf(context);
     switch (session.rematch) {
       case PlayRematch.none:
         return Padding(padding: const EdgeInsets.only(top: 20),
-          child: FilledButton(onPressed: session.askRematch, child: const Text(kPlayAgain)));
+          child: FilledButton(onPressed: session.askRematch, child: Text(words.playAgain)));
       case PlayRematch.asked:
         return Padding(padding: const EdgeInsets.only(top: 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
-          LiveLine(child: Text(kPlayRematchAsked, style: theme.textTheme.bodyLarge)),
-          TextButton(onPressed: session.cancelRematchAsk, child: const Text(kPlayRematchNeverMind)),
+          LiveLine(child: Text(words.rematchAsked, style: theme.textTheme.bodyLarge)),
+          TextButton(onPressed: session.cancelRematchAsk, child: Text(words.rematchNeverMind)),
         ]));
       case PlayRematch.offered:
         return Padding(padding: const EdgeInsets.only(top: 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
-          LiveLine(child: Text(kPlayRematchOffered, style: theme.textTheme.titleMedium)),
+          LiveLine(child: Text(words.rematchOffered, style: theme.textTheme.titleMedium)),
           const SizedBox(height: 8),
           Row(mainAxisSize: MainAxisSize.min, children: [
-            FilledButton(onPressed: session.acceptRematch, child: const Text(kPlayRematchYes)),
+            FilledButton(onPressed: session.acceptRematch, child: Text(words.rematchYes)),
             const SizedBox(width: 12),
-            TextButton(onPressed: session.declineRematch, child: const Text(kPlayRematchNotNow)),
+            TextButton(onPressed: session.declineRematch, child: Text(words.rematchNotNow)),
           ]),
         ]));
     }
@@ -65,18 +67,19 @@ class PlayFinishButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!session.hasMetPeer || session.endedForGood) return const SizedBox.shrink();
+    final PlayWords words = PlayAudienceScope.wordsOf(context);
     return IconButton(
-      tooltip: kPlayFinishForNow,
+      tooltip: words.finishForNow,
       icon: const Icon(Icons.pause_circle_outline),
       onPressed: () async {
         final bool? yes = await showDialog<bool>(
           context: context,
           builder: (c) => AlertDialog(
-            title: const Text(kPlayFinishForNow),
-            content: const Text(kPlayFinishBody),
+            title: Text(words.finishForNow),
+            content: Text(words.finishBody),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text(kPlayKeepPlaying)),
-              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text(kPlayFinishForNow)),
+              TextButton(onPressed: () => Navigator.pop(c, false), child: Text(words.keepPlaying)),
+              FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(words.finishForNow)),
             ],
           ),
         );
@@ -88,14 +91,15 @@ class PlayFinishButton extends StatelessWidget {
 
 /// Asked of the grown-up on the dealing device when a saved game is found: carry on, or start a new one.
 Future<bool> askResumeSavedGame(BuildContext context, String gameTitle) async {
+  final PlayWords words = PlayAudienceScope.wordsOf(context);
   final bool? yes = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (c) => AlertDialog(
-      content: Text(playResumeLine(gameTitle)),
+      content: Text(words.resumeFor(gameTitle)),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text(kPlayResumeNo)),
-        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text(kPlayResumeYes)),
+        TextButton(onPressed: () => Navigator.pop(c, false), child: Text(words.resumeNo)),
+        FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(words.resumeYes)),
       ],
     ),
   );

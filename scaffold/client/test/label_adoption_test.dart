@@ -102,7 +102,7 @@ void main() {
     });
 
     test('a guardian sees both where a nickname exists', () {
-      expect(_nick.forGuardian('g-dad', childName: 'Ivy'), 'Dad (Ivy calls you Dada)');
+      expect(_nick.forGuardian('g-dad', childName: 'Ivy'), 'Ivy calls you Dada');
       expect(_ageDefault.forGuardian('g-dad', childName: 'Ivy'), 'Dad');
     });
 

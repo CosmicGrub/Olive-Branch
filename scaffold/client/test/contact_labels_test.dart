@@ -71,7 +71,9 @@ void main() {
   group('what a guardian sees: both', () {
     test('shows how she says it', () {
       expect(ContactLabels.forGuardian(dad, childName: 'Ivy', nicknames: <String, String>{'d': 'Dada'}),
-          'Dad (Ivy calls you Dada)');
+          'Ivy calls you Dada');
+      expect(ContactLabels.forGuardian(dad, childName: 'Ivy', nicknames: <String, String>{'d': 'Dada'}, viewerIsSelf: false),
+          'Ivy calls Dad Dada');
     });
     test('shows just their label when she has not renamed it, or used the same word', () {
       expect(ContactLabels.forGuardian(dad, childName: 'Ivy'), 'Dad');

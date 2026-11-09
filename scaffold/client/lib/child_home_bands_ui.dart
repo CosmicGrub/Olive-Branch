@@ -24,6 +24,7 @@ import 'access_scope.dart';
 import 'child_home_bands.dart';
 import 'child_home_growth.dart';
 import 'cover_collapse.dart';
+import 'grownup_labels.dart';
 import 'tiered_tile.dart';
 import 'ui/olive_art.dart';
 import 'ui/olive_base.dart';
@@ -463,7 +464,8 @@ class ChildGrowScreen extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                     Text(it.title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                    Text(it.body, style: theme.textTheme.bodyMedium),
+                    Text(it.body.replaceAll(GrownupLabels.prototypeBothWords, GrownupLabelScope.of(context).bothNames()),
+                        style: theme.textTheme.bodyMedium),
                   ])),
                 ]),
               ),

@@ -786,7 +786,6 @@ class _OliveLiveState extends State<OliveLive> {
           child: KidLabelsHost(childId: widget.childId, child: withAccess(child!)),
         ),
         home: KioskShell(
-          variableLengthPin: widget.verifyPin != null,
           phoneUnlock: widget.phoneUnlock,
           verifyPin: widget.verifyPin ?? (pin) => _verifyGuardianPin(pin, childId: widget.childId),
           verifyBiometric: _liveVerifyBiometricStub,

@@ -1250,6 +1250,6 @@ class AgeHome34 extends StatelessWidget {
   }
 }
 
-String birthdayLine(ChildBirthday b) => b.sleepsUntil == 0
-    ? 'Today is your birthday'
-    : '${b.sleepsUntil} ${b.sleepsUntil == 1 ? 'sleep' : 'sleeps'} until your birthday';
+/// The quiet caption on her home in her birthday week. The prototype shows a caption and NO number
+/// (live/mod-child.js: cap('Your birthday is this week.')); the count lives on the My birthday screen only.
+String birthdayLine(ChildBirthday b) => b.sleepsUntil == 0 ? 'Today is your birthday' : 'Your birthday is this week.';

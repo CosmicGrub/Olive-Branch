@@ -444,6 +444,8 @@ void main() {
           await t.tap(find.text('1').first);
           await t.pump();
         }
+        await t.tap(find.byKey(const Key('pinGateConfirm')));
+        await t.pump();
         await t.pumpAndSettle(const Duration(seconds: 3));
       }
     }

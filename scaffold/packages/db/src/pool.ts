@@ -3067,7 +3067,7 @@ export const EXPENSE_RESOLUTIONS: Record<string, string> = {
  * `WHERE ended_at IS NULL` idempotent-miss shape.
  */
 export type ResolveExpenseResult =
-  | { ok: true; expense: Expense }
+  | { ok: true; expense: Expense; selfAccepted?: boolean }
   | { ok: false; reason: 'not_found' }
   /** the expense is not in a state this action may start from */
   | { ok: false; reason: 'invalid_transition'; status: string }
@@ -3076,8 +3076,10 @@ export type ResolveExpenseResult =
 
 /**
  * S-D14 -- a status change is a guarded, recorded TRANSITION, not a free
- * UPDATE. Only proposed -> accepted|disputed and accepted -> reimbursed are
- * legal; the person who proposed an expense cannot accept or dispute it; and
+ * UPDATE. Only proposed -> accepted|disputed, disputed -> accepted and
+ * accepted -> reimbursed are legal; the person who proposed an expense cannot
+ * accept or dispute it, except that a SOLE guardian may accept their own
+ * (expense_event.self_accept, migration 0045); and
  * every change lands in the append-only expense_event table with the actor and
  * the time (migration 0043, whose triggers are the real enforcement -- the
  * checks here only produce the plain-language refusal first). The row is
@@ -3098,11 +3100,21 @@ export async function resolveExpense(
     );
     if (!cur.length) return { ok: false, reason: 'not_found' };
     const from: string = cur[0].status;
+    // Migration 0045: a disputed expense may still be accepted; reimbursing needs 'accepted'.
     const legal = (from === 'proposed' && (status === 'accepted' || status === 'disputed')) ||
+      (from === 'disputed' && status === 'accepted') ||
       (from === 'accepted' && status === 'reimbursed');
     if (!legal) return { ok: false, reason: 'invalid_transition', status: from };
+    let selfAccepted = false;
     if ((status === 'accepted' || status === 'disputed') && cur[0].paid_by === actorUserId) {
-      return { ok: false, reason: 'own_expense' };
+      // Only a SOLE live guardian may accept their own proposal (recorded as self_accept in
+      // expense_event); with two or more guardians the other one decides; nobody disputes their own.
+      const g = await q(
+        `SELECT count(*)::int AS n FROM effective_guardianship WHERE child_id = $1 AND role = 'guardian'`,
+        [childId],
+      );
+      if (status !== 'accepted' || g[0].n !== 1) return { ok: false, reason: 'own_expense' };
+      selfAccepted = true;
     }
     const rows = await q(
       `UPDATE expense SET status = $1 WHERE id = $2 AND child_id = $3 AND status = $4
@@ -3110,7 +3122,7 @@ export async function resolveExpense(
       [status, expenseId, childId, from],
     );
     if (!rows.length) return { ok: false, reason: 'invalid_transition', status: from };
-    return { ok: true, expense: rowToExpense(rows[0]) };
+    return { ok: true, expense: rowToExpense(rows[0]), ...(selfAccepted ? { selfAccepted: true } : {}) };
   });
 }
 
@@ -4074,7 +4086,7 @@ export async function certifiedExportBundleFor(
 
     const countRows = await q(
       `SELECT count(*)::int AS n FROM export_record
-        WHERE requested_by = $1 AND kind = 'certified'
+        WHERE requested_by = $1 AND kind = 'certified' AND chain_verified
           AND created_at > now() - interval '12 months'`,
       [requestedBy],
     );
@@ -4157,10 +4169,12 @@ export async function certifiedExportBundleFor(
     const bundleHash = bundleHashOf(bundle);
 
     const inserted = await q(
-      `INSERT INTO export_record (child_id, requested_by, kind, was_free, head_hash, bundle_hash)
-       VALUES ($1, $2, 'certified', $3, $4, $5)
+      // chain_verified = false (0046): a bundle that reports its own fault is recorded but does not use up
+      // the one free certified export per rolling year.
+      `INSERT INTO export_record (child_id, requested_by, kind, was_free, head_hash, bundle_hash, chain_verified)
+       VALUES ($1, $2, 'certified', $3, $4, $5, $6)
        RETURNING id`,
-      [childId, requestedBy, auth.free, attestation.headHash, bundleHash],
+      [childId, requestedBy, auth.free, attestation.headHash, bundleHash, verification.ok],
     );
 
     return {

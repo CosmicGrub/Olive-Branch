@@ -23,15 +23,16 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'kiosk_lock_colors.dart';
+import 'local_pin.dart' show kLocalPinMinDigits;
 
 class PinGate extends StatefulWidget {
   const PinGate({super.key, required this.digits, required this.onComplete,
     this.shuffle = true, this.confirmLabel});
   final int digits;
 
-  /// When set, the code has no fixed length: `digits` is the MAXIMUM, the code is 4 to `digits` digits, and
-  /// it is handed over when the grown-up taps this button (the on-device PIN is 4 to 8 digits). When null the
-  /// code completes by itself at `digits`, as it always did (the server PIN).
+  /// When set, the code has no fixed length: `digits` is the MAXIMUM, the code is [kLocalPinMinDigits] to `digits`
+  /// digits, and it is handed over when the grown-up taps this button (every guardian PIN is 4 to 8 digits).
+  /// When null the code completes by itself at `digits` (a fixed-length keypad, kept for tests and demos).
   final String? confirmLabel;
   final ValueChanged<String> onComplete;
   final bool shuffle;
@@ -46,7 +47,8 @@ class _PinGateState extends State<PinGate> {
   @override
   void initState() {
     super.initState();
-    keys = List<int>.generate(9, (i) => i + 1);
+    // 1-9 and 0: a PIN may contain a zero, so the keypad must be able to type one.
+    keys = <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
     // Random.secure() — a predictable shuffle is no shuffle.
     if (widget.shuffle) keys.shuffle(Random.secure());
   }
@@ -96,7 +98,7 @@ class _PinGateState extends State<PinGate> {
           const SizedBox(height: 10),
           TextButton(
             key: const Key('pinGateConfirm'),
-            onPressed: entered.length >= 4 ? () {
+            onPressed: entered.length >= kLocalPinMinDigits ? () {
               widget.onComplete(entered);
               setState(() { entered = ''; if (widget.shuffle) keys.shuffle(Random.secure()); });
             } : null,

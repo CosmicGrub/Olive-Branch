@@ -22,7 +22,7 @@
 //    child's rename screen).
 //
 // A guardian's own screens use [GrownupLabels.forGuardian], which shows both
-// ("Dad (Ivy calls you Dada)") where a nickname exists.
+// ("Ivy calls you Dada") where a nickname exists.
 import 'package:flutter/widgets.dart';
 
 import 'contact_labels.dart';
@@ -63,6 +63,10 @@ class GrownupLabels {
     return contacts.length == 1 ? contacts.first : null;
   }
 
+  /// True once a family exists (at least one known grown-up). "My weeks" is hidden until then: with nobody
+  /// to name it would show only 'Grown-up one' and 'Grown-up two'.
+  bool get hasFamily => contacts.isNotEmpty;
+
   /// True when a child-facing screen can name a real grown-up.
   bool get hasPrimary => contact() != null;
 
@@ -81,6 +85,15 @@ class GrownupLabels {
     if (c == null) return neutralGrownUp;
     return ContactLabels.forGuardian(c, childName: childName, nicknames: nicknames);
   }
+
+  /// "Mommy and Daddy" in her own words when two grown-ups are known; otherwise the neutral "your grown-ups".
+  /// For prototype copy that says "Mom and Dad" (see [prototypeBothWords]).
+  String bothNames() => contacts.length >= 2
+      ? '${nameFor(contacts[0].id)} and ${nameFor(contacts[1].id)}'
+      : 'your grown-ups';
+
+  /// The words in prototype copy that [bothNames] stands in for.
+  static const String prototypeBothWords = 'Mom and Dad';
 
   /// Names for a two-home rhythm (the weeks screen): the first two grown-ups
   /// as she says them, padded with neutral placeholders.

@@ -42,12 +42,27 @@ void main() {
       expect(await s.isSet(), isFalse);
     });
 
+    testWidgets('an easy-guess PIN is refused gently at setup, and nothing is stored', (t) async {
+      for (final String easy in <String>['0000', '1234', '4321', '7777', '12345678']) {
+        bool saved = false;
+        final LocalPinService s = service();
+        await pumpForm(t, s, () => saved = true);
+        await t.enterText(find.byKey(const Key('localPinNew')), easy);
+        await t.enterText(find.byKey(const Key('localPinConfirm')), easy);
+        await t.tap(find.byKey(const Key('localPinSave')));
+        await t.pump();
+        expect(find.text(kEasyGuessPinMessage), findsOneWidget, reason: easy);
+        expect(saved, isFalse, reason: easy);
+        expect(await s.isSet(), isFalse, reason: easy);
+      }
+    });
+
     testWidgets('two different PINs are refused', (t) async {
       bool saved = false;
       final LocalPinService s = service();
       await pumpForm(t, s, () => saved = true);
-      await t.enterText(find.byKey(const Key('localPinNew')), '1234');
-      await t.enterText(find.byKey(const Key('localPinConfirm')), '1235');
+      await t.enterText(find.byKey(const Key('localPinNew')), '2580');
+      await t.enterText(find.byKey(const Key('localPinConfirm')), '2581');
       await t.tap(find.byKey(const Key('localPinSave')));
       await t.pump();
       expect(find.text("The two PINs don't match."), findsOneWidget);

@@ -124,6 +124,15 @@ export function baseUrlProblem(url) {
   return null;
 }
 
+/**
+ * Whether a cut is published as a GitHub PRE-RELEASE. Every cut this tool makes is debug-signed (it refuses a real
+ * keystore), so by default it is a preview and goes out as a pre-release; `--stable` is the explicit opt-out, for the day a
+ * release-signed build exists. A cut with no base URL is a preview whatever the flag says in the notes: it cannot reach a server.
+ */
+export function isPrerelease({ stable = false, prerelease = false } = {}) {
+  return prerelease || !stable;
+}
+
 /** Release notes: lead + verification paragraphs of the CHANGELOG section, its headings, the honest caveat. */
 export function releaseNotes({ version, date, title, section, sha, apk, sha256, size, repo = 'CosmicGrub/Olive-Branch', baseUrl = null, prerelease = false }) {
   const first = section.indexOf('\n### ');

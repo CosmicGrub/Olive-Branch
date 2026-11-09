@@ -46,6 +46,10 @@ class _LocalPinSetupFormState extends State<LocalPinSetupForm> {
       setState(() => _error = 'Enter a 4-8 digit PIN.');
       return;
     }
+    if (isEasyGuessLocalPin(_pin.text)) {
+      setState(() => _error = kEasyGuessPinMessage);
+      return;
+    }
     if (_pin.text != _confirm.text) {
       setState(() => _error = "The two PINs don't match.");
       return;

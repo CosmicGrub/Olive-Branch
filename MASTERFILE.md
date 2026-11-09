@@ -2230,7 +2230,11 @@ recomputes the `message_log` hash with pgcrypto (same length-prefixed framing,
 UTF-16 length), `hash_version` is 1, and TRUNCATE is refused; the migration first
 verifies every existing chain and FAILS, naming child and seq, if one does not.
 Expense status changes are guarded (`proposed` to `accepted` or `disputed`,
-`accepted` to `reimbursed`; the proposer cannot accept or dispute their own;
+`accepted` to `reimbursed`; since migration 0045 also `disputed` to `accepted`;
+the proposer cannot accept or dispute their own, except that a family with exactly
+ONE live guardian lets that guardian accept their own proposal, recorded with an
+explicit `self_accept` marker on the `expense_event` row (disputing your own stays
+refused; reimbursing an unaccepted expense stays `409 invalid_transition`);
 only `status` can change) and recorded with actor and time in the append-only
 `expense_event` table, whose CHECK admits only legal transitions; a route that
 used to flip `proposed` straight to `reimbursed` now answers `409
@@ -2355,7 +2359,7 @@ Owner requirement: the server must build in security against those who try to pe
 
 **What is drawn comes from one table.** `client/lib/child_home_bands.dart` is the Flutter twin of the live prototype's tile registry (`TL`), `BANDSET`, `MORE` and `GROW` (`docs/superpowers/mockups/live/mod-child.js`). A vector file (`client/test/parity/vectors/child_home_bands.json`) is produced by `tools/gen-child-home-vectors.mjs`, which boots the prototype headless, sets her age from 3 to 17 and records the tiles the home and the More page really draw (id, title, tier); `tools/test/child_home_vectors.test.mjs` fails if it is stale and `child_home_bands_test.dart` holds the Dart tables equal to it, so the prototype and the client cannot drift without a test saying so.
 
-**The four homes.** *3 to 4*: the icon-only home (`AgeHome34`, unchanged). *5 to 7*: a greeting over 'Hi, <name>', her grown-up's card and the sleeps line when the live shell knows them, the **My day** hero, **Play together / Messages / Stories / Show & tell** as four featured tiles, **My people / Colour / More** as three standard ones. *8 to 12*: 'Good morning, <name>' over the weekday, the **My weeks** strip, **Messages / Games / My list / Storyteller** featured, **My people / Show & tell / Journal / More** standard (four across, two on a narrow screen). *13 and up*: unchanged until wave 2b (Today, Downtime, Studio, Calendar and Privacy are in the table already). The renames are the registry's: Play together is Games at 8 to 12 and Downtime at 13 to 17; Colour and Draw & colour are Studio at 13 to 17; My day is Today at 13 to 17.
+**The four homes.** *3 to 4*: the icon-only home (`AgeHome34`, unchanged). *5 to 7*: a greeting over 'Hi, <name>', her grown-up's card and the sleeps line when the live shell knows them, the **My day** hero, **Play together / Messages / Stories / Show & tell** as four featured tiles, **My people / Colour / More** as three standard ones. *8 to 12*: 'Good morning, <name>' over the weekday, the **My weeks** strip (hidden until a family exists, on the home and in More, so it never shows the 'Grown-up one / Grown-up two' placeholders), **Messages / Games / My list / Storyteller** featured, **My people / Show & tell / Journal / More** standard (four across, two on a narrow screen). Child-facing copy never hard-codes Mom/Dad: until nicknames or a locked age 5 to 15 give her words, it says "your grown-up(s)" (`GrownupLabels.bothNames` for the growth page's "what Mom and Dad will see"). *13 and up*: unchanged until wave 2b (Today, Downtime, Studio, Calendar and Privacy are in the table already). The renames are the registry's: Play together is Games at 8 to 12 and Downtime at 13 to 17; Colour and Draw & colour are Studio at 13 to 17; My day is Today at 13 to 17.
 
 **When the band home is used.** Only with a family structure released on the device (`ChildHome.family`, the same snapshot that decided the home before); with none the older home is drawn exactly as before. A tile is drawn only if (1) its destination exists in the client (`kTilesWithDestination`; Calendar, Privacy, Feelings, My things and the grown-up door do not yet), (2) a guardian has not hidden it, and (3) the family structure has not switched it off. **Messages is never hideable.** News is a dot, never a number. No settings affordance exists at any depth (§8.1); every tile keeps its 64 dp floor, its quiet speaker and its long-press reading.
 
@@ -4022,7 +4026,9 @@ principle §2.11:
   portable files. **Free, all tiers, unlimited, including after cancellation.**
 - **Certified export** — tamper-evident, court-formatted, hash-chained, with an
   attestation page. **Court tier**, with **one free certified export per guardian
-  per rolling 12 months.**
+  per rolling 12 months.** A certified export of a broken message chain (exported
+  with its fault report) does not use up that allowance (migration 0046,
+  `export_record.chain_verified`).
 
 Rationale: pricing the evidence of your own life behind a paywall is both
 ethically indefensible and a reputational liability, and the free annual
@@ -4773,8 +4779,8 @@ with its tests, its **adoption by every child-facing screen** through `grownup_l
   Mom or a Dad has an age default; anyone else keeps the guardian's label.
 - **Nickname layer.** Each grown-up has a guardian label and an optional
   nickname she chose. `ContactLabels.forChild` shows nickname, else age default,
-  else guardian label. `ContactLabels.forGuardian` shows both: "Dad (Ivy calls
-  you Dada)". A bank (`kNicknameBank`: Mommy, Mama, Mum, Mom, Mummy, Daddy, Dada,
+  else guardian label. `ContactLabels.forGuardian` says it in the
+  prototype's words: "Ivy calls you Dada" (the guardian's own label is the row's title). A bank (`kNicknameBank`: Mommy, Mama, Mum, Mom, Mummy, Daddy, Dada,
   Papa, Pop, Dad) is offered and she may type her own (24 letters at most).
 - **Hers.** `NicknameRepository` (abstract; `MemoryNicknameRepository`;
   `LocalNicknameRepository` over `child.<id>.nicknames`, in §8.16.4) is the only
@@ -4800,7 +4806,7 @@ grown-up it wins, so her nickname beats the grown-up's own display name. A name
 that starts a sentence is raised with `asSubject` ("Your grown-up hid these
 around the house"); the TS-ported handicap wording is rewritten with
 `withParentName`. A guardian's own screens keep the guardian's labels
-(`GrownupLabels.forGuardian` gives "Dad (Ivy calls you Dada)" where a nickname
+(`GrownupLabels.forGuardian` gives "Ivy calls you Dada" where a nickname
 exists; the exchange screen shows the guardians' own labels).
 
 **Sites adopted:** `a11y_speech.dart` (the read-aloud label is "Send this to your
@@ -4911,7 +4917,8 @@ applying. **Nothing is uploaded and connecting does not upload it** (no route ta
 onboarding runs again.
 
 **The local PIN** (`guardian.local-guardian.localpin`, sealed). A 4 to 8 digit code, **separate from the server PIN.**
-- *Kept as:* PBKDF2-HMAC-SHA256 over a fresh 16-byte random salt, 100,000 rounds (the pinned pure-Dart `cryptography` package that
+**Easy-guess PINs are refused** when a guardian chooses one (setup form and change-PIN): every digit the same (0000), or a straight run up or down (1234, 4321, 0123, 7890), with the gentle adult-side line "That PIN is easy to guess. Please choose one that is harder for someone else to work out." Checking an existing PIN is unaffected, and a child never sets a PIN. **Every guardian PIN is 4 to 8 digits, everywhere:** setup, change PIN, the adult-only keypad (`PinGate`, digits 0-9, confirmed with OK, which waits for 4 digits), the kiosk gate for the server PIN as well as the local one (the old fixed 4-digit keypad is gone), and the server (`hashPin` accepts 4 to 8; `kiosk-pin/verify` hardcodes no length).
+- *Kept as:* PBKDF2-HMAC-SHA256 over a fresh 16-byte random salt, 100,000 rounds, computed in a background isolate (`Isolate.run`; rounds unchanged) so the screen keeps drawing (the pinned pure-Dart `cryptography` package that
   already seals the private areas), the salt and the round count stored with the hash. The PIN itself is never stored. Compared in
   constant time. The sealed area adds a second layer.
 - *Limited as:* five wrong tries lock it for 15 minutes, in the server's words ("Too many wrong tries. Try again in 15 minutes."); the
@@ -4970,7 +4977,7 @@ the step after "who is here" ("What do you call your grown-ups?", optional, "Nex
 
 **Hers.** `NicknameRepository` is the only writer and only the child's own screens hold it; a guardian screen is handed a
 `NicknameReader` that cannot write (a test fails if any guardian-side file mentions the writer). `ContactLabels.forGuardian` renders
-"Dad (Ivy calls you Dada)". **The guardian-side row that shows it is not built:** nicknames live on the child's device and there is no
+"Ivy calls you Dada" (the prototype's wording; "Ivy calls Sam Dada" for the other grown-up's row). **The guardian-side row that shows it is not built:** nicknames live on the child's device and there is no
 sync between a family's devices (§8.16.7), so on any one device today there is nothing for it to show.
 
 ---
@@ -5320,6 +5327,19 @@ they are not the same thing.
 Eleven phrases are banned from a child's screen, including **"failed"**, **"poor
 connection"** and **"check your network"** — a five-year-old cannot check her
 network and should not be asked to.
+
+**Ad-hoc play notices have two voices** (owner, 2026-11-08: "softer words for kids and normal words for the adult side"; `play_notice.dart`, `PlayWords`). The voice follows the DEVICE ROLE (`PlayAudienceScope`: the guardian shell is adult, everything else, and a missing scope, is the child's), never anything a peer sends. Same semantics, different words; neither names the child. The child's voice has no digits, names, blame, error words or pressure and never tells a no; the adult is told plainly.
+
+| Moment | Child | Adult |
+|---|---|---|
+| Other device away | *Your game is resting. It will wake up when you are together again.* | *The other device is out of range. The game is saved and will resume when it reconnects.* |
+| Game ended | *All done for now. We can play again whenever you like.* (Okay) | *The game was ended. It is saved if you want to resume it.* (OK) |
+| Finish for now | *Finish for now* / *Keep playing*; *Your game will be saved. We can play again whenever you like.* | *Finish for now* / *Keep playing*; *The game is saved. You can start a new one or resume it later.* |
+| Saved game found | *Your Uno game is still here.* Carry on / Start a new one | *A saved game of Uno was found on this device.* Resume / Start a new game |
+| Rematch offered | *Play again?* Yes / Not now | *The other player asked to play again.* Accept / Decline |
+| Rematch asked | *Asking to play again...* Never mind | *Asking to play again...* Cancel |
+
+A decline is never relayed: the asker only sees that it asked. (The child's saved-game line says "still here", not "waiting": "wait" is one of the banned pressure words.)
 
 The **degradation ladder** is HD → SD → audio-only → banked. The call falls *down*
 the ladder rather than off it, and the bottom rung always works.
@@ -7974,7 +7994,7 @@ a new band is **held until a guardian releases it** (the default): the band she 
 the first time anything touched her is the baseline, a birthday cannot move her past it,
 and releasing is a change in the history. A **birthday is a preview, not a surprise**:
 the guardian sees what changes before it does; she gets one quiet line in her last week
-(sleeps, never a counter or task), which a guardian can hide. A Feb 29 birthday is held on
+(the caption "Your birthday is this week.", with NO number on her home, as in the prototype; the count of sleeps is on the My birthday screen only; never a counter or task), which a guardian can hide. A Feb 29 birthday is held on
 Mar 1 in a non-leap year.
 
 **Storage seam.** `client/lib/family_structure_store.dart`: `FamilyStore` is two methods
