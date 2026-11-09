@@ -1,9 +1,9 @@
 {
  "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
  "totals": {
-  "implemented": 57,
+  "implemented": 58,
   "pending": 132,
-  "differs": 10
+  "differs": 9
  },
  "groups": {
   "birthday": {
@@ -77,9 +77,9 @@
    }
   },
   "rules": {
-   "implemented": 8,
+   "implemented": 9,
    "pending": 4,
-   "differs": 9
+   "differs": 8
   }
  },
  "units": {
@@ -1982,11 +1982,10 @@
    "group": "rules",
    "kind": "rule",
    "label": "Messages can never be hidden or paced (ParentalControlsScreen)",
-   "status": "differs",
+   "status": "implemented",
    "rows": [
     "tile:msgs"
-   ],
-   "note": "the Flutter screen offers a visibility switch for Messages (visible_tile:messages); wave 1a removes it"
+   ]
   },
   "rules#deletion.recoveryWindow": {
    "group": "rules",

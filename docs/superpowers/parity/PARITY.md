@@ -74,9 +74,9 @@ Together: kit -> tokens is guarded by the first, tokens -> real theme by the sec
 
 ## Known, deliberate differences (CSS has it, Flutter cannot, or has not yet)
 
-- **Mono face.** The prototype's labels and numerals use JetBrains Mono. It is not bundled
-  (`assets/fonts` has Bricolage Grotesque and Atkinson Hyperlegible). `kMonoFont` names it and falls
-  back to the platform monospace until the OFL font file and licence text are added. **Owner/next step.**
+- ~~Mono face.~~ **Done.** JetBrains Mono (SIL OFL 1.1, one variable-weight file, from github.com/google/fonts `ofl/jetbrainsmono`) is bundled as
+  `assets/fonts/JetBrainsMono.ttf` with `OFL-JetBrainsMono.txt` beside it; the label and mono styles ask for `wght` 500. All three licences are on
+  Flutter's licences page (`lib/font_licences.dart`, called from the app entry points).
 - **Inset highlight shadows** (`inset 0 1px 0 rgba(255,255,255,.8)`) cannot be a `BoxShadow`; they are kept in the data
   (`DesignShadow.inset`) and skipped by `designShadows`. Components that want the highlight draw a 1px top border with `hiC`.
 - **`backdrop-filter` blur, `color-mix()`, button gradients and the hero card** are not on `ThemeData`; components build them
@@ -160,7 +160,7 @@ Status: `built` = visually and behaviourally matches the prototype and has a tes
 | kit helper | Flutter | status | notes |
 |---|---|---|---|
 | theme (7 palettes x 2 modes) | `colorSchemeFor`, `OliveTokens` | built | guarded by `design_parity_test.dart` |
-| type scale | `TextTheme` + `OliveTokens` | built | mono face not bundled |
+| type scale | `TextTheme` + `OliveTokens` | built | |
 | radii, spacing | `AppRadius`, `AppSpacing` | built | |
 | motion tokens | `OliveMotion` | built | |
 | focus ring | button `side` on focus, `OliveTokens.focusSide` | partial | halo on fields not drawn |
@@ -194,5 +194,5 @@ Art regeneration: `node tools/gen-olive-icons.mjs` (reads `tools/design-referenc
 fails if `olive_art_data.dart` is stale. `kDesignIcons` / `kDesignSpots` in the tokens stay raw SVG data; `OliveIcon` draws
 the normalised geometry from the same snapshot, and a Dart test locks the two name sets together.
 
-Known gaps: `K.swipe` (swipe-to-reveal row) and the tab bar are not ported; no mono face is bundled, so `t-mono` and
-`t-label` use the body face with tabular figures.
+Known gaps: `K.swipe` (swipe-to-reveal row) and the tab bar are not ported; `t-mono` and
+`t-label` use the bundled JetBrains Mono (weight 500) with tabular figures.

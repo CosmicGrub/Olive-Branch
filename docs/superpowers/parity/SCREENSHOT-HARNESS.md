@@ -22,7 +22,7 @@ Layers 2.1 (scenarios) and 2.2 (tokens) of `BUILD-PLAN.md` are exact. This is la
    parity-shots CI job.
 2. Fonts: the prototype loads Google Fonts. The render script intercepts those requests and serves the SAME files Flutter bundles
    (`client/assets/fonts`: Bricolage Grotesque, Atkinson Hyperlegible), so neither side depends on the network and both use identical glyphs.
-   JetBrains Mono is not bundled (PARITY.md, known differences): until it is, mono text is excluded from the diff mask.
+   JetBrains Mono is now bundled (`assets/fonts/JetBrainsMono.ttf`), so mono text needs no diff mask.
 3. Drive: open `index.html`, `L.reset({scenario})` or call `L.fastFamily()`, then `L.go(dev, screenId)` for each id in `scenarios.json` and
    in `matrix.json` (`kind: screen`), wait for `requestAnimationFrame` twice, screenshot the `.dframe` element. Output
    `build/parity/reference/<screenId>.<size>.<mode>.png`.

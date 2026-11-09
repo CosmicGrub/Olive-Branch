@@ -158,6 +158,11 @@ void main() {
       expectStyle(x.rowTitle, 'rowTitle');
       expectStyle(x.rowSub, 'rowSub');
     });
+    test('the mono face is bundled (no platform stand-in) and a variable font at weight 500', () {
+      final st = designTextStyle('label');
+      expect(st.fontFamily, 'JetBrainsMono');
+      expect(st.fontVariations!.single.value, 500);
+    });
     test('the display face is a variable font asked for by exact weight', () {
       final st = designTextStyle('title');
       expect(st.fontVariations!.single.axis, 'wght');
