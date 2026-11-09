@@ -2783,18 +2783,44 @@ exactly 2 physical devices, no mesh; a device can locally host more than
 one seat (a human plus one or more CPU seats).
 
 **Admission for local play (2026-11-08; research `docs/superpowers/research/gamesuite-multiplayer-for-play-together.md`
-section 5.2).** Before this, any device on the same Wi-Fi could POST a turn, the body was read without a limit, and the
-child's name went out over mDNS to the whole network. Now (`play_admission.dart`, `local_session.dart`,
-`local_discovery.dart`): the service name is a neutral `olive-xxxx` label with no name and no model, and any peer text
-shown goes through `sanitizePeerText`. A session opens only for a device that holds the pairing credential from the
-adult gate work (§8.5.11): an ephemeral key exchange signed with the pinned device keys gives a per-session key; every
-turn carries a counter and an HMAC over its raw body, checked in constant time, with a strictly rising counter, the
-sender's address pinned to the one that said hello, and a 64 KiB body cap (413, even with no admission). The lobby
-must be open, holds one peer, and on the **grown-up's** device the first connection of a peer waits for a plain-words
-confirmation (the same word and picture on both screens, `PlayConfirmCard`); the child's device never asks. **Honest
-limits:** turns are authenticated, not encrypted (a listener on the same Wi-Fi can read a move, not forge or replay
-one); two never-paired devices cannot play through this layer; the confirm card is built and tested but not yet wired
-into `LocalPairingController`, and the message formats belong to the play-envelope work; mDNS not run on two devices.
+section 5.2; owner requirements the same day: "nothing at all identifying is displayed" and "security against those that
+may try to peek into the games and the network the app connected to").** Before this, any device on the same Wi-Fi could
+POST a turn, the body was read without a limit, the child's name went out over mDNS, and turns were plain JSON.
+
+*Names.* A stranger on the network sees only: that something advertises the generic service type `_gp._tcp`; an instance
+name that is a seat label, **"Player one" or "Player two"**; and two TXT entries, the seat digit and a random per-lobby
+token (the lobby's one-time public key) that changes every lobby and is derived from no identity. Seats are random per
+lobby and a tie-break settles a clash. No child or grown-up name, no device model or name or hostname, no family, child or
+device id, no stable fingerprint (the hello is sealed), no role, no `Server` or `User-Agent` header, no app-named header or
+path (`/h` hello, `/t` turn). Peers are told apart by the token and the handshake, never by names; the grown-up's
+confirmation card says "Player two wants to join" with the word and picture match, and renders nothing the peer sent. The
+child keeps seeing her own nicknames for her grown-ups from `ContactLabels`, locally. **Still observable:** that some app
+advertises that service type (any mDNS service is), when, and that two devices exchange messages of a few fixed sizes.
+
+*Who may play.* Only a device holding the pairing credential from the adult gate work (§8.5.11) can open a session. The
+hello is sealed to the lobby's one-time key, carries a signature with the pinned device key, and is answered the same way,
+so a stranger cannot sign and a passive listener sees no identity. The lobby is open for 10 minutes, holds one peer, and on
+the **grown-up's** device the first connection of a peer waits for a tap; the child's device never asks.
+
+*Peeking.* Every turn is one **ChaCha20-Poly1305** frame (the `cryptography` package, Apache-2.0), key per direction from
+HKDF over both Diffie-Hellman results, nonce from a strictly rising counter, associated data binding the session. Bodies
+are padded to 256, 1024, 4096, 16384 or 32768 bytes so a Connect 4 drop and a Uno play look the same; no plaintext move or
+state is on the wire; there is no separate MAC. A flipped bit, a replay, a reordered frame, a wrong key or another
+session's frame is refused; the 64 KiB cap (413) stays and holds even with no admission. The frame layout and key schedule
+are locked to a Node reference by golden vectors (`tools/play_frame.mjs`, `client/test/vectors/play_frame_vectors.json`).
+
+*The network.* The app never asks for, stores, displays, logs or sends the SSID, BSSID, LAN addresses, subnet, gateway,
+hostname or MAC (a source-level test reads every file in `lib/`). The server socket binds only the addresses of real LAN
+interfaces (private or link-local IPv4 on an interface that is not a tunnel, VPN or cellular link), all on one shared port
+(the hardware-found VPN race is answered by "every LAN address", never "any address"), answers only LAN source addresses,
+opens only for a lobby, and is closed when the game ends and when the app leaves the foreground (`play_lifecycle.dart`).
+
+**Honest limits.** This is a composition of standard primitives (X25519, Ed25519, HKDF, ChaCha20-Poly1305), not a new
+primitive, but the composition has not had outside review. A never-paired device cannot play through this layer. Traffic
+analysis (who talks to whom, roughly when, in padded sizes) remains possible. `LocalPairingController` accepts the
+admission, keys and lobby token but the five game screens do not yet pass them, and the confirmation card is not yet placed
+in a game screen: until then those games still run open (the previous behaviour). The message formats belong to the
+play-envelope work. mDNS and the lifecycle were not run on two real devices.
 
 **Uno** (`game_uno.dart`/`uno_session.dart`/`uno_bot.dart`/`uno_deck.dart`)
 is the deepest of the five: a real seat-based 2–4 seat engine, not

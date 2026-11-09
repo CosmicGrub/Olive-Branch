@@ -24,8 +24,15 @@ void main() {
     addTearDown(events.close);
     d.listenToEvents(events.stream);
     final Future<String> lost = d.lost.first;
+    // A peer must be seen (resolved) before its disappearance means anything; it is only ever called by its seat.
+    events.add(BonsoirDiscoveryEvent(
+        type: BonsoirDiscoveryEventType.discoveryServiceResolved,
+        service: ResolvedBonsoirService(
+            name: 'Dad-guardian', type: '_gp._tcp', port: 1, host: '10.0.0.2',
+            attributes: <String, String>{'s': '2', 'k': 'peer-token'})));
+    await Future<void>.delayed(Duration.zero);
     events.add(lostEvent('Dad'));
-    expect(await lost, 'Dad');
+    expect(await lost, 'Player two');
     await d.stop();
   });
 

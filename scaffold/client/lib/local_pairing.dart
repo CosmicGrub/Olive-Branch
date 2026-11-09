@@ -51,9 +51,12 @@ library;
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'device_keys.dart';
 import 'live_games.dart' show Side;
 import 'local_discovery.dart';
 import 'local_session.dart';
+import 'play_admission.dart';
+import 'play_lifecycle.dart';
 
 // Re-exported so a game screen built on this controller never needs its own
 // direct import of local_session.dart just to name the payload type it
@@ -73,7 +76,23 @@ enum PairingPhase { searching, found, peerLost, error }
 /// plain getters rather than requiring every screen to re-derive them from
 /// a raw event stream.
 class LocalPairingController extends ChangeNotifier {
-  LocalPairingController({required this.role, required this.displayName});
+  LocalPairingController({
+    required this.role,
+    required this.displayName,
+    this.admission,
+    this.ownKey,
+    this.peerKey,
+  });
+
+  /// Admission for play (play_admission.dart). Null keeps the older open behaviour. With it, the server answers only
+  /// paired, authenticated peers, every turn is encrypted, and a nearby lobby that is not a pinned peer is ignored.
+  final PlayAdmission? admission;
+  final DeviceKey? ownKey;
+
+  /// The one device key this device is paired with (the adult key on a child device, the child's on the adult's).
+  final Uint8List? peerKey;
+  PlaySession? _session;
+  PlayServerGuard? _guard;
 
   /// 'dad' or 'ivy' — the same real identity vocabulary call_screen.dart
   /// already uses.
@@ -127,22 +146,58 @@ class LocalPairingController extends ChangeNotifier {
     }
     if (_disposed) return;
 
-    final server = LocalSessionServer(onTurnReceived: (payload) => _incoming.add(payload));
-    await server.start();
+    final adm = admission;
+    if (adm != null) await adm.openWindow();
+    final server = LocalSessionServer(onTurnReceived: (payload) => _incoming.add(payload), admission: adm);
+    try {
+      await server.start();
+    } on LocalSessionException catch (e) {
+      _phase = PairingPhase.error;
+      _errorMessage = e.message;
+      _notify();
+      return;
+    }
     if (_disposed) {
       unawaited(server.stop());
       return;
     }
     _server = server;
 
-    final discovery = LocalDiscovery(role: role, displayName: displayName, servePort: server.port!);
+    final discovery = LocalDiscovery(role: role, displayName: displayName, servePort: server.port!, lobbyToken: adm?.lobbyToken);
     _discovery = discovery;
+    // Leaving the foreground closes the lobby and the socket: nothing listens while the game is not on screen.
+    _guard = PlayServerGuard(onLeave: _leave)..attach();
     _peerSub = discovery.peers.listen(_handlePeerFound);
     _lostSub = discovery.lost.listen(_handlePeerLost);
     await discovery.start();
   }
 
-  void _handlePeerFound(LocalPeer peer) {
+  /// The app left the foreground (or the game ended): stop listening, stop advertising, close the lobby.
+  void _leave() {
+    unawaited(_peerSub?.cancel());
+    unawaited(_lostSub?.cancel());
+    unawaited(_discovery?.stop());
+    unawaited(_server?.stop());
+    admission?.closeWindow();
+    _discovery = null;
+    _server = null;
+    _session = null;
+    _peer = null;
+    _phase = PairingPhase.error;
+    _errorMessage = 'Paused. Open the game again to keep playing.';
+    _notify();
+  }
+
+  Future<void> _handlePeerFound(LocalPeer peer) async {
+    if (admission != null) {
+      // Only a pinned, paired device may be played with. A lobby that does not answer our signed hello is a stranger.
+      final key = ownKey, pinned = peerKey, token = peer.token;
+      if (_peer != null || key == null || pinned == null || token == null) return;
+      final s = await PlaySession.hello(
+          own: key, peerKey: pinned, lobbyToken: token, post: LocalSessionClient(peer).postHello);
+      if (s == null || _disposed || _peer != null) return;
+      _session = s;
+    }
     // First real peer wins — a same-room session is exactly two people;
     // finding a second signal for the same peer (bonsoir can re-resolve)
     // must never restart a session already under way. This guard only
@@ -181,7 +236,7 @@ class LocalPairingController extends ChangeNotifier {
     final peer = _peer;
     if (peer == null) return;
     try {
-      await LocalSessionClient(peer).sendTurn(payload);
+      await LocalSessionClient(peer, session: _session).sendTurn(payload);
     } on LocalSessionException catch (e) {
       _phase = PairingPhase.error;
       _errorMessage = e.message;
@@ -192,6 +247,8 @@ class LocalPairingController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _guard?.detach();
+    admission?.closeWindow();
     unawaited(_peerSub?.cancel());
     unawaited(_lostSub?.cancel());
     unawaited(_discovery?.stop());

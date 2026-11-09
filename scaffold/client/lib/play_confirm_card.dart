@@ -10,11 +10,12 @@ import 'child_connect_screen.dart' show kSasIcons;
 import 'play_admission.dart';
 
 class PlayConfirmCard extends StatelessWidget {
-  const PlayConfirmCard({super.key, required this.admission, this.peerLabel});
+  const PlayConfirmCard({super.key, required this.admission, this.peerSeat = 2});
   final PlayAdmission admission;
 
-  /// What to call the other device. Untrusted: cleaned here.
-  final String? peerLabel;
+  /// Which seat the other device holds. The ONLY thing the card calls it: "Player one" or "Player two". No name, no
+  /// model, nothing the peer sent is rendered.
+  final int peerSeat;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -27,7 +28,7 @@ class PlayConfirmCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-                Text('${sanitizePeerText(peerLabel)} wants to play', style: Theme.of(context).textTheme.titleMedium),
+                Text('${seatLabel(peerSeat)} wants to join', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 const Text('Is the same word and picture on their screen?'),
                 const SizedBox(height: 8),
@@ -37,7 +38,7 @@ class PlayConfirmCard extends StatelessWidget {
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
                   OutlinedButton(key: const Key('playConfirmNo'), onPressed: admission.decline, child: const Text('No')),
                   const SizedBox(width: 12),
-                  FilledButton(key: const Key('playConfirmYes'), onPressed: admission.confirm, child: const Text('Yes, play')),
+                  FilledButton(key: const Key('playConfirmYes'), onPressed: admission.confirm, child: const Text('Yes, let them in')),
                 ]),
               ]),
             ),

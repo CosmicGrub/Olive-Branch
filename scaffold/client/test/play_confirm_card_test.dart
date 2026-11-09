@@ -10,25 +10,26 @@ import 'package:olive_client/play_confirm_card.dart';
 Future<DeviceKey> _key() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
 
 void main() {
-  testWidgets('the grown-up card shows the same word and picture and one tap admits', (t) async {
+  testWidgets('the card says Player two wants to join, shows the match, and never a name', (t) async {
     final DeviceKey adult = (await t.runAsync(_key))!, child = (await t.runAsync(_key))!;
     final PlayAdmission adm = PlayAdmission.forAdult(adult, <PairedKid>[
-      PairedKid(certId: 'c', childDeviceKey: child.publicKey, childId: 'k', deviceName: 'T', issuedAtMs: 1)
-    ])..openWindow();
-    await t.pumpWidget(MaterialApp(home: Scaffold(body: PlayConfirmCard(admission: adm, peerLabel: '\u202eDad\u0000'))));
+      PairedKid(certId: 'c', childDeviceKey: child.publicKey, childId: 'k', deviceName: 'Ivy\'s Tablet', issuedAtMs: 1)
+    ]);
+    await t.runAsync(adm.openWindow);
+    await t.pumpWidget(MaterialApp(home: Scaffold(body: PlayConfirmCard(admission: adm, peerSeat: 2))));
     expect(find.byKey(const Key('playConfirmCard')), findsNothing);
     final PlaySession? s = await t.runAsync<PlaySession?>(() async {
-      Map<String, dynamic>? sent;
       return await PlaySession.hello(
-          own: child, peerKey: adult.publicKey, post: (Map<String, dynamic> b) async {
-        sent = b;
-        return adm.handleHello(sent!, '127.0.0.1');
+          own: child, peerKey: adult.publicKey, lobbyToken: adm.lobbyToken!, post: (Map<String, dynamic> b) async {
+        return adm.handleHello(b, '127.0.0.1');
       });
     });
     await t.pump();
     expect(s, isNotNull);
     expect(find.byKey(const Key('playConfirmCard')), findsOneWidget);
-    expect(find.text('Dad wants to play'), findsOneWidget, reason: 'peer text is cleaned');
+    expect(find.text('Player two wants to join'), findsOneWidget);
+    expect(find.textContaining('Ivy'), findsNothing);
+    expect(find.textContaining('Tablet'), findsNothing);
     expect(t.widget<Text>(find.byKey(const Key('playConfirmWord'))).data, s!.sas.word);
     await t.tap(find.byKey(const Key('playConfirmYes')));
     await t.pump();
