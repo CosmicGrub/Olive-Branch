@@ -92,6 +92,7 @@ const ENTRIES = [
   ["--format=esm","--platform=node","packages/jokes/src/jokes.ts","--outfile=packages/jokes/src/jokes.mjs"],
   ["--format=esm","--platform=node","packages/game-sync/src/table.ts","--outfile=packages/game-sync/src/table.mjs"],
   ["--format=esm","--platform=node","packages/co-view/src/coview.ts","--outfile=packages/co-view/src/coview.mjs"],
+  ["--format=esm","--platform=node","packages/play-envelope/src/envelope.ts","--outfile=packages/play-envelope/src/envelope.mjs"],
   ["--format=esm","--platform=node","packages/parent-learn/src/learn.ts","--outfile=packages/parent-learn/src/learn.mjs"],
   ["--format=esm","--platform=node","packages/family-structure/src/family.ts","--outfile=packages/family-structure/src/family.mjs"],
 ];
