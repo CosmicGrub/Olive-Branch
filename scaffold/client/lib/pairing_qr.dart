@@ -1,4 +1,4 @@
-// OLIVE BRANCH — reading the optional proximity QR (olive://pair/1?s=..&k=..&q=..&a=..). Headless in CI.
+// OLIVE BRANCH — reading the optional proximity QR (olive://pair/1?s=..&k=..&q=..&a=..). UNVERIFIED on a device; headless in CI.
 // The payload holds only an open window's session id, the adult device's key fingerprint, a one-time secret and
 // LAN address hints: never a PIN, never a credential. It is useless once the window closes or is used.
 import 'dart:typed_data';
