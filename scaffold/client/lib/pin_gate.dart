@@ -26,8 +26,13 @@ import 'kiosk_lock_colors.dart';
 
 class PinGate extends StatefulWidget {
   const PinGate({super.key, required this.digits, required this.onComplete,
-    this.shuffle = true});
+    this.shuffle = true, this.confirmLabel});
   final int digits;
+
+  /// When set, the code has no fixed length: `digits` is the MAXIMUM, the code is 4 to `digits` digits, and
+  /// it is handed over when the grown-up taps this button (the on-device PIN is 4 to 8 digits). When null the
+  /// code completes by itself at `digits`, as it always did (the server PIN).
+  final String? confirmLabel;
   final ValueChanged<String> onComplete;
   final bool shuffle;
   @override
@@ -49,7 +54,7 @@ class _PinGateState extends State<PinGate> {
   void _tap(int d) {
     if (entered.length >= widget.digits) return;
     setState(() => entered += '$d');
-    if (entered.length == widget.digits) {
+    if (widget.confirmLabel == null && entered.length == widget.digits) {
       widget.onComplete(entered);
       // Re-shuffle after every attempt so repeated observation gains nothing.
       setState(() { entered = ''; if (widget.shuffle) keys.shuffle(Random.secure()); });
@@ -87,6 +92,17 @@ class _PinGateState extends State<PinGate> {
               child: Text('$d', style: const TextStyle(
                 color: KioskLockColors.primaryText, fontSize: 16)))))
             .toList())),
+        if (widget.confirmLabel != null) ...[
+          const SizedBox(height: 10),
+          TextButton(
+            key: const Key('pinGateConfirm'),
+            onPressed: entered.length >= 4 ? () {
+              widget.onComplete(entered);
+              setState(() { entered = ''; if (widget.shuffle) keys.shuffle(Random.secure()); });
+            } : null,
+            child: Text(widget.confirmLabel!, style: const TextStyle(
+              color: KioskLockColors.primaryText, fontSize: 15))),
+        ],
         const SizedBox(height: 14),
         const Text('keypad order changes every time',
           style: TextStyle(color: KioskLockColors.quaternaryText, fontSize: 9)),

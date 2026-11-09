@@ -2458,6 +2458,12 @@ hidden unless `showDemoTiles` is set; the offline demo build still lists them.
 
 - Escalation to guardian scope requires **PIN + biometric**, or a passkey.
 - **Shuffled numeric keypad** for guardian PIN — the child is literally watching.
+- **A child never sees a PIN screen (2026-11-08, section 8.5.11).** The child surface after a kiosk defeat, the
+  locked-out screen's grown-up button and the guardian shield all show the **adult-gate card** ("A grown-up does
+  this": a grown-up, a phone, nothing to type, no digits, no error, no count). The shuffled keypad exists only
+  behind a grown-up's deliberate tap on that card, and `PinGate` is built only from `adult_gate.dart` (a
+  source-level test fails otherwise). Adults set every PIN, on adult devices only; the child build has no PIN
+  setup form and its first run has no PIN step.
 - Failed-attempt cooldown notifies the *other* guardian.
 - **Break-glass path** so a parent locked out at 9 p.m. does not lose a
   scheduled call.
@@ -4903,6 +4909,51 @@ sync between a family's devices (§8.16.7), so on any one device today there is 
 
 ---
 
+### 8.5.11 The adult gate, and connecting a child's device on the same network
+
+**Owner request, 2026-11-08:** a simpler way to connect the child side to the parent side; the child must not
+have the guardian's PIN screen; adults set every PIN; the PIN is the primary method and must be safe against
+connecting to the wrong instance; a QR code is an optional shortcut when the devices are together.
+Design, flows and threat model: `docs/superpowers/specs/2026-11-08-adult-gate-and-simple-pairing-design.md`.
+
+**The adult gate (built).** `client/lib/adult_gate.dart`: `AdultGateCard` for the child (picture first, "A grown-up
+does this", no keypad, digits, error words, counts or timers: P1 to P11), `AdultGate` which opens the shuffled
+adult-only keypad only after a deliberate "I'm the grown-up" tap, and `askAdultPin` for pushed routes. `KioskShell`
+uses it for the post-defeat surface, break-glass and guardian escalation. Existing paired devices keep their
+server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
+
+**Connecting (built, headless-tested, not yet run on two real devices).**
+1. The grown-up opens More > "Connect a child's device" and types **their own PIN** (checked by the local PIN
+   service). That opens a **window**: 10 minutes, five failed tries, one use, in memory on the adult device only.
+2. On the child's device the grown-up taps "A grown-up does this" > "I'm the grown-up", picks **their own name**
+   from the windows open nearby (mDNS `_olivepair._tcp`; the name is what selects, never the PIN), and types the
+   same PIN on the adult-only keypad.
+3. The PIN is the password of a **password-authenticated key exchange** (`cpace.dart`, a CPace-style exchange over
+   X25519). It is never sent, and a recording cannot be used to guess it offline. The session id, family id, the
+   adult device's key fingerprint, the adult's name and the child device's key are bound into it, so another
+   family, another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation.
+4. Both screens then show the adult's name and the same **word and picture**; the grown-up taps "Yes, connect it".
+   The adult device signs a **certificate** for that one child device, one child, one family
+   (`device_keys.dart`), sealed to the child device under the exchange's key. Attempt counters and the lockout
+   live on the **adult** device. A wrong PIN, wrong grown-up or refusal looks the same to the child: "Your grown-up
+   can try again".
+5. **Optional QR** (a switch on the adult screen): the window shows an `olive://pair/1?...` picture carrying only
+   the session id, the adult device's key fingerprint, a one-time secret and LAN address hints. Scanning it runs
+   the same exchange with that secret instead of a typed PIN. It works once, only while the window is open, and
+   the adult device answers only LAN source addresses.
+
+**NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT (owner accepted 2026-11-08).**
+
+**Honest limits.** `cpace.dart` is custom cryptographic code (the Elligator2 map and transcript) that follows the
+CFRG CPace draft's structure but is not byte-compatible with it and has not been checked against its vectors; it
+agrees byte for byte with an independent Node implementation (`tools/pake_cpace.mjs`, golden vectors in
+`client/test/vectors/pake_vectors.json`) and **needs an external cryptographic review before families rely on
+it**. The child device keeps a salted slow hash of the grown-up's PIN (so a grown-up can type it there to leave the
+lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its keystore could brute-force a
+short PIN. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
+challenge-response "use my phone to unlock" option and the online relay of windows through the server are **not
+built**; the server pairing routes are unchanged and still work. No device has run this yet.
+
 ## §8.6 Her colour
 
 She picks a colour. It is hers, it appears in the app, and her father can see it.
@@ -6069,6 +6120,10 @@ drift. Nothing is written that is not in it.
 | `child.<id>.family` | Family structure a grown-up built and released on this device (`LocalStoreFamilyStore`): the append-only history, her homes and people, guardian-written stories. A failed save throws; a change is never reported recorded when it was not. | **Yes** |
 | `child.<id>.access` | Accessibility for her device, as a guardian set it: read aloud, reduce motion, roomier reading, larger targets, captions wanted. Five on/off switches (§8.21). | No |
 | `child.<id>.profile` | Offline start-up cache: her first name, age in whole years (and whether it is locked, §8.5.10), that she finished the welcome tour, and the grown-up's last hide/pace choices (so going offline never unhides what a guardian hid). | No |
+| `device.devicekey` | This device's own Ed25519 pairing key (section 8.5.11): the secret seed, never sent. No PIN, no personal data. | **Yes** |
+| `device.childpairing` | On a child's device: the certificate a grown-up's device signed (which child, which family), that grown-up's public key and first name, and the child's first name. No PIN. | **Yes** |
+| `device.adultunlock` | On a child's device: a salted slow hash of the grown-up's PIN (so a grown-up can type it there) and the count toward a 15 minute lock. Never the PIN; a child cannot create or change it. | **Yes** |
+| `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
@@ -7578,7 +7633,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **33 areas, 15 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **37 areas, 19 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
@@ -7588,6 +7643,7 @@ Each row is something this document or the product's own screens might lead a re
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
 | **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
+| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange needs an external cryptographic review. (3) "Use my phone to unlock" (a fresh signed challenge as a QR) and "Forget this tablet" screens. (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |

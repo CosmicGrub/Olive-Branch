@@ -16,7 +16,7 @@
 //  2. A stored device identity (the device was connected): its own role wins, because a
 //     connected device is whatever the server says it is.
 //  3. No stored role: the role picker, Step 0.
-//  4. Role Kid: the child's first run (welcome questions, then Connect this device).
+//  4. Role Kid: a locally approved pairing opens her home; otherwise the child's first run (welcome questions, then Connect this device).
 //  5. A grown-up role: if this device already has a local family AND a local PIN, the
 //     guardian home opens WITHOUT a server; otherwise the guardian onboarding runs.
 //
@@ -34,6 +34,9 @@ enum BootRoute {
   guardianPaired,
   rolePicker,
   kidFirstRun,
+  /// A Kid device a grown-up approved on the same network (pairing_protocol.dart): no server identity, a
+  /// signed certificate. Opens the child's home with the grown-up's PIN verifier for the adult gate.
+  childPairedLocal,
   guardianOnboarding,
   guardianOffline,
 }
@@ -47,6 +50,7 @@ class BootFacts {
     this.role,
     this.hasLocalFamily = false,
     this.hasLocalPin = false,
+    this.hasLocalChildPairing = false,
   });
 
   final LiveTarget target;
@@ -61,6 +65,9 @@ class BootFacts {
   final DeviceRole? role;
   final bool hasLocalFamily;
   final bool hasLocalPin;
+
+  /// This Kid device holds a verified pairing certificate from a grown-up's device.
+  final bool hasLocalChildPairing;
 }
 
 BootRoute decideBoot(BootFacts f) {
@@ -70,7 +77,7 @@ BootRoute decideBoot(BootFacts f) {
   if (stored != null) return stored == 'guardian' ? BootRoute.guardianPaired : BootRoute.childPaired;
   final DeviceRole? role = f.role;
   if (role == null) return BootRoute.rolePicker;
-  if (role == DeviceRole.kid) return BootRoute.kidFirstRun;
+  if (role == DeviceRole.kid) return f.hasLocalChildPairing ? BootRoute.childPairedLocal : BootRoute.kidFirstRun;
   return (f.hasLocalFamily && f.hasLocalPin) ? BootRoute.guardianOffline : BootRoute.guardianOnboarding;
 }
 

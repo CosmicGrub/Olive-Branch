@@ -196,3 +196,12 @@ the normalised geometry from the same snapshot, and a Dart test locks the two na
 
 Known gaps: `K.swipe` (swipe-to-reveal row) and the tab bar are not ported; `t-mono` and
 `t-label` use the bundled JetBrains Mono (weight 500) with tabular figures.
+
+## Delta: adult gate and simple pairing (2026-11-08)
+
+The live prototype (`docs/superpowers/mockups/live`) still shows the older shape: a child-side PIN keypad and a
+guardian-minted 6-digit code with a countdown. The Flutter app now differs on purpose and the prototype is NOT
+rebuilt here: the child shows an adult-gate card (no keypad until a grown-up taps), and connecting is a
+grown-up-opened window with a PIN-based key exchange and a confirmation word and picture
+(MASTERFILE section 8.5.11). The ledger rule `pairing.codeShape` still describes the server's 6-digit code, which is
+unchanged and still available as the account-code option.

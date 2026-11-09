@@ -65,6 +65,11 @@ void main() {
 
       await t.tap(find.byKey(const Key('guardianEscalationTrigger')));
       await t.pumpAndSettle();
+      // A child who taps the shield sees only the calm card; the grown-up opens the keypad.
+      expect(find.byType(PinGate), findsNothing);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+      await t.tap(find.byKey(const Key('adultGateGrownUp')));
+      await t.pumpAndSettle();
       expect(find.byType(PinGate), findsOneWidget);
 
       for (final d in const [1, 1, 1, 1]) {
@@ -87,6 +92,11 @@ void main() {
       await t.pumpAndSettle();
 
       await t.tap(find.byKey(const Key('guardianEscalationTrigger')));
+      await t.pumpAndSettle();
+      // A child who taps the shield sees only the calm card; the grown-up opens the keypad.
+      expect(find.byType(PinGate), findsNothing);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+      await t.tap(find.byKey(const Key('adultGateGrownUp')));
       await t.pumpAndSettle();
       for (final d in const [1, 1, 1, 1]) {
         await t.tap(find.text('$d').first);
@@ -115,6 +125,11 @@ void main() {
 
       await t.tap(find.byKey(const Key('guardianEscalationTrigger')));
       await t.pumpAndSettle();
+      // A child who taps the shield sees only the calm card; the grown-up opens the keypad.
+      expect(find.byType(PinGate), findsNothing);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+      await t.tap(find.byKey(const Key('adultGateGrownUp')));
+      await t.pumpAndSettle();
       for (final d in const [1, 1, 1, 1]) {
         await t.tap(find.text('$d').first);
         await t.pump();
@@ -133,6 +148,11 @@ void main() {
       )));
       await t.pumpAndSettle();
       await t.tap(find.byKey(const Key('guardianEscalationTrigger')));
+      await t.pumpAndSettle();
+      // A child who taps the shield sees only the calm card; the grown-up opens the keypad.
+      expect(find.byType(PinGate), findsNothing);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+      await t.tap(find.byKey(const Key('adultGateGrownUp')));
       await t.pumpAndSettle();
       for (final d in const [1, 1, 1, 1]) {
         await t.tap(find.text('$d').first);
@@ -161,6 +181,11 @@ void main() {
       )));
       await t.pumpAndSettle();
       await t.tap(find.byKey(const Key('guardianEscalationTrigger')));
+      await t.pumpAndSettle();
+      // A child who taps the shield sees only the calm card; the grown-up opens the keypad.
+      expect(find.byType(PinGate), findsNothing);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+      await t.tap(find.byKey(const Key('adultGateGrownUp')));
       await t.pumpAndSettle();
       for (final d in const [1, 1, 1, 1]) {
         await t.tap(find.text('$d').first);

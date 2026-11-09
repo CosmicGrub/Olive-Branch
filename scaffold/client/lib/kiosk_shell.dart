@@ -4,7 +4,7 @@
 //
 // Wraps the child side of the app. Owns a LockController-driven LockState,
 // engages the native lock on mount via kiosk_channel.dart, and renders
-// exactly one of ChildHome / PinGate / a locked-out screen / the guardian
+// exactly one of ChildHome / AdultGate / a locked-out screen / the guardian
 // escalation surface through canRender()'s deny-by-default gate — never
 // anything else, and the guardian surface only after a real PIN+biometric
 // escalation, never by falling through.
@@ -26,7 +26,7 @@
 //
 // Guardian escalation (`escalate()` in lock_controller.dart, PIN+biometric ->
 // `guardian_escalation`) is now wired end to end: a small persistent
-// affordance over the locked child surface starts it, PinGate collects the
+// affordance over the locked child surface starts it, the AdultGate (calm card, then the adult-only PinGate keypad) collects the
 // PIN (reused as-is — it never knows whose code it is), [verifyBiometric]
 // runs the real factor, and a successful `escalate()` lands on
 // guardian_escalation_screen.dart — the "guardian settings reachable from
@@ -42,7 +42,7 @@ import 'call_screen.dart';
 import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
-import 'pin_gate.dart';
+import 'adult_gate.dart';
 
 class KioskShell extends StatefulWidget {
   const KioskShell({
@@ -52,6 +52,7 @@ class KioskShell extends StatefulWidget {
     required this.verifyBiometric,
     this.channel,
     this.pinDigits = 4,
+    this.variableLengthPin = false,
     this.childName = 'your child',
     this.callerName = 'there',
   });
@@ -72,6 +73,10 @@ class KioskShell extends StatefulWidget {
   /// Injectable for widget tests; defaults to the real platform channel.
   final KioskChannel? channel;
   final int pinDigits;
+
+  /// True when the grown-up's code is the on-device PIN (4 to 8 digits, confirmed with OK) rather than the
+  /// server's fixed-length one.
+  final bool variableLengthPin;
   /// The child's own display name for the "Call" button on the lock-out
   /// screen (C-22) — what the child's own call screen calls her. Distinct
   /// from [childName], which is the guardian-facing label on the escalation
@@ -137,6 +142,9 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
     }
   }
 
+  int get _digits => widget.variableLengthPin ? 8 : widget.pinDigits;
+  String? get _confirm => widget.variableLengthPin ? 'OK' : null;
+
   Future<void> _onPinComplete(String pin) async {
     final correct = await widget.verifyPin(pin);
     if (!mounted) return;
@@ -144,11 +152,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   }
 
   Future<void> _attemptBreakGlass() async {
-    final code = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        builder: (_) => PinGate(digits: widget.pinDigits, onComplete: Navigator.of(context).pop),
-      ),
-    );
+    // The grown-up already tapped "I'm the grown-up" on the locked-out screen: straight to the keypad.
+    final code = await askAdultPin(context, digits: _digits, startOpen: true, confirmLabel: _confirm);
     if (code == null || !mounted) return;
     if (await widget.verifyPin(code) && mounted) {
       setState(() => _state = lock.breakGlass(_state, DateTime.now()).state);
@@ -161,11 +166,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   /// cooldown) gets one deliberately generic message: the child sitting
   /// there watching (§8.3's own framing) never learns which factor failed.
   Future<void> _attemptEscalation() async {
-    final pin = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        builder: (_) => PinGate(digits: widget.pinDigits, onComplete: Navigator.of(context).pop),
-      ),
-    );
+    // The shield is reachable by a child: she gets the calm card first, never a keypad.
+    final pin = await askAdultPin(context, digits: _digits, confirmLabel: _confirm);
     if (pin == null || !mounted) return;
     final pinOk = await widget.verifyPin(pin);
     if (!mounted) return;
@@ -206,7 +208,7 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
       ]);
     }
     if (lock.canRender(_state, lock.Surface.pinGate, now)) {
-      return PinGate(digits: widget.pinDigits, onComplete: _onPinComplete);
+      return AdultGate(digits: _digits, confirmLabel: _confirm, onPin: _onPinComplete);
     }
     if (lock.canRender(_state, lock.Surface.lockedOut, now)) {
       return _LockedOutScreen(

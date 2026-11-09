@@ -437,6 +437,9 @@ void main() {
       for (var i = 0; i < 5; i++) {
         await t.tap(find.byKey(const Key('guardianEscalationTrigger')));
         await t.pumpAndSettle();
+        // The child sees the adult-gate card; the grown-up taps once to open the keypad.
+        await t.tap(find.byKey(const Key('adultGateGrownUp')));
+        await t.pumpAndSettle();
         for (var d = 0; d < 4; d++) {
           await t.tap(find.text('1').first);
           await t.pump();

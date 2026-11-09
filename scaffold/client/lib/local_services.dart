@@ -225,6 +225,25 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'age, clearing data and the settings here. It is not the account PIN and is never sent '
           'anywhere. Sealed on the device.'),
   LocalDataEntry(
+      area: 'devicekey', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
+      what: 'This device\'s own signing key for pairing (the secret half never leaves the device). It '
+          'lets a grown-up\'s device prove who it is and lets a child\'s device prove it was approved. '
+          'It holds no PIN and no personal data. Sealed on the device.'),
+  LocalDataEntry(
+      area: 'childpairing', scope: LocalScope.device, encrypted: true, maxBytes: 8 * 1024,
+      what: 'On a child\'s device: the pairing certificate a grown-up\'s device signed (which child, which '
+          'family), that grown-up\'s public key and first name, and the child\'s first name. No PIN. '
+          'Sealed on the device.'),
+  LocalDataEntry(
+      area: 'adultunlock', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
+      what: 'On a child\'s device: a salted slow hash of the grown-up\'s PIN, only so a grown-up can '
+          'type it there to leave or unlock the app, and the count of wrong tries toward a 15 minute '
+          'lock. The PIN itself is never kept and a child cannot create or change it. Sealed on the device.'),
+  LocalDataEntry(
+      area: 'pairedkids', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * 1024,
+      what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '
+          'the date), so one can be forgotten later. Sealed on the device.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '
