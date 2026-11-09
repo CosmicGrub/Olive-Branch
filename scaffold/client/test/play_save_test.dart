@@ -91,7 +91,9 @@ void main() {
     });
   });
 
-  test('playSaveAcceptable is strict about depth and shape', () {
+  test('playSaveAcceptable is strict about size, depth and shape', () {
+    expect(playSaveAcceptable(<String, dynamic>{'pad': 'x' * (maxPlaySaveBytes + 1)}), isFalse);
+    expect(playSaveAcceptable(<String, dynamic>{'bad': Object()}), isFalse);
     expect(playSaveAcceptable(<String, dynamic>{'a': 1}), isTrue);
     expect(playSaveAcceptable(<String, dynamic>{'a': <Object?>[<String, dynamic>{'score': 1}]}), isFalse);
     var deep = <String, dynamic>{'x': 1};

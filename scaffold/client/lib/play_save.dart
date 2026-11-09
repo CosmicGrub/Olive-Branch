@@ -10,6 +10,7 @@
 // of those words as a key is refused outright; a finished game is cleared, not saved. The other device saves nothing:
 // it is rebuilt from the dealer's hello and state when they find each other again.
 import 'dart:async';
+import 'dart:convert';
 
 import 'live_games.dart' show auditLiveView, liveForbidden;
 import 'local_store.dart';
@@ -23,6 +24,11 @@ const int maxPlaySaveBytes = 16 * 1024;
 /// True when [snapshot] is safe to keep: plain JSON, small, and with no outcome or score key at any depth.
 bool playSaveAcceptable(Map<String, dynamic> snapshot) {
   if (!auditLiveView(snapshot).ok) return false;
+  try {
+    if (utf8.encode(jsonEncode(snapshot)).length > maxPlaySaveBytes) return false;
+  } on Object {
+    return false; // not plain JSON
+  }
   final Set<String> banned = <String>{...playSaveBannedKeys, ...liveForbidden.map((String s) => s.toLowerCase())};
   bool clean = true;
   void walk(Object? x, int depth) {
