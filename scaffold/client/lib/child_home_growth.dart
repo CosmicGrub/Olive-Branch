@@ -28,7 +28,7 @@ String protoBandOfAge(int a) => a <= 4 ? 't34' : a <= 7 ? 't57' : a <= 12 ? 't81
 const int kMaxHomeAge = 17;
 
 /// Her age on [today] (a local date), given her age on [lastDay] and her birthday's month and day. One year is
-/// added for every birthday that fell in (lastDay, today], never past [kMaxHomeAge], never going back.
+/// added for every birthday that fell after [lastDay] up to and including [today], never past [kMaxHomeAge], never going back.
 int ageAtLocalDay({required int age, required int month, required int day, required DateTime lastDay, required DateTime today}) {
   final DateTime from = DateTime(lastDay.year, lastDay.month, lastDay.day);
   final DateTime to = DateTime(today.year, today.month, today.day);
