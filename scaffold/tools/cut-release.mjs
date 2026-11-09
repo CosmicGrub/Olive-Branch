@@ -45,6 +45,20 @@ const sh = (cmd, args, opts = {}) => {
 };
 const git = (...a) => sh('git', a, { shell: false });
 
+/**
+ * What is really different in the tree: tracked files whose CONTENT differs from HEAD (line endings ignored, because
+ * `flutter pub get` rewrites tracked generated files with LF under a Windows core.autocrlf checkout, which `git status`
+ * reports as modified with an empty diff), plus untracked files that are not git-ignored. Empty string means clean.
+ */
+function treeDirt() {
+  const lines = [];
+  const changed = git('diff', '--ignore-cr-at-eol', '--name-only', 'HEAD').out;
+  if (changed) lines.push(...changed.split('\n').map((f) => `M ${f}`));
+  const untracked = git('ls-files', '--others', '--exclude-standard').out;
+  if (untracked) lines.push(...untracked.split('\n').map((f) => `?? ${f}`));
+  return lines.join('\n');
+}
+
 let problems = 0, warnings = 0;
 const ok = (m) => console.log(`  ok    ${m}`);
 const bad = (m, fatalOnlyWhenPublishing = false, publishing = false) => {
@@ -82,7 +96,7 @@ function main() {
   // ---- 1. git state
   console.log('\n1. git state');
   git('fetch', 'origin', 'main', '--tags', '--quiet');
-  const status = git('status', '--porcelain');
+  const status = { out: treeDirt() };
   status.out === '' ? ok('working tree is clean') : bad(`working tree is not clean:\n${status.out}`, true, publishing);
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD').out;
   branch === 'main' ? ok('on main') : bad(`on branch ${branch}, not main`, true, publishing);
@@ -147,7 +161,7 @@ function main() {
   const sumsPath = join(outDir, 'SHA256SUMS');
   if (o.skipBuild && existsSync(sumsPath) && !readFileSync(sumsPath, 'utf8').includes(digest)) die('--skip-build: the APK does not match SHA256SUMS from the build run');
   writeFileSync(sumsPath, `${digest}  ${apkName}\n`);
-  const treeAfter = git('status', '--porcelain').out;
+  const treeAfter = treeDirt();
   if (treeAfter !== status.out) bad(`the build changed tracked or untracked files in the tree:\n${treeAfter}`);
 
   const notes = releaseNotes({ version, date: v.changelog.date, title: v.changelog.title, section, sha: head, apk: apkName, sha256: digest, size, baseUrl: o.baseUrl, prerelease: o.prerelease });
