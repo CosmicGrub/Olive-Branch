@@ -1,9 +1,9 @@
 {
  "note": "The parity ratchet. A unit that is implemented here may never regress; pending and differs counts may never rise. When progress lowers them, regenerate with PARITY_UPDATE_BASELINE=1 flutter test test/parity/scenario_parity_test.dart and commit.",
  "totals": {
-  "implemented": 60,
+  "implemented": 61,
   "pending": 130,
-  "differs": 9
+  "differs": 8
  },
  "units": {
   "birthday.01#a0": "implemented",
@@ -200,7 +200,7 @@
   "rules#messages.lengthLimits": "pending",
   "rules#messages.retryCadence": "differs",
   "rules#messages.watchedMeansPlayedThrough": "pending",
-  "rules#pairing.codeShape": "differs",
+  "rules#pairing.codeShape": "implemented",
   "rules#pin.lockedAnswer": "differs",
   "rules#pin.lockoutThresholds": "implemented",
   "rules#pin.lockoutThroughTheRealScreen": "implemented",

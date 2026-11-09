@@ -1,9 +1,9 @@
 {
  "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
  "totals": {
-  "implemented": 60,
+  "implemented": 61,
   "pending": 130,
-  "differs": 9
+  "differs": 8
  },
  "groups": {
   "birthday": {
@@ -77,9 +77,9 @@
    }
   },
   "rules": {
-   "implemented": 10,
+   "implemented": 11,
    "pending": 4,
-   "differs": 7
+   "differs": 6
   }
  },
  "units": {
@@ -2094,11 +2094,10 @@
    "group": "rules",
    "kind": "rule",
    "label": "pairing.codeShape",
-   "status": "differs",
+   "status": "implemented",
    "rows": [
     "sub:pairing-code rules"
-   ],
-   "note": "the field accepts 0 to 9; the prototype codes are 1 to 9 only (owner decision open: alphabet)"
+   ]
   },
   "rules#pin.lockedAnswer": {
    "group": "rules",
