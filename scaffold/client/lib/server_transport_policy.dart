@@ -1,4 +1,5 @@
-// OLIVE BRANCH — how the app is allowed to talk to the Olive server
+// OLIVE BRANCH — how the app is allowed to talk to the Olive server. Not
+// UNVERIFIED: exercised by test/server_transport_policy_test.dart (real TLS).
 // (server-snoop hardening, docs/superpowers/specs/2026-11-08-server-snoop-
 // hardening-design.md section 4.1; operator side: docs/operators/).
 //
