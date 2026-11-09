@@ -85,6 +85,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   final TextEditingController _pin = TextEditingController();
   _Stage _stage = _Stage.intro;
   bool _offerQr = false;
+  bool _phoneOnly = false;
   bool _working = false;
   String? _message;
   AdultWindow? _window;
@@ -134,6 +135,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       childName: widget.childName,
       pin: pin,
       offerQr: _offerQr,
+      phoneOnly: _phoneOnly,
       makeUnlockVerifier: widget.makeUnlockVerifier,
       onPaired: (PairedKid k) => unawaited(widget.kids.add(k)),
     );
@@ -225,6 +227,14 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
           subtitle: const Text('Only works while the two devices are together, once, for a few minutes.'),
           value: _offerQr,
           onChanged: (bool v) => setState(() => _offerQr = v),
+        ),
+        SwitchListTile(
+          key: const Key('connectPhoneOnly'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Only my phone unlocks it'),
+          subtitle: const Text('Her device is never given a check for your PIN. You unlock it by showing it a picture from this phone.'),
+          value: _phoneOnly,
+          onChanged: (bool v) => setState(() => _phoneOnly = v),
         ),
         if (_message != null)
           Padding(

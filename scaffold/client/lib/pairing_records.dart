@@ -45,7 +45,8 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
     final PairingCert? cert = PairingCert.fromJson(raw['cert']);
     final Object? apk = raw['apk'], an = raw['an'], cn = raw['cn'];
     final LocalPinRecord? v = await _unlock.load();
-    if (cert == null || apk is! String || an is! String || cn is! String || v == null) return null;
+    final bool phoneOnly = raw['po'] == true;
+    if (cert == null || apk is! String || an is! String || cn is! String || (v == null && !phoneOnly)) return null;
     try {
       final Uint8List key = unb64(apk);
       // Fail closed: a certificate that does not verify under the stored adult key is "not paired".
@@ -58,10 +59,23 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
 
   @override
   Future<void> save(ChildPairing p) async {
-    await _unlock.save(p.unlockVerifier);
+    if (p.unlockVerifier != null) {
+      await _unlock.save(p.unlockVerifier!);
+    } else {
+      await _unlock.clear();
+    }
     await _ns.put(_key, <String, Object?>{
       'cert': p.cert.toJson(), 'apk': b64(p.adultKey), 'an': p.adultName, 'cn': p.childName,
+      if (p.unlockVerifier == null) 'po': true,
     });
+  }
+
+  /// A verified phone-only grant: keep the pairing, delete the PIN verifier. A typed code can never work again.
+  Future<void> makePhoneOnly() async {
+    final Object? raw = await _ns.get(_key);
+    if (raw is! Map) return;
+    await _unlock.clear();
+    await _ns.put(_key, <String, Object?>{...raw.cast<String, Object?>(), 'po': true});
   }
 
   @override
@@ -75,6 +89,7 @@ abstract class PairedKidsRepository {
   Future<List<PairedKid>> load();
   Future<void> add(PairedKid kid);
   Future<void> forget(String certId);
+  Future<void> setPhoneOnly(String certId, bool value);
 }
 
 class MemoryPairedKidsRepository implements PairedKidsRepository {
@@ -85,7 +100,17 @@ class MemoryPairedKidsRepository implements PairedKidsRepository {
   Future<void> add(PairedKid kid) async => _l.add(kid);
   @override
   Future<void> forget(String certId) async => _l.removeWhere((PairedKid k) => k.certId == certId);
+  @override
+  Future<void> setPhoneOnly(String certId, bool value) async {
+    for (int i = 0; i < _l.length; i++) {
+      if (_l[i].certId == certId) _l[i] = _withPhoneOnly(_l[i], value);
+    }
+  }
 }
+
+PairedKid _withPhoneOnly(PairedKid k, bool v) => PairedKid(
+    certId: k.certId, childDeviceKey: k.childDeviceKey, childId: k.childId, deviceName: k.deviceName,
+    issuedAtMs: k.issuedAtMs, phoneOnly: v);
 
 class LocalStorePairedKidsRepository implements PairedKidsRepository {
   LocalStorePairedKidsRepository(this._ns);
@@ -102,7 +127,7 @@ class LocalStorePairedKidsRepository implements PairedKidsRepository {
       try {
         out.add(PairedKid(
             certId: e['certId'] as String, childDeviceKey: unb64(e['cpk'] as String), childId: e['cid'] as String,
-            deviceName: e['dn'] as String, issuedAtMs: e['iat'] as int));
+            deviceName: e['dn'] as String, issuedAtMs: e['iat'] as int, phoneOnly: e['po'] == true));
       } catch (_) {}
     }
     return out;
@@ -110,7 +135,7 @@ class LocalStorePairedKidsRepository implements PairedKidsRepository {
 
   Future<void> _write(List<PairedKid> l) => _ns.put(_key, <Object?>[
         for (final PairedKid k in l)
-          <String, Object?>{'certId': k.certId, 'cpk': b64(k.childDeviceKey), 'cid': k.childId, 'dn': k.deviceName, 'iat': k.issuedAtMs},
+          <String, Object?>{'certId': k.certId, 'cpk': b64(k.childDeviceKey), 'cid': k.childId, 'dn': k.deviceName, 'iat': k.issuedAtMs, if (k.phoneOnly) 'po': true},
       ]);
 
   @override
@@ -119,4 +144,9 @@ class LocalStorePairedKidsRepository implements PairedKidsRepository {
   @override
   Future<void> forget(String certId) async =>
       _write((await load()).where((PairedKid k) => k.certId != certId).toList());
+
+  @override
+  Future<void> setPhoneOnly(String certId, bool value) async => _write(<PairedKid>[
+        for (final PairedKid k in await load()) k.certId == certId ? _withPhoneOnly(k, value) : k,
+      ]);
 }

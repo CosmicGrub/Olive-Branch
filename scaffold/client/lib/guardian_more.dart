@@ -19,6 +19,9 @@ import 'parent_learn_screens.dart';
 import 'parent_learn_store.dart';
 import 'age_lock_screens.dart';
 import 'connect_child_screen.dart';
+import 'connected_devices_screen.dart';
+import 'unlock_challenge.dart' show UnlockResponder;
+import 'unlock_child_screen.dart';
 import 'device_keys.dart';
 import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_services.dart';
@@ -970,6 +973,32 @@ class GuardianMoreScreen extends StatelessWidget {
               childName: childName, yearsOld: childAge)))),
         ]),
         HubSection(title: 'Connect a device', children: [
+          HubTile(icon: Icons.lock_open_outlined, title: "Unlock a child's device with my phone",
+            subtitle: 'Scan the picture on her device, type your PIN, show it the answer',
+            onTap: () async {
+              final local = GuardianLocalScope.maybeOf(context);
+              if (local == null) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Unlocking needs a PIN on this device. Set one up first.'),
+                  duration: Duration(seconds: 3)));
+                return;
+              }
+              final services = LocalServices.current;
+              final kids = LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope));
+              final key = await DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(services.area('devicekey')));
+              if (!context.mounted) return;
+              _open(context, UnlockChildScreen(
+                pin: local.services.pin,
+                responder: UnlockResponder(adultKey: key, kids: kids.load),
+                childName: childName,
+              ));
+            }),
+          HubTile(icon: Icons.tablet_android_outlined, title: 'Connected child devices',
+            subtitle: 'Forget a tablet, or make it unlock only with your phone',
+            onTap: () => _open(context, ConnectedDevicesScreen(
+              kids: LocalStorePairedKidsRepository(
+                LocalServices.current.area('pairedkids', ownerId: kLocalGuardianScope)),
+              childName: childName))),
           // Connect a child's device on the SAME network, no account or connection needed: you type your PIN here,
           // pick your name on her device and type it there (a key exchange; the PIN is never sent), then say yes.
           // Spec 2026-11-08-adult-gate-and-simple-pairing-design.md.

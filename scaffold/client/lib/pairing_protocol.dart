@@ -77,10 +77,13 @@ class _Pending {
 
 /// What the adult device remembers about a child device it certified (and can later forget).
 class PairedKid {
-  const PairedKid({required this.certId, required this.childDeviceKey, required this.childId, required this.deviceName, required this.issuedAtMs});
+  const PairedKid({required this.certId, required this.childDeviceKey, required this.childId, required this.deviceName, required this.issuedAtMs, this.phoneOnly = false});
   final String certId, childId, deviceName;
   final Uint8List childDeviceKey;
   final int issuedAtMs;
+
+  /// This tablet never accepts a typed code; only the grown-up's phone unlocks it.
+  final bool phoneOnly;
 }
 
 /// The adult-opened pairing window. One per "Connect a child's device" screen; in memory only.
@@ -99,6 +102,7 @@ class AdultWindow extends ChangeNotifier {
     required DateTime Function() now,
     required this.makeUnlockVerifier,
     required this.onPaired,
+    required this.phoneOnly,
   })  : _pin = pin, // ignore: prefer_initializing_formals
         _now = now, // ignore: prefer_initializing_formals
         attemptsLeft = maxAttempts;
@@ -116,6 +120,9 @@ class AdultWindow extends ChangeNotifier {
   /// Makes the salted slow verifier of the PIN that goes to the child device (for adult unlock there).
   final Future<LocalPinRecord> Function(String pin) makeUnlockVerifier;
   final void Function(PairedKid kid)? onPaired;
+
+  /// Do not give the tablet a PIN verifier at all: only the grown-up's phone will ever unlock it.
+  final bool phoneOnly;
 
   String? _pin;
   int attemptsLeft;
@@ -140,6 +147,7 @@ class AdultWindow extends ChangeNotifier {
     required String childName,
     required String pin,
     bool offerQr = false,
+    bool phoneOnly = false,
     Duration ttl = kWindowTtl,
     int maxAttempts = kWindowMaxAttempts,
     DateTime Function()? now,
@@ -153,7 +161,7 @@ class AdultWindow extends ChangeNotifier {
     return AdultWindow._(
       adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName,
       pin: pin, sid: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
-      maxAttempts: maxAttempts, now: clock, onPaired: onPaired,
+      maxAttempts: maxAttempts, now: clock, onPaired: onPaired, phoneOnly: phoneOnly,
       makeUnlockVerifier: makeUnlockVerifier ?? (String p) => _defaultVerifier(p, r),
     );
   }
@@ -290,16 +298,17 @@ class AdultWindow extends ChangeNotifier {
     final int iat = _now().millisecondsSinceEpoch;
     final PairingCert cert = await PairingCert.issue(adultKey,
         childDeviceKey: _cpk!, familyId: familyId, childId: childId, certId: certId, issuedAtMs: iat);
-    final LocalPinRecord verifier = await makeUnlockVerifier(_pin ?? '');
+    final LocalPinRecord? verifier = phoneOnly ? null : await makeUnlockVerifier(_pin ?? '');
     final Map<String, Object?> body = <String, Object?>{
       'cert': cert.toJson(), 'apk': b64(adultKey.publicKey), 'an': adultName, 'childName': childName,
-      'verifier': <String, Object?>{'iter': verifier.iterations, 'salt': b64(verifier.salt), 'hash': b64(verifier.hash)},
+      if (verifier != null) 'verifier': <String, Object?>{'iter': verifier.iterations, 'salt': b64(verifier.salt), 'hash': b64(verifier.hash)},
+      if (phoneOnly) 'po': true,
     };
     final AesGcm aes = AesGcm.with256bits();
     final SecretBox box = await aes.encrypt(utf8.encode(jsonEncode(body)), secretKey: SecretKey(await _key!.channelKey()));
     _sealed = Uint8List.fromList(box.concatenation());
     state = WindowState.approved;
-    onPaired?.call(PairedKid(certId: certId, childDeviceKey: _cpk!, childId: childId, deviceName: _deviceName, issuedAtMs: iat));
+    onPaired?.call(PairedKid(certId: certId, childDeviceKey: _cpk!, childId: childId, deviceName: _deviceName, issuedAtMs: iat, phoneOnly: phoneOnly));
     notifyListeners();
     return true;
   }
@@ -320,7 +329,12 @@ class ChildPairing {
   final PairingCert cert;
   final Uint8List adultKey;
   final String adultName, childName;
-  final LocalPinRecord unlockVerifier;
+
+  /// Null on a phone-only tablet: it holds no PIN verifier at all.
+  final LocalPinRecord? unlockVerifier;
+
+  /// Only the grown-up's phone unlocks this tablet.
+  bool get phoneOnly => unlockVerifier == null;
 }
 
 enum PairingFailure { unreachable, notMatched, declined, timedOut, malformed }
@@ -423,7 +437,8 @@ class ChildPairingClient {
         ? LocalPinRecord(
             iterations: v['iter'] as int, salt: unb64(v['salt'] as String), hash: unb64(v['hash'] as String))
         : null;
-    if (verifier == null) return const PairingResult.failed(PairingFailure.malformed);
+    // A tablet is either given a verifier or told it is phone-only; a credential with neither is refused.
+    if (verifier == null && body['po'] != true) return const PairingResult.failed(PairingFailure.malformed);
     return PairingResult.ok(ChildPairing(
         cert: cert, adultKey: apk, adultName: body['an'] as String, childName: body['childName'] as String,
         unlockVerifier: verifier));

@@ -43,6 +43,7 @@ import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
 import 'adult_gate.dart';
+import 'unlock_challenge.dart' show kPhoneProof;
 
 class KioskShell extends StatefulWidget {
   const KioskShell({
@@ -53,6 +54,7 @@ class KioskShell extends StatefulWidget {
     this.channel,
     this.pinDigits = 4,
     this.variableLengthPin = false,
+    this.phoneUnlock,
     this.childName = 'your child',
     this.callerName = 'there',
   });
@@ -77,6 +79,9 @@ class KioskShell extends StatefulWidget {
   /// True when the grown-up's code is the on-device PIN (4 to 8 digits, confirmed with OK) rather than the
   /// server's fixed-length one.
   final bool variableLengthPin;
+
+  /// The grown-up's phone as another way to unlock this tablet (null = no phone paired).
+  final PhoneUnlock? phoneUnlock;
   /// The child's own display name for the "Call" button on the lock-out
   /// screen (C-22) — what the child's own call screen calls her. Distinct
   /// from [childName], which is the guardian-facing label on the escalation
@@ -145,17 +150,21 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   int get _digits => widget.variableLengthPin ? 8 : widget.pinDigits;
   String? get _confirm => widget.variableLengthPin ? 'OK' : null;
 
+  /// A grown-up proof is either a typed code the injected check accepts, or the phone's verified signed answer
+  /// (the gate only produces [kPhoneProof] after the signature, nonce and expiry checked out).
+  Future<bool> _proves(String code) async => code == kPhoneProof || await widget.verifyPin(code);
+
   Future<void> _onPinComplete(String pin) async {
-    final correct = await widget.verifyPin(pin);
+    final correct = await _proves(pin);
     if (!mounted) return;
     setState(() => _state = lock.submitChildPin(_state, correct, DateTime.now()));
   }
 
   Future<void> _attemptBreakGlass() async {
     // The grown-up already tapped "I'm the grown-up" on the locked-out screen: straight to the keypad.
-    final code = await askAdultPin(context, digits: _digits, startOpen: true, confirmLabel: _confirm);
+    final code = await askAdultPin(context, digits: _digits, startOpen: true, confirmLabel: _confirm, phone: widget.phoneUnlock);
     if (code == null || !mounted) return;
-    if (await widget.verifyPin(code) && mounted) {
+    if (await _proves(code) && mounted) {
       setState(() => _state = lock.breakGlass(_state, DateTime.now()).state);
     }
   }
@@ -167,9 +176,9 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   /// there watching (§8.3's own framing) never learns which factor failed.
   Future<void> _attemptEscalation() async {
     // The shield is reachable by a child: she gets the calm card first, never a keypad.
-    final pin = await askAdultPin(context, digits: _digits, confirmLabel: _confirm);
+    final pin = await askAdultPin(context, digits: _digits, confirmLabel: _confirm, phone: widget.phoneUnlock);
     if (pin == null || !mounted) return;
-    final pinOk = await widget.verifyPin(pin);
+    final pinOk = await _proves(pin);
     if (!mounted) return;
     final biometricOk = pinOk ? await widget.verifyBiometric() : false;
     if (!mounted) return;
@@ -208,7 +217,7 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
       ]);
     }
     if (lock.canRender(_state, lock.Surface.pinGate, now)) {
-      return AdultGate(digits: _digits, confirmLabel: _confirm, onPin: _onPinComplete);
+      return AdultGate(digits: _digits, confirmLabel: _confirm, onPin: _onPinComplete, phone: widget.phoneUnlock);
     }
     if (lock.canRender(_state, lock.Surface.lockedOut, now)) {
       return _LockedOutScreen(
