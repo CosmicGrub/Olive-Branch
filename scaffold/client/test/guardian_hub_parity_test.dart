@@ -460,10 +460,6 @@ void main() {
 
         testWidgets('the guardian home with its fallback sentence at $at', (t) async {
           await _size(t, w, h: 2600);
-          // KNOWN, PRE-EXISTING and not this wave's file: at 2.0x text the shared TieredTile
-          // (tiered_tile.dart, which the age-band homes own) overflows its fixed cell by a few dp.
-          // This test holds everything that IS this wave's (the header, the state sentence, the
-          // clocks) and ignores only an overflow raised inside tiered_tile.dart.
           final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
           final void Function(FlutterErrorDetails)? old = FlutterError.onError;
           FlutterError.onError = errors.add;
@@ -473,12 +469,7 @@ void main() {
             childBands: <RibbonBand>[], actorBands: <RibbonBand>[]), scale: scale));
           await t.pumpAndSettle();
           FlutterError.onError = old;
-          final List<String> others = <String>[
-            for (final FlutterErrorDetails e in errors)
-              if (!e.toString().contains('tiered_tile.dart')) e.exceptionAsString(),
-          ];
-          expect(others, isEmpty, reason: 'home at $at');
-          if (scale == 1.0) expect(errors, isEmpty, reason: 'at 1.0x nothing overflows at all, tiles included');
+          expect(errors.map((e) => e.exceptionAsString()).toList(), isEmpty, reason: 'home at \$at');
           expect(find.byKey(const Key('guardianStateLine')), findsOneWidget);
         });
       }

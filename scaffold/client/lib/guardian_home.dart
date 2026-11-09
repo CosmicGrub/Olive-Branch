@@ -267,7 +267,10 @@ class GuardianHome extends StatelessWidget {
             final gapTotal = 10.0 * (crossAxisCount - 1);
             final effectiveColumnWidth =
                 (constraints.maxWidth / textScale - gapTotal) / crossAxisCount;
-            final mainAxisExtent = effectiveColumnWidth < 170.0 ? 136.0 : 108.0;
+            // Past 1.0x the cell grows with the text (a 2.0x label wraps one line further and
+            // overflowed a fixed cell by a few dp); at 1.0x it is exactly what it was.
+            final heightScale = textScale <= 1.0 ? 1.0 : textScale;
+            final mainAxisExtent = (effectiveColumnWidth < 170.0 ? 136.0 : 108.0) * heightScale;
 
             // The same 11 destinations as before, now tagged by tier
             // (_kGuardianTiles, in this spec's own §Tier assignment order)
@@ -356,13 +359,13 @@ class GuardianHome extends StatelessWidget {
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(children: [
-            SizedBox(width: double.infinity, height: 128, child: TieredTile(readAloud: false, 
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               key: const Key('guardianHomeHero'),
               icon: Icons.schedule_send, label: 'Message banking',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const MessageBankingScreen())))),
             const SizedBox(height: 10),
-            SizedBox(width: double.infinity, height: 128, child: TieredTile(readAloud: false, 
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               icon: Icons.more_horiz, label: 'More',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => Scaffold(
