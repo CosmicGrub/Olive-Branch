@@ -35,9 +35,11 @@ import 'growing_screens.dart';
 import 'game_logic.dart' show neutralGrownUp;
 import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels;
 import 'hub_widgets.dart';
+import 'journal_lock.dart';
 import 'journal_screen.dart';
 import 'letters_screen.dart';
 import 'maturation_ladder.dart';
+import 'my_marks.dart';
 import 'my_people_entry.dart';
 import 'picture_icons.dart' show Speak;
 import 'quieting_note.dart';
@@ -126,6 +128,18 @@ class ChildMoreScreen extends StatelessWidget {
   void _open(BuildContext context, Widget screen) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
 
+  /// What a grown-up recorded on the doorframe, only while their Growing marks switch is on (by month, no number).
+  Future<List<GrowthMarkView>> _grownUpMarks() async {
+    try {
+      final GrowingCareStores s = growingCare ?? GrowingCareStores.forChild();
+      final ChildSuites suites =
+          childSuitesFor(view: family?.view, yearsOld: childAge, switches: await s.switches.load());
+      return suites.pencilMarks ? await s.childLens().growth() : const <GrowthMarkView>[];
+    } catch (_) {
+      return const <GrowthMarkView>[];
+    }
+  }
+
   // Child voice throughout (C-13/C-15): short second-person lines, no
   // spec language ("irreversible", "guardian access", "preserved").
   // Contract: nothing guardian-facing and no settings affordance is
@@ -141,7 +155,12 @@ class ChildMoreScreen extends StatelessWidget {
         HubSection(title: 'Just yours', children: [
           HubTile(readAloud: true, icon: Icons.menu_book_outlined, title: 'My journal',
             subtitle: 'Just for you',
-            onTap: () => _open(context, JournalScreen(childName: childName))),
+            onTap: () => _open(context, JournalScreen(childName: childName, childAge: childAge, lock: JournalLock.forChild()))),
+          // Her own pencil marks on the door (k.growth). From five: the youngest band keeps its smallest set.
+          if (childAge >= 5)
+            HubTile(readAloud: true, key: const Key('childMyDoor'), icon: Icons.eco_outlined, title: 'Growing marks',
+              subtitle: 'On the door',
+              onTap: () => _open(context, MyDoorScreen(childName: childName, fromGrownUp: _grownUpMarks))),
           HubTile(readAloud: true, key: const Key('childMyPeople'), icon: Icons.favorite_outline, title: 'My people',
             subtitle: 'What you call your grown-ups',
             onTap: () => _open(context, MyPeopleEntry(fallbackAge: childAge))),

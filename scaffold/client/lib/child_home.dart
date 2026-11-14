@@ -82,7 +82,13 @@ import 'her_colour_home.dart';
 import 'homework_screen.dart';
 import 'inbox_screen.dart';
 import 'jokebook_screen.dart';
+import 'feelings_corner_screen.dart';
+import 'journal_lock.dart';
 import 'journal_screen.dart';
+import 'my_marks.dart';
+import 'rhythm_voice_repositories.dart';
+import 'shared_gallery.dart' show demoAppGallery;
+import 'snapshot_button.dart' show AppGalleryScreen;
 import 'letters_screen.dart';
 import 'live_game_picker.dart';
 import 'local_services.dart';
@@ -268,7 +274,7 @@ class ChildHome extends StatelessWidget {
         return WeeksScreen(
             childName: childName, nights: demoCustodyNights(names: names), guardianColors: demoGuardianColorsFor(names));
       case 'journal':
-        return JournalScreen(childName: childName);
+        return JournalScreen(childName: childName, childAge: childAge, lock: JournalLock.forChild());
       case 'memory':
         return MemoryBoxScreen(childName: childName);
       case 'capsule':
@@ -276,13 +282,17 @@ class ChildHome extends StatelessWidget {
             childName: childName, currentAge: childAge, childId: childId ?? 'demo-child',
             baseUrl: baseUrl, sessionToken: sessionToken, httpClient: httpClient);
       case 'growth':
-        return GrowthPictureScreen(childName: childName);
+        return MyDoorScreen(childName: childName, fromGrownUp: _grownUpMarks);
+      case 'feel':
+        return FeelingsCornerScreen(
+            service: RhythmVoiceService.forChild(childId), family: f, yearsOld: childAge, speak: speak);
       case 'jokes':
         return JokebookScreen(
             childName: childName, childAge: childAge, parentName: _grownUpIn(context), overrides: overrides);
       case 'draw':
         return DrawChoiceScreen(
-            title: bandTileTitle('draw', band), doodle: DoodleDesk(childName: childName), colouring: const ColouringScreen());
+            title: bandTileTitle('draw', band), doodle: DoodleDesk(childName: childName), colouring: const ColouringScreen(),
+            pictures: AppGalleryScreen(gallery: demoAppGallery));
       case 'birthday':
         final ChildBirthday? b = f.birthday;
         return b == null ? null : BirthdayScreen(birthday: b);
@@ -297,10 +307,25 @@ class ChildHome extends StatelessWidget {
       final GrowingCareStores s = GrowingCareStores.forChild();
       final ChildSuites suites =
           childSuitesFor(view: family?.view, yearsOld: childAge, switches: await s.switches.load());
-      final bool marks = suites.pencilMarks && (await s.childLens().growth()).isNotEmpty;
-      return <String>{if (!suites.memoryBox) 'memory', if (!marks) 'growth'};
+      // 'growth' is always hers now (she makes her own marks); the Feelings corner needs one of its four tools.
+      final bool feelings = (await feelingsToolsFor(
+              service: RhythmVoiceService.forChild(childId), family: family, yearsOld: childAge))
+          .anyVoice;
+      return <String>{if (!suites.memoryBox) 'memory', if (!feelings) 'feel'};
     } catch (_) {
-      return <String>{'memory', 'growth'}; // fail closed: an unreadable store shows neither
+      return <String>{'memory', 'feel'}; // fail closed: an unreadable store shows neither
+    }
+  }
+
+  /// What a grown-up recorded on the doorframe, only while their Growing marks switch is on (by month, no number).
+  Future<List<GrowthMarkView>> _grownUpMarks() async {
+    try {
+      final GrowingCareStores s = GrowingCareStores.forChild();
+      final ChildSuites suites =
+          childSuitesFor(view: family?.view, yearsOld: childAge, switches: await s.switches.load());
+      return suites.pencilMarks ? await s.childLens().growth() : const <GrowthMarkView>[];
+    } catch (_) {
+      return const <GrowthMarkView>[];
     }
   }
 

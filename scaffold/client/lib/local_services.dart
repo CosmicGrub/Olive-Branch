@@ -64,8 +64,9 @@ const int _mib = 1024 * 1024;
 const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'journal', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
-      what: 'Her private journal entries (text and date). Sealed on the device; '
-          'no grown-up can open them (P7).'),
+      what: 'Her private journal entries (text and date) and, if she chose to lock it from 13, the code '
+          'as a salted slow hash (never the four numbers) with the count of wrong tries toward a '
+          '15 minute rest. Sealed on the device; no grown-up can open or reset it (P7).'),
   LocalDataEntry(
       area: 'lists', scope: LocalScope.child,
       what: 'Her wants and needs lists: the words she typed and whether she ticked them. '
@@ -139,6 +140,11 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'photo) with an optional short caption. Kept apart from these, and marked as from them, are '
           'the short notes or small photos a grown-up left for her; a grown-up cannot edit or remove '
           'her own. No totals. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
+      area: 'mymarks', scope: LocalScope.child, encrypted: true, maxBytes: 64 * 1024,
+      what: 'The pencil marks she made herself on her door: the day and how far up she tapped, as a fraction '
+          'of the door. Hers: marks a grown-up recorded are kept apart, and neither can change the other. '
+          'No centimetres, no total, no comparison with anyone. Sealed on the device; never uploaded.'),
   LocalDataEntry(
       area: 'care', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
       what: 'Care binder (grown-up side only): sections and contacts a guardian wrote, hospital-mode '

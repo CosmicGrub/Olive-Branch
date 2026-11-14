@@ -366,17 +366,21 @@ class BandMoreExtra {
   final Widget Function(BuildContext context) build;
 }
 
-/// 'Draw & colour' (Studio at 13-17): a choice of a doodle or a colouring page (prototype k.draw).
+/// 'Draw & colour' (Studio at 13-17): a choice of a doodle or a colouring page, and the pictures she kept
+/// (prototype k.draw: Colour a picture, Doodle, My saved pictures).
 class DrawChoiceScreen extends StatelessWidget {
-  const DrawChoiceScreen({super.key, required this.title, required this.doodle, required this.colouring});
+  const DrawChoiceScreen({super.key, required this.title, required this.doodle, required this.colouring, this.pictures});
   final String title;
   final Widget doodle;
   final Widget colouring;
 
+  /// Her saved pictures (the third row). Null: the row is not drawn.
+  final Widget? pictures;
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(title)),
-        body: SafeArea(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: <Widget>[
+        body: SafeArea(child: SingleChildScrollView(padding: const EdgeInsets.all(16), child: Column(children: <Widget>[
           SizedBox(width: double.infinity, child: TieredTile(
             key: const Key('drawDoodle'), icon: Icons.brush_outlined, label: 'Doodle desk', featured: true, height: 120,
             onTap: (BuildContext c) => _push(c, doodle))),
@@ -384,6 +388,12 @@ class DrawChoiceScreen extends StatelessWidget {
           SizedBox(width: double.infinity, child: TieredTile(
             key: const Key('drawColouring'), icon: Icons.palette_outlined, label: 'Colouring', featured: true, height: 120,
             onTap: (BuildContext c) => _push(c, colouring))),
+          if (pictures != null) ...<Widget>[
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, child: TieredTile(
+              key: const Key('drawPictures'), icon: Icons.photo_library_outlined, label: 'My saved pictures', featured: true, height: 120,
+              onTap: (BuildContext c) => _push(c, pictures!))),
+          ],
         ]))),
       );
 }
