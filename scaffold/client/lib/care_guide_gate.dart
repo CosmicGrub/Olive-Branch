@@ -48,11 +48,33 @@ class GateDecision {
 
 final RegExp _isoDate = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
+/// A real calendar date in YYYY-MM-DD (not just the right shape: 9999-99-99 and 2030-02-31 are refused).
+bool isRealIsoDate(String s) {
+  if (!_isoDate.hasMatch(s)) return false;
+  final DateTime? d = DateTime.tryParse(s);
+  if (d == null) return false;
+  final String back = '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  return back == s;
+}
+
+/// A phone number is digits and dialling punctuation only (optionally several separated by a slash): prose, URLs and
+/// notes belong elsewhere, and a reviewer must rewrite any number that carries them.
+final RegExp _numberShape = RegExp(r'^[+(]*[0-9][0-9 ()./-]*(?:/\s*[+(]*[0-9][0-9 ()./-]*)*$');
+bool isPlainNumber(String s) => _numberShape.hasMatch(s.trim());
+
 /// Words a parent must never meet. The drafts use them to talk to the reviewer, not to a frightened parent.
 final List<RegExp> _forbidden = <RegExp>[
   RegExp('clinician', caseSensitive: false),
   RegExp(r'\bsources?\s*\d+', caseSensitive: false),
-  RegExp(r'\bdisagreements?\s*\d+', caseSensitive: false),
+  // The review-only material (disagreements, unverified items, reviewer questions) is NOT bundled, so a pointer to it
+  // would dangle. Any mention of it, or of a list/block/rule elsewhere in the draft, is refused.
+  RegExp(r'\bdisagree', caseSensitive: false),
+  RegExp(r'\bsee\b[^.;:]{0,60}\b(list|block|section|rule|above|below)\b', caseSensitive: false),
+  RegExp(r'\b(in|on) the [\w-]+ (list|block|section)\b', caseSensitive: false),
+  RegExp(r'\b(list|block|section) above\b', caseSensitive: false),
+  RegExp(r'\breviewers?\b', caseSensitive: false),
+  RegExp(r'\bneeds? (a |an )?(\w+ )?review', caseSensitive: false),
+  RegExp(r'\bunverified\b', caseSensitive: false),
   RegExp(r'\[\s*\d+(?:\s*[,;-]\s*\d+)*\s*\]'), // a bare citation marker such as [10] or [2, 3]
   RegExp(r'\bDRAFT\b'), // the drafts' own banner wording must not survive into a reviewed guide
   RegExp('not reviewed', caseSensitive: false),
@@ -94,17 +116,26 @@ Iterable<String> parentFacingStrings(CareGuide g) sync* {
   }
 }
 
+/// The helplines a screen may show. Review covers only the regions in the review record, so a helpline for any other
+/// region is withheld (phone numbers are the highest-stakes content). A previewed draft shows only its own region.
+List<Helpline> helplinesToShow(CareGuide g, {required bool draft}) {
+  final Set<String> ok = draft || !g.isReviewed ? <String>{g.region} : g.review.regions.toSet();
+  return <Helpline>[for (final Helpline h in g.helplines) if (ok.contains(h.region)) h];
+}
+
 /// The parent-facing strings that break the wording rules. Empty = clean.
 List<String> wordingViolations(CareGuide g) => <String>[
       for (final String s in parentFacingStrings(g))
         if (_forbidden.any((RegExp r) => r.hasMatch(s))) s,
+      for (final Helpline h in g.helplines)
+        if (!isPlainNumber(h.number)) h.number,
     ];
 
 /// The one decision. Fail closed.
 GateDecision decideGuide(CareGuide g, CareGuidePolicy policy) {
   if (g.status == kStatusReviewed) {
     final GuideReview r = g.review;
-    if (r.reviewedOn == null || !_isoDate.hasMatch(r.reviewedOn!) || (r.reviewedBy ?? '').trim().isEmpty || r.regions.isEmpty) {
+    if (r.reviewedOn == null || !isRealIsoDate(r.reviewedOn!) || (r.reviewedBy ?? '').trim().isEmpty || r.regions.isEmpty) {
       return const GateDecision.refuse(GateRefusal.incompleteReviewRecord);
     }
     if (!r.regions.contains(g.region)) return const GateDecision.refuse(GateRefusal.regionNotCovered);

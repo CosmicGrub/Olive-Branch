@@ -25,7 +25,6 @@
       "items": [
         {
           "text": "Baby aged 3 months or younger (this includes a baby who has just turned 3 months; if you are unsure of the exact age, count them in) with a temperature of 100.4 F (38 C) or higher, or whom you think has a high temperature (rectal reading is best), even with no other symptoms; or a rectal temperature below 97.7 F (36.5 C) (Cleveland Clinic): call the doctor or after-hours line immediately, day or night, or go to emergency care. Do not give fever medicine before the baby has been seen.",
-          "action": "urgent",
           "ages": "3 months or younger",
           "sources": [
             1,
@@ -40,7 +39,6 @@
         },
         {
           "text": "Cannot be woken (including a child who is asleep and cannot be roused), is very hard to wake, is not alert when awake, or is limp or too weak to stand",
-          "action": "emergency",
           "ages": "all",
           "sources": [
             14,
@@ -50,7 +48,6 @@
         },
         {
           "text": "Any difficulty breathing with a fever, even after the nose has been cleared: fast breathing, breathlessness, grunting, the belly sucking in under the ribs, or struggling to speak or cry; or blue, grey or pale lips, tongue or nails; or blue, grey, pale or blotchy skin.",
-          "action": "emergency",
           "ages": "all",
           "sources": [
             2,
@@ -62,7 +59,6 @@
         },
         {
           "text": "Dark red or purple spots or pinpricks on the skin, new bruises, or a rash that stays visible when a glass is pressed against it",
-          "action": "emergency",
           "ages": "all",
           "sources": [
             2,
@@ -72,7 +68,6 @@
         },
         {
           "text": "Any other new or unexplained rash with fever, including a rash that fades when a glass is pressed against it: go to emergency care now or call emergency services (MedlinePlus: call 911; Cleveland Clinic: ER or 911). AAP When to Call, NHS 111 and Seattle Children's rate a rash that fades less urgently; see the disagreement block.",
-          "action": "emergencyOrCare",
           "ages": "all",
           "sources": [
             9,
@@ -84,7 +79,6 @@
         },
         {
           "text": "A seizure (fit) with fever: get emergency care now and do not wait until the next day. Call emergency services, and do not drive, if it is the child's first, if it lasts about 3 minutes or longer, if the child is under 6 months, has trouble breathing, is stiff or twitching on only one side, has had more than one in 24 hours, is still seizing or unconscious, or is not back to normal or is unusually sleepy more than an hour after it ends. Even a short seizure that has fully stopped needs emergency care now in this guide. MedlinePlus, the most cautious source, says call 911 for any seizure with fever; this guide asks you to call emergency services in the cases listed above and otherwise to go to emergency care now (AAP KidsDoc: go to the emergency room; Canadian Paediatric Society: a physical exam within a few hours). See the seizure disagreement block.",
-          "action": "emergencyOrCare",
           "ages": "all, febrile seizures mostly 6 months to 5-6 years",
           "sources": [
             14,
@@ -98,7 +92,6 @@
         },
         {
           "text": "Stiff neck, severe or very bad headache, or light hurting the eyes, together with fever",
-          "action": "emergency",
           "ages": "all",
           "sources": [
             2,
@@ -108,7 +101,6 @@
         },
         {
           "text": "Bulging or swollen soft spot on the head (fontanelle) with fever",
-          "action": "emergency",
           "ages": "under 1 year",
           "sources": [
             14
@@ -116,7 +108,6 @@
         },
         {
           "text": "Crying that does not stop or cannot be calmed (nonstop crying), confusion, or extreme agitation; or no interest in feeding or normal activities, or not responding as usual",
-          "action": "emergency",
           "ages": "all",
           "sources": [
             9,
@@ -127,7 +118,6 @@
         },
         {
           "text": "Cannot walk (this includes a child who usually walks and no longer seems able to), or refuses to move an arm or leg; or unusually cold hands and feet",
-          "action": "emergency",
           "ages": "all",
           "sources": [
             9,
@@ -138,7 +128,6 @@
         },
         {
           "text": "Serious trouble swallowing fluids or saliva, or constant heavy drooling (Cleveland Clinic: ER or 911; AAP KidsDoc: seek care now)",
-          "action": "emergency",
           "ages": "all",
           "sources": [
             8,
@@ -147,7 +136,6 @@
         },
         {
           "text": "Chest pain with fever",
-          "action": "emergency",
           "ages": "all (older children who can describe it)",
           "sources": [
             15
@@ -155,7 +143,6 @@
         },
         {
           "text": "Fever or high body temperature after being somewhere very hot, such as a parked car or an overheated room: call the doctor right away or go to emergency care even if the reading is below 105 F. If heatstroke is suspected (body temperature above 105 F / 40.5 C from heat, not infection), call emergency services.",
-          "action": "urgent",
           "ages": "all",
           "sources": [
             0,
@@ -164,7 +151,6 @@
         },
         {
           "text": "Temperature above 104 F (40 C) at any age, or repeatedly above it, or staying high despite fever medicine: call the doctor or after-hours line right away or seek care now.",
-          "action": "urgent",
           "ages": "all",
           "sources": [
             14,
@@ -175,7 +161,6 @@
         },
         {
           "text": "Temperature above 105 F (40.5 C): go to emergency care or call the doctor right away; do not wait to see if it comes down.",
-          "action": "urgent",
           "ages": "all",
           "sources": [
             9

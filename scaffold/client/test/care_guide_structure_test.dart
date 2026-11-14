@@ -117,6 +117,69 @@ void main() {
     });
   });
 
+  group('no draft medical text ships in the app', () {
+    final Directory assets = Directory('assets/care_guides');
+    final List<File> bundled = assets.listSync().whereType<File>().where((File f) => f.path.endsWith('.json')).toList();
+
+    test('the pubspec bundles assets/care_guides/ and nothing under docs/ (where the drafts live)', () {
+      final String p = File('pubspec.yaml').readAsStringSync();
+      expect(p.contains('- assets/care_guides/'), true);
+      expect(p.contains('care-guides'), false);
+      expect(p.contains('app-draft'), false);
+    });
+
+    test('every guide file in the bundled directory is REVIEWED with a complete record, and the index lists exactly those', () {
+      final List<String> listed = <String>[];
+      for (final File f in bundled) {
+        if (_name(f) == 'index.json') continue;
+        final Map<String, Object?> m = jsonDecode(f.readAsStringSync()) as Map<String, Object?>;
+        expect(m['status'], 'REVIEWED', reason: '${_name(f)} must not ship unless a clinician has reviewed it');
+        final Map<String, Object?> r = m['review']! as Map<String, Object?>;
+        expect(r['reviewedOn'], isNotNull, reason: _name(f));
+        expect((r['reviewedBy'] as String? ?? '').trim(), isNotEmpty, reason: _name(f));
+        listed.add(_name(f).replaceAll('.json', ''));
+      }
+      final Map<String, Object?> idx = jsonDecode(File('assets/care_guides/index.json').readAsStringSync()) as Map<String, Object?>;
+      expect((idx['guides']! as List<Object?>).cast<String>().toList()..sort(), listed..sort());
+    });
+
+    test('no bundled file contains the draft status word or the draft disclaimer', () {
+      for (final File f in bundled) {
+        final String s = f.readAsStringSync();
+        expect(s.contains('DRAFT'), false, reason: _name(f));
+        expect(s.contains('Needs review'), false, reason: _name(f));
+      }
+    });
+
+    test('the five real drafts are kept outside the app, in docs/care-guides/app-draft', () {
+      for (final String id in <String>['who-to-call', 'choking', 'head-injury', 'high-fever', 'childproofing-home']) {
+        expect(File('$kDraftDir/$id.json').existsSync(), true, reason: id);
+        expect(File('assets/care_guides/$id.json').existsSync(), false, reason: '$id must not be bundled while it is a draft');
+      }
+    });
+  });
+
+  group('the app-written headings', () {
+    test('every block kind has a heading, and every heading is listed for sign-off with its kind', () {
+      final String doc = File('../../docs/care-guides/HEADING-SIGNOFF.md').readAsStringSync();
+      for (final String k in kBlockOrder) {
+        if (k == 'room') continue; // the heading is the draft's own room name
+        expect(kBlockHeadings.containsKey(k), true, reason: k);
+        expect(doc.contains('| `$k` | ${kBlockHeadings[k]} |'), true, reason: 'HEADING-SIGNOFF.md lacks "$k": "${kBlockHeadings[k]}"');
+      }
+    });
+
+    test('the post-episode and urgent headings add no timeframe, actor or place to the draft content', () {
+      for (final String k in <String>['afterEpisode', 'urgent']) {
+        final String h = kBlockHeadings[k]!.toLowerCase();
+        for (final String w in <String>['doctor', 'hospital', 'day', 'hour', 'now', 'minute', 'call']) {
+          expect(h.contains(w), false, reason: '"$h" for $k contains "$w"');
+        }
+      }
+      expect(kBlockHeadings['afterEpisode'], isNot('Same-day doctor'));
+    });
+  });
+
   group('emergency first', () {
     test('the fixed block order starts with the emergency block, then the other call tiers', () {
       expect(kBlockOrder.take(5).toList(), <String>['emergency', 'urgent', 'poison', 'nurseLine', 'sameDay']);
@@ -124,7 +187,7 @@ void main() {
 
     test('every bundled guide that has an emergency block shows it first, whatever order it is stored in', () {
       for (final String id in <String>['who-to-call', 'choking', 'head-injury', 'high-fever', 'childproofing-home']) {
-        final CareGuide g = CareGuide.fromJson(jsonDecode(File('assets/care_guides/$id.json').readAsStringSync()) as Map<String, Object?>);
+        final CareGuide g = CareGuide.fromJson(jsonDecode(File('$kDraftDir/$id.json').readAsStringSync()) as Map<String, Object?>);
         if (g.blocks.any((CareBlock b) => b.kind == 'emergency')) {
           expect(g.orderedBlocks.first.kind, 'emergency', reason: id);
         }

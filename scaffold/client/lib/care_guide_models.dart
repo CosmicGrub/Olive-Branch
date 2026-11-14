@@ -59,7 +59,7 @@ const String kStatusDraft = 'DRAFT_UNREVIEWED';
 
 /// Block kinds in the order the screens show them: emergency first, always.
 const List<String> kBlockOrder = <String>[
-  'emergency', 'urgent', 'poison', 'nurseLine', 'sameDay',
+  'emergency', 'urgent', 'poison', 'nurseLine', 'sameDay', 'afterEpisode',
   'firstSteps', 'doNow', 'dispatcherScript', 'haveReady', 'recognition', 'coolDown', 'howToMeasure',
   'doNot', 'watchFor', 'note', 'consent',
   'topHazards', 'room', 'arrivalChecklist', 'prevention',
@@ -256,6 +256,10 @@ class CareGuide {
   final List<GuideSource> sources;
 
   bool get isReviewed => status == kStatusReviewed;
+
+  /// True for a guide that can be read in an emergency (category emergency, or it has an emergency block). Screens add
+  /// no app-written advice to such a guide: any extra sentence could delay a call for help.
+  bool get isEmergencyTier => category == 'emergency' || blocks.any((CareBlock b) => b.kind == 'emergency');
 
   /// Blocks in display order: emergency first, then the fixed order of [kBlockOrder]. Stable inside a kind.
   List<CareBlock> get orderedBlocks {

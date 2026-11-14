@@ -51,29 +51,33 @@ their stored order.
 | 2 | `urgent` | `seekMedicalHelpNow`, `callDoctorRightAway`, `urgentCareOrER` |
 | 3 | `poison` | `callPoisonControl` |
 | 4 | `nurseLine` | `callDoctorOrNurseLine` |
-| 5 | `sameDay` | `callDoctorSameDay`, `medicalReviewAfterEpisode` |
-| 6 | `firstSteps` | `universalFirstSteps` |
-| 7 | `doNow` | `doNow` |
-| 8 | `dispatcherScript` | `whatToTellDispatcher` |
-| 9 | `haveReady` | `haveReady` |
-| 10 | `recognition` | `quickRecognition` (one item per condition) |
-| 11 | `coolDown` | `hardToBringDown` |
-| 12 | `howToMeasure` | `howToMeasure` |
-| 13 | `doNot` | `doNot` |
-| 14 | `watchFor` | `watchFor` |
-| 15 | `note` | `unexplainedInjuryNote` |
-| 16 | `consent` | `consentBasics` |
-| 17 | `topHazards` | `topHazards` |
-| 18 | `room` | `byRoom` (one block per room, room name in `title`) |
-| 19 | `arrivalChecklist` | `arrivalChecklist` |
-| 20 | `prevention` | `prevention` |
+| 5 | `sameDay` | `callDoctorSameDay` |
+| 6 | `afterEpisode` | `medicalReviewAfterEpisode` (its own kind: the draft states no same-day timeframe and says hospital, so the app must not call it "same-day doctor") |
+| 7 | `firstSteps` | `universalFirstSteps` |
+| 8 | `doNow` | `doNow` |
+| 9 | `dispatcherScript` | `whatToTellDispatcher` |
+| 10 | `haveReady` | `haveReady` |
+| 11 | `recognition` | `quickRecognition` (one item per condition) |
+| 12 | `coolDown` | `hardToBringDown` |
+| 13 | `howToMeasure` | `howToMeasure` |
+| 14 | `doNot` | `doNot` |
+| 15 | `watchFor` | `watchFor` |
+| 16 | `note` | `unexplainedInjuryNote` |
+| 17 | `consent` | `consentBasics` |
+| 18 | `topHazards` | `topHazards` |
+| 19 | `room` | `byRoom` (one block per room, room name in `title`) |
+| 20 | `arrivalChecklist` | `arrivalChecklist` |
+| 21 | `prevention` | `prevention` |
 
 Mapping several drafts' keys onto one kind is a structural choice, not a medical one: every item keeps its own words and
 its `legacyKey`. Two things for the reviewing clinician to confirm (they are questions, not changes):
 
 - The high-fever draft files three different `action` words (`emergency`, `urgent`, `emergencyOrCare`) under
-  `callEmergencyNow`. The converter keeps every one of those items in the `emergency` block with its `action` word, the
-  most cautious reading. Whether `urgent` items belong in the `urgent` block is the reviewer's call.
+  `callEmergencyNow`. The converter keeps every one of those items in the `emergency` block, the most cautious
+  reading, and keeps the `action` word in the full file (`converted/`). **The app-format copy drops the word and no
+  screen shows it, so the app currently draws all of them identically under "Emergency signs": a baby of 3 months or
+  younger with a temperature (`urgent`) looks the same as a seizure (`emergency`).** Whether `urgent` items belong in
+  the `urgent` block, or the distinction should be drawn, is the reviewer's call and must be settled before sign-off.
 - Whether `seekMedicalHelpNow`, `callDoctorRightAway` and `urgentCareOrER` are one tier (`urgent`) as mapped here.
 
 ## reviewOnly: never shown, never bundled
@@ -81,21 +85,37 @@ its `legacyKey`. Two things for the reviewing clinician to confirm (they are que
 Everything addressed to the reviewing clinician lives here: `disagreements` (`{ items: [{ topic, positions:[{claim,
 sources}], note }] }`), `unverified`, `reviewQuestions`, `changeLog` (`appliedByCorrector` replaces the draft's
 `applied_by_corrector`), `clinicianOnly` (the unresolved dose conflicts), `needsClinicianOrInstructor`, `firstLineNote`.
-Blocks the drafts flagged `displayToParents:false` / `display:false` keep their flag here. The bundle written to
-`scaffold/client/assets/care_guides/` has no `reviewOnly` and no helpline `note`, so the loader cannot render them even
+Blocks the drafts flagged `displayToParents:false` / `display:false` keep their flag here. The app-format copy written to
+`docs/care-guides/app-draft/` has no `reviewOnly` and no helpline `note`, so the loader cannot render them even
 by mistake. The full file keeps them so the review packet and the hash proof stay complete.
 
 ## Content lint (applies to a guide before the loader will return it as REVIEWED)
 
 A reviewed guide's parent-facing strings (everything outside `reviewOnly`; the `sources` list is exempt, it is shown as
-sources) must not contain: the word `clinician` (any case), `source <number>`, `Disagreement <number>`, a bare
-`[number]` citation marker, the word `DRAFT` in capitals, or `not reviewed`. These are wording the drafts use for the
-reviewer, not for a frightened parent. **The five drafts fail this lint today**: who-to-call 1 string, choking 6,
-head-injury 8, high-fever 2, childproofing-home 3 (20 in all). The review must rewrite those sentences; then the guide
-can be marked REVIEWED.
+sources) must not contain: the word `clinician` (any case), `source <number>`, any mention of `disagree...`, a pointer
+to a list, block, section or rule that the app does not bundle (`see the ... list`, `in the ... block`, `list above`),
+the words `reviewer`, `needs review` or `unverified`, a bare `[number]` citation marker, the word `DRAFT` in
+capitals, or `not reviewed`. These are wording the drafts use for the reviewer, not for a frightened parent. The
+`reviewOnly` material is not bundled, so a sentence that points at it would point at nothing. A helpline `number` must
+be digits and dialling punctuation only. **The five drafts fail this lint today**: the count is printed by
+`test/care_guide_gate_test.dart` (it was 20 sentences under the first, narrower lint; the lint now also catches the
+dangling pointers, so the number is larger). The review must rewrite every flagged sentence; then the guide can be
+marked REVIEWED. The lint is a denylist and cannot prove a guide is free of every kind of dangling pointer; the
+reviewer's read-through is the real check.
 
 ## Regenerating
 
-`node scaffold/tools/care-guides-convert.mjs` rewrites `converted/` and the client bundle; `--check` fails if they are
-stale. It never edits the draft files in this folder. Once a reviewer starts editing, the converted files become the
+`node scaffold/tools/care-guides-convert.mjs` rewrites `converted/`, `app-draft/` and the (empty) client index;
+`--check` fails if they are stale. It never edits the draft files in this folder. Once a reviewer starts editing, the converted files become the
 source of truth and the tool is extended to read them (and to refuse to overwrite a REVIEWED guide).
+
+## Promoting a guide (the only way it gets into the app)
+
+No draft is bundled. The client pubspec bundles `scaffold/client/assets/care_guides/`, and anything in there can be
+extracted from a release build even if no screen draws it, so that directory holds only `index.json` (empty) until a
+guide is REVIEWED. To promote one guide, after the clinician's sign-off: copy its `app-draft/<id>.json` to
+`assets/care_guides/<id>.json`, rewrite the flagged sentences, set `status` to `REVIEWED` and fill `review`
+(`reviewedOn` as a real calendar date, `reviewedBy` as a role, `regions`), and add the id to `index.json`.
+`test/care_guide_structure_test.dart` fails if a non-REVIEWED file is in that directory or the index disagrees with the
+directory. Helplines are shown only for the regions the review covers. Sign off the app-written headings too, see
+`HEADING-SIGNOFF.md`.

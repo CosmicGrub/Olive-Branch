@@ -80,7 +80,7 @@
       ]
     },
     {
-      "kind": "sameDay",
+      "kind": "afterEpisode",
       "legacyKey": "medicalReviewAfterEpisode",
       "items": [
         {

@@ -25,8 +25,16 @@ void main() {
       expect(const CareGuidePolicy().showsDrafts, false);
     });
 
-    test('the real bundled assets: a default loader returns nothing and refuses all five as not reviewed', () async {
+    test('the real bundled assets hold no guide at all: the drafts are not in the app (not even for a debug preview)', () async {
       final CareGuideLibrary lib = await CareGuideLoader().load(); // rootBundle = the real bundled assets
+      expect(lib.guides, isEmpty);
+      expect(lib.rejected, isEmpty);
+      final CareGuideLibrary preview = await CareGuideLoader(policy: const CareGuidePolicy(draftPreview: true)).load();
+      expect(preview.guides, isEmpty);
+    });
+
+    test('the five real drafts, if they were bundled, would all be refused as not reviewed', () async {
+      final CareGuideLibrary lib = await CareGuideLoader(bundle: realDraftBundle()).load();
       expect(lib.guides, isEmpty);
       expect(lib.rejected.map((RejectedGuide r) => r.id).toList(), _ids);
       expect(lib.rejected.every((RejectedGuide r) => r.reason == GateRefusal.notReviewed), true);
@@ -48,7 +56,7 @@ void main() {
 
   group('the debug preview', () {
     test('with the switch on in a non-release build all five drafts load, each marked as a draft', () async {
-      final CareGuideLibrary lib = await CareGuideLoader(policy: const CareGuidePolicy(draftPreview: true)).load();
+      final CareGuideLibrary lib = await CareGuideLoader(bundle: realDraftBundle(), policy: const CareGuidePolicy(draftPreview: true)).load();
       expect(lib.guides.map((CareGuide g) => g.id).toList(), _ids);
       expect(lib.draftIds, _ids.toSet());
       expect(lib.guides.every((CareGuide g) => g.status == kStatusDraft && lib.isDraft(g)), true);
@@ -104,6 +112,56 @@ void main() {
       }
     });
 
+    test('pointers to material that is not bundled, and reviewer vocabulary: refused', () {
+      for (final String bad in <String>[
+        ' (see disagreements)',
+        ' (other figures are in the disagreements block)',
+        ' (see the emergency list)',
+        ' (see the get-medical-help-now list)',
+        ' see the list above',
+        ' Needs review by a qualified paediatric reviewer before any use in an app',
+        ' needs a review first',
+        ' this is unverified',
+      ]) {
+        final CareGuide g = CareGuide.fromJson(fixtureGuide(extraText: bad));
+        expect(decideGuide(g, release()).refusal, GateRefusal.wordingLint, reason: bad);
+      }
+    });
+
+    test('a review date must be a real calendar date, not just date-shaped', () {
+      for (final String bad in <String>['9999-99-99', '2030-02-31', '2030-13-01', '2029-02-29', '0000-00-00']) {
+        expect(decideGuide(CareGuide.fromJson(fixtureGuide(reviewedOn: bad)), release()).refusal, GateRefusal.incompleteReviewRecord, reason: bad);
+      }
+      for (final String ok in <String>['2030-02-28', '2028-02-29']) {
+        expect(decideGuide(CareGuide.fromJson(fixtureGuide(reviewedOn: ok)), release()).allowed, true, reason: ok);
+      }
+    });
+
+    test('a phone number field is digits and dialling punctuation only', () {
+      for (final String ok in <String>['555-0100', '999 / 111', '+44 20 7946 0000', '1-800-222-1222', '(02) 5550 0100']) {
+        expect(isPlainNumber(ok), true, reason: ok);
+      }
+      for (final String bad in <String>['1-800-222-1222 (also online tool at example.org)', 'call 999', '', 'https://x.org', '999 or 111']) {
+        expect(isPlainNumber(bad), false, reason: bad);
+        final CareGuide g = CareGuide.fromJson(fixtureGuide(helplines: <Map<String, Object?>>[
+          <String, Object?>{'region': 'XX', 'name': 'Line', 'number': bad, 'sources': <int>[1]},
+        ]));
+        expect(decideGuide(g, release()).refusal, GateRefusal.wordingLint, reason: bad);
+      }
+    });
+
+    test('helplines are shown only for regions the review covers; a draft shows only its own region', () {
+      final List<Map<String, Object?>> lines = <Map<String, Object?>>[
+        <String, Object?>{'region': 'XX', 'name': 'Own line', 'number': '555-0100', 'sources': <int>[1]},
+        <String, Object?>{'region': 'YY', 'name': 'Other line', 'number': '555-0200', 'sources': <int>[1]},
+      ];
+      CareGuide g(List<String> regions, {String status = 'REVIEWED'}) =>
+          fixtureCareGuide(status: status, helplines: lines, regions: regions);
+      expect(helplinesToShow(g(<String>['XX']), draft: false).map((Helpline h) => h.region).toList(), <String>['XX']);
+      expect(helplinesToShow(g(<String>['XX', 'YY']), draft: false).map((Helpline h) => h.region).toList(), <String>['XX', 'YY']);
+      expect(helplinesToShow(g(<String>['XX', 'YY'], status: 'DRAFT_UNREVIEWED'), draft: true).map((Helpline h) => h.region).toList(), <String>['XX']);
+    });
+
     test('wording that merely looks similar is fine', () {
       final CareGuide g = CareGuide.fromJson(fixtureGuide(extraText: ' and 2 sources of heat, in [brackets]'));
       expect(decideGuide(g, release()).allowed, true);
@@ -132,7 +190,7 @@ void main() {
   group('the five real drafts cannot be promoted by flipping the status alone', () {
     for (final String id in _ids) {
       test('$id: flipping the status alone is refused; with a complete record the wording lint still refuses it', () {
-        final Map<String, Object?> m = jsonDecode(File('assets/care_guides/$id.json').readAsStringSync()) as Map<String, Object?>;
+        final Map<String, Object?> m = jsonDecode(File('$kDraftDir/$id.json').readAsStringSync()) as Map<String, Object?>;
         m['status'] = 'REVIEWED';
         expect(decideGuide(CareGuide.fromJson(m), const CareGuidePolicy(releaseMode: true)).refusal, GateRefusal.incompleteReviewRecord);
         m['review'] = <String, Object?>{'reviewedOn': '2030-01-02', 'reviewedBy': 'role', 'regions': <String>[m['region']! as String]};
@@ -144,6 +202,25 @@ void main() {
         expect(decideGuide(g, const CareGuidePolicy(releaseMode: true)).refusal, GateRefusal.wordingLint);
       });
     }
+
+    test('every parent-facing string in the drafts that points at a section, list or the disagreements is caught by the lint', () {
+      // A deliberately broader net than the lint itself: anything that reads like "see ..." or names a section that
+      // the app does not bundle. Whatever it finds, the lint must also refuse, so a reviewer who rewrites only part of a
+      // guide cannot get a REVIEWED guide with a dangling pointer past the gate.
+      final RegExp pointer = RegExp(r'disagree|\bsee\b[^.;:]{0,80}\b(list|block|section|rule|above|below)\b|\b(list|block) above|reviewer|unverified', caseSensitive: false);
+      int total = 0;
+      for (final String id in _ids) {
+        final CareGuide g = CareGuide.fromJson(jsonDecode(File('$kDraftDir/$id.json').readAsStringSync()) as Map<String, Object?>);
+        final Set<String> caught = wordingViolations(g).toSet();
+        for (final String s in parentFacingStrings(g)) {
+          if (pointer.hasMatch(s)) {
+            total++;
+            expect(caught.contains(s), true, reason: '$id: "$s"');
+          }
+        }
+      }
+      expect(total, greaterThan(20), reason: 'the drafts really do carry these pointers');
+    });
   });
 
   group('the models never see reviewer-only material', () {
@@ -161,7 +238,7 @@ void main() {
           }
         }
 
-        walk(jsonDecode(File('assets/care_guides/$id.json').readAsStringSync()));
+        walk(jsonDecode(File('$kDraftDir/$id.json').readAsStringSync()));
         for (final String k in <String>[
           'reviewOnly', 'displayToParents', 'clinicianOnly', 'honeyDoseConflict', 'reviewQuestions', 'unverified', 'disagreements', 'changeLog',
         ]) {

@@ -12,7 +12,7 @@ export const SCHEMA_VERSION = 1;
 
 // Parent-facing blocks the app may render, in the order they are shown (emergency first, always).
 export const BLOCK_RANK = [
-  'emergency', 'urgent', 'poison', 'nurseLine', 'sameDay',
+  'emergency', 'urgent', 'poison', 'nurseLine', 'sameDay', 'afterEpisode',
   'firstSteps', 'doNow', 'dispatcherScript', 'haveReady', 'recognition', 'coolDown', 'howToMeasure',
   'doNot', 'watchFor', 'note', 'consent',
   'topHazards', 'room', 'arrivalChecklist', 'prevention',
@@ -24,7 +24,9 @@ const TIER_KEYS = {
   seekMedicalHelpNow: 'urgent', callDoctorRightAway: 'urgent', urgentCareOrER: 'urgent',
   callPoisonControl: 'poison',
   callDoctorOrNurseLine: 'nurseLine',
-  callDoctorSameDay: 'sameDay', medicalReviewAfterEpisode: 'sameDay',
+  callDoctorSameDay: 'sameDay',
+  // Its own kind: the draft states no same-day timeframe and says hospital, so the app must not label it "same-day doctor".
+  medicalReviewAfterEpisode: 'afterEpisode',
 };
 const LIST_KEYS = {
   ...TIER_KEYS,
@@ -194,11 +196,19 @@ export function convertCareGuide(g) {
   return out;
 }
 
-/** The copy the app bundles: parent-facing fields only. reviewOnly is removed, so it cannot be rendered by accident. */
+/**
+ * The copy the app would bundle once a guide is REVIEWED: parent-facing fields only. reviewOnly is removed, so it cannot
+ * be rendered by accident. The per-item `action` triage word (urgent / emergency / emergencyOrCare ...) is also removed:
+ * no screen renders it, so it would be dead weight in the bundle; it stays in the full file (an open owner question, see
+ * docs/care-guides/SCHEMA.md).
+ */
 export function bundleForApp(converted) {
   const copy = { ...converted };
   delete copy.reviewOnly;
   copy.helplines = copy.helplines.map(({ note, ...h }) => h); // eslint-disable-line no-unused-vars
+  const noAction = (items) => items.map(({ action, ...i }) => i); // eslint-disable-line no-unused-vars
+  copy.blocks = copy.blocks.map((b) => ({ ...b, items: noAction(b.items) }));
+  copy.ageBands = copy.ageBands.map((b) => (b.items ? { ...b, items: noAction(b.items) } : b));
   return copy;
 }
 

@@ -6,8 +6,13 @@
  *
  * Reads  docs/care-guides/<id>.json                       (the originals; never modified)
  * Writes docs/care-guides/converted/<id>.json              (full, lossless, includes reviewOnly)
- *        scaffold/client/assets/care_guides/<id>.json      (what the app bundles; reviewOnly removed)
- *        scaffold/client/assets/care_guides/index.json     (ids, in library order)
+ *        docs/care-guides/app-draft/<id>.json              (the app-format copy, reviewOnly removed: NOT bundled)
+ *        scaffold/client/assets/care_guides/index.json     (the guides the app bundles: EMPTY until a guide is REVIEWED)
+ *
+ * No draft is ever written under scaffold/client/assets/: the pubspec bundles that directory, so a draft there would be
+ * extractable from a release APK even though the gate stops it being drawn. A reviewer promotes a guide by copying its
+ * app-draft file into assets/care_guides, filling its review record and status, and listing its id in index.json
+ * (docs/care-guides/SCHEMA.md, "Promoting a guide"). test/care_guide_structure_test.dart refuses any non-REVIEWED file there.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,6 +23,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPO = join(HERE, '..', '..');
 export const SRC = join(REPO, 'docs', 'care-guides');
 export const OUT_FULL = join(SRC, 'converted');
+export const OUT_DRAFT = join(SRC, 'app-draft');
 export const OUT_APP = join(REPO, 'scaffold', 'client', 'assets', 'care_guides');
 // Library order. who-to-call first: it is the emergency guide.
 export const GUIDE_IDS = ['who-to-call', 'choking', 'head-injury', 'high-fever', 'childproofing-home'];
@@ -30,9 +36,10 @@ export function buildAll() {
     const original = JSON.parse(readFileSync(join(SRC, `${id}.json`), 'utf8'));
     const full = convertCareGuide(original);
     files.set(join(OUT_FULL, `${id}.json`), json(full));
-    files.set(join(OUT_APP, `${id}.json`), json(bundleForApp(full)));
+    files.set(join(OUT_DRAFT, `${id}.json`), json(bundleForApp(full)));
   }
-  files.set(join(OUT_APP, 'index.json'), json({ schemaVersion: 1, guides: GUIDE_IDS }));
+  // Nothing is REVIEWED yet, so nothing is bundled.
+  files.set(join(OUT_APP, 'index.json'), json({ schemaVersion: 1, guides: [] }));
   return files;
 }
 

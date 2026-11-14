@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/care_guide_gate.dart';
 import 'package:olive_client/care_guide_loader.dart';
+import 'package:olive_client/care_guide_models.dart';
 import 'package:olive_client/care_guide_plan.dart';
 import 'package:olive_client/care_guide_screens.dart';
 import 'package:olive_client/hub_widgets.dart';
@@ -118,6 +119,35 @@ void main() {
     }
   });
 
+  testWidgets('G3: a helpline for a region the review does not cover is not drawn; a covered one is', (WidgetTester t) async {
+    final List<Map<String, Object?>> lines = <Map<String, Object?>>[
+      <String, Object?>{'region': 'XX', 'name': 'Own line', 'number': '555-0100', 'sources': <int>[1]},
+      <String, Object?>{'region': 'YY', 'name': 'Other line', 'number': '555-0200', 'sources': <int>[1]},
+    ];
+    await t.pumpWidget(_host(WhoToCallScreen(principalRole: 'guardian', guide: fixtureCareGuide(helplines: lines))));
+    expect(find.text('555-0100'), findsOneWidget);
+    expect(find.text('555-0200'), findsNothing);
+    expect(find.text('Other places'), findsNothing);
+    await t.pumpWidget(_host(WhoToCallScreen(principalRole: 'guardian', guide: fixtureCareGuide(helplines: lines, regions: <String>['XX', 'YY']))));
+    expect(find.text('555-0100'), findsOneWidget);
+    expect(find.text('555-0200'), findsOneWidget);
+    // a previewed draft shows only its own region even if the record (wrongly) lists more
+    await t.pumpWidget(_host(WhoToCallScreen(
+        principalRole: 'guardian', guide: fixtureCareGuide(status: 'DRAFT_UNREVIEWED', helplines: lines, regions: <String>['XX', 'YY']), draft: true)));
+    expect(find.text('555-0200'), findsNothing);
+  });
+
+  testWidgets('a post-episode block is drawn under a neutral heading, not "Same-day doctor"', (WidgetTester t) async {
+    final Map<String, Object?> m = fixtureGuide()
+      ..['blocks'] = <Object?>[
+        <String, Object?>{'kind': 'afterEpisode', 'items': <Object?>[<String, Object?>{'text': 'Sample follow-up line', 'sources': <int>[1]}]},
+      ];
+    await t.pumpWidget(_host(CareGuideScreen(principalRole: 'guardian', guide: CareGuide.fromJson(m))));
+    expect(find.text('After the episode'), findsOneWidget);
+    expect(find.text('Same-day doctor'), findsNothing);
+    expect(find.text('Sample follow-up line'), findsOneWidget);
+  });
+
   testWidgets('no text on a reviewed guide screen contains reviewer vocabulary', (WidgetTester t) async {
     await t.pumpWidget(_host(CareGuideScreen(principalRole: 'guardian', guide: fixtureCareGuide(), plan: const _MiaPlan())));
     await t.pumpAndSettle();
@@ -135,11 +165,27 @@ void main() {
     });
 
     testWidgets('with a plan on a reviewed guide it shows the plan and the rule line, word for word', (WidgetTester t) async {
-      await t.pumpWidget(_host(CareGuideScreen(principalRole: 'guardian', guide: fixtureCareGuide(), plan: const _MiaPlan())));
+      await t.pumpWidget(_host(CareGuideScreen(principalRole: 'guardian', guide: fixtureCareGuide(withEmergencyBlock: false), plan: const _MiaPlan())));
       await t.pumpAndSettle();
       expect(find.text('For Mia'), findsOneWidget);
       expect(find.text('Sample: plan line'), findsOneWidget);
       expect(find.text("If Mia's plan says something different from this guide, follow her plan and call her doctor."), findsOneWidget);
+    });
+
+    testWidgets('on an emergency-tier guide the rule line is withheld, so nothing can delay a call for help', (WidgetTester t) async {
+      for (final CareGuide g in <CareGuide>[
+        fixtureCareGuide(), // has an emergency block
+        fixtureCareGuide(category: 'emergency', withEmergencyBlock: false), // emergency category alone
+      ]) {
+        expect(g.isEmergencyTier, true);
+        await t.pumpWidget(_host(CareGuideScreen(principalRole: 'guardian', guide: g, plan: const _MiaPlan())));
+        await t.pumpAndSettle();
+        expect(find.text('For Mia'), findsOneWidget); // the guardian's own plan notes still show
+        expect(find.byKey(const Key('careRuleLine')), findsNothing);
+      }
+      await t.pumpWidget(_host(WhoToCallScreen(principalRole: 'guardian', guide: fixtureCareGuide(id: 'who-to-call', category: 'emergency'), plan: const _MiaPlan())));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('careRuleLine')), findsNothing);
     });
 
     testWidgets('on a previewed draft the rule line is withheld (it is advice, so it follows the review flag)', (WidgetTester t) async {
@@ -195,7 +241,7 @@ void main() {
   });
 
   group('the guardian hub tile', () {
-    testWidgets('in a default build (real bundled drafts, gate closed) it renders nothing', (WidgetTester t) async {
+    testWidgets('in a default build (the real bundled assets hold no guide) it renders nothing', (WidgetTester t) async {
       await t.pumpWidget(_host(const Scaffold(body: CareGuidesHubTile())));
       await t.pumpAndSettle();
       expect(find.byType(HubTile), findsNothing);

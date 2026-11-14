@@ -25,10 +25,11 @@ const String _guardianRole = 'guardian';
 /// Headings per block kind. Labels only.
 const Map<String, String> kBlockHeadings = <String, String>{
   'emergency': 'Emergency signs',
-  'urgent': 'Urgent signs',
+  'urgent': 'Urgent',
   'poison': 'Poison',
   'nurseLine': 'Doctor or nurse line',
   'sameDay': 'Same-day doctor',
+  'afterEpisode': 'After the episode',
   'firstSteps': 'First steps',
   'doNow': 'What to do',
   'dispatcherScript': 'What to tell the dispatcher',
@@ -255,11 +256,11 @@ class _GuideState extends State<CareGuideScreen> {
         if (g.disclaimer != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(g.disclaimer!, style: t.bodySmall)),
         if (g.emergencyFirstLine != null) _FirstLine(g, g.emergencyFirstLine!),
         for (final CareBlock b in top) _BlockView(guide: g, block: b),
-        if (widget.helplinesFirst) _HelplinesView(guide: g),
-        ForChildStrip(guideId: g.id, plan: widget.plan, reviewed: g.isReviewed && !widget.draft),
+        if (widget.helplinesFirst) _HelplinesView(guide: g, draft: widget.draft),
+        ForChildStrip(guideId: g.id, plan: widget.plan, reviewed: g.isReviewed && !widget.draft && !g.isEmergencyTier),
         if (g.ageBands.isNotEmpty) _AgeTabs(bands: g.ageBands, guide: g, index: _band, onSelect: (int i) => setState(() => _band = i)),
         for (final CareBlock b in rest) _BlockView(guide: g, block: b),
-        if (!widget.helplinesFirst && g.helplines.isNotEmpty) _HelplinesView(guide: g),
+        if (!widget.helplinesFirst && g.helplines.isNotEmpty) _HelplinesView(guide: g, draft: widget.draft),
         for (final GuideNote n in g.notes) Padding(padding: const EdgeInsets.only(top: 12), child: Text(n.text, style: t.bodySmall)),
         const SizedBox(height: 24),
       ]),
@@ -382,15 +383,18 @@ class _AgeTabs extends StatelessWidget {
 }
 
 class _HelplinesView extends StatelessWidget {
-  const _HelplinesView({required this.guide});
+  const _HelplinesView({required this.guide, required this.draft});
   final CareGuide guide;
+  final bool draft;
   @override
   Widget build(BuildContext context) {
-    if (guide.helplines.isEmpty) return const SizedBox.shrink();
+    // Only regions the review covers (a previewed draft: its own region). Nothing else is shown.
+    final List<Helpline> shown = helplinesToShow(guide, draft: draft);
+    if (shown.isEmpty) return const SizedBox.shrink();
     final TextTheme t = Theme.of(context).textTheme;
-    // The guide's own region first, then the others, each group in the guide's order.
-    final List<Helpline> mine = guide.helplines.where((Helpline h) => h.region == guide.region).toList();
-    final List<Helpline> other = guide.helplines.where((Helpline h) => h.region != guide.region).toList();
+    // The guide's own region first, then the others the review covers, each group in the guide's order.
+    final List<Helpline> mine = shown.where((Helpline h) => h.region == guide.region).toList();
+    final List<Helpline> other = shown.where((Helpline h) => h.region != guide.region).toList();
     Widget row(Helpline h) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
