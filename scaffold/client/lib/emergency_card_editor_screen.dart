@@ -246,16 +246,42 @@ class EmergencyCardHistoryScreen extends StatefulWidget {
 
 class _EmergencyCardHistoryState extends State<EmergencyCardHistoryScreen> {
   List<EcChange>? _h;
+  int _current = 0;
   bool _refused = false;
 
   @override
   void initState() {
     super.initState();
+    _reload();
+  }
+
+  void _reload() {
     widget.service.read(widget.principal).then((EmergencyCardDoc d) {
-      if (mounted) setState(() => _h = d.history.reversed.toList());
+      if (mounted) setState(() { _h = d.history.reversed.toList(); _current = d.version; });
     }).catchError((Object _) {
       if (mounted) setState(() => _refused = true);
     });
+  }
+
+  /// Restores version [v] as a new version, after a plain confirm. History is never rewritten.
+  Future<void> _restore(int v) async {
+    final bool? yes = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext c) => AlertDialog(
+              key: const Key('restoreConfirm'),
+              title: Text('Restore version $v?'),
+              content: Text('It is saved as version ${_current + 1}. Nothing is deleted: every version stays in the history.'),
+              actions: <Widget>[
+                TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Not now')),
+                FilledButton(key: const Key('restoreGo'), onPressed: () => Navigator.pop(c, true), child: const Text('Restore')),
+              ],
+            ));
+    if (yes != true) return;
+    final EcResult r = await widget.service.restore(widget.principal, v, expectedVersion: _current);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(r.ok ? 'Restored as version ${r.version}.' : ecRefusalText(r.reason))));
+    _reload();
   }
 
   @override
@@ -282,6 +308,13 @@ class _EmergencyCardHistoryState extends State<EmergencyCardHistoryScreen> {
                                       ? 'The card was empty before this.'
                                       : 'Before this change: ${c.previous!.spokenText()}',
                                   key: ValueKey<String>('previous-${c.version}')),
+                              if (c.previous != null && !c.previous!.isEmpty)
+                                Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TextButton(
+                                        key: ValueKey<String>('restore-${c.version - 1}'),
+                                        onPressed: () => _restore(c.version - 1),
+                                        child: Text('Restore version ${c.version - 1} as a new version'))),
                             ],
                           ),
                       ])),

@@ -152,6 +152,13 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'changes (who, when and what it said before; never deleted). Guardian-only. Sealed on the '
           'device; never uploaded.'),
   LocalDataEntry(
+      area: 'coordination', scope: LocalScope.child, encrypted: true, maxBytes: 2 * _mib,
+      what: 'Care and coordination, grown-up side only: the medicines a guardian wrote down and their dose log '
+          '(who gave it and when, never edited or deleted), the expenses a guardian recorded and each answer to '
+          'them, and the handover log: notes with a fingerprint chain so a change anywhere would show. Every word is '
+          "a guardian's; the app adds no medical text and no amounts, and moves no money. Never shown in her app. "
+          'Sealed on the device; never uploaded.'),
+  LocalDataEntry(
       area: 'explainers', scope: LocalScope.child, encrypted: true, maxBytes: 3 * _mib,
       what: 'Picture stories a guardian wrote for her: a title, up to six short pages, an optional '
           'small photo, and whether it is shown to her. The app writes none. Sealed on the device; '

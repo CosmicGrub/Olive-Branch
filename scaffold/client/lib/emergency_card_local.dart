@@ -410,6 +410,27 @@ class EmergencyCardService {
     return r;
   }
 
+  /// The card as it stood at [version], or null when that version is unknown or was blank. Versions are
+  /// never deleted, so every one up to the current is recoverable from the history.
+  static LocalEmergencyCard? cardAt(EmergencyCardDoc d, int version) {
+    if (version == d.version) return d.card;
+    for (final EcChange c in d.history) {
+      if (c.version == version + 1) return c.previous;
+    }
+    return null;
+  }
+
+  /// Restores an earlier [version] as a NEW version (nothing is deleted or rewritten: the history gains one
+  /// more entry). Refused with 'stale_version' if the card moved since [expectedVersion], and with 'empty' if
+  /// that version was blank or is unknown.
+  Future<EcResult> restore(FamilyPrincipal? p, int version, {required int expectedVersion, String? byName}) async {
+    if (!_guardian(p)) return const EcResult.no('guardian_only');
+    final EmergencyCardDoc d = await repo.load();
+    final LocalEmergencyCard? old = cardAt(d, version);
+    if (old == null || old.isEmpty) return const EcResult.no('empty');
+    return save(p, old, expectedVersion: expectedVersion, byName: byName);
+  }
+
   Future<void> _lock = Future<void>.value();
 
   Future<EcResult> _saveNow(FamilyPrincipal? p, LocalEmergencyCard card,

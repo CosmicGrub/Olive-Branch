@@ -1,0 +1,34 @@
+{
+  "note": "Rules of the live prototype's g-expenses, g-handover and g-overlap (docs/superpowers/mockups/live/mod-guardian.js srvExpAct, srvNote, awakeWindowMine), as data, replayed against care_local.dart by care_parity_test.dart. Two deliberate differences from the prototype are the owner's and the server's: a SOLE guardian may accept their own proposal (PR 174, migration 0045), and reimbursing is not limited to the payer (the server's resolveExpense has no payer check). Each case says which.",
+  "expense": [
+    { "name": "other guardian accepts a proposal", "status": "proposed", "action": "accept", "byPayer": false, "guardians": 2, "result": "ok", "to": "accepted" },
+    { "name": "payer cannot accept their own (two guardians)", "status": "proposed", "action": "accept", "byPayer": true, "guardians": 2, "result": "own_expense" },
+    { "name": "SOLE guardian may accept their own (owner, 0045; the prototype refuses)", "status": "proposed", "action": "accept", "byPayer": true, "guardians": 1, "result": "ok", "to": "accepted" },
+    { "name": "other guardian disputes with a reason", "status": "proposed", "action": "dispute", "byPayer": false, "guardians": 2, "reason": "Wrong size", "result": "ok", "to": "disputed" },
+    { "name": "a dispute needs a reason", "status": "proposed", "action": "dispute", "byPayer": false, "guardians": 2, "reason": "  ", "result": "reason_needed" },
+    { "name": "payer cannot dispute their own", "status": "proposed", "action": "dispute", "byPayer": true, "guardians": 2, "reason": "x", "result": "own_expense" },
+    { "name": "a sole guardian still cannot dispute their own", "status": "proposed", "action": "dispute", "byPayer": true, "guardians": 1, "reason": "x", "result": "own_expense" },
+    { "name": "a disputed expense can be accepted after all", "status": "disputed", "action": "accept", "byPayer": false, "guardians": 2, "result": "ok", "to": "accepted" },
+    { "name": "an accepted expense cannot be accepted again", "status": "accepted", "action": "accept", "byPayer": false, "guardians": 2, "result": "invalid_transition" },
+    { "name": "an accepted expense cannot be disputed", "status": "accepted", "action": "dispute", "byPayer": false, "guardians": 2, "reason": "x", "result": "invalid_transition" },
+    { "name": "accepted can be reimbursed (the server has no payer check)", "status": "accepted", "action": "reimburse", "byPayer": false, "guardians": 2, "result": "ok", "to": "reimbursed" },
+    { "name": "the payer can mark it reimbursed", "status": "accepted", "action": "reimburse", "byPayer": true, "guardians": 2, "result": "ok", "to": "reimbursed" },
+    { "name": "reimbursing needs accepted first", "status": "proposed", "action": "reimburse", "byPayer": false, "guardians": 2, "result": "invalid_transition" },
+    { "name": "a disputed expense cannot be reimbursed", "status": "disputed", "action": "reimburse", "byPayer": false, "guardians": 2, "result": "invalid_transition" },
+    { "name": "reimbursed is final", "status": "reimbursed", "action": "accept", "byPayer": false, "guardians": 2, "result": "invalid_transition" }
+  ],
+  "handover": {
+    "maxChars": 1000,
+    "corrections": "Correction to note #3: ",
+    "emptyRefused": true,
+    "firstPrevHash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "overlap": {
+    "awake": [7, 21],
+    "cases": [
+      { "name": "same zone", "herOffsetMin": -300, "myOffsetMin": -300, "from": 420, "to": 1260 },
+      { "name": "she is three hours ahead", "herOffsetMin": -300, "myOffsetMin": -480, "from": 420, "to": 1080 },
+      { "name": "fourteen hours apart: the awake days still meet at the end of mine", "herOffsetMin": 0, "myOffsetMin": -840, "from": 1020, "to": 1260 }
+    ]
+  }
+}

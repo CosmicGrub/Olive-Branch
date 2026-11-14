@@ -6277,6 +6277,7 @@ drift. Nothing is written that is not in it.
 | `child.<id>.memorybox` | What she chose to keep: copies of her doodles and colourings, or small photos. No totals. Under a different key prefix (`gift.`), marked as from them, the short notes or small photos a grown-up left for her (§8.24.5). | **Yes** |
 | `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
 | `child.<id>.emergencycard` | The local emergency card a guardian wrote (§8.24.4): allergies, conditions, medicines, doctor, contacts, every word typed by a guardian; the version counter; the append-only history (who, when, what it said before; never deleted); guardians' remembered names. Guardian-only. | **Yes** |
+| `child.<id>.coordination` | Care and coordination, grown-up side only (§8.24.7): the medicines a guardian wrote and their dose log (who gave it and when; never edited or deleted), the expenses a guardian recorded and each answer to them (append-only events, with the explicit self-accept marker), and the handover log (notes in a hash chain with the same framing as the server and the court export). Every word is a guardian's; the app adds no medical text and no amounts and moves no money. Never in her app. | **Yes** |
 | `child.<id>.explainers` | Picture stories a guardian wrote and whether each is shown to her. The app writes none. | **Yes** |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
 | `child.<id>.rhythm` | Rhythm, on this device only (§8.20): the routine and first-then cards a grown-up set (pictures and short names), her bag list, how-the-app-feels settings (sound, motion, brightness), and which steps she has ticked **today** (dropped the next day). No score, streak or count; nothing is shared with her other home. | No |
@@ -7775,7 +7776,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **39 areas, 20 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **40 areas, 21 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
@@ -8722,6 +8723,65 @@ conflicts, append-only history, bounds, sealed at rest, full box), `emergency_ca
 (which card is shown, live path unchanged, no invented data in a live build, editor, history,
 hospital mode), `memory_box_grown_up_test` (desk, separation, sealed, screens, read aloud) and the
 existing suites updated for the Voice default.
+
+### 8.24.7 Care and coordination on this device
+
+The prototype's care hub (g-care), medications (g-meds, g-med), handover notes (g-handover), shared
+expenses (g-expenses), "her time, your time" (g-overlap) and "swap a night" (g-swap), built on the
+device. The two-guardian, server-backed half (one list both grown-ups see, a swap one answers and the
+other asks) stays parked; wherever a screen would need it, it says so in plain words ("Later") and
+saves nothing. No record is ever shown in her app (P6); a non-guardian principal gets one neutral
+line and nothing is read.
+
+**Where it lives.** `care_local.dart` (the rules and the sealed record, area `coordination`) and
+`care_local_screens.dart` (the screens). One sealed document per child, written atomically, one write
+at a time. Reached from More, Coordination, "Care and coordination" in the offline guardian shell
+(a local scope and no session); the three Coordination tiles (and the home tiles for Meds, Handover
+notes and Expenses) open the on-device screens there too. A live session keeps the server-backed
+screens and the preview build keeps its demo screens.
+
+**Medicines.** A guardian adds a medicine (name, dose, a time or two every day, or "only when
+needed" with a gap in hours, and a note), edits it (past doses are unchanged) or retires it (the dose
+log stays and can still be read). "Log a dose I just gave" is refused if that slot (or that gap) has a
+dose: a modal names who gave it and when, and the next allowed time for an as-needed one, and nothing
+is logged. There is no override. A dose logged up to 30 minutes early counts for its slot, and a slot
+is "due" for 8 hours. The dose log is never edited or deleted; a mistake is explained in a handover
+note. Times are on the phone's clock (no zone database offline). Hospital mode reads the ACTIVE
+medicines from this list and shows them with the card.
+
+**Expenses (the server's rules, mirrored).** proposed to accepted or disputed, disputed to accepted,
+accepted to reimbursed, nothing else. The grown-up who proposed cannot dispute their own, and
+cannot accept their own EXCEPT a sole guardian, whose self-accept is recorded with an explicit marker
+and said so on the screen ("Accepted by you, as the only grown-up here"); reimbursing needs accepted;
+a dispute needs a short reason (200 characters). With one guardian the balance card is only the total
+that is recorded, never "the other grown-up owes you"; with two it is half each. Money is never moved.
+The screen says that "Olive Branch keeps the record only" and that she cannot see any of it.
+
+**Handover log.** Append-only and hash-chained with the SAME framing as the server and the court
+export (`computeEntryHash`, hash version 1: seq, child, author, instant in milliseconds UTC, text and
+previous hash, each length-prefixed), so a chain written here verifies in the court export unchanged.
+Notes are kept exactly as written, 1000 characters at most, and are shown with their number, author,
+time, a short fingerprint and the chain card ("Intact, N notes" or "Broken at note K"). Adding one
+needs the "This can never be changed" confirm. There is no edit and no delete anywhere; "Add a
+correction" starts a NEW note ("Correction to note #K: ..."). Until the phone is connected the log is
+only on the phone and the screen says so ("Later").
+
+**Her time, your time.** The two clocks and the awake-overlap ribbon (7 AM to 9 PM each). A home zone
+other than "same as this phone" cannot be converted offline, so the screen says so and shows no window.
+
+**Emergency card.** The history screen can restore an earlier version as a NEW version (versions are
+never deleted or rewritten; a stale card or a blank version is refused).
+
+**Verified** by `care_local_test` (guardian-only denials, the dose guard, the expense table with both
+the two-guardian and sole-guardian rules, the chain verifying in the court-export verifier, tamper
+detection, no edit or delete, sealed storage and restart, emergency restore) and
+`care_local_screens_test` (every screen driven by taps, the child and no-principal lines, no child file
+references the care files, posture at 344, 390, 600 and 800 dp at 2.0x text).
+
+**Not built (a later PR):** the server half (two grown-ups, banked-then-delivered notes), swap a night,
+the custody schedule's two-week list with swap markers, the month calendar with house shapes, the
+exchange bag merged with the packing list ("medicines that travel"), reminders for due medicines, and
+the per-tile counts on the guardian home.
 
 ---
 
