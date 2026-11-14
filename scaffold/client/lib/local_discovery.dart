@@ -72,7 +72,16 @@ class LocalPeer {
 /// from play_admission.dart when there is one). No name, no model, no family or device id, no role, and nothing that is
 /// the same from one session to the next. Peers disambiguate by token and the admission handshake, never by names.
 /// The seat is random per lobby; if two nearby devices show the same seat, the one with the smaller token flips.
-class LocalDiscovery {
+/// What a pairing controller needs from discovery: peers found, peers lost, start and stop. [LocalDiscovery] is the
+/// real one (mDNS); a test supplies a fake so two controllers can find each other over loopback.
+abstract class PeerDiscovery {
+  Stream<LocalPeer> get peers;
+  Stream<String> get lost;
+  Future<void> start();
+  Future<void> stop();
+}
+
+class LocalDiscovery implements PeerDiscovery {
   LocalDiscovery({required this.role, required this.displayName, required this.servePort, this.lobbyToken, int? seat})
       : _seat = seat ?? randomSeat();
 
@@ -99,9 +108,11 @@ class LocalDiscovery {
   String get seatName => seatLabel(_seat);
 
   /// A real, resolved peer, once found. May fire more than once for the same peer.
+  @override
   Stream<LocalPeer> get peers => _peers.stream;
 
   /// The seat label of a previously-found peer that went away.
+  @override
   Stream<String> get lost => _lost.stream;
 
   /// What this device puts on the network, exposed so a test can prove it names nothing.
@@ -115,6 +126,7 @@ class LocalDiscovery {
         attributes: <String, String>{'s': '$_seat', 'k': _token},
       );
 
+  @override
   Future<void> start() async {
     final broadcast = BonsoirBroadcast(service: _service());
     _broadcast = broadcast;
@@ -190,6 +202,7 @@ class LocalDiscovery {
   /// discovery session.
   BonsoirDiscovery? get discovery => _discovery;
 
+  @override
   Future<void> stop() async {
     // First: nothing may deliver into the controllers closed below.
     final StreamSubscription<BonsoirDiscoveryEvent>? sub = _eventSub;

@@ -22,6 +22,9 @@ import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'game_checkers.dart';
 
+/// The marker subprotocol the server echoes; the join token is offered beside it and never echoed.
+const String kCheckersSubprotocol = 'olive.v1';
+
 /// One live WebSocket connection to ONE table, already authenticated by the
 /// short-lived, single-use join token minted via
 /// `OliveApi.requestGameTable`/`OliveApi.joinGameTable`. `wsUrl` is this
@@ -33,10 +36,19 @@ class NetworkedCheckersChannel {
     required String wsUrl,
     required String token,
     required this.mySeat,
-    WebSocketChannel Function(Uri)? connect,
+    WebSocketChannel Function(Uri, Iterable<String>? protocols)? connect,
   }) {
-    final uri = Uri.parse(wsUrl).replace(queryParameters: {'token': token});
-    _channel = (connect ?? WebSocketChannel.connect)(uri);
+    // The join token rides in the Sec-WebSocket-Protocol header (`olive.v1, <token>`), NOT in the URL: reverse proxies
+    // and CDNs write the query string to access logs, they do not write this header (server/game_tables.mjs accepts
+    // both; docs/superpowers/specs/2026-11-08-server-snoop-hardening-design.md). Any query string already on [wsUrl]
+    // is dropped so no token (or anything else) can sit in the address.
+    final Uri parsed = Uri.parse(wsUrl);
+    final Uri clean = Uri(
+        scheme: parsed.scheme, host: parsed.host, port: parsed.hasPort ? parsed.port : null, path: parsed.path);
+    final List<String> offered = <String>[kCheckersSubprotocol, token];
+    _channel = connect != null
+        ? connect(clean, offered)
+        : WebSocketChannel.connect(clean, protocols: offered);
     // No initial 'connecting' event here: `_statusController` is a broadcast
     // stream, so anything added before a consumer subscribes (e.g. before
     // GameCheckers.initState runs on the next frame) would just be dropped,

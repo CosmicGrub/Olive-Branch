@@ -83,7 +83,7 @@ void main() {
     final fakeWs = _FakeWebSocketChannel();
     await t.pumpWidget(wrap(NetworkedCheckersLobbyScreen(
       httpClientForTesting: mock,
-      wsConnectForTesting: (_) => fakeWs,
+      wsConnectForTesting: (_, _) => fakeWs,
     )));
 
     await t.enterText(find.byKey(const Key('lobbyUserId')), 'dad-1');
@@ -153,7 +153,7 @@ void main() {
 
     await t.pumpWidget(wrap(NetworkedCheckersLobbyScreen(
       httpClientForTesting: mock,
-      wsConnectForTesting: (_) => fakeWs,
+      wsConnectForTesting: (_, _) => fakeWs,
     )));
     await t.enterText(find.byKey(const Key('lobbyUserId')), 'dad-1');
     await t.tap(find.byKey(const Key('lobbySignIn')));

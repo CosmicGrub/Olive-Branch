@@ -41,7 +41,7 @@ class NetworkedCheckersLobbyScreen extends StatefulWidget {
   /// Test seam only — production always uses a real `http.Client`.
   final http.Client? httpClientForTesting;
   /// Test seam only — production always opens a real WebSocket.
-  final WebSocketChannel Function(Uri)? wsConnectForTesting;
+  final WebSocketChannel Function(Uri, Iterable<String>? protocols)? wsConnectForTesting;
 
   @override
   State<NetworkedCheckersLobbyScreen> createState() => _NetworkedCheckersLobbyScreenState();

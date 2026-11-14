@@ -30,6 +30,7 @@ import 'live_games.dart' show Side;
 import 'connect4_play.dart';
 import 'local_pairing.dart';
 import 'local_services.dart';
+import 'play_confirm_card.dart';
 import 'play_game.dart';
 import 'play_notice.dart';
 import 'play_save.dart';
@@ -249,7 +250,7 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
           };
         }
       }
-      return Scaffold(
+      return PlayConfirmOverlay(pairing: _pairing, child: Scaffold(
         appBar: AppBar(title: const Text('Connect 4'), actions: [if (_session != null) PlayFinishButton(session: _session!)]),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own
         // build() for why: real-device testing at foldTabletop's ~420dp
@@ -259,7 +260,7 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
           padding: EdgeInsets.all(outerPad),
           child: Center(child: body),
         )),
-      );
+      ));
     });
   }
 }

@@ -10,12 +10,15 @@
 import 'connect4_play.dart';
 import 'game_war.dart' show warSpec;
 import 'live_games.dart' show liveForbidden;
+import 'pictionary_play.dart';
 import 'play_game.dart';
+import 'puzzle_play.dart';
+import 'twenty_questions_play.dart';
 import 'uno_play.dart';
 
 PlayRegistry _build() {
   final PlayRegistry r = PlayRegistry();
-  for (final PlayGameSpec s in <PlayGameSpec>[warSpec, connect4Spec, unoSpec]) {
+  for (final PlayGameSpec s in <PlayGameSpec>[warSpec, connect4Spec, unoSpec, pictionarySpec, puzzleSpec, twentyQuestionsSpec]) {
     r.register(s, forbidden: liveForbidden);
   }
   return r;
