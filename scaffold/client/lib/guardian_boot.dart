@@ -74,7 +74,7 @@ void _returnToPairing() {
     } catch (_) {
       // Fall through to the code screen.
     }
-    runApp(const _PairingBootApp(baseUrl: kLiveBaseUrl));
+    runApp(_PairingBootApp(baseUrl: kLiveBaseUrl));
   }());
 }
 

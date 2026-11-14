@@ -12,9 +12,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import 'push_channel.dart';
+import 'server_address.dart';
 
-const String kLiveBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8123'); // Android emulator's host-loopback alias
+/// The address every live screen talks to: a grown-up's saved "Server address" if there is one,
+/// else the build-time OLIVE_API_BASE_URL ([kBuiltInBaseUrl], server_address.dart). Read ONCE at
+/// start-up (runLive), so it is a plain getter, not a const.
+String get kLiveBaseUrl => ServerAddress.current;
 const String kLiveChildId = String.fromEnvironment('OLIVE_CHILD_ID',
     defaultValue: 'aaaaaaaa-0000-4000-8000-000000000001'); // seed-dev.mjs's Ivy
 const String kLiveGuardianId = String.fromEnvironment('OLIVE_GUARDIAN_ID',

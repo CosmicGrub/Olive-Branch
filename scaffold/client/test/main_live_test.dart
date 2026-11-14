@@ -253,7 +253,7 @@ void main() {
 
     test('a device that was connected and cut off returns to the code screen alone, '
         'without re-asking the questions', () {
-      expect(src, contains('runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl))'));
+      expect(src, contains('runApp(_PairingBootApp(baseUrl: _dartDefineBaseUrl))'));
     });
 
     test('the GUARDIAN shell is local-first now (role-first, MASTERFILE 8.5.9): the local family and a local PIN '

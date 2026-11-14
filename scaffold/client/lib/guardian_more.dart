@@ -66,6 +66,7 @@ import 'live_game_picker.dart';
 import 'local_pin_screens.dart';
 import 'lock_advisory_screen.dart';
 import 'clear_local_data_screen.dart';
+import 'server_address_screen.dart';
 import 'maturation_ladder.dart';
 import 'meds_care.dart';
 import 'palette_logic.dart';
@@ -698,6 +699,10 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => local!.onConnect!(context)),
         SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',
           subtitle: 'Stops notifications on this device', onTap: () => _signOut(context)),
+        SettingsRow(id: 'serveraddress', icon: Icons.dns_outlined, title: 'Server address',
+          subtitle: 'Only if the address you were given has changed',
+          onTap: () => _open(context, ServerAddressScreen(
+            verifyPin: _wipeVerifier(context)))),
         SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this device',
           subtitle: 'What this phone keeps, and clear it',
           onTap: () => _open(context, ClearLocalDataScreen(
@@ -1068,6 +1073,11 @@ class GuardianMoreScreen extends StatelessWidget {
         // SHOW the list; only the wipe needs a checkable PIN. Its own section,
         // last, so no existing tile moves.
         HubSection(title: 'This device', children: [
+          HubTile(key: const Key('moreServerAddress'), icon: Icons.dns_outlined,
+            title: 'Server address',
+            subtitle: 'Only if the address you were given has changed',
+            onTap: () => _open(context, ServerAddressScreen(
+              verifyPin: _wipeVerifier(context)))),
           HubTile(key: const Key('moreDeviceData'), icon: Icons.phonelink_erase_outlined,
             title: 'Data on this device',
             subtitle: 'What this phone keeps, and clear it',

@@ -6225,6 +6225,7 @@ drift. Nothing is written that is not in it.
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
+| `device.serveraddress` | The server address a grown-up typed under More > This device > Server address, if they changed it (§8.16.6a): an https origin, not secret, nothing personal. Absent means the build-time address is used. A wipe removes it. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
 | `guardian.local-guardian.localpin` | The grown-up's PIN for this device only (§8.5.9): PBKDF2-HMAC-SHA256 hash, salt, round count and the count toward a 15 minute lock. Never the PIN itself; not the account PIN; never sent. | **Yes** |
 | `child.<id>.nicknames` | What she calls each grown-up if she renamed one (§8.5.7): a contact id and the word she chose. Hers: a grown-up can see it, not change it. No count or ranking. | No |
@@ -6287,6 +6288,32 @@ device**:
 - **Export-free by design.** Nothing here is added to the court export, and
   there is no "export this data" affordance: a child's journal and pictures
   are not evidence this app hands to anyone (P7).
+
+### 8.16.6a Server address (grown-up, this device)
+
+Code: `client/lib/server_address.dart`, `server_address_screen.dart`; tests `server_address_test.dart`,
+`server_address_screen_test.dart`. Built for a server reached through a free quick tunnel whose https
+address changes whenever the tunnel restarts (operator guide `docs/operators/live-on-my-pc.md`).
+
+- **Where.** More > This device > Server address, and Settings > Account > Server address, in the
+  guardian app only. No child screen reads or shows it (the child side has no settings, and a child's
+  device cannot change its address; see the limit below).
+- **Rules.** The built-in address is the build-time `--dart-define=OLIVE_API_BASE_URL`, unchanged and
+  still the default. A saved address wins over it; "Use the built-in address" removes the saved one.
+  **https only**, an origin only (no path, query, fragment or login), a real host name; a plain `http://`
+  address is never accepted by this setting, LAN and loopback included. Saving and resetting need the
+  grown-up's PIN, checked the same way as "Data on this device" and failing closed (no way to check a
+  PIN means no change; a check that throws counts as wrong).
+- **Storage and timing.** One plain string in the device-scoped area `device.serveraddress` (§8.16.4).
+  It is read once at start-up (`runLive` calls `ServerAddress.bootLoad()` before any address is used,
+  because the pairing screens need it before the store is booted), so a change applies after the app is
+  closed and reopened; the screen says so. A device wipe removes it.
+- **Certificate pinning is off for this address.** A quick-tunnel certificate rotates and pins need a
+  stable domain (`docs/operators/certificate-pinning.md`). In a release build with no pins configured,
+  `OliveTransport` accepts https and still refuses http (tests in `server_address_test.dart` cover both).
+- **Limit.** A child's tablet has no screen for this. If the address changes, the tablet keeps the address
+  it was built with until it is reinstalled with a new define; a stable address (a named tunnel with a
+  domain) removes the problem.
 
 ### 8.16.7 What is not here
 
@@ -7733,7 +7760,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **38 areas, 20 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **39 areas, 20 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 

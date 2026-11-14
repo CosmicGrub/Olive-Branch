@@ -69,6 +69,7 @@ import 'guardian_local_scope.dart';
 import 'kiosk_shell.dart';
 import 'live_boot_plan.dart';
 import 'live_common.dart';
+import 'server_address.dart';
 import 'local_family.dart';
 import 'local_pin.dart';
 import 'adult_gate.dart' show PhoneUnlock;
@@ -92,7 +93,7 @@ export 'live_boot_plan.dart' show LiveTarget;
 // The dart-defines live in live_common.dart, shared with the guardian shell's boot (one place;
 // `bool.hasEnvironment`, NOT a defaultValue comparison — see that file for why the two are not
 // the same question). These are the names this file has always used for them.
-const _dartDefineBaseUrl = kLiveBaseUrl;
+String get _dartDefineBaseUrl => kLiveBaseUrl; // a saved "Server address" wins over the define
 const _dartDefineChildId = kLiveChildId;
 const _hasChildIdDartDefine = kHasChildIdDartDefine;
 const _devLoginDartDefine = kDevLoginDartDefine;
@@ -106,7 +107,7 @@ AuthSession _deviceSession(DeviceIdentity identity) => AuthSession.device(
 /// Back to the pairing screen: [AuthSession] has already cleared the stored
 /// identity by the time this runs. `runApp()` a second time is an ordinary way
 /// to replace the root widget (see [_PairingBootApp]'s own comment).
-void _returnToPairing() => runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl));
+void _returnToPairing() => runApp(_PairingBootApp(baseUrl: _dartDefineBaseUrl));
 
 /// The real backend PIN check — replaces the former hardcoded
 /// `_demoVerifyGuardianPin` ('1273', never checked against anything). This is
@@ -369,6 +370,7 @@ Future<void> main() => runLive();
 Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
   WidgetsFlutterBinding.ensureInitialized();
   registerFontLicences();
+  await ServerAddress.bootLoad(); // a grown-up's saved server address, before any address is read
   AuthSession.devLoginEnabled = _devLoginDartDefine;
   // MASTERFILE §11 -- registers the real top-level background handler before runApp(); wrapped in
   // try/catch inside (a missing google-services.json must never crash the build before its first

@@ -31,6 +31,7 @@ import 'package:path_provider/path_provider.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
 import 'sha256.dart';
+import 'server_address.dart' show ServerAddress;
 import 'store_cipher.dart';
 
 /// Whose data an area belongs to.
@@ -219,6 +220,11 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'someone else. It decides which app opens. It is not a name and grants a grown-up nothing; '
           'a device wipe removes it and the device asks again.'),
   LocalDataEntry(
+      area: 'serveraddress', scope: LocalScope.device, maxBytes: 4 * 1024,
+      what: 'The server address a grown-up typed under More > This device > Server address, if they '
+          'changed it (an https address only). It is not secret and holds nothing personal. Without '
+          'it the address this copy of Olive was built with is used. A device wipe removes it.'),
+  LocalDataEntry(
       area: 'localfamily', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * 1024,
       what: 'The family a grown-up set up on this device without a server: their name and what she '
           'calls them, her first name and age (locked; changing it needs a grown-up PIN) and '
@@ -395,6 +401,7 @@ class LocalServices {
   /// that is the paired-devices screen's job.
   Future<void> wipeAll() async {
     await store.wipe();
+    ServerAddress.resetInMemory(); // its saved copy is gone with the rest
     await keyring?.erase();
   }
 }

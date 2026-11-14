@@ -58,3 +58,8 @@ scaffold/out/
 /budget.ts
 /stream.ts
 .superpowers/
+
+# "Live on my PC" stack (docs/operators/live-on-my-pc.md): real secrets, local override, backups.
+scaffold/.env.live
+scaffold/docker-compose.live.override.yml
+scaffold/backups-live/

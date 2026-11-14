@@ -73,6 +73,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'homegrowth': 'When her home last grew',
   'playsave': 'Games in progress',
   'role': 'Who uses this device',
+  'serveraddress': 'Server address you chose',
   'localfamily': 'Your family, set up on this phone',
   'localpin': 'Your PIN for this phone',
 };
