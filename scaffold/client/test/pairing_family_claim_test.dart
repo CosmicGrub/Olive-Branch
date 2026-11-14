@@ -22,7 +22,7 @@ Future<AdultWindow> _window(DeviceKey k,
         adultKey: k, adultName: 'Mom', familyId: fid, childId: 'kid-1', childName: 'Ivy', pin: pin, now: now, familyKey: fk,
         requireMatch: requireMatch, makeUnlockVerifier: _cheap, onPaired: paired?.add);
 
-ChildPairingClient _client(DeviceKey ck, PairingTransport t, {void Function(PairingMatch)? onMatched}) => ChildPairingClient(
+ChildPairingClient _client(DeviceKey ck, PairingTransport t) => ChildPairingClient(
     childKey: ck, transport: t, delay: (Duration d) async {}, pollEvery: const Duration(seconds: 1), giveUpAfter: const Duration(seconds: 3));
 
 Map<String, dynamic> _hello(AdultWindow w, DeviceKey ck) => <String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T'};
@@ -156,6 +156,19 @@ void main() {
       expect(await _pake1(w, c2, '4829'), isNull);
       t = t.add(const Duration(seconds: 2));
       expect(await _pake1(w, c2, '4829'), isNotNull, reason: 'the stale claim expired');
+    });
+  });
+
+  group('a stopped device', () {
+    test('is not answered at all: no hello-ok, no pake2, no attempt used', () async {
+      final DeviceKey ak = await _key(), stopped = await _key(), other = await _key();
+      final AdultWindow w = await AdultWindow.open(
+          adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'k', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap,
+          refuseKey: (List<int> k) async => b64(k) == b64(stopped.publicKey));
+      expect(await w.handle(_hello(w, stopped)), isNull);
+      expect(await _pake1(w, stopped, '4829'), isNull);
+      expect(w.attemptsLeft, 5);
+      expect((await w.handle(_hello(w, other)))!['t'], 'hello-ok', reason: 'everyone else is unaffected');
     });
   });
 

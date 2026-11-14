@@ -204,7 +204,7 @@ void main() {
     Future<(Future<PairingResult>, DeviceKey)> startChild(WidgetTester t, _Adult a) async {
       final DeviceKey ck = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
       final Future<PairingResult> run = ChildPairingClient(
-              childKey: ck, transport: LoopbackPairingTransport(a.opened!), deviceName: 'Tab‮', pollEvery: const Duration(milliseconds: 20))
+              childKey: ck, transport: LoopbackPairingTransport(a.opened!), deviceName: 'Tab\u202e', pollEvery: const Duration(milliseconds: 20))
           .pair(sid: a.opened!.sid, password: '4829');
       await _settle(t);
       return (run, ck);

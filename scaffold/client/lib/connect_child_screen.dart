@@ -207,6 +207,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       makeUnlockVerifier: widget.makeUnlockVerifier,
       familyKey: familyKey,
       requireMatch: true,
+      refuseKey: widget.trust?.isRefused,
       onPaired: (PairedKid k) {
         unawaited(widget.kids.add(k));
         unawaited(_trustAdded(k));

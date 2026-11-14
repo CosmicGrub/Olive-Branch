@@ -103,8 +103,8 @@ void main() {
 
   group('hostile names', () {
     test('control, bidi and zero-width characters are removed, length is capped, empty becomes Unknown device', () {
-      expect(sanitizeDeviceName('Ivy‮ gnp.exe'), 'Ivy gnp.exe'.replaceAll(' gnp', ' gnp'));
-      expect(sanitizeDeviceName('A\u0000B​C⁦D⁩'), 'ABCD');
+      expect(sanitizeDeviceName('Ivy\u202e gnp.exe'), 'Ivy gnp.exe'.replaceAll(' gnp', ' gnp'));
+      expect(sanitizeDeviceName('A\u0000B\u200bC\u2066D\u2069'), 'ABCD');
       expect(sanitizeDeviceName('   '), 'Unknown device');
       expect(sanitizeDeviceName(null), 'Unknown device');
       expect(sanitizeDeviceName(42), 'Unknown device');
@@ -114,7 +114,7 @@ void main() {
 
     test('a hostile name is cleaned on the way into the list', () async {
       final (TrustBook b, _, _) = await _book();
-      final TrustedDevice d = (await b.add(certId: 'c', deviceKey: _k(5), deviceName: '‮evil\u0007', role: PairedRole.child, addedBy: 'Sam'))!;
+      final TrustedDevice d = (await b.add(certId: 'c', deviceKey: _k(5), deviceName: '\u202eevil\u0007', role: PairedRole.child, addedBy: 'Sam'))!;
       expect(d.name, 'evil');
     });
   });

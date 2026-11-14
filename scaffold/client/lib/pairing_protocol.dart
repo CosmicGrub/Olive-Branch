@@ -112,6 +112,7 @@ class AdultWindow extends ChangeNotifier {
     required this.familyKey,
     required this.requireMatch,
     required Random random,
+    required this.refuseKey,
   })  : _random = random, // ignore: prefer_initializing_formals
         _pin = pin, // ignore: prefer_initializing_formals
         _now = now, // ignore: prefer_initializing_formals
@@ -135,6 +136,10 @@ class AdultWindow extends ChangeNotifier {
   /// The family key (16 bytes) that goes to the child inside the sealed credential, so a claimed child can later
   /// tell its own family's pictures from a stranger's. Null = none (older callers).
   final Uint8List? familyKey;
+
+  /// Asked with a child device's public key on hello and pake1: true = the grown-up stopped that device earlier, so
+  /// the window stays silent to it (no answer, no attempt counted).
+  final Future<bool> Function(List<int> deviceKey)? refuseKey;
 
   /// When true, [approve] refuses until the adult picked the matching set ([pickMatch]).
   final bool requireMatch;
@@ -244,6 +249,7 @@ class AdultWindow extends ChangeNotifier {
     bool phoneOnly = false,
     Uint8List? familyKey,
     bool requireMatch = false,
+    Future<bool> Function(List<int> deviceKey)? refuseKey,
     Duration ttl = kWindowTtl,
     int maxAttempts = kWindowMaxAttempts,
     DateTime Function()? now,
@@ -258,7 +264,7 @@ class AdultWindow extends ChangeNotifier {
       adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName,
       pin: pin, sid: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
       maxAttempts: maxAttempts, now: clock, onPaired: onPaired, phoneOnly: phoneOnly,
-      familyKey: familyKey, requireMatch: requireMatch, random: r,
+      familyKey: familyKey, requireMatch: requireMatch, random: r, refuseKey: refuseKey,
       makeUnlockVerifier: makeUnlockVerifier ?? (String p) => _defaultVerifier(p, r),
     );
   }
@@ -335,6 +341,7 @@ class AdultWindow extends ChangeNotifier {
     switch (m['t']) {
       case 'hello':
         if (state != WindowState.open) return null;
+        if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
         if (_allowedChildKey != null) {
           // Mode B: only the scanned child, and only with proof it holds that key for THIS window. Silent drop.
           final Object? cpkRaw = m['cpk'], hsRaw = m['hs'];
@@ -349,6 +356,7 @@ class AdultWindow extends ChangeNotifier {
         };
       case 'pake1':
         if (state != WindowState.open) return null;
+        if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
         // Mode B: a pake1 from anyone but the scanned, hello-verified child is dropped WITHOUT being counted, so a
         // device that merely photographed the child's picture cannot use up the window's budget.
         if (_allowedChildKey != null) {

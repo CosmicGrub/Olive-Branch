@@ -5190,22 +5190,73 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
 **Connecting (built, headless-tested, not yet run on two real devices).**
 1. The grown-up opens More > "Connect a child's device" and types **their own PIN** (checked by the local PIN
    service). That opens a **window**: 10 minutes, five failed tries, one use, in memory on the adult device only.
-2. On the child's device the grown-up taps "A grown-up does this" > "I'm the grown-up", picks **their own name**
-   from the windows open nearby (mDNS `_olivepair._tcp`; the name is what selects, never the PIN), and types the
-   same PIN on the adult-only keypad.
+2. On the child's device the grown-up taps "A grown-up does this" > "I'm the grown-up", picks the open window
+   nearby (mDNS `_olivepair._tcp`, advertised as "Player one" or "Player two" with no name; the child shows each
+   as a **nameless picture tile** derived from the window's session id, and the grown-up taps the one that
+   matches the picture on the phone), and types the same PIN on the adult-only keypad.
 3. The PIN is the password of a **password-authenticated key exchange** (`cpace.dart`, a CPace-style exchange over
    X25519). It is never sent, and a recording cannot be used to guess it offline. The session id, family id, the
    adult device's key fingerprint, the adult's name and the child device's key are bound into it, so another
    family, another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation.
-4. Both screens then show the adult's name and the same **word and picture**; the grown-up taps "Yes, connect it".
-   The adult device signs a **certificate** for that one child device, one child, one family
-   (`device_keys.dart`), sealed to the child device under the exchange's key. Attempt counters and the lockout
-   live on the **adult** device. A wrong PIN, wrong grown-up or refusal looks the same to the child: "Your grown-up
-   can try again".
+4. The child's screen then shows **three pictures and a colour** (no words, no name; about 21 bits, derived from the
+   finished key exchange). The grown-up's phone shows **four candidate sets and "None of these"** and the grown-up
+   picks the one on the child's device (**Match**). A wrong pick, or "None of these", refuses: nothing is issued,
+   adding is off for 10 minutes and the history says so. A right pick leads to "Who is this?" (the grown-up
+   chooses; in this version only "My child"; the device can never claim a role) and "Yes, connect it" or "Not
+   mine". The adult device signs a **certificate** for that one child device, one child, one family
+   (`device_keys.dart`), sealed to the child device under the exchange's key together with a random **family key**
+   (used only for the blinded family tag below). Attempt counters and the lockout live on the **adult** device. A
+   wrong PIN, another family's window or picture, a refusal or a timeout all look the same to the child: one calm
+   picture, **no sentence at all** (the earlier "Your grown-up can try again" line was removed; it was error text).
+   Only one device may be mid-handshake with a window at a time: a second device that starts meanwhile is dropped
+   silently, not counted, and cannot replace the first; an abandoned claim frees the window after 5 minutes.
 5. **Optional QR** (a switch on the adult screen): the window shows an `olive://pair/1?...` picture carrying only
    the session id, the adult device's key fingerprint, a one-time secret and LAN address hints. Scanning it runs
    the same exchange with that secret instead of a typed PIN. It works once, only while the window is open, and
    the adult device answers only LAN source addresses.
+
+**The pairing picture (persistent QR; built, headless-tested, not yet run on two real devices).** Owner request,
+2026-11-14: a persistent QR that pairs the child side to its adult counterpart and back, that may never intersect
+with another instance or with strangers, with vetting and approval that continue after the scan. Design:
+`docs/planning/PERSISTENT-QR-PAIRING.md`. **A scan is an introduction, never a key.** The picture
+(`olive://id/1?r=<a|c>&k=<device public key>&s=<salt>&e=<epoch>[&f=<family tag>]`, about 100 to 130 characters,
+`client/lib/pairing_picture.dart`) carries only public data: the shower's role, its Ed25519 public key, a
+rendezvous salt, a counter, and an optional **blinded family tag**. It never carries a PIN or secret, the window's
+session id, an address, a name, a family or child id, a location or a time. Anyone who photographs it learns
+nothing that lets them in; the PIN-based exchange above is unchanged and **stays the primary method** (the
+picture is optional and works only for devices in the same place). Layers:
+1. **Meet.** Adding is **off by default**: the grown-up types their own PIN to open a window (10 minutes, then it
+   closes by itself). The picture is shown only inside that window. Either side can show a picture and the other
+   scan it (grown-up shows, child looks; or child shows its own picture, reachable only behind the adult gate's "I'm
+   the grown-up" tap, for at most 10 minutes, and the grown-up's phone scans it, which narrows the window to that
+   one device and drops every other device's messages before an attempt is counted). Without a picture the window uses
+   a random tag and the nameless tiles. The window's mDNS tag is an HMAC of the session id under the addressed
+   device's salt, so only a device that holds that picture can tell the window is for it.
+2. **Match.** As step 4 above.
+3. **Approve.** The grown-up's own choice of role, then Yes. A window never answers a device whose key the grown-up
+   stopped earlier (no reply, no attempt counted).
+4. **Settle in.** A newly added device is **New** for 24 hours by default (the grown-up can set none, 24 hours or
+   3 days). On this version that is a badge with the time left plus adult-side limits (a New device cannot add or
+   approve others); a child tablet has no server-side family setting this could restrict, so no more is claimed.
+5. **Keep watch.** The device's public key is pinned. A changed key pauses the connection ("Paused: this device
+   changed. Is this still her tablet?"); it is never silently trusted again. "Is this device still yours?" appears
+   after 60 days without contact (the grown-up's phone's own clock; a child's clock is never trusted). "Stop this
+   connection" needs the grown-up's PIN, refuses that key from then on and says plainly that the tablet keeps what
+   is on it until it is reset. A plain-language history is kept as an append-only, hash-chained list (a removed,
+   reordered or edited line shows a warning; this is tamper-evident, not tamper-proof). "Make a new code" gives
+   the picture a new salt and counter: every old photo stops matching its windows; connected devices keep working.
+**Other families.** A grown-up's picture, and a child device's picture once it belongs to a family, carry the
+blinded family tag (8 bytes of an HMAC under a random family key, bound to the salt and the device key, so two
+pictures cannot be linked and a refresh changes it). A device that belongs to a family refuses another family's
+picture at scan time with neutral wording on a grown-up's phone ("This code belongs to a different family. Nothing
+was shared.") and silently on a child device, and a child that holds a certificate never starts an exchange with a
+window of a different family. **Not built / honest limits:** a second grown-up phone is a separate pairing and the
+"both parents must approve" switch and the helper role need a family object that does not exist yet; "Stop" does
+not wipe an offline tablet; the child gate on a device that is not yet paired is soft (it can show a public picture,
+which is harmless); the Match check is about 21 bits, one try per request, a human check; an 8-digit PIN is about 26
+bits so security rests on the attempt limits; real two-device mDNS verification and the external review below are
+still outstanding; the Match values come from a new key-derivation label in `cpace.dart` (`PakeKey.match`), which
+is inside the same review scope.
 
 **NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT (owner accepted 2026-11-08).**
 
