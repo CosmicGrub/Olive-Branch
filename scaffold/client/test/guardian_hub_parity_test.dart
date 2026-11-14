@@ -111,6 +111,7 @@ void main() {
       expect(built.difference(known), isEmpty, reason: 'add these to the vector with a reason');
       for (final String id in (v['flutterOnly']! as List<Object?>).cast<String>()) {
         if (id == 'connect') continue; // only when the build can connect
+        if (id == 'phones') continue; // only where the guardian shell supplied the local recovery services
         expect(built.contains(id), isTrue, reason: id);
       }
     });
