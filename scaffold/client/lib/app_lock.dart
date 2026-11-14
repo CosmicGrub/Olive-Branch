@@ -109,7 +109,7 @@ class LocalStoreAppLockPrefsRepository implements AppLockPrefsRepository {
 /// DEVELOPMENT BUILDS ONLY. Android blocks screenshots of a window that sets FLAG_SECURE, which is how
 /// "hide in recent apps" works, so a tester could never see the grown-up's screens in a screenshot or a
 /// screen recording (the capture is black). A dev build (tools/device-sync.sh) passes
-/// --dart-define=OLIVE_ALLOW_SCREENSHOTS=1 so the flag is never set. A store or release cut never passes it,
+/// --dart-define=OLIVE_ALLOW_SCREENSHOTS=true so the flag is never set. A store or release cut never passes it,
 /// so the default stays "hidden". The saved preference and the settings screen are unchanged.
 const bool kAllowScreenshotsDev = bool.fromEnvironment('OLIVE_ALLOW_SCREENSHOTS');
 
