@@ -44,6 +44,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'adultunlock': 'Grown-up unlock check',
   'pairedkids': 'Child devices you connected',
   'familyledger': 'Who belongs to your family',
+  'trust': 'Who you added and what changed',
   'lists': 'Wants and needs',
   'pictures': 'Saved pictures',
   'stories': 'Stories she kept',

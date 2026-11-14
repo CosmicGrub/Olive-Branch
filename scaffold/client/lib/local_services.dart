@@ -301,6 +301,10 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'the two family keys that device holds. Nothing in it is shown to a child, and a child\'s device '
           'never holds the grown-ups-only key. Sealed on the device; nothing is uploaded; not used by the '
           'app yet.'),
+      area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 256 * 1024,
+      what: 'On a grown-up\'s device: the paired devices\' trust book (who each device is, when it was added, '
+          'settling in, paused or stopped) and the plain-language history of those changes, kept in order so an '
+          'edit can be noticed. Sealed on the device; never shown on a child\'s screen.'),
   LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
