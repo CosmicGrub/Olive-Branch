@@ -109,6 +109,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD must be set — see .env.prod.example}
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}
       BACKUP_READER_PASSWORD: ${BACKUP_READER_PASSWORD:?BACKUP_READER_PASSWORD must be set — see .env.prod.example}
+      # Optional (0047): empty leaves health_monitor NOLOGIN. See .env.prod.example.
+      HEALTH_MONITOR_PASSWORD: ${HEALTH_MONITOR_PASSWORD:-}
       POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-olive_prod}
     volumes:
       - olive-prod-pgdata:/var/lib/postgresql/data

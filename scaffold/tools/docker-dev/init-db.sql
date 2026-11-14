@@ -38,3 +38,12 @@ CREATE DATABASE olive_devicetest OWNER app_owner;
 -- owner of every table.
 CREATE ROLE backup_reader NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS
   LOGIN PASSWORD 'backup_reader';
+
+-- health_monitor: the identity a monitor (tools/health-alert.mjs with
+-- HEALTH_DATABASE_URL) connects as (migration 0047). NOSUPERUSER NOBYPASSRLS
+-- with NO table grants: db/migrations/0047 grants it SELECT on the health_check
+-- view and EXECUTE on health_counts() only, both of which return counts and
+-- static text. It cannot read a row of any table, so a leaked monitoring
+-- credential exposes nothing a Grafana panel would not show.
+CREATE ROLE health_monitor NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
+  LOGIN PASSWORD 'health_monitor';

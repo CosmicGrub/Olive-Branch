@@ -93,8 +93,10 @@ try {
 }
 check('C the view reads the catalog', 'and the view is clean again after the scratch table is gone', await observed(), 0);
 
-const { rows: viewRows } = await client.query(`SELECT pg_get_viewdef('health_check'::regclass, true) AS def`);
+// 0047: health_check is a thin view over health_counts(); the checks (and so the catalog read) live in the function.
+const { rows: viewRows } = await client.query(`SELECT pg_get_viewdef('health_check'::regclass, true) AS v, pg_get_functiondef('health_counts'::regproc) AS def`);
 const def = viewRows[0].def;
+check('D no hard-coded list', 'health_check reads through health_counts()', /health_counts\(\)/.test(viewRows[0].v), true);
 check('D no hard-coded list', "the view no longer carries a 'relname IN (...)' table list",
   /relname\s+IN\s*\(|relname\s*=\s*ANY\s*\(\s*ARRAY/i.test(def), false);
 check('D no hard-coded list', 'it consults rls_allow_list', /rls_allow_list/.test(def), true);
