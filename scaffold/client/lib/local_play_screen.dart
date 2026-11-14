@@ -55,10 +55,15 @@
 // NEVER a media path — see local_session.dart's own header for why that
 // line is load-bearing, not a style note.
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'live_games.dart';
 import 'local_pairing.dart';
+import 'play_confirm_card.dart';
+import 'play_game.dart';
+import 'play_notice.dart';
+import 'play_session.dart';
+import 'play_transport.dart';
+import 'play_widgets.dart';
+import 'twenty_questions_play.dart';
 
 class LocalPlayScreen extends StatefulWidget {
   const LocalPlayScreen({super.key, required this.role, required this.displayName});
@@ -75,110 +80,73 @@ class LocalPlayScreen extends StatefulWidget {
 }
 
 class _LocalPlayScreenState extends State<LocalPlayScreen> {
+  // The conversation (envelope, order, resend, resume, the calm away line) is the shared session's
+  // (play_session.dart); this screen only draws what the game (twenty_questions_play.dart) says.
   late final LocalPairingController _pairing =
       LocalPairingController(role: widget.role, displayName: widget.displayName);
-  StreamSubscription<LocalTurnPayload>? _turnSub;
-
-  LiveSession? _session;
-  final _rand = Random();
-
-  Side get _mySide => _pairing.mySide;
+  late final LocalPairingTransport _transport = LocalPairingTransport(_pairing);
+  late final TwentyQuestionsPlayGame _game = TwentyQuestionsPlayGame(PlayContext(
+      mode: PlayMode.pair, localSeatId: _transport.mySeat, authoritySeatId: 'b', seatIds: const ['a', 'b']));
+  late final PlaySessionController _session =
+      PlaySessionController(spec: twentyQuestionsSpec, game: _game, transport: _transport);
 
   @override
   void initState() {
     super.initState();
-    _pairing.addListener(_onPairingChanged);
-    _turnSub = _pairing.incomingTurns.listen(_handleIncomingTurn);
+    _pairing.addListener(_onChanged);
+    _game.addListener(_onChanged);
+    _session.addListener(_onChanged);
+    _session.start();
     unawaited(_pairing.start());
   }
 
-  void _onPairingChanged() {
+  void _onChanged() {
     if (mounted) setState(() {});
-  }
-
-  void _startGame() {
-    final result = startLive(LiveKind.twentyQuestions, Side.b, DateTime.now().toIso8601String(), _rand);
-    if (!result.ok || result.session == null) return;
-    setState(() => _session = result.session);
-    if (_mySide == Side.b) unawaited(_sendCurrentState());
-  }
-
-  /// Only the LEADER draws a new prompt and sends it — the other device
-  /// never independently draws (see this file's own header on why each
-  /// side keeping its own deck is an accepted, minor imperfection rather
-  /// than something this pass tries to fully solve).
-  Future<void> _takeMyTurn() async {
-    final session = _session;
-    if (session == null || session.leader != _mySide) return;
-    setState(() => _session = nextRound(session, _rand));
-    await _sendCurrentState();
-  }
-
-  Future<void> _sendCurrentState() async {
-    final session = _session;
-    if (session == null) return;
-    await _pairing.sendTurn({
-      'currentPrompt': session.currentPrompt,
-      'rounds': session.rounds,
-      'leader': session.leader == Side.a ? 'a' : 'b',
-    });
-  }
-
-  void _handleIncomingTurn(LocalTurnPayload payload) {
-    final leader = payload['leader'] == 'a' ? Side.a : Side.b;
-    final existing = _session;
-    final updated = LiveSession(
-      kind: LiveKind.twentyQuestions,
-      startedAt: existing?.startedAt ?? DateTime.now().toIso8601String(),
-      leader: leader,
-      deck: existing?.deck ?? newDeck(LiveKind.twentyQuestions, _rand),
-      currentPrompt: payload['currentPrompt'] as String?,
-      rounds: payload['rounds'] as int? ?? 0,
-      connection: ConnectionQuality.good,
-      degradedAt: null,
-    );
-    if (mounted) setState(() => _session = updated);
   }
 
   @override
   void dispose() {
-    unawaited(_turnSub?.cancel());
-    _pairing.removeListener(_onPairingChanged);
+    _game.removeListener(_onChanged);
+    _session.removeListener(_onChanged);
+    _session.dispose();
+    _game.dispose();
+    _transport.dispose();
+    _pairing.removeListener(_onChanged);
     _pairing.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final session = _session;
-    // A hard transport error always interrupts play. Otherwise, an
-    // already-under-way session keeps rendering regardless of pairing
-    // phase — the real fix for a transient peer-lost blip (see this file's
-    // and local_pairing.dart's own headers) — and only an in-progress-less
-    // screen defers to the raw pairing phase.
+    // A hard transport error always interrupts play. Otherwise, an already-under-way game keeps rendering regardless
+    // of pairing phase (a transient peer-lost blip is a calm line above it, not a different screen).
     final Widget body;
     if (_pairing.phase == PairingPhase.error) {
       body = _MessageView(
         message: _pairing.errorMessage ?? "Can't play locally right now.",
         icon: Icons.error_outline,
       );
-    } else if (session != null) {
-      body = _PlayingView(
-        session: session, mySide: _mySide, peerName: _pairing.peer?.name ?? 'the other side',
-        onTakeTurn: _takeMyTurn);
+    } else if (_session.endedForGood) {
+      body = PlaySessionNotice(kind: PlayNoticeKind.ended, onLeave: () => Navigator.of(context).maybePop());
+    } else if (_game.started) {
+      body = Column(mainAxisSize: MainAxisSize.min, children: [
+        PlayAwayBanner(session: _session),
+        _PlayingView(game: _game, peerName: 'the other side', onTakeTurn: _game.next),
+      ]);
+    } else if (_session.hasMetPeer && _session.notice != PlayNoticeKind.none) {
+      body = PlaySessionNotice(kind: _session.notice);
     } else {
       body = switch (_pairing.phase) {
-        PairingPhase.searching => const _Status(message: 'Looking nearby…'),
-        PairingPhase.found => _FoundView(peerName: _pairing.peer!.name, onStart: _startGame),
-        PairingPhase.peerLost =>
-          _MessageView(message: _pairing.errorMessage!, icon: Icons.wifi_off_outlined),
-        PairingPhase.error => throw StateError('handled above'),
+        PairingPhase.found => _FoundView(amDealer: _game.ctx.isAuthority, onStart: _game.begin),
+        PairingPhase.peerLost => const PlaySessionNotice(kind: PlayNoticeKind.away),
+        _ => const _Status(message: 'Looking nearby…'),
       };
     }
-    return Scaffold(
-      appBar: AppBar(title: const Text('Play nearby')),
-      body: SafeArea(child: Padding(padding: const EdgeInsets.all(24), child: Center(child: body))),
-    );
+    return PlayConfirmOverlay(pairing: _pairing, child: Scaffold(
+      appBar: AppBar(title: const Text('Play nearby'), actions: [PlayFinishButton(session: _session)]),
+      body: SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24), child: Center(child: body))),
+    ));
   }
 }
 
@@ -194,34 +162,36 @@ class _Status extends StatelessWidget {
 }
 
 class _FoundView extends StatelessWidget {
-  const _FoundView({required this.peerName, required this.onStart});
-  final String peerName;
+  const _FoundView({required this.amDealer, required this.onStart});
+  final bool amDealer;
   final VoidCallback onStart;
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
     Icon(Icons.people_alt_outlined, size: 40, color: Theme.of(context).colorScheme.primary),
     const SizedBox(height: 16),
-    Text('Found $peerName nearby', style: Theme.of(context).textTheme.headlineSmall),
+    Text('Found someone nearby', style: Theme.of(context).textTheme.headlineSmall),
     const SizedBox(height: 24),
-    FilledButton(onPressed: onStart, child: const Text('Start twenty questions')),
+    // The dealing device (the grown-up's) starts it; the other device is given the first prompt.
+    if (amDealer)
+      FilledButton(onPressed: onStart, child: const Text('Start twenty questions'))
+    else
+      Text('Getting ready…', style: Theme.of(context).textTheme.bodyLarge
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
   ]);
 }
 
 class _PlayingView extends StatelessWidget {
-  const _PlayingView({required this.session, required this.mySide, required this.peerName, required this.onTakeTurn});
-  final LiveSession session;
-  final Side mySide;
+  const _PlayingView({required this.game, required this.peerName, required this.onTakeTurn});
+  final TwentyQuestionsPlayGame game;
   final String peerName;
   final VoidCallback onTakeTurn;
 
   @override
   Widget build(BuildContext context) {
-    final myTurn = session.leader == mySide;
+    final myTurn = game.iAmLeader;
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Text(session.currentPrompt ?? 'Think of something.', textAlign: TextAlign.center,
+      Text(game.prompt ?? 'Think of something.', textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 8),
-      Text('Round ${session.rounds + 1}', style: Theme.of(context).textTheme.bodyMedium),
       const SizedBox(height: 24),
       if (myTurn)
         FilledButton(onPressed: onTakeTurn, child: const Text('Next round'))

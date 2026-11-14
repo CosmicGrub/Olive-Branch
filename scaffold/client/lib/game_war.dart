@@ -39,6 +39,7 @@ import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'game_logic.dart' show localPlayMinAge;
 import 'live_games.dart' show Side;
 import 'local_pairing.dart';
+import 'play_confirm_card.dart';
 import 'play_game.dart';
 import 'play_notice.dart';
 import 'play_session.dart';
@@ -396,7 +397,7 @@ class _GameWarScreenState extends State<GameWarScreen> {
         };
       }
       final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
-      return Scaffold(
+      return PlayConfirmOverlay(pairing: _pairing, child: Scaffold(
         appBar: AppBar(title: const Text('War'), actions: [PlayFinishButton(session: _session)]),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own
         // build() for why: real-device testing at foldTabletop's ~420dp
@@ -406,7 +407,7 @@ class _GameWarScreenState extends State<GameWarScreen> {
           padding: EdgeInsets.all(outerPad),
           child: Center(child: body),
         )),
-      );
+      ));
     });
   }
 }

@@ -24,7 +24,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
-import 'play_envelope.dart' show alwaysHiddenKeys;
+import 'play_envelope.dart' show alwaysHiddenKeys, maxEnvelopeBytes, maxEnvelopeBytesCeiling;
 
 enum PlayMode { pair, vsCpu, passAndPlay }
 
@@ -40,7 +40,7 @@ class PlayContext {
     required this.seatIds,
     Random? rng,
     Set<String>? cpuSeatIds,
-  })  : rng = rng ?? Random(),
+  })  : rng = rng ?? Random.secure(),
         cpuSeatIds = cpuSeatIds ?? const <String>{};
 
   final PlayMode mode;
@@ -49,6 +49,9 @@ class PlayContext {
   /// The seat that holds the truth (the dealer).
   final String authoritySeatId;
   final List<String> seatIds;
+
+  /// The dealer's randomness. Unseeded and secure in every shipped screen; a seeded [Random] is for a test that has
+  /// to deal the same hand twice, and a seed never leaves the dealing device ([neverSentKeys]).
   final Random rng;
 
   /// Seats a computer plays. Only the authority ever moves for these.
@@ -122,6 +125,7 @@ class PlayGameSpec {
     this.competitive = false,
     this.protocolVersion = 1,
     this.saveable = false,
+    this.maxMessageBytes = maxEnvelopeBytes,
   });
 
   /// The wire game id: lowercase letters, digits and underscore, up to 24.
@@ -149,6 +153,10 @@ class PlayGameSpec {
 
   /// The authority can save and restore this game ([PlayGame.snapshot]).
   final bool saveable;
+
+  /// How big one message of this game may be. Only a game that sends a picture needs more than the default; never
+  /// above [maxEnvelopeBytesCeiling] (one encrypted frame).
+  final int maxMessageBytes;
 
   /// Every key that must never be sent across for this game.
   List<String> get allHiddenKeys => hiddenInfo ? <String>[...alwaysHiddenKeys, ...hiddenKeys] : const <String>[];
@@ -178,6 +186,9 @@ class PlayRegistry {
       if (bad.contains(f.toLowerCase())) out.add('"$f" is a forbidden child-facing word');
     }
     if (s.saveable && !s.modes.contains(PlayMode.pair)) out.add('only a two-device game is saved');
+    if (s.maxMessageBytes < maxEnvelopeBytes || s.maxMessageBytes > maxEnvelopeBytesCeiling) {
+      out.add('maxMessageBytes ${s.maxMessageBytes} is outside $maxEnvelopeBytes to $maxEnvelopeBytesCeiling');
+    }
     return out;
   }
 

@@ -57,6 +57,7 @@ void main() {
   late StreamController<dynamic> incoming;
   late _FakeSink sink;
   late Uri capturedUri;
+  late Iterable<String>? capturedProtocols;
 
   NetworkedCheckersChannel makeChannel({int mySeat = 0}) {
     incoming = StreamController<dynamic>.broadcast();
@@ -65,17 +66,35 @@ void main() {
       wsUrl: 'ws://test.local/v1/game-tables/t_abc/socket',
       token: 'tok-123',
       mySeat: mySeat,
-      connect: (uri) {
+      connect: (uri, protocols) {
         capturedUri = uri;
+        capturedProtocols = protocols;
         return _FakeWebSocketChannel(incoming, sink);
       },
     );
   }
 
-  test('connects with the token carried as a query parameter, on the exact table path', () async {
+  test('connects with the token in the Sec-WebSocket-Protocol offer and NOT in the address, on the exact table path', () async {
     final ch = makeChannel();
-    expect(capturedUri.queryParameters['token'], 'tok-123');
+    expect(capturedProtocols, <String>['olive.v1', 'tok-123']);
+    expect(capturedUri.hasQuery, isFalse);
+    expect(capturedUri.toString().contains('tok-123'), isFalse);
     expect(capturedUri.path, '/v1/game-tables/t_abc/socket');
+    await ch.close();
+  });
+
+  test('a query string already on the address is dropped, so nothing rides in the URL', () async {
+    incoming = StreamController<dynamic>.broadcast();
+    sink = _FakeSink();
+    final ch = NetworkedCheckersChannel(
+      wsUrl: 'ws://test.local:8080/v1/game-tables/t_abc/socket?token=old&x=1', token: 'tok-9', mySeat: 0,
+      connect: (uri, protocols) {
+        capturedUri = uri;
+        capturedProtocols = protocols;
+        return _FakeWebSocketChannel(incoming, sink);
+      });
+    expect(capturedUri.toString(), 'ws://test.local:8080/v1/game-tables/t_abc/socket');
+    expect(capturedProtocols, <String>['olive.v1', 'tok-9']);
     await ch.close();
   });
 

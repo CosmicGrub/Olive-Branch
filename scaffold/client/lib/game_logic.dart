@@ -270,6 +270,8 @@ const Map<String, int> localPlayMinAge = {
   'pictionary': 5,
   'connect4': 6,
   'uno': 6,
+  // Twenty questions (local_play_screen.dart): the live-game table's own age; no hub tile opens it yet.
+  'twenty_questions': 8,
 };
 
 // ------------------------------------------------------------ handicap -----

@@ -22,12 +22,21 @@ import 'live_games.dart' show liveForbidden;
 
 const int playProtocolVersion = 1;
 const int maxEnvelopeBytes = 8192;
+
+/// The most a game may ask its own messages to be (a game that sends a picture, [PlayGameSpec.maxMessageBytes]). One
+/// encrypted frame carries 32766 bytes of payload (play_frame.dart), so nothing may ever exceed this.
+const int maxEnvelopeBytesCeiling = 30 * 1024;
 const int maxUnacked = 32;
 const int maxPayloadDepth = 12;
 const int _maxSafe = 9007199254740991;
 
 /// Keys that, in a hidden-information game, may never be in anything sent to the other device.
 const List<String> alwaysHiddenKeys = <String>['seed', 'rngSeed', 'rng', 'drawPile', 'deck'];
+
+/// Keys that may never cross in ANY game, hidden-information or not, on send or on receive: the dealer's seed stays
+/// on the dealing device (a seeded deal exists only so a test can be deterministic, and a seed on the wire would let
+/// the other device, or anyone who got through, work out every card still to come).
+const List<String> neverSentKeys = <String>['seed', 'rngSeed', 'rng', 'seedForTest'];
 
 enum PlayKind {
   hello('hello'),
@@ -125,11 +134,13 @@ String _auditPayload(Object? x, int depth) {
   return 'ok';
 }
 
-/// E2: parse an untrusted wire message (a JSON string or an already-decoded map). Never throws.
-ParsedEnvelope parsePlayEnvelope(Object? raw) {
+/// E2: parse an untrusted wire message (a JSON string or an already-decoded map). Never throws. [maxBytes] is the
+/// game's own cap (default [maxEnvelopeBytes], never above [maxEnvelopeBytesCeiling]).
+ParsedEnvelope parsePlayEnvelope(Object? raw, {int maxBytes = maxEnvelopeBytes}) {
+  final int cap = maxBytes.clamp(maxEnvelopeBytes, maxEnvelopeBytesCeiling);
   Object? o = raw;
   if (raw is String) {
-    if (utf8.encode(raw).length > maxEnvelopeBytes) return const ParsedEnvelope.fail(ParseFailure.tooLarge);
+    if (utf8.encode(raw).length > cap) return const ParsedEnvelope.fail(ParseFailure.tooLarge);
     try {
       o = jsonDecode(raw);
     } on FormatException {
@@ -142,7 +153,7 @@ ParsedEnvelope parsePlayEnvelope(Object? raw) {
     } catch (_) {
       return const ParsedEnvelope.fail(ParseFailure.notJson);
     }
-    if (utf8.encode(text).length > maxEnvelopeBytes) return const ParsedEnvelope.fail(ParseFailure.tooLarge);
+    if (utf8.encode(text).length > cap) return const ParsedEnvelope.fail(ParseFailure.tooLarge);
   }
   if (o is! Map) return const ParsedEnvelope.fail(ParseFailure.notObject);
   const ParsedEnvelope bad = ParsedEnvelope.fail(ParseFailure.badField);

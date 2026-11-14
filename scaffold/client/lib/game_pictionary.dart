@@ -38,15 +38,20 @@
 // its dedicated test (game_pictionary_wire_test.dart) for the real
 // guardrail, not just this comment.
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'access_scope.dart' show LiveLine;
 import 'annotation_canvas.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
-import 'live_games.dart' show Side, LiveKind, DeckState, newDeck, draw, auditLiveView,
-  Pictionary, newPictionary, guessDrawing;
+import 'live_games.dart' show Side;
 import 'local_pairing.dart';
+import 'pictionary_play.dart';
+import 'play_confirm_card.dart';
+import 'play_game.dart';
+import 'play_notice.dart';
+import 'play_session.dart';
+import 'play_transport.dart';
+import 'play_widgets.dart';
 
 /// foldTabletop's own outer padding — real-device-tested minimum,
 /// deliberately NOT shared with the other 4 local-play games' own
@@ -55,77 +60,6 @@ import 'local_pairing.dart';
 /// design_tokens.dart's own header / docs/superpowers/specs/2026-09-15-
 /// design-tokens-named-migration-design.md, Fix #2.
 const double _foldTabletopPad = 10.0;
-
-// ==================================================================
-// ==== wire — pure functions, no Flutter import, independently testable ===
-// ==================================================================
-
-// REAL BUG FIXED HERE: this field used to be named 'points', which
-// collides with live_games.dart's liveForbidden guardrail — a P2
-// safety net that blocks 'score'/'points'/'streak'/etc. from ever
-// reaching a live view. That list means "score points"; this field
-// means "the x/y coordinates making up a stroke" — an innocent name
-// collision, but auditLiveView() walks every key at every depth and
-// can't tell the two apart, so it silently refused to send EVERY
-// drawing, always, no matter what — found live on real 2-device
-// hardware (the guesser's screen never received anything), not by
-// `flutter analyze`/unit tests. Renamed to 'coords' to resolve the
-// collision at its root without weakening the real P2 guardrail.
-Map<String, dynamic> encodeStroke(Stroke s) => {
-  'id': s.id, 'actorId': s.actorId, 'seq': s.seq,
-  'coords': [for (final p in s.points) {'x': p.x, 'y': p.y}],
-  'color': s.color, 'widthPx': s.widthPx,
-};
-
-Stroke? decodeStroke(Object? raw) {
-  if (raw is! Map) return null;
-  final id = raw['id'];
-  final actorId = raw['actorId'];
-  final seq = raw['seq'];
-  final pointsRaw = raw['coords'];
-  final color = raw['color'];
-  final widthPx = raw['widthPx'];
-  if (id is! String || actorId is! String || seq is! int || pointsRaw is! List ||
-      color is! String || widthPx is! num) {
-    return null;
-  }
-  final points = <StrokePoint>[];
-  for (final p in pointsRaw) {
-    if (p is! Map || p['x'] is! num || p['y'] is! num) return null;
-    points.add(StrokePoint((p['x'] as num).toDouble(), (p['y'] as num).toDouble()));
-  }
-  return Stroke(id: id, actorId: actorId, actorKind: ActorKind.child, seq: seq,
-    points: points, color: color, widthPx: widthPx.toDouble());
-}
-
-/// Drawer → guesser, once per round, sent on "Show them." [word] is never
-/// carried on this shape.
-Map<String, dynamic> encodeDrawingRevealed({required int rounds, required String drawerCode, required List<Stroke> strokes}) => {
-  'kind': 'pictionary', 'turnKind': 'drawingRevealed', 'rounds': rounds, 'drawer': drawerCode,
-  'word': null, 'strokes': [for (final s in strokes) encodeStroke(s)],
-  'guessText': null, 'solved': false, 'lastGuessCorrect': null,
-};
-
-/// Guesser → drawer, one guess per turn.
-Map<String, dynamic> encodeGuessSubmitted({required int rounds, required String drawerCode, required String guessText}) => {
-  'kind': 'pictionary', 'turnKind': 'guessSubmitted', 'rounds': rounds, 'drawer': drawerCode,
-  'word': null, 'strokes': const <Map<String, dynamic>>[], 'guessText': guessText, 'solved': false, 'lastGuessCorrect': null,
-};
-
-/// Drawer → guesser, after the drawer's own device evaluates the guess
-/// locally. `word` is non-null ONLY when [solved] is true — the real
-/// guardrail this file's own header calls out. A future edit that always
-/// includes the word here would leak the answer to the guesser's device
-/// before they've earned it; game_pictionary_wire_test.dart asserts this
-/// directly, not just by comment.
-Map<String, dynamic> encodeGuessResult({required int rounds, required String drawerCode, required bool solved, required bool correct, required String word}) => {
-  'kind': 'pictionary', 'turnKind': 'guessResult', 'rounds': rounds, 'drawer': drawerCode,
-  'word': solved ? word : null, 'strokes': const <Map<String, dynamic>>[], 'guessText': null,
-  'solved': solved, 'lastGuessCorrect': correct,
-};
-
-Side? decodeSide(Object? code) => switch (code) { 'a' => Side.a, 'b' => Side.b, _ => null };
-String encodeSide(Side s) => s == Side.a ? 'a' : 'b';
 
 // ==================================================================
 // ==== widget ====
@@ -143,74 +77,42 @@ class GamePictionaryScreen extends StatefulWidget {
 enum PicPhase { drawing, waitingForGuess, waitingForDrawing, viewing, waitingForResult }
 
 class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
+  // The conversation (envelope, order, resend, resume, the calm away line) is the shared session's
+  // (play_session.dart); this screen only draws what the game (pictionary_play.dart) says and sends what it is told.
   late final LocalPairingController _pairing =
       LocalPairingController(role: widget.role, displayName: widget.displayName);
-  StreamSubscription<LocalTurnPayload>? _turnSub;
-  final _rand = Random();
+  late final LocalPairingTransport _transport = LocalPairingTransport(_pairing);
+  late final PictionaryPlayGame _game = PictionaryPlayGame(PlayContext(
+      mode: PlayMode.pair, localSeatId: _transport.mySeat, authoritySeatId: 'b', seatIds: const ['a', 'b']));
+  late final PlaySessionController _session =
+      PlaySessionController(spec: pictionarySpec, game: _game, transport: _transport);
   final _guessController = TextEditingController();
+  List<StrokePoint> _liveStroke = const [];
+  bool _celebrated = false;
 
   Side get _mySide => _pairing.mySide;
 
-  Side _drawer = Side.b; // dad draws first, matching every other fixed convention in this expansion
-  int _rounds = 0;
-  DeckState _deck = newDeck(LiveKind.pictionary);
-  String? _myWord; // only ever set on the drawer's own device
-  Pictionary? _pictionary; // only meaningful on the drawer's device, for guessDrawing()
-  AnnotationCanvas? _canvas; // only live while I'm the drawer
-  List<Stroke> _revealedStrokes = const [];
-  String? _lastGuessText;
-  bool _lastGuessWasWrong = false;
-  bool _celebrated = false;
-  List<StrokePoint> _liveStroke = const [];
-  bool _hasStarted = false;
-
   PicPhase get _phase {
-    if (_mySide == _drawer) {
-      // Simple and total: I've either sent my finished picture this turn,
-      // or I haven't. A wrong guess doesn't change this — I stay in
-      // waitingForGuess, ready for another, until a correct one advances
-      // the round via _drawNewWord().
-      return _hasStartedDrawingThisTurn ? PicPhase.waitingForGuess : PicPhase.drawing;
-    }
-    if (_revealedStrokes.isEmpty) return PicPhase.waitingForDrawing;
-    return _awaitingResult ? PicPhase.waitingForResult : PicPhase.viewing;
+    if (_game.iAmDrawer) return _game.pictureSent ? PicPhase.waitingForGuess : PicPhase.drawing;
+    if (!_game.pictureShown) return PicPhase.waitingForDrawing;
+    return _game.awaitingVerdict ? PicPhase.waitingForResult : PicPhase.viewing;
   }
-
-  bool _hasStartedDrawingThisTurn = false;
-  bool _awaitingResult = false;
 
   @override
   void initState() {
     super.initState();
     _pairing.addListener(_onPairingChanged);
-    _turnSub = _pairing.incomingTurns.listen(_handleIncomingTurn);
+    _game.addListener(_onPairingChanged);
+    _session.addListener(_onPairingChanged);
+    _session.start();
     unawaited(_pairing.start());
   }
 
   void _onPairingChanged() {
-    if (mounted) setState(() {});
-  }
-
-  void _startIfNeeded() {
-    if (_hasStarted) return;
-    _hasStarted = true;
-    if (_mySide == _drawer) _drawNewWord();
-  }
-
-  void _drawNewWord() {
-    final result = draw(_deck, _rand);
-    if (result == null) return;
-    setState(() {
-      _deck = result.deck;
-      _myWord = result.prompt;
-      _pictionary = newPictionary(result.prompt, _drawer);
-      _canvas = AnnotationCanvas();
-      _liveStroke = const [];
-      _hasStartedDrawingThisTurn = false;
-      _celebrated = false;
-      _lastGuessText = null;
-      _lastGuessWasWrong = false;
-    });
+    if (!mounted) return;
+    // Both devices open the game the moment they find each other; the dealer opens the first round.
+    if (_pairing.phase == PairingPhase.found) _game.begin();
+    setState(() {});
   }
 
   void _onPanStart(DragStartDetails d) =>
@@ -220,8 +122,8 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
       setState(() => _liveStroke = [..._liveStroke, StrokePoint(d.localPosition.dx, d.localPosition.dy)]);
 
   void _onPanEnd(DragEndDetails d) {
-    final canvas = _canvas;
-    if (canvas == null || _liveStroke.isEmpty) return;
+    final canvas = _game.canvas;
+    if (canvas == null || _liveStroke.isEmpty || _game.pictureSent) return;
     canvas.add(
       id: '${_mySide == Side.a ? 'a' : 'b'}-${DateTime.now().microsecondsSinceEpoch}',
       actorId: _mySide == Side.a ? 'ivy' : 'dad',
@@ -230,114 +132,26 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
       color: _mySide == Side.a ? '#3A7CA5' : '#B8863B',
       widthPx: 6.0,
     );
-    // REAL BUG FIXED HERE: this used to also set _hasStartedDrawingThisTurn
-    // = canvas.visible().isNotEmpty, which flips _phase to waitingForGuess
-    // the instant the FIRST stroke ends — before "Show them" is ever
-    // tapped and before _showThem() ever actually sends the picture. That
-    // locked the canvas read-only after one stroke (multi-stroke drawings
-    // were impossible) AND deadlocked the whole round, since the guesser's
-    // device never received anything — found live on real 2-device
-    // hardware, not by `flutter analyze`/unit tests. _hasStartedDrawingThisTurn
-    // must only become true inside _showThem(), once the picture is
-    // genuinely sent.
+    // The canvas stays open for more strokes: only "Show them" (the game's showThem) locks it and sends the picture.
     setState(() => _liveStroke = const []);
   }
 
-  Future<void> _showThem() async {
-    final canvas = _canvas;
-    if (canvas == null || canvas.visible().isEmpty) return;
-    setState(() => _hasStartedDrawingThisTurn = true);
-    await _send(encodeDrawingRevealed(rounds: _rounds, drawerCode: encodeSide(_drawer), strokes: canvas.visible()));
-  }
+  void _showThem() => _game.showThem();
 
-  Future<void> _submitGuess(String text) async {
+  void _submitGuess(String text) {
     if (text.trim().isEmpty) return;
-    setState(() => _awaitingResult = true);
-    await _send(encodeGuessSubmitted(rounds: _rounds, drawerCode: encodeSide(_drawer), guessText: text.trim()));
+    _game.guess(text);
     _guessController.clear();
-  }
-
-  Future<void> _send(Map<String, dynamic> payload) async {
-    final audit = auditLiveView(payload);
-    if (!audit.ok) {
-      debugPrint('game_pictionary: refusing to send a payload with forbidden keys: ${audit.leaks}');
-      return;
-    }
-    await _pairing.sendTurn(payload);
-  }
-
-  void _handleIncomingTurn(LocalTurnPayload payload) {
-    if (payload['kind'] != 'pictionary') return;
-    final turnKind = payload['turnKind'];
-    if (turnKind == 'drawingRevealed') {
-      final strokesRaw = payload['strokes'];
-      if (strokesRaw is! List) return;
-      final strokes = <Stroke>[];
-      for (final s in strokesRaw) {
-        final decoded = decodeStroke(s);
-        if (decoded == null) return;
-        strokes.add(decoded);
-      }
-      if (mounted) {
-        setState(() {
-          _revealedStrokes = strokes;
-          _lastGuessText = null;
-          _lastGuessWasWrong = false;
-        });
-      }
-      return;
-    }
-    if (turnKind == 'guessSubmitted') {
-      final guessText = payload['guessText'];
-      if (guessText is! String) return;
-      final pictionary = _pictionary;
-      if (pictionary == null) return;
-      final result = guessDrawing(pictionary, _mySide == Side.a ? Side.b : Side.a, guessText);
-      if (!result.ok || result.state == null) return;
-      final newState = result.state!;
-      final correct = result.correct ?? false;
-      setState(() {
-        _pictionary = newState;
-        _lastGuessText = guessText;
-        _lastGuessWasWrong = !correct;
-      });
-      unawaited(_send(encodeGuessResult(
-        rounds: correct ? _rounds + 1 : _rounds, drawerCode: encodeSide(_drawer),
-        solved: correct, correct: correct, word: _myWord ?? '')));
-      if (correct) {
-        // I was the drawer; I become the guesser next round.
-        setState(() {
-          _rounds += 1;
-          _drawer = _mySide == Side.a ? Side.b : Side.a;
-          _revealedStrokes = const [];
-          _celebrated = false;
-        });
-      }
-      return;
-    }
-    if (turnKind == 'guessResult') {
-      final solved = payload['solved'] == true;
-      final correct = payload['lastGuessCorrect'] == true;
-      if (mounted) {
-        setState(() {
-          _awaitingResult = false;
-          _lastGuessWasWrong = !correct;
-          if (solved) {
-            _rounds += 1;
-            _drawer = _mySide; // I was the guesser and got it right; I draw next round.
-            _revealedStrokes = const [];
-            _celebrated = false;
-          }
-        });
-        if (solved && _mySide == _drawer) _drawNewWord();
-      }
-    }
   }
 
   @override
   void dispose() {
-    unawaited(_turnSub?.cancel());
     _guessController.dispose();
+    _game.removeListener(_onPairingChanged);
+    _session.removeListener(_onPairingChanged);
+    _session.dispose();
+    _game.dispose();
+    _transport.dispose();
     _pairing.removeListener(_onPairingChanged);
     _pairing.dispose();
     super.dispose();
@@ -359,29 +173,35 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
       if (_pairing.phase == PairingPhase.error) {
         body = _MessageView(message: _pairing.errorMessage ?? "Can't play locally right now.",
           icon: Icons.error_outline);
-      } else if (_pairing.phase == PairingPhase.found || _hasStarted) {
-        _startIfNeeded();
-        body = PictionaryView(
-          phase: _phase, isDrawer: _mySide == _drawer, word: _myWord, canvas: _canvas, liveStroke: _liveStroke,
-          revealedStrokes: _revealedStrokes, rounds: _rounds, peerName: _pairing.peer?.name ?? 'the other side',
-          lastGuessWasWrong: _lastGuessWasWrong, lastGuessText: _lastGuessText, celebrated: _celebrated,
-          guessController: _guessController,
-          onPanStart: _onPanStart, onPanUpdate: _onPanUpdate, onPanEnd: _onPanEnd,
-          onShowThem: _showThem, onSubmitGuess: _submitGuess,
-          onCelebrate: () => setState(() => _celebrated = true),
-        );
+      } else if (_session.endedForGood) {
+        body = PlaySessionNotice(kind: PlayNoticeKind.ended, onLeave: () => Navigator.of(context).maybePop());
+      } else if (_game.started) {
+        // The game stays on screen while the other device is away, with one calm line above it.
+        body = Column(mainAxisSize: MainAxisSize.min, children: [
+          PlayAwayBanner(session: _session),
+          PictionaryView(
+            phase: _phase, isDrawer: _game.iAmDrawer, word: _game.word, canvas: _game.canvas, liveStroke: _liveStroke,
+            revealedStrokes: _game.shownStrokes, rounds: 0, peerName: 'the other side',
+            lastGuessWasWrong: _game.lastGuessWasWrong, lastGuessText: _game.lastGuessText, celebrated: _celebrated,
+            guessController: _guessController,
+            onPanStart: _onPanStart, onPanUpdate: _onPanUpdate, onPanEnd: _onPanEnd,
+            onShowThem: _showThem, onSubmitGuess: _submitGuess,
+            onCelebrate: () => setState(() => _celebrated = true),
+          ),
+        ]);
+      } else if (_session.hasMetPeer && _session.notice != PlayNoticeKind.none) {
+        body = PlaySessionNotice(kind: _session.notice);
       } else {
         body = switch (_pairing.phase) {
           PairingPhase.searching => const _Status(message: 'Looking nearby…'),
-          PairingPhase.peerLost =>
-            _MessageView(message: _pairing.errorMessage!, icon: Icons.wifi_off_outlined),
-          PairingPhase.found => throw StateError('handled above'),
+          PairingPhase.peerLost => const PlaySessionNotice(kind: PlayNoticeKind.away),
+          PairingPhase.found => const _Status(message: 'Looking nearby…'),
           PairingPhase.error => throw StateError('handled above'),
         };
       }
       final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
-      return Scaffold(
-        appBar: AppBar(title: const Text('Draw & guess')),
+      return PlayConfirmOverlay(pairing: _pairing, child: Scaffold(
+        appBar: AppBar(title: const Text('Draw & guess'), actions: [PlayFinishButton(session: _session)]),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own
         // build() for why: real-device testing at foldTabletop's ~420dp
         // height overflowed there. Same child_home.dart/care_note.dart
@@ -390,7 +210,7 @@ class _GamePictionaryScreenState extends State<GamePictionaryScreen> {
           padding: EdgeInsets.all(outerPad),
           child: Center(child: body),
         )),
-      );
+      ));
     });
   }
 }
@@ -445,8 +265,6 @@ class PictionaryView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Text('Round ${rounds + 1}', style: theme.textTheme.bodyMedium),
-      const SizedBox(height: 8),
       LiveLine(child: Text(_headline(), style: theme.textTheme.titleMedium, textAlign: TextAlign.center)),
       if (isDrawer && word != null) ...[
         const SizedBox(height: 8),

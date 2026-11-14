@@ -16,6 +16,12 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Play wiring
+- **Admission wired into play.** Every Play together session is encrypted and authenticated from the paired credentials; the grown-up's confirmation card shows on the grown-up's device on a first connection and a child device never asks; a never-paired device cannot play (calm line, nothing opened). War, Connect 4 and Uno run on it.
+- **Remaining games on the shared contract.** Draw and guess, Puzzle together and Twenty Questions moved onto `PlayGameSpec`/`PlaySessionController`; the picture game declares its own message cap (`maxMessageBytes`, at most one encrypted frame).
+- **Checkers join token in the header.** The networked-checkers client offers `olive.v1, <token>` in `Sec-WebSocket-Protocol`; no token in the URL.
+- **Seeds stay home.** Seeded deals are for tests only; `seed`/`rngSeed`/`rng`/`seedForTest` are refused on send and receive in every game; the dealer defaults to `Random.secure()`.
+
 ### Small wins batch
 - **Play notices in two voices (owner decision: softer words for kids, normal words for the adult side).** `play_notice.dart` now has `PlayWords.child` and `PlayWords.adult` (same semantics, different words) chosen by `PlayAudienceScope`, which the guardian shell sets to adult and which defaults to the child's; never from peer data. Child: soft and short, no digits, names, blame, error words or pressure, a no is never told. Adult: plain and direct (Accept / Decline, Resume, out of range, saved). Full table in MASTERFILE §5.23.2. The child's saved-game line is 'Your Uno game is still here.' because 'waiting' trips the banned pressure word 'wait'. Tests for both voices in `play_notice_test.dart`.
 - **Expense rules (migration 0045).** A family with exactly one live guardian lets that guardian accept their own proposed expense; the `expense_event` row records the actor and an explicit `self_accept` marker (disputing your own stays refused; a family with 2+ guardians keeps proposer-cannot-accept). `disputed` to `accepted` is now legal and recorded. Reimbursing an unaccepted expense is still 409 `invalid_transition`. Tests in `server/test/expenses_route.test.mjs` (route and trigger levels). The migration runs as the unprivileged app_owner (verified with `tools/test/migrate_nonsuper.test.mjs`).
