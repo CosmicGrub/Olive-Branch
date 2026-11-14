@@ -26,6 +26,12 @@ Widget _host(AppLockController c, {Widget? child}) => MaterialApp(
       home: AppLockGuard(controller: c, child: child ?? const Scaffold(body: Text('family screens', key: Key('inside')))),
     );
 
+// The real app mounts the guard in MaterialApp.builder, above the Navigator and any Overlay (guardian_boot.dart).
+Widget _hostAbove(AppLockController c) => MaterialApp(
+      builder: (BuildContext context, Widget? child) => AppLockGuard(controller: c, child: child!),
+      home: const Scaffold(body: Text('family screens', key: Key('inside'))),
+    );
+
 Future<void> _type(WidgetTester tester, String pin) async {
   await tester.enterText(find.byKey(const Key('appLockPinField')), pin);
   await tester.tap(find.byKey(const Key('appLockOpen')));
@@ -34,6 +40,18 @@ Future<void> _type(WidgetTester tester, String pin) async {
 }
 
 void main() {
+  testWidgets('the PIN field works when the guard sits above the Navigator (a tap must not throw)', (tester) async {
+    final AppLockController c = await _controller(tester);
+    await tester.pumpWidget(_hostAbove(c));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('appLockPinField')));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.enterText(find.byKey(const Key('appLockPinField')), '4829');
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
   group('prefs', () {
     test('round trip and unreadable data fall back to the SAFE default', () {
       const AppLockPrefs p = AppLockPrefs(lockOnLeave: false, delay: AppLockDelay.fiveMinutes, hideRecents: false);
