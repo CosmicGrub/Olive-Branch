@@ -16,6 +16,12 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Wave 8: child games parity (offline)
+- **Three in a row** opens on *How shall we play?*: Easy, Normal, Hard (never loses) or take turns with a friend on one screen; the end banner is a heart, not a trophy.
+- **Memory pairs** (new): 3 / 4 / 6 / 8 pairs by age, calm flip-back (longer with reduced motion), no timer, count or score. **War against the game** (new): a CPU seat on one screen, same cards as the two-device War. **Guess the word** on her own (new): per-band word bank with a hint and a fading flower instead of hearts.
+- All three sit under *On your own* at ages 3, 5 and 6 (`soloGameMinAge`); the guardian hub does not list them. Early ages kept, no minimum-age rule added; the shared game contract and play transport untouched.
+- Tests `game_solo_logic_test.dart`, `game_wave8_screens_test.dart`; parity matrix rows 295, 297, 298 built, 294 and 299 partial; MASTERFILE section 8.22.8. Not built: *the game draws* reveal, Connect 4 same-screen two-player, speak-the-hint.
+
 ### Wave 7: local suites parity (offline)
 - **Her suites (`g-suites`).** One page under *Settings → Her* lists Rhythm, Voice, Growing, Care, Village and Compass with an *On her shelf* or *Off* chip and the suite's own switch (shared with the Compass shelf and each suite page); Compass is guardian-only so its chip says *For you*. Honest tag: the suites live on this device, so each row says *Kept on this device* and sending to a second device waits for a later update.
 - **Voice feelings check-in.** A guardian switch (default on). Off removes only *The sky in me* from her side; the worry box is untouched and no guardian can read her weather.

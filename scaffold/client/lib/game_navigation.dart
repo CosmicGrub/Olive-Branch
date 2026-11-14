@@ -62,8 +62,8 @@ void Function(BuildContext context, GameKind kind) buildGameNavigator(String chi
       case GameKind.tictactoe:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
           builder: (_) => parentName == null
-            ? GameTicTacToe(childName: childName)
-            : GameTicTacToe(childName: childName, parentName: parentName)));
+            ? GameTicTacToe(childName: childName, showSetup: true)
+            : GameTicTacToe(childName: childName, parentName: parentName, showSetup: true)));
       case GameKind.dotsboxes:
         Navigator.of(playContext).push(MaterialPageRoute<void>(
           builder: (_) => parentName == null

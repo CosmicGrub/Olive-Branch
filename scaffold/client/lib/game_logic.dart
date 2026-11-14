@@ -272,6 +272,17 @@ const Map<String, int> localPlayMinAge = {
   'uno': 6,
 };
 
+/// Minimum ages for the games she plays on her own, against the game (wave 8, prototype k.play): Memory pairs,
+/// War against the game, and Guess the word with a built-in word. Kept apart from [hubGameMinAge] (which
+/// parental_controls_screen.dart pins to its own eight) and [localPlayMinAge] (two devices). The early ages stay:
+/// Memory starts at 3 with three pairs and grows with her; reading games keep 6, the same floor Guess the word
+/// has always had.
+const Map<String, int> soloGameMinAge = {
+  'memoryPairs': 3,
+  'warSolo': 5,
+  'wordGame': 6,
+};
+
 // ------------------------------------------------------------ handicap -----
 
 /// Refusal reasons a caller can act on. Mirrors games.ts's `setHandicap`
