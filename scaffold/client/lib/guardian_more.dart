@@ -1194,6 +1194,9 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, ConnectedDevicesScreen(
               kids: LocalStorePairedKidsRepository(
                 LocalServices.current.area('pairedkids', ownerId: kLocalGuardianScope)),
+              trust: TrustBook(LocalStoreTrustRepository(
+                LocalServices.current.area('trust', ownerId: kLocalGuardianScope))),
+              pin: GuardianLocalScope.maybeOf(context)?.services.pin,
               childName: childName))),
           // Connect a child's device on the SAME network, no account or connection needed: you type your PIN here,
           // pick your name on her device and type it there (a key exchange; the PIN is never sent), then say yes.
