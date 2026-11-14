@@ -33,6 +33,8 @@ import 'game_uno.dart';
 import 'game_war.dart';
 import 'game_kim.dart';
 import 'game_logic.dart';
+import 'game_memory.dart';
+import 'game_war_solo.dart';
 import 'grownup_labels.dart' show GrownupLabelScope;
 import 'game_story.dart';
 import 'game_wordsearch.dart';
@@ -89,6 +91,13 @@ class MoreGamesSections extends StatelessWidget {
       );
 
   bool _localVisible(String key) => childAge >= (localPlayMinAge[key] ?? 0);
+
+  // Her own games against the game (wave 8): the grown-up's pause and hide switches reach them through the same
+  // 'game:<key>' override the other hub games use.
+  bool _soloVisible(String key) => effectiveVisibility(
+        overrides: overrides, activityKey: 'game:$key', childAge: childAge,
+        defaultMinAge: soloGameMinAge[key] ?? 0,
+      );
 
   // Child-voice wording (C-13, C-12): short, second person, no grown-up
   // planning language, and honest about WHO she plays against. The board
@@ -172,6 +181,18 @@ class MoreGamesSections extends StatelessWidget {
           onTap: () => _open(context, GamePuzzleScreen(role: localRole, displayName: localName))),
     ]),
     HubSection(title: 'On your own', children: [
+      if (!guardianSide && _soloVisible('memoryPairs'))
+        HubTile(readAloud: true, icon: Icons.grid_view_rounded, title: 'Memory pairs',
+          subtitle: 'Turn two over and find the match',
+          onTap: () => _open(context, GameMemoryPairs(childAge: childAge))),
+      if (!guardianSide && _soloVisible('warSolo'))
+        HubTile(readAloud: true, icon: Icons.style_outlined, title: 'War against the game',
+          subtitle: 'Flip a card, the biggest card wins',
+          onTap: () => _open(context, const GameWarVsGame(peerName: 'the game'))),
+      if (!guardianSide && _soloVisible('wordGame') && _hubGameVisible('hangman'))
+        HubTile(readAloud: true, icon: Icons.abc, title: 'Guess the word',
+          subtitle: 'Find the hidden word, letter by letter',
+          onTap: () => _open(context, GuessTheWordSolo(childName: childName, childAge: childAge))),
       if (isTileVisible(overrides, 'game:findthing'))
         HubTile(readAloud: !guardianSide, icon: Icons.zoom_in, title: 'Find the thing',
           subtitle: 'Spot things in a busy picture',

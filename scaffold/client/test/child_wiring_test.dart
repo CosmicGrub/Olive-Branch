@@ -308,7 +308,10 @@ void main() {
       addTearDown(() => t.binding.setSurfaceSize(null));
       await t.pumpWidget(wrap(const GamesHubScreen(parentName: neutralGrownUp)));
       expect(find.text('Word search'), findsNothing);
-      expect(find.text('Guess the word'), findsNothing);
+      // Wave 8: she has her OWN Guess the word (a built-in word, no grown-up typing); what stays off her shell
+      // is the guardian's setup tile, the one where an adult chooses the word.
+      expect(find.text('Choose a word for them to guess'), findsNothing);
+      expect(find.textContaining('Choose a word for'), findsNothing);
       // ...but the rest of the hub is intact.
       expect(find.text('Checkers'), findsOneWidget);
     });
