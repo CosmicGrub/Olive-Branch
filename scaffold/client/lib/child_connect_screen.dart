@@ -5,15 +5,17 @@
 //
 // The child sees the adult-gate card (a grown-up and a phone, "A grown-up does this") and nothing else: no
 // keypad, no code field, no counts, no error words. A grown-up taps "I'm the grown-up" and chooses, in order:
-//   1. one of the open windows nearby, shown as a nameless picture tile (no names travel on the network), then
-//      types THEIR PIN on the adult-only keypad. The PIN is the key-exchange secret; it is never sent.
+//   1. one of the open windows nearby, shown as a nameless picture tile (the network carries no name, only a
+//      neutral "Player one/Player two" seat and a random handle), then types THEIR PIN on the adult-only keypad.
+//      The PIN is the key-exchange secret; it is never sent.
 //   2. or looks at the grown-up's lasting pairing picture with the camera, or shows this device's own picture for
 //      the grown-up's phone to scan. A scan is only an introduction: the PIN, the open window, the picture Match
 //      and the grown-up's Yes still decide everything.
 //   3. the older account code path, when a connection exists (the existing PairingRedeemScreen).
 // When the grown-up's phone has proved it knows the PIN, this screen shows three pictures and a colour (no words,
 // no name) for the grown-up to pick on the phone, then waits for the one-tap yes there. A wrong PIN, another
-// family's window or picture, a refusal or a timeout all look the same to the child: one calm picture, no words.
+// family's window or picture, a refusal, a timeout or a camera that will not start all end at the same calm card
+// (CalmTryAgainCard): no number, no count, no reason.
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -186,7 +188,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     final Uint8List? tag = w.tag;
     final Uint8List? salt = _adultPic?.salt ?? _ownPic?.salt;
     if (tag == null || salt == null || _chosen != null) return;
-    if (!await tagMatches(salt, w.sid, tag)) return;
+    if (!await tagMatches(salt, (w.handle ?? w.sid)!, tag)) return;
     if (!mounted || _chosen != null) return;
     if (_adultPic != null) _pinnedFp = await _adultPic!.fingerprint();
     if (!mounted) return;
@@ -244,6 +246,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     );
     final PairingResult r = await client.pair(
       sid: target.sid,
+      handle: target.handle,
       password: password,
       viaQr: viaQr,
       expectedAdultFingerprint: fp ?? _pinnedFp,
@@ -354,18 +357,8 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       case _Stage.working:
         return _frame(_working());
       case _Stage.tryAgain:
-        // One neutral picture for every failure: no sentence, no number, no count, nothing to read.
-        return _frame(Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-          const OliveBranchMark(size: 96),
-          const SizedBox(height: 12),
-          const Icon(Icons.refresh_rounded, key: Key('childConnectTryAgain'), size: 48, color: KioskLockColors.secondaryText),
-          const SizedBox(height: 20),
-          IconButton(
-              key: const Key('childConnectBack'),
-              iconSize: 36,
-              onPressed: () => setState(() { _reset(); _stage = _Stage.card; }),
-              icon: const Icon(Icons.check_rounded, color: KioskLockColors.secondaryText)),
-        ]));
+        // One calm card for every failure (the shared CalmTryAgainCard): no number, no count, no reason.
+        return CalmTryAgainCard(onOk: () => setState(() { _reset(); _stage = _Stage.card; }));
       case _Stage.options:
         return _frame(_options());
     }
@@ -411,7 +404,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
             InkResponse(
               key: Key('childConnectPick_${w.key}'),
               onTap: () => setState(() { _chosen = w; _pinnedFp = null; _stage = _Stage.keypad; }),
-              child: Padding(padding: const EdgeInsets.all(8), child: GlyphTile(glyph: windowGlyph(w.sid), size: 88)),
+              child: Padding(padding: const EdgeInsets.all(8), child: GlyphTile(glyph: windowGlyph((w.handle ?? w.sid)!), size: 88)),
             ),
         ]),
       const SizedBox(height: 12),

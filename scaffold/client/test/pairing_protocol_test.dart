@@ -245,4 +245,213 @@ void main() {
     expect(await w.handle(<String, dynamic>{'t': 'confirm', 'sid': b64(w.sid)}), isNull);
     expect(w.attemptsLeft, 5);
   });
+
+  group('discovery handle: the child finds a window without the session id or the adult name in the advertisement', () {
+    test('the handle is random per window and is not the session id; the label is a neutral seat name, not the adult name', () async {
+      final DeviceKey ak = await _key();
+      final AdultWindow a = await _window(ak, name: 'Margaret'), b = await _window(ak, name: 'Margaret');
+      expect(a.discoveryHandle.length, 16);
+      expect(a.discoveryHandle, isNot(a.sid));
+      expect(a.discoveryHandle, isNot(b.discoveryHandle));
+      expect(a.label, isIn(<String>['Player one', 'Player two']));
+      expect(a.label, windowSeatLabel(a.discoveryHandle));
+      expect(a.label.toLowerCase(), isNot(contains('mar')));
+    });
+
+    test('a full pairing that starts from the handle alone: the session id arrives in the hello answer', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      w.addListener(() async {
+        if (w.state == WindowState.awaitingApproval) await w.approve();
+      });
+      final List<Map<String, dynamic>> log = <Map<String, dynamic>>[];
+      final PairingResult r =
+          await _client(ck, LoopbackPairingTransport(w, log: log)).pair(handle: w.discoveryHandle, password: '4829');
+      expect(r.ok, isTrue, reason: '${r.failure}');
+      expect(log.first['t'], 'hello');
+      expect(log.first.containsKey('sid'), isFalse, reason: 'the first message names the window by its handle only');
+      expect(log.first['h'], b64(w.discoveryHandle));
+    });
+
+    test('a wrong handle gets silence and costs the window nothing', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      final PairingResult r = await _client(ck, LoopbackPairingTransport(w))
+          .pair(handle: Uint8List.fromList(List<int>.filled(16, 7)), password: '4829');
+      expect(r.failure, PairingFailure.unreachable);
+      expect(w.attemptsLeft, 5);
+    });
+
+    test('the handle works only for the hello: every later message still needs the session id', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      final Map<String, dynamic>? p = await w.handle(
+          <String, dynamic>{'t': 'pake1', 'h': b64(w.discoveryHandle), 'cpk': b64(ck.publicKey), 'Yc': b64(ck.publicKey)});
+      expect(p, isNull);
+    });
+
+    test('asking for neither a sid nor a handle is a programming error, not a network call', () async {
+      final DeviceKey ck = await _key();
+      final AdultWindow w = await _window(await _key());
+      await expectLater(_client(ck, LoopbackPairingTransport(w)).pair(password: '4829'), throwsArgumentError);
+    });
+
+    test('a hello answer with a session id of the wrong size is refused', () async {
+      final DeviceKey ck = await _key();
+      final PairingResult r = await _client(ck, _FixedTransport(<String, dynamic>{
+        't': 'hello-ok', 'sid': b64(<int>[1, 2, 3]), 'afp': 'x', 'apk': 'x', 'an': 'Mom', 'fid': 'f',
+      })).pair(handle: Uint8List(16), password: '4829');
+      expect(r.ok, isFalse);
+      expect(r.failure, PairingFailure.malformed);
+    });
+  });
+
+  group('per-source attempt budget on the adult window', () {
+    test('one source cannot burn the window: three failed confirmations and it is ignored; the window keeps two', () async {
+      final DeviceKey ak = await _key(), ck = await _key(), ck2 = await _key();
+      final AdultWindow w = await _window(ak);
+      w.addListener(() async {
+        if (w.state == WindowState.awaitingApproval) await w.approve();
+      });
+      for (int i = 1; i <= kSourceMaxFailures; i++) {
+        final PairingResult r = await _client(ck, LoopbackPairingTransport(w, source: 'burner')).pair(sid: w.sid, password: '0000');
+        expect(r.failure, PairingFailure.notMatched);
+        expect(w.attemptsLeft, 5 - i);
+      }
+      // The burner now gets silence on every message, and the window is still open with its remaining tries.
+      final PairingResult more = await _client(ck, LoopbackPairingTransport(w, source: 'burner')).pair(sid: w.sid, password: '0000');
+      expect(more.failure, PairingFailure.unreachable);
+      expect(w.attemptsLeft, 5 - kSourceMaxFailures);
+      expect(w.isOpen, isTrue);
+      // Even the burner holding the RIGHT PIN is ignored (a quiet block, not a hint about the PIN).
+      final PairingResult right = await _client(ck, LoopbackPairingTransport(w, source: 'burner')).pair(sid: w.sid, password: '4829');
+      expect(right.failure, PairingFailure.unreachable);
+      // A different source, the real child, still pairs.
+      final PairingResult real = await _client(ck2, LoopbackPairingTransport(w, source: 'child')).pair(sid: w.sid, password: '4829');
+      expect(real.ok, isTrue, reason: '${real.failure}');
+    });
+
+    test('the budget never makes the window easier to guess: the shared five still end it', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      for (int i = 0; i < 5; i++) {
+        await _client(ck, LoopbackPairingTransport(w, source: 'src-${i ~/ 2}')).pair(sid: w.sid, password: '0000');
+      }
+      expect(w.isOpen, isFalse);
+    });
+
+    test('hello and pake1 are capped per source too, and other sources are unaffected', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      Future<Map<String, dynamic>?> hello(String src) =>
+          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+      for (int i = 0; i < kSourceMaxHello; i++) {
+        expect(await hello('spam'), isNotNull);
+      }
+      expect(await hello('spam'), isNull, reason: 'over its hello budget');
+      expect(await hello('other'), isNotNull);
+
+      Future<Map<String, dynamic>?> pake1(String src) => w.handle(<String, dynamic>{
+            't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin',
+            'Yc': b64(Uint8List.fromList(List<int>.generate(32, (int i) => (i * 7 + 3) & 0xff))),
+          }, source: src);
+      // Only one claim is in flight at a time (a second one is dropped without being counted), so the claim is
+      // cleared between tries the way "Make a new code" does; the budget then bounds how often one source may start.
+      for (int i = 0; i < kSourceMaxPake1; i++) {
+        expect(await pake1('p1'), isNotNull);
+        w.refreshAdultPicture(Uint8List(16));
+      }
+      expect(await pake1('p1'), isNull, reason: 'over its pake1 budget');
+      expect(await pake1('p2'), isNotNull, reason: 'another source is not starved by it');
+      expect(w.attemptsLeft, 5, reason: 'none of this touched the failure count');
+    });
+
+    test('a source with no address (the in-process path) is never limited', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      for (int i = 0; i < kSourceMaxHello + 5; i++) {
+        expect(await w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}), isNotNull);
+      }
+    });
+
+    test('the table of sources is bounded, and a flood of free hellos never starves a new legitimate source', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      Future<Map<String, dynamic>?> hello(String src) =>
+          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+      for (int i = 0; i < kMaxTrackedSources * 3; i++) {
+        expect(await hello('s$i'), isNotNull, reason: 'source $i is never refused for want of room');
+      }
+      expect(await hello('the-real-child'), isNotNull);
+      expect(w.trackedSourceCount, lessThanOrEqualTo(kMaxTrackedSources), reason: 'memory stays bounded');
+    });
+
+    test('a source that has failed a confirmation keeps its block through any flood of new sources', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      for (int i = 0; i < kSourceMaxFailures; i++) {
+        await _client(ck, LoopbackPairingTransport(w, source: 'burner')).pair(sid: w.sid, password: '0000');
+      }
+      Future<Map<String, dynamic>?> hello(String src) =>
+          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+      for (int i = 0; i < kMaxTrackedSources * 3; i++) {
+        await hello('flood$i');
+      }
+      expect(await hello('burner'), isNull, reason: 'a flood cannot wash the burner back to a clean slate');
+    });
+
+    test('least-recently-used goes first: an active source keeps its budget while idle ones are dropped', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      Future<Map<String, dynamic>?> hello(String src) =>
+          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+      for (int i = 0; i < kSourceMaxHello; i++) {
+        await hello('active');
+      }
+      expect(await hello('active'), isNull);
+      for (int i = 0; i < kMaxTrackedSources * 2; i++) {
+        await hello('idle$i');
+        await hello('active'); // keeps touching it
+      }
+      expect(await hello('active'), isNull, reason: 'still over budget: it was never the eviction victim');
+    });
+
+    test('two addresses of one dual-stack host cannot, together, burn more than the window cap leaves the real child', () async {
+      expect(kSourceMaxFailures * 2, lessThan(kWindowMaxAttempts), reason: 'v4 + v6 budgets must sum below the cap');
+      final DeviceKey ak = await _key(), ck = await _key(), ck2 = await _key();
+      final AdultWindow w = await _window(ak);
+      w.addListener(() async {
+        if (w.state == WindowState.awaitingApproval) await w.approve();
+      });
+      for (final String src in <String>['host-v4', 'host-v6']) {
+        for (int i = 0; i < kSourceMaxFailures + 2; i++) {
+          await _client(ck, LoopbackPairingTransport(w, source: src)).pair(sid: w.sid, password: '0000');
+        }
+      }
+      expect(w.isOpen, isTrue);
+      expect(w.attemptsLeft, greaterThanOrEqualTo(1));
+      final PairingResult real = await _client(ck2, LoopbackPairingTransport(w, source: 'child')).pair(sid: w.sid, password: '4829');
+      expect(real.ok, isTrue, reason: '${real.failure}');
+    });
+
+    test('a blocked source costs the child nothing visible: the result is the same quiet "unreachable"', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      for (int i = 0; i < kSourceMaxFailures; i++) {
+        await _client(ck, LoopbackPairingTransport(w, source: 'b')).pair(sid: w.sid, password: '0000');
+      }
+      final List<Map<String, dynamic>> log = <Map<String, dynamic>>[];
+      final PairingResult r = await _client(ck, LoopbackPairingTransport(w, source: 'b', log: log)).pair(sid: w.sid, password: '0000');
+      expect(r.failure, PairingFailure.unreachable);
+      expect(log.length, 1, reason: 'it never got past the first message');
+    });
+  });
+}
+
+/// Answers every message with one canned map.
+class _FixedTransport implements PairingTransport {
+  _FixedTransport(this.answer);
+  final Map<String, dynamic> answer;
+  @override
+  Future<Map<String, dynamic>?> send(Map<String, dynamic> message) async => answer;
 }

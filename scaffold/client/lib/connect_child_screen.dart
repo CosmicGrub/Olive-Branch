@@ -304,8 +304,8 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
         Text('Open a short window for ${widget.childName}\'s device',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text('Type your PIN here. Then, on her device, tap "A grown-up does this", pick your name and '
-            'type the same PIN. Your PIN is never sent between the devices.'),
+        const Text('Type your PIN here. Then, on her device, tap "A grown-up does this", pick the letters this phone '
+            'will show, and type the same PIN. Your PIN is never sent between the devices.'),
         const SizedBox(height: 16),
         TextField(
           key: const Key('connectPinField'),
@@ -447,7 +447,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       picture: (double size) {
         if (_myPicture != null) return KeyedSubtree(key: const Key('connectPictureQr'), child: PictureTile(data: _myPicture!.payload, size: size));
         if (legacy) return KeyedSubtree(key: const Key('connectQr'), child: PictureTile(data: _qr!, size: size));
-        return KeyedSubtree(key: const Key('connectGlyph'), child: GlyphTile(glyph: windowGlyph(w.sid), size: size * 0.5));
+        return KeyedSubtree(key: const Key('connectGlyph'), child: GlyphTile(glyph: windowGlyph(w.discoveryHandle), size: size * 0.5));
       },
       steps: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text("Waiting for ${widget.childName}'s device", key: const Key('connectWaiting'), style: Theme.of(context).textTheme.titleLarge),

@@ -131,7 +131,9 @@ Future<FamilyCheck> checkFamily(PairingPicture pic, List<int>? familyKey) async 
 }
 
 /// The window-recognition tag: the first 8 bytes of HMAC-SHA256(key = the addressed device's salt,
-/// message = "olive-rdv/1" || sid). Only a device that holds (scanned or owns) the salt can tell it is for it.
+/// message = "olive-rdv/1" || the window's discovery handle). The advertisement carries the random handle, never the
+/// session id (the parameter is still called sid; the handle is what callers pass). Only a device that holds
+/// (scanned or owns) the salt can tell it is for it.
 Future<Uint8List> rendezvousTag(List<int> salt, List<int> sid) async {
   final Mac m = await Hmac.sha256().calculateMac(<int>[...utf8.encode('olive-rdv/1'), ...sid], secretKey: SecretKey(salt));
   return Uint8List.fromList(m.bytes.sublist(0, kPictureTagBytes));
@@ -185,6 +187,8 @@ class WindowGlyph {
   String toString() => '$colour:$picture';
 }
 
+/// The picture a window shows on its tile, derived from the window's discovery handle (what the advertisement
+/// carries; the session id never leaves the window before the first answer). The parameter keeps its old name.
 WindowGlyph windowGlyph(List<int> sid) => WindowGlyph(kSasPictures[sid[0] & 15], sid[1] % 6);
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -19,7 +19,7 @@ Answer: the persistent QR is a **pairing picture**: a public, non-secret, revoca
 | J2 | PAKE password is always the adult-set PIN (`m:'pin'`). | Designs 1 and 3 | Door card's "public constant password in card mode" with commit-before-reveal. It removes the PIN from authentication, needs new reordered crypto on top of D2's unreviewed PAKE, and leaves a 21-bit picture check as the only barrier. Contradicts "PIN is primary". Its "Extra careful" mode becomes the NORMAL mode here. |
 | J3 | Payload `olive://id/1?r&k&s&e[&f]`. | Design 3 | Design 1's plain stable instance id `i` in every code (links an adult to a child device and tracks a family across refreshes). Replaced by the blinded optional tag `f` (J12). Door card's separate `door`/`hello` hosts: one scheme with `r` is simpler and the parser is shared. |
 | J4 | Rotation ("Make a new code") regenerates `rs`, bumps `e`. The device KEY is never rotated by this feature. | Design 3 | Key rotation: breaks existing certs. Auto-rotation by a failed stranger (Design 1): lets a bystander break a parent's printed copies. A miss closes the window, locks adding and offers one-tap "Make a new code"; the adult decides (Door card D-5). |
-| J5 | Rendezvous by a salted per-window tag in mDNS TXT: `{v:1, w:sid, t:tag}`; instance name is the seat label. No names, no sid fragment in the name, no address in the QR. | Designs 1 and 3 | Rotating time-slot tags (Design 1: clock-skew handling, needs the same clock on both). The per-window `sid` already gives freshness. |
+| J5 | Rendezvous by a salted per-window tag in mDNS TXT: `{v:1, h:handle, t:tag}` (`h` is a random per-window handle, NOT the session id; reconciled with the pairing leak fixes, PR 196); instance name is the seat label. No names, no sid fragment in the name, no address in the QR. | Designs 1 and 3 | Rotating time-slot tags (Design 1: clock-skew handling, needs the same clock on both). The per-window `sid` already gives freshness. |
 | J6 | Both directions plus both-scanned, none mandatory: A adult shows, B child shows, A+B, and N (no picture, always available). | Design 3 | Door card's rule that Mode B must always pin. Not needed once J2 holds. |
 | J7 | `hs` Ed25519 proof in `hello` (Mode B, A+B) checked before any attempt is counted. | Existing code | Skipping it: lets a photographer of a child picture burn the 5 attempts. |
 | J8 | Match shows pictures only (no word) on both screens: 3 pictures of 64 plus a colour of 8 (about 21 bits), as the owner asked. The adult PICKS the matching set from 4 on the adult phone, plus "None of these". | Brainstorm, Door card D-4 | "They match" button alone: autopilot tapping is the main human weakness; the pick costs one tap. Keeping 16 bits (Design 3): the owner asked for 3 pictures + colour, and `Sas` currently reads only 2 bytes. Cost: `sas()` must derive 3 bytes from KDF(isk,'sas'); VERIFY whether `pake_vectors_test.dart`/`tools/pake_cpace.mjs` pin the SAS length (the PAKE messages themselves do not change). Bundle with the D2 review. |
@@ -60,8 +60,8 @@ mDNS while a window is open:
 | Service | `_olivepair._tcp` (reveals "an Olive window exists"; unavoidable, residual) |
 | Instance name | `Player one` (adult window) / `Player two`; VERIFY how Bonsoir renames duplicates |
 | TXT `v` | `1` |
-| TXT `w` | b64 `sid`, 16 random bytes per window |
-| TXT `t` | first 8 B of HMAC-SHA256(key=`rs` of the addressed peer, "olive-rdv/1"‖sid); 8 random bytes in Mode N |
+| TXT `h` | b64 random discovery handle, 16 bytes per window; never the session id (the session id comes back in the answer to the first message) |
+| TXT `t` | first 8 B of HMAC-SHA256(key=`rs` of the addressed peer, "olive-rdv/1"‖handle); 8 random bytes in Mode N |
 
 Handshake: `hello` gains optional `hs`. `hello-ok` currently returns `{afp, apk, an, fid}` and the adult name `an` is mixed into the PAKE channel id; both stay in v1 (the PAKE is untouched). Residual: in Mode N any LAN device that reads the public `sid` gets the adult name from hello-ok. Removing it (fixed label in the channel id, name moved into the sealed credential) changes the transcript, vectors and the D2 review scope, so it is bundled with the SAS change (Q4).
 
@@ -96,7 +96,7 @@ Adult                    Child (grown-up gate)    Child (gated, PIN typed on it)
  KEEP WATCH: see below.
 
 MODE A+B: both scanned, both pinned, tag from rs_c; outsiders can neither find the window nor burn attempts.
-MODE N (primary, no scan): TXT t random; child lists nameless glyph tiles from sid; adult screen shows the same
+MODE N (primary, no scan): TXT t random; child lists nameless glyph tiles from the handle; adult screen shows the same
         glyph large; adult taps the matching tile on the child; fingerprint check, PIN-PAKE, Match, Approve as above.
 MAKE A NEW CODE: PIN; new rs, e+1; pending claim dropped; old photos' tags never match; f stops verifying.
         Connected devices keep their certs. Forget/Stop/factory reset also rotate rs.

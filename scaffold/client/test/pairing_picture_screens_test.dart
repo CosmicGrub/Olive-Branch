@@ -154,8 +154,8 @@ void main() {
       expect(after.salt, isNot(before.salt));
       expect(after.publicKey, before.publicKey, reason: 'the device key is never rotated by this');
       final Uint8List tag = (await t.runAsync(() => a.opened!.windowTag()))!;
-      expect(await t.runAsync(() => tagMatches(before.salt, a.opened!.sid, tag)), isFalse, reason: 'the old photo finds nothing');
-      expect(await t.runAsync(() => tagMatches(after.salt, a.opened!.sid, tag)), isTrue);
+      expect(await t.runAsync(() => tagMatches(before.salt, a.opened!.discoveryHandle, tag)), isFalse, reason: 'the old photo finds nothing');
+      expect(await t.runAsync(() => tagMatches(after.salt, a.opened!.discoveryHandle, tag)), isTrue);
       expect((await t.runAsync(() => a.trust.repo.load()))!.history.map((HistoryEntry e) => e.kind), contains(HistoryKind.newCode));
     });
   });
@@ -309,8 +309,8 @@ void main() {
     testWidgets('open windows are nameless picture tiles; no name, no digits, no error words', (t) async {
       final _ChildRig rig = await pumpChild(t);
       final AdultWindow w1 = await window(t), w2 = await window(t);
-      rig.finder.emit(NearbyWindow(sid: w1.sid, host: 'x', port: 1));
-      rig.finder.emit(NearbyWindow(sid: w2.sid, host: 'y', port: 1));
+      rig.finder.emit(NearbyWindow(handle: w1.discoveryHandle, host: 'x', port: 1));
+      rig.finder.emit(NearbyWindow(handle: w2.discoveryHandle, host: 'y', port: 1));
       await _settle(t);
       expect(find.byType(GlyphTile), findsNWidgets(2));
       expect(find.textContaining('Mom'), findsNothing);
@@ -330,7 +330,9 @@ void main() {
       await _act(t, () async => rig.scan!(foreign.payload));
       await _settle(t);
       expect(find.byKey(const Key('childConnectTryAgain')), findsOneWidget);
-      expect(find.byType(Text), findsNothing, reason: 'the child reads nothing');
+      // The shared calm card (CalmTryAgainCard) is all the child reads: its one gentle line and OK. No reason, no
+      // family or picture word, no number.
+      expect(t.widgetList<Text>(find.byType(Text)).map((Text x) => x.data).toList(), <String?>['Your grown-up can try again', 'OK']);
       expect(find.byType(TextField), findsNothing);
     });
 
@@ -343,11 +345,11 @@ void main() {
       await _act(t, () async => rig.scan!(pic.payload));
       final AdultWindow other = await window(t), real = await window(t);
       final Uint8List wrongTag = (await t.runAsync(() => rendezvousTag(_b(16, 99), other.sid)))!;
-      final Uint8List rightTag = (await t.runAsync(() => rendezvousTag(pic.salt, real.sid)))!;
-      rig.finder.emit(NearbyWindow(sid: other.sid, host: 'x', port: 1, tag: wrongTag));
+      final Uint8List rightTag = (await t.runAsync(() => rendezvousTag(pic.salt, real.discoveryHandle)))!;
+      rig.finder.emit(NearbyWindow(handle: other.discoveryHandle, host: 'x', port: 1, tag: wrongTag));
       await _settle(t);
       expect(find.byKey(const Key('pinGateConfirm')), findsNothing, reason: 'a window the picture does not recognise is never chosen');
-      rig.finder.emit(NearbyWindow(sid: real.sid, host: 'y', port: 1, tag: rightTag));
+      rig.finder.emit(NearbyWindow(handle: real.discoveryHandle, host: 'y', port: 1, tag: rightTag));
       await _settle(t);
       expect(find.byKey(const Key('pinGateConfirm')), findsOneWidget);
     });
@@ -370,8 +372,8 @@ void main() {
       expect(p.role, PictureRole.child);
       expect(find.byType(Text), findsNothing, reason: 'the card has no words');
       final AdultWindow w = await window(t);
-      final Uint8List tag = (await t.runAsync(() => rendezvousTag(p.salt, w.sid)))!;
-      rig.finder.emit(NearbyWindow(sid: w.sid, host: 'x', port: 1, tag: tag));
+      final Uint8List tag = (await t.runAsync(() => rendezvousTag(p.salt, w.discoveryHandle)))!;
+      rig.finder.emit(NearbyWindow(handle: w.discoveryHandle, host: 'x', port: 1, tag: tag));
       await _settle(t);
       expect(find.byKey(const Key('pinGateConfirm')), findsOneWidget);
     });

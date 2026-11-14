@@ -77,8 +77,8 @@ void main() {
       final Uint8List oldSalt = _salt(1), newSalt = _salt(2);
       w.showAdultPicture(newSalt); // the adult refreshed; this window is addressed to the new salt
       final Uint8List advertised = await w.windowTag();
-      expect(await tagMatches(newSalt, w.sid, advertised), isTrue);
-      expect(await tagMatches(oldSalt, w.sid, advertised), isFalse, reason: 'the old photo recognises nothing');
+      expect(await tagMatches(newSalt, w.discoveryHandle, advertised), isTrue);
+      expect(await tagMatches(oldSalt, w.discoveryHandle, advertised), isFalse, reason: 'the old photo recognises nothing');
     });
   });
 
@@ -137,6 +137,23 @@ void main() {
       expect(await LoopbackPairingTransport(w).send(replay), isNull);
     });
 
+    test('found by the advertised handle (no session id known): the scanned child still pairs; a proof made for another id or window is refused', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak), other = await _window(ak);
+      w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
+      final LoopbackPairingTransport t = LoopbackPairingTransport(w);
+      Future<Map<String, dynamic>> byHandle(AdultWindow to, Uint8List signedOver) async => <String, dynamic>{
+            't': 'hello', 'h': b64(to.discoveryHandle), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(await signHello(ck, signedOver)),
+          };
+      // The child signs over the handle it addressed the window by; a proof over the session id, or over another
+      // window's handle, is not what a handle-addressed hello carries.
+      expect(await t.send(await byHandle(w, w.sid)), isNull);
+      expect(await t.send(await byHandle(w, other.discoveryHandle)), isNull);
+      expect(await t.send(await byHandle(w, w.discoveryHandle)), isNotNull);
+      _autoApprove(w);
+      expect((await _client(ck, t).pair(handle: w.discoveryHandle, password: '4829')).ok, isTrue);
+    });
+
     test('a tampered cpk or a signature over a different key is refused', () async {
       final DeviceKey ak = await _key(), ck = await _key(), other = await _key();
       final AdultWindow w = await _window(ak);
@@ -164,9 +181,9 @@ void main() {
       w.showAdultPicture(_salt(1));
       w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
       final Uint8List tag = await w.windowTag();
-      expect(await tagMatches(_salt(3), w.sid, tag), isTrue);
-      expect(await tagMatches(_salt(1), w.sid, tag), isFalse);
-      expect(await tagMatches(_salt(4), w.sid, tag), isFalse, reason: 'the child refreshed its picture; the old copy the adult scanned no longer matches the child');
+      expect(await tagMatches(_salt(3), w.discoveryHandle, tag), isTrue);
+      expect(await tagMatches(_salt(1), w.discoveryHandle, tag), isFalse);
+      expect(await tagMatches(_salt(4), w.discoveryHandle, tag), isFalse, reason: 'the child refreshed its picture; the old copy the adult scanned no longer matches the child');
     });
 
     test('a closed or expired window answers nothing, picture or not (no replay)', () async {
@@ -194,17 +211,18 @@ void main() {
   });
 
   group('nothing identifying is advertised', () {
-    test('the TXT record is exactly v, w and t, and no name, key, fingerprint or address is in it', () async {
+    test('the TXT record is exactly v, h and t, and no name, key, fingerprint, address or session id is in it', () async {
       final DeviceKey ak = await _key();
       final AdultWindow w = await _window(ak, name: 'Dana Whitfield');
-      final Map<String, String> txt = pairingTxt(w.sid, await w.windowTag());
-      expect(txt.keys.toSet(), <String>{'v', 'w', 't'});
+      final Map<String, String> txt = pairingTxt(w.discoveryHandle, await w.windowTag());
+      expect(txt.keys.toSet(), <String>{'v', 'h', 't'});
       expect(txt['v'], '1');
-      final String all = '${txt.values.join(' ')} ${pairingSeatLabel(w.sid)}';
+      final String all = '${txt.values.join(' ')} ${pairingSeatLabel(w.discoveryHandle)}';
       expect(all, isNot(contains('Dana')));
+      expect(all, isNot(contains(b64(w.sid))), reason: 'the session id is not advertised in any form');
       expect(all, isNot(contains(b64(ak.publicKey))));
       expect(all, isNot(contains(b64(ak.fingerprint))));
-      expect(<String>['Player one', 'Player two'], contains(pairingSeatLabel(w.sid)));
+      expect(<String>['Player one', 'Player two'], contains(pairingSeatLabel(w.discoveryHandle)));
     });
 
     test('with no picture the tag is random per window and stable within one; with a picture it is the HMAC', () async {
@@ -215,7 +233,8 @@ void main() {
       expect(a.hasPicture, isFalse);
       a.showAdultPicture(_salt(1));
       expect(a.hasPicture, isTrue);
-      expect(await a.windowTag(), await rendezvousTag(_salt(1), a.sid));
+      expect(await a.windowTag(), await rendezvousTag(_salt(1), a.discoveryHandle));
+      expect(await a.windowTag(), isNot(await rendezvousTag(_salt(1), a.sid)), reason: 'the tag is not keyed on the session id');
     });
   });
 }

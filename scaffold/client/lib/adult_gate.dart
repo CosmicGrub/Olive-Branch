@@ -225,6 +225,38 @@ class AdultGateCard extends StatelessWidget {
       );
 }
 
+/// The ONE calm fallback a child device shows when something did not work: a picture, one gentle line, an OK.
+/// No reason, no count, no code, no error word. [ChildConnectScreen] and the account-code step both end here.
+class CalmTryAgainCard extends StatelessWidget {
+  const CalmTryAgainCard({super.key, required this.onOk});
+  final VoidCallback onOk;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: KioskLockColors.background,
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                const Icon(Icons.refresh_rounded, size: 72, color: KioskLockColors.secondaryText),
+                const SizedBox(height: 12),
+                const Text('Your grown-up can try again',
+                    key: Key('childConnectTryAgain'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: KioskLockColors.primaryText, fontSize: 24, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 20),
+                TextButton(
+                    key: const Key('childConnectBack'),
+                    onPressed: onOk,
+                    child: const Text('OK', style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 18))),
+              ]),
+            ),
+          ),
+        ),
+      );
+}
+
 /// Pushes the gate as a route and returns the typed code, or null when it was closed. [startOpen] skips the
 /// card when the grown-up already chose to be here.
 Future<String?> askAdultPin(BuildContext context,

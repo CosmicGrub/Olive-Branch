@@ -34,6 +34,26 @@ const int _kMaxPake1PerWindow = 20;
 /// and an abandoned claim frees the window again after this long.
 const Duration kClaimTtl = Duration(minutes: 5);
 
+/// The quiet per-source budget on the adult window (one source = one LAN address, see sourceKey).
+/// A device on the same Wi-Fi that merely sees the window can burn at most [kSourceMaxFailures] of the window's
+/// [kWindowMaxAttempts] confirmations; past its budget it gets the same silence as a closed window. The failure
+/// limit is kept BELOW HALF the window cap on purpose: a dual-stack host has an IPv4 and an IPv6 address that this
+/// layer cannot tie together, so two budgets must still sum under the cap and leave the real child a try
+/// (a test pins this). A source's first-message and key-exchange tries are capped too, so one address cannot use
+/// up the window's 20 key exchanges or keep overwriting the real child's half-finished one.
+/// The table of sources is bounded and NEVER refuses a new source: it is least-recently-used, so a flood of free
+/// hellos (which need only the public handle) just evicts idle entries. A source that has FAILED a confirmation
+/// (at most [kWindowMaxAttempts] of them per window) is never evicted, so a flood cannot wash a block away.
+/// None of this is ever shown to a child.
+const int kSourceMaxHello = 12;
+const int kSourceMaxPake1 = 6;
+const int kSourceMaxFailures = 2;
+const int kMaxTrackedSources = 256;
+
+/// The neutral seat name a window shows ("Player one" or "Player two"). It is derived from the random discovery
+/// handle (one bit of it), never from the adult, the family, the device or the session id, so it identifies nobody.
+String windowSeatLabel(List<int> discoveryHandle) => (discoveryHandle[2] & 1) == 0 ? 'Player one' : 'Player two';
+
 /// The child's confirmation pictures and words: 16 of each, picked by two bytes of the shared key.
 const List<String> kSasPictures = <String>[
   'sun', 'moon', 'star', 'cloud', 'tree', 'fish', 'bird', 'cat',
@@ -60,17 +80,24 @@ abstract class PairingTransport {
 
 /// In-process transport for tests and for the same-process path: routes to one window.
 class LoopbackPairingTransport implements PairingTransport {
-  LoopbackPairingTransport(this.target, {this.log});
+  LoopbackPairingTransport(this.target, {this.log, this.source});
   final AdultWindow target;
   final List<Map<String, dynamic>>? log;
+
+  /// Pretend source address (tests); null = unlimited, as an in-process caller is.
+  final String? source;
   @override
   Future<Map<String, dynamic>?> send(Map<String, dynamic> message) {
     log?.add(Map<String, dynamic>.of(message));
-    return target.handle(message);
+    return target.handle(message, source: source);
   }
 }
 
 enum WindowState { open, awaitingApproval, approved, declined, closed }
+
+class _SourceUse {
+  int hello = 0, pake1 = 0, failures = 0;
+}
 
 class _Pending {
   _Pending(this.party, this.cpk, this.deviceName, this.qr, this.yc);
@@ -102,6 +129,7 @@ class AdultWindow extends ChangeNotifier {
     required this.childName,
     required String? pin,
     required this.sid,
+    required this.discoveryHandle,
     required this.qrSecret,
     required this.expiresAt,
     required this.maxAttempts,
@@ -121,6 +149,14 @@ class AdultWindow extends ChangeNotifier {
   final DeviceKey adultKey;
   final String adultName, familyId, childId, childName;
   final Uint8List sid;
+
+  /// What a nearby device finds the window by in the (neutral) advertisement: random per window, 16 bytes, and NOT
+  /// the session id. It works only for the first message (hello); the session id then comes back in the answer.
+  final Uint8List discoveryHandle;
+
+  /// The neutral seat name ("Player one" / "Player two") the advertisement shows: derived only from the random
+  /// handle, so it names nobody. The picture on the tile is what a person actually matches.
+  String get label => windowSeatLabel(discoveryHandle);
 
   /// The one-time QR secret, or null when the adult did not offer the QR shortcut (or it was used).
   Uint8List? qrSecret;
@@ -151,6 +187,7 @@ class AdultWindow extends ChangeNotifier {
   int attemptsLeft;
   WindowState state = WindowState.open;
   int _pake1Count = 0;
+  final Map<String, _SourceUse> _sources = <String, _SourceUse>{};
   _Pending? _pending;
   DateTime? _pendingAt;
   PakeKey? _key;
@@ -210,7 +247,7 @@ class AdultWindow extends ChangeNotifier {
   /// from a picture-addressed one by anyone without the salt.
   Future<Uint8List> windowTag() async {
     final Uint8List? salt = _childSalt ?? _adultSalt;
-    return salt == null ? _randomTag : rendezvousTag(salt, sid);
+    return salt == null ? _randomTag : rendezvousTag(salt, discoveryHandle);
   }
 
   /// Set once a child device passed key confirmation: what the adult is asked to approve.
@@ -269,7 +306,7 @@ class AdultWindow extends ChangeNotifier {
     final DateTime Function() clock = now ?? DateTime.now;
     return AdultWindow._(
       adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName,
-      pin: pin, sid: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
+      pin: pin, sid: bytes(16), discoveryHandle: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
       maxAttempts: maxAttempts, now: clock, onPaired: onPaired, phoneOnly: phoneOnly,
       familyKey: familyKey, requireMatch: requireMatch, random: r, refuseKey: refuseKey,
       makeUnlockVerifier: makeUnlockVerifier ?? (String p) => _defaultVerifier(p, r),
@@ -319,7 +356,11 @@ class AdultWindow extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _fail() {
+  void _fail(String? source) {
+    if (source != null) {
+      // The failure is charged to the source that sent the bad confirmation.
+      _use(source).failures += 1;
+    }
     attemptsLeft -= 1;
     _pending = null;
     _pendingAt = null;
@@ -330,33 +371,75 @@ class AdultWindow extends ChangeNotifier {
     }
   }
 
-  /// One incoming message. Null means "no answer". Never throws on a malformed message.
-  Future<Map<String, dynamic>?> handle(Map<String, dynamic> m) async {
+  /// One incoming message. Null means "no answer". Never throws on a malformed message. [source] names where it
+  /// came from (a LAN address as the transport sees it); null (the in-process path) is never limited.
+  Future<Map<String, dynamic>?> handle(Map<String, dynamic> m, {String? source}) async {
     try {
-      return await _handle(m);
+      return await _handle(m, source);
     } catch (_) {
       return null;
     }
   }
 
-  Future<Map<String, dynamic>?> _handle(Map<String, dynamic> m) async {
+  /// The record for [source], marked most recently used. A new source is always admitted: when the table is full
+  /// the least-recently-used entry WITHOUT a failure is dropped (failed sources are at most kWindowMaxAttempts,
+  /// far below the table size, so one is always found).
+  _SourceUse _use(String source) {
+    _SourceUse? u = _sources.remove(source);
+    if (u == null) {
+      u = _SourceUse();
+      if (_sources.length >= kMaxTrackedSources) {
+        String? victim;
+        for (final MapEntry<String, _SourceUse> e in _sources.entries) {
+          if (e.value.failures == 0) {
+            victim = e.key;
+            break;
+          }
+        }
+        _sources.remove(victim ?? _sources.keys.first);
+      }
+    }
+    _sources[source] = u;
+    return u;
+  }
+
+  /// Test hook: how many sources the window is tracking right now.
+  int get trackedSourceCount => _sources.length;
+
+  /// Takes one unit of [source]'s budget. False = over budget: stay silent.
+  bool _spend(String? source, int Function(_SourceUse u) bump, int limit) {
+    if (source == null) return true;
+    return bump(_use(source)) <= limit;
+  }
+
+  bool _blocked(String? source) => source != null && (_sources[source]?.failures ?? 0) >= kSourceMaxFailures;
+
+  Future<Map<String, dynamic>?> _handle(Map<String, dynamic> m, String? source) async {
     if (state == WindowState.closed || state == WindowState.declined) return null;
     if (_expired) {
       close();
       return null;
     }
+    if (_blocked(source)) return null;
     final Object? sidRaw = m['sid'];
-    if (sidRaw is! String || !constantTimeEquals(unb64(sidRaw), sid)) return null;
+    final bool sidOk = sidRaw is String && constantTimeEquals(unb64(sidRaw), sid);
+    // The advertisement carries a handle, not the session id: a nearby device opens with the handle and learns the
+    // session id from the answer. Only the hello may use it.
+    final Object? handleRaw = m['h'];
+    final bool handleOk = m['t'] == 'hello' && handleRaw is String && constantTimeEquals(unb64(handleRaw), discoveryHandle);
+    if (!sidOk && !handleOk) return null;
     switch (m['t']) {
       case 'hello':
-        if (state != WindowState.open) return null;
+        if (state != WindowState.open || !_spend(source, (_SourceUse u) => ++u.hello, kSourceMaxHello)) return null;
         if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
+        // The window id this hello was addressed by: the session id (a QR) or the discovery handle (nearby).
+        final Uint8List helloId = sidOk ? sid : discoveryHandle;
         if (_allowedChildKey != null) {
           // Mode B: only the scanned child, and only with proof it holds that key for THIS window. Silent drop.
           final Object? cpkRaw = m['cpk'], hsRaw = m['hs'];
           if (cpkRaw is! String || hsRaw is! String) return null;
           final Uint8List cpk = unb64(cpkRaw);
-          if (!constantTimeEquals(cpk, _allowedChildKey!) || !await verifyHello(cpk, sid, unb64(hsRaw))) return null;
+          if (!constantTimeEquals(cpk, _allowedChildKey!) || !await verifyHello(cpk, helloId, unb64(hsRaw))) return null;
           _helloCpk = cpk;
         }
         Uint8List? hn;
@@ -368,7 +451,7 @@ class AdultWindow extends ChangeNotifier {
           if (_helloNonces.length > 8) _helloNonces.removeAt(0);
         }
         return <String, dynamic>{
-          't': 'hello-ok', 'afp': b64(adultKey.fingerprint), 'apk': b64(adultKey.publicKey),
+          't': 'hello-ok', 'sid': b64(sid), 'afp': b64(adultKey.fingerprint), 'apk': b64(adultKey.publicKey),
           'an': adultName, 'fid': familyId,
           if (hn != null) 'hn': b64(hn),
         };
@@ -398,6 +481,8 @@ class AdultWindow extends ChangeNotifier {
           _pending = null;
           _pendingAt = null;
         }
+        // The source's own key-exchange budget (a stranger spends only its own).
+        if (!_spend(source, (_SourceUse u) => ++u.pake1, kSourceMaxPake1)) return null;
         // Only a well-formed share counts toward the cap, so junk cannot silently use the window up.
         final Object? cpkRaw = m['cpk'], ycRaw = m['Yc'];
         if (cpkRaw is! String || ycRaw is! String) return null;
@@ -427,7 +512,7 @@ class AdultWindow extends ChangeNotifier {
         }
         final Uint8List tagC = unb64(m['tagC'] as String);
         if (key == null || !await key.checkTag('C', tagC)) {
-          _fail();
+          _fail(source);
           return <String, dynamic>{'t': 'confirm-no'};
         }
         if (wasQr) qrSecret = null; // one use: spent only by a CONFIRMED exchange (a wrong guess costs an attempt)
@@ -558,25 +643,37 @@ class ChildPairingClient {
   final Duration pollEvery, giveUpAfter;
   final Future<void> Function(Duration) _delay;
 
-  /// Runs the whole exchange. [sid] names the adult's open window (picked by name, or from the QR);
+  /// Runs the whole exchange. The window is named by exactly one of [sid] (from the QR) or [handle] (from the
+  /// neutral advertisement: the session id then comes back in the hello answer);
   /// [password] is the typed PIN or the QR secret ([viaQr]); [expectedAdultFingerprint] comes from the QR.
   /// [onMatched] fires when the adult device proved it knows the secret: show the name and the pair.
   Future<PairingResult> pair({
-    required Uint8List sid,
+    Uint8List? sid,
+    Uint8List? handle,
     required String password,
     bool viaQr = false,
     Uint8List? expectedAdultFingerprint,
     String? expectedFamilyId,
     void Function(PairingMatch match)? onMatched,
   }) async {
+    if ((sid == null) == (handle == null)) {
+      throw ArgumentError('pair() needs exactly one of sid (from a QR) or handle (from discovery)');
+    }
     try {
       final Map<String, dynamic>? hello = await transport.send(<String, dynamic>{
-        't': 'hello', 'sid': b64(sid), 'cpk': b64(childKey.publicKey), 'dn': deviceName,
+        't': 'hello', if (sid != null) 'sid': b64(sid) else 'h': b64(handle!), 'cpk': b64(childKey.publicKey), 'dn': deviceName,
         // Proof this device holds the key it presents, for this window only (checked by a window that scanned
-        // this device's picture; ignored by every other).
-        'hs': b64(await signHello(childKey, sid)),
+        // this device's picture; ignored by every other). Signed over whichever window id the hello carries.
+        'hs': b64(await signHello(childKey, sid ?? handle!)),
       });
       if (hello == null || hello['t'] != 'hello-ok') return const PairingResult.failed(PairingFailure.unreachable);
+      if (sid == null) {
+        // Found by handle: the session id is whatever the window that answered says it is. It is a nonce, not a
+        // secret; the channel identifier below binds it into the key exchange either way.
+        final Uint8List got = unb64(hello['sid'] as String);
+        if (got.length != 16) return const PairingResult.failed(PairingFailure.malformed);
+        sid = got;
+      }
       final Uint8List apk = unb64(hello['apk'] as String), afp = unb64(hello['afp'] as String);
       final String an = hello['an'] as String, fid = hello['fid'] as String;
       if (!constantTimeEquals(await fingerprintOf(apk), afp)) return const PairingResult.failed(PairingFailure.notMatched);

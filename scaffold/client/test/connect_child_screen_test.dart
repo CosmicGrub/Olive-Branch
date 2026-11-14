@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:olive_client/child_connect_screen.dart';
 import 'package:olive_client/connect_child_screen.dart';
 import 'package:olive_client/device_keys.dart';
@@ -48,6 +49,8 @@ Future<void> _act(WidgetTester t, Future<void> Function() gesture) async {
   await t.pump();
 }
 
+
+
 Future<void> _settle(WidgetTester t) async {
   for (int i = 0; i < 40; i++) {
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
@@ -87,6 +90,8 @@ void main() {
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
     expect(find.byKey(const Key('connectWaiting')), findsOneWidget);
     expect(find.byKey(const Key('connectQr')), findsOneWidget, reason: 'the optional picture is offered');
+    expect(find.byKey(const Key('connectLabel')), findsNothing, reason: 'no letters to read out: the child picks a picture');
+    expect(opened!.label, isIn(<String>['Player one', 'Player two']));
     expect(opened!.qrPayload(), isNotNull);
 
     final DeviceKey ck = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
@@ -123,6 +128,25 @@ void main() {
     expect(find.textContaining('error'), findsNothing);
   });
 
+  testWidgets('child screen: camera denied while scanning shows only the calm card, never raw error text', (t) async {
+    await t.pumpWidget(MaterialApp(
+        home: ChildConnectScreen(
+            deviceKeys: MemoryDeviceKeyRepository(), onPaired: (_) async {}, finderFactory: _FakeFinder.new)));
+    await t.tap(find.byKey(const Key('adultGateGrownUp')));
+    await _settle(t);
+    await t.tap(find.byKey(const Key('childConnectScan')));
+    await t.pump();
+    final MobileScanner scanner = t.widget<MobileScanner>(find.byKey(const Key('pictureScanner')));
+    expect(scanner.errorBuilder, isNotNull, reason: 'without one the plugin shows raw English error text');
+    await t.pumpWidget(MaterialApp(
+        home: Builder(builder: (BuildContext c) => scanner.errorBuilder!(
+            c, const MobileScannerException(errorCode: MobileScannerErrorCode.permissionDenied, errorDetails: MobileScannerErrorDetails(message: 'CAMERA_PERMISSION_DENIED raw text'))))));
+    expect(find.byKey(const Key('childConnectTryAgain')), findsOneWidget);
+    expect(find.textContaining('PERMISSION'), findsNothing);
+    expect(find.textContaining('denied'), findsNothing);
+    expect(find.textContaining('rror'), findsNothing);
+  });
+
   testWidgets('child screen end to end: pick the nameless window, type the PIN, match shown, paired', (t) async {
     final DeviceKey ak = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
     final AdultWindow w = await t.runAsync(() => AdultWindow.open(
@@ -143,9 +167,12 @@ void main() {
     await t.tap(find.byKey(const Key('adultGateGrownUp')));
     await _settle(t);
     expect(find.byKey(const Key('childConnectWhich')), findsOneWidget);
-    finder.emit(NearbyWindow(sid: w.sid, host: 'x', port: 1));
+    finder.emit(NearbyWindow(label: w.label, handle: w.discoveryHandle, host: 'x', port: 1));
     await _settle(t);
-    await t.tap(find.byKey(Key('childConnectPick_${b64(w.sid)}')));
+    // Nothing identifying is listed: a nameless picture tile, never a name, a label or a session id.
+    expect(find.text('Mom'), findsNothing);
+    expect(find.text(w.label), findsNothing);
+    await t.tap(find.byKey(Key('childConnectPick_${b64(w.discoveryHandle)}')));
     await t.pumpAndSettle();
     for (final String d in <String>['4', '8', '2', '9']) {
       await t.tap(find.text(d));
@@ -172,9 +199,11 @@ void main() {
     )));
     await t.tap(find.byKey(const Key('adultGateGrownUp')));
     await _settle(t);
-    finder.emit(NearbyWindow(sid: w.sid, host: 'x', port: 1));
+    finder.emit(NearbyWindow(label: w.label, handle: w.discoveryHandle, host: 'x', port: 1));
     await _settle(t);
-    await t.tap(find.byKey(Key('childConnectPick_${b64(w.sid)}')));
+    expect(find.text('Mom'), findsNothing);
+    expect(find.text(w.label), findsNothing);
+    await t.tap(find.byKey(Key('childConnectPick_${b64(w.discoveryHandle)}')));
     await t.pumpAndSettle();
     for (final String d in <String>['1', '1', '1', '1']) {
       await t.tap(find.text(d));

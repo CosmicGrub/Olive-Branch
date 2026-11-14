@@ -13,6 +13,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'access_scope.dart';
+import 'adult_gate.dart' show CalmTryAgainCard;
 import 'form_factors.dart' as ff;
 import 'pairing_match.dart';
 import 'pairing_picture.dart';
@@ -22,6 +23,9 @@ typedef ScannerBuilder = Widget Function(BuildContext context, void Function(Str
 
 Widget defaultScannerBuilder(BuildContext context, void Function(String raw) onRaw) => MobileScanner(
       key: const Key('pictureScanner'),
+      // Camera denied or missing: only the calm card, never the plugin's raw English error text. Its OK leaves the
+      // screen the camera was on.
+      errorBuilder: (BuildContext c, _) => CalmTryAgainCard(onOk: () => Navigator.of(c).maybePop()),
       onDetect: (BarcodeCapture cap) {
         final String? raw = cap.barcodes.isNotEmpty ? cap.barcodes.first.rawValue : null;
         if (raw != null) onRaw(raw);
