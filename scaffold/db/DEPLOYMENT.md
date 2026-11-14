@@ -66,6 +66,35 @@ Set both GUCs with `SET LOCAL` inside the transaction, or reset them on
 connection return. A pooled connection that retains a previous request's
 `app.child_id` is a cross-tenant read.
 
+## Two roles: `app_owner` migrates, `app_runtime` serves (S-B11)
+
+`app_owner` owns every table, so a connection as `app_owner` can run DDL: one SQL injection
+in the server could `DISABLE ROW LEVEL SECURITY`, drop a policy, or drop the trigger that makes
+a table append-only. The running server, the scheduler and the health tools therefore connect
+as **`app_runtime`**: it owns nothing and holds only `SELECT/INSERT/UPDATE/DELETE`
+(`db/runtime_grants.sql`), no DDL, nothing on `schema_migration`, and every row-security policy
+binds it. Only `migrate` (and operators) use `app_owner`.
+
+- **Creating the role.** `CREATE ROLE` needs `CREATEROLE`, which `app_owner` deliberately lacks, so
+  it is not a migration. A fresh dev volume gets it from `tools/docker-dev/init-db.sql`; a fresh
+  production volume from `tools/docker-dev/init-db.prod.sh` (password `APP_RUNTIME_PASSWORD`, which
+  Compose refuses to start without); CI from `tools/verify.sh`.
+- **A database that already exists** (created before the split; Postgres only runs init scripts on
+  an empty data directory): run once as the `postgres` superuser
+  `psql -U postgres -v runtime_password=<APP_RUNTIME_PASSWORD> -f tools/docker-dev/create-runtime-role.sql`,
+  set `APP_RUNTIME_PASSWORD` in `.env.prod`, then `docker compose -f docker-compose.prod.yml up -d`
+  (the `migrate` service applies the grants on every run; they are idempotent).
+- **The boot guard.** Outside `NODE_ENV=development|test` the server refuses to start if its role is a
+  superuser, has `BYPASSRLS`, `CREATEROLE`/`CREATEDB`, or owns tables (`server/db_role.mjs`).
+  `ALLOW_OWNER_DB_ROLE=1` overrides it on purpose and is logged; do not set it in production.
+- **What this does not close.** The per-request identity is three transaction-local settings
+  (`app.role`, `app.user_id`, `app.child_id`) set from a verified session; code that can already run
+  arbitrary SQL as `app_runtime` can still forge them. The split removes the DDL half of the blast
+  radius, not that half.
+- **Known gap.** Views owned by `app_owner` (for example `health_check`) read zero rows over FORCE-ed
+  tables, because a view evaluates row security as its owner. Until that is fixed, do not rely on
+  the health alerts as proof that nothing is wrong.
+
 ## Migration order
 
 ```bash

@@ -37,6 +37,7 @@ import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'device_identity.dart';
 import 'server_transport_policy.dart';
+import 'webauthn_channel.dart' show platformPasskeyAssertion;
 
 typedef Clock = DateTime Function();
 
@@ -277,11 +278,17 @@ class AuthSession {
 /// installed the identity comes from the session, never from the arguments.
 /// With no session installed and dev login not enabled this fails closed with
 /// an [UnauthorizedException] ('not_signed_in').
+///
+/// [passkeyAssertion] answers the server's `passkey_assertion_required` when a grown-up sets
+/// the FIRST PIN on an account that already holds a passkey ([OliveApi.setGuardianPin]); it
+/// defaults to the platform passkey prompt ([platformPasskeyAssertion]) and is overridden only by
+/// tests.
 Future<OliveApi> apiFor(
   String baseUrl, {
   String? userId,
   String? childId,
   http.Client? client,
+  PasskeyAssertionProvider? passkeyAssertion,
 }) async {
   var session = AuthSession.current;
   if (session == null) {
@@ -289,5 +296,6 @@ Future<OliveApi> apiFor(
     session = AuthSession.dev(baseUrl: baseUrl, userId: userId, childId: childId, client: client);
   }
   final token = await session.token();
-  return OliveApi(baseUrl, token, client: client, session: session);
+  return OliveApi(baseUrl, token,
+      client: client, session: session, passkeyAssertion: passkeyAssertion ?? platformPasskeyAssertion);
 }

@@ -14,6 +14,8 @@ import 'package:olive_client/court_export.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
+Future<String?> _pinSource(BuildContext c, {required String title, String? why, String? error}) async => '5193';
+
 void main() {
   group('authorizeExport — §2.11 / §16.1 #3', () {
     test('raw export is always free, regardless of tier or history', () {
@@ -354,7 +356,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         return jsonRes(<String, String>{'token': 'tok'}, 200);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pump();
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -377,7 +379,7 @@ void main() {
         }
         return http.Response('not found', 404);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -410,7 +412,7 @@ void main() {
       });
       await tester.binding.setSurfaceSize(const Size(500, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -437,7 +439,7 @@ void main() {
           'bundleHash': 'c' * 64, 'exportRecordId': 'rec-2',
         }, 200);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -459,7 +461,7 @@ void main() {
               'an admin, by hand, until one exists.',
         }, 403);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -482,7 +484,7 @@ void main() {
           'message': 'You are not a guardian of this child.',
         }, 403);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'mom', childId: 'not-her-child', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -503,7 +505,7 @@ void main() {
               'unaffected and remains free and unlimited.',
         }, 403);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -536,7 +538,7 @@ void main() {
           ],
         }, 403);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -556,7 +558,7 @@ void main() {
           'error': 'annual_allowance_used', 'message': 'already used',
         }, 403);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -567,7 +569,7 @@ void main() {
         (WidgetTester tester) async {
       final MockClient mock =
           MockClient((http.Request req) async => jsonRes(<String, String>{'error': 'internal'}, 500));
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 
@@ -595,7 +597,7 @@ void main() {
           'bundleHash': 'c' * 64, 'exportRecordId': 'rec-3',
         }, 200);
       });
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
       expect(find.text('Certified export not authorized'), findsOneWidget);
@@ -617,7 +619,7 @@ void main() {
         'honestly rather than crashing uncaught', (WidgetTester tester) async {
       final MockClient mock = MockClient(
           (http.Request req) async => http.Response('not json at all', 200));
-      await tester.pumpWidget(wrap(LiveCourtExportScreen(
+      await tester.pumpWidget(wrap(LiveCourtExportScreen(pinSource: _pinSource, 
           baseUrl: 'http://api.test', guardianId: 'dad', childId: 'child-a', httpClient: mock)));
       await tester.pumpAndSettle();
 

@@ -12,13 +12,15 @@
 import 'package:flutter/material.dart';
 
 import 'app_lock.dart';
+import 'device_keys.dart';
 import 'device_role.dart';
 import 'local_family.dart';
 import 'local_pin.dart';
+import 'local_pin_recovery.dart';
 import 'local_services.dart';
 
 class GuardianLocalServices {
-  GuardianLocalServices({required this.roles, required this.families, required this.pin,
+  GuardianLocalServices({required this.roles, required this.families, required this.pin, this.recovery,
       AppLockPrefsRepository? lockPrefs})
       : lockPrefs = lockPrefs ?? MemoryAppLockPrefsRepository();
 
@@ -31,6 +33,9 @@ class GuardianLocalServices {
 
   /// One controller per run, shared by the guard above the Navigator and the settings screen.
   late final AppLockController appLock = AppLockController(pin: pin, repo: lockPrefs);
+  /// Linking another grown-up's phone and resetting a forgotten PIN from it (local_pin_recovery.dart). Null in a
+  /// tree built without it: the forgotten-PIN path then says plainly that clearing the app is the only reset.
+  final GuardianRecovery? recovery;
 
   /// Over the real (or in-memory) [LocalServices]. [pinIterations] is for tests.
   factory GuardianLocalServices.from(LocalServices s, {int? pinIterations}) => GuardianLocalServices(
@@ -41,6 +46,10 @@ class GuardianLocalServices {
           iterations: pinIterations ?? kLocalPinIterations,
         ),
         lockPrefs: LocalStoreAppLockPrefsRepository.over(s),
+        recovery: GuardianRecovery(
+          peers: LocalStoreGuardianPeerRepository(s.area('localpin', ownerId: kLocalGuardianScope)),
+          deviceKey: () => DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(s.area('devicekey'))),
+        ),
       );
 
   /// Everything in memory, for tests and the preview.
@@ -49,6 +58,10 @@ class GuardianLocalServices {
         roles: MemoryDeviceRoleRepository(role),
         families: MemoryLocalFamilyRepository(family),
         pin: LocalPinService(MemoryLocalPinRepository(), iterations: pinIterations),
+        recovery: GuardianRecovery(
+          peers: MemoryGuardianPeerRepository(),
+          deviceKey: () => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository()),
+        ),
       );
 }
 

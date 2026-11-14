@@ -126,6 +126,15 @@ class HomeworkProblemResult {
   );
 }
 
+/// Produces a fresh platform-passkey assertion for the step-up the server asks for when the
+/// FIRST PIN is set on an account that already holds a passkey (`passkey_assertion_required`).
+/// The real one is webauthn_channel.dart's [platformPasskeyAssertion]; it asks the server for a
+/// single-use challenge ([OliveApi.requestPinPasskeyChallenge]), runs the device's passkey
+/// prompt and returns `{credentialId, clientDataJSON, authenticatorData, signature}`
+/// (all base64url, sent verbatim). It throws when the grown-up cancels or the device has no
+/// passkey support; that is passed to the caller as it is, never turned into a success.
+typedef PasskeyAssertionProvider = Future<Map<String, String>> Function(OliveApi api);
+
 class OliveApi {
   /// [sessionToken] is the bearer this api starts with. With a [session]
   /// (audit G-02/G-06: the real authenticated session, see auth_session.dart)
@@ -133,13 +142,17 @@ class OliveApi {
   /// retried exactly once after the session refreshes; without one the token is
   /// used verbatim, exactly as before (tests, the explicit dev path, the
   /// pre-session invite/pairing calls).
-  OliveApi(this.baseUrl, this.sessionToken, {http.Client? client, this.session})
+  OliveApi(this.baseUrl, this.sessionToken, {http.Client? client, this.session, this.passkeyAssertion})
       : _client = client ?? OliveTransport.clientFor(baseUrl);
 
   final String baseUrl;
   final String sessionToken;
   final AuthSession? session;
   final http.Client _client;
+
+  /// How [setGuardianPin] answers `passkey_assertion_required` (see [PasskeyAssertionProvider]).
+  /// Null (tests, the pre-session calls): the refusal is thrown to the caller unchanged.
+  final PasskeyAssertionProvider? passkeyAssertion;
 
   // --- session (audit G-02/G-06/C-03) ------------------------------------
   // POST: a paired device trades {deviceId, deviceCredential} for a fresh
@@ -331,6 +344,9 @@ class OliveApi {
   // contract.test.mjs/transport.test.mjs only regex-scan for the literal
   // '/v1/me/pin', never the Dart identifier.
   static const guardianPinPath = '/v1/me/pin';
+  // POST: a single-use challenge for the passkey assertion the FIRST PIN needs on an account
+  // that already holds a passkey (409 no_passkey when there is nothing to assert).
+  static const mePinPasskeyChallenge = '/v1/me/pin/passkey-challenge';
   static const webauthnRegisterChallenge = '/v1/auth/webauthn/register/challenge';
   static const webauthnRegisterVerify = '/v1/auth/webauthn/register/verify';
   static const webauthnLoginChallenge = '/v1/auth/webauthn/login/challenge';
@@ -503,9 +519,10 @@ class OliveApi {
     String path, {
     String? childId,
     Map<String, String>? query,
+    Map<String, String>? headers,
   }) async {
     final res = await _authed((t) => _client.get(_uri(path, childId, query),
-        headers: {'authorization': 'Bearer $t'}));
+        headers: {'authorization': 'Bearer $t', ...?headers}));
     return _decode(res);
   }
 
@@ -1059,9 +1076,28 @@ class OliveApi {
   /// PIN couldn't be set (e.g. invalid_pin_format, guardian_session_required)
   /// rather than an opaque `false`. Throws [ApiException] on any non-2xx
   /// response, exactly like [fetchMe]/[fetchNow]/[fetchInbox] above.
+  ///
+  /// FIRST-PIN passkey check (security follow-up to S-B3): on an account that already holds a
+  /// passkey but has no PIN, the server answers `403 passkey_assertion_required` and wants a
+  /// fresh passkey assertion. When this api was built with a [passkeyAssertion] provider (the
+  /// app's [apiFor] always supplies the platform one) this asks the grown-up's device for it and
+  /// retries ONCE; a cancelled prompt or a missing authenticator is thrown as it is, so the
+  /// caller can say so plainly. An account with no passkey yet is unchanged: no proof, no prompt.
   Future<void> setGuardianPin(String pin) async {
-    await _post(guardianPinPath, {'pin': pin});
+    try {
+      await _post(guardianPinPath, {'pin': pin});
+    } on ApiException catch (e) {
+      final provider = passkeyAssertion;
+      if (e.error != 'passkey_assertion_required' || provider == null) rethrow;
+      final assertion = await provider(this);
+      await _post(guardianPinPath, {'pin': pin, 'assertion': assertion});
+    }
   }
+
+  /// POST [mePinPasskeyChallenge] -- `{challenge, rpId}`. Consumed by
+  /// webauthn_channel.dart's [platformPasskeyAssertion]; transport only, like every method here.
+  Future<Map<String, dynamic>> requestPinPasskeyChallenge() =>
+      _post(mePinPasskeyChallenge, const {});
 
   /// REPLACES an existing PIN. Since audit G-13 the server refuses to change a
   /// PIN without proof of the current one (403 `current_pin_required` /
@@ -1132,12 +1168,18 @@ class OliveApi {
   /// invited party -- see 0014_guardian_invite.sql's own header for why:
   /// this route closes invite creation, not account creation, which this
   /// codebase has never built for a brand-new guardian.
+  ///
+  /// [pin] is the caller's OWN guardian PIN: handing out access to a child is a step-up
+  /// action (S-B3), so the server refuses an invite without it (400 `pin_required`, 403
+  /// `pin_incorrect` / `pin_locked` / `pin_not_set`). It rides in the body, never a URL.
   Future<Map<String, dynamic>> createGuardianInvite(
     String childId, {
     required String role,
     required String label,
     required String invitedEmail,
-  }) => _post(guardianships, {'role': role, 'label': label, 'invitedEmail': invitedEmail},
+    required String pin,
+  }) => _post(guardianships,
+      {'role': role, 'label': label, 'invitedEmail': invitedEmail, 'pin': pin},
       childId: childId);
 
   /// Generates a CHILD-role pairing code for [childId] -- POST
@@ -1280,12 +1322,22 @@ class OliveApi {
   /// challenge_mismatch, rpid_mismatch, origin_mismatch) -- a registration
   /// failure is a real fact the caller must see, not one to fail silently
   /// past.
+  ///
+  /// [pin] is the caller's own guardian PIN. Adding a passkey is a permanent-takeover
+  /// primitive (S-B3), so the server needs it on any account that already has a PIN or a
+  /// passkey (400 `pin_required`, 403 `pin_incorrect` / `pin_locked` / `pin_not_set`); only
+  /// the very first credential of a brand-new account (invite bootstrap) is waived, and
+  /// there [pin] stays null.
   Future<void> submitWebauthnRegisterVerify({
     required String clientDataJSON,
     required String attestationObject,
+    String? pin,
   }) async {
-    await _post(webauthnRegisterVerify,
-        {'clientDataJSON': clientDataJSON, 'attestationObject': attestationObject});
+    await _post(webauthnRegisterVerify, {
+      'clientDataJSON': clientDataJSON,
+      'attestationObject': attestationObject,
+      'pin': ?pin,
+    });
   }
 
   /// `{windows: [{guardianId, weekday, startLocal, endLocal, note}, ...]}` —
@@ -1441,8 +1493,14 @@ class OliveApi {
   /// `bundleJson` is the EXACT string `bundleHash` was computed over — a
   /// caller that wants to verify the hash should hash/persist that field,
   /// not re-encode `bundle` itself (see routes.mjs's own comment on why).
-  Future<Map<String, dynamic>> fetchRawExport(String childId) =>
-      _get(export_, childId: childId);
+  ///
+  /// [pin] is the caller's OWN guardian PIN (S-B3 step-up): the family's whole message log
+  /// leaves the building here, so a bare session is not enough. It rides in the
+  /// `x-guardian-pin` header (a GET has no body and a secret never goes in a URL). Refusals
+  /// are [ApiException]s: 400 `pin_required`, 403 `pin_incorrect` / `pin_locked` /
+  /// `pin_not_set`.
+  Future<Map<String, dynamic>> fetchRawExport(String childId, {required String pin}) =>
+      _get(export_, childId: childId, headers: {'x-guardian-pin': pin});
 
   /// GET /v1/children/:childId/export?kind=certified — §2.11, §16.1 #3.
   /// Same route as [fetchRawExport], distinguished by the `kind` query
@@ -1452,8 +1510,11 @@ class OliveApi {
   /// guardian of this child) surfaces as an [ApiException] with the real
   /// server-reported `error` reason and plain-language `message`, never a
   /// silent failure or a fabricated success.
-  Future<Map<String, dynamic>> fetchCertifiedExport(String childId) =>
-      _get(export_, childId: childId, query: const {'kind': 'certified'});
+  ///
+  /// [pin] as for [fetchRawExport]: the same step-up, the same header.
+  Future<Map<String, dynamic>> fetchCertifiedExport(String childId, {required String pin}) =>
+      _get(export_, childId: childId, query: const {'kind': 'certified'},
+          headers: {'x-guardian-pin': pin});
 
   /// POST .../messages — server/routes.mjs's real counterpart to
   /// [fetchInbox], and the real backend for receipt_screen.dart's "Send one

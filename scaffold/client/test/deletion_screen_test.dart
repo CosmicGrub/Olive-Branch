@@ -54,6 +54,8 @@ Future<void> pumpUntil(WidgetTester tester, Finder finder, {int maxPumps = 200})
   }
 }
 
+Future<String?> _pinSource(BuildContext c, {required String title, String? why, String? error}) async => '5193';
+
 void main() {
   group('deletion copy audit — pure logic', () {
     test('clean copy passes the audit', () {
@@ -109,7 +111,7 @@ void main() {
           'removedWebauthnChallenges': 0,
         }), 200);
       });
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         childName: 'Ivy', baseUrl: 'http://api.test', sessionToken: 'tok-123', httpClient: mock));
       await ackAndConfirm(t);
       await t.pumpAndSettle();
@@ -146,7 +148,7 @@ void main() {
       final mock = MockClient((req) async => http.Response(jsonEncode({
         'ok': true, 'userId': 'u1', 'cancelledDeliveryIntents': 1,
       }), 200));
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', sessionToken: 'tok-123', httpClient: mock));
       await ackAndConfirm(t);
       await t.pumpAndSettle();
@@ -159,7 +161,7 @@ void main() {
       final mock = MockClient((req) async => http.Response(jsonEncode({
         'ok': true, 'userId': 'u1', 'cancelledDeliveryIntents': 0,
       }), 200));
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', sessionToken: 'tok-123', httpClient: mock));
       await ackAndConfirm(t);
       await t.pumpAndSettle();
@@ -172,7 +174,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         return http.Response(jsonEncode({'ok': true, 'userId': 'u1'}), 200);
       });
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', sessionToken: 'tok-123', httpClient: mock));
       await ackAndConfirm(t);
       await t.pump();
@@ -184,7 +186,7 @@ void main() {
         'never a fake success', (t) async {
       final mock = MockClient((req) async =>
           http.Response(jsonEncode({'error': 'no_session'}), 401));
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', sessionToken: '', httpClient: mock));
       await ackAndConfirm(t);
       await t.pumpAndSettle();
@@ -202,7 +204,7 @@ void main() {
 
     testWidgets('an unreachable server shows a real error, never a fake success', (t) async {
       final mock = MockClient((req) async => throw Exception('connection refused'));
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', sessionToken: 'tok-123', httpClient: mock));
       await ackAndConfirm(t);
       await t.pumpAndSettle();
@@ -281,7 +283,7 @@ void main() {
         return http.Response('not found', 404);
       });
 
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         childName: 'Ivy', baseUrl: 'http://api.test', childId: 'child-a',
         httpClient: mock, documentsDirectory: () async => tempDir));
       await t.tap(find.textContaining('Download'));
@@ -324,7 +326,7 @@ void main() {
         }), 200);
       });
 
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', childId: 'child-a',
         httpClient: mock, documentsDirectory: () async => tempDir));
       await t.tap(find.textContaining('Download'));
@@ -346,7 +348,7 @@ void main() {
         return http.Response(jsonEncode(<String, String>{'error': 'no_edge'}), 403);
       });
 
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', childId: 'someone-elses-child',
         httpClient: mock, documentsDirectory: () async => tempDir));
       await t.tap(find.textContaining('Download'));
@@ -372,7 +374,7 @@ void main() {
         }), 200);
       });
 
-      await pump(t, DeletionScreen(
+      await pump(t, DeletionScreen(pinSource: _pinSource, 
         baseUrl: 'http://api.test', childId: 'child-a',
         httpClient: mock, documentsDirectory: () async => tempDir));
       await t.tap(find.textContaining('Download'));

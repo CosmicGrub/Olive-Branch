@@ -67,6 +67,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
+import 'guardian_step_up.dart';
 import 'sha256.dart';
 
 /// Same convention as main_live.dart's own `_defaultBaseUrl` — the Android
@@ -138,8 +139,13 @@ class DeletionScreen extends StatefulWidget {
     this.guardianUserId = _defaultGuardianUserId,
     this.httpClient,
     this.documentsDirectory,
+    this.pinSource,
   });
   final String childName;
+  /// Where the guardian's PIN comes from for the raw export (S-B3 step-up, sent in the
+  /// `x-guardian-pin` header). Null in the app: a PIN dialog ([askGuardianPinDialog]).
+  /// Tests inject a source.
+  final GuardianPinSource? pinSource;
   /// Real network target for both `_confirm()` and `_export()`. Defaults
   /// match main_live.dart's own `--dart-define`s so this screen talks to the
   /// same dev server/seed data when run live, without requiring every call
@@ -247,11 +253,27 @@ class _DeletionScreenState extends State<DeletionScreen> {
   Future<void> _export(BuildContext context) async {
     if (_exporting) return;
     setState(() => _exporting = true);
-    OliveApi? api;
     try {
-      api = await apiFor(widget.baseUrl,
-          userId: widget.guardianUserId, client: widget.httpClient);
-      final Map<String, dynamic> result = await api.fetchRawExport(widget.childId);
+      final Map<String, dynamic>? result = await runWithGuardianPin<Map<String, dynamic>>(
+        context,
+        title: "Confirm it's you",
+        why: "The raw export is the family's whole message log. Enter your PIN to save a copy first.",
+        source: widget.pinSource,
+        run: (String pin) async {
+          final OliveApi api = await apiFor(widget.baseUrl,
+              userId: widget.guardianUserId, client: widget.httpClient);
+          try {
+            return await api.fetchRawExport(widget.childId, pin: pin);
+          } finally {
+            if (widget.httpClient == null) api.close();
+          }
+        },
+      );
+      if (result == null) {
+        // Cancelled at the PIN: nothing was asked of the server, nothing to report.
+        if (mounted) setState(() => _exporting = false);
+        return;
+      }
 
       // `bundleJson` is the EXACT string the server hashed (see api_client
       // .dart's own doc comment on fetchRawExport) — hashed and written
@@ -309,11 +331,11 @@ class _DeletionScreenState extends State<DeletionScreen> {
       if (!context.mounted) return;
       setState(() => _exporting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Raw export failed: '
-          '${e is ApiException ? '${e.statusCode} ${e.error}' : e}'),
+        content: Text(isPinStepUpError(e)
+            ? guardianStepUpMessage((e as ApiException).error)
+            : 'Raw export failed: '
+              '${e is ApiException ? '${e.statusCode} ${e.error}' : e}'),
         duration: const Duration(seconds: 4)));
-    } finally {
-      if (widget.httpClient == null) api?.close();
     }
   }
 

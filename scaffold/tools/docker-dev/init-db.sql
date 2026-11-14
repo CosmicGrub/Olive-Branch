@@ -47,3 +47,16 @@ CREATE ROLE backup_reader NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS
 -- credential exposes nothing a Grafana panel would not show.
 CREATE ROLE health_monitor NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
   LOGIN PASSWORD 'health_monitor';
+
+-- app_runtime: what the RUNNING server, the scheduler and the health tools connect
+-- as (S-B11). app_owner stays the migrator and the owner of every table; this role
+-- owns nothing and holds only SELECT/INSERT/UPDATE/DELETE (granted by
+-- db/runtime_grants.sql, which tools/migrate.mjs applies on every run), so a SQL
+-- injection in the server cannot run DDL, DISABLE ROW LEVEL SECURITY, drop a policy
+-- or an append-only trigger, or rewrite the migration ledger. Every row security
+-- policy binds it, FORCE-ed table or not. NOINHERIT and no memberships on purpose.
+-- Created here (not in a migration) for the reason app_owner and backup_reader are:
+-- CREATE ROLE needs CREATEROLE or superuser, which app_owner deliberately lacks.
+-- An already-initialised volume skips this file: run create-runtime-role.sql once.
+CREATE ROLE app_runtime NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT
+  LOGIN PASSWORD 'app_runtime';
