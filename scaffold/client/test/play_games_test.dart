@@ -19,6 +19,9 @@ import 'package:olive_client/play_games.dart';
 import 'package:olive_client/play_save.dart';
 import 'package:olive_client/uno_deck.dart';
 import 'package:olive_client/uno_play.dart';
+import 'package:olive_client/pictionary_play.dart';
+import 'package:olive_client/puzzle_play.dart';
+import 'package:olive_client/twenty_questions_play.dart';
 import 'package:olive_client/uno_session.dart';
 
 import 'play_harness.dart';
@@ -324,9 +327,9 @@ void main() {
   });
 
   group('the registry: every game on the contract', () {
-    test('War, Connect 4 and Uno are registered with the ages the hub already uses', () {
+    test('all six two-device games are registered with the ages the hub already uses', () {
       final specs = playGameRegistry.all;
-      expect(specs.map((s) => s.id).toSet(), {'war', 'connect4', 'uno'});
+      expect(specs.map((s) => s.id).toSet(), {'war', 'connect4', 'uno', 'pictionary', 'puzzle', 'twenty_questions'});
       for (final s in specs) {
         expect(s.minAge, localPlayMinAge[s.id], reason: s.id);
       }
@@ -361,6 +364,12 @@ void main() {
         if (t.dealerGame is UnoPlayGame) (t.dealerGame as UnoPlayGame).deal();
         if (t.dealerGame is WarPlayGame) (t.dealerGame as WarPlayGame).deal();
         if (t.dealerGame is Connect4PlayGame) (t.dealerGame as Connect4PlayGame).tapColumn(3);
+        if (t.dealerGame is PictionaryPlayGame) {
+          (t.dealerGame as PictionaryPlayGame).begin();
+          (t.guestGame as PictionaryPlayGame).begin();
+        }
+        if (t.dealerGame is PuzzlePlayGame) (t.dealerGame as PuzzlePlayGame).begin();
+        if (t.dealerGame is TwentyQuestionsPlayGame) (t.dealerGame as TwentyQuestionsPlayGame).begin();
         await pumpEventQueue();
         expect(t.guestGame.started, isTrue);
         expect(t.dealer.blockedSends, 0);

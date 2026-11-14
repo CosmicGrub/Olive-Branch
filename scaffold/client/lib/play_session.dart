@@ -166,6 +166,9 @@ class PlaySessionController extends ChangeNotifier implements PlayLink {
   // ------------------------------------------------------------- sending --
   Future<bool> _sendEnv(PlayEnvelope e) => transport.send(e.toJson());
 
+  /// Everything that may never leave this device in a state or a move: the game's own hidden keys, and a seed in any game.
+  late final List<String> _neverCross = <String>[...neverSentKeys, ...spec.allHiddenKeys];
+
   Future<void> _resendRetained() async {
     for (final PlayEnvelope e in session.pendingResend()) {
       // A message kept from before the dealer restarted is sent under the session it is now in.
@@ -176,8 +179,9 @@ class PlaySessionController extends ChangeNotifier implements PlayLink {
   @override
   Future<void> sendMove(Map<String, dynamic> payload) async {
     if (_endedForGood) return;
-    if (!auditLiveView(payload).ok) {
-      debugPrint('play_session: refusing to send a move with forbidden keys');
+    if (!auditLiveView(payload).ok || hiddenLeaks(payload, _neverCross).isNotEmpty) {
+      debugPrint('play_session: refusing to send a move with forbidden or hidden keys');
+      blockedSends++;
       return;
     }
     await _sendEnv(session.stamp(PlayKind.move, spec.id, p: payload));
@@ -194,7 +198,7 @@ class PlaySessionController extends ChangeNotifier implements PlayLink {
     final Map<String, dynamic>? payload = game.stateFor(transport.peerSeat);
     if (payload == null) return;
     // The hidden-information rule (E6): a state sent to the other device never carries what this one must keep.
-    if (hiddenLeaks(payload, spec.allHiddenKeys).isNotEmpty || !auditLiveView(payload).ok) {
+    if (hiddenLeaks(payload, _neverCross).isNotEmpty || !auditLiveView(payload).ok) {
       blockedSends++;
       debugPrint('play_session: refusing to send a state that carries hidden or forbidden keys');
       return;
@@ -209,7 +213,7 @@ class PlaySessionController extends ChangeNotifier implements PlayLink {
   // ------------------------------------------------------------ receiving --
   Future<void> _onInbound(PlayInbound inbound) async {
     if (_disposed) return;
-    final ParsedEnvelope parsed = parsePlayEnvelope(inbound.raw);
+    final ParsedEnvelope parsed = parsePlayEnvelope(inbound.raw, maxBytes: spec.maxMessageBytes);
     if (!parsed.ok) {
       final ParseFailure f = parsed.failure!;
       if (f == ParseFailure.legacy) {
@@ -227,6 +231,11 @@ class PlaySessionController extends ChangeNotifier implements PlayLink {
       return;
     }
     final PlayEnvelope env = parsed.env!;
+    // A seed on the wire is never legitimate, whichever device sent it: refuse the whole message.
+    if (env.p != null && hiddenLeaks(env.p, neverSentKeys).isNotEmpty) {
+      _reject('seed_key');
+      return;
+    }
     if (env.g != spec.id) {
       _reject('wrong_game');
       return;

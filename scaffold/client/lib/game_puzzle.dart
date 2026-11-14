@@ -15,8 +15,17 @@ import 'package:flutter/material.dart';
 import 'access_scope.dart' show LiveLine;
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
-import 'live_games.dart' show Side, auditLiveView;
+import 'live_games.dart' show Side;
 import 'local_pairing.dart';
+import 'local_services.dart';
+import 'play_confirm_card.dart';
+import 'play_game.dart';
+import 'play_notice.dart';
+import 'play_save.dart';
+import 'play_session.dart';
+import 'play_transport.dart';
+import 'play_widgets.dart';
+import 'puzzle_play.dart';
 import 'together_puzzle.dart';
 
 /// foldTabletop's own outer padding — real-device-tested minimum,
@@ -49,70 +58,58 @@ class GamePuzzleScreen extends StatefulWidget {
 }
 
 class _GamePuzzleScreenState extends State<GamePuzzleScreen> {
+  // The conversation (envelope, order, resend, resume, the calm away line, the dealer's save) is the shared session's
+  // (play_session.dart); this screen only draws what the game (puzzle_play.dart) says and sends what it is told.
   late final LocalPairingController _pairing =
       LocalPairingController(role: widget.role, displayName: widget.displayName);
-  StreamSubscription<LocalTurnPayload>? _turnSub;
-
-  TogetherPuzzleState? _state;
+  late final LocalPairingTransport _transport = LocalPairingTransport(_pairing);
+  late final PuzzlePlayGame _game = PuzzlePlayGame(PlayContext(
+      mode: PlayMode.pair, localSeatId: _transport.mySeat, authoritySeatId: 'b', seatIds: const ['a', 'b']));
+  late final PlaySessionController _session = PlaySessionController(
+      spec: puzzleSpec, game: _game, transport: _transport,
+      store: LocalPlaySaveStore(LocalServices.current.area('playsave')));
   bool _celebrated = false;
-
-  Side get _mySide => _pairing.mySide;
+  bool _offered = false;
 
   @override
   void initState() {
     super.initState();
     _pairing.addListener(_onPairingChanged);
-    _turnSub = _pairing.incomingTurns.listen(_handleIncomingTurn);
+    _game.addListener(_onPairingChanged);
+    _session.addListener(_onPairingChanged);
+    _session.start();
     unawaited(_pairing.start());
+    unawaited(_offerSavedGame());
+  }
+
+  /// A dealer with a saved puzzle is asked whether to carry on with it (play_save.dart).
+  Future<void> _offerSavedGame() async {
+    if (!await _session.hasSavedGame() || !mounted) return;
+    _offered = true;
+    final carryOn = await askResumeSavedGame(context, 'Puzzle together');
+    _offered = false;
+    if (carryOn) {
+      await _session.resumeSavedGame();
+    } else {
+      await _session.discardSavedGame();
+    }
+    if (mounted) _onPairingChanged();
   }
 
   void _onPairingChanged() {
-    if (mounted) setState(() {});
-  }
-
-  void _startIfNeeded() {
-    if (_state != null) return;
-    setState(() => _state = newPuzzle('farmyard'));
-  }
-
-  Future<void> _tryPlace(String pieceId, String slotId) async {
-    final current = _state;
-    if (current == null || _mySide != current.mover) return;
-    final result = placePiece(current, _mySide, pieceId, slotId);
-    if (!result.accepted) return; // a wrong slot is rejected here, never sent, never recorded
-    setState(() => _state = result.state);
-    final payload = <String, dynamic>{
-      'kind': 'piecePuzzle', 'puzzleId': result.state.puzzleId,
-      'mover': result.state.mover == Side.a ? 'a' : 'b',
-      'placedPieces': result.state.placedPieces.toList(),
-      'solved': result.state.solved,
-    };
-    final audit = auditLiveView(payload);
-    if (!audit.ok) {
-      debugPrint('game_puzzle: refusing to send a payload with forbidden keys: ${audit.leaks}');
-      return;
-    }
-    await _pairing.sendTurn(payload);
-  }
-
-  void _handleIncomingTurn(LocalTurnPayload payload) {
-    if (payload['kind'] != 'piecePuzzle') return;
-    final current = _state ?? newPuzzle('farmyard');
-    final placedRaw = payload['placedPieces'];
-    final moverRaw = payload['mover'];
-    if (placedRaw is! List || (moverRaw != 'a' && moverRaw != 'b')) return;
-    final placed = <String>[];
-    for (final p in placedRaw) {
-      if (p is! String) return;
-      placed.add(p);
-    }
-    final merged = mergeIncoming(current, placedPieces: placed, mover: moverRaw == 'a' ? Side.a : Side.b);
-    if (mounted) setState(() => _state = merged);
+    if (!mounted) return;
+    // The dealer opens the puzzle the moment the other device is found (unless it is still being asked about a save).
+    if (_pairing.phase == PairingPhase.found && !_offered) _game.begin();
+    setState(() {});
   }
 
   @override
   void dispose() {
-    unawaited(_turnSub?.cancel());
+    _game.removeListener(_onPairingChanged);
+    _session.removeListener(_onPairingChanged);
+    _session.dispose();
+    _game.dispose();
+    _transport.dispose();
     _pairing.removeListener(_onPairingChanged);
     _pairing.dispose();
     super.dispose();
@@ -125,31 +122,36 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen> {
     // one nested in something scrollable.
     return LayoutBuilder(builder: (context, constraints) {
       final posture = ff.postureFor(ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
-      final state = _state;
+      final state = _game.state;
       final Widget body;
       if (_pairing.phase == PairingPhase.error) {
         body = _MessageView(message: _pairing.errorMessage ?? "Can't play locally right now.",
           icon: Icons.error_outline);
-      } else if (_pairing.phase == PairingPhase.found || state != null) {
-        _startIfNeeded();
-        body = PuzzleView(
-          state: _state!, mySide: _mySide, peerName: _pairing.peer?.name ?? 'the other side',
-          onPlace: _tryPlace, celebrated: _celebrated,
-          onCelebrate: () => setState(() => _celebrated = true),
-          pieceScale: _pieceScaleFor(posture),
-        );
+      } else if (_session.endedForGood) {
+        body = PlaySessionNotice(kind: PlayNoticeKind.ended, onLeave: () => Navigator.of(context).maybePop());
+      } else if (state != null) {
+        // The puzzle stays on screen while the other device is away, with one calm line above it.
+        body = Column(mainAxisSize: MainAxisSize.min, children: [
+          PlayAwayBanner(session: _session),
+          PuzzleView(
+            state: state, mySide: _game.mySide, peerName: 'the other side',
+            onPlace: _game.place, celebrated: _celebrated,
+            onCelebrate: () => setState(() => _celebrated = true),
+            pieceScale: _pieceScaleFor(posture),
+          ),
+          if (_game.finished) PlayRematchBar(session: _session),
+        ]);
+      } else if (_session.hasMetPeer && _session.notice != PlayNoticeKind.none) {
+        body = PlaySessionNotice(kind: _session.notice);
       } else {
         body = switch (_pairing.phase) {
-          PairingPhase.searching => const _Status(message: 'Looking nearby…'),
-          PairingPhase.peerLost =>
-            _MessageView(message: _pairing.errorMessage!, icon: Icons.wifi_off_outlined),
-          PairingPhase.found => throw StateError('handled above'),
-          PairingPhase.error => throw StateError('handled above'),
+          PairingPhase.peerLost => const PlaySessionNotice(kind: PlayNoticeKind.away),
+          _ => const _Status(message: 'Looking nearby…'),
         };
       }
       final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
-      return Scaffold(
-        appBar: AppBar(title: const Text('Piece it together')),
+      return PlayConfirmOverlay(pairing: _pairing, child: Scaffold(
+        appBar: AppBar(title: const Text('Piece it together'), actions: [PlayFinishButton(session: _session)]),
         // SingleChildScrollView, not a bare Center — see game_uno.dart's own
         // build() for why: real-device testing at foldTabletop's ~420dp
         // height overflowed there. Same child_home.dart/care_note.dart
@@ -158,7 +160,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen> {
           padding: EdgeInsets.all(outerPad),
           child: Center(child: body),
         )),
-      );
+      ));
     });
   }
 }
@@ -199,9 +201,6 @@ class PuzzleView extends StatelessWidget {
     final slotSize = 72 * pieceScale;
 
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Text('${state.placedPieces.length} of ${def.pieces.length} placed together',
-        style: theme.textTheme.bodyMedium),
-      const SizedBox(height: 8),
       LiveLine(child: Text(
         state.solved ? 'Good job — you did it together!' : myTurn ? 'Your turn to place a piece' : 'Waiting for $peerName…',
         style: theme.textTheme.titleMedium, textAlign: TextAlign.center,

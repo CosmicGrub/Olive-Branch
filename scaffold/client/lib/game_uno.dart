@@ -72,6 +72,7 @@ import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 import 'live_games.dart' show Side;
 import 'local_pairing.dart';
 import 'local_services.dart';
+import 'play_confirm_card.dart';
 import 'play_game.dart';
 import 'play_notice.dart';
 import 'play_save.dart';
@@ -618,7 +619,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
       // to breathe instead of losing it to a fixed 16dp gutter tuned for
       // a taller screen.
       final outerPad = posture == ff.Posture.foldTabletop ? _foldTabletopPad : AppSpacing.lg;
-      return Scaffold(
+      return PlayConfirmOverlay(pairing: _pairing, child: Scaffold(
         appBar: AppBar(title: const Text('Uno'), actions: [if (_mode == _Mode.vsPeer) PlayFinishButton(session: _session)]),
         // SingleChildScrollView, not a bare Center — real-device testing at
         // foldTabletop's ~420dp height (landscape, hands-free call posture)
@@ -632,7 +633,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
           padding: EdgeInsets.all(outerPad),
           child: Center(child: body),
         )),
-      );
+      ));
     });
   }
 
