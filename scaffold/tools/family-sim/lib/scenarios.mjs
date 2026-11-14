@@ -85,7 +85,7 @@ export async function noisyNeighbour(ctx, fams, rec, { secs = 45, noisy = 3, con
   };
   const baseCounts = await phase('baseline', false);
   const hamCounts = await phase('hammer', true);
-  const w = (n) => { const x = rec.windows.get(n); const all = Object.entries(x.byFam).filter(([k]) => +k !== noisy).flatMap(([, v]) => v); return { ...summarize(all), requests: x.total, errors: x.err }; };
+  const w = (n) => { const x = rec.windows.get(n); const all = Object.entries(x.byFam).filter(([k]) => +k !== noisy).flatMap(([, v]) => v); const vReq = Object.entries(x.byFam).filter(([k]) => +k !== noisy).reduce((a, [, v]) => a + v.length, 0); const vErr = Object.entries(x.errByFam).filter(([k]) => +k !== noisy).reduce((a, [, v]) => a + v, 0); return { ...summarize(all), requests: vReq, errors: vErr }; };
   const out = { noisyFamily: noisy, baseline: w('baseline'), underAttack: w('hammer'), hammer: hamCounts, baseCounts };
   out.victimP95Ratio = out.baseline.p95 ? +(out.underAttack.p95 / out.baseline.p95).toFixed(2) : null;
   out.starved = out.underAttack.errors > out.baseline.errors + 2 || (out.victimP95Ratio ?? 1) > 3;

@@ -146,8 +146,10 @@ export async function tokenProbes(ctx, A, B, { secret, media = true }) {
   const own = a.artifacts[A.kids[0].id]?.signedUrl, theirs = b.artifacts[bKid]?.signedUrl;
   const guesses = [['well-formed, forged signature, B-shaped key', `/media/children/${bKid}/messages/${randomUUID()}?exp=${Date.now() + 9e5}&sig=deadbeef`]];
   if (own) {
-    const u = new URL(own, 'http://x'); const key = u.pathname;
-    guesses.push(['own signature, B-shaped key', key.replace(/children\/[0-9a-f-]{36}/, `children/${bKid}`) + u.search]);
+    const u = new URL(own, 'http://x'); const key = u.pathname;           // /media/<encodeURIComponent(storageKey)>
+    const decoded = decodeURIComponent(key.slice('/media/'.length));
+    const swapped = decoded.replace(/children\/[0-9a-f-]{36}/, `children/${bKid}`);
+    guesses.push(['own signature replayed on a B-shaped key', `/media/${encodeURIComponent(swapped)}${u.search}`]);
     guesses.push(['own url with a flipped signature', key + u.search.replace(/sig=(.)/, (m, c) => `sig=${c === 'a' ? 'b' : 'a'}`)]);
   }
   const shapes = [];

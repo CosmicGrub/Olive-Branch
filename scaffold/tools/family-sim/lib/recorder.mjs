@@ -48,10 +48,10 @@ export class Recorder {
     if (this.activeWindow && fam !== null && fam !== undefined) {
       const w = this.windows.get(this.activeWindow);
       (w.byFam[fam] ??= []).push(ms);
-      w.total++; if (bad) w.err++;
+      w.total++; if (bad) { w.err++; w.errByFam[fam] = (w.errByFam[fam] ?? 0) + 1; }
     }
   }
-  openWindow(name) { this.windows.set(name, { byFam: {}, total: 0, err: 0, t: this.now() }); this.activeWindow = name; }
+  openWindow(name) { this.windows.set(name, { byFam: {}, errByFam: {}, total: 0, err: 0, t: this.now() }); this.activeWindow = name; }
   closeWindow() { this.activeWindow = null; }
   latencyTable() {
     const out = {};

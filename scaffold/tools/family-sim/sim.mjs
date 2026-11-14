@@ -23,6 +23,8 @@ const profile = arg('profile', 'full');
 const N = Number(arg('families', 10));
 const SOAK = Number(arg('soak-secs', profile === 'quick' ? 45 : 600));
 const VHOUR = Number(arg('vhour-secs', profile === 'quick' ? 8 : 30)) * 1000;
+const ONLY = arg('only') ? new Set(arg('only').split(',')) : null;   // e.g. --only tokens,noisy (skips the sweep, burst, soak)
+const want = (k) => !ONLY || ONLY.has(k);
 const NOISY_SECS = profile === 'quick' ? 15 : 45;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const OUT = arg('out', join(HERE, 'out', `run-${stamp}`));
@@ -72,28 +74,30 @@ try {
   phase('probes', `${N}x${N - 1} ordered family pairs, all routes with :childId, plus token/pairing/media/relay/timing attacks`);
   const catalog = routeCatalog();
   rec.emit('catalog', { routes: catalog.length, childScoped: catalog.filter((r) => r.path.includes(':childId')).length });
-  const pairs = []; for (const A of fams) for (const B of fams) if (A !== B) pairs.push([A, B]);
+  const pairs = []; for (const A of fams) for (const B of fams) if (A !== B && want('sweep')) pairs.push([A, B]);
   await pool(pairs, Math.min(5, N), async ([A, B]) => {
     const r = await sweepPair(ctx, A, B, catalog);
     probeResults.pairs.push(r);
     rec.emit('probe', { a: A.n, b: B.n, blocked: r.blocked, missed: r.missed, oracle: r.oracle, total: r.total });
   });
   for (const A of fams) {
+    if (!want('tokens')) break;
     const B = fams[(A.index + 1) % N];
     const tp = await tokenProbes(ctx, A, B, { secret: process.env.SIM_SESSION_SECRET ?? '51f0a7d3c9b24e68a1d05c7e93b8f4a2d6e1c0b9a8f7e6d5c4b3a2918070f6e5' });
     probeResults.tokens.push(...tp);
     rec.emit('probe.token', { a: A.n, b: B.n, pass: tp.filter((x) => x.pass).length, fail: tp.filter((x) => !x.pass).length });
   }
   for (const A of fams) {
+    if (!want('timing')) break;
     const B = fams[(A.index + 3) % N];
     const t = await timingProbe(ctx, A, B, { n: profile === 'quick' ? 10 : 25 });
     probeResults.timing.push(...t);
     rec.emit('probe.timing', { a: A.n, b: B.n, flagged: t.filter((x) => x.flagged).length });
   }
-  probeResults.ws.push(...await wsProbe(ctx, fams[0], cfg.base));
-  probeResults.pairing.push(...await pairingGuess(ctx, fams[0], 26));
+  if (want('pairing')) probeResults.ws.push(...await wsProbe(ctx, fams[0], cfg.base));
+  if (want('pairing')) probeResults.pairing.push(...await pairingGuess(ctx, fams[0], 26));
   // fairness side-effect of the global pairing budget: can an honest family still pair right after?
-  {
+  if (want('pairing')) {
     const V = fams[1], vs = st(ctx, V);
     const code = await ctx.client.call('POST', `/v1/children/${V.kids[0].id}/device-pairing-codes`, { token: vs.g[0].token, body: { pin: vs.g[0].pin }, fam: V.n });
     const red = code.status === 201 ? await ctx.client.call('POST', '/v1/device-pairing/redeem', { body: { code: code.body.numericCode, role: 'child' }, fam: V.n }) : code;
@@ -103,11 +107,11 @@ try {
   rec.emit('probes.done', { pairs: probeResults.pairs.length });
 
   // ---- 3. burst --------------------------------------------------------------------------
-  results.burst = await burst(ctx, fams, rec, { rounds: profile === 'quick' ? 2 : 5 });
+  if (want('burst')) results.burst = await burst(ctx, fams, rec, { rounds: profile === 'quick' ? 2 : 5 });
   // ---- 4. noisy neighbour ----------------------------------------------------------------
-  results.noisy = await noisyNeighbour(ctx, fams, rec, { secs: NOISY_SECS, noisy: 3 });
+  if (want('noisy')) results.noisy = await noisyNeighbour(ctx, fams, rec, { secs: NOISY_SECS, noisy: 3 });
   // ---- 5. soak ---------------------------------------------------------------------------
-  results.soak = await soak(ctx, fams, rec, { secs: SOAK });
+  if (want('soak')) results.soak = await soak(ctx, fams, rec, { secs: SOAK });
 } catch (e) {
   rec.emit('run.error', { error: String(e?.stack ?? e).slice(0, 600) });
   results.error = String(e?.stack ?? e);
