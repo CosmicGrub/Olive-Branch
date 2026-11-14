@@ -23,7 +23,7 @@ void main() {
   group('settle in', () {
     test('a new device is New for 24 hours by default, then ordinary', () async {
       final (TrustBook b, _Clock c, _) = await _book();
-      final TrustedDevice d = (await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'Ivy tablet', role: DeviceRole.child, addedBy: 'Sam'))!;
+      final TrustedDevice d = (await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'Ivy tablet', role: PairedRole.child, addedBy: 'Sam'))!;
       expect(d.isNew(c.t.millisecondsSinceEpoch), isTrue);
       expect(d.newTimeLeft(c.t.millisecondsSinceEpoch), const Duration(hours: 24));
       c.add(const Duration(hours: 24));
@@ -34,15 +34,15 @@ void main() {
       for (final (SettleIn s, Duration d) in <(SettleIn, Duration)>[(SettleIn.none, Duration.zero), (SettleIn.day, const Duration(hours: 24)), (SettleIn.threeDays, const Duration(days: 3))]) {
         final (TrustBook b, _Clock c, _) = await _book();
         await b.setSettleIn(s);
-        final TrustedDevice dev = (await b.add(certId: 'c', deviceKey: _k(2), deviceName: 'T', role: DeviceRole.child, addedBy: 'Sam'))!;
+        final TrustedDevice dev = (await b.add(certId: 'c', deviceKey: _k(2), deviceName: 'T', role: PairedRole.child, addedBy: 'Sam'))!;
         expect(dev.newTimeLeft(c.t.millisecondsSinceEpoch), d);
       }
     });
 
     test('a New grown-up phone cannot approve others; a child device never can', () async {
       final (TrustBook b, _Clock c, _) = await _book();
-      await b.add(certId: 'g', deviceKey: _k(3), deviceName: 'Phone', role: DeviceRole.grownUp, addedBy: 'Sam');
-      await b.add(certId: 'k', deviceKey: _k(4), deviceName: 'Tablet', role: DeviceRole.child, addedBy: 'Sam');
+      await b.add(certId: 'g', deviceKey: _k(3), deviceName: 'Phone', role: PairedRole.grownUp, addedBy: 'Sam');
+      await b.add(certId: 'k', deviceKey: _k(4), deviceName: 'Tablet', role: PairedRole.child, addedBy: 'Sam');
       expect(await b.mayApproveOthers('g'), isFalse, reason: 'still New');
       c.add(const Duration(hours: 25));
       expect(await b.mayApproveOthers('g'), isTrue);
@@ -54,7 +54,7 @@ void main() {
   group('keep watch', () {
     test('the same key keeps the connection and refreshes contact; a different key pauses it', () async {
       final (TrustBook b, _Clock c, _) = await _book();
-      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'Ivy tablet', role: DeviceRole.child, addedBy: 'Sam');
+      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'Ivy tablet', role: PairedRole.child, addedBy: 'Sam');
       c.add(const Duration(days: 3));
       expect(await b.observe('c1', _k(1)), TrustStatus.active);
       expect((await b.devices()).single.lastContactMs, c.t.millisecondsSinceEpoch);
@@ -65,7 +65,7 @@ void main() {
 
     test('still yours appears at 60 days without contact and goes away once confirmed', () async {
       final (TrustBook b, _Clock c, _) = await _book();
-      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'T', role: DeviceRole.child, addedBy: 'Sam');
+      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'T', role: PairedRole.child, addedBy: 'Sam');
       c.add(const Duration(days: 59));
       expect((await b.devices()).single.needsStillYours(c.t.millisecondsSinceEpoch), isFalse);
       c.add(const Duration(days: 1));
@@ -76,13 +76,13 @@ void main() {
 
     test('stop refuses the key from then on, leaves other devices alone, and cannot be re-added silently', () async {
       final (TrustBook b, _, _) = await _book();
-      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'One', role: DeviceRole.child, addedBy: 'Sam');
-      await b.add(certId: 'c2', deviceKey: _k(2), deviceName: 'Two', role: DeviceRole.child, addedBy: 'Sam');
+      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'One', role: PairedRole.child, addedBy: 'Sam');
+      await b.add(certId: 'c2', deviceKey: _k(2), deviceName: 'Two', role: PairedRole.child, addedBy: 'Sam');
       expect(await b.stop('c1'), isTrue);
       expect(await b.isRefused(_k(1)), isTrue);
       expect(await b.observe('c1', _k(1)), isNull);
       expect(await b.observe('c2', _k(2)), TrustStatus.active, reason: 'the other device is still connected');
-      expect(await b.add(certId: 'c3', deviceKey: _k(1), deviceName: 'One again', role: DeviceRole.child, addedBy: 'Sam'), isNull);
+      expect(await b.add(certId: 'c3', deviceKey: _k(1), deviceName: 'One again', role: PairedRole.child, addedBy: 'Sam'), isNull);
       expect(await b.stop('missing'), isFalse);
     });
   });
@@ -114,7 +114,7 @@ void main() {
 
     test('a hostile name is cleaned on the way into the list', () async {
       final (TrustBook b, _, _) = await _book();
-      final TrustedDevice d = (await b.add(certId: 'c', deviceKey: _k(5), deviceName: '‮evil\u0007', role: DeviceRole.child, addedBy: 'Sam'))!;
+      final TrustedDevice d = (await b.add(certId: 'c', deviceKey: _k(5), deviceName: '‮evil\u0007', role: PairedRole.child, addedBy: 'Sam'))!;
       expect(d.name, 'evil');
     });
   });
@@ -122,7 +122,7 @@ void main() {
   group('history', () {
     test('plain words, never key / certificate / fingerprint', () async {
       final (TrustBook b, _, _) = await _book();
-      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'Ivy tablet', role: DeviceRole.child, addedBy: 'Sam');
+      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'Ivy tablet', role: PairedRole.child, addedBy: 'Sam');
       await b.note(HistoryKind.refusedOtherFamily);
       await b.note(HistoryKind.refusedMatch);
       await b.stop('c1');
@@ -153,7 +153,7 @@ void main() {
 
     test('the book keeps an intact chain across many events', () async {
       final (TrustBook b, _, _) = await _book();
-      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'A', role: DeviceRole.child, addedBy: 'Sam');
+      await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'A', role: PairedRole.child, addedBy: 'Sam');
       await b.observe('c1', _k(8));
       await b.note(HistoryKind.newCode);
       await b.stop('c1');

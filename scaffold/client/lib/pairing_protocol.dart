@@ -173,6 +173,16 @@ class AdultWindow extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// "Make a new code": drop a claim that is mid-handshake (its exchange was tied to the old picture) and address the
+  /// window to the new salt. Connected devices are not affected; only an open window is.
+  void refreshAdultPicture(Uint8List newAdultSalt) {
+    if (state != WindowState.open) return;
+    _pending = null;
+    _pendingAt = null;
+    _adultSalt = Uint8List.fromList(newAdultSalt);
+    notifyListeners();
+  }
+
   /// Mode A: the adult is showing their own picture, so a child that scanned it can recognise this window.
   void showAdultPicture(Uint8List adultSalt) {
     if (state != WindowState.open) return;

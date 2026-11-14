@@ -16,16 +16,16 @@ const List<String> kMatchPictures = <String>[
   'sun', 'moon', 'star', 'cloud', 'tree', 'fish', 'bird', 'cat',
   'dog', 'boat', 'house', 'flower', 'apple', 'ball', 'kite', 'bell',
   'key', 'book', 'car', 'bus', 'train', 'plane', 'rocket', 'bike',
-  'umbrella', 'snowflake', 'fire', 'drop', 'leaf', 'bee', 'butterfly', 'turtle',
-  'rabbit', 'horse', 'cow', 'pig', 'duck', 'owl', 'penguin', 'elephant',
-  'cake', 'icecream', 'pizza', 'cookie', 'carrot', 'lemon', 'cherry', 'pear',
-  'drum', 'guitar', 'piano', 'hat', 'shoe', 'glasses', 'clock', 'lamp',
-  'gift', 'balloon', 'crown', 'heart', 'diamond', 'anchor', 'flag', 'camera',
+  'umbrella', 'snowflake', 'fire', 'drop', 'leaf', 'bee', 'butterfly', 'spa',
+  'cup', 'scissors', 'hammer', 'palette', 'phone', 'tv', 'headphones', 'mic',
+  'cake', 'icecream', 'pizza', 'cookie', 'bread', 'burger', 'egg', 'tea',
+  'music', 'piano', 'wrench', 'cap', 'bag', 'watch', 'clock', 'bulb',
+  'gift', 'party', 'trophy', 'heart', 'diamond', 'anchor', 'flag', 'camera',
 ];
 
 /// Eight colours; each also has a shape so colour is never the only cue (colour-blind adults and children).
 const List<String> kMatchColours = <String>['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
-const List<String> kMatchShapes = <String>['circle', 'square', 'triangle', 'diamond', 'star', 'hexagon', 'heart', 'plus'];
+const List<String> kMatchShapes = <String>['circle', 'square', 'triangle', 'pentagon', 'ring', 'hexagon', 'heart', 'plus'];
 
 /// Three pictures (indices 0..63) and a colour (0..7).
 class MatchSet {

@@ -28,7 +28,9 @@ import 'unlock_child_screen.dart';
 import 'device_keys.dart';
 import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_services.dart';
+import 'pairing_picture.dart';
 import 'pairing_records.dart';
+import 'pairing_trust.dart';
 import 'guardian_names_screen.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -1213,6 +1215,10 @@ class GuardianMoreScreen extends StatelessWidget {
                 kids: LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope)),
                 adultName: local.family?.guardianName ?? 'A grown-up',
                 childName: childName,
+                // The lasting pairing picture, who was added and the plain-language history
+                // (docs/planning/PERSISTENT-QR-PAIRING.md).
+                pictures: LocalStorePairingPictureRepository(services.area('devicekey')),
+                trust: TrustBook(LocalStoreTrustRepository(services.area('trust', ownerId: kLocalGuardianScope))),
               ));
             }),
         ]),

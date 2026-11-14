@@ -21,7 +21,7 @@ import 'device_keys.dart';
 import 'local_store.dart';
 
 /// Who a device is. Only the adult chooses; a device can never claim a role. v1 builds [child] only.
-enum DeviceRole { child, grownUp, helper }
+enum PairedRole { child, grownUp, helper }
 
 enum TrustStatus { active, paused, stopped }
 
@@ -74,7 +74,7 @@ class TrustedDevice {
 
   final String certId, name, addedBy;
   final Uint8List deviceKey;
-  final DeviceRole role;
+  final PairedRole role;
   final int addedAtMs, noviceUntilMs, lastContactMs;
   final TrustStatus status;
 
@@ -86,7 +86,7 @@ class TrustedDevice {
       status == TrustStatus.active && nowMs - lastContactMs >= kStillYoursAfter.inMilliseconds;
 
   /// A New device cannot add or approve other devices; a paused or stopped one cannot either.
-  bool mayApproveOthers(int nowMs) => status == TrustStatus.active && !isNew(nowMs) && role != DeviceRole.child;
+  bool mayApproveOthers(int nowMs) => status == TrustStatus.active && !isNew(nowMs) && role != PairedRole.child;
 
   TrustedDevice copyWith({String? name, int? noviceUntilMs, int? lastContactMs, TrustStatus? status}) => TrustedDevice(
         certId: certId, deviceKey: deviceKey, name: name ?? this.name, role: role, addedAtMs: addedAtMs, addedBy: addedBy,
@@ -106,7 +106,7 @@ class TrustedDevice {
         certId: j['id'] as String,
         deviceKey: unb64(j['k'] as String),
         name: sanitizeDeviceName(j['n']),
-        role: DeviceRole.values.byName(j['r'] as String),
+        role: PairedRole.values.byName(j['r'] as String),
         addedAtMs: j['at'] as int,
         addedBy: (j['by'] as String?) ?? '',
         noviceUntilMs: j['nu'] as int,
@@ -305,7 +305,7 @@ class TrustBook {
     required String certId,
     required Uint8List deviceKey,
     required String deviceName,
-    required DeviceRole role,
+    required PairedRole role,
     required String addedBy,
   }) async {
     final TrustState s = await repo.load();

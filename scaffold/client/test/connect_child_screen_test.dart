@@ -20,6 +20,8 @@ class _FakeHost implements WindowHost {
   int? get port => 4242;
   @override
   Future<void> stop() async {}
+  @override
+  Future<void> readvertise() async {}
 }
 
 class _FakeFinder implements NearbyFinder {
@@ -92,9 +94,14 @@ void main() {
             childKey: ck, transport: LoopbackPairingTransport(opened!), deviceName: 'Tablet', pollEvery: const Duration(milliseconds: 20))
         .pair(sid: opened!.sid, password: '4829');
     await _settle(t);
+    // Match first: four sets, the grown-up picks the one on the child's device. Approve is not even offered yet.
+    expect(find.byKey(const Key('connectMatchStep')), findsOneWidget);
+    expect(find.byKey(const Key('connectApprove')), findsNothing);
+    await t.tap(find.byKey(Key('connectMatch_${opened!.matchChoices!.correct}')));
+    await t.pump();
     expect(find.byKey(const Key('connectApproveTitle')), findsOneWidget);
     expect(find.textContaining("Is this Ivy's Tablet?"), findsOneWidget);
-    expect(find.byKey(const Key('connectSas')), findsOneWidget);
+    expect(find.byKey(const Key('connectRoleChild')), findsOneWidget);
 
     await _act(t, () => t.tap(find.byKey(const Key('connectApprove'))));
     await _settle(t);
@@ -116,7 +123,7 @@ void main() {
     expect(find.textContaining('error'), findsNothing);
   });
 
-  testWidgets('child screen end to end: pick the grown-up by name, type the PIN, match shown, paired', (t) async {
+  testWidgets('child screen end to end: pick the nameless window, type the PIN, match shown, paired', (t) async {
     final DeviceKey ak = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
     final AdultWindow w = await t.runAsync(() => AdultWindow.open(
         adultKey: ak, adultName: 'Mom', familyId: 'fam', childId: 'kid', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap)) as AdultWindow;
@@ -136,9 +143,9 @@ void main() {
     await t.tap(find.byKey(const Key('adultGateGrownUp')));
     await _settle(t);
     expect(find.byKey(const Key('childConnectWhich')), findsOneWidget);
-    finder.emit(NearbyWindow(adultName: 'Mom', sid: w.sid, host: 'x', port: 1));
+    finder.emit(NearbyWindow(sid: w.sid, host: 'x', port: 1));
     await _settle(t);
-    await t.tap(find.text('Mom'));
+    await t.tap(find.byKey(Key('childConnectPick_${b64(w.sid)}')));
     await t.pumpAndSettle();
     for (final String d in <String>['4', '8', '2', '9']) {
       await t.tap(find.text(d));
@@ -165,9 +172,9 @@ void main() {
     )));
     await t.tap(find.byKey(const Key('adultGateGrownUp')));
     await _settle(t);
-    finder.emit(NearbyWindow(adultName: 'Mom', sid: w.sid, host: 'x', port: 1));
+    finder.emit(NearbyWindow(sid: w.sid, host: 'x', port: 1));
     await _settle(t);
-    await t.tap(find.text('Mom'));
+    await t.tap(find.byKey(Key('childConnectPick_${b64(w.sid)}')));
     await t.pumpAndSettle();
     for (final String d in <String>['1', '1', '1', '1']) {
       await t.tap(find.text(d));
