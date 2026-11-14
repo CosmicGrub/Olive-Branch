@@ -137,7 +137,16 @@ const serviceBlock = (text, name) => {
     /src="system"/.test(xml(mainCfg)) && !/src="user"/.test(xml(mainCfg)), 'true');
   check('C2 android', 'main config has NO domain-config that re-enables cleartext', /cleartextTrafficPermitted="true"/.test(xml(mainCfg)), false);
   check('C2 android', 'the debug override allows cleartext for localhost and 10.0.2.2 only',
-    [...xml(debugCfg).matchAll(/<domain [^>]*>([^<]+)</g)].map((m) => m[1]).sort().join(','), '10.0.2.2,127.0.0.1,localhost');
+    [...(xml(debugCfg).match(/<domain-config cleartextTrafficPermitted="true">[\s\S]*?<\/domain-config>/g) ?? []).join('').matchAll(/<domain [^>]*>([^<]+)</g)].map((m) => m[1]).sort().join(','), '10.0.2.2,127.0.0.1,localhost');
+  // MASTERFILE 16.2 #6 (third reversal): the self-hosted Jitsi's pinned LAN certificate is the ONLY extra trust,
+  // scoped to one LAN address, cleartext off, in both configs; never in the base config.
+  for (const [name, cfg] of [['main', mainCfg], ['debug', debugCfg]]) {
+    const x = xml(cfg);
+    const base = x.slice(x.indexOf('<base-config'), x.indexOf('</base-config>'));
+    check('C2 android', `${name} config: the pinned Jitsi certificate is not in the base config`, /jitsi_dev_cert/.test(base), false);
+    check('C2 android', `${name} config: the pinned certificate is scoped to one LAN address with cleartext off`,
+      /<domain-config cleartextTrafficPermitted="false">\s*<domain includeSubdomains="false">\d+\.\d+\.\d+\.\d+<\/domain>\s*<trust-anchors>\s*<certificates src="@raw\/jitsi_dev_cert"/.test(x), 'true');
+  }
   check('C2 android', 'the debug override still trusts only system CAs', !/src="user"/.test(xml(debugCfg)), 'true');
   check('C2 android', 'no manifest anywhere re-enables usesCleartextTraffic',
     ['main', 'debug', 'profile'].some((v) => /usesCleartextTraffic="true"/.test(rd(A + v + '/AndroidManifest.xml'))), false);
