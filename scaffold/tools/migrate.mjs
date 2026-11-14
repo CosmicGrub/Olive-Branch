@@ -21,7 +21,7 @@
  *  M4  TRANSACTIONAL PER FILE. Each migration runs in its own transaction, so a
  *      failure leaves the schema at a known version rather than half-applied.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { migrationChecksum } from './migrate_lib.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
@@ -188,7 +188,26 @@ if (gap.length) {
   await closeDb(); process.exit(1);
 }
 
+// S-B11 -- the least-privilege runtime role's grants are re-applied on EVERY run
+// (not once, in a migration): schema_migration itself is created by this runner,
+// and a role created after the schema (an existing deployment adopting the split)
+// must be able to pick up grants without a new migration. The file is idempotent,
+// does nothing when the role does not exist, and is skipped when it is not there
+// (a test pointing MIGRATIONS_DIR at a scratch directory).
+async function applyRuntimeGrants() {
+  const grants = process.env.RUNTIME_GRANTS_FILE ?? join(DIR, '..', 'runtime_grants.sql');
+  if (!existsSync(grants)) return;
+  try {
+    await execFile(grants);
+  } catch (e) {
+    console.error(`FAILED: ${grants}
+${e.stderr || e.message}`);
+    await closeDb(); process.exit(1);
+  }
+}
+
 if (!pending.length) {
+  await applyRuntimeGrants();
   console.log(`up to date — ${files.length} migration(s) applied`);
   await closeDb(); process.exit(0);
 }
@@ -208,5 +227,6 @@ for (const f of pending) {
       VALUES ('${f}', '${sha(body)}', ${ms});`);
   console.log(`applied ${f} (${ms}ms)`);
 }
+await applyRuntimeGrants();
 console.log(`done — ${pending.length} applied, ${files.length} total`);
 await closeDb();

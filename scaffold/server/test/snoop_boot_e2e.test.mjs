@@ -37,6 +37,9 @@ async function boot(extraEnv) {
     PATH: process.env.PATH, SystemRoot: process.env.SystemRoot,
     PORT: String(port), DATABASE_URL, SESSION_SECRET: hex(), MEDIA_SIGNING_SECRET: hex(),
     LIVEKIT_URL: 'wss://x.invalid', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'devsecret_at_least_32_chars_long_xx',
+    // This suite is about transport and logging, and CI connects it as app_owner; the database-role
+    // boot check (S-B11) has its own suite, tools/test/runtime_role.test.mjs.
+    ALLOW_OWNER_DB_ROLE: '1',
     ...extraEnv,
   };
   const child = spawn(process.execPath, [INDEX], { env, stdio: ['ignore', 'pipe', 'pipe'] });

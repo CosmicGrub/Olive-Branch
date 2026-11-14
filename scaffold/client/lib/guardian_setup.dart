@@ -48,6 +48,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'api_client.dart' show ApiException;
+import 'webauthn_channel.dart' show guardianPinSetupMessage;
 
 /// What a (future, real) passkey registration ceremony reports back.
 enum PasskeyOutcome { success, declined, unavailable }
@@ -226,6 +227,9 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
   /// pairing_redeem_screen.dart's own `_messageFor` already establishes for
   /// this app's other PIN/code flow.
   String _pinErrorMessage(Object e) {
+    // First PIN on an account that holds a passkey: the passkey step-up has its own plain words.
+    final passkeyWords = guardianPinSetupMessage(e);
+    if (passkeyWords != null) return passkeyWords;
     if (e is! ApiException) return 'Could not set your PIN. Check your connection and try again.';
     return switch (e.error) {
       'pin_required' || 'invalid_pin_format' => 'Enter a 4-8 digit PIN.',

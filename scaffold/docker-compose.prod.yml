@@ -25,7 +25,7 @@
 #     PASSWORD 'app_owner' / 'backup_reader' — fine for a throwaway local
 #     volume nobody depends on, not acceptable for anything real. `db` here
 #     runs tools/docker-dev/init-db.prod.sh instead (see that file's own
-#     header): it reads APP_OWNER_PASSWORD / BACKUP_READER_PASSWORD from the
+#     header): it reads APP_OWNER_PASSWORD / APP_RUNTIME_PASSWORD / BACKUP_READER_PASSWORD from the
 #     environment and fails closed (`:?`) if either is unset, the same
 #     posture SESSION_SECRET already has in both files.
 #
@@ -111,6 +111,7 @@ services:
       BACKUP_READER_PASSWORD: ${BACKUP_READER_PASSWORD:?BACKUP_READER_PASSWORD must be set — see .env.prod.example}
       # Optional (0047): empty leaves health_monitor NOLOGIN. See .env.prod.example.
       HEALTH_MONITOR_PASSWORD: ${HEALTH_MONITOR_PASSWORD:-}
+      APP_RUNTIME_PASSWORD: ${APP_RUNTIME_PASSWORD:?APP_RUNTIME_PASSWORD must be set — see .env.prod.example}
       POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-olive_prod}
     volumes:
       - olive-prod-pgdata:/var/lib/postgresql/data
@@ -164,7 +165,10 @@ services:
         condition: service_completed_successfully
     environment:
       PORT: "8123"
-      DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+      # S-B11: the RUNNING process connects as app_runtime (owns nothing, DML only,
+      # bound by every RLS policy), never as app_owner. Only `migrate` uses app_owner.
+      # server/db_role.mjs refuses to boot a production process on an owner role.
+      DATABASE_URL: postgres://app_runtime:${APP_RUNTIME_PASSWORD:?APP_RUNTIME_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set — see .env.prod.example (openssl rand -hex 32) — use a DIFFERENT value than any dev .env}
       # See top-of-file note #1 — deliberately a literal, not an
       # interpolation. Nothing in .env.prod, no override, no shell export
@@ -332,7 +336,10 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+      # S-B11: the RUNNING process connects as app_runtime (owns nothing, DML only,
+      # bound by every RLS policy), never as app_owner. Only `migrate` uses app_owner.
+      # server/db_role.mjs refuses to boot a production process on an owner role.
+      DATABASE_URL: postgres://app_runtime:${APP_RUNTIME_PASSWORD:?APP_RUNTIME_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
       SCHEDULER_HOUR_UTC: "${SCHEDULER_HOUR_UTC:-3}"
       # Real bug, found by this project's own post-tier audit: without this,
       # `reap-media`'s `FilesystemStorage` falls back to the exact same

@@ -52,13 +52,14 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          deleteReflection, clearReflections, setHouseRules, houseRulesFor,
          INVITABLE_ROLES, passkeysFor, deletePasskey, hasSecondFactorSetup,
          recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
-         storageKeyInUse, releaseMediaUpload } from '../packages/db/src/pool.mjs';
+         storageKeyInUse, releaseMediaUpload,
+         webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
 import { sleepsUntilSideChange, sideOn, sideAtInstant, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
 import { partsOn } from '../packages/delivery-engine/src/materialize.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
-import { hashPin } from '../packages/auth/src/auth.mjs';
+import { hashPin, verifyAssertion } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
 import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
 import { CHANNELS } from '../packages/devices/src/devices.mjs';
@@ -2175,6 +2176,17 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         // is the only proof accepted — see MASTERFILE.)
         const existing = await pinCredentialFor(pool, c.principal.userId);
         if (!existing) {
+          // FIRST-PIN passkey check (security follow-up to S-B3). An account that
+          // already holds a passkey but has no PIN used to let any session set its
+          // first PIN with no proof, and then add a passkey of its own with that PIN:
+          // a stolen session became a permanent takeover. Now such a session must
+          // present a FRESH passkey assertion over a challenge minted for this
+          // purpose (POST /v1/me/pin/passkey-challenge). An account with no passkey
+          // yet (invite bootstrap) has nothing to assert against and is unchanged.
+          if ((await passkeysFor(pool, c.principal.userId)).length > 0) {
+            const proof = await verifyPasskeyStepUp(c.principal.userId, c.body?.assertion);
+            if (!proof.ok) return { status: proof.status, body: { error: proof.error } };
+          }
           const created = await setPinCredential(pool, c.principal.userId, hash,
             { onlyIfAbsent: true });
           // A concurrent first-PIN call won between the check and the insert:
@@ -2200,6 +2212,66 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         }
         throw e; // -> Api.handle's catch-all -> 500, logged there
       }
+    },
+  });
+
+  // A fresh passkey assertion bound to a 'stepup' challenge, for the one action
+  // that has no PIN to prove against yet: setting the FIRST PIN on an account that
+  // already holds a passkey. Same checks the login ceremony makes (single-use
+  // challenge consumed BEFORE the signature check, origin, rpId hash, user
+  // presence AND user verification, signature, counter compare-and-swap) plus
+  // "the credential must be THIS account's own".
+  async function verifyPasskeyStepUp(userId, a) {
+    if (!a || typeof a !== 'object') {
+      return { ok: false, status: 403, error: 'passkey_assertion_required' };
+    }
+    const { credentialId, clientDataJSON, authenticatorData, signature } = a;
+    if (typeof credentialId !== 'string' || typeof clientDataJSON !== 'string' ||
+        typeof authenticatorData !== 'string' || typeof signature !== 'string') {
+      return { ok: false, status: 400, error: 'bad_request' };
+    }
+    let clientData;
+    try { clientData = JSON.parse(Buffer.from(clientDataJSON, 'base64url').toString('utf8')); }
+    catch { return { ok: false, status: 403, error: 'passkey_assertion_failed' }; }
+    const consumed = await consumeChallenge(pool, userId, 'stepup', clientData?.challenge ?? '');
+    if (!consumed) return { ok: false, status: 403, error: 'passkey_assertion_failed' };
+    const credential = await webauthnCredentialById(pool, credentialId);
+    if (!credential || credential.userId !== userId) {
+      return { ok: false, status: 403, error: 'passkey_assertion_failed' };
+    }
+    const now = Date.now();
+    const result = verifyAssertion({
+      assertion: { credentialId, clientDataJSON, authenticatorData, signature },
+      credential,
+      expectedChallenge: clientData.challenge ?? '',
+      expectedOrigin: RP_ORIGIN,
+      expectedRpIdHash: createHash('sha256').update(RP_ID, 'utf8').digest(),
+      // The 5-minute TTL and single use are enforced once, atomically, inside
+      // consumeChallenge() (see server/index.mjs's login verify for the same note).
+      challengeIssuedAt: now,
+      now,
+    });
+    if (!result.ok) return { ok: false, status: 403, error: 'passkey_assertion_failed' };
+    const advanced = await updateWebauthnSignCount(pool, credentialId, result.newSignCount);
+    if (!advanced) return { ok: false, status: 403, error: 'passkey_assertion_failed' };
+    return { ok: true };
+  }
+
+  // POST /v1/me/pin/passkey-challenge — mints the 'stepup' challenge the first-PIN
+  // assertion must sign. Guardian session only; 409 when the account has no
+  // passkey (there is nothing to assert, so nothing to ask for).
+  api.register({
+    method: 'POST', path: '/v1/me/pin/passkey-challenge', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      if ((await passkeysFor(pool, c.principal.userId)).length === 0) {
+        return { status: 409, body: { error: 'no_passkey' } };
+      }
+      const challenge = await createChallenge(pool, c.principal.userId, 'stepup');
+      return { body: { challenge, rpId: RP_ID } };
     },
   });
 

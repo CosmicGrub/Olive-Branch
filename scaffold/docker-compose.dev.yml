@@ -82,7 +82,10 @@ services:
       # stack is the development one, so it says so; the prod compose already
       # sets NODE_ENV=production and its `openssl rand -hex 32` secrets pass.
       NODE_ENV: development
-      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+      # S-B11: the running server connects as app_runtime (DML only, owns nothing; created by
+      # init-db.sql, or once by create-runtime-role.sql on an older volume). Only `migrate`
+      # connects as app_owner. A dev stack still boots as app_owner (with a warning).
+      DATABASE_URL: postgres://app_runtime:app_runtime@db:5432/olive_devicetest
       # Both read from ./.env (untracked — see .env.example), not a literal
       # here. A committed SESSION_SECRET plus a permanently-on DEV_LOGIN
       # were both real, confirmed findings: anyone holding the secret could
@@ -217,7 +220,10 @@ services:
     environment:
       # Same app_owner connection every other service here uses — see
       # `migrate`'s own comment on why app_owner, not postgres.
-      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+      # S-B11: the running server connects as app_runtime (DML only, owns nothing; created by
+      # init-db.sql, or once by create-runtime-role.sql on an older volume). Only `migrate`
+      # connects as app_owner. A dev stack still boots as app_owner (with a warning).
+      DATABASE_URL: postgres://app_runtime:app_runtime@db:5432/olive_devicetest
       # Real nightly cadence by default (03:00 UTC). Override for a tighter
       # loop while testing the scheduler itself — see
       # scaffold/docs/scheduler.md.
