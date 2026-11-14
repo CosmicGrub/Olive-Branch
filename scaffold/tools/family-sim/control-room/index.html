@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Olive Control Room</title>
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* Olive design language: tokens from client/assets/design/tokens.json (seed #4A6B4F, semantic ok/warn/bad/info). */
+:root{
+  --bg:#f6f4ec; --surface:#fffdf7; --surface2:#efece0; --ink:#1f2a21; --muted:#5a665c; --line:#d9d5c4;
+  --olive:#4a6b4f; --olive-c:#dfe9d8; --ok:#237a52; --ok-c:#dcf3e6; --warn:#8f6100; --warn-c:#fcefcf;
+  --bad:#b3322a; --bad-c:#fbe3e0; --info:#245f9c; --info-c:#dceafa; --focus:#245f9c;
+  --display:"Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;
+  --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141a15; --surface:#1c241d; --surface2:#232d24; --ink:#e8efe6; --muted:#a3b0a4; --line:#33403a;
+  --olive:#8fb596; --olive-c:#26352a; --ok:#6ccf9d; --ok-c:#12301f; --warn:#ecc15c; --warn-c:#34290c;
+  --bad:#f2a59d; --bad-c:#3a1a17; --info:#8bbdf0; --info-c:#122a44; --focus:#8bbdf0;}}
+:root[data-theme="dark"]{
+  --bg:#141a15; --surface:#1c241d; --surface2:#232d24; --ink:#e8efe6; --muted:#a3b0a4; --line:#33403a;
+  --olive:#8fb596; --olive-c:#26352a; --ok:#6ccf9d; --ok-c:#12301f; --warn:#ecc15c; --warn-c:#34290c;
+  --bad:#f2a59d; --bad-c:#3a1a17; --info:#8bbdf0; --info-c:#122a44; --focus:#8bbdf0;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 var(--body)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+h1{font:700 20px var(--display);margin:0;color:var(--olive);letter-spacing:.2px}
+.clock{font:600 22px var(--mono);padding:2px 10px;border-radius:10px;background:var(--olive-c);min-width:7.5ch;text-align:center}
+.chip{font:600 12px var(--mono);padding:3px 9px;border-radius:99px;background:var(--surface2);border:1px solid var(--line)}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
+button,select{font:600 14px var(--body);color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:7px 12px;cursor:pointer;min-height:36px}
+button.primary{background:var(--olive);color:var(--bg);border-color:var(--olive)}
+button:disabled{opacity:.5;cursor:default}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:10px 16px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px;min-width:120px}
+.stat b{display:block;font:700 22px var(--display)} .stat span{font-size:12px;color:var(--muted)}
+main{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px;padding:0 16px 24px}
+@media (max-width:980px){main{grid-template-columns:1fr}}
+section{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+h2{font:700 15px var(--display);margin:0 0 8px;color:var(--olive)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-left:6px solid var(--line);border-radius:12px;padding:8px 10px;background:var(--surface2);min-height:112px}
+.tile.run{border-left-color:var(--info)} .tile.ok{border-left-color:var(--ok)} .tile.warn{border-left-color:var(--warn)} .tile.bad{border-left-color:var(--bad)}
+.tile h3{font:700 14px var(--display);margin:0;display:flex;justify-content:space-between;gap:6px}
+.tile .who{font-size:12px;color:var(--muted);margin:2px 0}
+.tile .stepline{font:12px var(--mono);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font:600 11px var(--mono);padding:1px 7px;border-radius:99px}
+.badge.ok{background:var(--ok-c);color:var(--ok)} .badge.warn{background:var(--warn-c);color:var(--warn)} .badge.run{background:var(--info-c);color:var(--info)} .badge.idle{background:var(--surface);color:var(--muted)} .badge.bad{background:var(--bad-c);color:var(--bad)}
+.bands span{font:600 11px var(--mono);background:var(--olive-c);border-radius:6px;padding:0 5px;margin-right:3px}
+.counts{font:11px var(--mono);color:var(--muted)}
+table.board{border-collapse:separate;border-spacing:3px;font:11px var(--mono)}
+.board th{font-weight:600;color:var(--muted);padding:0 2px;text-align:center}
+.board td{width:34px;height:30px;border-radius:7px;text-align:center;background:var(--surface2);border:1px solid var(--line);color:var(--muted)}
+.board td.ok{background:var(--ok-c);color:var(--ok);border-color:var(--ok)} .board td.bad{background:var(--bad-c);color:var(--bad);border-color:var(--bad);font-weight:700} .board td.self{background:transparent;border-style:dashed}
+.legend{font-size:12px;color:var(--muted);margin-top:6px}
+.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.chart{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.chart h4{margin:0 0 2px;font:600 12px var(--body);display:flex;justify-content:space-between}
+canvas{width:100%;height:110px;display:block}
+.feed{height:420px;overflow:auto;font:12px/1.5 var(--mono);background:var(--surface2);border-radius:10px;padding:8px;border:1px solid var(--line)}
+.feed div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .feed .bad{color:var(--bad)} .feed .gap{color:var(--warn)} .feed .ph{color:var(--olive);font-weight:600} .feed .t{color:var(--muted)}
+.span2{grid-column:1/-1}
+.scrub{display:flex;gap:10px;align-items:center;padding:0 16px 10px} .scrub input[type=range]{flex:1}
+.hidden{display:none!important}
+.sr{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Olive Control Room</h1>
+  <div class="clock" id="clock" role="timer" aria-label="Simulated day clock">--:--</div>
+  <span class="chip" id="phase" aria-live="polite">idle</span>
+  <span class="chip" id="conn">disconnected</span>
+  <div class="controls">
+    <label class="sr" for="mode">Mode</label>
+    <select id="mode"><option value="live">Live</option><option value="replay">Replay</option></select>
+    <span id="liveCtl">
+      <select id="profile" aria-label="Profile"><option value="quick">Quick (about 4 min)</option><option value="full" selected>Full (about 22 min)</option></select>
+      <button class="primary" id="start">Start run</button>
+      <button id="pause">Pause</button>
+      <label class="sr" for="speed">Speed</label>
+      <select id="speed"><option>0.5</option><option selected>1</option><option>2</option><option>4</option><option>8</option></select>
+    </span>
+    <span id="repCtl" class="hidden">
+      <select id="runs" aria-label="Saved run"></select>
+      <button id="load">Load</button>
+      <button id="play">Play</button>
+      <select id="rspeed" aria-label="Replay speed"><option>1</option><option>4</option><option selected>16</option><option>64</option></select>
+    </span>
+    <button id="theme" aria-label="Toggle light or dark">Theme</button>
+  </div>
+</header>
+<div class="scrub hidden" id="scrub"><span class="chip" id="stime">0:00</span><input type="range" id="slider" min="0" max="0" value="0" aria-label="Scrub through the run"></div>
+<div class="stats" id="stats"></div>
+<main>
+  <section class="span2"><h2>Ten families</h2><div class="tiles" id="tiles"></div></section>
+  <section><h2>Isolation probe board <span class="chip" id="pcount">0 probes</span></h2>
+    <div style="overflow:auto"><table class="board" id="board" aria-label="Attacker family by victim family; green means every probe was refused uniformly"></table></div>
+    <div class="legend">Rows attack, columns are attacked. Green &#10003; = every probe refused with an answer indistinguishable from a nonexistent id. Red &#10007; = a miss (a finding).</div>
+    <h2 style="margin-top:12px">Gaps and findings <span class="chip" id="gcount">0</span></h2><div class="feed" id="gaps" style="height:170px"></div>
+  </section>
+  <section><h2>Live charts</h2><div class="charts" id="charts"></div>
+    <h2 style="margin-top:12px">Event feed</h2><div class="feed" id="feed" role="log" aria-live="off"></div></section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const html = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// ---------------------------------------------------------------- state / reducer
+let S; function fresh() {
+  S = { fams: [], tiles: {}, cells: {}, probes: 0, misses: 0, gaps: [], series: [], clock: '--:--', phase: 'idle', requests: 0, steps: 0, bad: 0,
+        feed: [], p95: null, burst: [], noisy: null, done: false };
+}
+fresh();
+function apply(ev, quiet) {
+  switch (ev.kind) {
+    case 'run.start': S.fams = ev.families; for (const f of ev.families) S.tiles[f.n] = { step: 'waiting', health: 'idle', ok: 0, bad: 0 }; S.runInfo = ev; break;
+    case 'step': { const t = S.tiles[ev.fam]; if (t) { t.step = ev.title; ev.ok ? t.ok++ : t.bad++; t.health = t.bad ? 'warn' : 'run'; t.last = ev; } S.steps++; if (!ev.ok) { S.bad++; feed(ev, `FAIL ${ev.id} ${ev.route ?? ''} -> ${ev.status}`, 'bad'); } else if (!quiet && ev.id?.match(/^(O1|P2|M2|R2|C1|E1|Z5)/)) feed(ev, `fam ${ev.fam}  ${ev.title}  ${ev.status ?? ''}`); break; }
+    case 'clock': S.clock = ev.virtual; break;
+    case 'phase': S.phase = ev.name; feed(ev, `PHASE ${ev.name}  ${ev.detail ?? ''}`, 'ph'); if (ev.name === 'probes') for (const t of Object.values(S.tiles)) t.health = t.bad ? 'warn' : 'ok'; break;
+    case 'probe': S.cells[`${ev.a}-${ev.b}`] = ev; S.probes += ev.total; S.misses += ev.missed; if (ev.missed) feed(ev, `MISS ${ev.a} -> ${ev.b}: ${ev.missed} of ${ev.total}`, 'bad'); break;
+    case 'probe.token': S.probes += ev.pass + ev.fail; if (ev.fail) { S.misses += ev.fail; feed(ev, `token probe miss ${ev.a} -> ${ev.b}: ${ev.fail}`, 'bad'); } break;
+    case 'probe.timing': if (ev.flagged) feed(ev, `timing flag ${ev.a} -> ${ev.b}: ${ev.flagged} routes`, 'gap'); break;
+    case 'metric': S.series.push(ev); S.requests = ev.reqTotal ?? S.requests; S.p95 = ev.p95; break;
+    case 'gap': S.gaps.push(ev); feed(ev, `GAP ${ev.id}: ${ev.title.slice(0, 110)}`, 'gap'); break;
+    case 'burst': S.burst.push(ev); feed(ev, `burst ${ev.round}: ${ev.ops} ops in ${ev.wallMs} ms (${ev.rps}/s) p95 ${ev.p95} ms`, 'ph'); break;
+    case 'noisy': S.noisy = ev; feed(ev, `noisy neighbour: victim p95 x${ev.victimP95Ratio} (${ev.starved ? 'STARVED' : 'not starved'})`, ev.starved ? 'bad' : 'ph'); break;
+    case 'harness': feed(ev, `harness: ${ev.what} delivered ${ev.delivered}`, 'gap'); break;
+    case 'run.done': S.done = true; feed(ev, 'RUN COMPLETE', 'ph'); break;
+    case 'run.error': feed(ev, 'RUN ERROR ' + ev.error.slice(0, 120), 'bad'); break;
+  }
+  if (ev.kind === 'phase' && /soak|burst|noisy/.test(ev.name)) for (const t of Object.values(S.tiles)) t.health = 'run';
+}
+function feed(ev, text, cls = '') { S.feed.push({ t: ev.t, text, cls }); if (S.feed.length > 400) S.feed.shift(); }
+// ---------------------------------------------------------------- render
+const mmss = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+function render() {
+  $('clock').textContent = S.clock; $('phase').textContent = S.phase;
+  const live = S.series.at(-1) ?? {};
+  $('stats').innerHTML = [['requests', S.requests], ['steps ok / bad', `${S.steps - S.bad} / ${S.bad}`], ['probes', S.probes], ['misses', S.misses],
+    ['p95 (ms)', S.p95 ?? '-'], ['req/s', live.rps ?? '-'], ['server MB', live.serverRssMb ?? '-'], ['db conns', live.dbConns ?? '-'], ['gaps', S.gaps.length]]
+    .map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+  $('tiles').innerHTML = S.fams.map((f) => { const t = S.tiles[f.n]; const h = t.health === 'idle' ? 'idle' : t.health;
+    const label = { idle: 'idle', run: 'running', ok: 'ok', warn: 'check' }[h] ?? h;
+    return `<div class="tile ${h}"><h3><span>${f.n}. ${html(f.name)}</span><span class="badge ${h}">${label}</span></h3>
+      <div class="who">${f.guardians} guardian${f.guardians > 1 ? 's' : ''}${f.single ? ' (single)' : ''}${f.custody ? ', custody' : ''}${f.sitter ? ', sitter' : ''}</div>
+      <div class="bands">${f.kids.map((k) => `<span title="${html(k.name)}, age ${k.age}">${k.band}</span>`).join('')}</div>
+      <div class="stepline" title="${html(t.step)}">${html(t.step)}</div><div class="counts">${t.ok} ok / ${t.bad} bad</div></div>`; }).join('');
+  const n = S.fams.length; let b = '<tr><th></th>' + S.fams.map((f) => `<th>${f.n}</th>`).join('') + '</tr>';
+  for (const a of S.fams) { b += `<tr><th>${a.n}</th>`; for (const v of S.fams) {
+    if (a.n === v.n) { b += '<td class="self"></td>'; continue; }
+    const c = S.cells[`${a.n}-${v.n}`]; const cls = !c ? '' : c.missed ? 'bad' : 'ok';
+    b += `<td class="${cls}" title="${c ? `${c.blocked}/${c.total} blocked${c.oracle ? `, ${c.oracle} existence-oracle` : ''}` : 'not run yet'}" aria-label="family ${a.n} attacks ${v.n}: ${c ? (c.missed ? 'miss' : 'blocked') : 'pending'}">${c ? (c.missed ? '&#10007;' : '&#10003;') : ''}</td>`; }
+    b += '</tr>'; }
+  $('board').innerHTML = b; $('pcount').textContent = `${S.probes} probes, ${S.misses} misses`;
+  const fd = $('feed'); const stick = fd.scrollTop + fd.clientHeight >= fd.scrollHeight - 30;
+  fd.innerHTML = S.feed.slice(-200).map((e) => `<div class="${e.cls}"><span class="t">${mmss(e.t)}</span> ${html(e.text)}</div>`).join(''); if (stick) fd.scrollTop = fd.scrollHeight;
+  $('gaps').innerHTML = S.gaps.map((g) => `<div class="gap" style="white-space:normal"><b>${g.id}</b> ${html(g.title)}<br><span class="t">${html((g.routes || []).join(', '))}</span></div>`).join('') || '<div class="t">none recorded yet</div>';
+  $('gcount').textContent = S.gaps.length; drawCharts();
+}
+const CH = [['p95', 'p95 latency (ms)', '--info'], ['serverRssMb', 'server RSS (MB)', '--olive'], ['dbConns', 'DB connections', '--warn'], ['rps', 'requests / s', '--ok']];
+function buildCharts() { $('charts').innerHTML = CH.map(([k, t]) => `<div class="chart"><h4><span>${t}</span><span id="v_${k}" class="counts"></span></h4><canvas id="c_${k}" width="420" height="110" role="img" aria-label="${t} over time"></canvas></div>`).join(''); }
+function drawCharts() {
+  const css = getComputedStyle(document.documentElement);
+  for (const [k, , col] of CH) {
+    const cv = $('c_' + k); if (!cv) continue; const ctx = cv.getContext('2d'); const w = cv.width = cv.clientWidth * devicePixelRatio, h = cv.height = cv.clientHeight * devicePixelRatio;
+    ctx.clearRect(0, 0, w, h); const pts = S.series.map((p) => p[k]).filter((v) => v != null);
+    ctx.strokeStyle = css.getPropertyValue('--line'); ctx.lineWidth = 1; for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 4); ctx.lineTo(w, h * i / 4); ctx.stroke(); }
+    if (pts.length < 2) continue; const max = Math.max(...pts) * 1.15 || 1;
+    ctx.strokeStyle = css.getPropertyValue(col); ctx.lineWidth = 2 * devicePixelRatio; ctx.beginPath();
+    pts.forEach((v, i) => { const x = i / (pts.length - 1) * w, y = h - v / max * (h - 6) - 3; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+    $('v_' + k).textContent = `${pts.at(-1)}  (max ${Math.max(...pts)})`;
+  }
+}
+// ---------------------------------------------------------------- live (SSE)
+let es = null, mode = 'live';
+function connect() {
+  if (es) es.close(); es = new EventSource('/events');
+  es.onopen = () => { $('conn').textContent = 'live'; };
+  es.onerror = () => { $('conn').textContent = 'reconnecting'; };
+  es.addEventListener('reset', () => { fresh(); });
+  es.onmessage = (m) => { apply(JSON.parse(m.data)); schedule(); };
+}
+let pending = false; function schedule() { if (pending) return; pending = true; setTimeout(() => { pending = false; render(); }, 200); }
+async function post(u) { const r = await fetch(u, { method: 'POST' }); return r.json(); }
+$('start').onclick = async () => { const r = await post(`/api/start?profile=${$('profile').value}`); if (!r.ok) alert(r.error); };
+$('pause').onclick = async () => { const on = $('pause').textContent === 'Pause'; await post(`/api/pause?on=${on ? 1 : 0}`); $('pause').textContent = on ? 'Resume' : 'Pause'; };
+$('speed').onchange = () => post(`/api/speed?x=${$('speed').value}`);
+// ---------------------------------------------------------------- replay
+let events = [], tpos = 0, playing = false, last = 0, idx = 0;
+async function loadRun() {
+  const name = $('runs').value; const txt = await (await fetch(`/api/run/${name}/events.ndjson`)).text();
+  events = txt.trim().split('\n').map((l) => JSON.parse(l)); const end = events.at(-1)?.t ?? 0; $('slider').max = end; $('slider').value = 0; seek(0);
+}
+function seek(t) { fresh(); idx = 0; tpos = t; while (idx < events.length && events[idx].t <= t) apply(events[idx++], true); $('stime').textContent = mmss(t); render(); }
+function tick(ts) { if (!playing) return; const dt = ts - last; last = ts; const nt = Math.min(+$('slider').max, tpos + dt * +$('rspeed').value);
+  while (idx < events.length && events[idx].t <= nt) apply(events[idx++], true); tpos = nt; $('slider').value = nt; $('stime').textContent = mmss(nt); render();
+  if (nt >= +$('slider').max) { playing = false; $('play').textContent = 'Play'; } else requestAnimationFrame(tick); }
+$('play').onclick = () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play'; if (playing) { last = performance.now(); requestAnimationFrame(tick); } };
+$('slider').oninput = (e) => seek(+e.target.value); $('load').onclick = loadRun;
+$('mode').onchange = async () => {
+  mode = $('mode').value; const rep = mode === 'replay';
+  $('liveCtl').classList.toggle('hidden', rep); $('repCtl').classList.toggle('hidden', !rep); $('scrub').classList.toggle('hidden', !rep);
+  if (rep) { if (es) es.close(); $('conn').textContent = 'replay'; const r = await (await fetch('/api/runs')).json(); $('runs').innerHTML = r.runs.map((x) => `<option>${x}</option>`).join(''); fresh(); render(); if (r.runs.length) loadRun(); }
+  else { fresh(); render(); connect(); }
+};
+$('theme').onclick = () => { const r = document.documentElement; const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; r.dataset.theme = dark ? 'light' : 'dark'; render(); };
+buildCharts(); render(); connect();
+if (location.hash === '#replay') { $('mode').value = 'replay'; $('mode').onchange(); }
+</script>
+</body>
+</html>
