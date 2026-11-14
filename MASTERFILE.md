@@ -4158,9 +4158,12 @@ Getting named on a court's approved-tools list is worth more than any ad spend.
   `docs/planning/VILLAGE-WELCOME-DESIGN.md` 6.2; see §8.28).** The earlier wording,
   "revocable by either guardian unilaterally", is replaced by **pause versus end**:
   *either* parent can **pause** a carer at once (their access stops on every device that
-  has the news, and the person sees only "Not available right now"); **ending** needs
-  agreement (a parent may end a person they themselves welcomed; ending someone the
-  other parent welcomed needs both parents). A time box that runs out ends access by
+  has the news, and the person sees only "Not available right now"); **ending** is the
+  proposed rule, **not settled (open owner decision, `docs/planning/GAP-REGISTER.md` G-36)**:
+  a parent may end a person they themselves welcomed, and ending someone the other parent
+  welcomed would need both parents. The cost is recorded: one parent could not remove a
+  carer the other welcomed, which fits a high-conflict family badly (pause is the
+  safeguard there). A time box that runs out ends access by
   itself. Neither act ever reaches a child. Until it is built, nothing in the product
   grants or revokes any such access.
 - Threat model explicitly includes **a controlling ex using the platform for
@@ -5292,8 +5295,10 @@ is inside the same review scope.
 not acceptable") and R5 ("QR is not a standing, remotely usable bearer secret") **still hold for any code that
 carries a secret or authorizes anything**. They are read to **allow a persistent QR only as non-secret public
 identity**: the pairing picture above names one device and its rendezvous handle, authorizes nothing by itself,
-and is **always followed by the PIN-based key exchange, the adult-opened window, Match and the adult's Yes**. A
-photographed picture gains nothing but a rotatable handle. Section 7.2 is unchanged: **unlock never uses a
+and is **always followed by the PIN-based key exchange, the adult-opened window, Match and the adult's Yes**. It is
+designed so that a photographed picture gives an attacker nothing but a rotatable handle; that claim, and this
+re-reading of D1 and R5, are **subject to the external cryptographic review that is still outstanding**
+(`docs/planning/GAP-REGISTER.md`, G-04). Section 7.2 is unchanged: **unlock never uses a
 persistent picture**; it uses a fresh signed nonce that cannot be replayed. **PLANNED, NOT BUILT:** using the same
 introduction (never a key) to welcome a *person* rather than a device (§8.28), and any family-level use of the
 picture (it names a device, not a family; a second grown-up's phone is still a separate pairing until the family
@@ -7622,16 +7627,18 @@ hardest kind to call out — which is why the product **refuses** it rather than
 leaving the other parent to absorb it. Sixteen banned constructions, including
 *"she says you…"*, which is the child used as ammunition.
 
-**PLANNED, NOT BUILT: the About Mia exception (owner decision 2026-11-14; design:
-`docs/planning/QR-VETTING-BRAINSTORM.md`, "About the child").** The planned guardian-only **About Mia** profile
+**PLANNED, NOT BUILT: the About Mia exception (owner decision 2026-11-14; the design text, "About the child" in
+`docs/planning/QR-VETTING-BRAINSTORM.md`, is on open PR #198 and is not in the repo until that merges; the adopted
+decisions are recorded in `docs/planning/DECISIONS.md`).** The planned guardian-only **About Mia** profile
 (what keeps her safe, everyday care, what helps, standing notes for hard days, medicines, health history) is the
 one place this section's second rule does not apply: its entries **persist until a parent changes them** instead
 of expiring in seven days, and each entry shows **who wrote it and when**, with a plain edit history so two parents
 can see each other's changes (both are shown when they disagree; one never silently overwrites the other). Its
 one expiring part, **Today's heads-up**, ends at midnight and is never kept as a log of her moods. What does *not*
 change: the profile is **not evidence**, sits outside the §13 tamper-evident log and the certified export, is
-never an exhibit, never carries a label or diagnosis onto any child screen, and is never visible to a child at
-all (P7 and the rule above that the child never sees a care note). The edit history is deliberately not an
+never an exhibit, never carries a label or diagnosis onto any child screen, and is never visible to anyone under 13
+(P7 and the rule above that the child never sees a care note; a teen's own separate sheet is §8.29 and is governed
+by the teen privacy tiers, §15 and §8.1.2). The edit history is deliberately not an
 evidence log. Legal review of this exception is still open (`docs/planning/GAP-REGISTER.md`, G-38). Nothing of
 this is built: today a care note is still a care note, and the care binder (§8.19) is still the only profile-like
 screen.
@@ -8523,7 +8530,7 @@ force today and for every guide that has not been signed off.** It may be lifted
 qualified paediatric clinician has reviewed and signed off, guide by guide** (a hands-on first-aid instructor
 as well for choking and CPR), and **never for a child screen**: a care guide is for a grown-up or a welcomed
 carer and never appears to a child. Each lifted guide carries its reviewed date and the reviewer's region.
-The drafts are `DRAFT_UNREVIEWED`, sit in `docs/care-guides/` (open PR #200) and are not in the app. See §8.29.
+The drafts are `DRAFT_UNREVIEWED`, sit in `docs/care-guides/` (merged, PR #200) and are not in the app. See §8.29.
 The same review applies to any app-written string in the planned About Mia profile (section titles, writing
 prompts, the "follow her doctor's plan" sentence): they are pre-written text too.
 
@@ -9280,9 +9287,10 @@ app cannot verify guardianship and an agreement signed in it is not a legal inst
 ## §8.29 Care guides, and the About Mia profile (PLANNED, NOT BUILT)
 
 **Nothing in this section is built, and no medical text is in the app.** The rule in §8.19.2 stays in force (§8.19.5
-records how it may be lifted, guide by guide). Planning: `docs/planning/QR-VETTING-BRAINSTORM.md`, the drafts and the
-clinician packet in `docs/care-guides/` (open PR #200), `docs/care-guides/CLINICIAN-COVER-LETTER.md` and
-`docs/planning/GAP-REGISTER.md`.
+records how it may be lifted, guide by guide). Planning: `docs/planning/DECISIONS.md` (the adopted decisions), the
+fuller design text in `docs/planning/QR-VETTING-BRAINSTORM.md` (the reshaped version is on open PR #198 and is not in
+the repo until that merges), the drafts and the clinician packet in `docs/care-guides/` (merged, PR #200),
+`docs/care-guides/CLINICIAN-COVER-LETTER.md` and `docs/planning/GAP-REGISTER.md`.
 
 **Care guides (adopted, not built).** A sourced, offline library for a grown-up or welcomed carer: what to do and who
 to call in minor and major events (pilot drafts: a bump to the head, choking, a high fever, making the home safe, who to
@@ -9300,8 +9308,10 @@ heads-up** (ends at midnight, never logged), medicines (the existing log and dou
 moods (parents only, locked by default). Parents write every word; the app advises nothing, computes no dose and
 interprets no diagnosis. A "For Mia" strip shows what a parent wrote beside the matching generic guide, labelled with who
 wrote it and when, with the sentence that her doctor's plan wins over any guide (that sentence needs clinician review like
-the guides). All parents can read and edit; a teen from 13 sees "My health sheet" and agrees before anything private is
-shared. The exception to the care-note rule is in §12.5. **Never visible to a child, at any age.** The profile needs a new
+the guides). All parents can read and edit. **The profile is never visible to anyone under 13.** A separate teen
+"My health sheet" (from 13, shown only with the teen's agreement) is **PLANNED**, is not this profile, and is
+governed by the teen privacy tiers (§15, §8.1.2), not by this paragraph; it is an open owner decision
+(`docs/planning/OPEN-DECISIONS.md` #48). The exception to the care-note rule is in §12.5. The profile needs a new
 sealed area in the on-device catalogue (§8.16.4), exclusion from the court export and wipe on "forget this child".
 
 **Not verified or open:** counsel's view of the §12.5 exception; any region's rules on health information about a child;

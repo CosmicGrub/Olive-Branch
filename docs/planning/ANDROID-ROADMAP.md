@@ -31,7 +31,6 @@ Releases: 0.50.0 (#149), 0.51.0 (#168, tag `v0.51.0`), small wins batch (#174). 
 | #192 | Wave 8: child games parity | Last item of Lane A. |
 | #176 | iOS inert scaffold and roadmap | iOS compile job is advisory only; on hold by owner direction. |
 | #198 | Docs: reshape the QR brainstorm and mockups for welcoming people into the village | Adds the About Mia profile and care guides sections. Docs only. |
-| #200 | Docs: care guides pilot (five sourced drafts, `DRAFT_UNREVIEWED`, not for app use) | Awaiting clinician review; nothing reaches the app. |
 | this PR | Docs: spec amendments, gap register, roadmap, clinician cover letter | Docs only, marked PLANNED where not built. |
 
 Closed without merging: #181 (the `ubuntu-24.04` runner pin is already on main), #187 and #188 (CI probes).

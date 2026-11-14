@@ -2,7 +2,7 @@
 
 Status: ready to send once the bracketed items are filled in. No personal details are in this file; the sender adds their own name and contact line. Written 2026-11-14.
 
-How to use this file: send the letter (part 1) and the checklist (part 2) together with the review packet (`CLINICIAN-REVIEW-PACKET.md`) and the five guide files. The packet and the guides live in `docs/care-guides/` once the pilot drafts are merged (open pull request #200 at the time of writing); until then send them from that branch. Send part 3 to the first-aid instructor in place of the third paragraph of the letter.
+How to use this file: send the letter (part 1) and the checklist (part 2) together with the review packet (`CLINICIAN-REVIEW-PACKET.md`) and the five guide files. The packet and the guides live in `docs/care-guides/` on the main branch (merged in pull request #200). Send part 3 to the first-aid instructor in place of the third paragraph of the letter.
 
 ---
 
