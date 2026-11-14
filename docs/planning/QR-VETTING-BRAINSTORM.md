@@ -194,22 +194,26 @@ No family object, no village.
 
 ## Owner decisions
 
-**Adopted earlier:** both parents approve adding a grown-up's phone; settle-in 24 hours for devices; pictures-and-colour match; "still yours?" at 60 days; adding off by default; helper = screen-only page.
+**Adopted ("go with all recommendations", then "go with your recommendations"), 2026-11-14:**
 
-**Open from the village spec (15 in all), the main ones, each with my recommendation:**
-1. Carers may only *suggest* a welcome; only parents start one. **Yes.**
-2. A carer who can act needs **all parents** by default, loosenable to one with a warning. **Yes.**
-3. **Pause** (either parent, at once) versus **end** (needs both). **Yes**, which differs from one existing spec line.
-4. The 24-hour think-it-over before limits on a parent. **Yes.**
-5. Caps of 4 parents and 8 carers. **Yes.**
-6. Whether Welcome ships before server mode. **Yes, local first.**
-7. Whether the signed **Standing OK** is included at all. **Yes, 90 days maximum.**
+- **Devices:** both parents approve adding a grown-up's phone; settle-in 24 hours; pictures-and-colour match; "still yours?" at 60 days; adding off by default.
+- **Village welcome (all of `VILLAGE-WELCOME-DESIGN.md`'s recommendations):**
+  - Only a parent starts a welcome; carers only suggest.
+  - Approval follows reach (Look, Act, Parent). A new parent needs all parents, a hard floor.
+  - A carer who can act needs all parents by default, loosenable to one with a plain warning.
+  - **Pause** is instant for either parent; **end** needs both.
+  - A 24-hour think-over before limits on a parent.
+  - Caps of 4 parents and 8 carers.
+  - Welcome ships local-first, before server mode.
+  - A signed **Standing OK**, 90 days at most.
+- **Care guides:**
+  - The spec rule against shipping medical text may be lifted **only after clinician review of each guide**. That review is a hard gate.
+  - US first, with UK, Canada and Australia numbers noted for later localisation.
+  - The library ships **offline** on the device with a visible "last reviewed" date and a way to check for updates.
+  - The section is named **"Care guides"**.
+  - Guides never appear on a child screen.
 
-**New for care guides:**
-8. Lift the spec rule against shipping medical text **once the library is clinician-reviewed.** Recommended yes, with the review as a hard gate.
-9. **US first**, with UK, Canada and Australia numbers noted for later localisation.
-10. Library goes **offline on the device**, with a visible "last reviewed" date and a way to check for updates.
-11. Name the section **"Care guides"** (not "medical").
+**Still open:** the remaining smaller questions in the village spec (section 13), which take their recommended defaults unless you say otherwise.
 
 ## Not covered here
 
