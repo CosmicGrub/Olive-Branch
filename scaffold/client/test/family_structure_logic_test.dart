@@ -192,4 +192,27 @@ void main() {
       expect(out, k['out']);
     });
   });
+
+  group('next exchange (Wave 5): a fact about the weekly shape, never about whose home (the rhythm has no anchor week)', () {
+    // 2026-11-09 is a Monday.
+    NextExchange? next(Rhythm r, [String today = '2026-11-09']) => nextExchange(r, today);
+    test('the first date on or after today that is the exchange day', () {
+      final NextExchange n = next(const Rhythm(pattern: 'alternating_weeks', exchangeDay: 5, exchangeTime: '18:00'))!;
+      expect([n.date, n.dayIndex, n.time, n.daysAway], ['2026-11-13', 5, '18:00', 4]);
+    });
+    test('today counts when today is the exchange day', () {
+      final NextExchange n = next(const Rhythm(pattern: '2-2-3', exchangeDay: 1))!;
+      expect([n.date, n.daysAway, n.time], ['2026-11-09', 0, null]);
+    });
+    test('Sunday is 0, and a week can roll over a month and a year end', () {
+      expect(next(const Rhythm(pattern: '2-2-3', exchangeDay: 0))!.date, '2026-11-15');
+      expect(nextExchange(const Rhythm(pattern: '2-2-3', exchangeDay: 3), '2026-12-30')!.date, '2026-12-30');
+      expect(nextExchange(const Rhythm(pattern: '2-2-3', exchangeDay: 2), '2026-12-30')!.date, '2027-01-05');
+    });
+    test('no pattern, no exchange day or a bad date gives nothing, never a guess', () {
+      expect(next(const Rhythm()), isNull);
+      expect(next(const Rhythm(pattern: '2-2-3')), isNull);
+      expect(next(const Rhythm(pattern: '2-2-3', exchangeDay: 2), 'soon'), isNull);
+    });
+  });
 }

@@ -47,6 +47,8 @@ String contactWords(String c) => switch (c) {
       _ => c,
     };
 
+const List<String> _dayNames = <String>['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 String patternWords(String p) => switch (p) {
       'none' => 'No rhythm set',
       '2-2-3' => '2-2-3',
@@ -481,6 +483,11 @@ class _FamilyHomesState extends State<FamilyHomesScreen> {
                 _gap(AppSpacing.sm),
                 Text(patternWords(o.intended.rhythm.pattern), key: const Key('rhythmSummary')),
                 if (o.intended.rhythm.exchangeTime != null) Text('Exchange at ${o.intended.rhythm.exchangeTime}'),
+                if (nextExchange(o.intended.rhythm, widget.ctx.service.today()) case final NextExchange n)
+                  Text(
+                    n.daysAway == 0 ? 'Next exchange: today${n.time == null ? '' : ' at ${n.time}'}'
+                        : 'Next exchange: ${_dayNames[n.dayIndex]}${n.time == null ? '' : ' at ${n.time}'}',
+                    key: const Key('nextExchange')),
                 _gap(AppSpacing.sm),
                 if (o.rhythmLocked)
                   _note(context, 'Set by a court order. It is shown here and cannot be changed in this app.',

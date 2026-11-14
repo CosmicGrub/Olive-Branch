@@ -9,6 +9,11 @@
 // daily prompt that nudged toward change would be manufacturing churn out of
 // a child, so there is deliberately no streak, no "N days in a row", and no
 // framing of either option as new or better.
+//
+// "Other colours" (Wave 4, prototype k.colour): one quiet button under the pair opens
+// the whole curated set, for the day she wants a colour that is on neither card. It is
+// the same answer (the same store call), the same twelve swatches as her first pick, and
+// it asks for nothing: no new/better framing, nothing counted, nothing to scroll past.
 import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
 import 'palette_logic.dart';
@@ -30,6 +35,7 @@ class ColourDailyScreen extends StatefulWidget {
 class _ColourDailyScreenState extends State<ColourDailyScreen> {
   late final DailyPair _pair = dailyPair(widget.currentColourId, rand: widget.random);
   String? _picked;
+  bool _all = false;
 
   void _pick(Swatch s) {
     setState(() => _picked = s.id);
@@ -50,7 +56,9 @@ class _ColourDailyScreenState extends State<ColourDailyScreen> {
           .map((s) => Expanded(child: _ColourCard(
             swatch: s, picked: _picked == s.id, onTap: () => _pick(s))))
           .toList();
-        return Padding(
+        return SingleChildScrollView(child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             Text('Which do you like more today?',
@@ -72,8 +80,24 @@ class _ColourDailyScreenState extends State<ColourDailyScreen> {
                     if (i > 0) const SizedBox(width: 16),
                     options[i],
                   ]])),
+            const SizedBox(height: 12),
+            if (!_all) TextButton(
+              key: const Key('colourMore'),
+              style: TextButton.styleFrom(minimumSize: const Size(64, 56)),
+              onPressed: () => setState(() => _all = true),
+              child: const Text('Other colours', style: TextStyle(fontSize: 18))),
+            if (_all) Wrap(
+              key: const Key('colourAll'), alignment: WrapAlignment.center, spacing: 12, runSpacing: 12,
+              children: [for (final s in palette) Semantics(
+                button: true, label: s.label, excludeSemantics: true,
+                child: InkWell(
+                  key: Key('all_${s.id}'), customBorder: const CircleBorder(), onTap: () => _pick(s),
+                  child: Container(width: 64, height: 64,
+                    decoration: BoxDecoration(color: s.color, shape: BoxShape.circle,
+                      border: _picked == s.id ? Border.all(color: scheme.onSurface, width: 4) : null),
+                    child: _picked == s.id ? Icon(Icons.check_rounded, color: s.ink) : null)))]),
           ]),
-        );
+        )));
       })),
     );
   }
