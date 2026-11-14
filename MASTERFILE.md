@@ -2150,22 +2150,132 @@ expiry for device credentials.
 **Not shipped (follow-up).** S-B2 (a guardian can pair a child-role device: needs
 a design decision on binding the child credential to the child's own device),
 S-B7 (the account-deletion recovery window and pseudonymising purge), S-B10
-(an Ed25519 signature and timestamp on the certified export), S-B11 (a DML-only
-`app_runtime` login for the server; `app_owner` still both migrates and serves,
-so FORCE RLS does not yet bind the server's own connection against a compromised
-handler), S-B12 (PIN per-device backoff, six-digit minimum for new PINs with a
+(an Ed25519 signature and timestamp on the certified export), S-B11 (**shipped
+afterwards, see 7.12.1**), S-B12 (PIN per-device backoff, six-digit minimum for new PINs with a
 blocklist, `PIN_PEPPER`, and scoping the kiosk attempt counter to the caller),
 the rest of S-B16, S-B17 to S-B20 (`RP_ID` is still the placeholder
 `olivebranch.local`; backup encryption off by default; privacy-law gaps; the
 two-guardian consent for roles that read the P8 log), and edge policies for the
-five child-keyed scheduling tables in the RLS allow-list. A residual in S-B3:
-`POST /v1/me/pin` still lets an account that has no PIN set its first one without
-proof, so a stolen session on an account that holds a passkey but no PIN can set a
-PIN and then add a passkey; closing it needs a fresh user-verified passkey assertion
-before the first PIN (follow-up). A client change is
-needed before the exports and invite creation work from the app: they now require
-the PIN (header or body), and `client/lib/api_client.dart` gained only the three
-new path constants.
+five child-keyed scheduling tables in the RLS allow-list. The residual in S-B3
+(a first PIN with no proof) and the client change the step-up needed (the exports
+and invite creation now require the PIN) **shipped afterwards, see 7.12.1**.
+
+### 7.12.1 Security follow-ups — as shipped (`feat/security-follow-ups`)
+
+Four follow-ups to 7.12, in one change. None touches a prohibition in 2.1: every
+screen below is adult-only (a child session gets 403 from each route behind it, and a
+child never reaches a PIN prompt or reads one of these messages), and nothing here
+needs the network except what it already did (exports and invites are server calls;
+PIN recovery is entirely on-device).
+
+**(1) The client sends the guardian PIN (step-up).** `fetchRawExport` and
+`fetchCertifiedExport` take a required `pin` and send it in the `x-guardian-pin`
+header (a GET has no body and a secret never goes in a URL); `createGuardianInvite`
+takes a required `pin` in the body; `submitWebauthnRegisterVerify` sends one when the
+account already has a PIN or a passkey (`buildRegisterPasskeyCallback` asks through a
+`pinProvider` BEFORE the device's passkey prompt, so nobody confirms a fingerprint for
+nothing). `client/lib/guardian_step_up.dart` is the adult side: a PIN dialog, a PIN
+card for a screen that needs the PIN before it can show anything (the certified
+export), and `runWithGuardianPin`, which asks again with the reason while the server
+says the PIN is wrong or missing, and does NOT ask again for `pin_locked` or
+`pin_not_set` (another try cannot help and must not look like a way around the
+lockout; the caller shows the plain words). The PIN is never kept: every export asks
+again. `court_export.dart` and `deletion_screen.dart` use it. Words are plain adult
+words ("That PIN doesn't match. Try again.", "Too many wrong tries. Try again in 15
+minutes."). There is no screen in the app yet that calls `createGuardianInvite`; the
+helper is ready for the one that will. The dev-only passkey tile in
+`guardian_more.dart` passes no PIN provider, so against a server that has a PIN it
+resolves to "declined" rather than faking anything.
+
+**(2) First-PIN passkey check (closes the S-B3 residual).** `POST /v1/me/pin`, when the
+account has NO PIN but already holds a passkey, now needs a fresh user-verified passkey
+assertion in the body (`assertion`), bound to a challenge minted by the new
+`POST /v1/me/pin/passkey-challenge` (guardian session only; `409 no_passkey` when there
+is nothing to assert). The assertion goes through the same checks the login ceremony
+makes: single-use `stepup` challenge consumed BEFORE the signature is checked (a failed
+attempt spends it), origin, rpId hash, user presence AND user verification, signature,
+sign-count compare-and-swap, and the credential must be THIS account's own. Migration
+0047 adds `stepup` as an `auth_challenge.purpose` (a `register` or `login` challenge can
+never be replayed as step-up proof, nor the reverse). Refusals: `403
+passkey_assertion_required` (none sent), `403 passkey_assertion_failed` (anything wrong,
+one answer for every cause), `400 bad_request` (malformed). An account with no passkey
+(invite bootstrap) is unchanged: it sets its first PIN with no proof, because there is
+nothing to assert against. Client: `OliveApi.setGuardianPin` answers
+`passkey_assertion_required` once by asking `platformPasskeyAssertion`
+(`webauthn_channel.dart`: challenge, the platform ceremony, the four base64url fields)
+and retrying; a cancelled prompt or a device with no passkey support is thrown as it is
+and `guardianPinSetupMessage` says so in plain words ("Setting your PIN needs you to
+confirm with your passkey. Nothing was changed."). Tests:
+`server/test/security_follow_ups_route.test.mjs` (the attack chain end to end: stolen
+session, no PIN, add a passkey: dead) and `client/test/security_follow_ups_client_test.dart`.
+
+**(3) Forgotten local PIN: recovery from a second grown-up's phone.** The local PIN is a
+salted slow hash on the phone; nothing on the phone can say what it was. Design
+(`client/lib/local_pin_recovery.dart`, screens in `guardian_pin_recovery_screens.dart`),
+fully on-device, in the shape of the tablet unlock (`unlock_challenge.dart`):
+
+- *Linking.* Two grown-up phones are linked once, in person, while both PINs are known:
+  each shows its Ed25519 device key (self-signed, so a picture proves the sender holds
+  the key) as a QR picture, the other scans it after its own PIN. Each phone keeps the
+  other's public key and a name in the sealed `localpin` area (key `peers`, up to four).
+  A link names no child, family or account and grants nothing but this one thing. Trust
+  is on first use and needs a PIN-checked, unlocked phone next to this one. Reached from
+  Settings, Safety, "Other grown-ups' phones".
+- *Reset.* On the PIN prompt, "Forgot your PIN?" opens a screen that shows a one-time
+  challenge (random nonce, its own key fingerprint, 5 minute expiry). The other phone
+  ("Reset someone's PIN") scans it, checks it names a phone it was linked to, asks for
+  ITS OWN PIN (the local service: constant-time compare, five tries then 15 minutes),
+  says in words what saying yes allows, and signs exactly those fields. The forgetful
+  phone verifies the signature against the key it pinned, that the nonce is the single
+  outstanding one and unexpired, consumes it (one try per picture), and only then lets
+  the grown-up choose a new PIN (4 to 8 digits, easy guesses refused). A recording of
+  either picture is useless afterwards; neither contains a PIN. Setting the new PIN
+  never touches the links, and does not itself approve the action the prompt was
+  guarding: the prompt asks for the new PIN to go on.
+- *No second grown-up, no recovery.* Without a linked phone nothing is offered and the
+  screen says so plainly (`kNoRecoveryWords`): clearing Olive's storage on the phone is
+  the only reset, and it erases the family set up on that phone, including anything
+  kept only there. It also says to link a second grown-up now, while the PIN is known.
+- *Limits.* Whoever holds the other phone AND knows its PIN can reset this one (that is
+  the point: it is the second grown-up). Either alone cannot. The server PIN
+  (`/v1/me/pin`) is a separate secret and is not reset by this. A link made by a
+  stranger needs the stranger to hold an unlocked, PIN-checked phone next to this one.
+  Tests: `local_pin_recovery_test.dart` (protocol: tampering, replay, expiry,
+  strangers, a removed link) and `guardian_pin_recovery_screens_test.dart` (screens,
+  posture at 344/390/600/800 dp and 2.0x text). UNVERIFIED on hardware: the QR scan has
+  only been exercised with the camera stood in for.
+
+**(4) S-B11: the connection role split.** Migrations and operations connect as
+`app_owner` (owns every table, NOSUPERUSER NOBYPASSRLS). The RUNNING server, the
+scheduler and the health tools connect as the new `app_runtime`: owns nothing, holds
+only SELECT/INSERT/UPDATE/DELETE, USAGE on sequences and EXECUTE on functions
+(`db/runtime_grants.sql`), no DDL, no right on the migration ledger, bound by every
+row-security policy on FORCE-ed tables or not. What it removes: `ALTER`/`DROP`/`CREATE`
+of any object, `DISABLE ROW LEVEL SECURITY`, `DROP POLICY`, dropping the trigger that
+makes a table append-only, rewriting `schema_migration`. What it does not: the
+per-request identity is still three transaction-local settings (`app.role`,
+`app.user_id`, `app.child_id`) set from a verified session, so code that can already
+run arbitrary SQL as this role can still forge them; the split removes the DDL half of
+the blast radius, not the GUC half. Pieces: the role is created OUTSIDE SQL migrations
+(`CREATE ROLE` needs CREATEROLE, which `app_owner` deliberately lacks) by
+`tools/docker-dev/init-db.sql` (dev), `init-db.prod.sh` (prod, from
+`APP_RUNTIME_PASSWORD`, fail-closed like the others), `tools/verify.sh` (CI), or once by
+`tools/docker-dev/create-runtime-role.sql` on a volume created before the split;
+`tools/migrate.mjs` re-applies the grants file after every run (idempotent, a no-op
+when the role does not exist, and a later migration's tables are covered by default
+privileges); `server/db_role.mjs` is the boot guard: outside development/test a server
+that finds itself a superuser, BYPASSRLS, CREATEROLE/CREATEDB or the owner of tables
+refuses to start unless `ALLOW_OWNER_DB_ROLE=1` (and logs either way); both Compose
+files now give the server and scheduler `app_runtime` and only `migrate` keeps
+`app_owner`. Tests: `tools/test/runtime_role.test.mjs` (the role is unprivileged, grants
+are idempotent and also work when the role is created after the schema, what it cannot
+do, what it can, the pure verdicts, the real server boot), the eight route suites
+`tools/verify.sh` re-runs AS `app_runtime`, and `tools/test/migrate_nonsuper.test.mjs`.
+Operations: `db/DEPLOYMENT.md`. *Found on the way, not fixed here:* views such as
+`health_check` are owned by `app_owner` when migrations run as `app_owner`, and a view
+evaluates row security as its owner, so over FORCE-ed tables they read zero rows for
+every caller; the health alerts can be silent false negatives in the production
+Compose path (a follow-up task is open).
 
 ### 7.13 Domain correctness — as shipped (audit pass `fix/domain-correctness`)
 
