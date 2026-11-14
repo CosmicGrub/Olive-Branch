@@ -202,18 +202,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       case _Stage.working:
         return _frame(_working());
       case _Stage.tryAgain:
-        return _frame(Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-          const Icon(Icons.refresh_rounded, size: 72, color: KioskLockColors.secondaryText),
-          const SizedBox(height: 12),
-          const Text('Your grown-up can try again',
-              key: Key('childConnectTryAgain'), textAlign: TextAlign.center,
-              style: TextStyle(color: KioskLockColors.primaryText, fontSize: 24, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 20),
-          TextButton(
-              key: const Key('childConnectBack'),
-              onPressed: () => setState(() => _stage = _Stage.card),
-              child: const Text('OK', style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 18))),
-        ]));
+        return CalmTryAgainCard(onOk: () => setState(() => _stage = _Stage.card));
       case _Stage.options:
         return _frame(_options());
     }

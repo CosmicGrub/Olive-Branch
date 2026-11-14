@@ -68,6 +68,21 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// The grown-up's path through the card: tap, "Type the code", the adult keypad. A child has none of this.
+  Future<void> grownUpTypes(WidgetTester tester, String code) async {
+    await tester.tap(find.byKey(const Key('adultGateGrownUp')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pairingChooseType')));
+    await tester.pumpAndSettle();
+    for (final String d in code.split('')) {
+      await tester.tap(find.text(d));
+      await tester.pump();
+    }
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
   group('a fresh device runs the questions first, pairing last', () {
     testWidgets('it opens on the welcome card, NOT on the code field', (tester) async {
       await pumpFlow(tester, repo: MemoryOnboardingDraftRepository(), client: _online());
@@ -83,8 +98,8 @@ void main() {
       await pumpFlow(tester, repo: repo, client: _online());
       await skipAllQuestions(tester);
 
-      expect(find.text('Connect this device'), findsOneWidget);
-      expect(find.byKey(const Key('pairingCodeField')), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+      expect(find.byKey(const Key('pairingCodeField')), findsNothing);
       final OnboardingDraft? d = await repo.load();
       expect(d, isNotNull);
       expect(d!.complete, isTrue);
@@ -133,7 +148,7 @@ void main() {
       await tester.tap(find.text('All done!'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Connect this device'), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
       final OnboardingDraft d = (await repo.load())!;
       expect(d.name, 'Ivy');
       expect(d.age, 7);
@@ -161,7 +176,7 @@ void main() {
       // Run 1: answer everything.
       await pumpFlow(tester, repo: open(), client: _online());
       await skipAllQuestions(tester);
-      expect(find.text('Connect this device'), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
 
       // The app is killed.
       await tester.pumpWidget(const SizedBox());
@@ -169,10 +184,10 @@ void main() {
 
       // Run 2: a brand-new widget tree over the same files.
       await pumpFlow(tester, repo: open(), client: _online());
-      expect(find.text('Connect this device'), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
       expect(find.text('Welcome'), findsNothing);
       expect(find.text("Let's begin"), findsNothing);
-      expect(find.byKey(const Key('pairingCodeField')), findsOneWidget);
+      expect(find.byKey(const Key('pairingCodeField')), findsNothing);
     });
 
     testWidgets('an unreadable store never traps her: she simply starts the questions', (tester) async {
@@ -180,7 +195,7 @@ void main() {
       expect(find.text('Welcome'), findsOneWidget);
       await skipAllQuestions(tester);
       // The save failed, but she still reaches the last step this run.
-      expect(find.text('Connect this device'), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
     });
   });
 
@@ -199,10 +214,7 @@ void main() {
         }),
         onRedeemed: (Map<String, dynamic> r) => result = r,
       );
-      await tester.enterText(find.byKey(const Key('pairingCodeField')), '123456');
-      await tester.tap(find.byKey(const Key('pairingConnectButton')));
-      await tester.pump();
-      await tester.pump();
+      await grownUpTypes(tester, '123456');
       expect(calls, hasLength(1));
       expect(calls.single['body'], <String, Object?>{'code': '123456', 'role': 'child'});
       expect(result?['deviceId'], 'device-1');
@@ -213,14 +225,11 @@ void main() {
       final MemoryOnboardingDraftRepository repo =
           MemoryOnboardingDraftRepository(const OnboardingDraft(gender: 'boy', complete: true));
       await pumpFlow(tester, repo: repo, client: _online());
-      await tester.enterText(find.byKey(const Key('pairingCodeField')), '123456');
-      await tester.tap(find.byKey(const Key('pairingConnectButton')));
-      await tester.pump();
-      await tester.pump();
+      await grownUpTypes(tester, '123456');
       expect((await repo.load())?.gender, 'boy');
     });
 
-    testWidgets('a wrong code gets calm fixed copy and no raw error text', (tester) async {
+    testWidgets('a wrong code gives the child only the one calm fallback: no sentence, no reason, no raw error text', (tester) async {
       final http.Client client = MockClient((http.Request r) async {
         if (r.url.path == '/v1/device-pairing/redeem') {
           return http.Response(jsonEncode(<String, Object?>{'error': 'not_found'}), 404);
@@ -229,24 +238,28 @@ void main() {
       });
       await pumpFlow(tester,
           repo: MemoryOnboardingDraftRepository(const OnboardingDraft(complete: true)), client: client);
-      await tester.enterText(find.byKey(const Key('pairingCodeField')), '000000');
-      await tester.tap(find.byKey(const Key('pairingConnectButton')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('pairingErrorMessage')), findsOneWidget);
-      expect(find.textContaining("doesn't match"), findsOneWidget);
+      await grownUpTypes(tester, '000000');
+      expect(find.byKey(const Key('childConnectTryAgain')), findsOneWidget);
+      expect(find.byKey(const Key('pairingErrorMessage')), findsNothing);
+      expect(find.textContaining("doesn't match"), findsNothing);
       expect(find.textContaining('not_found'), findsNothing);
       expect(find.textContaining('404'), findsNothing);
     });
 
-    testWidgets('it says in plain words that a grown-up gives the 6-digit code, with no pressure, '
-        'and shows an ask-a-grown-up picture', (tester) async {
+    testWidgets('it shows the calm grown-up card: a picture and "A grown-up does this", no number, no field, no code',
+        (tester) async {
       await pumpFlow(tester,
           repo: MemoryOnboardingDraftRepository(const OnboardingDraft(complete: true)),
           client: _online());
-      expect(find.textContaining('A grown-up gives you a number with 6 digits'), findsOneWidget);
-      expect(find.textContaining('no hurry'), findsOneWidget);
+      expect(find.text('A grown-up does this'), findsOneWidget);
       expect(find.byIcon(Icons.escalator_warning_rounded), findsOneWidget);
-      expect(find.bySemanticsLabel('Ask a grown-up to give you the code'), findsOneWidget);
+      expect(find.bySemanticsLabel('A grown-up does this'), findsWidgets);
+      expect(find.textContaining('6 digits'), findsNothing);
+      expect(find.textContaining('number'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      for (int d = 0; d <= 9; d++) {
+        expect(find.text('$d'), findsNothing);
+      }
     });
 
     testWidgets('P2 and the onboarding copy rules hold: no score, count, rank, praise or "try again"',
@@ -264,17 +277,17 @@ void main() {
       }
     });
 
-    testWidgets('every control is at least 64dp tall (the child target)', (tester) async {
+    testWidgets('the card offers a child nothing to press but the quiet grown-up button and the quiet close',
+        (tester) async {
       await pumpFlow(tester,
           repo: MemoryOnboardingDraftRepository(const OnboardingDraft(complete: true)),
           client: _online());
       expect(kChildTarget, 64);
-      for (final Key k in const <Key>[
-        Key('pairingConnectButton'), Key('pairingScanQrButton'), Key('pairingNotNowButton'),
-      ]) {
-        final Size s = tester.getSize(find.byKey(k));
-        expect(s.height, greaterThanOrEqualTo(64), reason: '$k is ${s.height}dp tall');
-      }
+      expect(find.byKey(const Key('pairingConnectButton')), findsNothing);
+      expect(find.byKey(const Key('pairingScanQrButton')), findsNothing);
+      expect(find.byType(FilledButton), findsNothing);
+      expect(find.byKey(const Key('adultGateGrownUp')), findsOneWidget);
+      expect(find.byKey(const Key('adultGateClose')), findsOneWidget);
     });
   });
 
@@ -284,7 +297,7 @@ void main() {
       final MemoryOnboardingDraftRepository repo = MemoryOnboardingDraftRepository(
           const OnboardingDraft(name: 'Ivy', gender: 'girl', complete: true));
       await pumpFlow(tester, repo: repo, client: _online());
-      await tester.tap(find.byKey(const Key('pairingNotNowButton')));
+      await tester.tap(find.byKey(const Key('adultGateClose')));
       await tester.pumpAndSettle();
 
       expect(find.text('Waiting for a grown-up'), findsOneWidget);
@@ -297,7 +310,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('firstRunConnectAgain')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('pairingCodeField')), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
       expect((await repo.load())?.name, 'Ivy');
     });
 
@@ -340,7 +353,7 @@ void main() {
       expect((await repo.load())?.name, 'Ivy');
     });
 
-    testWidgets('retry returns to the code field once the connection is back', (tester) async {
+    testWidgets('retry returns to the grown-up card once the connection is back', (tester) async {
       bool up = false;
       final http.Client client = MockClient((http.Request r) async {
         if (!up) throw _Offline();
@@ -354,7 +367,7 @@ void main() {
       await tester.tap(find.byKey(const Key('pairingRetryButton')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('pairingOfflinePicture')), findsNothing);
-      expect(find.byKey(const Key('pairingCodeField')), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
     });
 
     testWidgets('losing the connection while redeeming shows the same picture-only state',
@@ -366,10 +379,9 @@ void main() {
       });
       await pumpFlow(tester,
           repo: MemoryOnboardingDraftRepository(const OnboardingDraft(complete: true)), client: client);
-      expect(find.byKey(const Key('pairingCodeField')), findsOneWidget);
+      expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
       down = true;
-      await tester.enterText(find.byKey(const Key('pairingCodeField')), '123456');
-      await tester.tap(find.byKey(const Key('pairingConnectButton')));
+      await grownUpTypes(tester, '123456');
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('pairingOfflinePicture')), findsOneWidget);
       expect(find.textContaining('SocketException'), findsNothing);
