@@ -12,28 +12,32 @@
 // client could still lie about this, but this screen itself never offers a
 // role picker to a real user.
 //
-// Two layouts, one behaviour. The default is the standalone screen (the
-// guardian build still opens on it). [closingStep] is the child build's LAST
-// welcome step (owner request 2026-11-08: "make the Connect this device field
-// the final step of the onboarding process"): the same chrome as every other
-// welcome step, a plain-words line, an "ask a grown-up" picture, 64dp
-// targets, a calm "Not now", and a picture-only state when there is no
-// connection. See first_run_flow.dart.
+// Two layouts. The default is the standalone screen (the guardian build
+// still opens on it, and it is for a grown-up: a code field, a scan button
+// and distinct, honest error sentences). [closingStep] is the child build's
+// LAST welcome step (owner request 2026-11-08: "make the Connect this device
+// field the final step of the onboarding process") and is NOT a screen a child
+// reads or types on (owner rules P1-P11, MASTERFILE 2.1 and 5.23.2: a child
+// never sees a PIN, a code, a count, an error or a pairing word). It shows the
+// same calm adult-gate card as the rest of the child build ("A grown-up does
+// this"); only a deliberate "I'm the grown-up" tap leads to the way to give the
+// code: the adult-only shuffled keypad, or scanning the picture from the
+// account. Whatever the server says (expired, used, wrong, locked, unknown) the
+// child sees the one calm fallback ([CalmTryAgainCard]); no reason is shown.
+// With no connection it shows a picture-only state. See first_run_flow.dart.
 //
-// Error handling, per the design spec's own Testing section: role_mismatch
-// is surfaced with a distinct, specific message ("this code is for a
-// different kind of device") rather than folded into the same generic
-// "couldn't connect" text every other failure gets — the same
-// distinguish-the-real-reason discipline invitation_screen.dart's own
-// [_blockedReasonMessage] already establishes for its own failure modes.
-// Nothing ever shows a thrown exception's text: every message is fixed copy.
+// The standalone layout keeps the per-reason wording the design spec's Testing
+// section asks for (role_mismatch is a distinct message, and so on). Nothing
+// ever shows a thrown exception's text: every message is fixed copy.
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'access_settings.dart' show kChildTarget;
+import 'adult_gate.dart' show AdultGate, AdultGateCard, CalmTryAgainCard;
 import 'api_client.dart' show ApiException, redeemDevicePairingCode;
+import 'kiosk_lock_colors.dart';
 import 'onboarding_shared.dart' show ChildOnboardingScaffold;
 
 class PairingRedeemScreen extends StatefulWidget {
@@ -89,8 +93,12 @@ class PairingRedeemScreen extends StatefulWidget {
   State<PairingRedeemScreen> createState() => _PairingRedeemScreenState();
 }
 
+/// Where the closing step is. Only the grown-up stages ever show a keypad or a camera.
+enum _ClosingStage { card, choose, keypad, scan, working, tryAgain }
+
 class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
   final _codeController = TextEditingController();
+  _ClosingStage _closing = _ClosingStage.card;
   bool _scanning = false;
   bool _submitting = false;
   String? _errorMessage;
@@ -131,7 +139,11 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
   Future<void> _submit(String code) async {
     final trimmed = code.trim();
     if (trimmed.isEmpty || _submitting) return;
-    setState(() { _submitting = true; _errorMessage = null; });
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+      if (widget.closingStep) _closing = _ClosingStage.working;
+    });
     try {
       final result = await redeemDevicePairingCode(
         widget.baseUrl, trimmed, widget.role, client: widget.httpClient);
@@ -143,7 +155,9 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
         _submitting = false;
         _scanning = false;
         _scanHandledOnce = false;
-        _errorMessage = _messageFor(e.error);
+        // A child is never told which reason it was: the closing step has one calm fallback for all of them.
+        _errorMessage = widget.closingStep ? null : _messageFor(e.error);
+        if (widget.closingStep) _closing = _ClosingStage.tryAgain;
       });
     } catch (_) {
       if (!mounted) return;
@@ -154,6 +168,7 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
         // The closing step answers a missing connection with its own
         // picture-only state instead of a sentence.
         _offline = widget.closingStep;
+        if (widget.closingStep) _closing = _ClosingStage.card;
         _errorMessage = widget.closingStep
             ? null
             : "Couldn't reach the server. Check your connection and try again.";
@@ -189,7 +204,12 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
     if (_scanning) ...[
       SizedBox(height: 280, child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: MobileScanner(key: const Key('pairingScanner'), onDetect: _onDetect),
+        child: MobileScanner(
+          key: const Key('pairingScanner'),
+          onDetect: _onDetect,
+          // Camera denied or missing: the plugin's own error text is raw English; show only the calm card.
+          errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() { _scanning = false; _scanHandledOnce = false; })),
+        ),
       )),
       const SizedBox(height: 12),
       TextButton(
@@ -327,42 +347,104 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
         ]),
       );
     }
-    return ChildOnboardingScaffold(
-      title: 'Connect this device',
-      subtitle: 'This is the last step. A grown-up gives you a number with 6 '
-          'digits. Type it in, or scan their picture. There is no hurry.',
-      showContinueButton: false,
-      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // "Ask a grown-up": a grown-up with a child, a speech bubble, a number pad.
-        Semantics(
-          label: 'Ask a grown-up to give you the code',
-          excludeSemantics: true,
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.escalator_warning_rounded, size: 72, color: scheme.primary),
-            const SizedBox(width: 12),
-            Icon(Icons.chat_bubble_outline_rounded, size: 36, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 12),
-            Icon(Icons.dialpad_rounded, size: 56, color: scheme.primary),
+    return switch (_closing) {
+      _ClosingStage.card => AdultGateCard(
+          // A child can tap neither a field nor a number here: the card says "A grown-up does this" and nothing more.
+          onGrownUp: () => setState(() => _closing = _ClosingStage.choose),
+          onClose: widget.onNotNow,
+        ),
+      _ClosingStage.choose => _chooseWay(),
+      _ClosingStage.keypad => AdultGate(
+          digits: 6,
+          startOpen: true,
+          // The 6 digits complete by themselves, as the account code always did.
+          onPin: (String code) => unawaited(_submit(code)),
+          onClose: () => setState(() => _closing = _ClosingStage.choose),
+        ),
+      _ClosingStage.scan => _scanWay(),
+      _ClosingStage.working => const _ClosingFrame(
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3)),
+            SizedBox(height: 16),
+            Icon(Icons.phone_android_rounded, size: 56, color: KioskLockColors.secondaryText),
           ]),
         ),
-        const SizedBox(height: 24),
-        ..._entry(context, target: kChildTarget),
-        if (widget.onNotNow != null) ...[
-          const SizedBox(height: 8),
-          _notNowButton(),
-        ],
-        if (_errorMessage != null) ...[
-          const SizedBox(height: 16),
-          Text(_errorMessage!, key: const Key('pairingErrorMessage'), textAlign: TextAlign.center,
-            style: TextStyle(color: scheme.error)),
-        ],
-      ]),
-    );
+      _ClosingStage.tryAgain => CalmTryAgainCard(onOk: () => setState(() => _closing = _ClosingStage.card)),
+    };
   }
+
+  /// Behind the grown-up's deliberate tap: how to give the account code.
+  Widget _chooseWay() => _ClosingFrame(
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          SizedBox(
+            width: 260,
+            height: 56,
+            child: FilledButton.icon(
+              key: const Key('pairingChooseType'),
+              onPressed: () => setState(() => _closing = _ClosingStage.keypad),
+              icon: const Icon(Icons.dialpad_rounded),
+              label: const Text('Type the code', style: TextStyle(fontSize: 17)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: 260,
+            height: 56,
+            child: FilledButton.icon(
+              key: const Key('pairingChooseScan'),
+              onPressed: () => setState(() { _scanHandledOnce = false; _closing = _ClosingStage.scan; }),
+              icon: const Icon(Icons.qr_code_scanner_rounded),
+              label: const Text('Scan the picture', style: TextStyle(fontSize: 17)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            key: const Key('pairingChooseBack'),
+            onPressed: () => setState(() => _closing = _ClosingStage.card),
+            child: const Text('Back', style: TextStyle(color: KioskLockColors.tertiaryText)),
+          ),
+        ]),
+      );
+
+  Widget _scanWay() => _ClosingFrame(
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          SizedBox(
+            height: 300,
+            width: 300,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: MobileScanner(
+                key: const Key('pairingScanner'),
+                onDetect: _onDetect,
+                // Camera denied or missing: only the calm card, never the plugin's raw English error text.
+                errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() => _closing = _ClosingStage.choose)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            key: const Key('pairingScanBack'),
+            onPressed: () => setState(() => _closing = _ClosingStage.choose),
+            child: const Text('Back', style: TextStyle(color: KioskLockColors.tertiaryText)),
+          ),
+        ]),
+      );
 
   Widget _notNowButton() => Center(child: TextButton(
     key: const Key('pairingNotNowButton'),
     onPressed: _submitting ? null : widget.onNotNow,
     style: TextButton.styleFrom(minimumSize: const Size(88, kChildTarget)),
     child: const Text('Not now')));
+}
+
+/// The calm dark frame the child build's gate screens share.
+class _ClosingFrame extends StatelessWidget {
+  const _ClosingFrame({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: KioskLockColors.background,
+        body: SafeArea(child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: child))),
+      );
 }

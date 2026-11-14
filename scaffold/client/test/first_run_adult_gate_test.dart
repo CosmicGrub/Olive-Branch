@@ -39,8 +39,12 @@ void main() {
     await t.tap(find.byKey(const Key('childConnectAccountCode')));
     await t.pumpAndSettle();
     expect(find.byType(PairingRedeemScreen), findsOneWidget);
-    await t.tap(find.byKey(const Key('pairingNotNowButton')));
+    // Even here the child side shows the calm card, not a code field: the grown-up types behind another tap.
+    expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    await t.tap(find.byKey(const Key('adultGateClose')));
     await t.pumpAndSettle();
     expect(find.byKey(const Key('adultGateCard')), findsOneWidget);
+    expect(find.byType(PairingRedeemScreen), findsNothing);
   });
 }

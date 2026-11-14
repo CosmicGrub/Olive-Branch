@@ -1,15 +1,26 @@
 // OLIVE BRANCH — the same-network transport for the on-device pairing protocol: the adult device serves its open
-// window over a tiny HTTP endpoint and advertises it on mDNS; the child device lists the open windows nearby BY
-// THE ADULT'S NAME, and talks to the one a grown-up picks. UNVERIFIED on a device (bonsoir/mDNS needs two real
-// devices; the HTTP half is tested over loopback in test/lan_pairing_transport_test.dart).
+// window over a tiny HTTP endpoint and advertises it on mDNS; the child device lists the open windows nearby BY A
+// SHORT NEUTRAL LABEL the grown-up reads off the adult's screen, and talks to the one a grown-up picks. UNVERIFIED
+// on a device (bonsoir/mDNS needs two real devices; the HTTP half is tested over loopback in
+// test/lan_pairing_transport_test.dart).
 // Spec: docs/superpowers/specs/2026-11-08-adult-gate-and-simple-pairing-design.md section 6.4.
 //
 // PROXIMITY IS ENFORCED HERE, NOT HOPED FOR. The adult device answers only requests from a private, link-local
 // or unique-local source address (a LAN), never from a routable one. The service exists only while the adult's
-// window is open (it is stopped when the window closes), and it advertises nothing but the adult's name and the
-// window's session id (neither grants anything: the PIN-or-QR key exchange does). A person on the same Wi-Fi who
-// sends garbage can burn the window's five attempts (a denial of service the adult cures by opening a new window
-// in the same room); they cannot pair a device. Written down in the spec's threat model.
+// window is open (it is stopped when the window closes).
+//
+// WHAT THE ADVERTISEMENT CARRIES (nothing identifying, like the play stack in local_discovery.dart): a generic
+// service type, an instance name that is a random per-window label such as "KT7", and one TXT entry `h`, a random
+// per-window handle that is NOT the session id. No adult name, no family or device id, no session id, nothing the
+// same from one window to the next. The session id reaches the child only in the answer to its first message.
+// The price is plain: two grown-ups opening windows in range at once are told apart only by the label, which a
+// person reads off the adult's screen and picks on the other device.
+//
+// A person on the same Wi-Fi who sends garbage is held to a per-source budget by the window itself
+// (pairing_protocol.dart: kSourceMax*), so one address cannot burn the five confirmations; a crowd of addresses
+// still can (a denial of service the adult cures by opening a new window in the same room). They cannot pair a
+// device. The first hello still answers any same-LAN source holding the handle with the adult's name, family id
+// and public key (the key exchange binds them); moving those behind the key exchange is not done here.
 //
 // What it never carries: a PIN, a QR secret, a certificate in the clear. Only PAKE shares, confirmation tags and
 // a credential sealed under the exchange's key.
@@ -23,7 +34,9 @@ import 'package:bonsoir/bonsoir.dart';
 import 'device_keys.dart' show b64, unb64;
 import 'pairing_protocol.dart';
 
-const String kPairServiceType = '_olivepair._tcp';
+/// A generic type (RFC 6763: at most 15 characters): no app name, no word like "family" or "child". That some app
+/// advertises it is still observable on the same network; the rest of the advertisement is random per window.
+const String kPairServiceType = '_pw._tcp';
 const int _kMaxBody = 8 * 1024;
 
 /// True for the addresses a same-room LAN uses. Loopback only when [allowLoopback] (tests).
@@ -48,6 +61,30 @@ bool isLanAddress(InternetAddress a, {bool allowLoopback = false}) {
   return false;
 }
 
+/// The key a window budgets a source by: its IPv4 address, or its FULL IPv6 address (16 raw bytes, so a scope id
+/// written after '%' plays no part); an IPv4-mapped IPv6 address counts as its IPv4. The remote port is never part
+/// of it.
+///
+/// Trade-off, chosen on purpose: an earlier version collapsed IPv6 to its /64, which put every fe80::/64 link-local
+/// device (and every device on one unique-local /64) in ONE bucket, so a single hostile device could use up the
+/// budget and lock a real IPv6 child out. Per-address keys cannot do that. The cost is that a device which rotates
+/// its IPv6 address (privacy addresses) gets a fresh per-source budget each time; that only lets it spend more of
+/// the window's SHARED five confirmations, which still end the window, so it can deny service (the adult reopens a
+/// window) but never guess more than five PINs. The table of sources is LRU-bounded, so rotation cannot grow memory.
+/// A dual-stack host's IPv4 and IPv6 addresses cannot be tied together from here, so the per-source failure limit is
+/// kept below half the window cap (see kSourceMaxFailures) instead: two of its addresses leave a try for the child.
+String sourceKey(InternetAddress a) {
+  final List<int> b = a.rawAddress;
+  if (a.type == InternetAddressType.IPv4) return a.address;
+  if (b.length == 16) {
+    if (b.sublist(0, 10).every((int x) => x == 0) && b[10] == 0xff && b[11] == 0xff) {
+      return InternetAddress.fromRawAddress(Uint8List.fromList(b.sublist(12))).address;
+    }
+    return 'v6:${b.map((int x) => x.toRadixString(16).padLeft(2, '0')).join()}';
+  }
+  return a.address;
+}
+
 class LanPairingHost {
   LanPairingHost(this.window, {this.allowLoopback = false});
   final AdultWindow window;
@@ -57,20 +94,21 @@ class LanPairingHost {
 
   int? get port => _server?.port;
 
+  /// Exactly what goes on the network. Its own method so a test can check it without any mDNS.
+  BonsoirService advertisedService(int port) => BonsoirService(
+        name: window.label,
+        type: kPairServiceType,
+        port: port,
+        attributes: <String, String>{'h': b64(window.discoveryHandle)},
+      );
+
   Future<void> start({bool advertise = true}) async {
     final HttpServer s = await HttpServer.bind(InternetAddress.anyIPv6, 0, v6Only: false);
     _server = s;
     unawaited(s.forEach(_serve));
     window.addListener(_closeWithWindow);
     if (advertise) {
-      final BonsoirBroadcast b = BonsoirBroadcast(
-        service: BonsoirService(
-          name: 'olive-pair-${b64(window.sid).substring(0, 6)}',
-          type: kPairServiceType,
-          port: s.port,
-          attributes: <String, String>{'s': b64(window.sid), 'n': window.adultName},
-        ),
-      );
+      final BonsoirBroadcast b = BonsoirBroadcast(service: advertisedService(s.port));
       _broadcast = b;
       await b.ready;
       await b.start();
@@ -107,7 +145,7 @@ class LanPairingHost {
       final String body = utf8.decode(bytes.takeBytes());
       final Object? decoded = jsonDecode(body);
       final Map<String, dynamic>? answer =
-          decoded is Map<String, dynamic> ? await window.handle(decoded) : null;
+          decoded is Map<String, dynamic> ? await window.handle(decoded, source: sourceKey(from)) : null;
       if (answer == null) {
         r.response.statusCode = HttpStatus.noContent;
       } else {
@@ -165,14 +203,31 @@ class LanPairingTransport implements PairingTransport {
   }
 }
 
-/// An adult's open window seen on the network: a name to show and where to talk to it.
+/// An adult's open window seen on the network: a neutral label to show, how to address it and where to talk to
+/// it. Found through discovery it has a [handle] (never the session id); from a QR it has the [sid].
 class NearbyWindow {
-  const NearbyWindow({required this.adultName, required this.sid, required this.host, required this.port});
-  final String adultName;
-  final Uint8List sid;
+  const NearbyWindow({required this.label, this.handle, this.sid, required this.host, required this.port})
+      : assert((handle == null) != (sid == null), 'exactly one of handle or sid');
+  final String label;
+  final Uint8List? handle;
+  final Uint8List? sid;
   final String host;
   final int port;
-  String get key => b64(sid);
+  String get key => b64((handle ?? sid)!);
+}
+
+/// Reads one resolved service into a window, or null when it is not one of ours (anything but a label and a
+/// 16-byte handle). The old name-and-session-id shape is deliberately not understood.
+NearbyWindow? parseNearbyService({required String name, required String? host, required int port, required Map<String, String> attributes}) {
+  final String? h = attributes['h'];
+  if (host == null || h == null || name.isEmpty) return null;
+  try {
+    final Uint8List handle = unb64(h);
+    if (handle.length != 16) return null;
+    return NearbyWindow(label: name, handle: handle, host: host, port: port);
+  } catch (_) {
+    return null;
+  }
 }
 
 class LanPairingBrowser {
@@ -180,6 +235,7 @@ class LanPairingBrowser {
   StreamSubscription<BonsoirDiscoveryEvent>? _sub;
   final StreamController<NearbyWindow> _found = StreamController<NearbyWindow>.broadcast();
   final StreamController<String> _gone = StreamController<String>.broadcast();
+  final Map<String, String> _keyByName = <String, String>{};
 
   Stream<NearbyWindow> get found => _found.stream;
 
@@ -196,16 +252,18 @@ class LanPairingBrowser {
           unawaited(e.service?.resolve(d.serviceResolver));
         case BonsoirDiscoveryEventType.discoveryServiceResolved:
           final BonsoirService? s = e.service;
-          if (s is ResolvedBonsoirService && s.host != null) {
-            final String? sid = s.attributes['s'], name = s.attributes['n'];
-            if (sid == null || name == null) return;
-            try {
-              if (!_found.isClosed) _found.add(NearbyWindow(adultName: name, sid: unb64(sid), host: s.host!, port: s.port));
-            } catch (_) {}
+          if (s is ResolvedBonsoirService) {
+            final NearbyWindow? w = parseNearbyService(name: s.name, host: s.host, port: s.port, attributes: s.attributes);
+            if (w != null && !_found.isClosed) {
+              _keyByName[s.name] = w.key;
+              _found.add(w);
+            }
           }
         case BonsoirDiscoveryEventType.discoveryServiceLost:
-          final String? sid = e.service?.attributes['s'];
-          if (sid != null && !_gone.isClosed) _gone.add(sid);
+          // A lost service may carry no TXT record: the instance name (the label) is what identifies it.
+          final String? name = e.service?.name;
+          final String? key = name == null ? null : _keyByName.remove(name);
+          if (key != null && !_gone.isClosed) _gone.add(key);
         default:
           return;
       }

@@ -5190,9 +5190,10 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
 **Connecting (built, headless-tested, not yet run on two real devices).**
 1. The grown-up opens More > "Connect a child's device" and types **their own PIN** (checked by the local PIN
    service). That opens a **window**: 10 minutes, five failed tries, one use, in memory on the adult device only.
-2. On the child's device the grown-up taps "A grown-up does this" > "I'm the grown-up", picks **their own name**
-   from the windows open nearby (mDNS `_olivepair._tcp`; the name is what selects, never the PIN), and types the
-   same PIN on the adult-only keypad.
+2. On the child's device the grown-up taps "A grown-up does this" > "I'm the grown-up", picks the **short label**
+   their phone shows ("pick these letters", for example "KT7") from the windows open nearby (mDNS `_pw._tcp`, a
+   random per-window label and a random handle, never a name or the session id; the label is what selects, never the
+   PIN), and types the same PIN on the adult-only keypad.
 3. The PIN is the password of a **password-authenticated key exchange** (`cpace.dart`, a CPace-style exchange over
    X25519). It is never sent, and a recording cannot be used to guess it offline. The session id, family id, the
    adult device's key fingerprint, the adult's name and the child device's key are bound into it, so another
