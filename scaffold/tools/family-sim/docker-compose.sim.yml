@@ -1,0 +1,74 @@
+# OLIVE BRANCH -- family simulation: a THROWAWAY, isolated stack.
+# Project name `olive-sim`; own volumes; host ports 5481 (db) and 8141 (server),
+# both bound to 127.0.0.1 only. Never touches olive-dev-*/olive-live-*/jitsi-*.
+#   bash tools/family-sim/up.sh      bring up, build, migrate, wait healthy
+#   bash tools/family-sim/down.sh    tear down, removes ONLY olive-sim volumes
+# DEV_LOGIN=1 is acceptable ONLY because this stack is local, loopback-bound,
+# NODE_ENV=development and holds nothing but synthetic data.
+name: olive-sim
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - olive-sim-pgdata:/var/lib/postgresql/data
+      - ../docker-dev/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "127.0.0.1:5481:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: olive-sim-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # app_owner: NOSUPERUSER NOBYPASSRLS, the real migrator identity
+      # (tools/test/migrate_nonsuper.test.mjs).
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+    command: ["node", "tools/migrate.mjs"]
+    restart: "no"
+
+  server:
+    image: olive-sim-app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8123"
+      NODE_ENV: development
+      DEV_LOGIN: "1"
+      DATABASE_URL: postgres://app_owner:app_owner@db:5432/olive_devicetest
+      SESSION_SECRET: 51f0a7d3c9b24e68a1d05c7e93b8f4a2d6e1c0b9a8f7e6d5c4b3a2918070f6e5
+      MEDIA_SIGNING_SECRET: a3c1e5f7092b4d6e8a0c2e4f61839b5d7f1a3c5e7092b4d6e8a0c2e4f61839b5
+      # Structurally valid dummy LiveKit key: call SETUP/authorisation mints a
+      # token locally; no media ever flows (there is no LiveKit server here).
+      LIVEKIT_URL: wss://olive-sim.invalid
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: devsecret_at_least_32_chars_long_xx
+      MEDIA_STORAGE_ROOT: /app/data/media
+    ports:
+      - "127.0.0.1:8141:8123"
+    volumes:
+      - olive-sim-media:/app/data/media
+    command: ["node", "server/index.mjs"]
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  olive-sim-pgdata:
+  olive-sim-media:
