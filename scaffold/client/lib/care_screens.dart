@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'care_local.dart' show CareDoc, CareLocalRefused, CareMedication, CareService, MedKind;
 import 'emergency_card.dart';
 import 'emergency_card_editor_screen.dart';
 import 'emergency_card_local.dart';
@@ -38,7 +39,7 @@ import 'hub_widgets.dart';
 class GrowingCareHubScreen extends StatefulWidget {
   const GrowingCareHubScreen({
     super.key, required this.care, this.childName = 'Ivy', this.stores, this.guardianId = 'local-guardian',
-    this.fromName = '', this.emergency, this.openEmergencyCard,
+    this.fromName = '', this.emergency, this.openEmergencyCard, this.medicines,
   });
   final bool care;
   final String childName;
@@ -53,6 +54,9 @@ class GrowingCareHubScreen extends StatefulWidget {
   /// (the app supplies one that keeps using a live session's server card; null opens the local one).
   final EmergencyCardService? emergency;
   final void Function(BuildContext context)? openEmergencyCard;
+
+  /// The on-device medicine list (care_local.dart); hospital mode reads the active medicines from it.
+  final CareService? medicines;
 
   @override
   State<GrowingCareHubScreen> createState() => _GrowingCareHubScreenState();
@@ -119,7 +123,7 @@ class _GrowingCareHubScreenState extends State<GrowingCareHubScreen> {
         return HubTile(key: const Key('hubHospitalMode'), icon: Icons.local_hospital_outlined, title: 'Hospital mode',
             subtitle: 'One calm page for a stressed adult',
             onTap: () => _open(HospitalModeScreen(
-                childName: n, stores: _s, emergency: widget.emergency,
+                childName: n, stores: _s, emergency: widget.emergency, medicines: widget.medicines,
                 openEmergencyCard: widget.openEmergencyCard,
                 principal: FamilyPrincipal(roleName: 'guardian', userId: widget.guardianId))));
       case 'explainerCards':
@@ -411,6 +415,7 @@ class BinderPrintScreen extends StatelessWidget {
 class HospitalModeScreen extends StatefulWidget {
   const HospitalModeScreen({
     super.key, this.childName = 'Ivy', this.stores, this.openEmergencyCard, this.emergency, this.principal,
+    this.medicines,
   });
   final String childName;
   final GrowingCareStores? stores;
@@ -418,6 +423,10 @@ class HospitalModeScreen extends StatefulWidget {
   /// The local emergency card a guardian wrote (read with [principal]); null reads none.
   final EmergencyCardService? emergency;
   final FamilyPrincipal? principal;
+
+  /// The on-device medicine list: the ACTIVE medicines are shown as the prototype's hospital mode does
+  /// (name, dose, as-needed), read with [principal]. Null reads none.
+  final CareService? medicines;
 
   /// Overridable so a test need not build the whole emergency card.
   final void Function(BuildContext context)? openEmergencyCard;
@@ -430,6 +439,7 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
   late final GrowingCareStores _s = widget.stores ?? GrowingCareStores.forChild();
   HospitalSummary? _summary;
   EmergencyCardDoc? _local;
+  List<CareMedication> _meds = const <CareMedication>[];
 
   @override
   void initState() {
@@ -449,7 +459,18 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
         local = null; // not a guardian, or unreadable: no local card is shown
       }
     }
-    if (mounted) setState(() { _summary = sum; _local = local; });
+    List<CareMedication> meds = const <CareMedication>[];
+    if (widget.medicines != null) {
+      try {
+        final CareDoc cd = await widget.medicines!.read(widget.principal);
+        meds = <CareMedication>[for (final CareMedication m in cd.meds) if (!m.retired) m];
+      } on CareLocalRefused {
+        meds = const <CareMedication>[]; // not a guardian: nothing is read
+      } catch (_) {
+        meds = const <CareMedication>[];
+      }
+    }
+    if (mounted) setState(() { _summary = sum; _local = local; _meds = meds; });
   }
 
   Future<void> _editCard() async {
@@ -533,6 +554,11 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
               'Allergies and contacts come from your care binder.', key: Key('hospitalEmpty'))),
         if (s.notes.happeningToday.trim().isNotEmpty) _block(context, 'Happening today', s.notes.happeningToday, key: const Key('hospToday')),
         if (_local != null) ..._localCardBlocks(context, _local!.card!),
+        if (_meds.isNotEmpty)
+          _block(context, 'Medicines (from the medicine list)',
+              _meds.map((CareMedication m) =>
+                  '${m.dose.isEmpty ? m.name : '${m.name}  -  ${m.dose}'}${m.kind == MedKind.prn ? ' (as needed)' : ''}').join('\n'),
+              key: const Key('hospMedList')),
         for (final CareSection a in s.allergies) _block(context, a.title, a.body, key: ValueKey<String>('hospAllergy-${a.id}')),
         if (s.notes.staffShouldKnow.trim().isNotEmpty) _block(context, 'Staff should know', s.notes.staffShouldKnow, key: const Key('hospStaff')),
         if (s.notes.whatHelpsHer.trim().isNotEmpty) _block(context, 'What helps her', s.notes.whatHelpsHer, key: const Key('hospHelps')),

@@ -32,6 +32,8 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
+import 'care_local.dart' show CareService;
+import 'care_local_screens.dart';
 import 'care_screens.dart';
 import 'call_screen.dart';
 import 'call_security_info.dart';
@@ -449,6 +451,36 @@ class GuardianMoreScreen extends StatelessWidget {
     ));
   }
 
+  /// The on-device care records (medicines, expenses, handover log), or null in the preview build and in a
+  /// live build. Only the offline guardian shell (a local scope above this hub, no session) gets them; the
+  /// preview keeps its demo screens and a live session keeps the server-backed ones.
+  CareService? _localCare(BuildContext context) =>
+      (baseUrl == null && GuardianLocalScope.maybeOf(context) != null) ? CareService.forChild(childId) : null;
+
+  FamilyPrincipal get _careMe => FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
+
+  String? _careByName(BuildContext context) => GuardianLocalScope.maybeOf(context)?.family?.guardianName;
+
+  /// The one care hub (the prototype's g-care): live subtitles, and the screens that live in other files.
+  void _openCareHub(BuildContext context, CareService svc) {
+    final EmergencyCardService card = EmergencyCardService.forChild(childId);
+    _open(context, CareHubScreen(
+      service: svc, principal: _careMe, childName: childName, byName: _careByName(context),
+      emergencyVersion: () async => (await card.read(_careMe)).version,
+      links: CareHubLinks(
+        emergencyCard: (_) => EmergencyCardScreen(childName: childName, baseUrl: baseUrl, guardianId: guardianId,
+            childId: childId, httpClient: availabilityHttpClient, localService: card, principal: _careMe),
+        hospital: (_) => HospitalModeScreen(childName: childName, emergency: card, principal: _careMe,
+            medicines: svc, openEmergencyCard: _openEmergencyCard),
+        exchange: (_) => ExchangeScreen(childName: childName, baseUrl: baseUrl, guardianId: guardianId,
+            childId: childId, httpClient: availabilityHttpClient),
+        binder: (_) => CareBinderScreen(childName: childName),
+        appointments: (_) => AppointmentPrepScreen(childName: childName),
+        schedule: (_) => FamilyHomesScreen(ctx: _familyCtx()),
+      ),
+    ));
+  }
+
   /// Unlike [_openAvailability] above, this ALWAYS opens the real screen —
   /// HandoverNotesScreen has a genuine, intentional offline demo mode of its
   /// own (four seeded fixture entries, real append-only invariant enforced
@@ -459,6 +491,11 @@ class GuardianMoreScreen extends StatelessWidget {
   /// LIVE WIRING header); when they aren't, this is exactly the demo build
   /// this hub already was before this pass.
   void _openHandoverNotes(BuildContext context) {
+    final CareService? svc = _localCare(context);
+    if (svc != null) {
+      _open(context, LocalHandoverScreen(service: svc, principal: _careMe, childName: childName, byName: _careByName(context)));
+      return;
+    }
     _open(context, HandoverNotesScreen(
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
       httpClient: availabilityHttpClient,
@@ -472,6 +509,11 @@ class GuardianMoreScreen extends StatelessWidget {
   /// mean there is no non-guardian path to worry about here; `viewerRole`
   /// defaults to `ViewerRole.guardian` and is never overridden by this tile.
   void _openExpenses(BuildContext context) {
+    final CareService? svc = _localCare(context);
+    if (svc != null) {
+      _open(context, LocalExpensesScreen(service: svc, principal: _careMe, childName: childName, byName: _careByName(context)));
+      return;
+    }
     _open(context, ExpensesScreen(
       childName: childName,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
@@ -483,6 +525,11 @@ class GuardianMoreScreen extends StatelessWidget {
   /// — meds_care.dart has its own real, seeded-in-the-demo-fixture offline
   /// mode, not an honest-stub snackbar standing in for one.
   void _openMedsCare(BuildContext context) {
+    final CareService? svc = _localCare(context);
+    if (svc != null) {
+      _open(context, LocalMedsScreen(service: svc, principal: _careMe, childName: childName, byName: _careByName(context)));
+      return;
+    }
     _open(context, MedsCareScreen(
       childName: childName,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
@@ -684,7 +731,7 @@ class GuardianMoreScreen extends StatelessWidget {
           subtitle: 'Care binder, hospital mode, picture stories, appointment prep. Kept on this device',
           onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName,
             guardianId: guardianId ?? 'local-guardian', emergency: EmergencyCardService.forChild(childId),
-            openEmergencyCard: _openEmergencyCard))),
+            medicines: _localCare(context), openEmergencyCard: _openEmergencyCard))),
       ]),
       SettingsGroup('Safety', [
         SettingsRow(id: 'pin', icon: Icons.key_outlined, title: 'Change PIN',
@@ -1089,6 +1136,10 @@ class GuardianMoreScreen extends StatelessWidget {
             }),
         ]),
         HubSection(title: 'Coordination', children: [
+          if (_localCare(context) != null)
+            HubTile(key: const Key('moreCareHub'), icon: Icons.volunteer_activism_outlined, title: 'Care and coordination',
+              subtitle: 'Medicines, expenses, handover notes and more. On this device',
+              onTap: () => _openCareHub(context, _localCare(context)!)),
           HubTile(icon: Icons.event_available_outlined, title: 'Availability',
             subtitle: 'When he can actually be reached, honestly rendered',
             onTap: () => _openAvailability(context)),

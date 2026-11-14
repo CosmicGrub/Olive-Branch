@@ -62,6 +62,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'passes': 'Sitter pass and school summary',
   'compass': 'Family compass',
   'emergencycard': 'Emergency card (grown-up side)',
+  'coordination': 'Medicines, expenses and handover notes (grown-up side)',
   'memorybox': 'Her memory box',
   'family': 'Family and homes',
   'growing': 'Growing (grown-up side)',

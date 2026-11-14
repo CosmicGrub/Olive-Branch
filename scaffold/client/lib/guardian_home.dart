@@ -37,6 +37,7 @@
 // pass. The existing crossAxisCount/effectiveColumnWidth/mainAxisExtent
 // computation below is ALSO unchanged — only which tiles land in which
 // grid, and each grid's fill color, changes.
+import 'care_local_screens.dart' show CareDestination, localCareScreen;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'availability_screen.dart';
@@ -445,7 +446,8 @@ List<_TileSpec> _kGuardianTiles({
   _TileSpec(icon: Icons.medical_services_outlined, label: 'Meds & care', tier: _Tier.featured,
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
-      builder: () => MedsCareScreen(childName: childName,
+      builder: () => localCareScreen(context, CareDestination.meds, live: baseUrl != null,
+        childName: childName, childId: childId, guardianId: guardianId) ?? MedsCareScreen(childName: childName,
         baseUrl: baseUrl, guardianId: guardianId, childId: childId,
         httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.medical_information, label: 'Emergency card', tier: _Tier.featured,
@@ -459,7 +461,8 @@ List<_TileSpec> _kGuardianTiles({
   _TileSpec(icon: Icons.receipt_long, label: 'Handover notes', tier: _Tier.standard,
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
-      builder: () => HandoverNotesScreen(
+      builder: () => localCareScreen(context, CareDestination.handover, live: baseUrl != null,
+        childName: childName, childId: childId, guardianId: guardianId) ?? HandoverNotesScreen(
         baseUrl: baseUrl, guardianId: guardianId, childId: childId,
         httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.swap_horiz, label: 'Exchange', tier: _Tier.standard,
@@ -471,7 +474,8 @@ List<_TileSpec> _kGuardianTiles({
   _TileSpec(icon: Icons.account_balance_wallet, label: 'Expenses', tier: _Tier.standard,
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
-      builder: () => ExpensesScreen(childName: childName,
+      builder: () => localCareScreen(context, CareDestination.expenses, live: baseUrl != null,
+        childName: childName, childId: childId, guardianId: guardianId) ?? ExpensesScreen(childName: childName,
         baseUrl: baseUrl, guardianId: guardianId, childId: childId,
         httpClient: availabilityHttpClient))),
   _TileSpec(icon: Icons.wb_twilight, label: 'Morning briefing', tier: _Tier.standard,
