@@ -129,7 +129,7 @@ final List<RuleCheck> ruleChecks = <RuleCheck>[
     final int days = _m(r['expiry'])['replyKeptDays']! as int;
     return digestLeadDays == days ? const Res.ok() : Res.differs('digest lead is $digestLeadDays days, prototype keeps replies $days');
   }),
-  RuleCheck('playWindow.states', <String>['play.window'], UnitStatus.differs, (Map<String, Object?> r) async {
+  RuleCheck('playWindow.states', <String>['play.window'], UnitStatus.implemented, (Map<String, Object?> r) async {
     final Map<String, Object?> states = _m(_m(r['playWindow'])['states']);
     const PlayWindow w = PlayWindow(opensMin: 7 * 60 + 30, restsMin: 19 * 60 + 30, windDownMin: 15);
     const Map<String, String> name = <String, String>{'open': 'open', 'winding_down': 'winding', 'resting': 'closed'};
@@ -139,7 +139,7 @@ final List<RuleCheck> ruleChecks = <RuleCheck>[
       final String got = name[playWindowState(w, int.parse(hm[0]) * 60 + int.parse(hm[1]))]!;
       if (got != e.value) bad.add('${e.key}: Flutter $got, prototype ${e.value}');
     }
-    return bad.isEmpty ? const Res.ok() : Res.differs('wind-down is placed differently (prototype AFTER the rest time, Flutter BEFORE it): ${bad.join('; ')}');
+    return bad.isEmpty ? const Res.ok() : Res.differs('wind-down is placed differently from the prototype (rest time first, wind-down AFTER it): ${bad.join('; ')}');
   }),
   RuleCheck('deletion.recoveryWindow', <String>['row:Account/Delete my account'], UnitStatus.pending, (Map<String, Object?> r) async =>
       RegExp(r'6 (to|and) 12 month|six to twelve').hasMatch(_text('lib/deletion_screen.dart'))

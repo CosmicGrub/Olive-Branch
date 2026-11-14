@@ -5,6 +5,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/family_structure_screens.dart' show AgeBandsScreen;
 import 'package:olive_client/child_more.dart';
 import 'package:olive_client/colour_day_logic.dart';
 import 'package:olive_client/guardian_more.dart';
@@ -310,9 +311,13 @@ void main() {
   });
 
   group('the play window', () {
-    testWidgets('defaults are 3:30 PM to 7:00 PM with a 30 minute wind-down, previewed in her words', (t) async {
+    testWidgets('with no window, games are open all day; switching it on offers 3:30 PM to 7:00 PM with a 30 minute wind-down, previewed in her words', (t) async {
       await big(t);
       await t.pumpWidget(app(PlayWindowScreen(childName: 'Ivy', store: store())));
+      await t.pumpAndSettle();
+      expect(find.text('Games are open all day'), findsOneWidget);
+      expect(find.byKey(const Key('opensDrop')), findsNothing);
+      await t.tap(find.byKey(const Key('useWindow')));
       await t.pumpAndSettle();
       expect(find.text('3:30 PM'), findsOneWidget);
       expect(find.text('7:00 PM'), findsOneWidget);
@@ -325,7 +330,9 @@ void main() {
       final s = store();
       await t.pumpWidget(app(PlayWindowScreen(childName: 'Ivy', store: s)));
       await t.pumpAndSettle();
-      await t.tap(find.text('Off'));
+      await t.tap(find.byKey(const Key('useWindow')));
+      await t.pumpAndSettle();
+      await t.tap(find.descendant(of: find.byKey(const Key('windSeg')), matching: find.text('Off')));
       await t.pumpAndSettle();
       expect(find.textContaining('tomorrow'), findsWidgets);
       await t.tap(find.byKey(const Key('saveWindow')));
@@ -338,6 +345,8 @@ void main() {
     testWidgets('a window that rests before it opens cannot be saved', (t) async {
       await big(t);
       await t.pumpWidget(app(PlayWindowScreen(childName: 'Ivy', store: store())));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('useWindow')));
       await t.pumpAndSettle();
       await t.tap(find.byKey(const Key('opensDrop')));
       await t.pumpAndSettle();
@@ -376,7 +385,7 @@ void main() {
     });
 
     testWidgets('winding down: the games stay, with one calm line and no number', (t) async {
-      await t.pumpWidget(gate(store(at: DateTime(2026, 11, 7, 18, 40), window: w)));
+      await t.pumpWidget(gate(store(at: DateTime(2026, 11, 7, 19, 10), window: w)));
       await t.pumpAndSettle();
       expect(find.text('the games'), findsOneWidget, reason: 'a game in progress is never cut off');
       expect(find.text('It’s getting sleepy. One more, then goodnight.'), findsOneWidget);
@@ -473,11 +482,13 @@ void main() {
       expect(find.textContaining('needs a live session'), findsWidgets);
     });
 
-    testWidgets('Her: the age band explains itself and offers nothing to set', (t) async {
+    testWidgets('Her: the age band opens the real Age bands screen (no longer an info dialog), with the planner one tap away', (t) async {
       await openHub(t);
       await t.tap(find.byKey(const Key('settingsRow_age')));
       await t.pumpAndSettle();
-      expect(find.textContaining('there is nothing to set here yet'), findsOneWidget);
+      expect(find.byType(AgeBandsScreen), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byKey(const Key('bandsOpenPlanner')), findsOneWidget);
     });
 
     testWidgets('Learn and Family rows open the existing screens', (t) async {

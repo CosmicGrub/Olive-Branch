@@ -7,7 +7,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/age_lock_screens.dart';
-import 'package:olive_client/contact_labels.dart';
+import 'package:olive_client/contact_labels.dart';
+import 'package:olive_client/family_structure_screens.dart' show AgeBandsScreen;
 import 'package:olive_client/guardian_boot.dart';
 import 'package:olive_client/guardian_home.dart';
 import 'package:olive_client/guardian_home_live.dart';
@@ -216,6 +217,10 @@ void main() {
       expect(find.text('Ivy is 7. Locked: your PIN changes it'), findsOneWidget);
       await t.tap(find.byKey(const Key('settingsRow_age')));
       await t.pumpAndSettle();
+      // The row opens the real Age bands screen (Wave 3); the PIN-gated change is one tap further.
+      expect(find.byType(AgeBandsScreen), findsOneWidget);
+      await t.tap(find.byKey(const Key('bandsChangeAge')));
+      await t.pumpAndSettle();
     }
 
     testWidgets('PIN, then 3 to 17, then Save: the family, the controller and the screen all agree', (t) async {
@@ -266,6 +271,8 @@ void main() {
       await typeIntoGate(t, '1234');
       await t.tap(find.byKey(const Key('settingsRow_age')));
       await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('bandsChangeAge')));
+      await t.pumpAndSettle();
       await typeIntoGate(t, '1234');
       await t.tap(find.byKey(const Key('lockAge_9')));
       await t.tap(find.byKey(const Key('lockAgeSave')));
@@ -288,12 +295,13 @@ void main() {
       expect(find.byKey(const Key('localPinField')), findsNothing);
     });
 
-    testWidgets('without a local family the old dialog is still what the row opens (a connected guardian)', (t) async {
+    testWidgets('without a local family the row opens the Age bands screen with no way to change a locked age (a connected guardian)', (t) async {
       await pumpMore(t);
       await openSettings(t);
       await t.tap(find.byKey(const Key('settingsRow_age')));
       await t.pumpAndSettle();
-      expect(find.text('Age band'), findsWidgets);
+      expect(find.byType(AgeBandsScreen), findsOneWidget);
+      expect(find.byKey(const Key('bandsChangeAge')), findsNothing);
       expect(find.byKey(const Key('lockAge_12')), findsNothing);
     });
 

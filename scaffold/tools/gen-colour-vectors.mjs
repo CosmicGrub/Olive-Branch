@@ -93,8 +93,8 @@ export function generate() {
     w(1.5, 600, 0), { opensMin: '0', restsMin: 600, windDownMin: 0 }, { opensMin: 0, restsMin: 600 }, { ...w(), mood: 'x' }, null, [], 'x'];
   out.checkWindow = windows.map((x) => ({ input: x, expect: C.checkPlayWindow(x) }));
   const real = w();
-  out.windowState = [0, 929, 930, 1000, 1109, 1110, 1111, 1139, 1140, 1141, 1439].map((m) => ({ window: real, minute: m, expect: C.playWindowState(real, m) }))
-    .concat([w(930, 1140, 0)].flatMap((ww) => [1139, 1140].map((m) => ({ window: ww, minute: m, expect: C.playWindowState(ww, m) }))))
+  out.windowState = [0, 929, 930, 1000, 1109, 1110, 1111, 1139, 1140, 1141, 1169, 1170, 1439].map((m) => ({ window: real, minute: m, expect: C.playWindowState(real, m) }))
+    .concat([w(930, 1140, 0), w(930, 1439, 30)].flatMap((ww) => [1139, 1140, 1439].map((m) => ({ window: ww, minute: m, expect: C.playWindowState(ww, m) }))))
     .concat([{ window: null, minute: 5, expect: C.playWindowState(null, 5) }]);
   out.windowLength = [real, w(0, 1439, 0), w(600, 615, 0)].map((ww) => ({ window: ww, expect: C.windowLength(ww) }));
   out.isLonger = [[real, w(900, 1140, 30)], [real, w(930, 1200, 30)], [real, w(960, 1140, 30)], [real, w(930, 1110, 30)], [real, w(930, 1140, 15)], [null, real], [real, real]]

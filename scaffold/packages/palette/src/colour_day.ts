@@ -234,8 +234,10 @@ export const COLOUR_IDS: string[] = PALETTE.map((s) => s.id);
 /**
  * §8.6.6 — the play window. A guardian sets when games are open on her device.
  * The ending is a goodnight in her own frame, not a limit she can run into:
- * during the wind-down a game in progress may finish; after it, games rest
- * until the window opens again. Calls and family messages are never gated here
+ * games are open from opensMin until restsMin; for the wind-down that follows
+ * the rest time a game in progress may finish and new ones wait (the prototype's
+ * order, parity ledger rule playWindow.states: rest time first, wind-down AFTER
+ * it); after the tail, games rest until the window opens again. Calls and family messages are never gated here
  * (§5.19, §8.1) — this module has no input that could gate them.
  */
 export interface PlayWindow {
@@ -243,7 +245,7 @@ export interface PlayWindow {
   opensMin: number;
   /** Minutes after local midnight, opensMin < restsMin <= 1439. */
   restsMin: number;
-  /** 0, 15 or 30: the gentle tail before restsMin. */
+  /** 0, 15 or 30: the gentle tail that follows restsMin (it ends at midnight at the latest). */
   windDownMin: number;
 }
 
@@ -254,7 +256,7 @@ export type PlayWindowState = 'open' | 'winding_down' | 'resting';
 export type PlayWindowCheck =
   | { ok: true; window: PlayWindow }
   | { ok: false; reason: 'body_must_be_object' | 'unknown_field' | 'bad_opensMin' | 'bad_restsMin'
-      | 'bad_windDownMin' | 'window_too_short' };
+      | 'bad_windDownMin' };
 
 const isMinute = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 1439;
 
@@ -265,16 +267,15 @@ export function checkPlayWindow(input: unknown): PlayWindowCheck {
   if (!isMinute(i.opensMin)) return { ok: false, reason: 'bad_opensMin' };
   if (!isMinute(i.restsMin) || i.restsMin <= i.opensMin) return { ok: false, reason: 'bad_restsMin' };
   if (!(WIND_DOWN_CHOICES as readonly unknown[]).includes(i.windDownMin)) return { ok: false, reason: 'bad_windDownMin' };
-  if (i.restsMin - i.opensMin < (i.windDownMin as number) + 15) return { ok: false, reason: 'window_too_short' };
   return { ok: true, window: { opensMin: i.opensMin, restsMin: i.restsMin, windDownMin: i.windDownMin as number } };
 }
 
 /** `minuteOfDay` is HER local minute, 0..1439. */
 export function playWindowState(w: PlayWindow | null, minuteOfDay: number): PlayWindowState {
   if (!w) return 'open';
-  if (minuteOfDay < w.opensMin || minuteOfDay >= w.restsMin) return 'resting';
-  if (w.windDownMin > 0 && minuteOfDay >= w.restsMin - w.windDownMin) return 'winding_down';
-  return 'open';
+  if (minuteOfDay >= w.opensMin && minuteOfDay < w.restsMin) return 'open';
+  if (w.windDownMin > 0 && minuteOfDay >= w.restsMin && minuteOfDay < w.restsMin + w.windDownMin) return 'winding_down';
+  return 'resting';
 }
 
 /** Minutes games stay open each day. */

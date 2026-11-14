@@ -53,11 +53,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart' show ApiException, acceptGuardianInvite, fetchGuardianInvite;
+import 'ui/olive_ui.dart';
 
 class InvitationScreen extends StatefulWidget {
   const InvitationScreen({super.key, required this.childName, required this.inviterLabel,
     required this.yourLabel, required this.onAccept, this.onDecline,
-    this.baseUrl, this.inviteId, this.httpClient});
+    this.baseUrl, this.inviteId, this.httpClient, this.preview = false});
 
   final String childName;
   /// The guardian who sent the invite, in their own word (Dad, Mum, ...).
@@ -78,6 +79,12 @@ class InvitationScreen extends StatefulWidget {
   /// Injectable for tests of the real path (package:http/testing.dart's
   /// MockClient), matching child_home_live.dart's own pattern.
   final http.Client? httpClient;
+
+  /// A PREVIEW of what another adult would be asked, opened from the guardian's
+  /// own settings. Inviting someone needs the network, which is not built, so
+  /// nothing is sent, Accept does not exist, and the screen says so in words
+  /// ('Invitation (preview)', 'Nothing is sent'); it never fakes an invitation.
+  final bool preview;
 
   @override
   State<InvitationScreen> createState() => _InvitationScreenState();
@@ -188,6 +195,7 @@ class _InvitationScreenState extends State<InvitationScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    appBar: widget.preview ? AppBar(title: const Text('Invitation (preview)')) : null,
     body: SafeArea(child: _loadingInvite
       ? const Center(child: CircularProgressIndicator())
       : _content(context)),
@@ -207,6 +215,13 @@ class _InvitationScreenState extends State<InvitationScreen> {
           constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
           child: Column(mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (widget.preview) ...[
+              const OliveNotice(key: Key('invitationPreviewNotice'), tone: OliveTone.info,
+                title: 'Nothing is sent',
+                text: 'This is a preview of what another adult would be asked to accept. Inviting '
+                    'someone needs the network, which is not built yet, so no invitation exists.'),
+              const SizedBox(height: 16),
+            ],
             Center(child: CircleAvatar(radius: 34, backgroundColor: scheme.primaryContainer,
               child: Icon(Icons.mail_outline_rounded, color: scheme.primary, size: 30))),
             const SizedBox(height: 20),
@@ -235,6 +250,13 @@ class _InvitationScreenState extends State<InvitationScreen> {
                   ?.copyWith(color: scheme.error)),
               const SizedBox(height: 12),
             ],
+            if (widget.preview)
+              SizedBox(height: 56, child: FilledButton.tonal(
+                key: const Key('closePreviewButton'),
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text('Close the preview',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))))
+            else
             SizedBox(height: 56, child: FilledButton(
               key: const Key('acceptInvitationButton'),
               onPressed: (_accepting || _inviteBlockedMessage != null) ? null : _accept,
@@ -255,7 +277,7 @@ class _InvitationScreenState extends State<InvitationScreen> {
                 style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: scheme.error)),
             ],
-            if (widget.onDecline != null) ...[
+            if (widget.onDecline != null && !widget.preview) ...[
               const SizedBox(height: 8),
               SizedBox(height: 48, child: TextButton(
                 onPressed: _accepting ? null : widget.onDecline, child: const Text('Not now'))),

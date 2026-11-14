@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 
 import 'access_scope.dart' show childTargetOf;
 import 'contact_labels.dart';
+import 'age_planner_screen.dart';
 import 'design_tokens.dart';
 import 'family_structure_logic.dart';
 import 'family_structure_store.dart';
@@ -816,8 +817,12 @@ class _FamilyHistoryState extends State<FamilyHistoryScreen> {
 
 // ================================================================ age bands ===
 class AgeBandsScreen extends StatefulWidget {
-  const AgeBandsScreen({super.key, required this.ctx});
+  const AgeBandsScreen({super.key, required this.ctx, this.onChangeAge});
   final FamilyContext ctx;
+
+  /// When supplied (the settings hub, on a device with a locked local age), a row that
+  /// opens the PIN-gated way to change her age. Null hides it.
+  final VoidCallback? onChangeAge;
   @override
   State<AgeBandsScreen> createState() => _AgeBandsState();
 }
@@ -925,6 +930,18 @@ class _AgeBandsState extends State<AgeBandsScreen> {
                 subtitle: const Text('When she moves to a new band, nothing changes on her side until you release it.'),
                 value: o.released.holdBandChange,
                 onChanged: (bool v) => _apply(<String, Object?>{'op': 'set_band_hold', 'hold': v})),
+              ListTile(
+                key: const Key('bandsOpenPlanner'), contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.event_note_outlined), title: const Text('What changes at each age'),
+                subtitle: const Text('The planner, band by band'), trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => AgePlannerScreen(childName: child, childAge: widget.ctx.yearsOld)))),
+              if (widget.onChangeAge != null)
+                ListTile(
+                  key: const Key('bandsChangeAge'), contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.cake_outlined), title: Text('Change $child’s age'),
+                  subtitle: const Text('Her age is locked. Your PIN changes it'), trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onChangeAge),
             ])),
     );
   }

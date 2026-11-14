@@ -1945,8 +1945,12 @@
     "windDownMin": 30
    },
    "expect": {
-    "ok": false,
-    "reason": "window_too_short"
+    "ok": true,
+    "window": {
+     "opensMin": 0,
+     "restsMin": 44,
+     "windDownMin": 30
+    }
    }
   },
   {
@@ -2138,7 +2142,7 @@
     "windDownMin": 30
    },
    "minute": 1110,
-   "expect": "winding_down"
+   "expect": "open"
   },
   {
    "window": {
@@ -2147,7 +2151,7 @@
     "windDownMin": 30
    },
    "minute": 1111,
-   "expect": "winding_down"
+   "expect": "open"
   },
   {
    "window": {
@@ -2156,7 +2160,7 @@
     "windDownMin": 30
    },
    "minute": 1139,
-   "expect": "winding_down"
+   "expect": "open"
   },
   {
    "window": {
@@ -2165,7 +2169,7 @@
     "windDownMin": 30
    },
    "minute": 1140,
-   "expect": "resting"
+   "expect": "winding_down"
   },
   {
    "window": {
@@ -2174,6 +2178,24 @@
     "windDownMin": 30
    },
    "minute": 1141,
+   "expect": "winding_down"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1169,
+   "expect": "winding_down"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 30
+   },
+   "minute": 1170,
    "expect": "resting"
   },
   {
@@ -2202,6 +2224,42 @@
    },
    "minute": 1140,
    "expect": "resting"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1140,
+    "windDownMin": 0
+   },
+   "minute": 1439,
+   "expect": "resting"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1439,
+    "windDownMin": 30
+   },
+   "minute": 1139,
+   "expect": "open"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1439,
+    "windDownMin": 30
+   },
+   "minute": 1140,
+   "expect": "open"
+  },
+  {
+   "window": {
+    "opensMin": 930,
+    "restsMin": 1439,
+    "windDownMin": 30
+   },
+   "minute": 1439,
+   "expect": "winding_down"
   },
   {
    "window": null,

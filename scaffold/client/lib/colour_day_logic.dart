@@ -277,8 +277,11 @@ ParentColourView? guardianView(List<DayColour> days, String localDate) =>
 
 // ========================================================= the play window ==
 /// A guardian sets when games are open on her device. The ending is a goodnight
-/// in her own frame, not a limit she can run into: during the wind-down a game
-/// in progress may finish; after it, games rest until the window opens again.
+/// in her own frame, not a limit she can run into: games are open from
+/// [PlayWindow.opensMin] until [PlayWindow.restsMin]; for the wind-down that
+/// FOLLOWS the rest time a game in progress may finish and new ones wait (the
+/// prototype's order, parity ledger rule playWindow.states: rest time first,
+/// wind-down after); after the tail, games rest until the window opens again.
 /// Calls and family messages are never gated here — this module has no input
 /// that could gate them.
 class PlayWindow {
@@ -287,7 +290,7 @@ class PlayWindow {
   final int opensMin;
   /// Minutes after local midnight, opensMin < restsMin <= 1439.
   final int restsMin;
-  /// 0, 15 or 30: the gentle tail before [restsMin].
+  /// 0, 15 or 30: the gentle tail that follows [restsMin] (ends at midnight at the latest).
   final int windDownMin;
 
   Map<String, dynamic> toJson() => {'opensMin': opensMin, 'restsMin': restsMin, 'windDownMin': windDownMin};
@@ -328,16 +331,15 @@ PlayWindowCheck checkPlayWindow(Object? input) {
   if (!_isMinute(o)) return const PlayWindowCheck.err('bad_opensMin');
   if (!_isMinute(r) || (r as num) <= (o as num)) return const PlayWindowCheck.err('bad_restsMin');
   if (w is! num || !windDownChoices.contains(w)) return const PlayWindowCheck.err('bad_windDownMin');
-  if (r - o < w + 15) return const PlayWindowCheck.err('window_too_short');
   return PlayWindowCheck.ok(PlayWindow(opensMin: o.toInt(), restsMin: r.toInt(), windDownMin: w.toInt()));
 }
 
 /// [minuteOfDay] is HER local minute, 0..1439. 'open' | 'winding_down' | 'resting'.
 String playWindowState(PlayWindow? w, int minuteOfDay) {
   if (w == null) return 'open';
-  if (minuteOfDay < w.opensMin || minuteOfDay >= w.restsMin) return 'resting';
-  if (w.windDownMin > 0 && minuteOfDay >= w.restsMin - w.windDownMin) return 'winding_down';
-  return 'open';
+  if (minuteOfDay >= w.opensMin && minuteOfDay < w.restsMin) return 'open';
+  if (w.windDownMin > 0 && minuteOfDay >= w.restsMin && minuteOfDay < w.restsMin + w.windDownMin) return 'winding_down';
+  return 'resting';
 }
 
 /// Minutes games stay open each day.

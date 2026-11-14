@@ -68,6 +68,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'care': 'Care binder (grown-up side)',
   'explainers': 'Picture stories for her',
   'access': 'Accessibility settings',
+  'plan': 'Plan for her home (grown-up side)',
   'onboarding': 'Welcome answers',
   'nicknames': 'What she calls her grown-ups',
   'homegrowth': 'When her home last grew',

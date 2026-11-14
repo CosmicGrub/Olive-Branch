@@ -51,6 +51,7 @@ import 'expenses_screen.dart';
 import 'form_factors.dart' as ff;
 import 'guardian_local_scope.dart';
 import 'guardian_more.dart';
+import 'guardian_state_line.dart';
 import 'handover_notes.dart';
 import 'meds_care.dart';
 import 'message_banking.dart';
@@ -168,17 +169,17 @@ class GuardianHome extends StatelessWidget {
       final Widget ribbonBlock = Column(children: [
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic, children: [
+            // A Wrap, not a Row: at 2.0x text on the 344 dp cover screen her name, the
+            // clock and the zone no longer fit on one line, and a Row overflowed. The
+            // clock stays dominant either way.
+            Wrap(crossAxisAlignment: WrapCrossAlignment.end, spacing: 4, children: [
                 Text(childName, style: Theme.of(context).textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(width: 4),
                 // The CHILD's clock is dominant — same titleMedium weight as
                 // her name, well above the actor line below (§8.2.3).
                 Text(childLocalTime, style: Theme.of(context).textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w600,
                     fontFeatures: const [FontFeature.tabularFigures()])),
-                const SizedBox(width: 4),
                 Text(childZoneAbbr, style: Theme.of(context).textTheme.labelSmall
                   ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ]),
@@ -192,11 +193,13 @@ class GuardianHome extends StatelessWidget {
             // dominant-frame treatment exchange_screen.dart's own handoff
             // card uses, while the actor line and zone abbreviation stay
             // exactly as subordinate as they were.
-            if (childStateSentence != null) ...[
-              Text(childStateSentence!, style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-            ],
+            // Always one sentence: the caller's when it has one, else the honest
+            // fallback (guardian_state_line.dart), never blank and never invented.
+            Text(guardianStateLine(childName: childName, sentence: childStateSentence,
+                connected: baseUrl != null, dayPart: dayPart),
+              key: const Key('guardianStateLine'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
             // Actor time is subordinate, always.
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
@@ -264,7 +267,10 @@ class GuardianHome extends StatelessWidget {
             final gapTotal = 10.0 * (crossAxisCount - 1);
             final effectiveColumnWidth =
                 (constraints.maxWidth / textScale - gapTotal) / crossAxisCount;
-            final mainAxisExtent = effectiveColumnWidth < 170.0 ? 136.0 : 108.0;
+            // Past 1.0x the cell grows with the text (a 2.0x label wraps one line further and
+            // overflowed a fixed cell by a few dp); at 1.0x it is exactly what it was.
+            final heightScale = textScale <= 1.0 ? 1.0 : textScale;
+            final mainAxisExtent = (effectiveColumnWidth < 170.0 ? 136.0 : 108.0) * heightScale;
 
             // The same 11 destinations as before, now tagged by tier
             // (_kGuardianTiles, in this spec's own §Tier assignment order)
@@ -353,13 +359,13 @@ class GuardianHome extends StatelessWidget {
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(children: [
-            SizedBox(width: double.infinity, height: 128, child: TieredTile(readAloud: false, 
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               key: const Key('guardianHomeHero'),
               icon: Icons.schedule_send, label: 'Message banking',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const MessageBankingScreen())))),
             const SizedBox(height: 10),
-            SizedBox(width: double.infinity, height: 128, child: TieredTile(readAloud: false, 
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               icon: Icons.more_horiz, label: 'More',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => Scaffold(

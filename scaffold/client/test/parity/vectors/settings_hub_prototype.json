@@ -1,0 +1,31 @@
+{
+  "note": "The prototype's Settings hub (docs/superpowers/mockups/live): mod-shell.js `L.tile({area:\"settings\"...})` rows sh.names, sh.devices, sh.add, sh.pin, sh.session and mod-guardian.js `sr(...)` rows (lines 1305-1324), in their group order and `order` value. `{child}` is the child's name. Flutter's settings_hub_parity test holds the real hub to this list: same group, same relative order, same title. A prototype row with no Flutter counterpart says why in `flutter`. Update this file when the prototype's hub changes (the Flutter test then tells you what to build).",
+  "groups": ["Her", "Family", "Safety", "Learn", "Account"],
+  "rows": [
+    {"proto": "sh.names", "group": "Her", "order": 10, "title": "{child} calls you", "flutter": "names"},
+    {"proto": "grd.s.colour", "group": "Her", "order": 11, "title": "Colour and art", "flutter": "colour"},
+    {"proto": "grd.s.look", "group": "Her", "order": 12, "title": "How her app looks", "flutter": "look"},
+    {"proto": "grd.s.band", "group": "Her", "order": 13, "title": "Age band", "flutter": "age"},
+    {"proto": "grd.s.access", "group": "Her", "order": 14, "title": "Accessibility for her device", "flutter": "access"},
+    {"proto": "grd.s.play", "group": "Her", "order": 15, "title": "Play window and daily time", "flutter": "window"},
+    {"proto": "grd.s.suites", "group": "Her", "order": 16, "title": "Her suites", "flutter": null, "why": "Flutter has no single 'Her suites' screen: the four suites are separate rows (Routine and rhythm, Her voice, Village, Family compass) placed after Play window, in the Her group."},
+    {"proto": "sh.devices", "group": "Family", "order": 10, "title": "Paired devices", "flutter": "devices"},
+    {"proto": "sh.add", "group": "Family", "order": 11, "title": "Add {child}’s tablet", "flutter": "addtablet"},
+    {"proto": "grd.s.family", "group": "Family", "order": 12, "title": "Family structure", "flutter": "family"},
+    {"proto": "grd.s.history", "group": "Family", "order": 13, "title": "Family history", "flutter": "history"},
+    {"proto": "grd.s.rhythm", "group": "Family", "order": 14, "title": "Weekly rhythm", "flutter": "weekly"},
+    {"proto": "grd.s.adults", "group": "Family", "order": 15, "title": "Adults and helpers", "flutter": "adults"},
+    {"proto": "grd.s.devices", "group": "Family", "order": 16, "title": "Remove a device", "flutter": null, "why": "Removing a device is the Paired devices screen in Flutter (it lists and revokes); one row, not two."},
+    {"proto": "grd.s.partner", "group": "Family", "order": 17, "title": "{partner} (simulated co-guardian)", "flutter": null, "why": "The prototype's second guardian is a simulation; the real one is a different person on a different device (online-parked)."},
+    {"proto": "sh.pin", "group": "Safety", "order": 10, "title": "Guardian PIN", "flutter": null, "why": "Its explainer (ob.pinInfo) is the top card of the Change PIN screen, so Flutter has one PIN row."},
+    {"proto": "grd.s.pin", "group": "Safety", "order": 11, "title": "Change PIN", "flutter": "pin"},
+    {"proto": "grd.s.controls", "group": "Safety", "order": 12, "title": "Parental controls", "flutter": "controls"},
+    {"proto": "grd.s.data", "group": "Safety", "order": 13, "title": "Data on this phone", "flutter": "devicedata"},
+    {"proto": "grd.s.learn", "group": "Learn", "order": 10, "title": "Parent Learn", "flutter": "learn"},
+    {"proto": "grd.s.choices", "group": "Learn", "order": 11, "title": "Your Learn choices", "flutter": "learnchoices"},
+    {"proto": "grd.s.delete", "group": "Account", "order": 80, "title": "Delete my account", "flutter": null, "why": "Open owner decision (the 6 to 12 month recovery window): Flutter's Deletion row states what deletion means and deletes nothing here."},
+    {"proto": "grd.s.session", "group": "Account", "order": 89, "title": "Session", "flutter": null, "why": "The prototype's sign-in state row; Flutter's Sign out row covers it."},
+    {"proto": "sh.session", "group": "Account", "order": 90, "title": "Sign out", "flutter": "signout"}
+  ],
+  "flutterOnly": ["growing", "rhythm", "voice", "village", "compass", "care", "connect", "deletion"]
+}
