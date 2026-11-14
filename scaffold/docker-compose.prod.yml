@@ -171,9 +171,17 @@ services:
       # server/index.mjs refuses to boot with DEV_LOGIN=1 under this value
       # (audit G-02/G-06) — a second, independent lock behind the literal above.
       NODE_ENV: production
-      LIVEKIT_URL: ${LIVEKIT_URL:?LIVEKIT_URL must be set — see .env.prod.example, a real LiveKit Cloud project, no LAN-IP dev default here}
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set — see .env.prod.example}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set — see .env.prod.example}
+      # §16.2 #6 (third reversal): self-hosted Jitsi is the default provider.
+      # Optional so a deploy without calls still boots; a call POST then
+      # answers 503 call_provider_unavailable. LiveKit stays selectable.
+      CALL_PROVIDER: ${CALL_PROVIDER:-jitsi}
+      JITSI_APP_ID: ${JITSI_APP_ID:-}
+      JITSI_APP_SECRET: ${JITSI_APP_SECRET:-}
+      JITSI_SERVER_URL: ${JITSI_SERVER_URL:-}
+      JITSI_XMPP_DOMAIN: ${JITSI_XMPP_DOMAIN:-meet.jitsi}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       # Pinned explicitly rather than left to server/routes.mjs's own
       # DEFAULT_MEDIA_STORAGE_ROOT fallback (derived from import.meta.url —
       # an internal implementation detail, not a contract). The volume
@@ -236,6 +244,9 @@ services:
           cpus: "0.5"
 
   callroom:
+    # The LiveKit-only dev room server. Opt-in (docker compose --profile callroom up)
+    # so a default deploy (CALL_PROVIDER=jitsi, no LiveKit project) still starts.
+    profiles: ["callroom"]
     image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
     restart: always
     environment:

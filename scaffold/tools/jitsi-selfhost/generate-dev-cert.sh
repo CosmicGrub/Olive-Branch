@@ -76,6 +76,14 @@ MSYS2_ARG_CONV_EXCL="/C=" openssl req -new -x509 -days 3650 -nodes \
 chmod 600 "$KEYS_DIR/cert.key"
 cp "$KEYS_DIR/cert.crt" "$ANDROID_RAW_DIR/$ANDROID_CERT_NAME"
 
+# Keep the Android network-security-config trust scope in lockstep with the SAN
+# list just written (cert SAN and trust scope must never drift). See
+# nsc-scope.sh for exactly what is rewritten (only the marked block) and why.
+. ./nsc-scope.sh
+for f in "../../client/android/app/src/main/res/xml/network_security_config.xml"          "../../client/android/app/src/debug/res/xml/network_security_config.xml"; do
+  nsc_rewrite "$f" "$@"
+done
+
 echo ""
 echo "Wrote:"
 echo "  $KEYS_DIR/cert.crt + cert.key  (private key stays local, never committed)"
@@ -84,7 +92,7 @@ echo ""
 echo "Next:"
 echo "  1. Restart the web container so nginx picks up the new cert:"
 echo "       docker compose -f .jitsi-docker/docker-compose.yml restart web"
-echo "  2. Confirm network_security_config.xml has a <trust-anchors> entry"
-echo "     for @raw/${ANDROID_CERT_NAME%.pem} scoped to the SANs above."
+echo "  2. network_security_config.xml (main + debug) now trusts the pinned cert for"
+echo "     the LAN IP argument(s) above only (checked in; review the git diff)."
 echo "  3. Rebuild the Android app — a cert baked into an already-installed"
 echo "     APK does not update itself."

@@ -3765,6 +3765,37 @@ enrollment. Documented in the security policy required by §10.1.
 > from code review" discipline the Jitsi entry above established for
 > itself, applied to its own reversal.
 
+> **§16.2 #6, REVERSED a third time, unreleased (2026-11-09): self-hosted Jitsi is the default call provider again; LiveKit stays selectable.**
+> The LiveKit entry above is superseded as the default, not removed. The owner's decision, in their words: calls use the self-hosted Jitsi
+> stack in Docker on the owner's own PC, started on demand; "no oracle", and the Oracle/VPS/tunnel hosting plan is scrapped for much later.
+> The history, stated plainly: LiveKit Cloud (v0.40.0), then Jitsi (v0.46.0 on meet.jit.si, then self-hosted, verified in both directions on a
+> Fold 5 and a tablet), then LiveKit Cloud again (v0.49.57, never device-verified because no LiveKit project credentials ever existed), now
+> Jitsi again. Three reversals in three months is a cost, and this one keeps both engines in the code behind one seam
+> (`client/lib/call_provider.dart`, `server/call_config.mjs`) so a fourth would be a setting, not a migration.
+>
+> **COPPA, honestly.** The reason this is the better default for a child's product is not performance. LiveKit Cloud is a third-party media
+> processor: a child's audio and video would pass through, and be processed by, a company the family has no relationship with, which has to be
+> disclosed and papered. Self-hosted Jitsi on the owner's own server has no such third party: the media bridge is the owner's own machine.
+> That is a real reduction in disclosed processors, not a claim of compliance (no counsel has reviewed this, and `CALL_PROVIDER=livekit`
+> reintroduces the processor the moment it is selected).
+>
+> **What is selectable and how.** The server reads `CALL_PROVIDER=jitsi|livekit` (default `jitsi`). Authorization is unchanged and
+> provider-agnostic (who may call whom, I1-I5 in `rooms.ts`, the generic `can('call')` gate, knock/answer). Only the grant differs. The response
+> carries `provider`: for Jitsi a short-lived (I5) per-participant HS256 JWT scoped to one derived room (`HMAC(secret, session room)`, lowercase,
+> unguessable even to someone who saw the push handle), adults moderate, the child does not, recording/livestream/screen-share/outbound off, no
+> chat, settings or invite for anyone; for LiveKit the unchanged token and URL. An unconfigured provider is reported (503
+> `call_provider_unavailable`, before any session exists or any device is rung), never faked.
+>
+> **Limits, stated plainly.** (1) Jitsi calls work only on the owner's LAN, only while the PC is on and calls are switched on
+> (`tools/jitsi-selfhost/calls-on.sh`); there is no push that rings a closed app from outside the house. (2) Jitsi cannot express LiveKit's
+> `canPublish:false`: an observer-only guardian (§17.3) is not a moderator and joins muted with a hang-up-only toolbar, which is enforced by the
+> client, not the server, so it is advisory on Jitsi and enforced on LiveKit. (3) The JWT's short life means a call longer than the token's
+> minutes cannot silently reconnect with it; the app rejoins through the join route. (4) The LAN stack serves a self-signed certificate; the
+> app trusts exactly one pinned public certificate for exactly one LAN address (`network_security_config.xml`), the base config (system CAs only,
+> no cleartext) is untouched, and there is no trust-all anywhere. (5) UNVERIFIED on hardware in this form: the Jitsi engine ran on real devices
+> in the Jitsi era; this port, the JWT, and the pinned-certificate path have been tested by CI and a fake SDK, not yet by two devices.
+> Operating instructions: `scaffold/docs/calls-on-the-lan.md`.
+
 > **Guardian kiosk PIN made a REQUIRED step, v0.49.73.** The "Auth" row
 > above has read "device-bound token + PIN (children)" since this table was
 > first written, but said nothing about the GUARDIAN's own kiosk PIN
@@ -4105,7 +4136,7 @@ certified export covers the genuine single-hearing case. Sustained litigation us
 | 1 | **The name.** Two names, deliberately: **Olive** to a child, **Olive Branch** to an adult. | v0.23.0 | §16.3 |
 | 4 | **Ping limit scales with age, then stops existing.** 3/day to 7, 5 to 9, 8 to 12, **none from 13**. | v0.23.0 | §9.9, `PING_BANDS` |
 | 5 | **Preservation is a standing rule, not an election** — anything a parent sends is kept. Everything else surfaces in a 14-day expiry digest, guardian-only, one tap to keep. | v0.23.0 | §10.1b, `expiringSoon()` |
-| 6 | **Call/video/streaming infrastructure.** LiveKit Cloud (v0.40.0) → **REVERSED**, Jitsi Meet + Jitsi Videobridge (unreleased) → **REVERSED AGAIN**, back to LiveKit Cloud, not yet device-verified. | v0.40.0, reversed unreleased, reversed again v0.49.57 | §16.2 callout above the tech-stack table |
+| 6 | **Call/video/streaming infrastructure.** LiveKit Cloud (v0.40.0) → **REVERSED**, Jitsi Meet + Jitsi Videobridge (unreleased) → **REVERSED AGAIN**, back to LiveKit Cloud (v0.49.57, never device-verified) → **REVERSED a third time (2026-11-09)**: self-hosted Jitsi on the owner's PC is the default, LiveKit stays selectable (`CALL_PROVIDER`); self-hosting avoids disclosing a third-party media processor, LiveKit Cloud would require it; not yet device-verified in this form. | v0.40.0, reversed unreleased, reversed again v0.49.57, reversed a third time unreleased | §16.2 callouts above the tech-stack table |
 
 **Cleared, v0.49.44.** A real USPTO/app-store search (not a placeholder) found
 no blocking conflict for this product category — one real, disclosed risk (a

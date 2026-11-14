@@ -63,7 +63,8 @@ import { parseAttestationObject, extractCredentialPublicKey } from '../packages/
 import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
 import { CHANNELS } from '../packages/devices/src/devices.mjs';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
-import { mintLiveKitToken } from '../packages/session-runtime/src/livekit-token.mjs';
+import { resolveCallConfig } from './call_config.mjs';
+import { buildCallGrant, callUnavailable } from './call_grant.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
@@ -123,20 +124,19 @@ export const defaultMediaStorage = new FilesystemStorage(
   process.env.MEDIA_STORAGE_ROOT ?? DEFAULT_MEDIA_STORAGE_ROOT, mediaSigningSecret);
 
 /**
- * MASTERFILE §16.2 #6 REVERSED AGAIN — LiveKit Cloud, not self-hosted Jitsi.
- * See docs/superpowers/specs/2026-08-29-livekit-call-migration-design.md.
+ * MASTERFILE §16.2 #6 — REVERSED a third time (2026-11-09): self-hosted Jitsi
+ * is the DEFAULT call provider, LiveKit stays selectable. CALL_PROVIDER=
+ * jitsi|livekit (default jitsi); server/call_config.mjs parses and validates
+ * the env (read per request, so a test or an operator can switch without a
+ * re-import). Authorization (who may call whom, I1-I5 in rooms.ts, the
+ * generic can('call') gate) is provider-agnostic and untouched: ONLY the
+ * final grant differs. See buildCallGrant() below.
  *
- * Same env var names `tools/local-call-room-server.mjs` uses, on purpose —
- * this route is the real, authenticated replacement for that dev-only
- * script's `/room` endpoint, not a second, independently-configured path to
- * the same LiveKit project. No fallback default for the key/secret (unlike
- * the old JITSI_SERVER_URL's public-server fallback): a call route that
- * silently minted tokens against no real LiveKit project would fail in a
- * more confusing way, later, than failing loudly here if these are unset.
+ * Unconfigured is reported, never faked. Jitsi: 503 call_provider_unavailable
+ * BEFORE a session is created or a child's device is rung (a call that cannot
+ * be minted must not ring). LiveKit: the historical 500 call_backend_
+ * unconfigured, unchanged.
  */
-const LIVEKIT_URL = process.env.LIVEKIT_URL;
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 
 /**
  * LOCAL DEV/TEST ONLY — same honesty convention server/index.mjs's own
@@ -1294,6 +1294,13 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
       if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
 
+      // Jitsi: refuse BEFORE ringing anyone if the provider cannot mint.
+      const callCfg = resolveCallConfig(opts.callEnv ?? process.env);
+      if (callCfg.provider === 'jitsi' && callCfg.unavailable.length) {
+        console.error(`[call] jitsi unavailable, missing: ${callCfg.unavailable.join(', ')}`);
+        return callUnavailable(callCfg);
+      }
+
       const now = new Date();
       // mintToken() below needs this caller's real edges as an input to
       // compute their own grant (observer-only vs full-publish) — a second
@@ -1395,23 +1402,21 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         console.error(`[call_log] failed to record call start for session ${session.id}:`, e);
       }
 
-      // Loud, not silent: an unconfigured LiveKit project must never look
-      // like a successful call start. minted.ok already proved this caller
-      // is genuinely authorized — this is a deployment-config failure, not
-      // an authorization one, so 500 (our fault), not 403 (their fault).
-      if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
-        console.error(`[call] LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET not set — cannot mint a real call token for session ${session.id}`);
-        return { status: 500, body: { error: 'call_backend_unconfigured' } };
+      // Loud, not silent: an unconfigured provider must never look like a
+      // successful call start. minted.ok already proved this caller is
+      // genuinely authorized — this is a deployment-config failure, not an
+      // authorization one, so 5xx (our fault), not 403 (their fault).
+      if (callCfg.unavailable.length) {
+        console.error(`[call] ${callCfg.unavailable.join('/')} not set — cannot mint a real call token for session ${session.id}`);
+        return callUnavailable(callCfg);
       }
-      const token = await mintLiveKitToken(minted.token, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+      const grant = await buildCallGrant(callCfg, minted,
+        { displayName: 'Dad', isChild: false, observerOnly: realObserverOnly });
 
       return {
         status: 201,
         body: {
-          token,
-          wsURL: LIVEKIT_URL,
-          identity: minted.token.identity,
-          displayName: 'Dad',
+          ...grant,
           rang,
           // Lets CallScreen's own hang-up path call the new end-call route
           // below on the exact session this response minted, without the
@@ -1511,19 +1516,20 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       );
       if (!minted.ok) return { status: 403, body: { error: minted.reason } };
 
-      if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
-        console.error(`[call] LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET not set — cannot mint a real join token for session ${session.id}`);
-        return { status: 500, body: { error: 'call_backend_unconfigured' } };
+      const callCfg = resolveCallConfig(opts.callEnv ?? process.env);
+      if (callCfg.unavailable.length) {
+        console.error(`[call] ${callCfg.unavailable.join('/')} not set — cannot mint a real join token for session ${session.id}`);
+        return callUnavailable(callCfg);
       }
-      const token = await mintLiveKitToken(minted.token, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+      // Jitsi only: the join mint above is unchanged (observerOnly:false is
+      // pre-existing, disclosed in MASTERFILE), but the moderator role must
+      // never be handed to an observer-only guardian, so read the real edge.
+      const joinObserverOnly = isChild ? false
+        : (edges.find((e) => e.childId === c.childId)?.observerOnly ?? true);
+      const grant = await buildCallGrant(callCfg, minted,
+        { displayName: isChild ? 'Ivy' : 'Dad', isChild, observerOnly: joinObserverOnly });
 
-      return {
-        status: 200,
-        body: {
-          token, wsURL: LIVEKIT_URL, identity: minted.token.identity,
-          displayName: isChild ? 'Ivy' : 'Dad',
-        },
-      };
+      return { status: 200, body: grant };
     },
   });
 

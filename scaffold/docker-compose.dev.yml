@@ -106,6 +106,16 @@ services:
       # -start requirement that would block testers who aren't touching
       # calls today. Set all three from ./.env (untracked — see
       # .env.example) once a real LiveKit Cloud project exists.
+      # MASTERFILE §16.2 #6 (third reversal): CALL_PROVIDER defaults to the
+      # owner's self-hosted Jitsi. Every value is optional here (no `:?`): the
+      # stack runs without calls, and an actual call POST answers 503
+      # call_provider_unavailable honestly until the Jitsi values are set in
+      # ./.env (untracked; see .env.example and docs/calls-on-the-lan.md).
+      CALL_PROVIDER: ${CALL_PROVIDER:-jitsi}
+      JITSI_APP_ID: ${JITSI_APP_ID:-}
+      JITSI_APP_SECRET: ${JITSI_APP_SECRET:-}
+      JITSI_SERVER_URL: ${JITSI_SERVER_URL:-}
+      JITSI_XMPP_DOMAIN: ${JITSI_XMPP_DOMAIN:-meet.jitsi}
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}

@@ -14,3 +14,12 @@
 # after a failed release build) -- confirmed against a real R8 failure,
 # not applied speculatively.
 -dontwarn kotlinx.parcelize.Parcelize
+
+# One WebRTC per APK (see build.gradle.kts, olive.webrtc). In the default Jitsi
+# build flutter_webrtc's Java glue (com.cloudwebrtc.*, used only by the selectable
+# LiveKit engine) references org.webrtc classes that Jitsi's older WebRTC does not
+# have (AudioTrackSink, DataPacketCryptor...). Those paths are never reached unless a
+# LiveKit grant is joined in a Jitsi-variant build, which is not supported (the call
+# screen shows its calm "not ready" state). R8 must not treat that as a build error.
+-dontwarn org.webrtc.**
+-dontwarn com.cloudwebrtc.webrtc.**

@@ -20,6 +20,7 @@ const ENTRIES = [
   ["--format=esm","--platform=node","packages/family-graph/src/session.ts","--outfile=packages/family-graph/src/session.mjs"],
   ["--format=esm","--platform=node","packages/session-runtime/src/rooms.ts","--outfile=packages/session-runtime/src/rooms.mjs"],
   ["--format=esm","--platform=node","packages/session-runtime/src/livekit-token.ts","--outfile=packages/session-runtime/src/livekit-token.mjs"],
+  ["--format=esm","--platform=node","packages/session-runtime/src/jitsi-token.ts","--outfile=packages/session-runtime/src/jitsi-token.mjs"],
   ["--format=esm","--platform=node","packages/child-lock/src/lock.ts","--outfile=packages/child-lock/src/lock.mjs"],
   ["--format=esm","--platform=node","packages/messaging/src/pipeline.ts","--outfile=packages/messaging/src/pipeline.mjs"],
   ["--format=esm","--platform=node","packages/auth/src/auth.ts","--outfile=packages/auth/src/auth.mjs"],

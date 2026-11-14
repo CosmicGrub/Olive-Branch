@@ -1,6 +1,6 @@
 // OLIVE BRANCH — guards for what ships in a release build (on-device
 // performance pass): bundled asset size, no silent debug-signed release, no
-// dead Jitsi-era leftovers, and the documented per-ABI build. Reads the repo's
+// unguarded Jitsi trust or vendored copy, and the documented per-ABI build. Reads the repo's
 // own files, so a later change that undoes any of these fails here.
 import 'dart:io';
 
@@ -70,34 +70,39 @@ void main() {
     });
   });
 
-  group('the Jitsi-era leftovers are gone from the main source set', () {
-    test('no cleartext network-security config or dev certificate', () {
-      // The Jitsi-era config PERMITTED cleartext and trusted a dev certificate. The
-      // server-snoop hardening config (docs/operators/certificate-pinning.md) is
-      // the opposite: cleartext off, system CAs only. A config may exist in the
-      // main source set only if it is that one.
+  // MASTERFILE 16.2 #6, third reversal (2026-11-09): Jitsi is the default call provider again, so the
+  // old "leftovers are gone" guard became a guard on what the comeback is allowed to bring back.
+  group('the Jitsi comeback brings back only what it is allowed to', () {
+    test('network-security config: no cleartext, system CAs only, one pinned cert for one LAN address', () {
       final File cfg = File('android/app/src/main/res/xml/network_security_config.xml');
-      if (cfg.existsSync()) {
-        final String xml = cfg.readAsStringSync().replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
-        expect(xml, contains('<base-config cleartextTrafficPermitted="false">'));
-        expect(xml, isNot(contains('cleartextTrafficPermitted="true"')));
-        expect(xml, isNot(contains('src="user"')));
-        expect(xml, isNot(contains('src="@raw')));
-      }
-      expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').existsSync(), isFalse);
-      final String manifest = read('android/app/src/main/AndroidManifest.xml');
-      if (manifest.contains('networkSecurityConfig')) {
-        expect(cfg.existsSync(), isTrue, reason: 'the manifest must point at a config that exists');
-      }
+      final String xml = cfg.readAsStringSync().replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
+      expect(xml, contains('<base-config cleartextTrafficPermitted="false">'));
+      expect(xml, isNot(contains('cleartextTrafficPermitted="true"')));
+      expect(xml, isNot(contains('src="user"')));
+      // The ONLY @raw trust anchor is the pinned Jitsi certificate, once, inside a
+      // cleartext-off domain-config for a single IPv4 address; never in the base config.
+      expect('@raw/jitsi_dev_cert'.allMatches(xml).length, 1);
+      expect(RegExp(r'@raw/(?!jitsi_dev_cert)').hasMatch(xml), isFalse);
+      expect(
+        RegExp(r'<domain-config cleartextTrafficPermitted="false">\s*<domain includeSubdomains="false">\d+\.\d+\.\d+\.\d+</domain>\s*<trust-anchors>\s*<certificates src="@raw/jitsi_dev_cert"')
+            .hasMatch(xml),
+        isTrue);
+      final String base = xml.substring(xml.indexOf('<base-config'), xml.indexOf('</base-config>'));
+      expect(base, isNot(contains('@raw')));
+      expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').readAsStringSync(), contains('BEGIN CERTIFICATE'));
+      expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').readAsStringSync(), isNot(contains('PRIVATE KEY')));
+      expect(read('android/app/src/main/AndroidManifest.xml'), contains('networkSecurityConfig'));
     });
 
-    test('the vendored jitsi_meet_flutter_sdk copy is gone and nothing references it', () {
-      expect(Directory('third_party/jitsi_meet_flutter_sdk_patched').existsSync(), isFalse);
+    test('the vendored jitsi_meet_flutter_sdk copy is wired, trimmed to Android, and nothing else overrides', () {
+      expect(Directory('third_party/jitsi_meet_flutter_sdk_patched').existsSync(), isTrue);
+      expect(Directory('third_party/jitsi_meet_flutter_sdk_patched/ios').existsSync(), isFalse);
+      expect(Directory('third_party/jitsi_meet_flutter_sdk_patched/mobile-tools').existsSync(), isFalse);
+      expect(read('third_party/jitsi_meet_flutter_sdk_patched/android/build.gradle'), contains('compileSdkVersion 36'));
       final String pubspec = read('pubspec.yaml');
-      // Comments may still mention the name; no dependency or path may.
-      expect(RegExp(r'^\s*jitsi_meet_flutter_sdk\s*:', multiLine: true).hasMatch(pubspec), isFalse);
-      expect(pubspec, isNot(contains('jitsi_meet_flutter_sdk_patched')));
-      expect(read('analysis_options.yaml'), isNot(contains('jitsi_meet_flutter_sdk_patched/**')));
+      expect(pubspec, contains('path: third_party/jitsi_meet_flutter_sdk_patched'));
+      expect(RegExp(r'^\s*jitsi_meet_flutter_sdk\s*:\s*\^', multiLine: true).hasMatch(pubspec), isTrue);
+      expect(read('analysis_options.yaml'), contains('third_party/**'));
     });
   });
 }
