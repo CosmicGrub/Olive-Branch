@@ -24,15 +24,21 @@ import 'pairing_protocol.dart' show kSasPictures;
 
 const int kPictureMaxLength = 200;
 const int kPictureTagBytes = 8;
+const int kFamilyTagBytes = 8;
+const int kFamilyKeyBytes = 16;
 
 enum PictureRole { adult, child }
 
 /// A parsed or freshly built pairing picture.
 class PairingPicture {
-  const PairingPicture({required this.role, required this.publicKey, required this.salt, required this.epoch});
+  const PairingPicture({required this.role, required this.publicKey, required this.salt, required this.epoch, this.familyTag});
   final PictureRole role;
   final Uint8List publicKey, salt;
   final int epoch;
+
+  /// The optional blinded family tag (8 bytes): a hint that lets a device of the SAME family recognise this
+  /// picture and a device of another family refuse it at scan time. Never an authenticator.
+  final Uint8List? familyTag;
 
   /// First 16 bytes of SHA-256 of the key: what a window's `hello-ok` must also report.
   Future<Uint8List> fingerprint() => fingerprintOf(publicKey);
@@ -43,6 +49,7 @@ class PairingPicture {
         'k': b64(publicKey),
         's': b64(salt),
         'e': '$epoch',
+        if (familyTag != null) 'f': b64(familyTag!),
       }).toString();
 }
 
@@ -60,8 +67,8 @@ Uint8List? _exactBytes(String? s, int bytes) {
   }
 }
 
-/// Null for anything that is not exactly a well-formed pairing picture. Fails closed: exactly the four keys, each
-/// once, no extras, no whitespace, no fragment, no userinfo, no port, length at most [kPictureMaxLength].
+/// Null for anything that is not exactly a well-formed pairing picture. Fails closed: exactly the four keys (or
+/// those four plus the optional `f`), each once, no extras, no whitespace, no fragment, no userinfo, no port, length at most [kPictureMaxLength].
 PairingPicture? parsePairingPicture(String raw) {
   try {
     if (raw.isEmpty || raw.length > kPictureMaxLength) return null;
@@ -72,9 +79,11 @@ PairingPicture? parsePairingPicture(String raw) {
     if (u.hasFragment || u.userInfo.isNotEmpty || u.hasPort || !u.hasQuery) return null;
     // Exactly four non-empty key=value segments: Uri silently drops an empty one ("&&", a trailing "&").
     final List<String> parts = u.query.split('&');
-    if (parts.length != 4 || parts.any((String p) => p.split('=').length != 2 || p.startsWith('='))) return null;
+    if (parts.length != 4 && parts.length != 5) return null;
+    if ( parts.any((String p) => p.split('=').length != 2 || p.startsWith('='))) return null;
     final Map<String, List<String>> q = u.queryParametersAll;
-    if (q.length != 4 || !<String>['r', 'k', 's', 'e'].every(q.containsKey)) return null;
+    if (q.length != parts.length || !<String>['r', 'k', 's', 'e'].every(q.containsKey)) return null;
+    if (q.length == 5 && !q.containsKey('f')) return null;
     if (q.values.any((List<String> v) => v.length != 1)) return null;
     final String r = q['r']!.single, e = q['e']!.single;
     if (r != 'a' && r != 'c') return null;
@@ -83,10 +92,42 @@ PairingPicture? parsePairingPicture(String raw) {
     if (epoch > 65535) return null;
     final Uint8List? k = _exactBytes(q['k']!.single, 32), s = _exactBytes(q['s']!.single, 16);
     if (k == null || s == null) return null;
-    return PairingPicture(role: r == 'a' ? PictureRole.adult : PictureRole.child, publicKey: k, salt: s, epoch: epoch);
+    Uint8List? f;
+    if (q.containsKey('f')) {
+      f = _exactBytes(q['f']!.single, kFamilyTagBytes);
+      if (f == null) return null;
+    }
+    return PairingPicture(role: r == 'a' ? PictureRole.adult : PictureRole.child, publicKey: k, salt: s, epoch: epoch, familyTag: f);
   } catch (_) {
     return null;
   }
+}
+
+/// The blinded family tag: the first 8 bytes of HMAC-SHA256(key = the family key, message = "olive-fam/1" || role ||
+/// salt || device key). Binding the salt makes it change whenever the picture is refreshed, and binding the device
+/// key makes it differ between devices, so two pictures of one family cannot be linked by it. The family key never
+/// leaves the family (it travels only inside the sealed pairing credential).
+Future<Uint8List> familyTag(List<int> familyKey, PictureRole role, List<int> salt, List<int> deviceKey) async {
+  final Mac m = await Hmac.sha256().calculateMac(
+      <int>[...utf8.encode('olive-fam/1'), role == PictureRole.adult ? 0x61 : 0x63, ...salt, ...deviceKey],
+      secretKey: SecretKey(familyKey));
+  return Uint8List.fromList(m.bytes.sublist(0, kFamilyTagBytes));
+}
+
+/// What a scanner makes of a picture's family tag against the family it belongs to (if any).
+enum FamilyCheck { sameFamily, differentFamily, noHint }
+
+/// A device that belongs to a family ([familyKey] non-null) refuses a picture whose tag does not verify; a device
+/// with no family yet cannot tell, and a picture with no tag gives no hint. A claimed device that scans a
+/// tag-less picture proceeds to the later checks (fingerprint, PIN, Match, Approve), which do not depend on it.
+Future<FamilyCheck> checkFamily(PairingPicture pic, List<int>? familyKey) async {
+  if (familyKey == null || pic.familyTag == null) return FamilyCheck.noHint;
+  final Uint8List want = await familyTag(familyKey, pic.role, pic.salt, pic.publicKey);
+  int diff = 0;
+  for (int i = 0; i < kFamilyTagBytes; i++) {
+    diff |= want[i] ^ pic.familyTag![i];
+  }
+  return diff == 0 ? FamilyCheck.sameFamily : FamilyCheck.differentFamily;
 }
 
 /// The window-recognition tag: the first 8 bytes of HMAC-SHA256(key = the addressed device's salt,
@@ -138,9 +179,16 @@ WindowGlyph windowGlyph(List<int> sid) => WindowGlyph(kSasPictures[sid[0] & 15],
 // Local state: the salt and the epoch. Same storage tier as the device key (the 'devicekey' area).
 
 class PairingPictureState {
-  const PairingPictureState(this.salt, this.epoch);
+  const PairingPictureState(this.salt, this.epoch, {this.familyKey});
   final Uint8List salt;
   final int epoch;
+
+  /// The family key (16 random bytes), once this device is in a family: made on the first adult device, carried to a
+  /// child device only inside the sealed pairing credential. Null on a device with no family yet.
+  final Uint8List? familyKey;
+
+  PairingPictureState copyWith({Uint8List? salt, int? epoch, Uint8List? familyKey}) =>
+      PairingPictureState(salt ?? this.salt, epoch ?? this.epoch, familyKey: familyKey ?? this.familyKey);
 }
 
 abstract class PairingPictureRepository {
@@ -168,11 +216,17 @@ class LocalStorePairingPictureRepository implements PairingPictureRepository {
     final Object? s = raw['s'], e = raw['e'];
     if (s is! String || e is! int || e < 0 || e > 65535) return null;
     final Uint8List? salt = _exactBytes(s, 16);
-    return salt == null ? null : PairingPictureState(salt, e);
+    final Object? f = raw['f'];
+    final Uint8List? fk = f is String ? _exactBytes(f, kFamilyKeyBytes) : null;
+    return salt == null ? null : PairingPictureState(salt, e, familyKey: fk);
   }
 
   @override
-  Future<void> save(PairingPictureState state) => _ns.put(_key, <String, Object?>{'s': b64(state.salt), 'e': state.epoch});
+  Future<void> save(PairingPictureState state) => _ns.put(_key, <String, Object?>{
+        's': b64(state.salt),
+        'e': state.epoch,
+        if (state.familyKey != null) 'f': b64(state.familyKey!),
+      });
 }
 
 /// Builds this device's picture and rotates it. The DEVICE KEY is never rotated here: refreshing only changes the
@@ -201,15 +255,39 @@ class PairingPictureService {
     return fresh;
   }
 
-  Future<PairingPicture> own(DeviceKey key, PictureRole role) async {
+  /// This device's picture. With [withFamilyTag] it carries the blinded family tag when a family key is known (an
+  /// adult picture, or a claimed child's); otherwise it carries none.
+  Future<PairingPicture> own(DeviceKey key, PictureRole role, {bool withFamilyTag = true}) async {
     final PairingPictureState s = await state();
-    return PairingPicture(role: role, publicKey: key.publicKey, salt: s.salt, epoch: s.epoch);
+    final Uint8List? fk = s.familyKey;
+    return PairingPicture(
+      role: role, publicKey: key.publicKey, salt: s.salt, epoch: s.epoch,
+      familyTag: withFamilyTag && fk != null ? await familyTag(fk, role, s.salt, key.publicKey) : null,
+    );
+  }
+
+  /// The family key, made once on the first adult device that needs it.
+  Future<Uint8List> ensureFamilyKey() async {
+    final PairingPictureState s = await state();
+    if (s.familyKey != null) return s.familyKey!;
+    final Uint8List fk = Uint8List.fromList(List<int>.generate(kFamilyKeyBytes, (_) => _random.nextInt(256)));
+    try {
+      await repo.save(s.copyWith(familyKey: fk));
+    } catch (_) {}
+    return fk;
+  }
+
+  /// A child device keeps the family key that arrived inside its sealed credential.
+  Future<void> adoptFamilyKey(Uint8List fk) async {
+    if (fk.length != kFamilyKeyBytes) return;
+    final PairingPictureState s = await state();
+    await repo.save(s.copyWith(familyKey: Uint8List.fromList(fk)));
   }
 
   /// "Refresh picture": a new salt and the next epoch (wrapping at 65535).
   Future<PairingPictureState> refresh() async {
     final PairingPictureState old = await state();
-    final PairingPictureState next = PairingPictureState(_newSalt(), (old.epoch + 1) & 0xffff);
+    final PairingPictureState next = PairingPictureState(_newSalt(), (old.epoch + 1) & 0xffff, familyKey: old.familyKey);
     await repo.save(next);
     return next;
   }

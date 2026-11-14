@@ -51,7 +51,13 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
       final Uint8List key = unb64(apk);
       // Fail closed: a certificate that does not verify under the stored adult key is "not paired".
       if (!await cert.verifiedBy(key)) return null;
-      return ChildPairing(cert: cert, adultKey: key, adultName: an, childName: cn, unlockVerifier: v);
+      final Object? fk = raw['fk'];
+      Uint8List? familyKey;
+      if (fk is String) {
+        final Uint8List f = unb64(fk);
+        if (f.length == 16) familyKey = f;
+      }
+      return ChildPairing(cert: cert, adultKey: key, adultName: an, childName: cn, unlockVerifier: v, familyKey: familyKey);
     } catch (_) {
       return null;
     }
@@ -67,6 +73,7 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
     await _ns.put(_key, <String, Object?>{
       'cert': p.cert.toJson(), 'apk': b64(p.adultKey), 'an': p.adultName, 'cn': p.childName,
       if (p.unlockVerifier == null) 'po': true,
+      if (p.familyKey != null) 'fk': b64(p.familyKey!),
     });
   }
 

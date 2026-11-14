@@ -23,11 +23,16 @@ import 'package:flutter/foundation.dart';
 import 'cpace.dart';
 import 'device_keys.dart';
 import 'local_pin.dart' show LocalPinRecord, constantTimeEquals, kLocalPinIterations;
+import 'pairing_match.dart';
 import 'pairing_picture.dart';
 
 const Duration kWindowTtl = Duration(minutes: 10);
 const int kWindowMaxAttempts = 5;
 const int _kMaxPake1PerWindow = 20;
+
+/// One request in flight at a time: a second device that starts while one is mid-handshake is dropped silently,
+/// and an abandoned claim frees the window again after this long.
+const Duration kClaimTtl = Duration(minutes: 5);
 
 /// The child's confirmation pictures and words: 16 of each, picked by two bytes of the shared key.
 const List<String> kSasPictures = <String>[
@@ -104,7 +109,11 @@ class AdultWindow extends ChangeNotifier {
     required this.makeUnlockVerifier,
     required this.onPaired,
     required this.phoneOnly,
-  })  : _pin = pin, // ignore: prefer_initializing_formals
+    required this.familyKey,
+    required this.requireMatch,
+    required Random random,
+  })  : _random = random, // ignore: prefer_initializing_formals
+        _pin = pin, // ignore: prefer_initializing_formals
         _now = now, // ignore: prefer_initializing_formals
         attemptsLeft = maxAttempts;
 
@@ -121,6 +130,14 @@ class AdultWindow extends ChangeNotifier {
   /// Makes the salted slow verifier of the PIN that goes to the child device (for adult unlock there).
   final Future<LocalPinRecord> Function(String pin) makeUnlockVerifier;
   final void Function(PairedKid kid)? onPaired;
+  final Random _random;
+
+  /// The family key (16 bytes) that goes to the child inside the sealed credential, so a claimed child can later
+  /// tell its own family's pictures from a stranger's. Null = none (older callers).
+  final Uint8List? familyKey;
+
+  /// When true, [approve] refuses until the adult picked the matching set ([pickMatch]).
+  final bool requireMatch;
 
   /// Do not give the tablet a PIN verifier at all: only the grown-up's phone will ever unlock it.
   final bool phoneOnly;
@@ -130,6 +147,7 @@ class AdultWindow extends ChangeNotifier {
   WindowState state = WindowState.open;
   int _pake1Count = 0;
   _Pending? _pending;
+  DateTime? _pendingAt;
   PakeKey? _key;
   Uint8List? _cpk;
   String _deviceName = '';
@@ -177,6 +195,34 @@ class AdultWindow extends ChangeNotifier {
   String? get pendingDeviceName => state == WindowState.awaitingApproval ? _deviceName : null;
   Sas? sas;
 
+  /// The Match step: four candidate sets for the adult to choose from, the real one among them. Set once the child
+  /// device passed key confirmation.
+  MatchChoices? matchChoices;
+  MatchSet? _matchReal;
+  bool matchConfirmed = false;
+
+  /// True after the adult picked a wrong set, or "None of these". The window is then closed to this device.
+  bool matchRefused = false;
+
+  /// The adult chose [index] (0..3), or null for "None of these". A right pick unlocks [approve]; a wrong one, or
+  /// null, refuses the pairing (the window closes, nothing is issued). Returns true only for the right pick.
+  bool pickMatch(int? index) {
+    if (state != WindowState.awaitingApproval || matchChoices == null || matchConfirmed) return false;
+    if (index != null && index == matchChoices!.correct) {
+      matchConfirmed = true;
+      notifyListeners();
+      return true;
+    }
+    matchRefused = true;
+    decline();
+    return false;
+  }
+
+  /// What the child device must show for the Match step (the real set). Exposed for tests; the adult screen never
+  /// reads it.
+  @visibleForTesting
+  MatchSet? get debugRealMatch => _matchReal;
+
   static Future<AdultWindow> open({
     required DeviceKey adultKey,
     required String adultName,
@@ -186,6 +232,8 @@ class AdultWindow extends ChangeNotifier {
     required String pin,
     bool offerQr = false,
     bool phoneOnly = false,
+    Uint8List? familyKey,
+    bool requireMatch = false,
     Duration ttl = kWindowTtl,
     int maxAttempts = kWindowMaxAttempts,
     DateTime Function()? now,
@@ -200,6 +248,7 @@ class AdultWindow extends ChangeNotifier {
       adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName,
       pin: pin, sid: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
       maxAttempts: maxAttempts, now: clock, onPaired: onPaired, phoneOnly: phoneOnly,
+      familyKey: familyKey, requireMatch: requireMatch, random: r,
       makeUnlockVerifier: makeUnlockVerifier ?? (String p) => _defaultVerifier(p, r),
     );
   }
@@ -236,6 +285,7 @@ class AdultWindow extends ChangeNotifier {
     _pin = null; // the PIN is held only while the window lives
     qrSecret = null;
     _pending = null;
+    _pendingAt = null;
     _key = null;
     _allowedChildKey = null;
     _childSalt = null;
@@ -247,6 +297,7 @@ class AdultWindow extends ChangeNotifier {
   void _fail() {
     attemptsLeft -= 1;
     _pending = null;
+    _pendingAt = null;
     if (attemptsLeft <= 0) {
       close();
     } else {
@@ -296,6 +347,14 @@ class AdultWindow extends ChangeNotifier {
           final Uint8List got = unb64(c);
           if (!constantTimeEquals(got, _allowedChildKey!) || !constantTimeEquals(got, _helloCpk!)) return null;
         }
+        // One claim at a time: a second pake1 while one is mid-handshake is dropped silently and NOT counted, so it
+        // can neither replace the first device's exchange nor use up the window's tries. An abandoned claim frees
+        // the window after [kClaimTtl].
+        if (_pending != null) {
+          if (_pendingAt != null && _now().difference(_pendingAt!) < kClaimTtl) return null;
+          _pending = null;
+          _pendingAt = null;
+        }
         if (++_pake1Count > _kMaxPake1PerWindow) return null;
         final Uint8List cpk = unb64(m['cpk'] as String), yc = unb64(m['Yc'] as String);
         if (cpk.length != 32 || yc.length != 32) return null;
@@ -306,11 +365,13 @@ class AdultWindow extends ChangeNotifier {
         if (password == null) return null;
         final PakeParty party = await PakeParty.start(isChild: false, password: password, sid: sid, ci: _channelId(cpk));
         _pending = _Pending(party, cpk, _clip(m['dn']), qr, yc);
+        _pendingAt = _now();
         return <String, dynamic>{'t': 'pake2', 'Ya': b64(party.share)};
       case 'confirm':
         final _Pending? p = _pending;
         if (state != WindowState.open || p == null) return null;
         _pending = null;
+        _pendingAt = null;
         if (p.qr) qrSecret = null; // one use, success or not
         PakeKey? key;
         try {
@@ -328,6 +389,8 @@ class AdultWindow extends ChangeNotifier {
         _deviceName = p.deviceName;
         _tagC = tagC;
         sas = Sas.fromBytes(await key.sas());
+        _matchReal = MatchSet.fromBytes(await key.match());
+        matchChoices = buildMatchChoices(_matchReal!, _random);
         state = WindowState.awaitingApproval;
         notifyListeners();
         return <String, dynamic>{'t': 'confirm-ok', 'tagA': b64(await key.tag('A'))};
@@ -352,6 +415,7 @@ class AdultWindow extends ChangeNotifier {
   /// The adult tapped "Yes, that is her tablet". Issues the certificate and seals it for the child device.
   Future<bool> approve() async {
     if (state != WindowState.awaitingApproval || _key == null || _cpk == null || _expired) return false;
+    if (requireMatch && !matchConfirmed) return false;
     final Random r = Random.secure();
     final String certId = b64(List<int>.generate(12, (_) => r.nextInt(256)));
     final int iat = _now().millisecondsSinceEpoch;
@@ -362,6 +426,7 @@ class AdultWindow extends ChangeNotifier {
       'cert': cert.toJson(), 'apk': b64(adultKey.publicKey), 'an': adultName, 'childName': childName,
       if (verifier != null) 'verifier': <String, Object?>{'iter': verifier.iterations, 'salt': b64(verifier.salt), 'hash': b64(verifier.hash)},
       if (phoneOnly) 'po': true,
+      if (familyKey != null) 'fk': b64(familyKey!),
     };
     final AesGcm aes = AesGcm.with256bits();
     final SecretBox box = await aes.encrypt(utf8.encode(jsonEncode(body)), secretKey: SecretKey(await _key!.channelKey()));
@@ -384,6 +449,7 @@ class AdultWindow extends ChangeNotifier {
 class ChildPairing {
   const ChildPairing({
     required this.cert, required this.adultKey, required this.adultName, required this.childName, required this.unlockVerifier,
+    this.familyKey,
   });
   final PairingCert cert;
   final Uint8List adultKey;
@@ -391,6 +457,9 @@ class ChildPairing {
 
   /// Null on a phone-only tablet: it holds no PIN verifier at all.
   final LocalPinRecord? unlockVerifier;
+
+  /// The family key from the sealed credential (null for a credential issued before pairing pictures existed).
+  final Uint8List? familyKey;
 
   /// Only the grown-up's phone unlocks this tablet.
   bool get phoneOnly => unlockVerifier == null;
@@ -408,9 +477,12 @@ class PairingResult {
 
 /// What the child's screen shows (picture first) once the adult device passed confirmation.
 class PairingMatch {
-  const PairingMatch(this.adultName, this.sas);
+  const PairingMatch(this.adultName, this.sas, [this.match]);
   final String adultName;
   final Sas sas;
+
+  /// The three pictures and the colour the child's screen shows for the adult to pick (no words).
+  final MatchSet? match;
 }
 
 class ChildPairingClient {
@@ -437,6 +509,7 @@ class ChildPairingClient {
     required String password,
     bool viaQr = false,
     Uint8List? expectedAdultFingerprint,
+    String? expectedFamilyId,
     void Function(PairingMatch match)? onMatched,
   }) async {
     try {
@@ -453,6 +526,9 @@ class ChildPairingClient {
       if (expectedAdultFingerprint != null && !constantTimeEquals(expectedAdultFingerprint, afp)) {
         return const PairingResult.failed(PairingFailure.notMatched);
       }
+      // A device that already belongs to a family never starts an exchange with a window of another family: it stops
+      // here, before any PAKE message is sent, and says nothing.
+      if (expectedFamilyId != null && fid != expectedFamilyId) return const PairingResult.failed(PairingFailure.notMatched);
       final Uint8List ci = cat(<List<int>>[
         lv(sid), lv(utf8.encode(fid)), lv(afp), lv(childKey.publicKey), lv(utf8.encode(an)),
       ]);
@@ -467,7 +543,7 @@ class ChildPairingClient {
       final Map<String, dynamic>? c = await transport.send(<String, dynamic>{'t': 'confirm', 'sid': b64(sid), 'tagC': b64(tagC)});
       if (c == null || c['t'] != 'confirm-ok') return const PairingResult.failed(PairingFailure.notMatched);
       if (!await key.checkTag('A', unb64(c['tagA'] as String))) return const PairingResult.failed(PairingFailure.notMatched);
-      onMatched?.call(PairingMatch(an, Sas.fromBytes(await key.sas())));
+      onMatched?.call(PairingMatch(an, Sas.fromBytes(await key.sas()), MatchSet.fromBytes(await key.match())));
       Duration waited = Duration.zero;
       while (waited <= giveUpAfter) {
         final Map<String, dynamic>? r = await transport.send(<String, dynamic>{'t': 'poll', 'sid': b64(sid), 'tagC': b64(tagC)});
@@ -501,8 +577,14 @@ class ChildPairingClient {
         : null;
     // A tablet is either given a verifier or told it is phone-only; a credential with neither is refused.
     if (verifier == null && body['po'] != true) return const PairingResult.failed(PairingFailure.malformed);
+    final Object? fk = body['fk'];
+    Uint8List? familyKey;
+    if (fk is String) {
+      final Uint8List raw = unb64(fk);
+      if (raw.length == kFamilyKeyBytes) familyKey = raw;
+    }
     return PairingResult.ok(ChildPairing(
         cert: cert, adultKey: apk, adultName: body['an'] as String, childName: body['childName'] as String,
-        unlockVerifier: verifier));
+        unlockVerifier: verifier, familyKey: familyKey));
   }
 }

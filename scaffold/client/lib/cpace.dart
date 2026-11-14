@@ -126,6 +126,11 @@ class PakeKey {
   /// Two bytes both screens turn into the confirmation word and picture.
   Future<Uint8List> sas() async => (await _kdf(isk, 'sas')).sublist(0, 2);
 
+  /// Three bytes for the "Match" step of the pairing picture (three pictures and a colour, about 21 bits). A new
+  /// KDF label only: the transcript, the messages and the existing vectors are unchanged. Still inside the D2
+  /// external-review scope (cpace.dart is custom crypto).
+  Future<Uint8List> match() async => (await _kdf(isk, 'match')).sublist(0, 3);
+
   /// A 32 byte key for sealing the credential message.
   Future<Uint8List> channelKey() => _kdf(isk, 'channel');
 }
