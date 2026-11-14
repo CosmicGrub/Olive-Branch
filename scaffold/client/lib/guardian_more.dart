@@ -59,6 +59,7 @@ import 'guardian_settings_hub.dart';
 import 'her_colour_guardian.dart';
 import 'play_window_screen.dart';
 import 'handover_notes.dart';
+import 'her_suites_screen.dart';
 import 'hub_widgets.dart';
 import 'access_screen.dart';
 import 'add_device_screen.dart';
@@ -691,6 +692,9 @@ class GuardianMoreScreen extends StatelessWidget {
         SettingsRow(id: 'window', icon: Icons.bedtime_outlined, title: 'Play window and daily time',
           subtitle: 'When games are open, the wind-down and the daily total',
           onTap: () => _open(context, PlayWindowScreen(childName: childName))),
+        SettingsRow(id: 'suites', icon: Icons.view_agenda_outlined, title: 'Her suites',
+          subtitle: 'Rhythm, Voice, Growing, Care, Village, Compass: what is on her shelf. On this device only',
+          onTap: () => _openHerSuites(context)),
         SettingsRow(id: 'growing', icon: Icons.eco_outlined, title: 'Growing',
           subtitle: 'Time capsule, first times, growing marks. Kept on this device',
           onTap: () => _open(context, GrowingCareHubScreen(care: false, childName: childName,
@@ -787,6 +791,35 @@ class GuardianMoreScreen extends StatelessWidget {
           subtitle: 'Stops notifications on this device', onTap: () => _signOut(context)),
       ]),
     ]));
+  }
+
+  /// g-suites: the six suites on one page (switches are the suites' own).
+  void _openHerSuites(BuildContext context) {
+    final FamilyPrincipal me = FamilyPrincipal(roleName: 'guardian', userId: guardianId ?? 'local-guardian');
+    final CompassService compass = CompassService.local(LocalServices.current, childId: childId, ports: suitePortsFor(
+        rhythmVoice: RhythmVoiceService.forChild(childId), village: VillageService.forChild(childId),
+        growingCare: GrowingCareStores.forChild(childId: childId), principal: me));
+    _open(context, HerSuitesScreen(childName: childName, service: compass, principal: me, open: (String key) {
+      switch (key) {
+        case 'rhythm':
+          _open(context, RhythmGuardianHubScreen(childName: childName,
+            service: RhythmVoiceService.forChild(childId), principal: me, yearsOld: childAge));
+        case 'voice':
+          _open(context, VoiceGuardianHubScreen(childName: childName,
+            service: RhythmVoiceService.forChild(childId), principal: me, yearsOld: childAge));
+        case 'growing':
+          _open(context, GrowingCareHubScreen(care: false, childName: childName, guardianId: guardianId ?? 'local-guardian'));
+        case 'care':
+          _open(context, GrowingCareHubScreen(care: true, childName: childName,
+            guardianId: guardianId ?? 'local-guardian', emergency: EmergencyCardService.forChild(childId),
+            medicines: _localCare(context), openEmergencyCard: _openEmergencyCard));
+        case 'village':
+          _openVillage(context);
+        case 'compass':
+          _open(context, CompassHubScreen(childName: childName, principal: me, service: compass,
+            hints: () => builderHintsFor(me, childAge)));
+      }
+    }));
   }
 
   void _openVillage(BuildContext context) {

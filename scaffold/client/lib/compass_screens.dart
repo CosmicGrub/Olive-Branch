@@ -147,15 +147,30 @@ class _QuestionState extends State<CompassQuestionScreen> with _Say<CompassQuest
     } catch (_) {}
     try {
       final CompassDoc d = await widget.service.load(widget.principal);
-      if (mounted) setState(() { _a = d.answers; _hints = hints; _loaded = true; });
+      if (mounted) {
+        setState(() { _a = d.answers; _hints = hints; _loaded = true; });
+        if (!_wordsSet) { _wordsSet = true; _words.text = _wordsNow; }
+      }
     } on CompassRefused {
       if (mounted) setState(() => denied = true);
     }
   }
 
+  late final TextEditingController _words = TextEditingController();
+  bool _wordsSet = false;
+
+  @override
+  void dispose() {
+    _words.dispose();
+    super.dispose();
+  }
+
+  String get _wordsNow => _who ? _a.whoWords : _a.needsWords;
+
   void _toggle(String id, bool on) => setState(() => _a = _who ? _a.withWho(id, on) : _a.withNeed(id, on));
 
   Future<void> _save() async {
+    _a = _who ? _a.copyWith(whoWords: _words.text) : _a.copyWith(needsWords: _words.text);
     final CompassResult r = await widget.service.saveAnswers(widget.principal, _a);
     reportResult(r);
     if (r.ok && mounted) await Navigator.of(context).maybePop();
@@ -187,13 +202,27 @@ class _QuestionState extends State<CompassQuestionScreen> with _Say<CompassQuest
                   materialTapTargetSize: MaterialTapTargetSize.padded,
                 ),
             ]),
+          if (_loaded) ...<Widget>[
+            const SizedBox(height: 16),
+            TextField(
+              key: const Key('compassWords'), controller: _words, maxLength: maxCompassWords, minLines: 2, maxLines: 4,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                  labelText: _who ? 'In your own words (optional)' : 'Anything else that helps (optional)',
+                  helperText: 'Only you see this, on this device. It does not change the suggestions.',
+                  helperMaxLines: 2, border: const OutlineInputBorder()),
+            ),
+          ],
           const SizedBox(height: 16),
           FilledButton(key: const Key('compassSave'), onPressed: _save, child: const Text('Save')),
           TextButton(
               key: const Key('compassNotSure'),
               onPressed: () async {
                 // "Not sure" is a complete answer: nothing is ticked, nothing is saved for this step.
-                final CompassAnswers cleared = _who ? CompassAnswers(needs: _a.needs) : CompassAnswers(who: _a.who);
+                final CompassAnswers cleared = _who
+                    ? CompassAnswers(needs: _a.needs, needsWords: _a.needsWords)
+                    : CompassAnswers(who: _a.who, whoWords: _a.whoWords);
+                _words.clear();
                 setState(() => _a = cleared);
                 await _save();
               },

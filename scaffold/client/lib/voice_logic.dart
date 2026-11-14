@@ -282,7 +282,9 @@ String sentenceOf(List<String> strip) {
 // ============================================================ THE DOCUMENT ===
 /// The guardian-authored half of suite C, kept in one small document.
 class VoiceDoc {
-  const VoiceDoc({this.helpers = const <Helper>[], this.personalSymbols = const <String>[], this.suiteOn = false});
+  const VoiceDoc({
+    this.helpers = const <Helper>[], this.personalSymbols = const <String>[], this.suiteOn = false, this.feelingsOn = true,
+  });
   final List<Helper> helpers;
   final List<String> personalSymbols;
 
@@ -291,13 +293,19 @@ class VoiceDoc {
   /// unreadable value is off (fail closed).
   final bool suiteOn;
 
-  VoiceDoc copyWith({List<Helper>? helpers, List<String>? personalSymbols, bool? suiteOn}) => VoiceDoc(
+  /// The guardian's "feelings check-in on her tablet" switch (the prototype's Voice
+  /// toggle): whether "The sky in me" is offered at all while Voice is on. ON by
+  /// default; only an explicit `false` turns it off. It never gives a guardian a
+  /// way to read her weather, and the worry box is not touched by it.
+  final bool feelingsOn;
+
+  VoiceDoc copyWith({List<Helper>? helpers, List<String>? personalSymbols, bool? suiteOn, bool? feelingsOn}) => VoiceDoc(
       helpers: helpers ?? this.helpers, personalSymbols: personalSymbols ?? this.personalSymbols,
-      suiteOn: suiteOn ?? this.suiteOn);
+      suiteOn: suiteOn ?? this.suiteOn, feelingsOn: feelingsOn ?? this.feelingsOn);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'helpers': <Object?>[for (final Helper h in helpers) h.toJson()],
-        'personalSymbols': personalSymbols, 'suiteOn': suiteOn,
+        'personalSymbols': personalSymbols, 'suiteOn': suiteOn, 'feelingsOn': feelingsOn,
       };
 
   static VoiceDoc fromJson(Object? j) {
@@ -319,6 +327,6 @@ class VoiceDoc {
         }
       }
     }
-    return VoiceDoc(helpers: helpers, personalSymbols: syms, suiteOn: j['suiteOn'] == true);
+    return VoiceDoc(helpers: helpers, personalSymbols: syms, suiteOn: j['suiteOn'] == true, feelingsOn: j['feelingsOn'] != false);
   }
 }

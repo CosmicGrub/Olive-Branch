@@ -8611,6 +8611,39 @@ directory, sealed at rest, per-child names, size bounds, every principal, the st
 refusals in words, no network or launcher import in any of these files), `compass_logic_test`,
 `compass_repositories_test`, `compass_screens_test` and `visual_alert_test`.
 
+### 8.22.7 Wave 7: the local suites at prototype parity
+
+All offline and on this device. Prototype rows `g-suites`, `g-s-voice`, `g-s-rhythm`, `g-s-compass` (parity
+matrix rows 179, 183, 184, 185, 189).
+
+- **Her suites** (`g-suites`, `her_suites_screen.dart`). One page, *Settings → Her → Her suites*, lists the
+  prototype's six suites in its order (Rhythm, Voice, Growing, Care, Village, Compass). Each row opens the suite's own
+  page, carries an **On her shelf** or **Off** chip and one switch. **Each switch is the suite's own** (the page goes
+  through the Compass service's ports, so it, the Compass shelf and each suite page cannot disagree). Compass has no
+  switch (it is a guardian-only page with no child side); its chip says *For you*. The page shows on or off and a count
+  of suites that are on, never use. The existing per-suite settings rows stay.
+- **On this device, not "On her tablet".** The prototype publishes guardian-written content to a separate child device and tags
+  it *On her tablet* or *Waiting to send*. Here the suites write the same install's local store, so there is nothing
+  waiting: the page says *Kept on this device* and that sending to a second device waits for a later update. Nothing is
+  sent and no row pretends otherwise. The server publish stays parked with the online waves.
+- **Voice: feelings check-in** (`VoiceDoc.feelingsOn`, default on; only an explicit `false` turns it off). A guardian
+  switch *Feelings check-in on her tablet*. Off removes only *The sky in me* (`tilesFor(feelingsOn)`, so her More page and the
+  Feelings corner agree); the worry box, helpers and symbols are unchanged, and a guardian still has no way to read her
+  weather. Only a guardian can change it (a child principal is refused).
+- **Rhythm: things worth a quiet warning** (`SensoryProfile.headsUp`). The prototype's five flags (loud places,
+  bright lights, scratchy or tight clothes, crowds, surprises) are five switches on *How the app feels*. They describe
+  places and moments, never her: no label, no diagnosis, no "needs review" tag. Each flag on adds one soft line (no count, no
+  "you have") at the top of her new-place walk-through. Older documents have none. The app-describing settings
+  (sound level, no motion, no buzzing, brightness cap) stay.
+- **Compass: free text.** Each of the two questions takes an optional free-text answer (280 characters, whitespace and
+  control characters cleaned) beside the chips, kept in the sealed guardian-only `compass` area. **The text is never read
+  by the suggestions**: only ticked options shape them. *Not sure* clears only its own step.
+- **Not built.** The *tonight* sitter flag that tells her who is looking after her (the sitter pass stays guardian-only;
+  a child-facing line about a named adult needs a decision, see the Wave 7 report), the helper *they have said yes* tick, a
+  single child-facing *My things* shelf page (each suite keeps its own tiles in More), and any second-device publish.
+- **Tests.** `wave7_suites_parity_test.dart` (page, switches, refusals, posture at 344/390/600/800 dp at 2.0x text, feelings
+  switch and gate, heads-up flags and the new-place walk, Compass words), plus the updated settings-hub parity vector.
+
 ---
 
 ## §8.23 On-device performance pass — measured first, fixed only where shown

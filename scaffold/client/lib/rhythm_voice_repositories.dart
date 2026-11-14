@@ -357,6 +357,9 @@ class RhythmVoiceService {
   Future<RvResult> setVoiceSuite(FamilyPrincipal? p, bool on) =>
       _guarded(p, () async => voice.save((await voice.load()).copyWith(suiteOn: on)));
 
+  Future<RvResult> setFeelingsCheckIn(FamilyPrincipal? p, bool on) =>
+      _guarded(p, () async => voice.save((await voice.load()).copyWith(feelingsOn: on)));
+
   Future<RvResult> saveHelpers(FamilyPrincipal? p, List<Helper> helpers) => _guarded(p, () async {
         await voice.save((await voice.load()).copyWith(helpers: checkedHelpers(helpers)));
       });
