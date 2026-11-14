@@ -1,5 +1,7 @@
 # Self-hosted Jitsi — §16.2 #6 Step 2
 
+> **2026-11-09: this is the default call provider again** (MASTERFILE §16.2 #6, third reversal). Switch calls on and off with `calls-on.sh` / `calls-off.sh`; the operating guide (LAN-only limits, ports, Windows firewall, certificate scope, server env) is `scaffold/docs/calls-on-the-lan.md`. The sections below are the original staging notes and are kept as history.
+
 **Status: staged, container-level verified, and the cert-trust gap is now
 closed at the TLS layer; still not verified on real hardware.** This
 directory sets up a local `docker-jitsi-meet` stack so Step 2 (self-host
