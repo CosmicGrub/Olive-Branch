@@ -138,9 +138,9 @@ GitHub-hosted standard runners being free for public repositories is GitHub's do
 verified** from this session (billing pages not read). Per the owner constraint the job is observed once and not
 iterated to green before the go-ahead.
 
-**First run result:** see the section below, filled in after the first observed run.
+**First run result:**
 
-RESULT_PLACEHOLDER
+Observed once on PR #176 (2026-11-14): `flutter pub get` and `flutter build ios --no-codesign --debug` **succeeded** on `macos-latest` (Xcode build about 171 s, "Built build/ios/iphoneos/Runner.app"). So all plugins resolve and compile for iOS 15.0 with the checked-in project, and the macOS runner ran for a public repository (whether it is free was still not verified). That proves compilation only: no launch, no behaviour, no signing. No blockers found, nothing iterated.
 
 ## 7. Risks and open decisions
 
