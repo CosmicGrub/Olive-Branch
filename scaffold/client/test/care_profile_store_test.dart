@@ -221,6 +221,15 @@ void main() {
       expect(jsonEncode(await ns.get('doc')), isNot(contains('Slept badly')), reason: 'purged, not hidden');
     });
 
+    test('a stale heads-up is also purged by any write, not only by a read', () async {
+      final MemoryStoreBackend disk = MemoryStoreBackend();
+      final CareProfileService a = CareProfileService.local(_device(disk), clock: clock.call);
+      await a.setHeads(mom, 'Slept badly, extra patience');
+      clock.t = DateTime(2026, 11, 15, 8);
+      expect((await a.addEntry(mom, CareProfilePart.safe, 'Peanuts: hives', title: 'Allergy')).ok, isTrue);
+      expect(jsonEncode(await _device(disk).area('aboutchild').get('doc')), isNot(contains('Slept badly')), reason: 'purged by the write');
+    });
+
     test('is never kept as a log: rewriting replaces it, and no earlier text survives anywhere in the file', () async {
       final MemoryStoreBackend disk = MemoryStoreBackend();
       final LocalServices dev = _device(disk);

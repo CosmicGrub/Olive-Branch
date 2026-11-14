@@ -6583,8 +6583,8 @@ drift. Nothing is written that is not in it.
 | `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
 | `child.<id>.emergencycard` | The local emergency card a guardian wrote (§8.24.4): allergies, conditions, medicines, doctor, contacts, every word typed by a guardian; the version counter; the append-only history (who, when, what it said before; never deleted); guardians' remembered names. Guardian-only. | **Yes** |
 | `child.<id>.coordination` | Care and coordination, grown-up side only (§8.24.7): the medicines a guardian wrote and their dose log (who gave it and when; never edited or deleted), the expenses a guardian recorded and each answer to them (append-only events, with the explicit self-accept marker), and the handover log (notes in a hash chain with the same framing as the server and the court export). Every word is a guardian's; the app adds no medical text and no amounts and moves no money. Never in her app. | **Yes** |
-| `child.<id>.aboutchild` | The care profile ("About her", §8.24.8), grown-up side only: what a guardian wrote under Keep her safe, her everyday, what helps, health history and moods and habits (the last two behind the guardian PIN); today's heads-up (one note, gone at local midnight, never kept as a log); the people it is shown to on this phone and until when; the dates for the "is this still right?" prompts and her birthday if a guardian gave it; a short edit history of each entry (who changed it and when; not an evidence log, not hashed, not exported). Every word is a guardian's; the app adds no medical text and works out no dose. Never in her app. | **Yes** |
-| `child.<id>.aboutplans` | Photos of a doctor's plan (an asthma or allergy action plan) that a guardian chose to keep, each with a label the guardian typed (§8.24.8). The app never takes, edits or reads one. Guardian side only. | **Yes** |
+| `child.<id>.aboutchild` | The care profile ("About her", §8.24.8), grown-up side only: what a guardian wrote under Keep her safe, her everyday, what helps, health history and moods and habits (the last two behind the guardian PIN); today's heads-up (one note for one local day, never kept as a log; not shown after local midnight and removed the next time the profile is opened or changed); the people it is shown to on this phone and until when; the dates for the "is this still right?" prompts and her birthday if a guardian gave it; a short edit history of each entry (who changed it and when; not an evidence log, not hashed, not exported). Every word is a guardian's; the app adds no medical text and works out no dose. Never in her app. | **Yes** |
+| `child.<id>.aboutplans` | Photos of a doctor's plan (an asthma or allergy action plan) that a guardian chose to keep, each with a label the guardian typed (§8.24.8). The app never takes, edits or reads one; the picker's temporary copy is deleted once the sealed copy is made. Guardian side only. | **Yes** |
 | `child.<id>.explainers` | Picture stories a guardian wrote and whether each is shown to her. The app writes none. | **Yes** |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
 | `child.<id>.rhythm` | Rhythm, on this device only (§8.20): the routine and first-then cards a grown-up set (pictures and short names), her bag list, how-the-app-feels settings (sound, motion, brightness), and which steps she has ticked **today** (dropped the next day). No score, streak or count; nothing is shared with her other home. | No |
@@ -9167,7 +9167,8 @@ writes about the child**, kept on this device and shown in her app **never**. De
 **It loses nothing.** The binder's sections are copied in once each (allergies to Keep her safe; routines,
 school and notes to Her everyday; a blank section waits until it has words; each copied entry says "from the
 care binder" and the date, because the binder never recorded who wrote it); the binder is not changed or
-emptied and stays reachable. The emergency card and the medicines log are **read where they are kept**,
+emptied and stays reachable. **The copy is made once and the two then drift:** a later edit in the binder does
+not reach the profile or the doctor sheet, and the hub says so; write changes in the profile. The emergency card and the medicines log are **read where they are kept**,
 never copied, so they cannot drift: the card's allergies, conditions, doctor and contacts go on the doctor
 sheet, and the Medicines part opens the existing medicines screen with its dose log and double-dose guard
 unchanged (`care_local.dart`).
@@ -9183,14 +9184,16 @@ shipped**: they are app-written strings and need clinical and child-development 
 | **Keep her safe** | Entries a grown-up wrote (allergies, what must not be missed, who to call), the photos of a doctor's plan, and the emergency card on the sheet. | A grown-up with a say in her care: always. Others: only if a parent chose. |
 | **Her everyday** | Food, sleep, routines, school, what she likes. | Same rule. |
 | **What helps** | What calms, what overwhelms, how a break is asked for. | Same rule. |
-| **Today's heads-up** | One short note for one local day. **Gone for good at local midnight; never logged, never revised, never on the doctor sheet.** | Same rule, and only on its day. |
+| **Today's heads-up** | One short note for one local day. **Not shown after local midnight, and removed from the sealed file the next time the profile is opened or changed (nothing runs at midnight itself); never logged, never revised, never on the doctor sheet.** | Same rule, and only on its day. |
 | **Medicines** | The existing list and dose log. | Same rule (shown as written: name, dose, times, the gap set, the note, who gave the last dose). |
 | **Health history** | Entries a grown-up wrote. **Parents only, behind the guardian PIN.** | Never anyone else. |
 | **Moods and habits** | Entries a grown-up wrote. **Parents only, behind the guardian PIN.** | Never anyone else. |
 
 **The child never sees any of it.** `careProfileVisibleToChild` is false for every part (the shape of
-`careNoteVisibleTo`); no child-side file imports the profile files, directly or through anything it imports,
-and no file of hers can name its types or areas (`care_profile_structure_test.dart` reads the real sources);
+`careNoteVisibleTo`); only the guardian shell imports the profile files, and no file whose name marks it as her side
+(child_, kid_, journal_, my_marks, her_colour_, kiosk_) reaches them directly or through anything it imports,
+or can name its types or areas (`care_profile_structure_test.dart` reads the real sources; the guarantee rests on
+the importer check, and the role gate in each screen decides at run time);
 every screen of the profile is the guardian shell and refuses a non-guardian with one neutral line before
 reading anything; a service call from a child or no principal is refused `guardian_only` for reads and writes
 alike. No label, count, score, streak or place is stored (P1 to P11).
@@ -9198,7 +9201,7 @@ alike. No label, count, score, streak or place is stored (P1 to P11).
 **Rules held in the service, not the screens.**
 - **The PIN on the locked parts.** Health history and Moods and habits can be read or written only after the
   guardian PIN check accepts the PIN, and only for five minutes after the last use (use slides the window; the
-  screen closes them on leaving). A read before the PIN does not contain those entries at all. With no PIN on
+  screen closes them on leaving). The window belongs to the phone's shared service, not to one guardian: after one parent enters the PIN, another guardian using the same app on that phone can open those parts until it closes, and it keeps running while the app is in the background. A read before the PIN does not contain those entries at all. With no PIN on
   the device they stay closed and the screen says to set one. The file itself is sealed with the phone's own key,
   not the PIN: the PIN decides who sees it in the app.
 - **The tone guard.** What describes her (Her everyday, What helps, Today's heads-up, Moods and habits) goes
@@ -9233,7 +9236,7 @@ alike. No label, count, score, streak or place is stored (P1 to P11).
   state). "Yes, still right" resets the count; "Not now" hides it for the visit. Nothing is scheduled or sent.
 - **The photo of a doctor's plan.** A grown-up chooses a photo (the phone's picker, gallery only) and types a
   label; it is kept sealed in `child.<id>.aboutplans`. JPEG or PNG by its first bytes only, 600 KB at most, 6 at
-  most. The app never takes, crops, enhances, reads or turns one into text; a person granted Keep-safe is shown
+  most. The app never takes, crops, enhances, reads or turns one into text, and keeps the file exactly as the picker gave it (no resizing or recompression), deleting the picker's temporary copy afterwards; a person granted Keep-safe is shown
   it in "Show as". The sheet lists it by label only.
 - **The doctor sheet.** A print-style one-page text built only from what grown-ups wrote: Keep her safe, the
   emergency card's allergies, conditions, doctor and contacts, the medicines as written, the labels of the

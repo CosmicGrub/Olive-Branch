@@ -41,6 +41,12 @@ void main() {
       expect(careProfileToneFound('Obviously her fault'), containsAll(<String>['obviously']));
     });
 
+    test('matches whole words: a food note is not refused for a longer word that starts the same way', () {
+      expect(careProfileToneFound('Loves a bratwurst on Fridays'), isEmpty);
+      expect(careProfileToneFound('She is a brat'), contains('a brat'));
+      expect(careProfileToneFound('Such a Brat!'), contains('a brat'));
+    });
+
     test('lets a description of need through', () {
       expect(careProfileToneFound('Needs quiet after school. Blue blanket helps.'), isEmpty);
     });

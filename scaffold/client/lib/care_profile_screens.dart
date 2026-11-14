@@ -14,10 +14,12 @@
 // the "Show as" screen on THIS phone and the printed sheet will show, and the hub says so in plain words. The
 // PIN protects the locked parts on this phone; the file itself is sealed with the phone's own key.
 import 'dart:async';
+import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 
 import 'care_local.dart' show CareDoc, CareLocalRefused, CareResult, CareService;
 import 'care_profile_logic.dart';
@@ -35,8 +37,17 @@ typedef PlanPhotoSource = Future<Uint8List?> Function();
 
 Future<Uint8List?> pickPlanPhoto() async {
   try {
-    final XFile? x = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, maxHeight: 1600, imageQuality: 70);
-    return x == null ? null : await x.readAsBytes();
+    // No resizing or recompression: a plan has to stay legible, and the plugin would otherwise write a re-encoded copy.
+    final XFile? x = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (x == null) return null;
+    final Uint8List bytes = await x.readAsBytes();
+    // The picker hands back a copy in this app's temporary folder, unsealed. Remove it now that the sealed copy is
+    // made from its bytes. Only a file inside the temporary folder is ever deleted: never a photo of the user's own.
+    try {
+      final String tmp = (await getTemporaryDirectory()).path;
+      if (x.path.startsWith(tmp)) await File(x.path).delete();
+    } catch (_) {}
+    return bytes;
   } catch (_) {
     return null;
   }
@@ -415,7 +426,7 @@ class _CareProfileState extends State<CareProfileScreen> {
         child: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
           _note(context, '$careProfileLocalNote $careProfileNoSyncNote', key: const Key('profileBanner'), icon: Icons.shield_outlined),
           if (_copied > 0)
-            _note(context, 'Copied $_copied ${_copied == 1 ? 'section' : 'sections'} from your care binder. The binder still has its own copy and nothing in it was changed.', key: const Key('profileCopied')),
+            _note(context, 'Copied $_copied ${_copied == 1 ? 'section' : 'sections'} from your care binder. The binder still has its own copy and nothing in it was changed. This was a one-time copy: later changes in the binder do not reach here, so write new ones here.', key: const Key('profileCopied')),
           if (!_notNow)
             for (final CpReviewReason r in _reasons)
               Card(
@@ -1188,6 +1199,7 @@ class _SheetState extends State<CareProfileSheetScreen> {
   String? _text;
   bool _refused = false;
   bool _everyday = false, _helps = false, _health = false, _moods = false;
+  bool _relocked = false;
 
   @override
   void initState() {
@@ -1202,6 +1214,13 @@ class _SheetState extends State<CareProfileSheetScreen> {
   }
 
   Future<void> _build() async {
+    // The PIN window lapsed since a locked chip was turned on: switch it off and say so, rather than leave it
+    // looking selected while its text has quietly gone.
+    if (!widget.service.isUnlocked && (_health || _moods)) {
+      _health = false;
+      _moods = false;
+      _relocked = true;
+    }
     try {
       final CareProfileDoc d = await widget.service.read(widget.principal);
       CareDoc? m;
@@ -1247,6 +1266,7 @@ class _SheetState extends State<CareProfileSheetScreen> {
     }
     if (!mounted) return;
     setState(() {
+      if (v && (which == 'health' || which == 'moods')) _relocked = false;
       switch (which) {
         case 'everyday':
           _everyday = v;
@@ -1270,6 +1290,7 @@ class _SheetState extends State<CareProfileSheetScreen> {
       body: SafeArea(
         child: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
           _note(context, 'Built only from what grown-ups wrote, with who wrote it and when. The app adds no advice. Copy it to print or send it yourself: nothing is sent from here.', key: const Key('sheetBanner')),
+          if (_relocked) _note(context, 'The PIN window closed, so Health history and Moods are off the sheet. Turn them on to enter your PIN again.', key: const Key('sheetRelocked'), warn: true),
           Wrap(spacing: 8, children: <Widget>[
             FilterChip(key: const Key('optEveryday'), label: Text(careProfilePartTitle(CareProfilePart.everyday, widget.childName)), selected: _everyday, onSelected: (bool v) => unawaited(_toggle('everyday', v))),
             FilterChip(key: const Key('optHelps'), label: const Text('What helps'), selected: _helps, onSelected: (bool v) => unawaited(_toggle('helps', v))),
@@ -1294,7 +1315,7 @@ class _SheetState extends State<CareProfileSheetScreen> {
               onPressed: () async {
                 final ScaffoldMessengerState m = ScaffoldMessenger.of(context);
                 await Clipboard.setData(ClipboardData(text: text));
-                m.showSnackBar(const SnackBar(content: Text("Copied to this phone's clipboard.")));
+                m.showSnackBar(const SnackBar(content: Text("Copied to this phone's clipboard. If it includes Health history or Moods, clear the clipboard after you paste.")));
               },
             ),
         ]),

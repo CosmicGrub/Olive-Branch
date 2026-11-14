@@ -104,7 +104,7 @@ String careProfilePartHint(CareProfilePart p) => switch (p) {
   CareProfilePart.safe => 'Allergies, what must never be missed, who to call. Reaches furthest when you share.',
   CareProfilePart.everyday => 'Food, sleep, routines, school, what she likes.',
   CareProfilePart.helps => 'What calms, what overwhelms, how a break is asked for. Describe needs, not judgements.',
-  CareProfilePart.heads => 'One short note for today only. It is gone at midnight and is never kept.',
+  CareProfilePart.heads => 'One short note for today only. It is not shown after midnight, is removed the next time this profile is opened or changed, and is never kept.',
   CareProfilePart.meds => 'The medicines list and its dose log, as you wrote them in Medications.',
   CareProfilePart.health => 'Parents only, behind your PIN.',
   CareProfilePart.moods => 'Parents only, behind your PIN. Patterns you have noticed.',
@@ -156,7 +156,7 @@ List<String> careProfileToneFound(String text) {
   final String t = text.toLowerCase();
   return <String>[
     for (final String w in <String>[...careNoteBanned, ...careProfileLabelWords])
-      if (t.contains(w)) w,
+      if (RegExp('(^|[^a-z0-9])${RegExp.escape(w)}(\$|[^a-z0-9])').hasMatch(t)) w,
   ];
 }
 

@@ -151,7 +151,7 @@ class CareProfileService {
 
   // ----------------------------------------------------------- reading ---
   /// The document. Guardian only. While the PIN has not been given, the locked parts' entries are not in it.
-  /// An expired heads-up is removed for good as part of the read.
+  /// An expired heads-up is removed for good as part of the next read or write (nothing runs at midnight itself).
   Future<CareProfileDoc> read(FamilyPrincipal? p) async {
     if (!_guardian(p)) throw const CareProfileRefused('guardian_only');
     final CareProfileDoc d = await _serial<CareProfileDoc>(() async {
@@ -183,7 +183,7 @@ class CareProfileService {
       if (!_guardian(p)) return CareResult<T>.no('guardian_only');
       try {
         final String id = p!.userId! as String;
-        final CareProfileDoc d0 = await repo.load();
+        final CareProfileDoc d0 = _dropStaleHeads(await repo.load());
         final String given = _line(byName);
         if (given.length > cpMaxNameChars) return CareResult<T>.no('too_long');
         final Map<String, String> names = <String, String>{...d0.names, if (given.isNotEmpty) id: given};
@@ -200,6 +200,10 @@ class CareProfileService {
       }
     });
   }
+
+  /// A heads-up from an earlier local day is removed from whatever is about to be saved, so no write carries it on.
+  CareProfileDoc _dropStaleHeads(CareProfileDoc d) =>
+      d.heads != null && d.heads!.day != cpDay(_clock()) ? d.copyWith(clearHeads: true) : d;
 
   String _line(Object? v) => cpText(v).replaceAll(RegExp(r'\s+'), ' ');
   DateTime _now() => DateTime.fromMillisecondsSinceEpoch(_clock().millisecondsSinceEpoch, isUtc: true);

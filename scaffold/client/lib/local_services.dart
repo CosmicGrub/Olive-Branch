@@ -174,7 +174,7 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       area: 'aboutchild', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
       what: 'The care profile (About her), grown-up side only: what a guardian wrote under Keep her safe, her '
           'everyday, what helps, health history and moods and habits (the last two behind the guardian PIN), '
-          "today's heads-up (one note, gone at local midnight, never kept as a log), who each part is shown to on "
+          "today's heads-up (one note for one local day, not shown after midnight and removed the next time it is opened or changed, never kept as a log), who each part is shown to on "
           'this phone and until when, the dates for the "is this still right?" prompts, and a short edit history '
           'of each entry (who changed it and when; not an evidence log). Every word is a guardian\'s; '
           'the app adds no medical text and works out no dose. Never shown in her app. Sealed on the device; '

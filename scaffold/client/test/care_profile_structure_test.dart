@@ -108,7 +108,10 @@ void main() {
   test('it makes no network call and is in no export', () {
     for (final String f in _profileFiles) {
       final String src = _code('lib/$f');
-      for (final String banned in <String>['package:http', 'dart:io', 'api_client', 'HttpClient', 'WebSocket', 'court_export', 'computeEntryHash', 'appendEntry', 'verifyChain']) {
+      // dart:io is allowed only as `show File` (the screens delete the picker's temporary copy); HttpClient and
+      // WebSocket stay banned by name below, so the network door is still shut.
+      expect(RegExp(r"dart:io'(?! show File;)").hasMatch(src), isFalse, reason: '$f imports dart:io beyond File');
+      for (final String banned in <String>['package:http', 'api_client', 'HttpClient', 'WebSocket', 'court_export', 'computeEntryHash', 'appendEntry', 'verifyChain']) {
         expect(src.contains(banned), isFalse, reason: '$f uses $banned');
       }
     }

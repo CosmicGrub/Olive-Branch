@@ -463,6 +463,27 @@ void main() {
       expect(sheetText(t), contains('Asthma since 2024'));
     });
 
+    testWidgets('when the unlock window lapses, the locked chips switch off and say so, instead of silently dropping text', (t) async {
+      await svc.unlock(mom, _pinOk, '2580');
+      await svc.addEntry(mom, CareProfilePart.health, 'Asthma since 2024');
+      svc.lock();
+      await _show(t, sheet());
+      await t.ensureVisible(find.byKey(const Key('optHealth')));
+      await t.tap(find.byKey(const Key('optHealth')));
+      await t.pumpAndSettle();
+      await t.enterText(find.byKey(const Key('profilePinField')), '2580');
+      await t.tap(find.byKey(const Key('profilePinOk')));
+      await t.pumpAndSettle();
+      expect(sheetText(t), contains('Asthma since 2024'));
+      svc.lock();
+      await t.ensureVisible(find.byKey(const Key('optHelps')));
+      await t.tap(find.byKey(const Key('optHelps')));
+      await t.pumpAndSettle();
+      expect(t.widget<FilterChip>(find.byKey(const Key('optHealth'))).selected, isFalse);
+      expect(sheetText(t), isNot(contains('Asthma since')));
+      expect(find.byKey(const Key('sheetRelocked')), findsOneWidget);
+    });
+
     testWidgets('a wrong PIN leaves the health history off the sheet', (t) async {
       await svc.unlock(mom, _pinOk, '2580');
       await svc.addEntry(mom, CareProfilePart.health, 'Asthma since 2024');
