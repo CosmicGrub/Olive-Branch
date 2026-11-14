@@ -22,11 +22,11 @@ void main() {
   final bad = RegExp(r'\d|timer|locked?\b|limit|no more|punish|taken|minutes?|left', caseSensitive: false);
 
   testWidgets('a wind-down that starts while she is on the games list arrives on its own', (t) async {
-    now = DateTime(2026, 11, 9, 18, 20);
+    now = DateTime(2026, 11, 9, 18, 50);
     await t.pumpWidget(app(PlayWindowGate(store: store(), child: const Scaffold(body: Text('the games')))));
     await t.pumpAndSettle();
     expect(find.byKey(const Key('windDownBanner')), findsNothing);
-    await minutes(t, 12); // 18:32, inside the 30-minute tail
+    await minutes(t, 12); // 19:02, inside the wind-down that follows the rest time
     expect(find.byKey(const Key('windDownBanner')), findsOneWidget);
     expect(find.text('the games'), findsOneWidget, reason: 'the games stay: it is one more, then goodnight');
     final line = playWindowLine('winding_down')!;
@@ -34,10 +34,10 @@ void main() {
   });
 
   testWidgets('then the rest time puts the games to sleep, calm and with no number', (t) async {
-    now = DateTime(2026, 11, 9, 18, 45);
+    now = DateTime(2026, 11, 9, 19, 20);
     await t.pumpWidget(app(PlayWindowGate(store: store(), child: const Scaffold(body: Text('the games')))));
     await t.pumpAndSettle();
-    await minutes(t, 20); // 19:05
+    await minutes(t, 20); // 19:40, after the wind-down
     expect(find.text('the games'), findsNothing);
     final line = t.widget<Text>(find.byKey(const Key('goodnightLine'))).data!;
     expect(line, contains('tomorrow'));
@@ -67,7 +67,7 @@ void main() {
     await t.tap(find.text('play'));
     await t.pumpAndSettle();
     expect(find.text('mid-game'), findsOneWidget);
-    await minutes(t, 30); // 19:20, past the rest time, game still open
+    await minutes(t, 50); // 19:40, past the wind-down, game still open
     expect(find.text('mid-game'), findsOneWidget, reason: 'the gate stands at the door, not inside the game');
     expect(find.byKey(const Key('goodnightLine')), findsNothing, reason: 'the goodnight card is under the game');
     await t.pageBack();
