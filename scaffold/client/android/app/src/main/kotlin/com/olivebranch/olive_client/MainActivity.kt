@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.view.WindowManager
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -101,6 +102,18 @@ class MainActivity : FlutterActivity() {
         // WebAuthnBridge.kt's own header for the API-level tension and the
         // discoverable-credential requirement this bridge is built around.
         WebAuthnBridge.register(this, MethodChannel(messenger, WebAuthnBridge.METHOD_CHANNEL))
+
+        // Adult safety (app_lock.dart): FLAG_SECURE blanks this app in the recent-apps
+        // list (and blocks screenshots). Only the guardian app ever calls it; the child
+        // side and the kiosk/WebAuthn bridges are untouched.
+        MethodChannel(messenger, "olive/secure_screen").setMethodCallHandler { call, result ->
+            if (call.method == "set") {
+                val on = call.arguments as? Boolean ?: false
+                if (on) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                result.success(null)
+            } else result.notImplemented()
+        }
     }
 
     override fun onStop() {

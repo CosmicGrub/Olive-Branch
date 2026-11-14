@@ -11,6 +11,7 @@
 // screen the way child_more.dart does for the child side.
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'app_lock_screen.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'family_structure_screens.dart';
 import 'family_structure_store.dart';
@@ -763,6 +764,9 @@ class GuardianMoreScreen extends StatelessWidget {
             ? _open(context, ParentalControlsScreen(baseUrl: baseUrl!, guardianId: guardianId!,
                 childId: childId, childName: childName, httpClient: availabilityHttpClient))
             : _needsLive(context, 'Parental controls')),
+        SettingsRow(id: 'applock', icon: Icons.lock_clock_outlined, title: 'App lock and privacy',
+          subtitle: 'Lock on leaving, hide in recent apps, quick hide',
+          onTap: () => _openAppLock(context)),
         SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this phone',
           subtitle: 'What lives here, and clear it',
           onTap: () => _open(context, ClearLocalDataScreen(
@@ -860,6 +864,19 @@ class GuardianMoreScreen extends StatelessWidget {
 
   /// Change PIN: with a PIN on this device, the local change flow (current, new,
   /// confirm; easy guesses refused); otherwise the account PIN form as before.
+  /// The adult-safety screen. Needs this device's local scope (the PIN it asks for lives there);
+  /// without one (the preview build) it says so rather than showing a lock that cannot lock.
+  Future<void> _openAppLock(BuildContext context) async {
+    final local = GuardianLocalScope.maybeOf(context);
+    if (local == null) {
+      _needsLive(context, 'The app lock');
+      return;
+    }
+    final bool set = await local.services.pin.isSet();
+    if (!context.mounted) return;
+    _open(context, AppLockSettingsScreen(controller: local.services.appLock, pinIsSet: set));
+  }
+
   Future<void> _openChangePin(BuildContext context) async {
     final local = GuardianLocalScope.maybeOf(context);
     if (local != null && await local.services.pin.isSet()) {

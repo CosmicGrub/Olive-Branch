@@ -11,17 +11,26 @@
 // how the preview build and every old test still work).
 import 'package:flutter/material.dart';
 
+import 'app_lock.dart';
 import 'device_role.dart';
 import 'local_family.dart';
 import 'local_pin.dart';
 import 'local_services.dart';
 
 class GuardianLocalServices {
-  GuardianLocalServices({required this.roles, required this.families, required this.pin});
+  GuardianLocalServices({required this.roles, required this.families, required this.pin,
+      AppLockPrefsRepository? lockPrefs})
+      : lockPrefs = lockPrefs ?? MemoryAppLockPrefsRepository();
 
   final DeviceRoleRepository roles;
   final LocalFamilyRepository families;
   final LocalPinService pin;
+
+  /// The adult-safety settings (app lock, recents, quick hide), kept beside the PIN.
+  final AppLockPrefsRepository lockPrefs;
+
+  /// One controller per run, shared by the guard above the Navigator and the settings screen.
+  late final AppLockController appLock = AppLockController(pin: pin, repo: lockPrefs);
 
   /// Over the real (or in-memory) [LocalServices]. [pinIterations] is for tests.
   factory GuardianLocalServices.from(LocalServices s, {int? pinIterations}) => GuardianLocalServices(
@@ -31,6 +40,7 @@ class GuardianLocalServices {
           LocalStoreLocalPinRepository(s.area('localpin', ownerId: kLocalGuardianScope)),
           iterations: pinIterations ?? kLocalPinIterations,
         ),
+        lockPrefs: LocalStoreAppLockPrefsRepository.over(s),
       );
 
   /// Everything in memory, for tests and the preview.
