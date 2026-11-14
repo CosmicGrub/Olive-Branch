@@ -106,6 +106,13 @@ class LocalStoreAppLockPrefsRepository implements AppLockPrefsRepository {
       LocalStoreAppLockPrefsRepository(s.area('localpin', ownerId: kLocalGuardianScope));
 }
 
+/// DEVELOPMENT BUILDS ONLY. Android blocks screenshots of a window that sets FLAG_SECURE, which is how
+/// "hide in recent apps" works, so a tester could never see the grown-up's screens in a screenshot or a
+/// screen recording (the capture is black). A dev build (tools/device-sync.sh) passes
+/// --dart-define=OLIVE_ALLOW_SCREENSHOTS=1 so the flag is never set. A store or release cut never passes it,
+/// so the default stays "hidden". The saved preference and the settings screen are unchanged.
+const bool kAllowScreenshotsDev = bool.fromEnvironment('OLIVE_ALLOW_SCREENSHOTS');
+
 /// The Android side of "hide in recent apps" (MainActivity.kt, channel below).
 class SecureScreen {
   SecureScreen([MethodChannel? channel]) : _channel = channel ?? const MethodChannel(kSecureScreenChannel);
@@ -141,6 +148,7 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
     SecureScreen? secure,
     DateTime Function()? now,
     this.observe = true,
+    this.allowScreenshots = kAllowScreenshotsDev,
   })  : secure = secure ?? SecureScreen(),
         _now = now ?? DateTime.now;
 
@@ -149,6 +157,9 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
   final SecureScreen secure;
   final DateTime Function() _now;
   final bool observe;
+
+  /// True only in a development build (see [kAllowScreenshotsDev]): the secure flag is then never set.
+  final bool allowScreenshots;
 
   AppLockPrefs _prefs = const AppLockPrefs();
   AppLockPrefs get prefs => _prefs;
@@ -183,14 +194,14 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
     if (_disposed) return;
     _locked = _prefs.lockOnLeave && hasPin;
     _ready = true;
-    unawaited(secure.set(_prefs.hideRecents));
+    unawaited(secure.set(_prefs.hideRecents && !allowScreenshots));
     notifyListeners();
   }
 
   Future<void> update(AppLockPrefs next) async {
     await repo.save(next);
     _prefs = next;
-    unawaited(secure.set(next.hideRecents));
+    unawaited(secure.set(next.hideRecents && !allowScreenshots));
     notifyListeners();
   }
 

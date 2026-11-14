@@ -21,7 +21,7 @@ build() { # $1 entry, $2 name, rest = extra dart-defines
   local entry="$1" name="$2"; shift 2
   echo "== build $name"
   flutter build apk --release --target-platform android-arm64 -t "lib/$entry.dart" \
-    --dart-define=OLIVE_API_BASE_URL="$URL" "$@" \
+    --dart-define=OLIVE_API_BASE_URL="$URL" --dart-define=OLIVE_ALLOW_SCREENSHOTS=1 "$@" \
     --android-project-arg=olive.allowDebugSignedRelease=true >"$OUT/$name.log" 2>&1 || { tail -20 "$OUT/$name.log"; exit 1; }
   cp build/app/outputs/flutter-apk/app-release.apk "$OUT/$name.apk"
 }
