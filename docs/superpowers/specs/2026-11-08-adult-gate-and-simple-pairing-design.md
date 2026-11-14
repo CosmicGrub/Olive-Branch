@@ -100,7 +100,7 @@ Properties: replaying any recorded message fails (fresh nonces/shares per attemp
 An abstract `PairingTransport` (`request(Map) -> Future<Map?>`, adult side `serve(handler)`). Implementations:
 
 - `LoopbackPairingTransport` (tests and the in-process path).
-- `LanPairingTransport`: a small HTTP server on A (the same pattern and the same VPN-interface bind lesson as `local_session.dart`), mDNS service `_olivepair._tcp` advertising ONLY while a window is open, TXT = `{sidHash (first 8 bytes of SHA-256 sid), an}`; C lists nearby open windows by adult NAME and the adult taps their own name (that is the explicit selection that makes the PIN safe), or scans the QR for the hints.
+- `LanPairingTransport`: a small HTTP server on A (the same pattern and the same VPN-interface bind lesson as `local_session.dart`), mDNS service `_pw._tcp` advertising ONLY while a window is open, instance name = a random per-window label (for example `KT7`), TXT = `{h: random 16-byte discovery handle}` (amended: it used to carry the adult name and a session-id hash; nothing identifying travels in discovery, like the play stack). C lists nearby open windows by that label, which the adult reads off A's screen and picks (that is the explicit selection that makes the PIN safe), or scans the QR for the hints. The first message names the window by the handle; the session id comes back in the answer. The window budgets each source address (3 failed confirmations, 12 hellos, 6 key exchanges) and is silent past it.
 - Online relay through the server: **later**, not built (section 9).
 
 Anything the transport cannot do stays honest: the child card shows the calm "ask your grown-up to open the connect window" state; there is no fake success.
