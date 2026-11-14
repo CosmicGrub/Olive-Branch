@@ -18,6 +18,7 @@ Owner requirements, condensed:
 - The code is **persistent**, works **both ways**, and the **PIN stays primary**.
 - Already-connected family members can **approve other adults, including co-parents, with or without restrictions**: they **welcome** new members to their **village**.
 - Protocols to **protect the child in minor and major events and failures, at every age**, with sourced directions for anyone in the village.
+- **Screenshots** as a setting for grown-ups, and in-app sharing **only from one grown-up to another, never to a child**.
 - A way to **adjust, document and customise** how to care for *this* child: tendencies, moods, habits, allergies, medicines and diagnoses, on good days and hard days, written only by the parents.
 
 ## The one idea
@@ -196,6 +197,55 @@ A gentle, skippable **"Tell us about Mia"** after the family is set up: one sect
 7. **Teen sees "My health sheet"** and must agree before private notes are shared. Recommended yes, from 13.
 8. **Review prompts** at birthdays, 90 days and after medicine changes. Recommended yes.
 9. **Neutral writing prompts** ("What helps when she's upset?") are app-written strings, so they need the same clinical and child-development review as other pre-written text. Recommended: ship them only after that review.
+
+## Screenshots: a setting for grown-ups, and sharing between grown-ups only
+
+Owner request (2026-11-14): "let screenshots be a toggleable function given to and by the adults of the app. we may be allowed to share and exchange screenshots via the app, only from one adult to another, but never the child."
+
+**Why it needs care.** Today "Hide in recent apps" blanks the app in the recents list and also blocks every screenshot and screen recording of it (Android treats both as one flag). That protects the family, but it also stops a grown-up from keeping a screenshot of, say, the schedule, and stops us from testing on a real device. Meanwhile a system screenshot can be sent anywhere by anyone holding the phone, and the app screens hold children's names, health notes and schedules.
+
+**Two separate things, because they have different risks:**
+
+| | **A system screenshot** (the phone's own capture) | **An in-app share** (the app captures a screen and sends it) |
+|---|---|---|
+| Who controls it | The grown-up, per phone, in settings | The grown-up, per share |
+| Default | **Off** (private) | **On**, adult to adult only |
+| Where it can go | Anywhere the phone allows. The app cannot control it | **Only to another grown-up in the family, inside the app**. Never the phone's share sheet, never a child |
+| Sensitive screens | Always blocked, even when allowed | Always excluded |
+| Child device | **Never** | **Never** |
+
+### The setting: "Screens on this phone"
+
+- Two choices, in plain words: **Private** (default: the recents card is blank and screenshots are blocked) and **Screenshots allowed**.
+- It lives with the app lock settings. It is **per phone**, set by the grown-up who owns it, behind their PIN. Turning it on shows one calm sentence: "Anyone with this phone can then take pictures of what's on screen, and send them anywhere."
+- **Sensitive screens stay blocked even when screenshots are allowed:** PIN and lock screens, locked health history and moods in About Mia, the pairing picture and codes, the journal's keypad. These set the secure flag themselves, whatever the setting.
+- The setting is **never in a child's app**, and **a child's device always blocks screenshots** (new rule, owner to confirm). Developer test builds have a separate switch, so testing is still possible and a store build can never carry it.
+
+### Sharing a screen with another grown-up, inside the app
+
+- A **"Share this screen"** action on ordinary grown-up screens. It captures the screen **itself** (inside the app, so it works even when system screenshots are blocked).
+- **Before it sends**, a preview with two tools: **Hide names and photos** (blur children's names and pictures) and **Add a note**. A banner states who it will go to.
+- **Only grown-ups can be chosen.** The list shows grown-ups in this family, never a child or a child's device, and never "share elsewhere". This is enforced in the data (a child device is not a valid recipient) and by a structural test, not only by what the screen shows.
+- **It expires** (default 7 days, the sender can pick 1 day to 30 days) and cannot be forwarded in the app. The receiver sees who sent it and when. The sender can **take it back** at any time.
+- **Honest limit, said plainly in the app:** a grown-up who receives a picture could photograph it with another device. The app cannot prevent that; it can only keep the picture inside the family and mark where it came from.
+- **A quiet note in the family history:** "Sam shared a screen with Alex". It records that a share happened, not the picture.
+- **Not an evidence chain**, in line with the care-note rule. It is a convenience between two parents.
+
+### How it travels (depends on other work)
+
+- **Same Wi-Fi, phones linked as grown-ups:** direct and encrypted to the other grown-up's phone key, using the adult-to-adult linking that already exists (the phone's key shown as a picture, scanned both ways).
+- **Not nearby:** it waits in a sealed outbox and goes the next time the phones meet, or through the sealed relay once family sync exists (see `FAMILY-SYNC-DESIGN.md`). The screen says so plainly: "Alex isn't nearby. It will go when your phones meet."
+- **A family with one grown-up** has no one to share with; the action is hidden.
+
+### Decisions for the owner (each with my recommendation)
+
+1. **System screenshots default to Off (Private).** Recommended yes.
+2. **Sensitive screens always blocked,** even when screenshots are allowed. Recommended yes.
+3. **A child's device always blocks screenshots.** Recommended yes. It also means a test build needs the developer switch.
+4. **In-app share is adult to adult only, with a preview, a "hide names and photos" tool, expiry and take-back.** Recommended yes.
+5. **No use of the phone's own share sheet,** ever, for family screens. Recommended yes.
+6. **Whether a share needs the other grown-up's agreement to receive.** Recommended no: it appears as a quiet card they can dismiss.
+7. **Both parents are told when a screen is shared** with a third grown-up (a carer), not just the recipient. Recommended yes, because a carer sees less.
 
 ## Care guides: protecting the child in everyday and serious moments
 
