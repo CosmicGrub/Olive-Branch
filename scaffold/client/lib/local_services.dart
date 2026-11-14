@@ -281,6 +281,13 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '
           'the date), so one can be forgotten later. Sealed on the device.'),
   LocalDataEntry(
+      area: 'familyledger', scope: LocalScope.guardian, encrypted: true, maxBytes: 512 * 1024,
+      what: 'On a grown-up\'s device: the family\'s signed record of which grown-ups and which child devices '
+          'belong (public keys and the names a grown-up typed, no PIN), the votes on pending changes, and '
+          'the two family keys that device holds. Nothing in it is shown to a child, and a child\'s device '
+          'never holds the grown-ups-only key. Sealed on the device; nothing is uploaded; not used by the '
+          'app yet.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '
