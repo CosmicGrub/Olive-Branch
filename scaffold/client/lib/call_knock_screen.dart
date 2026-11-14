@@ -56,6 +56,7 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'call_knock.dart';
 import 'call_modes.dart' show CallMode;
+import 'call_provider.dart' show CallGrant;
 import 'call_screen.dart';
 import 'push_channel.dart' show PushPointer;
 import 'read_aloud.dart' show ReadAloudScope;
@@ -223,11 +224,14 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
       final api = OliveApi(widget.baseUrl!, widget.sessionToken!, session: AuthSession.current);
       final joined = await api.joinCall(widget.childId!, widget.sessionId!);
       api.close();
+      // The grant says WHICH engine carries this call (jitsi or livekit); a
+      // body that is not a usable grant is a calm "didn't happen" below.
+      final grant = CallGrant.fromJson(joined);
       if (!mounted) return;
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         builder: (_) => CallScreen(
           who: widget.who, displayName: widget.displayName, initialMode: mode,
-          knownToken: joined['token'] as String, knownWsURL: joined['wsURL'] as String))));
+          knownGrant: grant, knownToken: grant.token, knownWsURL: grant.wsURL))));
     } catch (e) {
       // Honest, not alarming — the same calm posture knockUnanswered() and
       // _handleNotNow() below already established for "this didn't happen,"
