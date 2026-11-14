@@ -171,6 +171,20 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           "a guardian's; the app adds no medical text and no amounts, and moves no money. Never shown in her app. "
           'Sealed on the device; never uploaded.'),
   LocalDataEntry(
+      area: 'aboutchild', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
+      what: 'The care profile (About her), grown-up side only: what a guardian wrote under Keep her safe, her '
+          'everyday, what helps, health history and moods and habits (the last two behind the guardian PIN), '
+          "today's heads-up (one note, gone at local midnight, never kept as a log), who each part is shown to on "
+          'this phone and until when, the dates for the "is this still right?" prompts, and a short edit history '
+          'of each entry (who changed it and when; not an evidence log). Every word is a guardian\'s; '
+          'the app adds no medical text and works out no dose. Never shown in her app. Sealed on the device; '
+          'never uploaded.'),
+  LocalDataEntry(
+      area: 'aboutplans', scope: LocalScope.child, encrypted: true, maxBytes: 6 * _mib,
+      what: "Photos of a doctor's plan (for example an asthma or allergy action plan) that a guardian chose to "
+          'keep, each with a label the guardian typed. The app never takes, edits or reads one. Guardian side '
+          'only, never in her app. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
       area: 'explainers', scope: LocalScope.child, encrypted: true, maxBytes: 3 * _mib,
       what: 'Picture stories a guardian wrote for her: a title, up to six short pages, an optional '
           'small photo, and whether it is shown to her. The app writes none. Sealed on the device; '
