@@ -462,6 +462,31 @@ int _dayNum(String iso) {
 
 int daysBetween(String a, String b) => _dayNum(b) - _dayNum(a);
 
+/// The next day the rhythm hands her over (Wave 5, prototype g-schedule "Next exchange"): the first date on or
+/// after [todayIso] that falls on the rhythm's exchange day, with the exchange time when one is set. This is a
+/// fact about the weekly shape only. The rhythm carries no anchor week (who has her this week is not recorded), so
+/// it never claims whose home she goes to, and it is null while there is no pattern or no exchange day.
+class NextExchange {
+  const NextExchange(this.date, this.dayIndex, this.time, this.daysAway);
+  final String date;
+  /// 0 = Sunday .. 6 = Saturday, the same numbering as [Rhythm.exchangeDay].
+  final int dayIndex;
+  final String? time;
+  /// 0 means today. Guardian-side only: her own screens say "sleeps", never this.
+  final int daysAway;
+}
+
+NextExchange? nextExchange(Rhythm r, String todayIso) {
+  final int? d = r.exchangeDay;
+  if (r.pattern == 'none' || d == null || !isIsoDate(todayIso)) return null;
+  final List<int> p = todayIso.split('-').map(int.parse).toList();
+  final DateTime t = DateTime.utc(p[0], p[1], p[2]);
+  final int add = (d - (t.weekday % 7) + 7) % 7;
+  final DateTime on = t.add(Duration(days: add));
+  String two(int v) => v.toString().padLeft(2, '0');
+  return NextExchange('${on.year.toString().padLeft(4, '0')}-${two(on.month)}-${two(on.day)}', d, r.exchangeTime, add);
+}
+
 class Verdict {
   const Verdict.ok() : reason = null;
   const Verdict.no(String this.reason);

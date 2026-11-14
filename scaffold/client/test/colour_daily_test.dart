@@ -62,6 +62,53 @@ void main() {
     expect(find.byIcon(Icons.settings), findsNothing);
   });
 
+  group('other colours (Wave 4)', () {
+    testWidgets('one quiet button opens all twelve; a swatch is the same answer as a card', (tester) async {
+      String? got;
+      await pump(tester, (id) => got = id, random: () => 0.2);
+      expect(find.byKey(const Key('colourAll')), findsNothing);
+      await tester.tap(find.byKey(const Key('colourMore')));
+      await tester.pump();
+      expect(find.byKey(const Key('colourAll')), findsOneWidget);
+      expect(find.byKey(const Key('colourMore')), findsNothing);
+      for (final s in palette) {
+        expect(find.byKey(Key('all_${s.id}')), findsOneWidget, reason: s.id);
+      }
+      await tester.tap(find.byKey(const Key('all_grape')));
+      await tester.pump();
+      expect(got, 'grape');
+    });
+
+    testWidgets('the extra set carries no streak, count or new-and-better language either', (tester) async {
+      await pump(tester, (_) {});
+      await tester.tap(find.byKey(const Key('colourMore')));
+      await tester.pump();
+      for (final word in [...colourForbidden, 'streak', 'new colour', 'better', 'try something']) {
+        expect(find.textContaining(word, findRichText: true), findsNothing, reason: word);
+      }
+    });
+
+    for (final size in const [Size(344, 882), Size(390, 844), Size(600, 900), Size(800, 1280)]) {
+      for (final scale in const [1.0, 2.0]) {
+        testWidgets('opened set fits at ${size.width.toInt()} dp at ${scale}x text, and every target is 56 dp or more', (tester) async {
+          await tester.binding.setSurfaceSize(size);
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pump(tester, (_) {});
+          await tester.ensureVisible(find.byKey(const Key('colourMore'))); // a tall text scale scrolls
+          await tester.tap(find.byKey(const Key('colourMore')));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+          for (final s in palette) {
+            final sz = tester.getSize(find.byKey(Key('all_${s.id}')));
+            expect(sz.shortestSide, greaterThanOrEqualTo(56), reason: s.id);
+          }
+        });
+      }
+    }
+  });
+
   group('responsive — required audit viewports', () {
     // Fold5 cover screen, Fold5 unfolded main screen, a standard phone, and a
     // desktop/tablet-scale width. This screen already branches on width

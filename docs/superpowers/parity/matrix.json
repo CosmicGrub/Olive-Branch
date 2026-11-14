@@ -1594,7 +1594,7 @@
   "flutter": "her_colour_guardian.dart :: HerColourGuardianScreen; colour_parent.dart :: ColourParentScreen (read-only readout, hub tile)",
   "status": "differs",
   "look": "Prototype shows art styles as 2x2 cards with illustrated scene thumbnails and a per-device (phone/tablet) Matches/Syncing row card; Flutter uses small text-only ChoiceChips, one 'every device shows the same colour' line, plus an extra swatch row and switches.",
-  "behaviour": "RULE CONFLICT: Flutter lets the guardian SET a 'colour day' (12-swatch picker, replaces her answer, she is not asked) and has an allowed-styles FilterChip set and a coding-activities switch; prototype says 'There is no picker here for a grown-up' and 'Pick or change her colour for her' is in You can't. Reconcile as an owner decision. Flutter styles are age-filtered (pixel from 8).",
+  "behaviour": "RULE CONFLICT: Flutter lets the guardian SET a 'colour day' (12-swatch picker, replaces her answer, she is not asked) and has an allowed-styles FilterChip set and a coding-activities switch; prototype says 'There is no picker here for a grown-up' and 'Pick or change her colour for her' is in You can't. Reconcile as an owner decision. Flutter styles are age-filtered (pixel from 8). WAVE 4/5: art style is now chosen from drawn thumbnails (seven styles, the prototype shows four scene thumbnails); the override is flagged in code, MASTERFILE 8.6.5 and here. Per-device Matches/Syncing rows and the sync simulator stay online-parked.",
   "audience": "guardian",
   "mode": "offline",
   "size": "M",
@@ -1602,7 +1602,9 @@
    "row:Her/Colour and art",
    "route:PUT /v1/colour-of-day"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "flag": "wave45-flag: guardian colour-day override KEPT (owner decision 2026-11-08) and flagged; the prototype forbids a grown-up picking her colour. Open owner decision; removal recipe in her_colour_guardian.dart.",
+  "test": "her_colour_wave4_test.dart; her_colour_screens_test.dart"
  },
  {
   "n": 83,
@@ -1856,9 +1858,9 @@
   "line": 808,
   "what": "Colour of the day: 'Which colour do you want today?' with eight swatches (Red..Pink); tapping sets the pencil colour for today and shows 'Today is <colour>'; a fixed 'Your colour' row (her own seed colour, stays the same); activity tiles: Colour sort, Draw, Path code and Colour critter (age 5+), Pixel garden (age 8+). Ask can be turned off by the guardian.",
   "flutter": "her_colour_home.dart :: HerColourScreen; colour_daily.dart :: ColourDailyScreen (two-up A/B); colour_pick.dart :: ColourPickScreen; child_more.dart :: _ColourTile; her_colour_art.dart :: ColourArt (7 art styles); colour_day_logic.dart :: dailyPair",
-  "status": "differs",
+  "status": "partial",
   "look": "Flutter does not show eight swatches. If the day's question is unanswered she gets ColourDailyScreen, a two-up A/B (one side is always her current colour), then HerColourScreen: 'Today your colour is <label>', an art-style chip row ('Pictures look like', 7 styles the guardian allows) with a sample picture, and activity HubTiles. Her colour is an accent (stripe, ring, flourish; budget of three), never a theme.",
-  "behaviour": "Flutter has no streak/churn nudge by design; the daily question ends for the day after answering. Activities gated by age bands: sort 3-7, path 5-9 (coding toggle), critter 3-10, pixel 8-12 (coding toggle) vs prototype (path/critter 5+, pixel 8+, no upper limit). Prototype 'Draw' tile has no Flutter equivalent here (Doodle desk is in More).",
+  "behaviour": "Flutter has no streak/churn nudge by design; the daily question ends for the day after answering.  Prototype 'Draw' tile has no Flutter equivalent here (Doodle desk is in More). WAVE 4: the two-up now has an Other colours button that opens all twelve swatches (the prototype eight-swatch pick, reconciled: two-up stays the default). Activity age limits no longer close: sort and critter from 3, path from 5, pixel from 8, no upper limit (owner rule: keep early bands, unlock more).",
   "audience": "child (all bands)",
   "mode": "offline",
   "size": "M",
@@ -1869,7 +1871,8 @@
    "k.c.critter",
    "k.c.pixel"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "her_colour_wave4_test.dart; colour_daily_test.dart; colour_activities_logic_test.dart"
  },
  {
   "n": 96,
@@ -1902,14 +1905,15 @@
   "flutter": "colour_sort_screen.dart :: ColourSortScreen; colour_activities_logic.dart :: SortRound; colour_foods.dart",
   "status": "differs",
   "look": "Flutter sorts up to nine PICTURES (foods and animals in today's colour) into three baskets (fruit, vegetables, animals): 'Let's find things that are sea blue'. Wrong answers wobble back with no red; glow on the right basket. Prototype sorts plain colour dots into colour pots.",
-  "behaviour": "Different concept (categories by food group vs match the colour). Min 3 to max 7 years in Flutter.",
+  "behaviour": "Different concept (categories by food group vs match the colour). Min 3 to max 7 years in Flutter. WAVE 4: no upper age (was 3 to 7); opens at 3 and stays.",
   "audience": "child (all bands)",
   "mode": "offline",
   "size": "M",
   "dependsOn": [
    "k.colour"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "colour_activities_logic_test.dart; her_colour_screens_test.dart"
  },
  {
   "n": 98,
@@ -1922,14 +1926,15 @@
   "flutter": "path_code_screen.dart :: PathCodeScreen (_CellView); colour_activities_logic.dart",
   "status": "partial",
   "look": "Flutter theme: a fox walking to a carrot on a path in today's colour, with 'a repeat block' unlocked from 8; arrow blocks shown back as written. Prototype: pawn to a star with rocks.",
-  "behaviour": "Flutter blocks stay on screen after a rock stops the hero so she can change one; ages 5-9 and only if the guardian's coding toggle is on; no level counter (P2). Repeat block at 8+ (not in prototype).",
+  "behaviour": "Flutter blocks stay on screen after a rock stops the hero so she can change one; ages 5-9 and only if the guardian's coding toggle is on; no level counter (P2). Repeat block at 8+ (not in prototype). WAVE 4: no upper age (was 5 to 9); opens at 5 and stays.",
   "audience": "child (all bands)",
   "mode": "offline",
   "size": "M",
   "dependsOn": [
    "k.colour"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "colour_activities_logic_test.dart; her_colour_screens_test.dart"
  },
  {
   "n": 99,
@@ -1942,14 +1947,15 @@
   "flutter": "colour_critter_screen.dart :: ColourCritterScreen",
   "status": "differs",
   "look": "Flutter: pick an animal from today's list and a style from those the guardian allows; tap a part, it fills with today's colour or a lighter/darker tint; a second picture shows the same animal in the chosen style. Prototype: free 12-colour palette on a single critter.",
-  "behaviour": "Flutter restricts fills to today's colour and its tints (no free palette); undo is one tap; ages 3-10.",
+  "behaviour": "Flutter restricts fills to today's colour and its tints (no free palette); undo is one tap; ages 3-10. WAVE 4: no upper age (was 3 to 10); opens at 3 and stays.",
   "audience": "child (all bands)",
   "mode": "offline",
   "size": "M",
   "dependsOn": [
    "k.colour"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "colour_activities_logic_test.dart; her_colour_screens_test.dart"
  },
  {
   "n": 100,
@@ -1962,14 +1968,15 @@
   "flutter": "pixel_garden_screen.dart :: PixelGardenScreen",
   "status": "differs",
   "look": "Flutter: 8x8 garden, today's colour in three tints, a mirror switch (symmetry) and a row stamp. Prototype: 12x12, 12-colour palette.",
-  "behaviour": "Opens at 8 only if the guardian's coding activities toggle is on, ages 8-12; no score/goal. Prototype has neither the toggle nor the mirror/stamp.",
+  "behaviour": "Opens at 8 only if the guardian's coding activities toggle is on, ages 8-12; no score/goal. Prototype has neither the toggle nor the mirror/stamp. WAVE 4: no upper age (was 8 to 12); opens at 8 and stays.",
   "audience": "child (all bands)",
   "mode": "offline",
   "size": "M",
   "dependsOn": [
    "k.colour"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "colour_activities_logic_test.dart; her_colour_screens_test.dart"
  },
  {
   "n": 101,
@@ -1982,14 +1989,15 @@
   "flutter": "her_colour_art.dart :: ColourArt (seven styles); her_colour_home.dart (style chips, child picks among allowed); her_colour_guardian.dart",
   "status": "partial",
   "look": "Flutter applies the style to ColourArt pictures on the colour screens only, and the child chooses among the allowed styles.",
-  "behaviour": "Prototype applies the style to the canvas border across every page, guardian-chosen with no child choice.",
+  "behaviour": "Prototype applies the style to the canvas border across every page, guardian-chosen with no child choice. WAVE 4: the guardian picks the default from drawn thumbnails.",
   "audience": "both",
   "mode": "offline",
   "size": "M",
   "dependsOn": [
    "k.colour"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "her_colour_wave4_test.dart"
  },
  {
   "n": 102,
@@ -2064,7 +2072,7 @@
   "flutter": "family_structure_screens.dart :: FamilyStructureScreen (hub); FamilyPeopleScreen; PersonEditorScreen; FamilyHomesScreen; RhythmEditorScreen; ChangePreviewScreen",
   "status": "differs",
   "look": "Prototype is one stepper screen (progress bar, Step N of 4) with draft kept across steps; Flutter is a hub of separate screens (People, Homes and rhythm, Age bands, Change history), each edit going straight to its own preview.",
-  "behaviour": "Flutter applies each edit as a single op through preview (no multi-edit draft, no stale_version rebase, local-first). Rhythm kinds differ: Flutter patterns none/2-2-3/2-2-5-5/alternating/week-on-week-off/custom with exchange day+time; prototype alt/2255/own two-week tap grid. Max 4 homes, 730-day date window, court-order lock all present.",
+  "behaviour": "Flutter applies each edit as a single op through preview (no multi-edit draft, no stale_version rebase, local-first). Rhythm kinds differ: Flutter patterns none/2-2-3/2-2-5-5/alternating/week-on-week-off/custom with exchange day+time; prototype alt/2255/own two-week tap grid. Max 4 homes, 730-day date window, court-order lock all present. WAVE 5: scenario family replayed on the real screens (runner drivers go g-family, go g-history, kid.openMyPeople; tap-only replay in family_scenario_screens_test.dart).",
   "audience": "guardian",
   "mode": "offline",
   "size": "L",
@@ -2072,7 +2080,8 @@
    "row:Family/Family structure",
    "g-history"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "family_scenario_screens_test.dart; family_structure_screens_test.dart"
  },
  {
   "n": 106,
@@ -2125,7 +2134,7 @@
   "flutter": "family_structure_store.dart :: FamilyService (apply/release/undo on a local op log); family_structure_logic.dart (verdicts too_many_homes, locked_by_order, maxDateAheadDays 730)",
   "status": "differs",
   "look": "",
-  "behaviour": "Same invariants but evaluated locally; no server routes, no stale-version conflict between two guardians, no cross-guardian notification. Undo-as-new-entry matches.",
+  "behaviour": "Same invariants but evaluated locally; no server routes, no stale-version conflict between two guardians, no cross-guardian notification. Undo-as-new-entry matches. WAVE 5: scenario family replayed on the real screens (runner drivers go g-family, go g-history, kid.openMyPeople; tap-only replay in family_scenario_screens_test.dart).",
   "audience": "guardian",
   "mode": "online-parked",
   "size": "L",
@@ -2133,7 +2142,8 @@
    "g-family",
    "g-history"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "family_scenario_screens_test.dart; family_structure_screens_test.dart"
  },
  {
   "n": 109,
@@ -2146,14 +2156,15 @@
   "flutter": "family_structure_screens.dart :: FamilyHistoryScreen",
   "status": "built",
   "look": "Flutter rows are text lines '<date> . <state>' with buttons; prototype shows avatars of who made the change and coloured status chips.",
-  "behaviour": "Matches filter, immutability note and undo-as-new-entry. Flutter shows 'a story from you travels with this change' line (FLUTTER-ONLY). Court-order entries shown locked.",
+  "behaviour": "Matches filter, immutability note and undo-as-new-entry. Flutter shows 'a story from you travels with this change' line (FLUTTER-ONLY). Court-order entries shown locked. WAVE 5: scenario family replayed on the real screens (runner drivers go g-family, go g-history, kid.openMyPeople; tap-only replay in family_scenario_screens_test.dart).",
   "audience": "guardian",
   "mode": "offline",
   "size": "S",
   "dependsOn": [
    "row:Family/Family history"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "family_scenario_screens_test.dart; family_structure_screens_test.dart"
  },
  {
   "n": 110,
@@ -2409,7 +2420,8 @@
    "kid.rename",
    "tile:people"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "family_scenario_screens_test.dart; family_structure_screens_test.dart"
  },
  {
   "n": 123,
@@ -2488,7 +2500,8 @@
   "dependsOn": [
    "k.person"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "family_scenario_screens_test.dart"
  },
  {
   "n": 127,
@@ -3271,7 +3284,7 @@
   "flutter": "family_structure_screens.dart :: RhythmEditorScreen, ChangePreviewScreen; exchange_screen.dart :: ExchangeScreen (Handoff and Coming-up sections); weeks_screen.dart :: WeeksScreen (her side)",
   "status": "partial",
   "look": "Flutter guardian side has a rhythm editor and an Exchange screen with a 'goes to X in N sleeps' card and coming-up list; no 14-day list with swap chips and no locked-by-order banner screen.",
-  "behaviour": "Rhythm editing exists with preview; court-order lock rule not seen in the editor (uncertain). Swap exceptions do not exist so none appear on the calendar.",
+  "behaviour": "Rhythm editing exists with preview; court-order lock rule not seen in the editor (uncertain). Swap exceptions do not exist so none appear on the calendar. WAVE 5: the rhythm card states the next exchange (day and time, never whose home: no anchor week is recorded); the court-order lock is shown locked with no edit button and the service refuses edits (family_structure_screens_test.dart). Next-two-weeks and swaps need the anchor/swap model and stay missing.",
   "audience": "guardian",
   "mode": "offline",
   "size": "M",
@@ -3279,7 +3292,8 @@
    "Family structure rows",
    "g-swap"
   ],
-  "certainty": "uncertain"
+  "certainty": "uncertain",
+  "test": "family_structure_screens_test.dart; family_structure_logic_test.dart"
  },
  {
   "n": 166,
@@ -5835,14 +5849,15 @@
   "flutter": "play_window_gate.dart :: PlayWindowGate; play_window_screen.dart :: PlayWindowScreen (guardian side); her_colour_store.dart :: ChildColourStore.playWindow",
   "status": "built",
   "look": "Flutter: resting = full 'Goodnight' scaffold with a moon icon and the guardian's line; winding = bottom banner. Prototype: bottom sheet at the tile, dim tile, wake time shown, 'Draw instead' offered.",
-  "behaviour": "Both gate GAMES only (calls and messages never pass) and never cut a game in progress; Flutter gate lives at the games door, prototype also re-checks inside each game screen. No wake time shown in Flutter's goodnight card (line is guardian text).",
+  "behaviour": "Both gate GAMES only (calls and messages never pass) and never cut a game in progress; Flutter gate lives at the games door, prototype also re-checks inside each game screen. No wake time shown in Flutter's goodnight card (line is guardian text). WAVE 4: the gate re-reads the window each minute and on resume (a wind-down arrives by itself, soft cross-fade), never cuts a game in progress, and before the window opens says later today, not tomorrow.",
   "audience": "child (all bands)",
   "mode": "offline",
   "size": "S",
   "dependsOn": [
    "k.play"
   ],
-  "certainty": "verified"
+  "certainty": "verified",
+  "test": "play_window_gate_test.dart"
  },
  {
   "n": 294,

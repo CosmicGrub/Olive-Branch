@@ -133,8 +133,10 @@ void main() {
 
     testWidgets('age 4: sort and critter', (t) async => expect(await shown(t, 4), ['sort', 'critter']));
     testWidgets('age 6: and Path code', (t) async => expect(await shown(t, 6), ['sort', 'path', 'critter']));
-    testWidgets('age 9: Path code, critter and Pixel garden', (t) async => expect(await shown(t, 9), ['path', 'critter', 'pixel']));
-    testWidgets('coding switched off: only critter at 9', (t) async => expect(await shown(t, 9, code: false), ['critter']));
+    testWidgets('age 9: everything she had, and Pixel garden too (nothing closes as she grows)',
+        (t) async => expect(await shown(t, 9), ['sort', 'path', 'critter', 'pixel']));
+    testWidgets('age 14: still all four', (t) async => expect(await shown(t, 14), ['sort', 'path', 'critter', 'pixel']));
+    testWidgets('coding switched off: sort and critter at 9', (t) async => expect(await shown(t, 9, code: false), ['sort', 'critter']));
 
     testWidgets('each tile opens its real screen', (t) async {
       await big(t);
