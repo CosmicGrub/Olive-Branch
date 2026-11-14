@@ -4,12 +4,14 @@
 // Holds: the use-a-window switch (off = open all day), the order of the ending (rest time
 // FIRST, wind-down AFTER it: the prototype's order, parity ledger rule playWindow.states),
 // the live "on her tablet right now" line, the honest "nothing was sent" when a window is
-// made longer, and the daily time total with its honest "nothing counts minutes yet".
+// made longer, and the daily time total, now enforced on her device (daily_time_test.dart), with its plain description.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/colour_day_logic.dart';
+import 'package:olive_client/daily_time_logic.dart';
+import 'package:olive_client/daily_time_store.dart';
 import 'package:olive_client/her_colour_store.dart';
 import 'package:olive_client/home_plan_store.dart';
 import 'package:olive_client/play_window_gate.dart';
@@ -115,7 +117,7 @@ void main() {
       expect(find.text('What Ivy sees at 7:30 PM'), findsOneWidget);
       expect(find.byKey(const Key('windPreview')), findsOneWidget);
       expect(find.textContaining('Nothing is taken away. Games open again at 7:30 AM'), findsOneWidget);
-      expect(find.textContaining('Calls and family messages are never affected'), findsOneWidget);
+      expect(find.textContaining('Calls and family messages are never affected'), findsWidgets);
     });
 
     testWidgets('making the window longer is saved, and says plainly that nothing was sent to the other guardian', (t) async {
@@ -165,10 +167,37 @@ void main() {
       expect(t.widget<Text>(find.byKey(const Key('dailyMsg'))).data, 'Saved on this device.', reason: 'lowering is free and never reported');
     });
 
-    testWidgets('daily time is honest: nothing counts her minutes, so nothing stops at the total', (t) async {
+    testWidgets('daily time is honest about what it does: it rests her reading and watching, shows her no number, and is per device', (t) async {
       await open(t, _store(), MemoryHomePlanRepository());
-      expect(find.textContaining('do not count minutes yet'), findsOneWidget);
-      expect(find.textContaining('records the total you chose'), findsOneWidget);
+      expect(find.textContaining('rest gently once it is used up'), findsOneWidget);
+      expect(find.textContaining('She is never shown a number'), findsOneWidget);
+      expect(t.widget<Text>(find.byKey(const Key('dailyHonest'))).data, contains('are never touched by it'));
+      expect(find.textContaining('needs the network, which is not built yet'), findsWidgets);
+      expect(find.textContaining('do not count minutes yet'), findsNothing, reason: 'the old "nothing stops" line is gone');
+    });
+
+    testWidgets('with the total off there is no use line and no allow button; with it on the grown-up sees today\'s use on this device and can allow 30 more minutes', (t) async {
+      final MemoryDayUseRepository usage = MemoryDayUseRepository(
+          DayUse(day: localDayKey(DateTime(2026, 11, 7, 16)), seconds: 40 * 60));
+      Future<void> openWith(MemoryHomePlanRepository plan) async {
+        await _size(t, 500);
+        await t.pumpWidget(MaterialApp(home: PlayWindowScreen(key: UniqueKey(), childName: 'Ivy', store: _store(), plan: plan,
+            usage: usage, clock: () => DateTime(2026, 11, 7, 16))));
+        await t.pumpAndSettle();
+      }
+
+      await openWith(MemoryHomePlanRepository());
+      expect(find.byKey(const Key('dailyUsed')), findsNothing);
+      expect(find.byKey(const Key('dailyAllowMoreHere')), findsNothing);
+
+      await openWith(MemoryHomePlanRepository(const HomePlan(dailyHours: 1)));
+      expect(t.widget<Text>(find.byKey(const Key('dailyUsed'))).data, contains('40 min'));
+      await t.ensureVisible(find.byKey(const Key('dailyAllowMoreHere')));
+      await t.tap(find.byKey(const Key('dailyAllowMoreHere')));
+      await t.pumpAndSettle();
+      expect((await usage.load(localDayKey(DateTime(2026, 11, 7, 16)))).bonusMinutes, kDailyBonusStepMinutes);
+      expect(t.widget<Text>(find.byKey(const Key('dailyMsg'))).data, contains('Allowed 30 more minutes for today'));
+      expect(t.widget<Text>(find.byKey(const Key('dailyUsed'))).data, contains('You allowed 30 more minutes today'));
     });
 
     testWidgets('a daily-time save that fails is said', (t) async {

@@ -203,6 +203,11 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'until a grown-up has told her and whether a note to the grown-up is wanted a week '
           'before. A handful of choices; no count, no score, nothing about what she did.'),
   LocalDataEntry(
+      area: 'daytime', scope: LocalScope.child, maxBytes: 4 * 1024,
+      what: 'Today only, on her device: the date and how many seconds of reading and watching this device has '
+          'seen today, and any extra minutes a grown-up allowed for today. It starts empty at local midnight and '
+          'yesterday is not kept. Never shown to her as a number; no history, streak, score or total; never sent.'),
+  LocalDataEntry(
       area: 'village', scope: LocalScope.child, encrypted: true, maxBytes: 128 * 1024,
       what: 'Village, on this device only: a large-print grandparent page, picture stories a guardian '
           'wrote and whether each is released to her (a held one is never shown), the sibling '

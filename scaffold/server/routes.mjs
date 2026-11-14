@@ -2781,6 +2781,49 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     },
   });
 
+  // GET /v1/children/:childId/expiry-digests -- the guardian's quiet reader for the
+  // scheduler's `expiry-digest` job (tools/scheduler.mjs, S-D2; table expiry_digest,
+  // migration 0044). The job only RECORDS; until this route nothing read the rows.
+  // MASTERFILE section 16.2 #5: a child is never shown this digest, so a child
+  // principal is refused here explicitly (the table's own RLS policy also hides it).
+  // `archive.preserve` is the action a guardian needs to act on what the digest
+  // says, so exactly the roles that may keep an artifact may read the reminder.
+  // The rows hold ids, kinds and dates only (never a caption), and only those
+  // fields are returned. Only digests whose last expiry is still ahead are sent:
+  // an already-cleared set is not a reminder any more. Newest first, at most 5.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/expiry-digests', action: 'archive.preserve',
+    // Holds no outer pooled connection: this handler reaches Postgres only through
+    // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const rows = await inSession(c, (q) => q(
+        `SELECT id,
+                to_char(generated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS generated_at,
+                lead_days, item_count,
+                to_char(earliest_expiry AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS earliest_expiry,
+                to_char(latest_expiry AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS latest_expiry,
+                digest
+           FROM expiry_digest
+          WHERE child_id = $1 AND latest_expiry > now()
+          ORDER BY generated_at DESC
+          LIMIT 5`,
+        [c.childId]));
+      return { body: {
+        digests: rows.map((r) => ({
+          id: r.id, generatedAt: r.generated_at, leadDays: r.lead_days, itemCount: r.item_count,
+          earliestExpiry: r.earliest_expiry, latestExpiry: r.latest_expiry,
+          items: (Array.isArray(r.digest?.items) ? r.digest.items : []).map((i) => ({
+            artifactId: i.artifactId, kind: i.kind, expiresAt: i.expiresAt,
+          })),
+        })),
+      } };
+    },
+  });
+
   // GET/POST /v1/children/:childId/handover-notes — the parent-to-parent
   // handover log, real for the first time. Found by this project's own
   // post-tier audit: message_log (db/migrations/0006_court_tier.sql) has
