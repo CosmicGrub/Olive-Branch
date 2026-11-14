@@ -1,8 +1,8 @@
 {
  "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
  "totals": {
-  "implemented": 65,
-  "pending": 128,
+  "implemented": 71,
+  "pending": 122,
   "differs": 6
  },
  "groups": {
