@@ -16,6 +16,9 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Fix: the pairing trust book crashed "Connect a child's device"
+- The persistent QR work (#197) used a local data area, `trust`, that was never listed in `localDataCatalogue`, so tapping the Connect row threw `"trust" is not in localDataCatalogue` and the screen never opened. Found on the real Fold5. The area is now registered (sealed, guardian scope), has its plain-words name on the clear-data screen and its row in the §8.16.4 table (44 areas, 24 sealed). A new test, `local_data_areas_used_test.dart`, scans every `.area('...')` call in `lib` and fails for any name the catalogue does not list, so this cannot recur. A local machine path that had been written into this file was also removed.
+
 ### The pairing picture: a persistent QR that is an introduction, never a key (owner request 2026-11-14)
 - **Red-team hardening (same branch).** A poll now needs a MAC over a one-use nonce (a sniffed `tagC` no longer takes the sealed credential); only well-formed `pake1` messages count toward the cap; a wrong QR guess costs an attempt instead of burning the QR; a scanned window makes the child sign a fresh nonce in `pake1` (a replayed hello cannot take the claim slot); a claimed child tablet refuses a tag-less adult picture; the olive mark follows reduce-motion; the child's own picture stays below the hinge; no tooltips on the child's failure and picture cards; calmer Match icons; a key-storage failure shows the calm failure picture. Regression tests: `pairing_hardening_test.dart`. Still open: the adult's name and family id in `hello-ok`, PIN verifier on the tablet, no revocation or expiry, a one-tap path to the keypad, custom PAKE review.
 - **A public, revocable picture for one device** (`pairing_picture.dart`, `olive://id/1?r&k&s&e[&f]`): role, device public key, rendezvous salt, counter and an optional blinded family tag. No PIN, secret, session id, address, name, family or child id, location or time. Strict fail-closed parser (200-character cap, exact keys, canonical base64url), rejected by the one-time `olive://pair/1` parser and the reverse. The PIN-PAKE stays the primary method and the only authenticator; the picture only chooses which window is meant.
@@ -3936,7 +3939,7 @@ close it for real.
   known-recurring stale paths out of the way before every launch attempt
   (clearing only the one path a given crash names is whack-a-mole — the
   next crash just leaves the other one stuck). Not part of this repo — a
-  one-time machine fix, `C:\Users\Obliv\bin\Fix-DockerDesktop.ps1`.
+  one-time machine fix, a local `Fix-DockerDesktop.ps1` script.
 
 ## [0.49.27] — 2026-08-22 — Device-adaptive backlog, batch A of 3: nine more screens get the comfortable-reading-width cap
 
