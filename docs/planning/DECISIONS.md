@@ -23,11 +23,34 @@ Rules every contributor follows. Newest first inside each group. Source: owner i
 ## Adults, PINs and pairing
 
 - Adults set every PIN on adult devices (4 to 8 digits, easy-guess refusal). A child device shows only the calm "a grown-up does this" card, never a keypad flow.
-- PIN is the primary connect and unlock method; the QR code is an optional shortcut that works only while the two devices are together. A static standing QR is not used.
+- PIN is the primary connect and unlock method; the QR code is an optional shortcut that works only while the two devices are together. A static standing QR **that carries a secret** is not used.
+- **A persistent QR is allowed only as non-secret public identity** (a "pairing picture" for one device: role, public key, rotatable salt, counter, optional blinded family tag), always followed by the PIN-based key exchange, the adult-opened window, Match and the adult's Yes. A scan is an introduction, never a key. Unlock never uses a persistent picture. Either device can show one and the other scan it; both are optional. (2026-11-14; addendum in the pairing spec section 15 and MASTERFILE 8.5.11.)
+- Pairing devices: both parents approve adding a grown-up's phone (once a second grown-up is linked); a new device is "New" for 24 hours; the match is three pictures and a colour; "still yours?" at 60 days; adding is off by default. (2026-11-14)
 - Pairing uses a password-authenticated key exchange bound to an adult-opened session. The key exchange is custom and **needs external cryptographic review before real families rely on it**.
 - Offline unlock keeps a salted slow hash of the adult PIN on the child device, with a "phone-only unlock" setting for cautious families. Unlock lockout lives on the child device.
 - One role per device. "Someone else" stays as a fourth role.
 - Pairing codes use digits 0-9.
+
+## The village and the family (adopted 2026-11-14; not built)
+
+Source: the owner's "go with all recommendations" and "go with your recommendations". Design in `VILLAGE-WELCOME-DESIGN.md` and `FAMILY-IDENTITY-DESIGN.md`; MASTERFILE section 8.28 marks all of it PLANNED. Open conflicts are in `GAP-REGISTER.md`.
+
+- Already-connected grown-ups approve new grown-ups ("welcome" them to the village), with or without limits. A scan or a code is an introduction, never a key; a newcomer can never grant themselves trust.
+- Only a parent starts a welcome; a carer can only suggest one.
+- Approval follows reach (Look, Act, Parent). A new parent needs all parents, a hard floor. A carer who can act needs all parents by default, loosenable to one with a plain warning.
+- **Pause is instant for either parent; ending needs agreement** (replaces "revocable by either guardian unilaterally" in MASTERFILE section 15). A parent may end someone they themselves welcomed; ending someone the other parent welcomed needs both.
+- A limit on a parent is an agreement the limited parent signs, with a 24 hour think-it-over; nobody else can tighten it. (Open: limits must restrict actions only, never what a parent can see, to keep MASTERFILE 2.6 true. GAP-REGISTER G-35.)
+- Caps: 4 parents, 8 carers, 12 child devices. A Visit lasts at most 14 days. A signed Standing OK lasts at most 90 days.
+- Welcome ships local-first, before server mode. Helper pages keep their boundary: a page that would work on the helper's own phone is a welcome, not a page.
+- Device roles map to presets as in MASTERFILE 8.5.8: Mom, Dad and Someone else are labels; the welcoming grown-ups choose the preset; a Helper page is not a device role.
+- One family object (family id, family key, signed ledger) for every grown-up and child device is the foundation; "no family object, no village".
+
+## Care guides and the About Mia profile (adopted 2026-11-14; nothing built)
+
+- Care guides are a sourced, offline library named "Care guides", for grown-ups and welcomed carers only; never on a child screen. US first, other countries noted for later.
+- **The spec rule against shipping medical text may be lifted only after a clinician has reviewed each guide. That review is a hard gate**; a first-aid instructor also reviews choking and CPR. Until a guide is signed off it stays out of the build. Guides show a last-reviewed date; updates ride app releases.
+- Every step, threshold and number is sourced from a page that was opened, or left out and listed. Disagreements are shown with the cautious reading flagged. No medicine doses.
+- About Mia is a guardian-only, on-device, sealed profile that grows the care binder: parents write every word, the app advises nothing, all parents can read and edit with a plain (not evidentiary) edit history, health history and moods are parents-only and locked, Today's heads-up ends at midnight, the child never sees any of it. The care-note "not evidence" rule has a stated exception for persistence and attribution only (MASTERFILE 12.5). The nine decisions in the QR brainstorm's "About the child" list are adopted under "go with your recommendations"; the owner can reverse any.
 
 ## Play together
 
@@ -45,7 +68,7 @@ Rules every contributor follows. Newest first inside each group. Source: owner i
 
 - Merge PRs once CI is green. Root-cause every failure; never retry blind.
 - Totals come from CI's computed figure. After any rebase check for conflict markers.
-- Canonical docs (MASTERFILE, MARKUP, DEMO) must match shipped behaviour, not only the version number.
+- Canonical docs (MASTERFILE, MARKUP, DEMO) must match shipped behaviour, not only the version number. Anything planned and not built goes in MASTERFILE only under a heading or lead-in that says PLANNED, NOT BUILT.
 - Never delete the owner's files unprompted. Downloading files needs the owner's explicit yes.
 - Pause or resume exactly as the owner says; when the owner pauses, only PRs and CI continue.
 - Releases: debug-signed preview cuts publish as pre-release by default; `v0.51.0` was published as a normal release. Release process: `docs/RELEASING.md`.

@@ -4152,8 +4152,17 @@ Getting named on a court's approved-tools list is worth more than any ad spend.
   market segment.
 - Moderation on any free-text between a child and a non-guardian adult.
 - Block paths, safety contact, escalation route.
-- **Sitter and step-parent tokens are time-boxed and revocable** by either
-  guardian unilaterally.
+- **Sitter and step-parent tokens are time-boxed and revocable.** No such token
+  exists in the shipped code (the invite routes create no access, §22.2).
+  **PLANNED, NOT BUILT (owner decision 2026-11-14; design:
+  `docs/planning/VILLAGE-WELCOME-DESIGN.md` 6.2; see §8.28).** The earlier wording,
+  "revocable by either guardian unilaterally", is replaced by **pause versus end**:
+  *either* parent can **pause** a carer at once (their access stops on every device that
+  has the news, and the person sees only "Not available right now"); **ending** needs
+  agreement (a parent may end a person they themselves welcomed; ending someone the
+  other parent welcomed needs both parents). A time box that runs out ends access by
+  itself. Neither act ever reaches a child. Until it is built, nothing in the product
+  grants or revokes any such access.
 - Threat model explicitly includes **a controlling ex using the platform for
   surveillance** and **contact in violation of a court order**. `guardianship`
   can express `restricted` and `supervised`; P3 removes the surveillance surface
@@ -5049,6 +5058,22 @@ one word per choice), **64dp** targets, read-aloud on request (a speaker reads t
 says its word; speech never starts by itself, §8.8.5), and no pressure: nothing is timed, counted or compared, and there is no "step
 1 of 7". A tap only **highlights** a face; a second, separate "That's me" commits it, so a small finger's mis-tap costs nothing.
 
+**PLANNED, NOT BUILT: how the four device roles map to the village's four kinds of person (owner decision
+2026-11-14; design: `docs/planning/VILLAGE-WELCOME-DESIGN.md` 4.2 and 6.4; see §8.28).** The role above is what a
+device calls itself; the village preset is what the family's grown-ups grant. Mapping:
+
+| `DeviceRole` | Village meaning |
+|---|---|
+| `kid` | A **child device** (never a person with a preset; it is certified by a grown-up and never sees any of this) |
+| `mom`, `dad` | The word a grown-up calls themselves. A founding grown-up is always a **Parent**; a grown-up who joins later is given a preset by the grown-ups who welcome them |
+| `other` ("Someone else") | Same as above. It is a label, not a preset: it can be a **Parent** (another guardian), a **Carer** (a trusted adult, ongoing), a **Visit** (a time-boxed carer, up to 14 days) or **View only**, chosen by the welcoming parents, never by the person |
+| (no role) | **Helper** is not a device role at all: a Helper page is a screen a parent holds up, with no key and no entry in the family's record. A person who would use it on their own phone is a Carer or Visit and goes through a welcome |
+
+A role stays a question, not authority (§8.5.0): picking Mom, Dad or Someone else grants nothing. "I was invited"
+becomes a fifth first-run choice only when the village is built. The code's `PairedRole.helper`
+(`pairing_trust.dart`) stays reserved and unused. **Nothing in this table is built**: today the only role a paired
+device can be given is "My child", and no preset exists.
+
 **The role is one word per device,** kept in the new device-scoped catalogue area `device.role` (§8.16.4). It is not a name and not
 personal data. A device wipe removes it, after which the device asks again. **A role is a question, not authority (§8.5.0):** picking
 Mom, Dad or Someone else grants nothing on any server; the guardian shell it opens is the same shell a paired guardian gets and every
@@ -5261,6 +5286,18 @@ which is harmless); the Match check is about 21 bits, one try per request, a hum
 bits so security rests on the attempt limits; real two-device mDNS verification and the external review below are
 still outstanding; the Match values come from a new key-derivation label in `cpace.dart` (`PakeKey.match`), which
 is inside the same review scope.
+
+**Addendum to the pairing spec's D1, R5 and section 7.2 (recorded 2026-11-14; the same text is in
+`docs/superpowers/specs/2026-11-08-adult-gate-and-simple-pairing-design.md`).** D1 ("a literal static family QR is
+not acceptable") and R5 ("QR is not a standing, remotely usable bearer secret") **still hold for any code that
+carries a secret or authorizes anything**. They are read to **allow a persistent QR only as non-secret public
+identity**: the pairing picture above names one device and its rendezvous handle, authorizes nothing by itself,
+and is **always followed by the PIN-based key exchange, the adult-opened window, Match and the adult's Yes**. A
+photographed picture gains nothing but a rotatable handle. Section 7.2 is unchanged: **unlock never uses a
+persistent picture**; it uses a fresh signed nonce that cannot be replayed. **PLANNED, NOT BUILT:** using the same
+introduction (never a key) to welcome a *person* rather than a device (§8.28), and any family-level use of the
+picture (it names a device, not a family; a second grown-up's phone is still a separate pairing until the family
+object exists).
 
 **NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT (owner accepted 2026-11-08).**
 
@@ -7585,6 +7622,20 @@ hardest kind to call out — which is why the product **refuses** it rather than
 leaving the other parent to absorb it. Sixteen banned constructions, including
 *"she says you…"*, which is the child used as ammunition.
 
+**PLANNED, NOT BUILT: the About Mia exception (owner decision 2026-11-14; design:
+`docs/planning/QR-VETTING-BRAINSTORM.md`, "About the child").** The planned guardian-only **About Mia** profile
+(what keeps her safe, everyday care, what helps, standing notes for hard days, medicines, health history) is the
+one place this section's second rule does not apply: its entries **persist until a parent changes them** instead
+of expiring in seven days, and each entry shows **who wrote it and when**, with a plain edit history so two parents
+can see each other's changes (both are shown when they disagree; one never silently overwrites the other). Its
+one expiring part, **Today's heads-up**, ends at midnight and is never kept as a log of her moods. What does *not*
+change: the profile is **not evidence**, sits outside the §13 tamper-evident log and the certified export, is
+never an exhibit, never carries a label or diagnosis onto any child screen, and is never visible to a child at
+all (P7 and the rule above that the child never sees a care note). The edit history is deliberately not an
+evidence log. Legal review of this exception is still open (`docs/planning/GAP-REGISTER.md`, G-38). Nothing of
+this is built: today a care note is still a care note, and the care binder (§8.19) is still the only profile-like
+screen.
+
 ### 12.6 The catch-up
 
 A parent who has not opened the app in five days got a home screen.
@@ -8109,7 +8160,7 @@ Each row is something this document or the product's own screens might lead a re
 
 **Credentials and accounts the owner would have to supply:** a LiveKit Cloud project (URL, API key and secret); a Firebase project for FCM and an Apple push key for APNs; an Android release keystore (`android/key.properties`, `RELEASE_SIGNING.md`; a release build refuses to be debug-signed). None exists in this repository, and none is fabricated.
 
-**Content and review that cannot be built by engineering alone:** a **commissioned, diverse picture and symbol set** (Material icons stand in, §8.20); **clinical and child-development review** before any pre-written text about a new partner, a family change or a person's role (§8.22.5), before any pre-written medical or explainer text (§8.19.5), and before *I need help* (clinicians and a lawyer, §8.20); and review of the Parent Learn cards' evidence labels (§8.17).
+**Content and review that cannot be built by engineering alone:** a **commissioned, diverse picture and symbol set** (Material icons stand in, §8.20); **clinical and child-development review** before any pre-written text about a new partner, a family change or a person's role (§8.22.5), before any pre-written medical or explainer text (§8.19.5; **PLANNED, not built:** the rule is lifted per care guide only after that guide is signed off by a clinician, §8.29), and before *I need help* (clinicians and a lawyer, §8.20); and review of the Parent Learn cards' evidence labels (§8.17).
 
 ---
 
@@ -8465,6 +8516,16 @@ picture story (it would need a person on the other end); capsule contents from o
 (single device, single guardian write path); anniversaries or any reminder; notifications.
 Clinical and child-development review is still required before any pre-written explainer or
 care text is considered; none is shipped.
+
+**PLANNED, NOT BUILT: how the "no medical advice" rule may be lifted (owner decision 2026-11-14).**
+The rule in §8.19.2 (the app ships no medical advice, no condition text, no pre-written explainer) **stays in
+force today and for every guide that has not been signed off.** It may be lifted **only for a care guide that a
+qualified paediatric clinician has reviewed and signed off, guide by guide** (a hands-on first-aid instructor
+as well for choking and CPR), and **never for a child screen**: a care guide is for a grown-up or a welcomed
+carer and never appears to a child. Each lifted guide carries its reviewed date and the reviewer's region.
+The drafts are `DRAFT_UNREVIEWED`, sit in `docs/care-guides/` (open PR #200) and are not in the app. See §8.29.
+The same review applies to any app-written string in the planned About Mia profile (section titles, writing
+prompts, the "follow her doctor's plan" sentence): they are pre-written text too.
 
 ## §8.20 Rhythm and Voice — suites B and C, offline and on this device (umbrella)
 
@@ -8868,7 +8929,7 @@ None holds a count, score, streak or rank (a test scans the stored shapes).
 ### 8.22.5 Not built, and why
 
 Anything between homes or that contacts a person (parked): a sitter *link* that expires, is opened
-on the sitter's phone and tells the guardian it was opened; a medicine log; a teacher's note that
+on the sitter's phone and tells the guardian it was opened (the planned way to do this is a welcome, §8.28, not a link); a medicine log; a teacher's note that
 reaches both homes; a forwarding address; shared calendars; a shared sibling canvas or game table;
 calling and sending a picture from the grandparent page; the step-parent role, invitations, scope
 and one-month review; "getting to know" cards and a first message. Printing (the page is designed
@@ -9168,3 +9229,80 @@ A synthetic multi-family harness, `scaffold/tools/family-sim/` (operator guide `
 - **Control room.** `node tools/family-sim/control-room.mjs` (127.0.0.1 only): ten family tiles, event feed, an isolation board, live charts, a virtual clock, play, pause and speed, and an offline replay of any saved `events.ndjson`.
 - **CI.** `tools/family-sim/test/isolation_ci.test.mjs` (three families, a short flow, isolation probes only, real Postgres and RLS through the in-process Api) runs in `tools/verify.sh`. The large run stays manual.
 - **What it cannot prove.** One process, one machine, loopback only; no real network, TLS, proxy or horizontal scale; compressed single-day schedules only (no DST, no midnight wrap); call and relay checks cover authorisation, not media; sign-in is the dev shortcut, not the passkey ceremony.
+
+## §8.28 Village welcome: adults approving new adults (PLANNED, NOT BUILT)
+
+**Nothing in this section is built.** It records an owner direction (2026-11-14, "go with your recommendations") so the
+spec and the code do not drift; the detail lives in `docs/planning/VILLAGE-WELCOME-DESIGN.md` (design, edge cases, test
+plan, build order W1 to W11), `docs/planning/FAMILY-IDENTITY-DESIGN.md` (the family object it needs) and
+`docs/planning/GAP-REGISTER.md` (every gap and gate). The name "Village" is already suite D (§8.22); the verb is
+*welcome*, and the formal words (ledger, tier, profile, epoch) never appear on a screen.
+
+**The rule.** A new grown-up is never in until the right grown-ups have said yes to exactly what they are being given;
+they start small; and a person who is limited is always the one who agreed to it. A scan or a code is an introduction,
+never a key (§8.5.11). A newcomer can never grant themselves trust.
+
+**What is decided (adopted, not built).**
+- Only a **parent** starts a welcome; a carer can only *suggest* one.
+- Approval follows *reach*: **Look** (read only), **Act** (writes, unlocks a tablet, reaches the child), **Parent** (equal
+  say). A new **parent** needs **all** parents, a hard floor, not a setting. A carer who can act needs all parents by
+  default, loosened to one only with a plain warning. A single-parent family needs that parent's yes plus a 72 hour hold
+  for a new parent; there is no override for an unreachable parent (a smaller welcome or a signed Standing OK covers
+  practical needs, 90 days at most).
+- Presets: **Parent**, **Parent with limits**, **Trusted carer**, **Visit** (time-boxed, up to 14 days), **View only**; and
+  the **Helper page** (below). Settle-in: 72 hours for a parent, 24 hours for a carer.
+- **A limit on a parent is an agreement, never an order**: the limited parent signs the exact list, gets a 24 hour
+  think-it-over and can tighten their own limits at any time; nobody else can change them. *Open conflict, not
+  resolved here:* §2.6 says neither parent can hide platform activity from the other, so a limit may restrict only
+  what a parent can *do*, never what they can *see*; the village design must be edited to match before it is built
+  (`GAP-REGISTER.md` G-35). §2.6 is not amended by this section.
+- **Pause** is instant for either parent; **ending** needs agreement (§15). **Caps:** 4 parents and 8 carers, 12 child devices.
+- It ships **local-first**, before server mode, because local data does not sync and the first payoff is tablets,
+  notices and the history.
+- A **Helper page** (sitter pass, grandparent corner, school summary) stays exactly what §8.22.1 says: a page a parent
+  writes and holds up, no key, no entry in the family's record. **The boundary:** the moment a page would work on the
+  helper's own phone (a link, a QR they keep, a copy that arrives) it is a Carer or Visit and goes through a welcome. A
+  "share with a link" button on these pages is a welcome in disguise and must not be built as a shortcut.
+- The device-role mapping is in §8.5.8.
+
+**What a child sees.** Nothing while a request is pending, paused, lapsed or limited: no vote, limit, PIN, error,
+reason, count or the word "welcome". After a parent releases a new grown-up they appear under the name the child already
+uses for them, through the existing label rules (§8.5.7); background roles never appear. A source test is required to
+hold that no child file mentions any of this. P3, P6, P7 and P11 stand unchanged: no location, no expense surface for a
+child, no access to the journal, no remote control.
+
+**What it depends on.** A real family object (§22.2 "Simple pairing: what is left" says a second grown-up's phone is
+still a separate pairing). Until then: no member kinds, no proposals, no profiles, no limits, no time boxes, no pause.
+**Gates before real families:** external cryptographic review of the key exchange and the family ledger, a real
+two-device run, and a usability read of the wording with real parents. No lawyer has read the limits agreement; the
+app cannot verify guardianship and an agreement signed in it is not a legal instrument.
+
+## §8.29 Care guides, and the About Mia profile (PLANNED, NOT BUILT)
+
+**Nothing in this section is built, and no medical text is in the app.** The rule in §8.19.2 stays in force (§8.19.5
+records how it may be lifted, guide by guide). Planning: `docs/planning/QR-VETTING-BRAINSTORM.md`, the drafts and the
+clinician packet in `docs/care-guides/` (open PR #200), `docs/care-guides/CLINICIAN-COVER-LETTER.md` and
+`docs/planning/GAP-REGISTER.md`.
+
+**Care guides (adopted, not built).** A sourced, offline library for a grown-up or welcomed carer: what to do and who
+to call in minor and major events (pilot drafts: a bump to the head, choking, a high fever, making the home safe, who to
+call and what to say). The section is named **"Care guides"**. Rules: every step, threshold and number traces to an
+authoritative page that was opened and read, or it is left out and listed; disagreements between authorities are shown,
+with the most cautious defensible reading flagged; emergency steps first; no medicine doses; **status
+`DRAFT_UNREVIEWED` until a qualified paediatric clinician (and a first-aid instructor for choking and CPR) signs off,
+guide by guide; that sign-off is a hard gate**. US first, with other countries' numbers noted for later; the right
+number for the place needs a grown-up-chosen region, because the product has no location (P3). The library ships on the
+device with a visible *last reviewed* date; updates ride app releases. **Never on a child screen.**
+
+**About Mia (adopted, not built).** A guardian-only, on-device, sealed profile that grows the care binder (§8.19) rather
+than replacing its data: what keeps her safe, everyday care, what helps, standing notes for hard days, **Today's
+heads-up** (ends at midnight, never logged), medicines (the existing log and double-dose guard), health history and
+moods (parents only, locked by default). Parents write every word; the app advises nothing, computes no dose and
+interprets no diagnosis. A "For Mia" strip shows what a parent wrote beside the matching generic guide, labelled with who
+wrote it and when, with the sentence that her doctor's plan wins over any guide (that sentence needs clinician review like
+the guides). All parents can read and edit; a teen from 13 sees "My health sheet" and agrees before anything private is
+shared. The exception to the care-note rule is in §12.5. **Never visible to a child, at any age.** The profile needs a new
+sealed area in the on-device catalogue (§8.16.4), exclusion from the court export and wipe on "forget this child".
+
+**Not verified or open:** counsel's view of the §12.5 exception; any region's rules on health information about a child;
+whether the guides' authorities have changed since they were read (each draft records its research date).
