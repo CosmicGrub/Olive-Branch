@@ -14,7 +14,7 @@ let out;
 try {
   // 0047: health_check reads through the aggregate-only health_counts(), so the
   // counts are true for any caller under FORCE RLS; no app.role is declared.
-  out = execFileSync(cmd, [...args,'-q','-t','-A','-F','\u0001','-c', '-c',
+  out = execFileSync(cmd, [...args,'-q','-t','-A','-F','\u0001','-c',
     'SELECT check_name, severity, observed, threshold, meaning FROM health_check ORDER BY severity, check_name;'],
     { encoding:'utf8' });
 } catch (e) { console.error('ABORT: cannot query health_check'); process.exit(2); }
