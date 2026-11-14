@@ -408,6 +408,33 @@ const intent = (o) => ({
     onDisk.gate.length > 10 && onDisk.materialize.length > 25 && onDisk.nextReachableWindow.length > 8, true);
 }
 
+// ---- at_daypart is independent of the hour 'now' falls in -------------------------------------
+// A bedtime that STRAIGHT-CROSSES the child's local midnight (23:50 -> 00:20) is a legal row
+// (0042's day_part_no_overlap models it). Banking for it must succeed at every UTC minute of a
+// day in every zone, including the ten minutes before local midnight (the CI failure of
+// 2026-11-14, 'daypart_undefined' for a Stockholm child at ~21:56Z, came from a SEEDER that
+// dropped such a part; the engine was correct and this pins that).
+{
+  const midnightBedtime = { kind: 'bedtime', startsLocal: '23:50', endsLocal: '00:20', daysOfWeek: ALL, reachable: true };
+  const ZONES = ['Europe/Stockholm', 'America/New_York', 'America/Chicago', 'Asia/Tokyo', 'Pacific/Auckland'];
+  for (const tz of ZONES) {
+    const failures = [];
+    for (let m = 0; m < 1440; m++) {
+      const now = DateTime.utc(2026, 11, 14, 0, 0).plus({ minutes: m });
+      const r = materialize(
+        { id: 'p', childId: 'c', state: 'pending', policy: 'at_daypart', targetDaypart: 'bedtime',
+          expiresAt: now.plus({ days: 97 }).toISO() },
+        { homeTz: tz, tzIntervals: [], dayParts: [midnightBedtime] }, now);
+      if (!r.ok) failures.push(`${now.toFormat('HH:mm')}Z:${r.reason}`);
+      else if (r.scheduledAt.setZone(tz).toFormat('HH:mm') !== '23:50') failures.push(`${now.toFormat('HH:mm')}Z:wrong`);
+      else if (r.scheduledAt < now.minus({ minutes: PAST_GRACE_MINUTES }) || r.scheduledAt > now.plus({ hours: 25 }))
+        failures.push(`${now.toFormat('HH:mm')}Z:far`);
+    }
+    check('at_daypart wall-clock independence',
+      `${tz}: a midnight-crossing bedtime resolves at every UTC minute of the day`, failures.slice(0, 3).join(' ') || 'none', 'none');
+  }
+}
+
 let g = '';
 for (const r of rows) {
   if (r.group !== g) { g = r.group; console.log(`\n${g}`); }
