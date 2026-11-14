@@ -62,6 +62,7 @@ import 'call_screen.dart';
 import 'child_home_bands.dart';
 import 'child_home_bands_ui.dart';
 import 'child_home_growth.dart';
+import 'child_home_t13.dart';
 import 'child_more.dart';
 import 'colouring_screen.dart';
 import 'contact_labels.dart';
@@ -91,6 +92,7 @@ import 'my_day.dart';
 import 'play_window_gate.dart';
 import 'showcase_screen.dart';
 import 'storyteller_screen.dart';
+import 'teen_store.dart';
 import 'tiered_tile.dart';
 import 'wants_needs.dart';
 import 'weeks_screen.dart';
@@ -100,7 +102,7 @@ class ChildHome extends StatelessWidget {
     required this.sleepsUntilHandover, required this.unreadCount,
     this.baseUrl, this.childId, this.sessionToken, this.httpClient,
     this.childAge = 7, this.overrides, this.dayParts, this.guardianName,
-    this.family, this.speak, this.growth, this.clock, this.nicknames});
+    this.family, this.speak, this.growth, this.clock, this.nicknames, this.teenRepository, this.handoverPurge});
 
   final String childName;
   final ParentPresence? presence;
@@ -168,6 +170,13 @@ class ChildHome extends StatelessWidget {
 
   /// Hers (the only writer of what she calls her grown-ups). Null = this device's own store.
   final NicknameRepository? nicknames;
+
+  /// Wave 2b: her own calendar, free times, asks and handover choice (13 and up). Null = this device's own store.
+  final TeenRepository? teenRepository;
+
+  /// Removes this tablet's copy of her data 30 days after she took and went, once her own copy is saved and checked.
+  /// Null = only a live build removes anything (see [_purge]); a demo build never does.
+  final Future<void> Function()? handoverPurge;
   bool _fam(String tile) => family == null || family!.view.hasTile(tile);
   String get _greeting => family?.view.plainGreeting == true ? 'Hey $childName' : 'Hi $childName';
 
@@ -205,7 +214,19 @@ class ChildHome extends StatelessWidget {
   String? get _bandHomeBand {
     final FamilyChildSnapshot? f = family;
     if (f == null) return null;
-    return kBandsDrawnHere.contains(f.view.band) ? f.view.band : null;
+    final String band = protoBand(f.view.band);
+    return kBandsDrawnHere.contains(band) ? band : null;
+  }
+
+  /// The 13 to 17 shell: routes its tiles and holds the Today and handover cards (child_home_t13.dart).
+  TeenShell get _teen => TeenShell(
+        childName: childName, age: childAge, birthday: family?.birthday, repository: teenRepository, clock: clock);
+
+  /// The removal after take and go runs only when handed in, or in a live build (never in the demo).
+  Future<void> Function()? get _purge {
+    if (handoverPurge != null) return handoverPurge;
+    if (!LocalServices.current.isLive) return null;
+    return () => LocalServices.current.forgetChild(LocalServices.current.childId);
   }
 
   /// Tile ids a guardian hid with a switch (Messages is never one of them).
@@ -232,6 +253,10 @@ class ChildHome extends StatelessWidget {
 
   /// Where each band-home tile goes. Null = no destination (the tile is not drawn anywhere).
   Widget? _bandDestination(BuildContext context, String id, FamilyChildSnapshot f, String band) {
+    if (band == 't1317') {
+      final Widget? t = _teen.tile(context, id);
+      if (t != null) return t;
+    }
     switch (id) {
       case 'day':
         return MyDayScreen(
@@ -310,6 +335,7 @@ class ChildHome extends StatelessWidget {
         destination: (BuildContext c, String id) => _bandDestination(c, id, f, band),
         speak: null,
         extras: <BandMoreExtra>[
+          if (band == 't1317') ..._teen.moreExtras(),
           // The prototype's 8-12 home has no My day tile (it has the weeks strip), but My day shipped and carries her
           // real day parts: it stays one tap away, here.
           if (band == 't812' && _fam('myDay'))
@@ -338,7 +364,9 @@ class ChildHome extends StatelessWidget {
       destination: (BuildContext x, String id) => _bandDestination(x, id, f, band),
       unreadDot: unreadCount > 0, clock: clock,
       presence: presence == null ? null : _PresenceCard(presence!, childName: childName),
-      footer: sleepsUntilHandover == null ? null : _Sleeps(sleepsUntilHandover!),
+      // Sleeps fade at 11 (§21.5): the 13 to 17 home counts nothing for her.
+      footer: sleepsUntilHandover == null || band == 't1317' ? null : _Sleeps(sleepsUntilHandover!),
+      today: band == 't1317' ? _teen.today(now: (clock ?? DateTime.now)(), purge: _purge) : null,
       birthdayLine: (f.birthday?.lineShown ?? false) ? birthdayLine(f.birthday!) : null,
       onBirthday: f.birthday == null ? null : () => unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) => BirthdayScreen(birthday: f.birthday!)))),
@@ -356,7 +384,11 @@ class ChildHome extends StatelessWidget {
   Widget _growPage(BuildContext context, FamilyChildSnapshot f, String band, ChildGrowth g, GrowthMark m) {
     final GrowPage page = kGrowPages[m.key]!;
     final String? tileId = kGrowDestTile[page.dest];
-    final bool exists = tileId != null && kTilesWithDestination.contains(tileId) && _bandDestination(context, tileId, f, band) != null;
+    // A page's button opens a tile when its destination is one, else one of the teen shell's own screens
+    // (free times, her copy, her choices at 18); a page with neither is a plain Okay.
+    final bool isTile = tileId != null && kTilesWithDestination.contains(tileId);
+    final Widget? other = isTile ? null : _teen.grow(context, page.dest);
+    final bool exists = isTile ? _bandDestination(context, tileId, f, band) != null : other != null;
     final GrownupLabels labels = GrownupLabelScope.read(context);
     return ChildGrowScreen(
       page: page, destinationExists: exists, speak: speak,
@@ -365,7 +397,7 @@ class ChildHome extends StatelessWidget {
       onShow: () async {
         await g.markSeen();
         if (!context.mounted || !exists) return;
-        final Widget? to = _bandDestination(context, tileId, f, band);
+        final Widget? to = isTile ? _bandDestination(context, tileId, f, band) : other;
         if (to != null) unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => to)));
       },
     );

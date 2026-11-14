@@ -165,8 +165,9 @@ class HomeLayout {
   List<String> get all => <String>[...hero, ...strip, ...featured, ...standard];
 }
 
-/// The four homes. t34 is AgeHome34 (family_structure_screens.dart) and t1317 is wave 2b, both listed here so
-/// the vector covers every band; [kBandsDrawnHere] says which ones child_home_bands_ui.dart draws.
+/// The four homes. t34 is AgeHome34 (family_structure_screens.dart); t57, t812 and t1317 are drawn from this table by
+/// child_home_bands_ui.dart. All four are listed so the vector covers every band; [kBandsDrawnHere] says which ones
+/// BandHome draws.
 const Map<String, HomeLayout> kHomeLayout = <String, HomeLayout>{
   't34': HomeLayout(standard: <String>['people', 'stories', 'colour']),
   't57': HomeLayout(
@@ -179,15 +180,15 @@ const Map<String, HomeLayout> kHomeLayout = <String, HomeLayout>{
     featured: <String>['msgs', 'cal'], standard: <String>['journal', 'draw', 'people', 'ladder', 'privacy', 'more']),
 };
 
-/// The bands whose home this client draws from the table (2a). t34 keeps AgeHome34; t1317 is wave 2b.
-const Set<String> kBandsDrawnHere = <String>{'t57', 't812'};
+/// The bands whose home this client draws from the table (2a: t57 and t812; 2b: t1317). t34 keeps AgeHome34.
+const Set<String> kBandsDrawnHere = <String>{'t57', 't812', 't1317'};
 
 /// The tiles whose destination exists in this client today. A tile without one never appears (it would be a
-/// dead end). Wave 6 adds cal and privacy; the grown-up door is a separate row; Feelings and My things have
-/// no screen of their own yet.
+/// dead end). Wave 2b adds cal (her own calendar) and privacy (what her grown-ups can see); the grown-up door is a
+/// separate row; Feelings and My things have no screen of their own yet.
 const Set<String> kTilesWithDestination = <String>{
   'people', 'stories', 'colour', 'day', 'play', 'msgs', 'showtell', 'more', 'list', 'weeks', 'journal',
-  'memory', 'capsule', 'growth', 'jokes', 'draw', 'storyteller', 'birthday', 'ladder',
+  'memory', 'capsule', 'growth', 'jokes', 'draw', 'storyteller', 'birthday', 'ladder', 'cal', 'privacy',
 };
 
 /// The prototype's tile id -> the key the family structure's ChildView.tiles uses (family_structure_logic).
@@ -206,8 +207,10 @@ const Map<String, String> kTileOverrideKey = <String, String>{
 /// Messages is never hideable, by any switch, in any band.
 bool tileHideable(String id) => id != 'msgs';
 
-/// Her band for the home, in the prototype's four bands. The client's own 't13' (13 and up) is the
-/// prototype's t1317; this client has no 18 handover band yet (wave 2b decides).
+/// Her band for the home, in the prototype's four bands. The client's own 't13' (13 and up) is the prototype's t1317.
+/// The split at 18 is by AGE, not by band id (wave 2b): from 18 the same t1317 home carries the handover card
+/// (child_home_t13.dart), exactly as the prototype, where 18 is a handover and not a fifth band. Nothing stored under
+/// 't13' changes.
 String protoBand(String clientBand) => clientBand == 't13' ? 't1317' : clientBand;
 
 /// The band's layout for her age: at 13 the Downtime (Play) tile shows in the Standard row and from 14 it

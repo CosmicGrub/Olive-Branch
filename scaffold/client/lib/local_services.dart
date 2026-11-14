@@ -93,6 +93,12 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'Which growing-up steps she has reached and which she has already been told about. '
           'Only ever grows; nothing is taken back.'),
   LocalDataEntry(
+      area: 'teen', scope: LocalScope.child, encrypted: true, maxBytes: 1 * _mib,
+      what: 'Her own calendar events and who she chose to show each one to, the free times she published, the '
+          'asks a grown-up made and what she answered, her choice at eighteen and whether her copy was saved, '
+          'what she offered and what a grown-up asked for when staying in touch, and the notes a grown-up wrote '
+          'for her birthday. Sealed on the device; never uploaded; no count, score or place.'),
+  LocalDataEntry(
       area: 'colour', scope: LocalScope.child,
       what: 'Colour of the day for this device: the last two weeks of colour days (only the '
           'latest is ever used or shown; older ones are dropped), the art style, and the play '

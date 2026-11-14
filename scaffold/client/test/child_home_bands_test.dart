@@ -146,18 +146,30 @@ void main() {
   });
 
   group('tiles appear only if their destination exists', () {
-    test('cal, privacy, feel, shelf and the grown-up door have none yet, so no home or More page draws them', () {
-      for (final String id in <String>['cal', 'privacy', 'feel', 'shelf', 'grownup']) {
+    test('feel, shelf and the grown-up door have none yet, so no home or More page draws them', () {
+      for (final String id in <String>['feel', 'shelf', 'grownup']) {
         expect(kTilesWithDestination.contains(id), isFalse, reason: id);
       }
       for (final String b in kBandSet.keys) {
         for (int age in <int>[5, 8, 13, 14]) {
           final List<String> shown = visibleHomeIds(b, age);
-          for (final String id in <String>['cal', 'privacy', 'feel', 'shelf', 'grownup']) {
+          for (final String id in <String>['feel', 'shelf', 'grownup']) {
             expect(shown, isNot(contains(id)), reason: '$id in $b');
           }
         }
       }
+    });
+
+    test('wave 2b: cal and privacy have destinations now, and only the 13 to 17 home carries them', () {
+      for (final String id in <String>['cal', 'privacy']) {
+        expect(kTilesWithDestination.contains(id), isTrue, reason: id);
+      }
+      for (final String b in <String>['t34', 't57', 't812']) {
+        for (final String id in <String>['cal', 'privacy']) {
+          expect(visibleHomeIds(b, 9), isNot(contains(id)), reason: '$id in $b');
+        }
+      }
+      expect(visibleHomeIds('t1317', 15), containsAll(<String>['cal', 'privacy', 'journal', 'ladder']));
     });
 
     test('a family structure switch removes a tile (Play when the games area is off), and only that tile', () {

@@ -192,13 +192,14 @@ void main() {
       expect(find.byKey(const Key('bandTile.weeks')), findsOneWidget);
     });
 
-    testWidgets('13 and up keeps the older home until wave 2b (the table says which bands it draws)', (WidgetTester t) async {
+    testWidgets('13 and up is drawn from the table too since wave 2b (t1317), never as the 8-12 or 5-7 home', (WidgetTester t) async {
       await big(t);
       await t.pumpWidget(app(kidHome(await snap(years: 14), years: 14), years: 14));
       await t.pumpAndSettle();
       expect(find.byKey(const Key('bandHome.t812')), findsNothing);
       expect(find.byKey(const Key('bandHome.t57')), findsNothing);
-      expect(kBandsDrawnHere, <String>{'t57', 't812'});
+      expect(find.byKey(const Key('bandHome.t1317')), findsOneWidget);
+      expect(kBandsDrawnHere, <String>{'t57', 't812', 't1317'});
     });
   });
 
@@ -404,7 +405,7 @@ void main() {
       expect(find.textContaining('Mom and Dad'), findsNothing);
     });
 
-    testWidgets('the 13 page is plain, says nobody else is told, and has no button for a screen that does not exist yet', (WidgetTester t) async {
+    testWidgets('the 13 page is plain, says nobody else is told, and its button opens Privacy (wave 2b built it)', (WidgetTester t) async {
       await big(t, const Size(800, 3000));
       final ChildGrowth g = await grown(12, 13);
       await t.pumpWidget(app(kidHome(await snap(years: 13), years: 13, growth: g), years: 13));
@@ -412,10 +413,10 @@ void main() {
       expect(t.widget<Text>(find.byKey(const Key('growEyebrow'))).data, 'You are 13');
       expect(find.byKey(const Key('growScene')), findsNothing);
       expect(find.byKey(const Key('growTeenNote')), findsOneWidget);
-      expect(find.byKey(const Key('growShow')), findsNothing, reason: 'Privacy has no screen yet');
-      await t.tap(find.byKey(const Key('growOkay')));
+      expect(find.byKey(const Key('growOkay')), findsNothing, reason: 'Privacy has a screen now');
+      await t.tap(find.byKey(const Key('growShow')));
       await t.pumpAndSettle();
-      expect(find.byKey(const Key('growPage')), findsNothing);
+      expect(find.byKey(const Key('teenPrivacy')), findsOneWidget);
     });
 
     testWidgets('with no growth state the home is drawn as it always was (older callers)', (WidgetTester t) async {
