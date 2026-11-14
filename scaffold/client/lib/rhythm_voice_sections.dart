@@ -74,7 +74,7 @@ class _RhythmVoiceSectionsState extends State<RhythmVoiceSections> {
     if (l == null) return const SizedBox.shrink();
     final RhythmVoiceTiles t = tilesFor(
       view: widget.family?.view, yearsOld: widget.yearsOld,
-      rhythmOn: l.rhythm.suiteOn, voiceOn: l.voice.suiteOn, twoHomesSetting: l.rhythm.twoHomes,
+      rhythmOn: l.rhythm.suiteOn, voiceOn: l.voice.suiteOn, feelingsOn: l.voice.feelingsOn, twoHomesSetting: l.rhythm.twoHomes,
       routine: l.rhythm.routine, board: l.rhythm.board, packing: l.rhythm.packing,
       place: l.place, helpers: l.voice.helpers,
     );

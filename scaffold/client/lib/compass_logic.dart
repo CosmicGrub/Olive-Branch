@@ -74,45 +74,74 @@ String? optionLabel(String id) {
   return null;
 }
 
+/// The longest free-text answer, in characters.
+const int maxCompassWords = 280;
+
+/// Trimmed, whitespace-collapsed, control characters dropped, capped.
+String cleanCompassWords(String raw) {
+  final String t = raw.replaceAll(RegExp(r'[\x00-\x1F\x7F]+'), ' ').replaceAll(RegExp(r' {2,}'), ' ').trim();
+  return t.length <= maxCompassWords ? t : t.substring(0, maxCompassWords).trimRight();
+}
+
 /// A guardian's answers. Any number may be chosen, none is fine. Unknown ids are
 /// dropped on the way in, never kept.
 class CompassAnswers {
-  const CompassAnswers({this.who = const <String>{}, this.needs = const <String>{}});
+  const CompassAnswers({
+    this.who = const <String>{}, this.needs = const <String>{}, this.whoWords = '', this.needsWords = '',
+  });
   final Set<String> who;
   final Set<String> needs;
 
-  bool get isEmpty => who.isEmpty && needs.isEmpty;
+  /// The prototype's two free-text answers, one per question, in a guardian's own
+  /// words. Optional, at most [maxCompassWords] characters, kept only in the sealed
+  /// guardian-only area. They are NOT read by [suggest]: only the ticked options
+  /// shape suggestions, so nothing a guardian types is ever interpreted.
+  final String whoWords;
+  final String needsWords;
+
+  bool get isEmpty => who.isEmpty && needs.isEmpty && whoWords.isEmpty && needsWords.isEmpty;
   Set<String> get all => <String>{...who, ...needs};
 
   CompassAnswers withWho(String id, bool on) => !_whoIds.contains(id)
       ? this
-      : CompassAnswers(who: on ? <String>{...who, id} : (<String>{...who}..remove(id)), needs: needs);
+      : copyWith(who: on ? <String>{...who, id} : (<String>{...who}..remove(id)));
 
   CompassAnswers withNeed(String id, bool on) => !_needIds.contains(id)
       ? this
-      : CompassAnswers(who: who, needs: on ? <String>{...needs, id} : (<String>{...needs}..remove(id)));
+      : copyWith(needs: on ? <String>{...needs, id} : (<String>{...needs}..remove(id)));
+
+  CompassAnswers copyWith({Set<String>? who, Set<String>? needs, String? whoWords, String? needsWords}) => CompassAnswers(
+      who: who ?? this.who, needs: needs ?? this.needs,
+      whoWords: whoWords == null ? this.whoWords : cleanCompassWords(whoWords),
+      needsWords: needsWords == null ? this.needsWords : cleanCompassWords(needsWords));
 
   /// Stored in the table's own order so the document is the same however the
   /// answers were ticked.
   Map<String, Object?> toJson() => <String, Object?>{
         'who': <String>[for (final CompassOption o in compassWhoOptions) if (who.contains(o.id)) o.id],
         'needs': <String>[for (final CompassOption o in compassNeedsOptions) if (needs.contains(o.id)) o.id],
+        if (whoWords.isNotEmpty) 'whoWords': whoWords,
+        if (needsWords.isNotEmpty) 'needsWords': needsWords,
       };
 
   static CompassAnswers fromJson(Object? j) {
     if (j is! Map) return const CompassAnswers();
     Set<String> pick(Object? raw, Set<String> known) =>
         raw is List ? <String>{for (final Object? x in raw) if (x is String && known.contains(x)) x} : <String>{};
-    return CompassAnswers(who: pick(j['who'], _whoIds), needs: pick(j['needs'], _needIds));
+    return CompassAnswers(
+        who: pick(j['who'], _whoIds), needs: pick(j['needs'], _needIds),
+        whoWords: j['whoWords'] is String ? cleanCompassWords(j['whoWords']! as String) : '',
+        needsWords: j['needsWords'] is String ? cleanCompassWords(j['needsWords']! as String) : '');
   }
 
   @override
   bool operator ==(Object other) =>
       other is CompassAnswers && other.who.length == who.length && other.needs.length == needs.length &&
-      other.who.containsAll(who) && other.needs.containsAll(needs);
+      other.who.containsAll(who) && other.needs.containsAll(needs) && other.whoWords == whoWords &&
+      other.needsWords == needsWords;
 
   @override
-  int get hashCode => Object.hash(Object.hashAllUnordered(who), Object.hashAllUnordered(needs));
+  int get hashCode => Object.hash(Object.hashAllUnordered(who), Object.hashAllUnordered(needs), whoWords, needsWords);
 }
 
 // ================================================================= rules =====

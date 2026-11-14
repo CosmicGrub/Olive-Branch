@@ -619,6 +619,15 @@ class _SensoryEditorState extends State<SensoryEditorScreen> with _Reporter<Sens
               subtitle: const Text('Pages simply change'), onChanged: (bool v) => _set(_p.copyWith(reduceMotion: v))),
           SwitchListTile(key: const Key('sensoryHaptics'), value: _p.hapticsOff, title: const Text('No buzzing'),
               onChanged: (bool v) => _set(_p.copyWith(hapticsOff: v))),
+          const SizedBox(height: 12),
+          Text('Things worth a quiet warning', style: Theme.of(context).textTheme.titleMedium),
+          const Text('Her tablet adds a gentle heads-up on a new-place walk-through. This is about places and moments, never about her; nothing here is shown to her as a label.',
+              key: Key('headsUpNote')),
+          for (final HeadsUp h in headsUps)
+            SwitchListTile(
+              key: Key('headsUp_${h.id}'), value: _p.headsUp.contains(h.id), title: Text(h.label), subtitle: Text(h.does),
+              onChanged: (bool v) => _set(_p.withHeadsUp(h.id, v)),
+            ),
           const ListTile(key: Key('sensoryFlash'), leading: Icon(Icons.flash_off_outlined), title: Text('No flashing, ever'),
               subtitle: Text('This is always so.')),
           Text('Brightest the app may be', style: Theme.of(context).textTheme.titleMedium),
@@ -647,11 +656,12 @@ class VoiceGuardianHubScreen extends StatefulWidget {
 
 class _VoiceGuardianHubState extends State<VoiceGuardianHubScreen> with _Reporter<VoiceGuardianHubScreen> {
   bool _on = false; // off until a guardian turns it on
+  bool _feelings = true;
   @override
   void initState() {
     super.initState();
     widget.service.loadVoice(widget.principal).then((VoiceDoc d) {
-      if (mounted) setState(() => _on = d.suiteOn);
+      if (mounted) setState(() { _on = d.suiteOn; _feelings = d.feelingsOn; });
     }).catchError((Object _) {});
   }
 
@@ -672,6 +682,16 @@ class _VoiceGuardianHubState extends State<VoiceGuardianHubScreen> with _Reporte
         onChanged: (bool v) async {
           final RvResult r = await s.setVoiceSuite(p, v);
           if (r.ok) setState(() => _on = v);
+          report(r);
+        },
+      ),
+      SwitchListTile(
+        key: const Key('voiceFeelings'), value: _feelings, title: Text('Feelings check-in on $n\'s tablet'),
+        subtitle: const Text('She can tell her tablet how she feels. Her answers belong to her. You will never see them, '
+            'and nothing is sent to anyone.'),
+        onChanged: (bool v) async {
+          final RvResult r = await s.setFeelingsCheckIn(p, v);
+          if (r.ok) setState(() => _feelings = v);
           report(r);
         },
       ),

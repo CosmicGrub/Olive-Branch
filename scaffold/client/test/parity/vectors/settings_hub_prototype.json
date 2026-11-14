@@ -8,7 +8,7 @@
     {"proto": "grd.s.band", "group": "Her", "order": 13, "title": "Age band", "flutter": "age"},
     {"proto": "grd.s.access", "group": "Her", "order": 14, "title": "Accessibility for her device", "flutter": "access"},
     {"proto": "grd.s.play", "group": "Her", "order": 15, "title": "Play window and daily time", "flutter": "window"},
-    {"proto": "grd.s.suites", "group": "Her", "order": 16, "title": "Her suites", "flutter": null, "why": "Flutter has no single 'Her suites' screen: the four suites are separate rows (Routine and rhythm, Her voice, Village, Family compass) placed after Play window, in the Her group."},
+    {"proto": "grd.s.suites", "group": "Her", "order": 16, "title": "Her suites", "flutter": "suites"},
     {"proto": "sh.devices", "group": "Family", "order": 10, "title": "Paired devices", "flutter": "devices"},
     {"proto": "sh.add", "group": "Family", "order": 11, "title": "Add {child}’s tablet", "flutter": "addtablet"},
     {"proto": "grd.s.family", "group": "Family", "order": 12, "title": "Family structure", "flutter": "family"},

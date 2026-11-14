@@ -3537,17 +3537,17 @@
   "module": "mod-guardian.js",
   "line": 1310,
   "what": "Settings row Her / Her suites, sub shows how many suites are on her shelf, opens g-suites.",
-  "flutter": "guardian_more.dart :: SettingsRow id 'compass' (group Family, 'Family compass') -> CompassHubScreen / SuitesShelfScreen",
-  "status": "partial",
+  "flutter": "guardian_more.dart :: SettingsRow id 'suites' ('Her suites') -> her_suites_screen.dart :: HerSuitesScreen",
+  "status": "built",
   "look": "",
-  "behaviour": "Wave 3: the four suites (Routine and rhythm, Her voice, Village, Family compass) are now in the Her group after Play window; there is still no single 'Her suites' screen with an On her shelf chip.",
+  "behaviour": "Wave 7: one 'Her suites' row in the Her group; its page lists the six suites with an On her shelf / Off chip and the count of suites on her shelf. The four on-device suite rows remain beside it.",
   "audience": "guardian",
   "mode": "offline",
   "size": "S",
   "dependsOn": [
    "g-suites"
   ],
-  "certainty": "uncertain"
+  "certainty": "confirmed"
  },
  {
   "n": 180,
@@ -3614,17 +3614,17 @@
   "module": "mod-guardian.js",
   "line": 1267,
   "what": "Her suites hub: six rows (Rhythm, Voice, Growing, Care, Village, Compass) each with On her shelf / Off chip.",
-  "flutter": "guardian_more.dart :: SettingsRow list (rhythm, voice, village, compass, growing, care); compass_screens.dart :: SuitesShelfScreen",
-  "status": "differs",
+  "flutter": "her_suites_screen.dart :: HerSuitesScreen (six rows, On her shelf / Off chip, one switch each); compass_repositories.dart :: CompassService.shelf/setSuite",
+  "status": "built",
   "look": "No single 'Her suites' list; Flutter spreads suites over separate settings rows and a Suites shelf screen inside Compass. No On/Off chips on the rows.",
-  "behaviour": "Flutter shelf switches live in SuitesShelfScreen and per-suite 'Show on her device' switches; proto has one switch per suite on both its page and the shelf (same state).",
+  "behaviour": "Wave 7: the six suites in the prototype's order, each switch is the suite's own (shared with the Compass shelf and each suite page). Compass has no shelf switch: it is a guardian-only page, its chip says 'For you'. Each row also says 'Kept on this device' (no second device to wait for).",
   "audience": "guardian",
   "mode": "offline",
   "size": "M",
   "dependsOn": [
    "g-s-compass"
   ],
-  "certainty": "verified"
+  "certainty": "confirmed"
  },
  {
   "n": 184,
@@ -3634,17 +3634,17 @@
   "module": "mod-guardian.js",
   "line": 1270,
   "what": "Rhythm suite: shelf switch, daily routine steps (time optional), first-then pairs, packing buddy, new place stories, sensory profile (5 flags).",
-  "flutter": "rhythm_voice_guardian_screens.dart :: RhythmGuardianHubScreen, RoutineEditorScreen, FirstThenEditorScreen, PackingEditorScreen, NewPlaceEditorScreen, SensoryEditorScreen",
+  "flutter": "rhythm_voice_guardian_screens.dart :: SensoryEditorScreen (sound, motion, buzzing, brightness, plus the five quiet-warning flags); rhythm_screens.dart :: NewPlaceScreen heads-up",
   "status": "built",
   "look": "Flutter editors use picture choosers and photo rooms; sensory page is sound level, no motion, no buzzing, no flashing, brightness cap rather than the proto's five yes/no flags (loud, bright, scratchy, crowds, surprises).",
-  "behaviour": "Sensory model differs: Flutter describes the app on her device, not her; proto flags describe her sensitivities with a 'needs review' tag. Flutter adds 'two homes' setting.",
+  "behaviour": "Wave 7: the prototype's five flags (loud, bright, scratchy, crowds, surprises) are now switches under 'Things worth a quiet warning'; her new-place walk shows one soft line per flag on. Flutter's app-describing settings stay (sound level, no motion, no buzzing, brightness cap). No 'needs review' tag: nothing is a diagnosis.",
   "audience": "guardian",
   "mode": "offline",
   "size": "S",
   "dependsOn": [
    "authored-content/publish"
   ],
-  "certainty": "verified"
+  "certainty": "confirmed"
  },
  {
   "n": 185,
@@ -3654,15 +3654,15 @@
   "module": "mod-guardian.js",
   "line": 1270,
   "what": "Voice suite: my helpers, symbols, feelings check-in on/off.",
-  "flutter": "rhythm_voice_guardian_screens.dart :: VoiceGuardianHubScreen, HelpersEditorScreen, SymbolsEditorScreen, SharedWorriesScreen",
-  "status": "partial",
+  "flutter": "rhythm_voice_guardian_screens.dart :: VoiceGuardianHubScreen 'voiceFeelings' switch; rhythm_voice_gate.dart :: tilesFor(feelingsOn)",
+  "status": "built",
   "look": "Flutter adds 'Worries she chose to show you' row; no feelings check-in toggle row.",
-  "behaviour": "Feelings weather and worry box are hers and unreadable by guardians (P-compliant); Flutter has no guardian switch to turn feelings check-in on/off. Helpers need a 'they have said yes' tick, symbols capped at 8 extra, proto uses free name/job pairs.",
+  "behaviour": "Wave 7: guardian switch 'Feelings check-in on her tablet' (default on): off removes only 'The sky in me' from her side; the worry box is hers and untouched; a guardian still cannot read her weather. Helpers 'they have said yes' tick is not built (helpers are picture cards).",
   "audience": "guardian",
   "mode": "offline",
   "size": "S",
   "dependsOn": [],
-  "certainty": "verified"
+  "certainty": "confirmed"
  },
  {
   "n": 186,
@@ -3726,15 +3726,15 @@
   "module": "mod-guardian.js",
   "line": 1270,
   "what": "Compass suite: two free-text gentle questions, suites shelf with switches, Profiles (Deaf or hard of hearing, Away from home).",
-  "flutter": "compass_screens.dart :: CompassHubScreen, CompassQuestionScreen, CompassSuggestScreen, SuitesShelfScreen, ProfilesScreen; compass_logic.dart :: deafProfile, awayProfile",
-  "status": "differs",
+  "flutter": "compass_screens.dart :: CompassQuestionScreen (chips plus an optional free-text answer), CompassHubScreen, SuitesShelfScreen, ProfilesScreen; compass_logic.dart :: CompassAnswers.whoWords/needsWords",
+  "status": "built",
   "look": "Flutter questions are chip choices ('Who is in her life', 'What would help her'), plus a Suggestions screen; proto questions are two free-text answers.",
-  "behaviour": "Profiles exist with different names ('Alerts she can see', 'Device used in another home') and apply preset accessibility defaults; captions not promised in both. Shelf is built.",
+  "behaviour": "Wave 7: each of the two questions now also takes an optional free-text answer (280 characters, guardian-only, sealed, never read by the suggestions). Chips, Suggestions and the shelf stay; profile names differ from the prototype's on purpose.",
   "audience": "guardian",
   "mode": "offline",
   "size": "M",
   "dependsOn": [],
-  "certainty": "verified"
+  "certainty": "confirmed"
  },
  {
   "n": 190,

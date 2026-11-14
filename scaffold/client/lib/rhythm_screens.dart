@@ -483,7 +483,15 @@ class _NewPlaceScreenState extends State<_NewPlaceScreenView> {
   Widget _walk(BuildContext context, PlacePlan p) {
     final Speak? speak = SensoryScope.speakFor(context, widget.speak);
     final bool onPlan = _at >= p.stops.length;
+    final List<String> headsUp = SensoryScope.of(context).headsUp;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+      if (headsUp.isNotEmpty && _at == 0)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(key: const Key('placeHeadsUp'), crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+            for (final String line in headsUp) QuietNote(line, icon: Icons.info_outline),
+          ]),
+        ),
       if (onPlan)
         Container(
           key: const Key('placePlan'),

@@ -512,10 +512,16 @@ class SensoryProfile {
     this.reduceMotion = false,
     this.hapticsOff = false,
     this.brightnessCeiling = 100,
+    this.headsUp = const <String>{},
   });
   final SoundLevel sound;
   final bool reduceMotion;
   final bool hapticsOff;
+
+  /// Things worth a quiet warning (ids from [headsUpIds]): the prototype's
+  /// five sensory flags. A guardian's gentle planning aid, not a label: her tablet
+  /// adds a plain heads-up line on the "new place" walk-through and nothing else.
+  final Set<String> headsUp;
 
   /// 30..100, in steps of 10: the brightest the app may ask the screen to be.
   final int brightnessCeiling;
@@ -523,14 +529,23 @@ class SensoryProfile {
   /// Flashing is never on, for anyone; it is a fact, not a setting.
   bool get neverFlashes => true;
 
-  SensoryProfile copyWith({SoundLevel? sound, bool? reduceMotion, bool? hapticsOff, int? brightnessCeiling}) =>
+  SensoryProfile copyWith({
+    SoundLevel? sound, bool? reduceMotion, bool? hapticsOff, int? brightnessCeiling, Set<String>? headsUp,
+  }) =>
       SensoryProfile(
           sound: sound ?? this.sound, reduceMotion: reduceMotion ?? this.reduceMotion,
-          hapticsOff: hapticsOff ?? this.hapticsOff, brightnessCeiling: brightnessCeiling ?? this.brightnessCeiling);
+          hapticsOff: hapticsOff ?? this.hapticsOff, brightnessCeiling: brightnessCeiling ?? this.brightnessCeiling,
+          headsUp: headsUp ?? this.headsUp);
+
+  /// The heads-up ids with [id] switched on or off (an unknown id changes nothing).
+  SensoryProfile withHeadsUp(String id, bool on) => !headsUpIds.contains(id)
+      ? this
+      : copyWith(headsUp: on ? <String>{...headsUp, id} : (<String>{...headsUp}..remove(id)));
 
   Map<String, Object?> toJson() => <String, Object?>{
         'sound': sound.name, 'reduceMotion': reduceMotion, 'hapticsOff': hapticsOff,
         'brightnessCeiling': brightnessCeiling,
+        'headsUp': <String>[for (final String k in headsUpIds) if (headsUp.contains(k)) k],
       };
 
   /// Each field falls back to its default on its own; a damaged value never
@@ -544,9 +559,38 @@ class SensoryProfile {
     final Object? b = j['brightnessCeiling'];
     return SensoryProfile(
         sound: s, reduceMotion: j['reduceMotion'] == true, hapticsOff: j['hapticsOff'] == true,
-        brightnessCeiling: b is int && isValidBrightness(b) ? b : 100);
+        brightnessCeiling: b is int && isValidBrightness(b) ? b : 100,
+        headsUp: j['headsUp'] is List
+            ? <String>{for (final Object? x in j['headsUp']! as List) if (x is String && headsUpIds.contains(x)) x}
+            : <String>{});
   }
 }
+
+/// One thing that may need a quiet warning: the guardian's label (about the
+/// situation, never about her), what her tablet then says, and the guardian-side
+/// sentence on what it does.
+class HeadsUp {
+  const HeadsUp(this.id, this.label, this.does, this.line);
+  final String id;
+  final String label;
+  final String does;
+
+  /// The soft line a child may read: no count, no "needs", no label of her.
+  final String line;
+}
+
+const List<HeadsUp> headsUps = <HeadsUp>[
+  HeadsUp('loud', 'Loud places', 'Warns her first', 'It might be loud. You can cover your ears or take a break.'),
+  HeadsUp('bright', 'Bright lights', 'Warns her first', 'It might be very bright. You can look away.'),
+  HeadsUp('scratchy', 'Scratchy or tight clothes', 'Offers a choice', 'You can choose what feels good to wear.'),
+  HeadsUp('crowds', 'Crowds', 'Gives her an exit picture', 'There might be lots of people. You can ask for a quiet spot.'),
+  HeadsUp('surprises', 'Surprises', 'Says what is coming', 'Here is what is going to happen, so nothing is a surprise.'),
+];
+
+final Set<String> headsUpIds = <String>{for (final HeadsUp h in headsUps) h.id};
+
+/// The soft lines for the flags that are on, in the table's own order.
+List<String> headsUpLines(SensoryProfile p) => <String>[for (final HeadsUp h in headsUps) if (p.headsUp.contains(h.id)) h.line];
 
 bool isValidBrightness(int b) => b >= minBrightnessPercent && b <= 100 && b % 10 == 0;
 
@@ -559,7 +603,11 @@ SensoryProfile validateSensory(SensoryProfile p) {
 class SensoryDefaults {
   const SensoryDefaults({
     required this.volume, required this.animate, required this.haptics, required this.maxBrightness,
+    this.headsUp = const <String>[],
   });
+
+  /// Soft heads-up lines for her new-place walk-through (see [headsUpLines]).
+  final List<String> headsUp;
 
   /// 0.0 (silent) .. 1.0, for a read-aloud or sound channel to apply.
   final double volume;
@@ -580,6 +628,7 @@ SensoryDefaults sensoryDefaults(SensoryProfile p, {bool osReduceMotion = false})
       animate: !(p.reduceMotion || osReduceMotion),
       haptics: !p.hapticsOff,
       maxBrightness: p.brightnessCeiling / 100,
+      headsUp: headsUpLines(p),
     );
 
 // ============================================================ THE DOCUMENT ===

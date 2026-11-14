@@ -36,7 +36,7 @@ Future<RhythmVoiceTiles> feelingsToolsFor({
     final voice = await service.loadVoice(me);
     return tilesFor(
         view: family?.view, yearsOld: yearsOld,
-        rhythmOn: rhythm.suiteOn, voiceOn: voice.suiteOn, twoHomesSetting: rhythm.twoHomes,
+        rhythmOn: rhythm.suiteOn, voiceOn: voice.suiteOn, feelingsOn: voice.feelingsOn, twoHomesSetting: rhythm.twoHomes,
         helpers: voice.helpers);
   } catch (_) {
     return RhythmVoiceTiles.none;
