@@ -2195,7 +2195,7 @@ is nothing to assert). The assertion goes through the same checks the login cere
 makes: single-use `stepup` challenge consumed BEFORE the signature is checked (a failed
 attempt spends it), origin, rpId hash, user presence AND user verification, signature,
 sign-count compare-and-swap, and the credential must be THIS account's own. Migration
-0047 adds `stepup` as an `auth_challenge.purpose` (a `register` or `login` challenge can
+0048 adds `stepup` as an `auth_challenge.purpose` (a `register` or `login` challenge can
 never be replayed as step-up proof, nor the reverse). Refusals: `403
 passkey_assertion_required` (none sent), `403 passkey_assertion_failed` (anything wrong,
 one answer for every cause), `400 bad_request` (malformed). An account with no passkey

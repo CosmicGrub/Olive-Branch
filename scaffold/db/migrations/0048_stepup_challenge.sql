@@ -1,5 +1,5 @@
 -- ============================================================================
---  OLIVE BRANCH — 0047: a third WebAuthn challenge purpose, 'stepup'.
+--  OLIVE BRANCH — 0048: a third WebAuthn challenge purpose, 'stepup'.
 --
 --  Security follow-up to S-B3 (MASTERFILE section 7.12). A guardian session on an
 --  account that already holds a passkey but has NO PIN yet could set its first
