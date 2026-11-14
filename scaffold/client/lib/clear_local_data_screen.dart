@@ -38,6 +38,7 @@ import 'shared_gallery.dart';
 /// 'explainers' can never reach a grown-up's screen.
 const Map<String, String> kLocalDataAreaNames = <String, String>{
   'journal': 'Private journal',
+  'teen': 'Your calendar, free times and choices at eighteen',
   'devicekey': 'Pairing key for this device',
   'childpairing': 'Which grown-up connected this device',
   'adultunlock': 'Grown-up unlock check',

@@ -64,6 +64,8 @@ IconData bandIcon(String proto) => switch (proto) {
     };
 
 const List<String> _weekdays = <String>['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const List<String> _months = <String>[
+  'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 /// Good morning / afternoon / evening, from HER local clock.
 String bandGreeting(DateTime now) => now.hour < 12 ? 'Good morning' : now.hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -84,13 +86,14 @@ class BandHome extends StatelessWidget {
     this.clock,
     this.presence,
     this.footer,
+    this.today,
     this.birthdayLine,
     this.onBirthday,
     this.onGrewTap,
     this.speak,
   });
 
-  /// 't57' or 't812' (see [kBandsDrawnHere]).
+  /// 't57', 't812' or 't1317' (see [kBandsDrawnHere]).
   final String band;
   final int age;
   final String childName;
@@ -106,6 +109,9 @@ class BandHome extends StatelessWidget {
 
   /// A quiet line under it (the sleeps-until-handover line, when the live shell knows it).
   final Widget? footer;
+
+  /// 13 to 17: the Today card (and the handover card from 17) above the tiles. Null on the younger homes.
+  final Widget? today;
 
   /// The quiet birthday line in her birthday week (information only, family_structure_screens.dart's birthdayLine),
   /// and what it opens. Null = no line.
@@ -170,8 +176,13 @@ class BandHome extends StatelessWidget {
         final int standardCols = _layout.standardColumns == 4 && w < 520 ? 2 : _layout.standardColumns;
 
         final bool t57 = band == 't57';
-        final String eyebrow = t57 ? bandGreeting(now) : _weekdays[now.weekday - 1];
-        final String title = t57 ? 'Hi, $childName' : '${bandGreeting(now)}, $childName';
+        final bool teen = band == 't1317';
+        final String eyebrow = t57
+            ? bandGreeting(now)
+            : teen
+                ? '${_weekdays[now.weekday - 1]}, ${_months[now.month - 1]} ${now.day}'
+                : _weekdays[now.weekday - 1];
+        final String title = t57 ? 'Hi, $childName' : teen ? 'Hey, $childName' : '${bandGreeting(now)}, $childName';
         final Widget header = Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
@@ -196,6 +207,7 @@ class BandHome extends StatelessWidget {
         }
         final List<Widget> aside = <Widget>[
           if (presence != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: presence),
+          if (today != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: today),
           if (footer != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: footer),
         ];
 

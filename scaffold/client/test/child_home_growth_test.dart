@@ -21,9 +21,13 @@ void main() {
     test('a device that slept through the birthday catches up when it wakes', () {
       expect(age(12, DateTime(2026, 11, 8), DateTime(2026, 11, 20)), 13);
     });
-    test('a gap of more than a year counts each birthday, up to 17', () {
+    test('a gap of more than a year counts each birthday, and her age no longer stops at 17', () {
       expect(age(9, DateTime(2024, 1, 1), DateTime(2026, 1, 1)), 11);
-      expect(age(16, DateTime(2020, 1, 1), DateTime(2026, 1, 1)), kMaxHomeAge);
+      expect(age(16, DateTime(2020, 1, 1), DateTime(2026, 1, 1)), 22, reason: 'real past 18 (wave 2b)');
+      expect(age(17, DateTime(2026, 11, 9), DateTime(2026, 11, 10), m: 11, d: 10), 18, reason: 'the 18th birthday counts');
+    });
+    test('only a sanity bound stops the count (a damaged store cannot count a child up to 400)', () {
+      expect(age(100, DateTime(1900, 1, 1), DateTime(2100, 1, 1)), kMaxHomeAge);
     });
     test('a Feb 29 birthday falls on Mar 1 in a common year and on Feb 29 in a leap year', () {
       expect(age(8, DateTime(2027, 2, 27), DateTime(2027, 2, 28), m: 2, d: 29), 8);
