@@ -37,6 +37,7 @@ export class Recorder {
   async gate() { while (this.paused) await sleep(100); }
   sample(key, ms, status, fam) {
     this.requests++;
+    (this.recent ??= []).push(ms); if (this.recent.length > 500) this.recent.shift();
     let a = this.lat.get(key); if (!a) this.lat.set(key, a = []);
     a.push(ms);
     let s = this.status.get(key); if (!s) this.status.set(key, s = {});

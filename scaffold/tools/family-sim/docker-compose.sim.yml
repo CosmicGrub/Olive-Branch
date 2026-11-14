@@ -56,6 +56,14 @@ services:
       LIVEKIT_API_KEY: devkey
       LIVEKIT_API_SECRET: devsecret_at_least_32_chars_long_xx
       MEDIA_STORAGE_ROOT: /app/data/media
+      # Every simulated family arrives from 127.0.0.1, so the real per-IP auth bucket
+      # (30 burst) would throttle the whole simulation as if it were one household.
+      # Raised here only; the per-PRINCIPAL write bucket stays real (300 burst, 600/min)
+      # so the noisy-neighbour scenario still exercises it.
+      AUTH_RATE_IP_CAPACITY: "600"
+      AUTH_RATE_IP_PER_MIN: "600"
+      WRITE_RATE_CAPACITY: "300"
+      WRITE_RATE_PER_MIN: "600"
     ports:
       - "127.0.0.1:8141:8123"
     volumes:
