@@ -1,4 +1,7 @@
 import java.io.FileInputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import java.util.Properties
 
 plugins {
@@ -131,6 +134,58 @@ gradle.taskGraph.whenReady {
                 "key.properties (see android/RELEASE_SIGNING.md). For a local, never-" +
                 "distributed smoke build only, pass -Polive.allowDebugSignedRelease=true."
         )
+    }
+}
+
+// ONE WebRTC per APK (MASTERFILE 16.2 #6, third reversal). The Jitsi SDK
+// (org.jitsi:webrtc 124) and livekit_client's flutter_webrtc
+// (io.github.webrtc-sdk:android 144) each ship org.webrtc.* classes and the SAME
+// native library name (libjingle_peerconnection_so.so), so a build carrying both
+// fails at :app:mergeReleaseNativeLibs. The default build keeps Jitsi (the default
+// call provider) and drops the other stack; `-Polive.webrtc=livekit` (through
+// Flutter: --android-project-arg=olive.webrtc=livekit) flips it. HONEST LIMIT: the
+// other engine's Dart/Java glue then runs against a WebRTC it was not built for, so
+// that engine is not expected to work in that build; a server-granted provider the
+// build cannot carry shows the calm "not ready" state. Never carry both.
+val webrtcEngine = providers.gradleProperty("olive.webrtc").orNull ?: "jitsi"
+require(webrtcEngine == "jitsi" || webrtcEngine == "livekit") { "olive.webrtc must be jitsi or livekit" }
+configurations.configureEach {
+    if (webrtcEngine == "jitsi") {
+        exclude(group = "io.github.webrtc-sdk", module = "android")
+    } else {
+        exclude(group = "org.jitsi", module = "webrtc")
+    }
+}
+
+// flutter_webrtc ALSO embeds a few org.webrtc.* helper classes of its own (Camera1Helper
+// and friends) in its library jar, which collide with the Jitsi WebRTC's identical names
+// at R8/D8 ("Type org.webrtc.Camera1Helper is defined multiple times"). In the Jitsi build
+// those embedded copies are stripped from flutter_webrtc's runtime jar so the Jitsi
+// WebRTC's own are the only ones. Skipped in the livekit variant, where nothing collides.
+if (webrtcEngine == "jitsi") {
+    gradle.projectsEvaluated {
+        rootProject.findProject(":flutter_webrtc")?.tasks
+            ?.matching { it.name.startsWith("bundleLibRuntimeToJar") }
+            ?.configureEach {
+                doLast {
+                    outputs.files.files.filter { it.isFile && it.name == "classes.jar" }.forEach { jar ->
+                        val tmp = File(jar.parentFile, "classes.stripped.jar")
+                        ZipFile(jar).use { zin ->
+                            ZipOutputStream(tmp.outputStream()).use { zout ->
+                                zin.entries().asSequence()
+                                    .filter { !it.name.startsWith("org/webrtc/") }
+                                    .forEach { e ->
+                                        zout.putNextEntry(ZipEntry(e.name))
+                                        if (!e.isDirectory) zin.getInputStream(e).copyTo(zout)
+                                        zout.closeEntry()
+                                    }
+                            }
+                        }
+                        jar.delete()
+                        tmp.renameTo(jar)
+                    }
+                }
+            }
     }
 }
 
