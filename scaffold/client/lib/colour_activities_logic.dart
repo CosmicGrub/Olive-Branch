@@ -11,27 +11,30 @@
 //     an empty garden is a fine garden. Messages never say "wrong" or "try
 //     again".
 //   - They grow up with her (§21): Path code from 5, its repeat block and Pixel
-//     garden from 8. A guardian can switch both coding activities off.
+//     garden from 8. A guardian can switch both coding activities off. An
+//     activity only ever OPENS at its age; none closes again (there is no upper
+//     age: the standing rule is to keep the early bands and unlock more as she
+//     grows, so a nine-year-old still has Colour sort if she likes it).
 import 'colour_foods.dart';
 
 // ============================================================ the catalogue ==
 class ColourActivity {
-  const ColourActivity(this.id, this.name, this.kind, this.minAge, this.maxAge, {this.coding = false});
+  const ColourActivity(this.id, this.name, this.kind, this.minAge, {this.coding = false});
   final String id;
   final String name;
   /// 'Learn' | 'Code' | 'Design'
   final String kind;
+  /// The age it opens at. There is no age it closes at.
   final int minAge;
-  final int maxAge;
   /// Switched off by the guardian's "coding activities" toggle.
   final bool coding;
 }
 
 const List<ColourActivity> colourActivities = [
-  ColourActivity('sort', 'Colour sort', 'Learn', 3, 7),
-  ColourActivity('path', 'Path code', 'Code', 5, 9, coding: true),
-  ColourActivity('critter', 'Colour critter', 'Design', 3, 10),
-  ColourActivity('pixel', 'Pixel garden', 'Code', 8, 12, coding: true),
+  ColourActivity('sort', 'Colour sort', 'Learn', 3),
+  ColourActivity('path', 'Path code', 'Code', 5, coding: true),
+  ColourActivity('critter', 'Colour critter', 'Design', 3),
+  ColourActivity('pixel', 'Pixel garden', 'Code', 8, coding: true),
 ];
 
 /// Pixel garden and the repeat block open at 8 and cannot be opened earlier.
@@ -43,7 +46,7 @@ bool repeatUnlocked(int age) => age >= repeatBlockMinAge;
 /// What she sees for her age and her guardian's coding toggle.
 List<ColourActivity> activitiesFor({required int age, required bool codeActivities}) => [
   for (final a in colourActivities)
-    if (age >= a.minAge && age <= a.maxAge && (codeActivities || !a.coding)) a,
+    if (age >= a.minAge && (codeActivities || !a.coding)) a,
 ];
 
 // ================================================================ colour sort ==

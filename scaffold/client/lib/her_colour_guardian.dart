@@ -11,11 +11,23 @@
 // her; her own answer is never deleted by clearing. The art style is the
 // guardian's: it changes how pictures are drawn, never her colour.
 //
+// FLAGGED (owner decision, kept for now): the prototype's g-colour says "There is no
+// picker here for a grown-up" and lists "Pick or change her colour for her" under You
+// can't. This screen keeps the colour-day override anyway (a guardian may set one day's
+// colour, it never deletes her own answer, and clearing it hands the question back). The
+// matrix row #82 stays `differs` until the owner decides; removing it is deleting
+// `_setDay`, the 'A colour day' block and the first line of the You-can list.
+//
+// The art style is chosen from thumbnails: each style draws the same small picture in
+// her colour, so what a grown-up picks is what she will see (the prototype's four scene
+// thumbnails, here seven because the colour activities have seven styles).
+//
 // Local-first: everything goes through [GuardianColourStore]; nothing here
 // touches a network.
 import 'package:flutter/material.dart';
 import 'colour_critter_screen.dart' show styleName;
 import 'colour_day_logic.dart';
+import 'her_colour_art.dart';
 import 'her_colour_store.dart';
 import 'palette_logic.dart';
 
@@ -140,11 +152,12 @@ class _HerColourGuardianScreenState extends State<HerColourGuardianScreen> {
               Text('Art style', style: theme.textTheme.titleMedium),
               Text('How pictures are drawn in her activities. It never changes her colour.', style: theme.textTheme.bodySmall),
               const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 4, children: [
-                for (final s in stylesForAge(widget.childAge)) ChoiceChip(
-                  key: Key('artStyle_$s'), label: Text(styleName(s)),
+              Wrap(key: const Key('artStyleThumbs'), spacing: 10, runSpacing: 10, children: [
+                for (final s in stylesForAge(widget.childAge)) _StyleThumb(
+                  key: Key('artStyle_$s'), style: s, label: styleName(s),
+                  color: view.today.swatch?.color ?? theme.colorScheme.primary,
                   selected: art.artStyle == s,
-                  onSelected: (_) => _save({
+                  onTap: () => _save({
                     'artStyle': s,
                     if (!art.allowedStyles.contains(s)) 'allowedStyles': [...art.allowedStyles, s],
                   })),
@@ -177,5 +190,37 @@ class _HerColourGuardianScreenState extends State<HerColourGuardianScreen> {
             ]),
           )),
     );
+  }
+}
+
+/// One art style, drawn: the same small picture in her colour, in that style.
+class _StyleThumb extends StatelessWidget {
+  const _StyleThumb({super.key, required this.style, required this.label, required this.color,
+    required this.selected, required this.onTap});
+  final String style;
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true, selected: selected, inMutuallyExclusiveGroup: true, label: '$label style', excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16), onTap: onTap,
+        child: Container(
+          width: 96, constraints: const BoxConstraints(minHeight: 56),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: selected ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+            border: Border.all(color: selected ? scheme.primary : scheme.outlineVariant, width: selected ? 3 : 1)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            ColourArt(recipe: 'round', color: color, style: style, size: 56, semanticLabel: 'A sample in $label style'),
+            const SizedBox(height: 4),
+            Text(label, textAlign: TextAlign.center, style: Theme.of(context).textTheme.labelMedium),
+          ]))));
   }
 }

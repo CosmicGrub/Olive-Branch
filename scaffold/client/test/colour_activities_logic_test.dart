@@ -13,6 +13,17 @@ void main() {
     test('a 3-year-old gets sorting and colouring only', () => expect(ids(3), ['sort', 'critter']));
     test('a 5-year-old gains Path code', () => expect(ids(5), ['sort', 'path', 'critter']));
     test('a 7-year-old has no pixel garden', () => expect(ids(7).contains('pixel'), isFalse));
+    test('nothing closes as she grows: every early activity is still there at 9, 12 and 17', () {
+      for (final age in [9, 10, 12, 13, 17]) {
+        expect(ids(age), containsAll(['sort', 'path', 'critter', 'pixel']), reason: 'age $age');
+      }
+    });
+    test('an activity opens at its age and has no age it closes at', () {
+      for (final a in colourActivities) {
+        expect(activitiesFor(age: a.minAge, codeActivities: true).map((x) => x.id), contains(a.id));
+        expect(activitiesFor(age: a.minAge - 1, codeActivities: true).map((x) => x.id), isNot(contains(a.id)));
+      }
+    });
     test('an 8-year-old gets the pixel garden', () => expect(ids(8).contains('pixel'), isTrue));
     test('the guardian can switch both coding activities off', () {
       expect(ids(8, code: false), isNot(contains('path')));

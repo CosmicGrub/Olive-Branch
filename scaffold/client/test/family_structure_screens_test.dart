@@ -189,6 +189,29 @@ void main() {
       expect(find.textContaining('24-hour'), findsOneWidget);
     });
 
+    testWidgets('homes: the rhythm card says the next exchange as a day and a time, and nothing about whose home', (WidgetTester t) async {
+      await t.binding.setSurfaceSize(const Size(800, 1800));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      final FamilyService s = svc(); // today is Saturday 2026-11-07
+      await seed(s);
+      await s.addChange(guardian, actorName: 'Dad', yearsOld: 7, timing: Timing.now.toJson(), op: <String, Object?>{
+        'op': 'set_rhythm', 'rhythm': const Rhythm(pattern: 'alternating_weeks', exchangeDay: 5, exchangeTime: '18:00').toJson()});
+      await t.pumpWidget(wrap(FamilyHomesScreen(ctx: ctx(s))));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('nextExchange')), findsOneWidget);
+      expect((t.widget(find.byKey(const Key('nextExchange'))) as Text).data, 'Next exchange: Friday at 18:00');
+    });
+
+    testWidgets('homes: no rhythm, no next exchange line', (WidgetTester t) async {
+      await t.binding.setSurfaceSize(const Size(800, 1800));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      final FamilyService s = svc();
+      await seed(s);
+      await t.pumpWidget(wrap(FamilyHomesScreen(ctx: ctx(s))));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('nextExchange')), findsNothing);
+    });
+
     testWidgets('the fifth home is not offered', (WidgetTester t) async {
       await t.binding.setSurfaceSize(const Size(800, 1800));
       addTearDown(() => t.binding.setSurfaceSize(null));

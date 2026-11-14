@@ -37,12 +37,12 @@
    }
   },
   "family": {
-   "implemented": 4,
-   "pending": 6,
+   "implemented": 10,
+   "pending": 0,
    "differs": 0,
    "steps": {
-    "implemented": 2,
-    "pending": 3,
+    "implemented": 5,
+    "pending": 0,
     "differs": 0
    }
   },
@@ -460,21 +460,19 @@
    "group": "family",
    "kind": "act",
    "label": "go g-family",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "row:Family/Family structure"
-   ],
-   "note": "no Flutter driver for \"go g-family\""
+   ]
   },
   "family.01#e:screen.g": {
    "group": "family",
    "kind": "assert",
    "label": "screen.g = g-family",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "row:Family/Family structure"
-   ],
-   "note": "blocked: an action in family.01 is pending"
+   ]
   },
   "family.02#a0": {
    "group": "family",
@@ -498,21 +496,19 @@
    "group": "family",
    "kind": "act",
    "label": "go g-history",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "row:Family/Family history"
-   ],
-   "note": "no Flutter driver for \"go g-history\""
+   ]
   },
   "family.03#e:screen.g": {
    "group": "family",
    "kind": "assert",
    "label": "screen.g = g-history",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "row:Family/Family history"
-   ],
-   "note": "blocked: an action in family.03 is pending"
+   ]
   },
   "family.05#a0": {
    "group": "family",
@@ -536,21 +532,19 @@
    "group": "family",
    "kind": "act",
    "label": "tap kid.openMyPeople",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "kid.openMyPeople+kid.callSheet+kid.msgTo"
-   ],
-   "note": "no Flutter driver for \"tap kid.openMyPeople\""
+   ]
   },
   "family.06#e:screen.k": {
    "group": "family",
    "kind": "assert",
    "label": "screen.k = k.people",
-   "status": "pending",
+   "status": "implemented",
    "rows": [
     "kid.openMyPeople+kid.callSheet+kid.msgTo"
-   ],
-   "note": "blocked: an action in family.06 is pending"
+   ]
   },
   "golden.02#a0": {
    "group": "golden",

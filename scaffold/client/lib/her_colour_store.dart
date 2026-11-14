@@ -69,8 +69,11 @@ class GuardianColourView {
 }
 
 class PlayWindowInfo {
-  const PlayWindowInfo({required this.window, required this.state, this.line});
+  const PlayWindowInfo({required this.window, required this.state, this.line, this.beforeOpen = false});
   final PlayWindow? window;
+  /// True when the games are resting because the window has not opened yet today (so the goodnight
+  /// card must not say "back tomorrow"). Never a number: it is only used to pick a calm sentence.
+  final bool beforeOpen;
   /// 'open' | 'winding_down' | 'resting' — in HER local time.
   final String state;
   final String? line;
@@ -193,7 +196,10 @@ class MemoryColourStore implements ChildColourStore, GuardianColourStore {
   @override
   Future<PlayWindowInfo> playWindow() async {
     final s = playWindowState(_window, _minute);
-    return PlayWindowInfo(window: _window, state: s, line: playWindowLine(s));
+    final w = _window;
+    return PlayWindowInfo(
+      window: w, state: s, line: playWindowLine(s),
+      beforeOpen: w != null && s == 'resting' && _minute < w.opensMin);
   }
 
   @override

@@ -22,6 +22,7 @@ import 'package:olive_client/add_device_screen.dart';
 import 'package:olive_client/child_home_growth.dart' show ageAtLocalDay;
 import 'package:olive_client/contact_labels.dart';
 import 'package:olive_client/family_structure_logic.dart';
+import 'package:olive_client/family_structure_screens.dart' as fs;
 import 'package:olive_client/family_structure_store.dart';
 import 'package:olive_client/colour_day_logic.dart';
 import 'package:olive_client/her_colour_store.dart';
@@ -64,6 +65,8 @@ class ParityWorld {
   late final FakeServer server;
   late MemoryColourStore colour;
   late FamilyService fam;
+  /// The guardian's view of the family: what the real family screens are mounted with.
+  fs.FamilyContext get famCtx => fs.FamilyContext(service: fam, principal: _guardian, actorName: 'Jess', childName: 'Ivy', yearsOld: 9);
 
   // The child.
   AgeLockState age = const AgeLockState();
@@ -354,7 +357,21 @@ final Map<String, _Driver> _drivers = <String, _Driver>{
     return same ? const Res.ok() : Res.pending('the screen saved $saved, not ${w.playOpen} to ${w.playRest} with a ${w.playWind} minute wind-down');
   },
 
-  // ---- family structure: the real service, with a hold and a release
+  // ---- family structure: the real screens over the real service (Wave 5), with a hold and a release
+  'go:g-family': (ParityWorld w, _Act a) async {
+    await w.mount(fs.FamilyStructureScreen(ctx: w.famCtx));
+    return const Res.ok();
+  },
+  'go:g-history': (ParityWorld w, _Act a) async {
+    await w.mount(fs.FamilyHistoryScreen(ctx: w.famCtx));
+    return const Res.ok();
+  },
+  'tap:kid.openMyPeople': (ParityWorld w, _Act a) async {
+    // Her tablet shows the released snapshot, in her words, through the real child screen.
+    final FamilyChildSnapshot snap = await w.fam.childSnapshot(_child, childId: 'child-1', yearsOld: 9);
+    await w.mount(fs.MyPeopleScreen(snapshot: snap, age: w.age));
+    return const Res.ok();
+  },
   'op:api POST /v1/family-changes': (ParityWorld w, _Act a) async {
     final String mode = (a.raw['mode'] as String?) ?? 'now';
     final FamilyWrite r = await w.fam.addChange(_guardian,
@@ -391,6 +408,9 @@ const Map<String, Type> _screenTypes = <String, Type>{
   'ob.kid.name': ObNameScreen,
   'ob.kid.connect': PairingRedeemScreen,
   'g-play': PlayWindowScreen,
+  'g-family': fs.FamilyStructureScreen,
+  'g-history': fs.FamilyHistoryScreen,
+  'k.people': fs.MyPeopleScreen,
 };
 
 Res _eq(Object? flutter, Object? proto, String what) =>
