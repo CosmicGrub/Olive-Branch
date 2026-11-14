@@ -91,7 +91,7 @@ try {
     rec.emit('probe.timing', { a: A.n, b: B.n, flagged: t.filter((x) => x.flagged).length });
   }
   probeResults.ws.push(...await wsProbe(ctx, fams[0], cfg.base));
-  probeResults.pairing.push(...await pairingGuess(ctx, fams[0], 14));
+  probeResults.pairing.push(...await pairingGuess(ctx, fams[0], 26));
   // fairness side-effect of the global pairing budget: can an honest family still pair right after?
   {
     const V = fams[1], vs = st(ctx, V);

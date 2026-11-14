@@ -438,6 +438,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "scheduler backup job: real pg_dump, prune, alarm (real DB)|packages/db/test/backup_job.test.mjs" \
             "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" \
             "migrate as the NON-superuser app_owner: full set, trusted extensions, no custom-GUC proconfig (real DB)|tools/test/migrate_nonsuper.test.mjs" \
+            "family simulation CI subset: 3 families, strict cross-family isolation probes (real DB, real RLS)|tools/family-sim/test/isolation_ci.test.mjs" \
             "db domain constraints: day-parts, time zones, enums (0042, real DB)|packages/db/test/domain_constraints.test.mjs" \
             "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs"             "snoop hardening routes: relay IDOR tripwire, uniform answers, revocation, live-schema sweep (real DB)|server/test/snoop_api_route.test.mjs"             "snoop hardening e2e: booted server refuses bad deploys, https-only, headers, CORS closed, no leakage (real DB)|server/test/snoop_boot_e2e.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
