@@ -117,10 +117,10 @@ th{background:var(--accent-soft);color:var(--page-ink)}
 </head>
 <body>
 <main>
-<h1>Welcoming people safely</h1>
-<p class="lede">Two welcomes follow one rule. A scan is an introduction, never a key. And welcoming a person is a decision the family makes together, never something a newcomer can do to themselves. These are drafts of what could appear in the app: grown-ups in the olive theme, the child tablet in the child shell.</p>
+<h1>Welcoming people safely, and caring for the child</h1>
+<p class="lede">Two welcomes follow one rule. A scan is an introduction, never a key. And welcoming a person is a decision the family makes together, never something a newcomer can do to themselves. A person being limited is always the one who agreed to it. A sourced library of care guides sits in the same Village. These are drafts of what could appear in the app: grown-ups in the olive theme, the child tablet in the child shell.</p>
 <nav class="toc" aria-label="Sections">
-  <a href="#map">Where it lives</a><a href="#first">First run paths</a><a href="#device">Adding a device</a><a href="#person">Welcoming a person</a><a href="#after">After the welcome</a><a href="#child">The child's view</a><a href="#layouts">Tablet and Fold</a><a href="#tables">The rules</a>
+  <a href="#map">Where it lives</a><a href="#first">First run paths</a><a href="#device">Adding a device</a><a href="#person">Welcoming a person</a><a href="#after">After the welcome</a><a href="#guides">Care guides</a><a href="#child">The child's view</a><a href="#layouts">Tablet and Fold</a><a href="#tables">The rules</a>
 </nav>
 
 <ol class="layers" aria-label="The layers of trust">
@@ -136,7 +136,7 @@ th{background:var(--accent-soft);color:var(--page-ink)}
 <p class="lede">One home for all of it: the Village. Nothing is hidden in settings, and nothing reaches a child.</p>
 <div class="map">
   <div class="node"><h4>Home (grown-ups)</h4><ul><li>Quiet card: "A welcome request is waiting"</li><li>Quiet card: "Someone tried to join"</li></ul></div>
-  <div class="node hot"><h4>More → Adults and helpers (the Village)</h4><ul><li>People and their limits</li><li>Welcome someone</li><li>Requests</li><li>Add a device</li><li>Helpers (screen-only pages)</li><li>Safety for new people</li><li>History</li></ul></div>
+  <div class="node hot"><h4>More → Adults and helpers (the Village)</h4><ul><li>People and their limits</li><li>Welcome someone</li><li>Requests</li><li>Add a device</li><li>Helpers (screen-only pages)</li><li><b>Care guides</b></li><li>Safety for new people</li><li>History</li></ul></div>
   <div class="node"><h4>Settings hub</h4><ul><li>"People and devices" row, same place</li><li>App lock, hide in recents</li></ul></div>
   <div class="node"><h4>First run</h4><ul><li>Who is using this device?</li><li>Grown-up · Child · <b>I was invited</b></li></ul></div>
   <div class="node"><h4>Child device</h4><ul><li>No pairing words, ever</li><li>A new grown-up appears only after the family welcomes them, under the child's own name for them</li></ul></div>
@@ -324,6 +324,7 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   </div>
   <button class="btn p">Welcome someone</button>
   <div class="card opt"><div class="ico">📄</div><div class="grow"><div class="t">Helpers</div><div class="s">Sitter pass, grandparent page. Screen only</div></div></div>
+  <div class="card opt"><div class="ico">🩹</div><div class="grow"><div class="t">Care guides</div><div class="s">What to do, and who to call</div></div></div>
 </div></div>
 <figcaption><b>V1. The Village (replaces today's preview)</b>Everyone, their tier and limits in one place. "Welcome someone" is the only way in.</figcaption>
 </figure>
@@ -332,11 +333,13 @@ th{background:var(--accent-soft);color:var(--page-ink)}
 <div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
   <div class="top"><span class="back">‹</span> Welcome someone</div>
   <div class="s">Who are you welcoming?</div>
-  <div class="card opt"><div class="ico">🧑</div><div><div class="t">A parent</div><div class="s">A co-parent or second guardian. All parents must agree</div></div></div>
-  <div class="card opt"><div class="ico">👵</div><div><div class="t">A carer</div><div class="s">A grandparent, aunt or regular sitter with their own phone</div></div></div>
-  <div class="card opt"><div class="ico">📄</div><div><div class="t">A helper, no account</div><div class="s">A one-off sitter or teacher. You write a pass and show it</div></div></div>
+  <div class="card opt"><div class="ico">🧑</div><div><div class="t">A parent</div><div class="s">Equal say. All parents must agree</div></div></div>
+  <div class="card opt"><div class="ico">👵</div><div><div class="t">A trusted carer</div><div class="s">A grandparent or regular sitter with their own phone</div></div></div>
+  <div class="card opt"><div class="ico">🧳</div><div><div class="t">A visit</div><div class="s">Someone staying, for a few days</div></div></div>
+  <div class="card opt"><div class="ico">👀</div><div><div class="t">View only</div><div class="s">Can see the plan, nothing more</div></div></div>
+  <div class="card opt"><div class="ico">📄</div><div><div class="t">A helper page</div><div class="s">No account. You write it and show it</div></div></div>
 </div></div>
-<figcaption><b>V2. Pick who</b>Plain choices; the tier decides who must agree, which the screen says in words.</figcaption>
+<figcaption><b>V2. Pick who (a parent starts it)</b>Only a parent starts a welcome. A carer can only suggest someone, with a plain message to the parents. How far someone can reach decides who must agree.</figcaption>
 </figure>
 
 <figure>
@@ -351,9 +354,10 @@ th{background:var(--accent-soft);color:var(--page-ink)}
     <div class="rowi"><div class="grow"><div class="t">Only Mia, not Leo</div></div><div class="sw on"></div></div>
   </div>
   <div class="card blue"><div class="t">Until</div><div class="s">Sunday 16 Nov, 6:00 pm. Then access ends unless you extend it.</div></div>
+  <div class="card warn"><div class="s"><b>Can act.</b> She can unlock a tablet and message Mia, so every parent will be asked.</div></div>
   <button class="btn p" style="margin-top:auto">Next</button>
 </div></div>
-<figcaption><b>V3. Limits and a time box</b>Plain switches. Defaults are safe; nothing is on that isn't needed.</figcaption>
+<figcaption><b>V3. Limits and a time box</b>Plain switches. The screen says whether she can only look or can act, because that decides who must agree. Only parents ever get settings, money or welcoming.</figcaption>
 </figure>
 
 <figure>
@@ -379,7 +383,7 @@ th{background:var(--accent-soft);color:var(--page-ink)}
       <div class="step"><span class="d ok">✓</span>Rose chose her own PIN</div>
       <div class="step"><span class="d ok">✓</span>Sam said yes</div>
       <div class="step"><span class="d wait">…</span>Alex hasn't answered yet</div></div></div>
-  <div class="card tint"><div class="s">A carer needs one other grown-up to agree. We'll remind Alex. No answer isn't a yes, and this expires in 7 days.</div></div>
+  <div class="card tint"><div class="s">A carer who can act needs every parent to agree. We'll remind Alex. No answer isn't a yes, and this expires in 7 days.</div></div>
   <button class="btn d" style="margin-top:auto">Withdraw request</button>
 </div></div>
 <figcaption><b>V5. Waiting for the family</b>The inviting grown-up sees exactly where it stands.</figcaption>
@@ -393,9 +397,9 @@ th{background:var(--accent-soft);color:var(--page-ink)}
     <div class="s"><b>She could:</b> see the schedule and emergency card, message the family.</div>
     <div class="s"><b>She couldn't:</b> change settings, welcome others, see Leo.</div>
     <div class="s"><b>Until:</b> Sunday 6:00 pm.</div></div>
-  <div class="list" style="margin-top:auto"><button class="btn p">Yes, welcome her</button><div class="two"><button class="btn q sm">Ask me later</button><button class="btn d sm">No</button></div></div>
+  <div class="list" style="margin-top:auto"><button class="btn p">Yes, welcome her</button><button class="btn q sm">Yes, but with less</button><div class="two"><button class="btn q sm">Ask me later</button><button class="btn d sm">No</button></div></div>
 </div></div>
-<figcaption><b>V6. Request (an existing grown-up)</b>What she could and couldn't do, who asked, until when. "No" never tells Rose why.</figcaption>
+<figcaption><b>V6. Request (a parent)</b>What she could and couldn't do, who asked, until when. "Yes, but with less" is the way out of a disagreement. "No" never tells Rose why. Every parent is told the moment it's proposed.</figcaption>
 </figure>
 
 <figure>
@@ -403,9 +407,10 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   <div class="top">An agreement for you both</div>
   <div class="card warn"><div class="t">Limits on a parent</div><div class="s">Sam asked that Alex's access be limited to the schedule and messages while a plan is agreed. A parent can be limited only if they accept.</div></div>
   <div class="card list"><div class="s">• Alex keeps full access to Leo's emergency card.</div><div class="s">• Changing this later needs you both, or a court order.</div><div class="s">• Alex can say no, and nothing changes.</div></div>
+  <div class="card blue"><div class="s">You have 24 hours to think it over. You can withdraw at any time. Nothing applies until then.</div></div>
   <div class="list" style="margin-top:auto"><button class="btn p">I accept</button><button class="btn d">I don't accept</button></div>
 </div></div>
-<figcaption><b>V7. Restricted co-parent agreement</b>A parent can be restricted only by their own acceptance. Neither parent can impose limits on the other alone.</figcaption>
+<figcaption><b>V7. Restricted co-parent agreement</b>An agreement, never an order. The limited parent signs the exact list, gets 24 hours to think, and can withdraw. Limits can never hide anything from them or stop them leaving.</figcaption>
 </figure>
 
 <figure>
@@ -433,9 +438,9 @@ th{background:var(--accent-soft);color:var(--page-ink)}
     <div class="rowi"><div class="grow"><div class="t">Connection check</div><div class="s">Same phone as when welcomed</div></div><span class="pill">✓</span></div>
   </div>
   <div class="card warn"><div class="s">Giving her more access needs the same agreement as welcoming her.</div></div>
-  <div class="list" style="margin-top:auto"><button class="btn q">Change limits</button><button class="btn d">Remove from the village</button></div>
+  <div class="list" style="margin-top:auto"><button class="btn q">Change limits</button><div class="two"><button class="btn q sm">Pause now</button><button class="btn d sm">End</button></div></div>
 </div></div>
-<figcaption><b>A1. One person</b>Loosening limits asks the family again. Tightening is instant. Removal gives notice.</figcaption>
+<figcaption><b>A1. One person</b>Loosening limits asks the family again. Tightening is instant. <b>Pause</b> works at once for either parent. <b>End</b> needs both, or notice first.</figcaption>
 </figure>
 
 <figure>
@@ -454,12 +459,13 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   <div class="card list">
     <div class="rowi"><div class="grow"><div class="t">Adding people</div><div class="s">Off. Turns on for 10 minutes when you choose.</div></div><div class="sw"></div></div>
     <div class="rowi"><div class="grow"><div class="t">A new parent needs</div><div class="s">All parents (can't be lowered)</div></div><span class="pill off">Locked</span></div>
-    <div class="rowi"><div class="grow"><div class="t">A new carer needs</div><div class="s">One other grown-up</div></div><span class="s">›</span></div>
-    <div class="rowi"><div class="grow"><div class="t">New people settle in for</div><div class="s">24 hours</div></div><span class="s">›</span></div>
-    <div class="rowi"><div class="grow"><div class="t">Tell all grown-ups</div><div class="s">When anyone is added or removed</div></div><div class="sw on"></div></div>
+    <div class="rowi"><div class="grow"><div class="t">A carer who can act needs</div><div class="s">All parents</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="grow"><div class="t">A view-only person needs</div><div class="s">One parent, all others told at once</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="grow"><div class="t">Standing OK</div><div class="s">Let Sam decide while you're away</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="grow"><div class="t">Tell all grown-ups</div><div class="s">When anyone is added, paused or removed</div></div><div class="sw on"></div></div>
   </div>
 </div></div>
-<figcaption><b>A3. Safety for new people</b>Safe defaults. The new-parent rule is shown as locked, on purpose.</figcaption>
+<figcaption><b>A3. Safety for new people</b>Safe defaults. The new-parent rule is locked, on purpose. A family can loosen the carer rule to one parent, with a plain warning.</figcaption>
 </figure>
 
 <figure>
@@ -485,6 +491,104 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   <div class="bar"><span><b>Home</b></span><span>Messages</span><span>Calendar</span><span>More</span></div>
 </div></div>
 <figcaption><b>A5. Home (adult)</b>Requests and notices are quiet cards, never alarms and never shown to a child.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Standing OK</div>
+  <div class="card tint"><div class="t">While you're away</div><div class="s">Let Sam decide on view-only people and short visits until you're back. Never a new parent, and never anyone who can act.</div></div>
+  <div class="card list">
+    <div class="rowi"><div class="grow"><div class="t">Until</div><div class="s">Sunday 8 Dec (at most 90 days)</div></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Every decision is told to you</div><div class="s">And you can cancel this any time</div></div><span class="pill">✓</span></div></div>
+  <div class="s">Enter your PIN to sign this.</div>
+  <div class="dots"><i class="f"></i><i class="f"></i><i></i><i></i></div>
+  <button class="btn p" style="margin-top:auto">Sign</button>
+</div></div>
+<figcaption><b>A6. Standing OK</b>For a parent who can't be reached. It covers small, safe decisions only, is signed with a PIN, and ends by itself.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Paused</div>
+  <div class="card warn"><div class="t">Alex paused Grandma Rose.</div><div class="s">She can't open anything for now. Nothing has been removed. Sam and Alex can talk, then turn her back on or end it together.</div></div>
+  <div class="card blue"><div class="s">A pause is for safety. It's never a way to remove someone: ending a carer that the other parent welcomed needs both of you.</div></div>
+  <div class="list" style="margin-top:auto"><button class="btn p">Turn back on</button><button class="btn q">Talk first</button></div>
+</div></div>
+<figcaption><b>A7. Paused</b>Either parent can pause at once. Everyone sees it, in words that don't blame anyone.</figcaption>
+</figure>
+
+</div>
+
+
+<h2 id="guides">Care guides</h2>
+<p class="lede">What to do, and who to call, for anyone looking after the child. <b>These screens show structure only.</b> The content is being researched from authoritative sources and cannot appear in the app until a clinician has reviewed it. Every guide carries its sources, date and review status. Never shown to a child.</p>
+<div class="row">
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Care guides</div>
+  <button class="btn d" style="background:var(--badBg)">🚨 In an emergency: call now</button>
+  <div class="card list">
+    <div class="rowi"><div class="ico">📞</div><div class="grow"><div class="t">Who to call, what to say</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="ico">🤕</div><div class="grow"><div class="t">A bump to the head</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="ico">😮</div><div class="grow"><div class="t">Choking</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="ico">🌡️</div><div class="grow"><div class="t">A high fever</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="ico">🏠</div><div class="grow"><div class="t">Making the home safe</div></div><span class="s">›</span></div>
+  </div>
+  <div class="card warn"><div class="s"><b>Draft, not yet reviewed by a clinician.</b> Not medical advice.</div></div>
+</div></div>
+<figcaption><b>G1. The library</b>The emergency button is always first. Searchable by what happened and by the child's age. Works offline.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> A bump to the head</div>
+  <div class="tabs"><span class="on">Baby</span><span>1–3</span><span>3–5</span><span>5–12</span><span>Teen</span></div>
+  <div class="card bad"><div class="t">Call emergency services now if…</div><div class="s">[the guide's emergency signs for this age, from the reviewed source]</div></div>
+  <div class="card"><div class="t">Do this now</div><div class="s">[numbered steps for this age, each tied to a source]</div></div>
+  <div class="card"><div class="t">Watch for</div><div class="s">[signs and for how long]</div></div>
+  <div class="s" style="margin-top:auto">Sources and the date they were checked are listed here · <b>Draft</b></div>
+</div></div>
+<figcaption><b>G2. One guide</b>Emergency signs first, then steps by age, then what to watch. Sources and review status always visible. Placeholders only here: no content until reviewed.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Who to call, what to say</div>
+  <div class="card list">
+    <div class="rowi"><span class="pill">1</span><div class="grow"><div class="t">Emergency services</div><div class="s">[number for your place] · when</div></div><button class="btn p sm" style="width:auto">Call</button></div>
+    <div class="rowi"><span class="pill">2</span><div class="grow"><div class="t">Poison control</div><div class="s">[number for your place] · when</div></div><button class="btn q sm" style="width:auto">Call</button></div>
+    <div class="rowi"><span class="pill">3</span><div class="grow"><div class="t">Mia's doctor</div><div class="s">From the family's emergency card</div></div><button class="btn q sm" style="width:auto">Call</button></div>
+  </div>
+  <div class="card"><div class="t">Tell them</div><div class="s">Where you are · her age · what happened · what you've done. Stay on the line.</div></div>
+  <div class="card tint"><div class="s">Have ready: allergies, medicines, her doctor, a parent's number.</div></div>
+</div></div>
+<figcaption><b>G3. Who to call</b>The family's own emergency card fills the blanks. The right numbers for the place, from official sources.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Welcome, Rose</div>
+  <div class="card tint"><div class="t">You're in. Two things to know first.</div></div>
+  <div class="card opt"><div class="ico">📞</div><div class="grow"><div class="t">Who to call</div><div class="s">In an emergency</div></div><span class="s">›</span></div>
+  <div class="card opt"><div class="ico">✅</div><div class="grow"><div class="t">Arrival checklist</div><div class="s">What to check when you arrive</div></div><span class="s">›</span></div>
+  <div class="card list">
+    <div class="rowi"><span class="pill">✓</span><div class="s">See the schedule and the emergency card</div></div>
+    <div class="rowi"><span class="pill off">✕</span><div class="s">Change settings or welcome others</div></div></div>
+  <button class="btn p" style="margin-top:auto">OK</button>
+</div></div>
+<figcaption><b>G4. A new carer's first screen</b>Two quiet links before anything else: who to call, and an arrival checklist.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Sitter pass</div>
+  <div class="card"><div class="t">For Jo, tonight</div><div class="s">Bedtime 8:00 · the green cup · emergency card shown below</div></div>
+  <div class="card opt"><div class="ico">📞</div><div class="grow"><div class="t">Who to call</div></div><span class="s">›</span></div>
+  <div class="card opt"><div class="ico">🤕</div><div class="grow"><div class="t">Only the guides you chose</div><div class="s">Head bump · fever · choking</div></div><span class="s">›</span></div>
+  <div class="card tint"><div class="s">A helper with no account sees only what a parent puts on this page. Nothing is sent.</div></div>
+</div></div>
+<figcaption><b>G5. A helper page</b>A parent picks which guides appear on the page. The helper needs no account.</figcaption>
 </figure>
 
 </div>
@@ -550,14 +654,17 @@ th{background:var(--accent-soft);color:var(--page-ink)}
 <h2 id="tables">The rules, at a glance</h2>
 <h3>Who must agree</h3>
 <div class="tw"><table>
-<thead><tr><th>Welcoming a…</th><th>Who must agree</th><th>If someone doesn't answer</th></tr></thead>
+<thead><tr><th>Welcoming a…</th><th>Who is asked</th><th>Needed</th><th>Lapses after</th></tr></thead>
 <tbody>
-<tr><td>Helper (no account)</td><td>The grown-up who writes the pass</td><td>n/a</td></tr>
-<tr><td>Carer</td><td>One other grown-up (the inviter if alone)</td><td>Waits. Silence is never yes. Expires after 7 days</td></tr>
-<tr><td>Parent</td><td><b>All parents</b>, never lower</td><td>Waits and reminds. Expires after 7 days</td></tr>
-<tr><td>Giving more access</td><td>Same as welcoming that tier</td><td>Same</td></tr>
-<tr><td>Giving less access</td><td>Any grown-up for a carer; a parent only for themselves</td><td>n/a</td></tr>
+<tr><td>A parent</td><td>All parents</td><td><b>All. A hard floor</b>, never lowerable</td><td>14 days</td></tr>
+<tr><td>A parent, family of one</td><td>That parent</td><td>Their yes, plus a 72-hour hold</td><td>14 days</td></tr>
+<tr><td>A parent with limits</td><td>All parents, and the person accepts the exact limits</td><td>All</td><td>14 days</td></tr>
+<tr><td>A trusted carer who can act</td><td>All parents</td><td>All by default (a family may set one parent, with a warning)</td><td>7 days</td></tr>
+<tr><td>A visit who can act</td><td>All parents</td><td>As above</td><td>3 days</td></tr>
+<tr><td>View only (can only look)</td><td>One parent</td><td>The proposer, <b>all others told at once</b></td><td>7 days</td></tr>
+<tr><td>A helper page</td><td>Nobody</td><td>Grants nothing</td><td>n/a</td></tr>
 </tbody></table></div>
+<p class="lede" style="margin-top:10px">Silence is never yes. A parent can answer Yes, No, Ask me later, or Yes with less. Either parent can pause a carer at once; ending one the other welcomed needs both.</p>
 <h3>What a stranger can and can't do</h3>
 <div class="tw"><table>
 <thead><tr><th>Attempt</th><th>What happens</th></tr></thead>
@@ -567,7 +674,7 @@ th{background:var(--accent-soft);color:var(--page-ink)}
 <tr><td>Scans a child's hello card</td><td>Nothing is revealed. No request unless a grown-up opened adding.</td></tr>
 <tr><td>Another family's app scans our code</td><td>"This code belongs to a different family." Nothing is shared.</td></tr>
 <tr><td>Uses an old invitation code</td><td>Refused, the same as a code that never existed.</td></tr>
-<tr><td>Wins over one grown-up against the others' wishes</td><td>A new parent needs all parents. A carer can be welcomed by one but is limited, settling in and logged.</td></tr>
+<tr><td>Wins over one grown-up against the others' wishes</td><td>A new parent needs all parents; a carer who can act needs all by default; a view-only person is limited, noticed by everyone and can be paused at once.</td></tr>
 <tr><td>Tries to bring in a new adult to push out another</td><td>Cannot: new parents need every parent, and removal needs a visible notice and agreement.</td></tr>
 </tbody></table></div>
 </main>
