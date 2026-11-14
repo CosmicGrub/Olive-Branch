@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 
 import 'contact_labels.dart' show GrownupContact;
 import 'grownup_labels.dart';
+import 'journal_lock.dart';
 import 'journal_screen.dart';
 import 'local_services.dart';
 import 'maturation_ladder.dart';
@@ -634,8 +635,12 @@ class _ConsentLogState extends State<ConsentLogScreen> {
 /// suggests what to write and nothing that reads it. It uses the same sealed on-device store as the younger
 /// journal ([JournalRepository]), so entries she wrote earlier are here too.
 class TeenJournalScreen extends StatefulWidget {
-  const TeenJournalScreen({super.key, required this.childName, this.childId, this.repository, this.clock});
+  const TeenJournalScreen({super.key, required this.childName, this.childId, this.repository, this.clock, this.lock});
   final String childName;
+
+  /// Her journal's code. When one is set, the younger journal's keypad gate (journal_screen.dart) stands in front of
+  /// every page, so this screen can never be a door past the code. Null only in the preview and tests.
+  final JournalLock? lock;
   final String? childId;
   final JournalRepository? repository;
   final DateTime Function()? clock;
@@ -650,10 +655,12 @@ class _TeenJournalState extends State<TeenJournalScreen> {
   final TextEditingController _text = TextEditingController();
   List<JournalEntry> _entries = const <JournalEntry>[];
   bool _writing = false;
+  bool? _locked;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_checkLock());
     unawaited(_load());
   }
 
@@ -661,6 +668,16 @@ class _TeenJournalState extends State<TeenJournalScreen> {
   void dispose() {
     _text.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkLock() async {
+    bool on = false;
+    try {
+      on = widget.lock != null && await widget.lock!.isOn();
+    } catch (_) {
+      // An unreadable lock record behaves as no lock; the pages are sealed regardless.
+    }
+    if (mounted) setState(() => _locked = on);
   }
 
   Future<void> _load() async {
@@ -699,6 +716,13 @@ class _TeenJournalState extends State<TeenJournalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.lock != null) {
+      if (_locked == null) return const Scaffold(body: SizedBox.shrink());
+      if (_locked!) {
+        return JournalScreen(
+            childName: widget.childName, childId: widget.childId, repository: widget.repository, lock: widget.lock, childAge: 13);
+      }
+    }
     return TeenPage(title: 'Journal', bodyKey: const Key('teenJournal'), children: <Widget>[
       Row(children: <Widget>[
         const OliveChip('Only you', icon: 'lock', key: Key('journalOnlyYou')),

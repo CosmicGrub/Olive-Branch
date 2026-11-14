@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 
 import 'child_home_bands_ui.dart' show BandMoreExtra;
 import 'family_structure_store.dart' show ChildBirthday;
+import 'journal_lock.dart';
 import 'handover18_screens.dart';
 import 'journal_screen.dart' show JournalRepository;
 import 'local_services.dart';
@@ -64,7 +65,7 @@ class TeenShell {
       case 'privacy':
         return Builder(builder: privacyWithRows);
       case 'journal':
-        return TeenJournalScreen(childName: childName, childId: childId, repository: journal, clock: clock);
+        return TeenJournalScreen(childName: childName, childId: childId, repository: journal, clock: clock, lock: JournalLock.forChild(childId: childId));
       case 'ladder':
         return _ladder();
     }

@@ -193,7 +193,7 @@ void main() {
 
   group('P7 structure', () {
     test('every place the app builds a JournalScreen passes a lock, so no door skips the code', () {
-      final RegExp call = RegExp(r'JournalScreen\(([^;]*?)\)\)?[;,]', dotAll: true);
+      final RegExp call = RegExp(r'(?<![A-Za-z])JournalScreen\(([^;]*?)\)\)?[;,]', dotAll: true);
       int found = 0;
       for (final File f in Directory('lib').listSync().whereType<File>().where((File f) => f.path.endsWith('.dart'))) {
         if (f.path.endsWith('journal_screen.dart')) continue;
@@ -204,6 +204,13 @@ void main() {
         }
       }
       expect(found, greaterThanOrEqualTo(2));
+    });
+
+    test('the teen journal door passes a lock too, so the code stands in front of it', () {
+      final String src = File('lib/child_home_t13.dart').readAsStringSync();
+      final Match? m = RegExp(r'TeenJournalScreen\(([^;]*?)\);', dotAll: true).firstMatch(src);
+      expect(m, isNotNull);
+      expect(m!.group(0), contains('lock:'));
     });
 
     test('no guardian-side file reaches the journal, its lock, her door marks or her weather', () {
