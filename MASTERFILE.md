@@ -8650,6 +8650,35 @@ matrix rows 179, 183, 184, 185, 189).
 - **Tests.** `wave7_suites_parity_test.dart` (page, switches, refusals, posture at 344/390/600/800 dp at 2.0x text, feelings
   switch and gate, heads-up flags and the new-place walk, Compass words), plus the updated settings-hub parity vector.
 
+### 8.22.8 Wave 8: child games at prototype parity (offline)
+
+Prototype rows `k.play`, `k.g.ttt`, `k.g.mem`, `k.g.war`, `k.g.word` (parity matrix rows 292, 295, 297, 298, 299). All of it
+is on this device and against the game; nothing needs a network. Every existing game stays. The shared game contract
+(PR #173) and the play transport are untouched.
+
+- **Three in a row: levels and a friend** (`game_tictactoe.dart`, `game_solo_logic.dart`). It opens on a calm *How shall we play?* panel:
+  **Easy** (a random square), **Normal** (take a win, block hers, take the middle, else random), **Hard** (full search, takes
+  the quickest win, never loses) or **Take turns with a friend** on this one screen. Every level honours the handicaps
+  (`no_centre`). Friend mode alternates turns with no thinking pause and hides *Make it fair* and the voice-note action
+  (a handicap is set by her on a grown-up, never between friends). The end banner is a quiet heart, never a trophy.
+- **Memory pairs** (`game_memory.dart`). Eight drawn symbols, each with its own shape and colour. Pairs grow with age: **3**
+  for 3 and 4, **4** for 5-7, **6** for 8-12, **8** from 13 (the early ages stay; nothing is removed). A miss waits 900 ms (1200 ms with
+  reduced motion, so more time to look) and turns back. No timer, no move count, no score; the end line is *All the pairs are
+  together.* This is not the *Our photos* game: `GameKind.memory` stays unbuilt and is never offered.
+- **War against the game** (`game_war_solo.dart`). The same card faces and flip reveal as the two-device War, with a CPU seat
+  from age 5. Higher card takes both; a tie keeps every card in the pot and the next flip settles it; 120 flips ends level.
+  Piles are pictures, never numbers. End line: *Good game.*
+- **Guess the word, on her own** (`game_hangman.dart :: GuessTheWordSolo`). A word from a per-band bank (young, middle, older)
+  with its hint, from age 6. One flower fades a little with each miss instead of eight hearts to count; a found or revealed word
+  offers *Another word*. A grown-up's typed word (guardian hub) is unchanged.
+- **Where they sit.** *Memory pairs*, *War against the game* and *Guess the word* are under **On your own** in the games list, ages
+  3, 5 and 6 (`soloGameMinAge`, kept apart from the eight pinned hub games), shown only on her shelf, never on the guardian hub, and
+  hidden or paused by the same per-game switches as the other games.
+- **Not built:** Draw and guess *the game draws* reveal (`k.g.pict`), Connect 4 same-screen two-player, Guess the word speak-the-hint,
+  the prototype's flat two-column picker (the picker keeps its sections), and wake time on the games-resting card.
+- **Tests.** `game_solo_logic_test.dart` (level, memory, word-bank and War vectors, Hard proved unbeatable), `game_wave8_screens_test.dart`
+  (screens, no score language, 344 / 390 / 600 / 800 dp at 2.0x text, ages and doors).
+
 ---
 
 ## §8.23 On-device performance pass — measured first, fixed only where shown
