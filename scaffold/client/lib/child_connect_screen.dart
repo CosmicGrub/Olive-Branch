@@ -194,7 +194,12 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       case _Stage.scanning:
         return _frame(
           Column(children: <Widget>[
-            SizedBox(height: 300, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: MobileScanner(key: const Key('childConnectScanner'), onDetect: _onScan))),
+            SizedBox(height: 300, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: MobileScanner(
+                key: const Key('childConnectScanner'),
+                onDetect: _onScan,
+                // Camera denied or missing: only the calm card, never the plugin's raw English error text.
+                errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() => _stage = _Stage.options)),
+              ))),
             const SizedBox(height: 12),
             TextButton(onPressed: () => setState(() => _stage = _Stage.options), child: const Text('Back')),
           ]),

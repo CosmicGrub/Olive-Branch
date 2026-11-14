@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:olive_client/child_connect_screen.dart';
 import 'package:olive_client/connect_child_screen.dart';
 import 'package:olive_client/device_keys.dart';
@@ -118,6 +119,25 @@ void main() {
     }
     expect(find.byType(TextField), findsNothing);
     expect(find.textContaining('error'), findsNothing);
+  });
+
+  testWidgets('child screen: camera denied while scanning shows only the calm card, never raw error text', (t) async {
+    await t.pumpWidget(MaterialApp(
+        home: ChildConnectScreen(
+            deviceKeys: MemoryDeviceKeyRepository(), onPaired: (_) async {}, finderFactory: _FakeFinder.new)));
+    await t.tap(find.byKey(const Key('adultGateGrownUp')));
+    await _settle(t);
+    await t.tap(find.byKey(const Key('childConnectScan')));
+    await t.pump();
+    final MobileScanner scanner = t.widget<MobileScanner>(find.byKey(const Key('childConnectScanner')));
+    expect(scanner.errorBuilder, isNotNull, reason: 'without one the plugin shows raw English error text');
+    await t.pumpWidget(MaterialApp(
+        home: Builder(builder: (BuildContext c) => scanner.errorBuilder!(
+            c, const MobileScannerException(errorCode: MobileScannerErrorCode.permissionDenied, errorDetails: MobileScannerErrorDetails(message: 'CAMERA_PERMISSION_DENIED raw text'))))));
+    expect(find.byKey(const Key('childConnectTryAgain')), findsOneWidget);
+    expect(find.textContaining('PERMISSION'), findsNothing);
+    expect(find.textContaining('denied'), findsNothing);
+    expect(find.textContaining('rror'), findsNothing);
   });
 
   testWidgets('child screen end to end: pick the phone by its label, type the PIN, match shown, paired', (t) async {

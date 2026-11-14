@@ -204,7 +204,12 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
     if (_scanning) ...[
       SizedBox(height: 280, child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: MobileScanner(key: const Key('pairingScanner'), onDetect: _onDetect),
+        child: MobileScanner(
+          key: const Key('pairingScanner'),
+          onDetect: _onDetect,
+          // Camera denied or missing: the plugin's own error text is raw English; show only the calm card.
+          errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() { _scanning = false; _scanHandledOnce = false; })),
+        ),
       )),
       const SizedBox(height: 12),
       TextButton(
@@ -408,7 +413,12 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
             width: 300,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: MobileScanner(key: const Key('pairingScanner'), onDetect: _onDetect),
+              child: MobileScanner(
+                key: const Key('pairingScanner'),
+                onDetect: _onDetect,
+                // Camera denied or missing: only the calm card, never the plugin's raw English error text.
+                errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() => _closing = _ClosingStage.choose)),
+              ),
             ),
           ),
           const SizedBox(height: 12),

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:olive_client/pairing_redeem_screen.dart';
 
 class _Offline implements Exception {
@@ -127,6 +128,24 @@ void main() {
     await t.tap(find.byKey(const Key('pairingScanBack')));
     await t.pumpAndSettle();
     expect(find.byKey(const Key('pairingChooseType')), findsOneWidget);
+  });
+
+  testWidgets('camera denied while scanning: only the one calm card, never raw error text from the plugin', (t) async {
+    await pump(t, _answering(404, <String, Object?>{}));
+    await t.tap(find.byKey(const Key('adultGateGrownUp')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const Key('pairingChooseScan')));
+    await t.pump();
+    final MobileScanner scanner = t.widget<MobileScanner>(find.byKey(const Key('pairingScanner')));
+    expect(scanner.errorBuilder, isNotNull, reason: 'without one the plugin shows raw English error text');
+    await t.pumpWidget(MaterialApp(
+        home: Builder(builder: (BuildContext c) => scanner.errorBuilder!(
+            c, const MobileScannerException(errorCode: MobileScannerErrorCode.permissionDenied, errorDetails: MobileScannerErrorDetails(message: 'CAMERA_PERMISSION_DENIED raw text'))))));
+    expect(find.byKey(const Key('childConnectTryAgain')), findsOneWidget);
+    final String all = _everythingShown(t);
+    expect(all, isNot(contains('PERMISSION')));
+    expect(all, isNot(contains('denied')));
+    expect(all, isNot(contains('rror')));
   });
 
   for (final String reason in <String>[
