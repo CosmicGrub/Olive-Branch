@@ -28,15 +28,20 @@ const Duration kWindowTtl = Duration(minutes: 10);
 const int kWindowMaxAttempts = 5;
 const int _kMaxPake1PerWindow = 20;
 
-/// The quiet per-source budget on the adult window (one source = one LAN address; an IPv6 /64 counts as one).
+/// The quiet per-source budget on the adult window (one source = one LAN address, see sourceKey).
 /// A device on the same Wi-Fi that merely sees the window can burn at most [kSourceMaxFailures] of the window's
-/// [kWindowMaxAttempts] confirmations; past its budget it gets the same silence as a closed window. A source's
-/// first-message and key-exchange tries are capped too, so one address cannot use up the window's 20 key
-/// exchanges or keep overwriting the real child's half-finished one. The table of sources is bounded; once full,
-/// a NEW source is ignored (a known one keeps its place). None of this is ever shown to a child.
+/// [kWindowMaxAttempts] confirmations; past its budget it gets the same silence as a closed window. The failure
+/// limit is kept BELOW HALF the window cap on purpose: a dual-stack host has an IPv4 and an IPv6 address that this
+/// layer cannot tie together, so two budgets must still sum under the cap and leave the real child a try
+/// (a test pins this). A source's first-message and key-exchange tries are capped too, so one address cannot use
+/// up the window's 20 key exchanges or keep overwriting the real child's half-finished one.
+/// The table of sources is bounded and NEVER refuses a new source: it is least-recently-used, so a flood of free
+/// hellos (which need only the public handle) just evicts idle entries. A source that has FAILED a confirmation
+/// (at most [kWindowMaxAttempts] of them per window) is never evicted, so a flood cannot wash a block away.
+/// None of this is ever shown to a child.
 const int kSourceMaxHello = 12;
 const int kSourceMaxPake1 = 6;
-const int kSourceMaxFailures = 3;
+const int kSourceMaxFailures = 2;
 const int kMaxTrackedSources = 256;
 
 /// The letters a window label may use: no vowels (so it never spells a word) and nothing easily misread.
@@ -239,9 +244,8 @@ class AdultWindow extends ChangeNotifier {
 
   void _fail(String? source) {
     if (source != null) {
-      // The failure is charged to the source that sent the bad confirmation (the table has room: it sent a pake1).
-      final _SourceUse? u = _sources[source] ?? (_sources.length < kMaxTrackedSources ? (_sources[source] = _SourceUse()) : null);
-      u?.failures += 1;
+      // The failure is charged to the source that sent the bad confirmation.
+      _use(source).failures += 1;
     }
     attemptsLeft -= 1;
     _pending = null;
@@ -262,15 +266,35 @@ class AdultWindow extends ChangeNotifier {
     }
   }
 
-  /// Takes one unit of [source]'s budget. False = over budget (or the table of sources is full): stay silent.
+  /// The record for [source], marked most recently used. A new source is always admitted: when the table is full
+  /// the least-recently-used entry WITHOUT a failure is dropped (failed sources are at most kWindowMaxAttempts,
+  /// far below the table size, so one is always found).
+  _SourceUse _use(String source) {
+    _SourceUse? u = _sources.remove(source);
+    if (u == null) {
+      u = _SourceUse();
+      if (_sources.length >= kMaxTrackedSources) {
+        String? victim;
+        for (final MapEntry<String, _SourceUse> e in _sources.entries) {
+          if (e.value.failures == 0) {
+            victim = e.key;
+            break;
+          }
+        }
+        _sources.remove(victim ?? _sources.keys.first);
+      }
+    }
+    _sources[source] = u;
+    return u;
+  }
+
+  /// Test hook: how many sources the window is tracking right now.
+  int get trackedSourceCount => _sources.length;
+
+  /// Takes one unit of [source]'s budget. False = over budget: stay silent.
   bool _spend(String? source, int Function(_SourceUse u) bump, int limit) {
     if (source == null) return true;
-    _SourceUse? u = _sources[source];
-    if (u == null) {
-      if (_sources.length >= kMaxTrackedSources) return false;
-      u = _sources[source] = _SourceUse();
-    }
-    return bump(u) <= limit;
+    return bump(_use(source)) <= limit;
   }
 
   bool _blocked(String? source) => source != null && (_sources[source]?.failures ?? 0) >= kSourceMaxFailures;

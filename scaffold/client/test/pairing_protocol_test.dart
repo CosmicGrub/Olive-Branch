@@ -365,16 +365,64 @@ void main() {
       }
     });
 
-    test('the table of sources is bounded: a flood of new addresses cannot grow memory without limit', () async {
+    test('the table of sources is bounded, and a flood of free hellos never starves a new legitimate source', () async {
       final DeviceKey ak = await _key(), ck = await _key();
       final AdultWindow w = await _window(ak);
       Future<Map<String, dynamic>?> hello(String src) =>
           w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
-      for (int i = 0; i < kMaxTrackedSources; i++) {
-        expect(await hello('s$i'), isNotNull);
+      for (int i = 0; i < kMaxTrackedSources * 3; i++) {
+        expect(await hello('s$i'), isNotNull, reason: 'source $i is never refused for want of room');
       }
-      expect(await hello('one-too-many'), isNull);
-      expect(await hello('s0'), isNotNull, reason: 'a source already known keeps its place');
+      expect(await hello('the-real-child'), isNotNull);
+      expect(w.trackedSourceCount, lessThanOrEqualTo(kMaxTrackedSources), reason: 'memory stays bounded');
+    });
+
+    test('a source that has failed a confirmation keeps its block through any flood of new sources', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      for (int i = 0; i < kSourceMaxFailures; i++) {
+        await _client(ck, LoopbackPairingTransport(w, source: 'burner')).pair(sid: w.sid, password: '0000');
+      }
+      Future<Map<String, dynamic>?> hello(String src) =>
+          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+      for (int i = 0; i < kMaxTrackedSources * 3; i++) {
+        await hello('flood$i');
+      }
+      expect(await hello('burner'), isNull, reason: 'a flood cannot wash the burner back to a clean slate');
+    });
+
+    test('least-recently-used goes first: an active source keeps its budget while idle ones are dropped', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      Future<Map<String, dynamic>?> hello(String src) =>
+          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+      for (int i = 0; i < kSourceMaxHello; i++) {
+        await hello('active');
+      }
+      expect(await hello('active'), isNull);
+      for (int i = 0; i < kMaxTrackedSources * 2; i++) {
+        await hello('idle$i');
+        await hello('active'); // keeps touching it
+      }
+      expect(await hello('active'), isNull, reason: 'still over budget: it was never the eviction victim');
+    });
+
+    test('two addresses of one dual-stack host cannot, together, burn more than the window cap leaves the real child', () async {
+      expect(kSourceMaxFailures * 2, lessThan(kWindowMaxAttempts), reason: 'v4 + v6 budgets must sum below the cap');
+      final DeviceKey ak = await _key(), ck = await _key(), ck2 = await _key();
+      final AdultWindow w = await _window(ak);
+      w.addListener(() async {
+        if (w.state == WindowState.awaitingApproval) await w.approve();
+      });
+      for (final String src in <String>['host-v4', 'host-v6']) {
+        for (int i = 0; i < kSourceMaxFailures + 2; i++) {
+          await _client(ck, LoopbackPairingTransport(w, source: src)).pair(sid: w.sid, password: '0000');
+        }
+      }
+      expect(w.isOpen, isTrue);
+      expect(w.attemptsLeft, greaterThanOrEqualTo(1));
+      final PairingResult real = await _client(ck2, LoopbackPairingTransport(w, source: 'child')).pair(sid: w.sid, password: '4829');
+      expect(real.ok, isTrue, reason: '${real.failure}');
     });
 
     test('a blocked source costs the child nothing visible: the result is the same quiet "unreachable"', () async {

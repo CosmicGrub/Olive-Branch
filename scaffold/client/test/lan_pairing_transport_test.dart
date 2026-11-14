@@ -136,11 +136,22 @@ void main() {
   });
 
   group('sourceKey', () {
-    test('IPv4 as is; IPv6 by its /64; IPv4-mapped IPv6 as its IPv4', () {
+    test('IPv4 as is; IPv4-mapped IPv6 as its IPv4; port plays no part', () {
       expect(sourceKey(InternetAddress('192.168.1.20')), '192.168.1.20');
       expect(sourceKey(InternetAddress('::ffff:192.168.1.20')), '192.168.1.20');
-      expect(sourceKey(InternetAddress('fd12:3456:789a:1::5')), sourceKey(InternetAddress('fd12:3456:789a:1:aaaa:bbbb:cccc:dddd')));
+      expect(sourceKey(InternetAddress('::ffff:192.168.1.20')), sourceKey(InternetAddress('192.168.1.20')));
+    });
+
+    test('IPv6 is keyed by the full address: two link-local or two same-/64 devices never share a budget', () {
+      expect(sourceKey(InternetAddress('fe80::1')), isNot(sourceKey(InternetAddress('fe80::2'))));
+      expect(sourceKey(InternetAddress('fe80::aaaa:bbbb:cccc:dddd')), isNot(sourceKey(InternetAddress('fe80::1'))));
+      expect(sourceKey(InternetAddress('fd12:3456:789a:1::5')), isNot(sourceKey(InternetAddress('fd12:3456:789a:1:aaaa:bbbb:cccc:dddd'))));
       expect(sourceKey(InternetAddress('fd12:3456:789a:1::5')), isNot(sourceKey(InternetAddress('fd12:3456:789a:2::5'))));
+    });
+
+    test('the same IPv6 device is one source however its scope is written', () {
+      expect(sourceKey(InternetAddress('fe80::1')), sourceKey(InternetAddress('fe80::0001')));
+      expect(sourceKey(InternetAddress('fe80::1%1')), sourceKey(InternetAddress('fe80::1')));
     });
   });
 

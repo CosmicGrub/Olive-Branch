@@ -61,8 +61,18 @@ bool isLanAddress(InternetAddress a, {bool allowLoopback = false}) {
   return false;
 }
 
-/// The key a window budgets a source by: its IPv4 address, or its IPv6 /64 (a device can rotate the rest at will);
-/// an IPv4-mapped IPv6 address counts as its IPv4.
+/// The key a window budgets a source by: its IPv4 address, or its FULL IPv6 address (16 raw bytes, so a scope id
+/// written after '%' plays no part); an IPv4-mapped IPv6 address counts as its IPv4. The remote port is never part
+/// of it.
+///
+/// Trade-off, chosen on purpose: an earlier version collapsed IPv6 to its /64, which put every fe80::/64 link-local
+/// device (and every device on one unique-local /64) in ONE bucket, so a single hostile device could use up the
+/// budget and lock a real IPv6 child out. Per-address keys cannot do that. The cost is that a device which rotates
+/// its IPv6 address (privacy addresses) gets a fresh per-source budget each time; that only lets it spend more of
+/// the window's SHARED five confirmations, which still end the window, so it can deny service (the adult reopens a
+/// window) but never guess more than five PINs. The table of sources is LRU-bounded, so rotation cannot grow memory.
+/// A dual-stack host's IPv4 and IPv6 addresses cannot be tied together from here, so the per-source failure limit is
+/// kept below half the window cap (see kSourceMaxFailures) instead: two of its addresses leave a try for the child.
 String sourceKey(InternetAddress a) {
   final List<int> b = a.rawAddress;
   if (a.type == InternetAddressType.IPv4) return a.address;
@@ -70,7 +80,7 @@ String sourceKey(InternetAddress a) {
     if (b.sublist(0, 10).every((int x) => x == 0) && b[10] == 0xff && b[11] == 0xff) {
       return InternetAddress.fromRawAddress(Uint8List.fromList(b.sublist(12))).address;
     }
-    return 'v6:${b.sublist(0, 8).map((int x) => x.toRadixString(16).padLeft(2, '0')).join()}';
+    return 'v6:${b.map((int x) => x.toRadixString(16).padLeft(2, '0')).join()}';
   }
   return a.address;
 }
