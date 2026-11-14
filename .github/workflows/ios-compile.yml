@@ -1,0 +1,72 @@
+name: ios-compile
+# ADVISORY ONLY. Never a required check, never part of `verify` or `image`, and `continue-on-error`
+# on the job means a failure here can not turn a PR red. Do NOT add it to branch protection.
+# docs/roadmaps/IOS-ROADMAP.md: iOS work is on hold until the owner says Android is complete; this
+# job only records whether the inert ios/ scaffold still compiles (no signing).
+# macOS runners: GitHub documents standard hosted runners as free for PUBLIC repositories. NOT
+# verified from this session (could not read the billing page); the first run's behaviour is the evidence.
+on:
+  pull_request:
+    paths:
+      - 'scaffold/client/**'
+      - '.github/workflows/ios-compile.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ios-compile:
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: scaffold/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.44.8', channel: stable, cache: true }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('scaffold/client/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: scaffold/client/ios/Pods
+          key: pods-${{ runner.os }}-${{ hashFiles('scaffold/client/pubspec.lock', 'scaffold/client/ios/Podfile') }}
+          restore-keys: pods-${{ runner.os }}-
+      - name: flutter pub get
+        run: flutter pub get 2>&1 | tee "$RUNNER_TEMP/ios-compile.log"
+      - name: flutter build ios --no-codesign --debug
+        id: build
+        run: |
+          set -o pipefail
+          flutter build ios --no-codesign --debug 2>&1 | tee -a "$RUNNER_TEMP/ios-compile.log"
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### iOS compile (advisory, scaffold only)"
+            echo ""
+            echo "- Result: \`${{ steps.build.outcome }}\` (never blocks a merge)"
+            echo "- Flutter 3.44.8, \`flutter build ios --no-codesign --debug\`"
+            echo "- Nothing here proves the app WORKS on iOS: no Swift bridges exist yet (docs/roadmaps/IOS-ROADMAP.md)."
+            echo ""
+            echo "Last log lines:"
+            echo '```'
+            tail -n 25 "$RUNNER_TEMP/ios-compile.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-compile-log
+          path: ${{ runner.temp }}/ios-compile.log
+          if-no-files-found: ignore
