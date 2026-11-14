@@ -1,6 +1,6 @@
 # Family sync and notifications: how guardian devices share data without a server that can read it
 
-Design only. No code in this change. Written 2026-11-14 against `origin/main` at 8440203.
+Design only. No code in this change. Written 2026-11-14 against `origin/main`, re-based on cdf9806 (care guides pilot, PR #200) after review.
 Status: DRAFT FOR OWNER REVIEW. Nothing here is built. Section 14 lists what needs the owner; section 15 lists what could not be verified.
 
 Companions (read first): `FAMILY-IDENTITY-DESIGN.md` (family object FID, signed ledger, family key FK, guardian-only key GK, device agreement keys, rotation, second-guardian join), `VILLAGE-WELCOME-DESIGN.md` (welcome votes, pause, "told in plain words"), `QR-VETTING-BRAINSTORM.md` (a scan is an introduction, never a key), `docs/superpowers/specs/2026-11-08-server-snoop-hardening-design.md` (sealed relay envelope, network-identity minimisation), `DECISIONS.md` and `OPEN-DECISIONS.md` (offline-first, parked online items). MASTERFILE: 2.1 (P1 to P11), 2.6, 2.12, 5.7, 8.15, 8.24, 11, 15, 17.1.
@@ -14,7 +14,7 @@ The identity lane and the village lane stay as they are. This document adds one 
 Today every grown-up phone is an island. The care binder, the medicines and their dose log, the emergency card, the handover log, expenses and the family record are each one sealed document on one phone (`SYNC: none`, local-only; "sharing between homes is parked"). Three features the owner wants cannot exist on islands:
 
 - **About Mia** (both parents edit one profile of her),
-- **the village** ("every parent is told immediately", welcome votes that need other parents' answers),
+- **the village** (every parent "told in plain words at the time", welcome votes that need other parents' answers),
 - **the care guides' For Mia strip** (a short personalised strip that sits on top of a reviewed guide and shows what the family itself wrote about her: allergies, the emergency contact, the doctor).
 
 The design in one paragraph: **every shared record becomes a signed, encrypted, append-only event in a small hash-linked log; the existing sealed documents become a deterministic fold of those logs; any device that holds the family keys can carry any bytes to any other device, over whichever road happens to be open (the same Wi-Fi, a tablet that moves between homes, a dumb mailbox on the server that sees only ciphertext, or a hand-carried file); a wake-up push may knock on the door but never says anything.** No road is trusted. Authority is the Ed25519 signature of a guardian device, secrecy is a key the server never has, and when two grown-ups change the same thing at once, both versions are shown and a grown-up chooses. Nothing is silently overwritten.
@@ -24,7 +24,7 @@ Recommendations in brief (full list with reasons in section 14):
 1. One sync engine, transport-agnostic ("bundles"), so the roads can be built in the order the owner's offline-first direction allows.
 2. v1 roads: **same-Wi-Fi direct** first (it works today with no hosting), then the **sealed mailbox** on the server when hosting resumes. A tablet carrying ciphertext between homes (the "courier") and a hand-carried file are cheap add-ons, off by default.
 3. **A hard truth stated up front:** with no server and no shared Wi-Fi, two homes cannot sync. The only no-server cross-home roads are the child's tablet as a courier and a hand-carried file. The design makes both possible and is honest that neither is instant.
-4. "Every parent is told immediately" must be reworded in the village design to "as soon as their phone connects". The in-app promise can only be as strong as the road.
+4. The village design's "told in plain words at the time" and "told at once" (3.6, 7.9) must be reworded to "as soon as their phone connects". The in-app promise can only be as strong as the road.
 5. Wake-only push is optional, off until the owner supplies credentials, and carries no content, no name and no family id.
 6. Sealed sync is introduced for **local-only families first**. Server-backed families keep today's plaintext-with-RLS routes until a deliberate migration; two sources of truth for the same medicine list is the failure to avoid (section 14, question 1).
 
@@ -35,7 +35,7 @@ Recommendations in brief (full list with reasons in section 14):
 ### 1.1 Goals
 
 1. Two or more guardian devices of one family converge on the same shared records (About Mia, care binder, emergency card, medicines and dose log, expenses, handover log, passes, family structure the guardians built), with no server required for the logic.
-2. The server, when present, is a courier of ciphertext. A full compromise of it yields sizes, timing, opaque tags and push tokens, never content, never a name, never a roster.
+2. The server, when present, is a courier of ciphertext. A full compromise of it yields bucketed sizes, timing, the key epoch number, mailbox ids and push tokens, never content, never a name, never a roster, never a family id, a device fingerprint or the kind of change (section 5.2 keeps all of those inside the encryption).
 3. Guardian-private material never reaches a child device in readable form (P6, P7); the child's own material never leaves her device at all.
 4. Offline works. A change is saved at once, is delivered when any road opens, and the person sees the truth about where it has got to.
 5. A conflict is a visible, calm event for grown-ups and never a silent loss. Attribution of every change to a person is preserved (who gave the dose, who changed the card).
@@ -48,7 +48,7 @@ Recommendations in brief (full list with reasons in section 14):
 - No sync of anything the child makes, writes, draws, feels or chooses (journal, worries, feelings, lists, pictures, memory box, nicknames and the rest, section 3). A sanctioned child-to-grown-up share ("show my grown-up") is a separate, child-first design.
 - No location, no live presence, no "last seen" for the child, no read receipts about the child. (P3.)
 - No real-time collaborative editing. Edits are saved and merged, not typed together.
-- No access for carers or helpers. A welcomed carer holds FK and an agreement key, never GK (Village design 10.3), so a carer receives no guardian-shared record through sync. Carer views remain the parent-held pages that exist today. A later design may seal per-capability sub-keys.
+- No access for carers or helpers. A welcomed carer holds FK and an agreement key, never GK (Village design 6.5 and 9), so a carer receives no guardian-shared record through sync. Carer views remain the parent-held pages that exist today. A later design may seal per-capability sub-keys.
 - No remote wipe or remote control of any device (P11). Revocation is cryptographic (section 8), not a command.
 - No photo or large-attachment sync. Records that carry a small photo today (growing capsules, passes) sync their text in v1 and their photo later, once blob sizes and quotas are measured.
 - No sync of PINs, device keys, store keys, the local app-lock choices or anything under `localpin`, `devicekey`, `adultunlock`, `childpairing`. Never.
@@ -109,6 +109,8 @@ Five classes. Every catalogue area belongs to exactly one.
 | `colour` (play window, art style), `plan`, `access`, `rhythm` (routine, first-then cards, bag), `voice` (helpers, symbols, on/off) | **D** for what a guardian set; **N** for her ticks and her day | One-way fan-out so a tablet connected by Mom honours a setting Dad changed. Needs identity PR 4 (the child device holds the ledger). Optional for v1. |
 | the family ledger itself (roster, policy, welcome proposals and votes, pause, rotation) | **P** | Defined by the identity and village designs; this document only carries it. |
 
+The catalogue's own `scope` label is a different axis from this table: it marks `care`, `emergencycard`, `coordination`, `family` and `passes` as scope `child` (they are about her), whereas the class here says who may read them (guardians only). The class governs sync. A later catalogue PR should either relabel those areas or add a guardian-only flag so the two cannot be read as contradictory; their "Data on this device" text already says guardian side only.
+
 ### 3.2 What never leaves a device, as a rule a test can check
 
 - A child device's store keys and every N area never enter the sync event store. A source guard fails the build if a child-side file imports the sync writer, and a test fails if any N area name appears in the event-kind table (section 5.2).
@@ -143,7 +145,7 @@ The sync engine (sections 5 and 6) moves opaque **bundles**: a bounded list of s
 ### 4.3 The courier, in detail
 
 - What it carries: first, **ledger entries** (class P). They are public to members, small, and are the main thing a stranded co-parent needs (a welcome vote, a pause, a revoke notice). Second and only if the owner agrees, a bounded **satchel** of sealed G/L events addressed to the other household's devices, at most 256 KiB, oldest dropped after 30 days.
-- Why it is acceptable cryptographically: the tablet holds FK, not GK. It cannot open G or L. Its satchel is ciphertext plus the same opaque tags the mailbox would see.
+- Why it is acceptable cryptographically: the tablet holds FK, not GK. It cannot open G or L. Its satchel is ciphertext only: the outer layout (section 5.2) carries a version, an epoch number, a nonce and a bucketed length, so the tablet learns no stream, author, kind or family id. Cost: it cannot check signatures, so the satchel's size cap and age limit are its only defence against junk.
 - Why it still needs the owner: it stores health-adjacent ciphertext on a child's device that can be lost, and it makes the child's tablet part of the parents' logistics. P11 and P2 are not touched (the child sees nothing, is asked nothing, controls nothing), but the product principle "the child device is hers" deserves an explicit yes.
 - Child-first rules: no screen, no setting, no word on the tablet; storage-full on the satchel drops the oldest silently; a courier fault is invisible to her.
 
@@ -152,7 +154,7 @@ The sync engine (sections 5 and 6) moves opaque **bundles**: a bounded list of s
 Not designed to implementation depth, because it depends on the family tenant work and on hosting.
 
 - **Store-and-forward, not a table.** A mailbox holds sealed bundles for one recipient device until fetched or until a TTL (recommend 30 days). Quota per mailbox (recommend 2 MiB, 200 items). Items use the existing envelope discipline: strict parse, deny-by-default keys, fixed size buckets (reuse 256, 1024, 4096 and add 16384 and 32768 as the local frame does), a plaintext tripwire as a tripwire not a proof (relay_envelope.ts E1 to E4).
-- **Opaque addressing.** Mailbox id = HKDF(FK-derived key, recipient device fingerprint, FK epoch). The server cannot link a mailbox to a family, a person or a child, because it never learns FK. A mailbox id is stable within an epoch, so the server can see "a mailbox receives N items a day"; rotation changes all ids.
+- **Opaque addressing.** Mailbox id = HKDF(FK-derived key, recipient device fingerprint, FK epoch). The server cannot link a mailbox to a family, a person or a child, because it never learns FK, and because the events it stores carry no family id, device fingerprint, stream or kind (section 5.2). A mailbox id is stable within an epoch, so the server can see "a mailbox receives N items a day"; rotation changes all ids. Because nothing outside the encryption names a stream, a device fetches everything addressed to its mailbox and sorts by trial decryption; selective fetch per stream is not possible, which is the price of not leaking stream activity.
 - **Capability auth, no accounts.** Post requires a MAC under an FK-derived post key (proves "a member of some family that owns this mailbox", not who). Fetch requires a read secret the recipient chose at registration (the server stores its hash). So even in a server-backed family the mailbox path does not give the server a device-to-account map. Honest cost: any member, including a child tablet or a revoked-but-not-rotated device, can post junk until the next rotation; junk fails the recipient's signature check and is dropped (a denial-of-service nuisance, not a breach). Rate limits cannot use raw client IPs (snoop hardening keeps none), so they are per mailbox and global.
 - **Fits the snoop rules:** TLS only in production; no content, tag or ciphertext in logs; production refuses plaintext-looking items; network identifiers in bodies refused.
 - **Not a game table.** The live relay stays as it is. Reusing its code (strict parse, rate limiter, upgrade hardening) is welcome; reusing its lifecycle is not.
@@ -175,8 +177,8 @@ The identity design's ledger is a hash-linked list of signed entries with `prev`
 
 | Stream kind | Readable by | Content | Defined in |
 |---|---|---|---|
-| `ledger` | all member devices (FK), signed in clear to members | roster, policy, welcome, pause, rotate | identity and village designs |
-| `data:<area>:<child>` | guardian devices (GK) | one stream per area per child: `profile`, `care`, `emergency`, `meds`, `expenses`, `handover`, `passes`, ... | this document |
+| `ledger` | all member devices (FK), signed in clear to members | roster, policy, welcome, pause, rotate | identity and village designs. Its layout is the identity design's; 5.2 describes the guardian data streams only |
+| `data:<area>:<child>` | guardian devices (GK) | one stream per area per child: `profile`, `care`, `emergency`, `meds`, `expenses`, `handover`, `passes`, ... Each has a random 128-bit **streamId** minted by its first event and carried only inside sealed events (5.2) | this document |
 | `data:<area>:<child>:lock:<section>` | holders of the section key | one stream per locked section | section 6.5 |
 | `cfg:<child device>` | that child device (FK) and guardians | class D settings | section 3 |
 
@@ -184,30 +186,38 @@ One stream per area per child keeps each stream small and inside the catalogue's
 
 ### 5.2 Event layout
 
-Canonical bytes built with the existing `lv()` and `cat()` helpers (length-prefixed, not JSON, because signing JSON is fragile), in the same style as `PairingCert.signedBytes` and `play_frame.dart`:
+Canonical bytes built with the existing `lv()` and `cat()` helpers (length-prefixed, not JSON, because signing JSON is fragile), in the same style as `PairingCert.signedBytes` and `play_frame.dart`.
+
+**Rule: nothing that identifies a family, a device, a stream or a kind of change is outside the encryption.** The outer header is only what a recipient needs to pick a key.
 
 ```
-header  = lv("olive-evt-v1") | FID | epoch | streamTag | authorDeviceFp | authorSeq | hlc | prev[] | kind | schema
-body    = AEAD( key = HKDF(GK_epoch, "olive/gk/evt/v1", streamTag),
-                nonce = random 192-bit (see below),
-                aad   = header,
-                plain = lv(payload) | zero padding to a bucket )
-event   = header | body | signature
-signature = Ed25519( authorDeviceKey, SHA-256(header | body) )
-eventHash = SHA-256( header | body | signature )
+outer  = lv("olive-evt-v1") | epoch | nonce | bucketLen
+inner  = lv(FID) | streamId | authorDeviceFp | authorSeq | hlc | prev[] | kind | schema | lv(payload)
+sig    = Ed25519( authorDeviceKey, SHA-256( "olive/evt-sig/v1" | inner ) )
+plain  = inner | sig | zero padding to bucketLen
+body   = AEAD( key = HKDF(GK_epoch, "olive/gk/evt/v2", empty),
+               nonce = random 192-bit (see below),
+               aad   = outer,
+               plain )
+event  = outer | body
+sealHash  = SHA-256( outer | body )          // what a relay or mailbox can dedupe on
+eventId   = SHA-256( inner | sig )           // what prev[] and acks name
 ```
 
-- **`streamTag`** = HMAC(GK-derived key, stream name). A server or courier sees a stable opaque tag per stream, never "medicines". Within an epoch a tag is stable; rotation changes them.
-- **`authorSeq`** is a per-device strictly rising counter. A recipient that sees 1, 2, 4 knows 3 is missing. This is how a withholding relay is detected (section 8).
+- **What an outside observer sees:** the version string, the key epoch number, a random nonce, and a bucketed length. Not the FID, not which device wrote it, not the stream, not the kind, not the schema, not `prev`. A mailbox operator, a courier or a LAN observer cannot tell a dose from an allergy edit (the padding rationale now holds), cannot count one device's activity separately from another's, and cannot link a mailbox to a family by an identifier in the bytes. What remains is in section 8, S1.
+- **Stream identity is independent of the key epoch.** `streamId` is minted once by the stream's first event, lives inside the sealed and signed `inner`, and never changes. Rotation changes the AEAD key and the nonce space, not the `streamId`, `authorSeq` or `prev[]`. The old per-epoch "streamTag" is gone: the heads exchange (5.4) names streams by `streamId` inside an already-sealed session.
+- **`prev[]` and acks name `eventId`, not `sealHash`.** An `eventId` covers only the signed inner bytes, so it is the same whichever epoch the event is sealed under. That is what lets a DAG, `authorSeq` and checkpoints span epochs (5.6 and section 8, S7 and S16).
+- **`authorSeq`** is a per-device strictly rising counter, per stream. A recipient that sees 1, 2, 4 knows 3 is missing. This is how a withholding relay is detected (section 8). The gap is only visible after decryption, by a guardian device; an outside relay cannot see or exploit it.
 - **`hlc`** is a hybrid logical clock (wall milliseconds plus a counter). It is used to **order for display**, never to decide who wins. A drift bound rejects events whose wall time is more than 24 hours ahead of the receiving device's clock (question 12).
-- **`prev[]`** lists the stream heads the author had seen. Two events that do not reach each other through `prev` are **concurrent**.
-- **`kind`** comes from a closed table per area (for example `meds.add`, `meds.dose`, `emergency.set`, `expense.propose`, `expense.event`, `handover.note`). The table is the place a test asserts that no N area has an entry (section 3.2).
-- **Sign the ciphertext, not the plaintext.** A recipient (or a courier, or in server mode a mailbox) can reject a forged or damaged event without spending a decryption, and a GK holder cannot forge another guardian's authorship, because attribution is a device signature, not a shared key. That is exactly what dose attribution ("who gave it") and 2.6 and P8 need.
-- **Why not authenticate with GK alone:** GK is shared by every guardian device. A GK-only MAC would let any guardian forge any other's entries.
-- **Nonce:** with several devices sharing one key, nonce reuse is the classic hazard. Recommend XChaCha20-Poly1305 (random 192-bit nonce, collision-safe at any plausible volume). The client pins `cryptography` 2.9.0 and already uses ChaCha20-Poly1305 and AES-GCM; XChaCha20 availability in that version was not checked (section 15). Fallback: a 96-bit nonce built from a 32-bit device index and a 64-bit persistent per-device counter, with a rule to jump the counter forward on restore.
-- **Padding:** the plaintext is padded to the local frame's buckets (256, 1024, 4096, 16384, 32768) so a dose and an allergy edit look alike on the wire.
-- **Epoch binding:** the epoch is in the header and the AAD. An event under an old epoch can only be opened by someone who held that epoch's key (section 8).
-- **Cross-implementation vectors:** a small Node implementation of the canonical bytes, the hash and the AEAD with a shared vector file, as `tools/pake_cpace.mjs` and `test/vectors/play_frame_vectors.json` already do.
+- **`prev[]`** lists the stream heads (`eventId`s) the author had seen. Two events that do not reach each other through `prev` are **concurrent**.
+- **`kind`** comes from a closed table per area (for example `meds.add`, `meds.dose`, `emergency.set`, `expense.propose`, `expense.event`, `handover.note`). The table is the place a test asserts that no N area has an entry (section 3.2). It is inside the sealed inner bytes, so only a guardian device that has opened the event can read it.
+- **Authorship is an inner device signature.** It is checked after decryption against the roster. A GK-only MAC would let any guardian forge any other's entries, so the Ed25519 signature covers `FID`, `streamId`, `authorDeviceFp`, `authorSeq`, `prev[]`, `kind` and the payload together. That is exactly what dose attribution ("who gave it") and 2.6 and P8 need.
+- **What this costs:** the earlier draft let a courier or a mailbox reject a forged or damaged event by signature without decrypting. A non-member cannot do that now, and should not be able to: it would need the roster, which is the thing hidden. Outsiders are protected instead by the AEAD tag (a recipient drops anything that does not open), the mailbox post capability (4.4) and bucket and quota limits. A junk item costs a recipient one failed decryption.
+- **Epoch binding:** the epoch is in the outer header and in the AAD, so a recipient picks the right key and a re-labelled epoch fails to open. An event sealed under an old epoch can be opened only by someone who holds that epoch's key (5.6; section 8, S7 and S16). A recipient also checks the `FID` inside against its own family and drops a mismatch.
+- **Locked sections** (6.5) use a section key instead of GK. The outer layout is identical, so an observer cannot tell a locked event from an ordinary one; a recipient tries GK for that epoch, then the section keys it holds.
+- **Nonce:** with several devices sharing one key, nonce reuse is the classic hazard. Recommend XChaCha20-Poly1305 (random 192-bit nonce, collision-safe at any plausible volume). The client pins `cryptography` 2.9.0 and already uses ChaCha20-Poly1305 and AES-GCM; XChaCha20 availability in that version was not checked (section 15). Fallback: a 96-bit nonce built from a device index and a 64-bit persistent per-device counter, with a rule to jump the counter forward on restore. The fallback's device index would sit in the clear nonce, so it must be a random index per epoch, not the device fingerprint.
+- **Padding:** the plaintext (inner, signature and zero padding) is padded to the local frame's buckets (256, 1024, 4096, 16384, 32768) so a dose and an allergy edit look alike on the wire. The padding hides length differences within a bucket only.
+- **Cross-implementation vectors:** a small Node implementation of the canonical bytes, the hashes and the AEAD with a shared vector file, as `tools/pake_cpace.mjs` and `test/vectors/play_frame_vectors.json` already do. Add a test that no byte string equal to the FID, a device fingerprint, a `streamId` or a `kind` name appears in `outer | body` for any vector.
 
 ### 5.3 Materialised view: the existing sealed documents stay
 
@@ -222,16 +232,26 @@ The existing sealed documents (`care`, `emergencycard`, `coordination`, `localfa
 Per pair of devices, in rounds, over any road:
 
 1. **Hello** (road-specific; on road A the sealed pinned-key hello of `play_admission.dart`, on road C a signed capability request).
-2. **Heads**: for each stream the pair is both entitled to, `streamTag -> [head hashes] + count + the highest authorSeq seen per author device`. This is small and itself sealed on the wire.
+2. **Heads**: for each stream the pair is both entitled to, `streamId -> [head eventIds] + count + the highest authorSeq seen per author device`. This is small and itself sealed on the wire, inside the session (road A) or inside a GK-sealed bundle item (roads C and E), so no road shows a `streamId`.
 3. **Want/have**: each side lists the head ranges it is missing; the other sends events walking back along `prev` until it reaches something the first side already has.
-4. **Bounded batches** sized to a bucket; resumable; each side verifies signature, epoch, kind and schema before storing, stores, then acknowledges with `ack(streamTag, head)`.
-5. **Ack events are not stored in the stream**; they are a per-peer high-water mark the device keeps so it can say truthfully "Alex's phone has this" (section 9.3).
+4. **Bounded batches** sized to a bucket; resumable; each side opens, verifies the inner signature, `FID`, epoch, kind and schema before storing, stores, then acknowledges.
+5. **Acks are signed, and are not stored in the stream.** An ack is `lv("olive-ack-v1") | streamId | headEventId | epoch | ackerDeviceFp`, signed by the acking device's Ed25519 key and carried sealed (inside the session on road A, as a GK-sealed bundle item on roads C and E). The receiving device verifies it against the roster and only then raises its per-peer high-water mark, which is what lets it say truthfully "Alex's phone has this" (section 9.3). A relay, mailbox or courier can neither forge an ack (it has neither the key nor the roster) nor make a false one true by replaying: a replayed ack only repeats that the acker once held that head, which stays true. The alternative proof, a later event by Alex that names the head in `prev[]`, also counts as "seen" and needs no ack at all.
 
-A stream that has grown past N events (recommend 500) may be **checkpointed**: a signed snapshot of the fold plus the hashes it covers. A joining device receives the checkpoint and the tail. The full history stays on guardian devices; append-only areas (dose log, handover log, emergency history) never discard the underlying events, only stop sending them to every new joiner by default (question 5).
+A stream that has grown past N events (recommend 500) may be **checkpointed**: a signed snapshot of the fold plus the hashes it covers. A joining device receives the checkpoint and the tail; how it gets older history is 5.6. The full history stays on guardian devices; append-only areas (dose log, handover log, emergency history) never discard the underlying events.
 
 ### 5.5 Sizes
 
 Not measured. Back of envelope, flagged as an assumption: a dose or an expense event is a few hundred bytes of payload, padded to a 256 or 1024 bucket; a card edit with the previous card inside it (`EcChange` keeps the full previous card) is a few KiB. Existing caps (care 4 MiB, emergency card 4 MiB, coordination 2 MiB) bound the folds. The event store needs its own catalogue area and cap; with checkpoints it should stay well under the sum of the folds, but this was not tested (section 15).
+
+### 5.6 Rotation, history and the late joiner
+
+Two questions the epoch design must answer: what happens to a stream when the key rotates, and what a guardian who joins later can read.
+
+- **A stream survives rotation unchanged.** Its identity is `streamId` (inside the signed bytes), its order is `authorSeq` and `prev[]` (of `eventId`s), and none of those mention an epoch. After a rotation, new events are sealed under the new GK epoch and name old heads in `prev[]` as before. Old events stay sealed under their old epoch on every device that already holds them, and a device keeps an old GK epoch for as long as it keeps the events that epoch seals.
+- **A late joiner gets a carry, not old keys.** A guardian who joins after epoch E receives the current GK only. They do not receive earlier GK epochs, because handing them over would give the joiner all ciphertext any past observer ever stored and would undo the point of a rotation. Instead an existing guardian device writes **carry events**: sealed under the current epoch, each carrying a verbatim copy of one original inner event (with its original inner signature) from the append-only logs the owner agreed a joiner may see (question 5: dose log, handover log, emergency history), plus a signed checkpoint of the current fold for the other streams. Because the original `eventId` and signature are unchanged, attribution ("Alex gave the 8:02 dose") and every `prev[]` link still verify, and the carry adds no new author claim; it only records who carried it.
+- **Nothing locked is carried.** Locked sections (6.5) and their section keys are not part of a carry. A joiner sees at most their existence.
+- **Cost, stated to the owner:** a carry exposes to the joiner every fact in the carried logs, including facts from earlier years. That is the question 5 decision, made explicit: the approving guardian is told in plain words what the newcomer will see before they approve. The carry is a bounded job (a few hundred events, in buckets) and can run over any road.
+- **A removed guardian** keeps what they could already read (S7). After a rotation they cannot open anything sealed afterwards, and a later joiner is never given their epoch's key either.
 
 ---
 
@@ -338,21 +358,22 @@ Assets: the content of G and L records (health, expenses, notes); the roster; th
 
 | # | Threat | Mitigation | Residual |
 |---|---|---|---|
-| S1 | **Server compromise** (DB, logs, memory, backups) | Mailbox stores only sealed items under opaque ids; keys never reach it; no name, roster or tag meaning; plaintext tripwire; no content in logs | Sizes (bucketed), timing, mailbox activity per epoch, push tokens, that Olive exists on this server. Metadata is not zero |
-| S2 | Server **drops, delays, reorders, duplicates or replays** | Event hash dedupe; `authorSeq` gap detection; epoch and stream bound in AAD; heads exchange between peers on any other road reveals what the server withheld | A server can delay indefinitely; peers meeting on road A see the gap and fill it |
+| S1 | **Server compromise** (DB, logs, memory, backups) | Mailbox stores only sealed items under opaque ids; keys never reach it; the event layout (5.2) puts the FID, device fingerprints, stream, kind, schema and `prev` inside the encryption, so there is no name, roster, stream or kind for it to read; plaintext tripwire; no content in logs | What the outer header and the mailbox still reveal: the key epoch number (so rotation timing), bucketed sizes, arrival timing, how many items each mailbox id gets per epoch (roughly how many devices a family has and how busy they are), push tokens, that Olive exists on this server. Metadata is not zero |
+| S2 | Server **drops, delays, reorders, duplicates, replays or forges an ack** | `sealHash` dedupe at the relay, `eventId` dedupe at the device; `authorSeq` gap detection; epoch in the AAD and `streamId` in the signed bytes; heads exchange between peers on any other road reveals what the server withheld; acks are signed by the acking device and bound to (`streamId`, head, epoch), so a relay cannot make "Alex has it" true | A server can delay indefinitely; peers meeting on road A see the gap and fill it. A replayed ack only repeats a true statement |
 | S3 | **Forged event** from outside | Needs a guardian device's Ed25519 signature and the epoch key | None for a correct client |
 | S4 | **Lost or stolen phone** | Sealed at rest under a keystore key (existing); app lock and adult gate (existing); the other guardian writes `device.revoke`; FK and GK rotate on revoke; new epoch events unreadable to the thief | A phone unlocked by its thief can read everything it already holds. Old epochs stay readable. Revocation lags until devices meet (identity T5). Nothing can remotely wipe a phone (P11 and offline) |
 | S5 | **Rogue guardian device** (a compromised or hostile co-parent phone) | Cannot erase (append-only, P8); every change is attributed by device signature; conflicts are surfaced, not resolved by it; cannot add or remove a person alone (identity 4.4) | It reads everything not in a locked section it does not hold, and it can inject false-but-attributed events (a fake dose). Detectable and attributable, not preventable |
-| S6 | **Replay** of old bundles or votes | Event hash dedupe; epoch in AAD; proposals carry their own expiry; `prev` binds an approval to a ledger position | Needs the fork and replay property tests |
-| S7 | **Removed guardian still holding keys** | Key rotation (identity 3.5): new random FK and GK epoch wrapped only to remaining devices; mailbox ids and post keys change with FK; section keys rotate if the removed person was a grantee | They keep every old epoch and every copy they stored. Unavoidable and stated to the owner |
+| S6 | **Replay** of old bundles, votes or acks | `sealHash` and `eventId` dedupe; epoch in AAD; proposals carry their own expiry; `prev` binds an approval to a ledger position | Needs the fork and replay property tests |
+| S7 | **Removed guardian still holding keys** | Key rotation (identity 3.5): new random FK and GK epoch wrapped only to remaining devices; mailbox ids and post keys change with FK; section keys rotate if the removed person was a grantee; streams continue across the rotation by `streamId` and `eventId` (5.6) | They keep every old epoch and every copy they stored. Unavoidable and stated to the owner |
 | S8 | **Child device** reads or writes | Holds FK only: can read class D, can carry ciphertext, can never open G or L, is never a valid signer; source guard keeps the sync writer out of the child build | A modified client can post junk to a mailbox; junk fails signatures |
-| S9 | **Extraction of a child tablet's satchel** | Ciphertext only | Sizes and tags |
-| S10 | **LAN observer** | Same handover as play: generic mDNS type, random per-session token, sealed hello between pinned keys, padded frames, LAN-only binds | That a family app is on the LAN, and timing, as with play |
+| S9 | **Extraction of a child tablet's satchel** | Ciphertext only; the outer layout names no family, stream or author | Epoch number, bucketed sizes and arrival times |
+| S10 | **LAN observer** | Same handover as play: generic mDNS type, random per-session token, sealed hello between pinned keys, padded frames, LAN-only binds; bundle bytes use the 5.2 layout, so no FID or fingerprint is visible | That a family app is on the LAN, the epoch number, bucketed sizes and timing, as with play |
 | S11 | **Wake-push metadata** | No content; opaque `ref`; token tied to a mailbox not an account | Google or Apple see a ping and its time. For a family that objects, the setting stays off |
 | S12 | **Downgrade** to an older sync version | Version in header and AAD; a device never answers a lower version once it has seen the higher one for this family | The legacy period |
 | S13 | **GK holder leaks GK** | Not preventable; limits blast radius via rotation | Inherent to a shared symmetric key |
 | S14 | **Restricted guardian** (protective order or `guardianship.restricted`) continues to receive sync data | In server mode, a restriction triggers revoke and rotation through the server-countersigned ledger (identity 6.4). In local-only mode there is **no adjudicator**, so there is nothing to enforce it | This is the sharpest open edge. Flag to counsel and the owner; do not claim local-only families can enforce an order |
 | S15 | Custom crypto composition | Standard primitives (Ed25519, X25519, HKDF, HMAC, XChaCha20-Poly1305 or ChaCha20-Poly1305, SHA-256); signed canonical encoding; vectors | New composition. It inherits and extends the external review requirement of decision D2 and `EXTERNAL-CRYPTO-REVIEW-BRIEF.md`; the brief should be extended to cover the event layout, wraps and mailbox capabilities |
+| S16 | **Late joiner and history** (a guardian who joins after one or more rotations) | The joiner gets the current GK only and a carry of the agreed append-only logs plus a signed checkpoint, never old GK epochs (5.6); carried events keep their original inner signatures; locked sections are never carried; the approving guardian is told what the joiner will see | The joiner reads everything carried, including older health facts (question 5). A carry author could omit events, so the checkpoint and the original `authorSeq` gaps are what reveal an omission |
 
 ---
 
@@ -384,17 +405,17 @@ Assets: the content of G and L records (health, expenses, notes); the roster; th
 
 Wording stays plain for adults, never softer-for-children, because these are adult surfaces. Children's softer variants exist only where a child ever sees a play notice; none of the above ever reaches her.
 
-### 9.3 "Told immediately" is not a promise this system can keep
+### 9.3 "Told at once" is not a promise this system can keep
 
-The village design says every parent is told immediately. With no server and no shared Wi-Fi it cannot be true, and a UI that implies it is a lie told to a worried parent. Rules:
+The owner's brief and the village design promise that every parent is told ("in plain words at the time" in 3.6, "at once" in 7.9). With no server and no shared Wi-Fi it cannot be true, and a UI that implies it is a lie told to a worried parent. Rules:
 
 - The UI says **"Alex will see it as soon as your phones connect"** until an ack exists, then **"Alex has it."** (Section 6.4's delivery states.)
-- The ack is a per-peer high-water mark stored on the sender; it is truthful per event.
-- The Village design and the QR brainstorm should replace "immediately" with this wording. (Question 8.)
+- The ack is a signed message from the peer's device (5.4 step 5), kept as a per-peer high-water mark on the sender; it is truthful per event and cannot be forged by a relay.
+- The Village design (3.6, 7.9) and the QR brainstorm should replace "in plain words at the time" and "at once" with this wording where they describe delivery. (Question 8.)
 
 ### 9.4 Local notifications and background work
 
-- The client has `firebase_messaging` but no local-notification package and no background-work package. Adding either is a dependency decision: a local-notification plugin for the composed text, and a periodic/background fetch for road C. Both are listed as S8 and S11 prerequisites and are not decided here.
+- The client has `firebase_messaging` but no local-notification package and no background-work package. Adding either is a dependency decision: a local-notification plugin for the composed text, and a periodic/background fetch for road C. The local-notification plugin is a prerequisite of S7; the background fetch is a prerequisite of S11. Neither is decided here.
 - Android 13 and later needs a runtime notification permission; asking for it is an adult-gate flow on a guardian device only, never on a child device.
 - A child device registers for the silent wake (to refresh class D) only if the owner enables D and push; it requests no notification permission.
 
@@ -416,7 +437,7 @@ This section lists issues for the owner and counsel. Nothing here is a legal opi
 6. **Protective orders and restricted guardians** (S14). A local-only family has no adjudicator. Counsel should decide what the product may say about this before real families rely on it.
 7. **Minimisation.** Sync adds no new categories of data; it moves what guardians already wrote. The server holds none of it readable. Retention of ciphertext is bounded (30 days mailbox, 30 days satchel).
 8. **Consent and disclosure.** The catalogue screen ("Data on this device") must gain sync lines in plain words: what is shared with another grown-up's phone, that a server may carry sealed bytes, that nothing about the child's own side is shared. That text is also what store reviewers and a privacy notice will lean on.
-9. **No pre-written medical advice.** Unchanged. The For Mia strip shows guardian-typed facts next to a clinician-reviewed guide; sync adds no text of its own, and the care guides remain `DRAFT_UNREVIEWED` and out of the app until a clinician signs off (CLINICIAN-REVIEW-PACKET on `docs/care-guides-pilot`).
+9. **No pre-written medical advice.** Unchanged. The For Mia strip shows guardian-typed facts next to a clinician-reviewed guide; sync adds no text of its own, and the care guides remain `DRAFT_UNREVIEWED` and out of the app until a clinician signs off (`docs/care-guides/CLINICIAN-REVIEW-PACKET.md`).
 10. **Cross-border.** Where the mailbox runs (the owner's PC today) decides where ciphertext sits. Moot until hosting resumes.
 
 ---
@@ -431,10 +452,10 @@ This section lists issues for the owner and counsel. Nothing here is a legal opi
 | FID, FK, GK, device agreement keys, sealed `family` area | Identity PR 2 | S1, S3 |
 | Child device holds ledger and FK; roster read from the ledger; `PlayAdmission`, `ChildUnlockHost` pin the ledger's guardians | Identity PR 4 | S4 (to let tablets take part), S13 (courier), class D |
 | Second grown-up joins; settle-in; pending approvals and gossip | Identity PR 5 / Village W1 | S5 (more than one guardian exists to sync) |
-| Revoke, leave, rotation | Identity PRs 6 and 7 | S10 revocation behaviour |
+| Revoke, leave, rotation | Identity PRs 6 and 7 | S9 (section-key rotation); the rotation behaviour of 5.6 on every road |
 | Server family tenant (`family`, `family_member`, `current_family()`) and S-D26 | Identity PR 8 | S10 (server mailbox) |
 
-Sync cannot ship before identity PRs 1 and 2. Everything before that is design and pure code that can be unit tested against a stand-in ledger.
+Sync cannot ship before identity PRs 1 and 2. Everything before that is design and pure code that can be unit tested against a stand-in ledger. The carer-never-GK rule this relies on is Village 6.5 and 9; Village 10.3 covers pending people, who hold nothing.
 
 ### 11.2 Existing code reused
 
@@ -520,7 +541,7 @@ Each has a recommendation, written so "go with the recommendations" is one answe
 5. **What a newly joined guardian sees from before they joined.** *Recommend:* current state plus the append-only logs (dose log, handover log, emergency history), minus locked sections, with a plain notice shown to the approving guardian ("Alex will see what is already here").
 6. **Lock-screen text.** *Recommend:* generic ("Olive: an update is waiting.") by default; a per-guardian setting for "show who and what" off by default.
 7. **Wake push.** *Recommend:* optional, off by default, enabled only when credentials exist; Android data-only first.
-8. **"Told immediately".** *Recommend:* reword the Village design and every screen to "as soon as their phone connects", with the delivery states of 6.4.
+8. **"Told at once".** *Recommend:* reword the Village design (3.6, 7.9) and every screen to "as soon as their phone connects", with the delivery states of 6.4.
 9. **Hospital-mode behaviour while a card is forked.** *Recommend:* show both versions with the union for list fields and a mark for provenance; ask the clinician reviewer to confirm before the first real family.
 10. **Mailbox retention and quota.** *Recommend:* 30 days, 2 MiB and 200 items per mailbox.
 11. **Checkpoint size.** *Recommend:* checkpoint a stream at 500 events; never discard append-only history on guardian devices.
@@ -535,8 +556,8 @@ Each has a recommendation, written so "go with the recommendations" is one answe
 
 ## 15. What could not be verified (and what is inferred)
 
-- **Nothing was run.** No tests, no `flutter analyze`, no database, no device, no network. Every statement about current behaviour is from reading files at 8440203.
-- **Features named in the brief that are not in the repository on `main`:** "About Mia" (the shared profile), the care guides' "For Mia strip", and "health history locked sections". The care guides exist only on the unmerged branch `origin/docs/care-guides-pilot` (marked `DRAFT_UNREVIEWED`); I read its clinician packet's front matter, not the guides. Sections 3, 6.5 and the For Mia references are inferred from the brief and the local catalogue, not from a spec. "Mia" is the owner's example name; the design is per child.
+- **Nothing was run.** No tests, no `flutter analyze`, no database, no device, no network. Every statement about current behaviour is from reading files at 8440203, then re-based on cdf9806 (documentation-only changes: the village design and the care guides).
+- **Features named in the brief that are not in the repository on `main`:** "About Mia" (the shared profile), the care guides' "For Mia strip", and "health history locked sections". The care guides are now on `main` under `docs/care-guides/` (PR #200, marked `DRAFT_UNREVIEWED`, with `CLINICIAN-REVIEW-PACKET.md`); I read the packet's front matter, not the guides. Sections 3, 6.5 and the For Mia references are inferred from the brief and the local catalogue, not from a spec. "Mia" is the owner's example name; the design is per child.
 - **The family tenant (S-D26) text** is not in the repository, as the identity design already notes. The mailbox's relationship to it is a proposal.
 - **Library support.** That `cryptography` 2.9.0 provides XChaCha20-Poly1305 was not checked (ChaCha20-Poly1305, AES-GCM, X25519, HKDF are in use today). The wrap and AEAD behaviour on Android was not tried.
 - **Platform push behaviour** (Android Doze and data-only delivery priority, iOS background push throttling, FireOS) is stated from general knowledge and was not tested; push has never run against a live endpoint in this project.

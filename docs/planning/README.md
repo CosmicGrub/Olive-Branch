@@ -9,6 +9,7 @@ This folder is the project's planning record, kept in the repository so it is ve
 | [OPEN-DECISIONS.md](OPEN-DECISIONS.md) | Decisions still open, each with a recommendation. |
 | [HOSTING-AND-CALLS.md](HOSTING-AND-CALLS.md) | Where the server runs and how calls work: options researched, the chosen direction, what was scrapped, store-distribution and multi-family readiness plans. |
 | [OPERATIONS-RUNBOOK.md](OPERATIONS-RUNBOOK.md) | How to resume work: CI rules and gotchas, the merge procedure, the device-push recipe, the Docker stack, memory limits. |
+| [FAMILY-SYNC-DESIGN.md](FAMILY-SYNC-DESIGN.md) | Design only: how guardian devices share data as sealed, signed event logs over several roads (same Wi-Fi, mailbox, hand-carried file), conflicts, notifications, threat model and build order. |
 
 Related documents elsewhere in the repo:
 
