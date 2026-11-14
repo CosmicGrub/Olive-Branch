@@ -187,7 +187,7 @@ const Set<String> kBandsDrawnHere = <String>{'t57', 't812'};
 /// no screen of their own yet.
 const Set<String> kTilesWithDestination = <String>{
   'people', 'stories', 'colour', 'day', 'play', 'msgs', 'showtell', 'more', 'list', 'weeks', 'journal',
-  'memory', 'capsule', 'growth', 'jokes', 'draw', 'storyteller', 'birthday', 'ladder',
+  'memory', 'capsule', 'growth', 'jokes', 'draw', 'storyteller', 'birthday', 'ladder', 'feel',
 };
 
 /// The prototype's tile id -> the key the family structure's ChildView.tiles uses (family_structure_logic).
