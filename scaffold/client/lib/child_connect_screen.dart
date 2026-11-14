@@ -228,7 +228,14 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
 
   Future<void> _run({required NearbyWindow target, required String password, bool viaQr = false, Uint8List? fp}) async {
     setState(() { _stage = _Stage.working; _match = null; });
-    final DeviceKey key = await DeviceKey.loadOrCreate(widget.deviceKeys);
+    final DeviceKey key;
+    try {
+      key = await DeviceKey.loadOrCreate(widget.deviceKeys);
+    } catch (_) {
+      // Key storage failed: the same calm picture as any other failure, never a spinner with no way out.
+      if (mounted) _fail();
+      return;
+    }
     final ChildPairingClient client = ChildPairingClient(
       childKey: key,
       transport: widget.transportFor(target.host, target.port),
@@ -294,7 +301,10 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       try {
         fk = (await PairingPictureService(repo).state()).familyKey;
       } catch (_) {}
-      if (await checkFamily(pic, fk) == FamilyCheck.differentFamily) {
+      // A claimed device (it holds a family key) refuses another family's picture AND a picture with no tag at all:
+      // dropping the tag must not downgrade the check.
+      final FamilyCheck fc = await checkFamily(pic, fk);
+      if (fc == FamilyCheck.differentFamily || (fk != null && fc == FamilyCheck.noHint)) {
         _fail();
         return;
       }
@@ -333,14 +343,14 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
             const SizedBox(height: 12),
             IconButton(
               key: const Key('childConnectScanBack'),
-              tooltip: 'Back',
               onPressed: () => setState(() { _scanHandled = false; _stage = _Stage.options; }),
               icon: const Icon(Icons.arrow_back_rounded, color: KioskLockColors.tertiaryText),
             ),
           ]),
         );
       case _Stage.hello:
-        return _frame(_helloCard());
+        // Not inside _frame's scroll view: the picture must sit wholly below the hinge in tabletop posture.
+        return Scaffold(backgroundColor: KioskLockColors.background, body: SafeArea(child: _helloCard()));
       case _Stage.working:
         return _frame(_working());
       case _Stage.tryAgain:
@@ -352,7 +362,6 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
           const SizedBox(height: 20),
           IconButton(
               key: const Key('childConnectBack'),
-              tooltip: 'OK',
               iconSize: 36,
               onPressed: () => setState(() { _reset(); _stage = _Stage.card; }),
               icon: const Icon(Icons.check_rounded, color: KioskLockColors.secondaryText)),
@@ -370,20 +379,19 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
   /// The device's own picture on a white tile, for the grown-up's phone to scan. No words.
   Widget _helloCard() {
     final PairingPicture pic = _ownPic!;
-    final double side = (MediaQuery.sizeOf(context).shortestSide * 0.6).clamp(200.0, 320.0);
-    return Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+    return PictureLayout(
+      picture: (double side) => KeyedSubtree(key: const Key('childHelloCard'), child: PictureTile(data: pic.payload, size: side)),
+      steps: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
       const OliveBranchMark(size: 56),
-      const SizedBox(height: 16),
-      KeyedSubtree(key: const Key('childHelloCard'), child: PictureTile(data: pic.payload, size: side)),
       const SizedBox(height: 16),
       IconButton(
         key: const Key('childHelloClose'),
-        tooltip: 'Close',
         iconSize: 32,
         onPressed: () => setState(() { _reset(); _stage = _Stage.options; }),
         icon: const Icon(Icons.close_rounded, color: KioskLockColors.tertiaryText),
       ),
-    ]);
+      ]),
+    );
   }
 
   Widget _options() {

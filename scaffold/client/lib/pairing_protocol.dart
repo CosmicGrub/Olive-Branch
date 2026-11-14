@@ -158,6 +158,13 @@ class AdultWindow extends ChangeNotifier {
   String _deviceName = '';
   Uint8List? _tagC;
   Uint8List? _sealed;
+  Uint8List? _pollNonce;
+  final List<Uint8List> _helloNonces = <Uint8List>[];
+
+  Uint8List _freshNonce() {
+    final Random r = Random.secure();
+    return Uint8List.fromList(List<int>.generate(16, (_) => r.nextInt(256)));
+  }
 
   // The pairing picture (docs/planning/PERSISTENT-QR-PAIRING.md). None of this authorizes anything: it only decides
   // which devices this window recognises and answers. The PIN-PAKE and the adult's "Yes" are unchanged.
@@ -303,6 +310,8 @@ class AdultWindow extends ChangeNotifier {
     _pending = null;
     _pendingAt = null;
     _key = null;
+    _pollNonce = null;
+    _helloNonces.clear();
     _allowedChildKey = null;
     _childSalt = null;
     _adultSalt = null;
@@ -350,9 +359,18 @@ class AdultWindow extends ChangeNotifier {
           if (!constantTimeEquals(cpk, _allowedChildKey!) || !await verifyHello(cpk, sid, unb64(hsRaw))) return null;
           _helloCpk = cpk;
         }
+        Uint8List? hn;
+        if (_allowedChildKey != null) {
+          // Mode B: hand out a fresh nonce the child must sign in its pake1 (a replayed hello gets one too, but
+          // cannot sign it). A few are kept so one stray hello cannot invalidate the real child's.
+          hn = _freshNonce();
+          _helloNonces.add(hn);
+          if (_helloNonces.length > 8) _helloNonces.removeAt(0);
+        }
         return <String, dynamic>{
           't': 'hello-ok', 'afp': b64(adultKey.fingerprint), 'apk': b64(adultKey.publicKey),
           'an': adultName, 'fid': familyId,
+          if (hn != null) 'hn': b64(hn),
         };
       case 'pake1':
         if (state != WindowState.open) return null;
@@ -364,6 +382,13 @@ class AdultWindow extends ChangeNotifier {
           if (c is! String || _helloCpk == null) return null;
           final Uint8List got = unb64(c);
           if (!constantTimeEquals(got, _allowedChildKey!) || !constantTimeEquals(got, _helloCpk!)) return null;
+          // ...and it must prove it holds the key NOW: a signature over one of the nonces this window issued.
+          final Object? hnRaw = m['hn'], psRaw = m['ps'], ycRaw0 = m['Yc'];
+          if (hnRaw is! String || psRaw is! String || ycRaw0 is! String) return null;
+          final Uint8List hn = unb64(hnRaw);
+          final int at = _helloNonces.indexWhere((Uint8List n) => constantTimeEquals(n, hn));
+          if (at < 0 || !await verifyPake1(got, sid, hn, unb64(ycRaw0), unb64(psRaw))) return null;
+          _helloNonces.removeAt(at);
         }
         // One claim at a time: a second pake1 while one is mid-handshake is dropped silently and NOT counted, so it
         // can neither replace the first device's exchange nor use up the window's tries. An abandoned claim frees
@@ -373,9 +398,12 @@ class AdultWindow extends ChangeNotifier {
           _pending = null;
           _pendingAt = null;
         }
-        if (++_pake1Count > _kMaxPake1PerWindow) return null;
-        final Uint8List cpk = unb64(m['cpk'] as String), yc = unb64(m['Yc'] as String);
+        // Only a well-formed share counts toward the cap, so junk cannot silently use the window up.
+        final Object? cpkRaw = m['cpk'], ycRaw = m['Yc'];
+        if (cpkRaw is! String || ycRaw is! String) return null;
+        final Uint8List cpk = unb64(cpkRaw), yc = unb64(ycRaw);
         if (cpk.length != 32 || yc.length != 32) return null;
+        if (++_pake1Count > _kMaxPake1PerWindow) return null;
         final bool qr = m['m'] == 'qr';
         final List<int>? password = qr
             ? (qrSecret == null ? null : utf8.encode(b64(qrSecret!)))
@@ -390,7 +418,7 @@ class AdultWindow extends ChangeNotifier {
         if (state != WindowState.open || p == null) return null;
         _pending = null;
         _pendingAt = null;
-        if (p.qr) qrSecret = null; // one use, success or not
+        final bool wasQr = p.qr;
         PakeKey? key;
         try {
           key = await p.party.finish(p.yc);
@@ -402,6 +430,7 @@ class AdultWindow extends ChangeNotifier {
           _fail();
           return <String, dynamic>{'t': 'confirm-no'};
         }
+        if (wasQr) qrSecret = null; // one use: spent only by a CONFIRMED exchange (a wrong guess costs an attempt)
         _key = key;
         _cpk = p.cpk;
         _deviceName = p.deviceName;
@@ -411,13 +440,20 @@ class AdultWindow extends ChangeNotifier {
         matchChoices = buildMatchChoices(_matchReal!, _random);
         state = WindowState.awaitingApproval;
         notifyListeners();
-        return <String, dynamic>{'t': 'confirm-ok', 'tagA': b64(await key.tag('A'))};
+        _pollNonce = _freshNonce();
+        return <String, dynamic>{'t': 'confirm-ok', 'tagA': b64(await key.tag('A')), 'n': b64(_pollNonce!)};
       case 'poll':
-        if (_tagC == null || !constantTimeEquals(unb64(m['tagC'] as String), _tagC!)) return null;
-        if (state == WindowState.awaitingApproval) return <String, dynamic>{'t': 'wait'};
+        final Object? tc = m['tagC'], tp = m['tagP'];
+        if (_tagC == null || _key == null || _pollNonce == null || tc is! String || tp is! String) return null;
+        if (!constantTimeEquals(unb64(tc), _tagC!)) return null;
+        // tagC crosses the LAN in the clear, so it is not proof. The poll must also carry a MAC over a one-use nonce
+        // only the real child can compute; the nonce is replaced on every good poll, so a sniffed poll cannot be replayed.
+        if (!await _key!.checkTag(pollRole(_pollNonce!), unb64(tp))) return null;
+        _pollNonce = _freshNonce();
+        if (state == WindowState.awaitingApproval) return <String, dynamic>{'t': 'wait', 'n': b64(_pollNonce!)};
         if (state == WindowState.approved) {
           final Uint8List sealed = _sealed!;
-          close(); // a credential is handed over once
+          close(); // a credential is handed over once, and only to a device that proved it holds the key
           return <String, dynamic>{'t': 'approved', 'sealed': b64(sealed)};
         }
         return null;
@@ -503,6 +539,9 @@ class PairingMatch {
   final MatchSet? match;
 }
 
+/// The role string a poll proof is made under: binds the tag to the adult's current one-use nonce.
+String pollRole(List<int> nonce) => 'P${b64(nonce)}';
+
 class ChildPairingClient {
   ChildPairingClient({
     required this.childKey,
@@ -547,6 +586,7 @@ class ChildPairingClient {
       // A device that already belongs to a family never starts an exchange with a window of another family: it stops
       // here, before any PAKE message is sent, and says nothing.
       if (expectedFamilyId != null && fid != expectedFamilyId) return const PairingResult.failed(PairingFailure.notMatched);
+      final Object? hnRaw = hello['hn'];
       final Uint8List ci = cat(<List<int>>[
         lv(sid), lv(utf8.encode(fid)), lv(afp), lv(childKey.publicKey), lv(utf8.encode(an)),
       ]);
@@ -554,6 +594,10 @@ class ChildPairingClient {
       final Map<String, dynamic>? p2 = await transport.send(<String, dynamic>{
         't': 'pake1', 'sid': b64(sid), 'cpk': b64(childKey.publicKey), 'dn': deviceName,
         'm': viaQr ? 'qr' : 'pin', 'Yc': b64(party.share),
+        // Only a window that scanned this device's picture issues a nonce; the signature proves the key is held now.
+        if (hnRaw is String) ...<String, dynamic>{
+          'hn': hnRaw, 'ps': b64(await signPake1(childKey, sid, unb64(hnRaw), party.share)),
+        },
       });
       if (p2 == null || p2['t'] != 'pake2') return const PairingResult.failed(PairingFailure.notMatched);
       final PakeKey key = await party.finish(unb64(p2['Ya'] as String));
@@ -563,10 +607,14 @@ class ChildPairingClient {
       if (!await key.checkTag('A', unb64(c['tagA'] as String))) return const PairingResult.failed(PairingFailure.notMatched);
       onMatched?.call(PairingMatch(an, Sas.fromBytes(await key.sas()), MatchSet.fromBytes(await key.match())));
       Duration waited = Duration.zero;
+      Uint8List nonce = unb64(c['n'] as String);
       while (waited <= giveUpAfter) {
-        final Map<String, dynamic>? r = await transport.send(<String, dynamic>{'t': 'poll', 'sid': b64(sid), 'tagC': b64(tagC)});
+        final Map<String, dynamic>? r = await transport.send(<String, dynamic>{
+          't': 'poll', 'sid': b64(sid), 'tagC': b64(tagC), 'tagP': b64(await key.tag(pollRole(nonce))),
+        });
         if (r == null) return const PairingResult.failed(PairingFailure.declined);
         if (r['t'] == 'approved') return _open(await _decrypt(key, r['sealed'] as String), apk, afp, fid);
+        nonce = unb64(r['n'] as String);
         await _delay(pollEvery);
         waited += pollEvery;
       }

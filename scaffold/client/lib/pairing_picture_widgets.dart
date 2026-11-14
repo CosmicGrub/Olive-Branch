@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import 'access_scope.dart';
 import 'form_factors.dart' as ff;
 import 'pairing_match.dart';
 import 'pairing_picture.dart';
@@ -139,7 +140,7 @@ class OliveBranchMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: 0.6, end: 1),
-        duration: const Duration(milliseconds: 700),
+        duration: motionDuration(context, 700),
         curve: Curves.easeOutBack,
         builder: (BuildContext context, double v, Widget? child) => Opacity(opacity: v.clamp(0.0, 1.0), child: Transform.scale(scale: v, child: child)),
         child: Icon(Icons.eco_rounded, key: const Key('oliveBranchMark'), size: size, color: const Color(0xFF8A9A5B)),
@@ -153,10 +154,10 @@ const List<IconData> _matchIcons = <IconData>[
   Icons.wb_sunny_rounded, Icons.nightlight_round, Icons.star_rounded, Icons.cloud_rounded, Icons.park_rounded, Icons.set_meal_rounded, Icons.flutter_dash, Icons.pets_rounded,
   Icons.cruelty_free_rounded, Icons.sailing_rounded, Icons.home_rounded, Icons.local_florist_rounded, Icons.apple_rounded, Icons.sports_soccer_rounded, Icons.paragliding_rounded, Icons.notifications_rounded,
   Icons.vpn_key_rounded, Icons.menu_book_rounded, Icons.directions_car_rounded, Icons.directions_bus_rounded, Icons.train_rounded, Icons.flight_rounded, Icons.rocket_launch_rounded, Icons.pedal_bike_rounded,
-  Icons.beach_access_rounded, Icons.ac_unit_rounded, Icons.local_fire_department_rounded, Icons.water_drop_rounded, Icons.eco_rounded, Icons.emoji_nature_rounded, Icons.filter_vintage_rounded, Icons.spa_rounded,
-  Icons.local_cafe_rounded, Icons.content_cut_rounded, Icons.hardware_rounded, Icons.palette_rounded, Icons.phone_android_rounded, Icons.tv_rounded, Icons.headphones_rounded, Icons.mic_rounded,
+  Icons.beach_access_rounded, Icons.ac_unit_rounded, Icons.umbrella_rounded, Icons.water_drop_rounded, Icons.eco_rounded, Icons.emoji_nature_rounded, Icons.filter_vintage_rounded, Icons.spa_rounded,
+  Icons.local_cafe_rounded, Icons.toys_rounded, Icons.extension_rounded, Icons.palette_rounded, Icons.phone_android_rounded, Icons.tv_rounded, Icons.headphones_rounded, Icons.mic_rounded,
   Icons.cake_rounded, Icons.icecream_rounded, Icons.local_pizza_rounded, Icons.cookie_rounded, Icons.bakery_dining_rounded, Icons.lunch_dining_rounded, Icons.egg_alt_rounded, Icons.emoji_food_beverage_rounded,
-  Icons.music_note_rounded, Icons.piano_rounded, Icons.build_rounded, Icons.school_rounded, Icons.shopping_bag_rounded, Icons.watch_rounded, Icons.schedule_rounded, Icons.lightbulb_rounded,
+  Icons.music_note_rounded, Icons.piano_rounded, Icons.directions_boat_rounded, Icons.school_rounded, Icons.shopping_bag_rounded, Icons.watch_rounded, Icons.schedule_rounded, Icons.lightbulb_rounded,
   Icons.card_giftcard_rounded, Icons.celebration_rounded, Icons.emoji_events_rounded, Icons.favorite_rounded, Icons.diamond_rounded, Icons.anchor_rounded, Icons.flag_rounded, Icons.photo_camera_rounded,
 ];
 

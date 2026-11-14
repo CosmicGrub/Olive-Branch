@@ -118,8 +118,8 @@ Future<Uint8List> familyTag(List<int> familyKey, PictureRole role, List<int> sal
 enum FamilyCheck { sameFamily, differentFamily, noHint }
 
 /// A device that belongs to a family ([familyKey] non-null) refuses a picture whose tag does not verify; a device
-/// with no family yet cannot tell, and a picture with no tag gives no hint. A claimed device that scans a
-/// tag-less picture proceeds to the later checks (fingerprint, PIN, Match, Approve), which do not depend on it.
+/// with no family yet cannot tell, and a picture with no tag gives no hint. A claimed device (the child screen)
+/// treats [FamilyCheck.noHint] as a refusal, so dropping the tag is not a downgrade.
 Future<FamilyCheck> checkFamily(PairingPicture pic, List<int>? familyKey) async {
   if (familyKey == null || pic.familyTag == null) return FamilyCheck.noHint;
   final Uint8List want = await familyTag(familyKey, pic.role, pic.salt, pic.publicKey);
@@ -156,6 +156,18 @@ Future<Uint8List> signHello(DeviceKey key, List<int> sid) => key.sign(helloSigne
 
 Future<bool> verifyHello(List<int> cpk, List<int> sid, List<int> signature) =>
     DeviceKey.verify(cpk, helloSignedBytes(sid, cpk), signature);
+
+/// What a child's `pake1` signs in a window that scanned its picture: "olive-p1/1" || sid || cpk || the adult's fresh
+/// hello nonce || its PAKE share. The hello signature alone is replayable (Ed25519 is deterministic); this one is
+/// bound to a nonce the adult chose after the hello, so only the holder of the key can make it.
+Uint8List pake1SignedBytes(List<int> sid, List<int> cpk, List<int> nonce, List<int> share) =>
+    Uint8List.fromList(<int>[...utf8.encode('olive-p1/1'), ...sid, ...cpk, ...nonce, ...share]);
+
+Future<Uint8List> signPake1(DeviceKey key, List<int> sid, List<int> nonce, List<int> share) =>
+    key.sign(pake1SignedBytes(sid, key.publicKey, nonce, share));
+
+Future<bool> verifyPake1(List<int> cpk, List<int> sid, List<int> nonce, List<int> share, List<int> signature) =>
+    DeviceKey.verify(cpk, pake1SignedBytes(sid, cpk, nonce, share), signature);
 
 /// The nameless picture a child shows for a window in "no picture scanned" mode: derived from the window's
 /// session id, so the adult's open-window screen and the child's tile agree without any name.

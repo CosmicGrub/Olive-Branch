@@ -197,16 +197,21 @@ void main() {
     expect(w.qrPayload(), isNull, reason: 'the window closed and the secret is gone');
   });
 
-  test('a photographed QR is useless once used, and its secret burns on a failed use too', () async {
+  test('a QR is spent by a CONFIRMED use only; a wrong guess costs an attempt but cannot burn the QR shortcut', () async {
     final DeviceKey ak = await _key(), ck = await _key();
     final AdultWindow w = await _window(ak, qr: true);
+    w.addListener(() async {
+      if (w.state == WindowState.awaitingApproval) await w.approve();
+    });
     final Uri u = Uri.parse(w.qrPayload()!);
-    // Someone uses a WRONG secret in qr mode: the real one is burned (single use) and the failure counts.
+    final int before = w.attemptsLeft;
     await _client(ck, LoopbackPairingTransport(w)).pair(sid: w.sid, password: 'not-the-secret', viaQr: true);
-    expect(w.qrPayload(), isNull);
+    expect(w.attemptsLeft, before - 1, reason: 'the wrong guess is counted');
+    expect(w.qrPayload(), isNotNull, reason: 'a stranger cannot destroy the QR shortcut');
     final PairingResult r = await _client(ck, LoopbackPairingTransport(w)).pair(
         sid: w.sid, password: u.queryParameters['q']!, viaQr: true);
-    expect(r.ok, isFalse);
+    expect(r.ok, isTrue);
+    expect(w.qrPayload(), isNull, reason: 'spent by the confirmed use');
   });
 
   test('the PIN is not on the wire and not derivable from the transcript', () async {
