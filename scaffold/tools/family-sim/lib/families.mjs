@@ -39,7 +39,7 @@ export function buildFamilies(n = 10, { today = new Date() } = {}) {
       index: i, n: f, name: wrap ? `${t.name} ${wrap + 1}` : t.name, tz: t.tz, guardians, kids,
       single: !!t.single, custody: !!t.custody, sitter: t.sitter ?? null,
       medicationId: sid(NS, f, KIND.medication, 1), bagItemId: sid(NS, f, KIND.bag, 1),
-      sitterEmail: t.sitter ? `sim-sitter-${f}@olive-sim.invalid` : null,
+      sitterEmail: t.sitter ? `sim-sitter-${f}-${Date.now().toString(36)}@olive-sim.invalid` : null,
     });
   }
   return fams;

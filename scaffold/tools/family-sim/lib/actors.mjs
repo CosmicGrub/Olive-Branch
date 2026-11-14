@@ -168,8 +168,12 @@ export async function sendMessage(ctx, fam, fromChild, kid, { daypart = 'bedtime
   const up = await S(ctx, fam, 'M1', `${fromChild ? kid.name : s.g[0].name} records a video note`, 'POST', `/v1/children/${kid.id}/media`,
     { token, body: { bytes: tinyMp4().toString('base64') } }, { expect: [201] });
   if (!up.ok) return null;
-  const msg = await S(ctx, fam, 'M2', `Bank the message for ${daypart}`, 'POST', `/v1/children/${kid.id}/messages`,
+  const bank = () => S(ctx, fam, 'M2', `Bank the message for ${daypart}`, 'POST', `/v1/children/${kid.id}/messages`,
     { token, body: { storageKey: up.body.storageKey, durationMs: 4200, daypart } }, { expect: [201] });
+  let msg = await bank();
+  // FINDING F1: ten simultaneous POST /messages exhaust the 10-connection pool (see report). Retry so the
+  // rest of the day can still be exercised; the first failure stays on the record.
+  for (let i = 0; i < 3 && msg.status >= 500; i++) { await sleep(1500 + i * 1000); msg = await bank(); }
   if (!msg.ok) return null;
   s.artifacts[kid.id] = { intentId: msg.body.id, artifactId: msg.body.artifactId, storageKey: up.body.storageKey };
   return msg.body;
