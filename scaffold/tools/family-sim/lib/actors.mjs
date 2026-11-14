@@ -197,18 +197,20 @@ export async function dayFlow(ctx, fam) {
   await sendMessage(ctx, fam, true, kid);
   await S(ctx, fam, 'D6', 'Guardian sets theme', 'PUT', `/v1/children/${kid.id}/theme`,
     { token: g1.token, body: { themePalette: ['olive', 'calmModern', 'warmGrounded', 'softPlayful'][fam.n % 4], themeBrightness: fam.n % 2 ? 'dark' : 'light' } }, { expect: [200, 204] });
-  await S(ctx, fam, 'D7', 'Child profile', 'PUT', `/v1/children/${kid.id}/profile`, { token: g1.token, body: { gender: fam.n % 2 ? 'girl' : 'boy' } }, { expect: [200, 204] });
+  await S(ctx, fam, 'D7', 'Child profile', 'PUT', `/v1/children/${kid.id}/profile`, { token: kidTok, body: { gender: fam.n % 2 ? 'girl' : 'boy' } }, { expect: [200, 204] });
   await S(ctx, fam, 'D8', 'Game favourites (child)', 'PUT', `/v1/children/${kid.id}/game-favorites`, { token: g1.token, body: { favoriteKinds: ['checkers', 'hangman'] } }, { expect: [200, 204] });
   await S(ctx, fam, 'D9', 'Hide an activity (play settings)', 'PUT', `/v1/children/${kid.id}/activity-overrides/uno`, { token: g1.token, body: { visible: fam.n % 3 !== 0 } }, { expect: [200, 204] });
   await S(ctx, fam, 'D10', 'Own availability windows', 'PUT', '/v1/me/availability', { token: g1.token, body: [{ weekday: 1, startLocal: '17:00', endLocal: '19:00', note: 'home from work' }] }, { expect: [200, 204] });
-  await S(ctx, fam, 'D11', 'House rules', 'PUT', `/v1/children/${kid.id}/learn/house-rules`, { token: g1.token, body: { rules: [{ category: 'screens', text: 'Tablets rest at dinner' }] } }, { expect: [200, 204] });
   await S(ctx, fam, 'D12', 'Parent Learn settings', 'PUT', '/v1/learn/settings', { token: g1.token, body: { framing: 'neutral', rulesList: true } }, { expect: [200, 204] });
+  await S(ctx, fam, 'D11', 'House rules', 'PUT', `/v1/children/${kid.id}/learn/house-rules`, { token: g1.token, body: { rules: [{ category: 'screens', text: 'Tablets rest at dinner' }] } }, { expect: [200, 204] });
 
   await untilVirtual(ctx, 16.5); pace('16:30');
   // calls: authorisation and setup only. No media flows in this stack.
   const call = await S(ctx, fam, 'C1', 'Guardian starts a call (token mint, no media)', 'POST', `/v1/children/${kid.id}/calls`, { token: g1.token, body: {} }, { expect: [200, 201] });
   if (call.ok && call.body?.sessionId) {
     await S(ctx, fam, 'C2', `${kid.name} joins the call (authorised)`, 'POST', `/v1/children/${kid.id}/calls/${call.body.sessionId}/join`, { token: kidTok, body: {} }, { expect: [200, 201] });
+    if (st(ctx, fam).bad && ctx.fails.at(-1)?.body?.error === 'bad_path') addGap(ctx, 'G7', 'DEFECT: POST /calls mints a sessionId as 32 hex chars with no dashes, but the :sessionId join/end routes (strictIds) refuse anything that is not a dashed uuid (400 bad_path): a started call can never be joined or ended through the API',
+      ['POST /v1/children/:childId/calls', 'POST /v1/children/:childId/calls/:sessionId/join', 'POST /v1/children/:childId/calls/:sessionId/end'], `sessionId ${call.body.sessionId} -> 400 bad_path`);
     await S(ctx, fam, 'C3', 'Call ended', 'POST', `/v1/children/${kid.id}/calls/${call.body.sessionId}/end`, { token: g1.token, body: {} }, { expect: [200] });
   }
 
