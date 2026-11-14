@@ -23,7 +23,9 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, which has no /usr/lib/postgresql/16/bin that verify.sh uses (the
+    # DB suites aborted with 'Postgres unreachable' although the service container was up).
+    runs-on: ubuntu-24.04
     # Measured: ~14-16 minutes. A hung step (a wedged livekit-server, a stuck
     # Postgres connection) otherwise holds the runner for GitHub's 6-hour
     # default; 45 minutes is ~3x the real duration.
