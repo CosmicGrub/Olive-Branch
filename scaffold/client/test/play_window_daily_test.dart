@@ -171,7 +171,7 @@ void main() {
       await open(t, _store(), MemoryHomePlanRepository());
       expect(find.textContaining('rest gently once it is used up'), findsOneWidget);
       expect(find.textContaining('She is never shown a number'), findsOneWidget);
-      expect(t.widget<Text>(find.byKey(const Key('dailyHonest'))).data, contains('Calls and family messages are never affected'));
+      expect(t.widget<Text>(find.byKey(const Key('dailyHonest'))).data, contains('are never touched by it'));
       expect(find.textContaining('needs the network, which is not built yet'), findsWidgets);
       expect(find.textContaining('do not count minutes yet'), findsNothing, reason: 'the old "nothing stops" line is gone');
     });

@@ -251,8 +251,8 @@ class _PlayWindowScreenState extends State<PlayWindowScreen> {
         key: const Key('dailyNote'), style: theme.textTheme.bodySmall),
       const SizedBox(height: 6),
       Text('Kept on this device. When the total is on, $name’s reading and watching on this device rest gently once '
-        'it is used up, and start again at midnight. She is never shown a number. Calls and family messages are '
-        'never affected. One shared total across both homes needs the network, which is not built yet.',
+        'it is used up, and start again at midnight. She is never shown a number. Calls and messages from '
+        'family are never touched by it. One shared total across both homes needs the network, which is not built yet.',
         key: const Key('dailyHonest'), style: theme.textTheme.bodySmall),
       if (_plan.dailyHours > 0 && _use != null) ...[
         const SizedBox(height: 6),
