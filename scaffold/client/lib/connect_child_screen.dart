@@ -207,8 +207,8 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
         Text('Open a short window for ${widget.childName}\'s device',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text('Type your PIN here. Then, on her device, tap "A grown-up does this", pick your name and '
-            'type the same PIN. Your PIN is never sent between the devices.'),
+        const Text('Type your PIN here. Then, on her device, tap "A grown-up does this", pick the letters this phone '
+            'will show, and type the same PIN. Your PIN is never sent between the devices.'),
         const SizedBox(height: 16),
         TextField(
           key: const Key('connectPinField'),
@@ -253,6 +253,15 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
         const SizedBox(height: 8),
         const Text('Open Olive on it and tap "A grown-up does this". This window closes in 10 minutes, '
             'after five wrong tries, or when you leave this screen.'),
+        if (_window != null) ...<Widget>[
+          const SizedBox(height: 16),
+          const Text('On her device, pick these letters:', textAlign: TextAlign.center),
+          Center(
+            child: Text(_window!.label,
+                key: const Key('connectLabel'),
+                style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 6)),
+          ),
+        ],
         if (_message != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_message!, key: const Key('connectMessage'))),
         if (_qr != null) ...<Widget>[
           const SizedBox(height: 16),

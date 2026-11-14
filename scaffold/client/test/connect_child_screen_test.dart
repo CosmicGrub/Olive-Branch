@@ -46,6 +46,8 @@ Future<void> _act(WidgetTester t, Future<void> Function() gesture) async {
   await t.pump();
 }
 
+String _textOf(WidgetTester t, Key k) => t.widget<Text>(find.byKey(k)).data!;
+
 Future<void> _settle(WidgetTester t) async {
   for (int i = 0; i < 40; i++) {
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
@@ -85,6 +87,8 @@ void main() {
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
     expect(find.byKey(const Key('connectWaiting')), findsOneWidget);
     expect(find.byKey(const Key('connectQr')), findsOneWidget, reason: 'the optional picture is offered');
+    expect(find.byKey(const Key('connectLabel')), findsOneWidget);
+    expect(_textOf(t, const Key('connectLabel')), opened!.label, reason: 'the grown-up reads this label off the screen');
     expect(opened!.qrPayload(), isNotNull);
 
     final DeviceKey ck = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
@@ -116,7 +120,7 @@ void main() {
     expect(find.textContaining('error'), findsNothing);
   });
 
-  testWidgets('child screen end to end: pick the grown-up by name, type the PIN, match shown, paired', (t) async {
+  testWidgets('child screen end to end: pick the phone by its label, type the PIN, match shown, paired', (t) async {
     final DeviceKey ak = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
     final AdultWindow w = await t.runAsync(() => AdultWindow.open(
         adultKey: ak, adultName: 'Mom', familyId: 'fam', childId: 'kid', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap)) as AdultWindow;
@@ -136,9 +140,12 @@ void main() {
     await t.tap(find.byKey(const Key('adultGateGrownUp')));
     await _settle(t);
     expect(find.byKey(const Key('childConnectWhich')), findsOneWidget);
-    finder.emit(NearbyWindow(adultName: 'Mom', sid: w.sid, host: 'x', port: 1));
+    finder.emit(NearbyWindow(label: w.label, handle: w.discoveryHandle, host: 'x', port: 1));
     await _settle(t);
-    await t.tap(find.text('Mom'));
+    // Nothing identifying is listed: the grown-up picks the short label shown on the phone, never a name.
+    expect(find.text('Mom'), findsNothing);
+    expect(find.text(w.label), findsOneWidget);
+    await t.tap(find.text(w.label));
     await t.pumpAndSettle();
     for (final String d in <String>['4', '8', '2', '9']) {
       await t.tap(find.text(d));
@@ -165,9 +172,12 @@ void main() {
     )));
     await t.tap(find.byKey(const Key('adultGateGrownUp')));
     await _settle(t);
-    finder.emit(NearbyWindow(adultName: 'Mom', sid: w.sid, host: 'x', port: 1));
+    finder.emit(NearbyWindow(label: w.label, handle: w.discoveryHandle, host: 'x', port: 1));
     await _settle(t);
-    await t.tap(find.text('Mom'));
+    // Nothing identifying is listed: the grown-up picks the short label shown on the phone, never a name.
+    expect(find.text('Mom'), findsNothing);
+    expect(find.text(w.label), findsOneWidget);
+    await t.tap(find.text(w.label));
     await t.pumpAndSettle();
     for (final String d in <String>['1', '1', '1', '1']) {
       await t.tap(find.text(d));

@@ -5,11 +5,13 @@
 //
 // The child sees the adult-gate card (a grown-up and a phone, "A grown-up does this") and nothing else: no
 // keypad, no code field, no counts, no error words. A grown-up taps "I'm the grown-up" and chooses, in order:
-//   1. their own name from the open windows nearby (their phone has one open: "Connect a child's device"),
-//      then types THEIR PIN on the adult-only keypad. The PIN is the key-exchange secret; it is never sent.
+//   1. their phone's short label from the open windows nearby (their phone has one open: "Connect a child's
+//      device", and shows the label, for example "KT7"; the network never carries a name), then types THEIR PIN
+//      on the adult-only keypad. The PIN is the key-exchange secret; it is never sent.
 //   2. optionally, scanning the picture that window can show (only works while the devices are together);
 //   3. the older account code path, when a connection exists (the existing PairingRedeemScreen).
-// When the grown-up's phone has proved it knows the PIN, this screen shows that grown-up's NAME and the same
+// When the grown-up's phone has proved it knows the PIN, this screen shows that grown-up's NAME (learned only
+// now, from the phone that proved it knows the PIN, never from the network) and the same
 // word and picture the phone shows, then waits for the one-tap yes on the phone. A wrong PIN, a wrong
 // grown-up or a refusal all look the same to the child: a gentle "your grown-up can try again".
 import 'dart:async';
@@ -140,6 +142,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     );
     final PairingResult r = await client.pair(
       sid: target.sid,
+      handle: target.handle,
       password: password,
       viaQr: viaQr,
       expectedAdultFingerprint: fp,
@@ -165,7 +168,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     if (hint == null) return;
     _scanHandled = true;
     unawaited(_run(
-      target: NearbyWindow(adultName: '', sid: qr.sid, host: hint.host, port: hint.port),
+      target: NearbyWindow(label: '', sid: qr.sid, host: hint.host, port: hint.port),
       password: qr.secret,
       viaQr: true,
       fp: qr.adultFingerprint,
@@ -225,7 +228,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
         const Text('Which grown-up?', key: Key('childConnectWhich'),
             style: TextStyle(color: KioskLockColors.primaryText, fontSize: 24, fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        const Text("Open \"Connect a child's device\" on your phone.",
+        const Text("Open \"Connect a child's device\" on your phone, then pick the letters it shows.",
             textAlign: TextAlign.center, style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 14)),
         const SizedBox(height: 16),
         if (_nearby.isEmpty)
@@ -240,7 +243,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
                 child: FilledButton(
                   key: Key('childConnectPick_${w.key}'),
                   onPressed: () => setState(() { _chosen = w; _stage = _Stage.keypad; }),
-                  child: Text(w.adultName, style: const TextStyle(fontSize: 18)),
+                  child: Text(w.label, style: const TextStyle(fontSize: 18, letterSpacing: 2)),
                 ),
               ),
             ),
