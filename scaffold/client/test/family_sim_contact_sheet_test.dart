@@ -17,7 +17,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:olive_client/child_home.dart';
-import 'package:olive_client/child_home_bands.dart';
 import 'package:olive_client/contact_labels.dart';
 import 'package:olive_client/family_structure_logic.dart';
 import 'package:olive_client/family_structure_screens.dart';
