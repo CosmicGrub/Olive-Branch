@@ -21,6 +21,12 @@ dependencies:
   # prebuilt call UI — call_screen.dart builds its own, deliberately (see
   # that file's own header for why that's the right tradeoff here).
   livekit_client: ^2.8.1
+  # MASTERFILE 16.2 #6, REVERSED a third time (2026-11-09): self-hosted Jitsi is
+  # the default call provider again, LiveKit stays selectable (CALL_PROVIDER on
+  # the server picks per grant; lib/call_provider.dart is the seam). The SDK
+  # opens a native Jitsi Activity; third_party/jitsi_meet_flutter_sdk_patched
+  # is the vendored copy with the compileSdk fix (see third_party/PATCH.md).
+  jitsi_meet_flutter_sdk: ^13.1.0
   http: ^1.2.2
   # Network play (checkers, live) — packages/game-sync + server/game_tables.mjs's
   # WSS relay. No dependency_override needed (unlike jitsi/bonsoir_android
@@ -129,6 +135,8 @@ dev_dependencies:
 dependency_overrides:
   bonsoir_android:
     path: third_party/bonsoir_android_patched
+  jitsi_meet_flutter_sdk:
+    path: third_party/jitsi_meet_flutter_sdk_patched
 
 flutter:
   uses-material-design: true

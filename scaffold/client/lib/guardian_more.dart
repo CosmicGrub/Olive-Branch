@@ -33,6 +33,7 @@ import 'auth_session.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
 import 'care_screens.dart';
+import 'call_provider.dart' show CallGrant, CallUnavailableReason, callUnavailableLine;
 import 'call_screen.dart';
 import 'call_security_info.dart';
 import 'closing_ritual.dart';
@@ -336,15 +337,23 @@ class GuardianMoreScreen extends StatelessWidget {
       }
       onCallStarted?.call(started);
       final sessionId = started['sessionId'] as String?;
+      // The grant says which engine carries this call (jitsi or livekit).
+      final grant = CallGrant.fromJson(started);
       if (context.mounted) {
         _open(context, CallScreen(who: 'dad', displayName: 'Dad',
-          knownToken: started['token'] as String?, knownWsURL: started['wsURL'] as String?,
+          knownGrant: grant, knownToken: grant.token, knownWsURL: grant.wsURL,
           onCallEnd: sessionId == null ? null : () => _endRealCall(url, gid, childId, sessionId)));
       }
     } catch (e) {
       if (context.mounted) {
+        // 503 call_provider_unavailable: the server says calls are not switched
+        // on. Plain words for the adult, not a raw error code.
+        final off = e is ApiException && e.error == 'call_provider_unavailable';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Could not start the call: ${e is ApiException ? e.error : userMessageFor(e)}'), duration: const Duration(seconds: 3)));
+          content: Text(off
+            ? callUnavailableLine(CallUnavailableReason.providerOff, isGuardian: true)
+            : 'Could not start the call: ${e is ApiException ? e.error : userMessageFor(e)}'),
+          duration: const Duration(seconds: 4)));
       }
     }
   }

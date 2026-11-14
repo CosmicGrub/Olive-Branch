@@ -270,7 +270,7 @@ void main() {
     // throws building this new LayoutBuilder for the states it CAN reach.
     InCallView buildView({required bool tabletop}) => InCallView(
       tabletop: tabletop,
-      localTrack: null, remoteTrack: null, remoteName: null, notice: null,
+      localVideo: null, remoteVideo: null, remoteName: null, notice: null,
       isGuardian: true, onHangUp: () async {}, onToggleMic: () async {},
       onToggleCamera: () async {}, micEnabled: true, cameraEnabled: true,
       remoteMode: CallMode.video, awaitingResumeConsent: false,

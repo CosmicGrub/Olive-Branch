@@ -511,6 +511,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.2"
+  jitsi_meet_flutter_sdk:
+    dependency: "direct main"
+    description:
+      path: "third_party/jitsi_meet_flutter_sdk_patched"
+      relative: true
+    source: path
+    version: "13.1.0"
   jni:
     dependency: transitive
     description:
