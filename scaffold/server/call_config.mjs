@@ -62,7 +62,7 @@ export function resolveCallConfig(env = process.env) {
       problems.push(e.message.startsWith('JITSI_SERVER_URL') ? e.message : 'JITSI_SERVER_URL is not a valid URL');
     }
   } else jitsiMissing.push('JITSI_SERVER_URL');
-  const xmppDomain = (env.JITSI_XMPP_DOMAIN ?? 'meet.jitsi').trim();
+  const xmppDomain = (env.JITSI_XMPP_DOMAIN || 'meet.jitsi').trim();
   if (!DOMAIN_RE.test(xmppDomain)) problems.push('JITSI_XMPP_DOMAIN is not a valid host name');
   if (secret && appId && serverURL && DOMAIN_RE.test(xmppDomain)) {
     jitsi = { appId, appSecret: secret, serverURL, xmppDomain };
