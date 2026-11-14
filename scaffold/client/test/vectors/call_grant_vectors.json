@@ -1,0 +1,72 @@
+{
+ "generatedBy": "tools/gen-call-grant-vectors.mjs",
+ "appSecretHex": "9f3a61c07be24d58a1c9e0374bd62f85d7013ac9e86b4f520c1d3e5f7a9b2d4f",
+ "vectors": [
+  {
+   "label": "jitsi, guardian starts (moderator)",
+   "body": {
+    "provider": "jitsi",
+    "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJvbGl2ZS1jYWxscyIsImF1ZCI6ImppdHNpIiwic3ViIjoibWVldC5qaXRzaSIsInJvb20iOiJvZjNhNDA0MzE2YWY3Nzk1M2ZlN2FiYzYzYjRlZWQxYzlmNDZjMWU2MyIsIm5iZiI6MTc5NDI1NDM5MCwiaWF0IjoxNzk0MjU0NDAwLCJleHAiOjE3OTQyNTUwMDAsImNvbnRleHQiOnsidXNlciI6eyJpZCI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsIm5hbWUiOiJEYWQiLCJtb2RlcmF0b3IiOnRydWV9LCJmZWF0dXJlcyI6eyJyZWNvcmRpbmciOmZhbHNlLCJsaXZlc3RyZWFtaW5nIjpmYWxzZSwic2NyZWVuLXNoYXJpbmciOmZhbHNlLCJvdXRib3VuZC1jYWxsIjpmYWxzZSwic2lwLW91dGJvdW5kLWNhbGwiOmZhbHNlLCJ0cmFuc2NyaXB0aW9uIjpmYWxzZX19fQ.oa87BP00heyCTn-5x05GYqzqAd7-SdPkurOhlNsfBYk",
+    "room": "of3a404316af77953fe7abc63b4eed1c9f46c1e63",
+    "serverURL": "https://192.168.1.50:8443",
+    "identity": "11111111-1111-1111-1111-111111111111",
+    "displayName": "Dad",
+    "moderator": true,
+    "observerOnly": false,
+    "expiresAt": 1794255000,
+    "rang": false,
+    "sessionId": "sess-golden"
+   }
+  },
+  {
+   "label": "jitsi, child joins (not moderator)",
+   "body": {
+    "provider": "jitsi",
+    "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJvbGl2ZS1jYWxscyIsImF1ZCI6ImppdHNpIiwic3ViIjoibWVldC5qaXRzaSIsInJvb20iOiJvZjNhNDA0MzE2YWY3Nzk1M2ZlN2FiYzYzYjRlZWQxYzlmNDZjMWU2MyIsIm5iZiI6MTc5NDI1NDM5MCwiaWF0IjoxNzk0MjU0NDAwLCJleHAiOjE3OTQyNTUwMDAsImNvbnRleHQiOnsidXNlciI6eyJpZCI6ImFhYWFhYWFhLWFhYWEtYWFhYS1hYWFhLWFhYWFhYWFhYWFhYSIsIm5hbWUiOiJJdnkiLCJtb2RlcmF0b3IiOmZhbHNlfSwiZmVhdHVyZXMiOnsicmVjb3JkaW5nIjpmYWxzZSwibGl2ZXN0cmVhbWluZyI6ZmFsc2UsInNjcmVlbi1zaGFyaW5nIjpmYWxzZSwib3V0Ym91bmQtY2FsbCI6ZmFsc2UsInNpcC1vdXRib3VuZC1jYWxsIjpmYWxzZSwidHJhbnNjcmlwdGlvbiI6ZmFsc2V9fX0.wpjU9YsjMllUD90Z0tLvioHisPDP2lJHfm2TaBInfUM",
+    "room": "of3a404316af77953fe7abc63b4eed1c9f46c1e63",
+    "serverURL": "https://192.168.1.50:8443",
+    "identity": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "displayName": "Ivy",
+    "moderator": false,
+    "observerOnly": false,
+    "expiresAt": 1794255000
+   }
+  },
+  {
+   "label": "jitsi, observer-only guardian",
+   "body": {
+    "provider": "jitsi",
+    "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJvbGl2ZS1jYWxscyIsImF1ZCI6ImppdHNpIiwic3ViIjoibWVldC5qaXRzaSIsInJvb20iOiJvZjNhNDA0MzE2YWY3Nzk1M2ZlN2FiYzYzYjRlZWQxYzlmNDZjMWU2MyIsIm5iZiI6MTc5NDI1NDM5MCwiaWF0IjoxNzk0MjU0NDAwLCJleHAiOjE3OTQyNTUwMDAsImNvbnRleHQiOnsidXNlciI6eyJpZCI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsIm5hbWUiOiJEYWQiLCJtb2RlcmF0b3IiOmZhbHNlfSwiZmVhdHVyZXMiOnsicmVjb3JkaW5nIjpmYWxzZSwibGl2ZXN0cmVhbWluZyI6ZmFsc2UsInNjcmVlbi1zaGFyaW5nIjpmYWxzZSwib3V0Ym91bmQtY2FsbCI6ZmFsc2UsInNpcC1vdXRib3VuZC1jYWxsIjpmYWxzZSwidHJhbnNjcmlwdGlvbiI6ZmFsc2V9fX0.XFKwaPiwmCJ8CnbGntGbdq38TtwZyzgUnCykrUF6VU8",
+    "room": "of3a404316af77953fe7abc63b4eed1c9f46c1e63",
+    "serverURL": "https://192.168.1.50:8443",
+    "identity": "11111111-1111-1111-1111-111111111111",
+    "displayName": "Dad",
+    "moderator": false,
+    "observerOnly": true,
+    "expiresAt": 1794255000,
+    "rang": false,
+    "sessionId": "sess-golden"
+   }
+  },
+  {
+   "label": "livekit, guardian starts (token redacted)",
+   "body": {
+    "provider": "livekit",
+    "token": "redacted",
+    "wsURL": "wss://x.invalid",
+    "identity": "11111111-1111-1111-1111-111111111111",
+    "displayName": "Dad",
+    "rang": false,
+    "sessionId": "sess-golden"
+   }
+  },
+  {
+   "label": "jitsi unavailable",
+   "status": 503,
+   "body": {
+    "error": "call_provider_unavailable",
+    "provider": "jitsi"
+   }
+  }
+ ]
+}

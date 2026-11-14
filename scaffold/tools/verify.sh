@@ -139,7 +139,7 @@ for spec in \
   "child homes: per-age tiles, renames, More, your-home-grows, drift guard|tools/test/child_home_vectors.test.mjs" \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
   "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
-  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs" ; do
+  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
@@ -419,6 +419,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
+            "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
             "me route: yearsOld for the child age gate (real DB)|server/test/me_route.test.mjs" \
             "presence route: on-duty exclusion + tie-break (real DB)|server/test/presence_route.test.mjs" \

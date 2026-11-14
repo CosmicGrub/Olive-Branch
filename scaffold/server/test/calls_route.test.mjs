@@ -115,7 +115,7 @@ await admin.query('COMMIT');
 const SECRET = Buffer.from('b'.repeat(32), 'utf8');
 const NOW = Date.now();
 const api = new Api(SECRET, dbPort(pool));
-registerRoutes(api, pool);
+registerRoutes(api, pool, undefined, { callEnv: { CALL_PROVIDER: 'livekit', LIVEKIT_URL: 'wss://verify-sh.invalid', LIVEKIT_API_KEY: 'devkey', LIVEKIT_API_SECRET: 'devsecret_at_least_32_chars_long_xx' } });
 
 const dadTok = issueSession(SECRET,
   { userId: DAD, roleName: 'guardian', childId: null, escalated: false }, NOW);
