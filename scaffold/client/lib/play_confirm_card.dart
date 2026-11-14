@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 
 import 'child_connect_screen.dart' show kSasIcons;
+import 'local_pairing.dart';
 import 'play_admission.dart';
 
 class PlayConfirmCard extends StatelessWidget {
@@ -15,7 +16,7 @@ class PlayConfirmCard extends StatelessWidget {
 
   /// Which seat the other device holds. The ONLY thing the card calls it: "Player one" or "Player two". No name, no
   /// model, nothing the peer sent is rendered.
-  final int peerSeat;
+  final int? peerSeat;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -28,7 +29,8 @@ class PlayConfirmCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-                Text('${seatLabel(peerSeat)} wants to join', style: Theme.of(context).textTheme.titleMedium),
+                Text(peerSeat == null ? 'The other device wants to join' : '${seatLabel(peerSeat!)} wants to join',
+                    style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 const Text('Is the same word and picture on their screen?'),
                 const SizedBox(height: 8),
@@ -45,4 +47,45 @@ class PlayConfirmCard extends StatelessWidget {
           );
         },
       );
+}
+
+/// Wraps a game screen on EVERY device and shows the confirmation card over it on a grown-up's device when a paired
+/// device connects for the first time (the game screen underneath carries on waiting). On a child's device the
+/// admission never asks, so this is just [child]: a child is never shown the card, a question, or a code.
+class PlayConfirmOverlay extends StatelessWidget {
+  const PlayConfirmOverlay({super.key, required this.pairing, required this.child});
+
+  /// Null before a game has opened its pairing (Connect 4 opens it only when "Play nearby" is chosen).
+  final LocalPairingController? pairing;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final LocalPairingController? p = pairing;
+    if (p == null) return child;
+    return ListenableBuilder(
+        listenable: p,
+        builder: (BuildContext context, Widget? _) {
+          final PlayAdmission? adm = p.admission;
+          if (adm == null || !p.awaitingGrownUp) return child;
+          return Stack(children: <Widget>[
+            child,
+            const Positioned.fill(child: ModalBarrier(dismissible: false, color: Color(0x99000000))),
+            Positioned.fill(
+              child: SafeArea(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: PlayConfirmCard(admission: adm, peerSeat: p.peerSeat),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ]);
+        },
+      );
+  }
 }

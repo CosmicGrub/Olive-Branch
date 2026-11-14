@@ -50,12 +50,14 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show InternetAddress;
 import 'package:flutter/foundation.dart';
 import 'device_keys.dart';
 import 'live_games.dart' show Side;
 import 'local_discovery.dart';
 import 'local_session.dart';
 import 'play_admission.dart';
+import 'play_credentials.dart';
 import 'play_lifecycle.dart';
 
 // Re-exported so a game screen built on this controller never needs its own
@@ -76,23 +78,56 @@ enum PairingPhase { searching, found, peerLost, error }
 /// plain getters rather than requiring every screen to re-derive them from
 /// a raw event stream.
 class LocalPairingController extends ChangeNotifier {
+  /// By default every session is ADMITTED (play_admission.dart): the credentials are read from the sealed pairing
+  /// records ([credentials], default [PlayCredentialsSource.current]), the server answers only paired, authenticated
+  /// peers, every turn is encrypted, a nearby lobby that is not a pinned peer is ignored, and a device that was never
+  /// paired cannot play (the phase goes to [PairingPhase.error] with a calm line and nothing is opened).
+  ///
+  /// Passing [admission] + [ownKey] + [peerKey]/[peerKeys] uses those instead (tests). [open] is the one way to the
+  /// old open behaviour (a plain POST from anyone on the network): for single-device previews and the legacy
+  /// dev entry points only; no shipped screen passes it.
   LocalPairingController({
     required this.role,
     required this.displayName,
-    this.admission,
-    this.ownKey,
-    this.peerKey,
-  });
+    PlayAdmission? admission,
+    DeviceKey? ownKey,
+    Uint8List? peerKey,
+    List<Uint8List>? peerKeys,
+    this.credentials,
+    this.open = false,
+    this.network,
+  }) {
+    _admission = admission;
+    _ownKey = ownKey;
+    _peerKeys = peerKeys ?? (peerKey == null ? null : <Uint8List>[peerKey]);
+  }
 
-  /// Admission for play (play_admission.dart). Null keeps the older open behaviour. With it, the server answers only
-  /// paired, authenticated peers, every turn is encrypted, and a nearby lobby that is not a pinned peer is ignored.
-  final PlayAdmission? admission;
-  final DeviceKey? ownKey;
+  /// Where credentials come from when none were passed in. Null means [PlayCredentialsSource.current].
+  final PlayCredentialsSource? credentials;
 
-  /// The one device key this device is paired with (the adult key on a child device, the child's on the adult's).
-  final Uint8List? peerKey;
+  /// True only for the legacy open mode described above.
+  final bool open;
+
+  /// Tests only: replace the parts of the real network this controller would otherwise use.
+  final PlayNetworkSeams? network;
+
+  PlayAdmission? _admission;
+  DeviceKey? _ownKey;
+  List<Uint8List>? _peerKeys;
+
+  /// The admission in force (null only in the legacy open mode, or before [start] resolved it).
+  PlayAdmission? get admission => _admission;
   PlaySession? _session;
   PlayServerGuard? _guard;
+  bool _helloing = false;
+
+  /// The grown-up's confirmation card is waiting for an answer (grown-up's device only).
+  bool get awaitingGrownUp => _admission?.state == PlayState.awaitingConfirm;
+
+  /// Which seat the nearby device advertised (1 or 2), or null before it is known. The only thing a confirmation card
+  /// ever calls the other device.
+  int? get peerSeat => parseSeat(_lastPeerSeatText);
+  String? _lastPeerSeatText;
 
   /// 'dad' or 'ivy' — the same real identity vocabulary call_screen.dart
   /// already uses.
@@ -107,7 +142,7 @@ class LocalPairingController extends ChangeNotifier {
   /// live_games.dart for the same reason this field does.
   late final Side mySide = role == 'ivy' ? Side.a : Side.b;
 
-  LocalDiscovery? _discovery;
+  PeerDiscovery? _discovery;
   LocalSessionServer? _server;
   StreamSubscription<LocalPeer>? _peerSub;
   StreamSubscription<String>? _lostSub;
@@ -135,7 +170,22 @@ class LocalPairingController extends ChangeNotifier {
   }
 
   Future<void> start() async {
-    final address = await ownLocalIPv4();
+    if (_admission == null && !open) {
+      final PlayCredentials? cred =
+          await (credentials ?? PlayCredentialsSource.current).load(adult: role != 'ivy');
+      if (_disposed) return;
+      if (cred == null) {
+        // Never paired: there is nobody this device may play with, so nothing is opened and nothing is advertised.
+        _phase = PairingPhase.error;
+        _errorMessage = unpairedPlayLine(adult: role != 'ivy');
+        _notify();
+        return;
+      }
+      _admission = cred.buildAdmission();
+      _ownKey = cred.own;
+      _peerKeys = cred.peerKeys;
+    }
+    final address = network?.ownAddress ?? await ownLocalIPv4();
     if (address == null) {
       _phase = PairingPhase.error;
       // Honest, calm, no banned phrase — the same discipline
@@ -146,9 +196,16 @@ class LocalPairingController extends ChangeNotifier {
     }
     if (_disposed) return;
 
-    final adm = admission;
-    if (adm != null) await adm.openWindow();
-    final server = LocalSessionServer(onTurnReceived: (payload) => _incoming.add(payload), admission: adm);
+    final adm = _admission;
+    if (adm != null) {
+      await adm.openWindow();
+      adm.addListener(_onAdmission);
+    }
+    final server = LocalSessionServer(
+        onTurnReceived: (payload) => _incoming.add(payload),
+        admission: adm,
+        bindAddresses: network?.bindAddresses,
+        allowLoopback: network?.allowLoopback ?? false);
     try {
       await server.start();
     } on LocalSessionException catch (e) {
@@ -163,10 +220,11 @@ class LocalPairingController extends ChangeNotifier {
     }
     _server = server;
 
-    final discovery = LocalDiscovery(role: role, displayName: displayName, servePort: server.port!, lobbyToken: adm?.lobbyToken);
+    final PeerDiscovery discovery = network?.discoveryFactory?.call(server.port!, adm?.lobbyToken) ??
+        LocalDiscovery(role: role, displayName: displayName, servePort: server.port!, lobbyToken: adm?.lobbyToken);
     _discovery = discovery;
     // Leaving the foreground closes the lobby and the socket: nothing listens while the game is not on screen.
-    _guard = PlayServerGuard(onLeave: _leave)..attach();
+    if (network?.lifecycleGuard ?? true) _guard = PlayServerGuard(onLeave: _leave)..attach();
     _peerSub = discovery.peers.listen(_handlePeerFound);
     _lostSub = discovery.lost.listen(_handlePeerLost);
     await discovery.start();
@@ -178,7 +236,8 @@ class LocalPairingController extends ChangeNotifier {
     unawaited(_lostSub?.cancel());
     unawaited(_discovery?.stop());
     unawaited(_server?.stop());
-    admission?.closeWindow();
+    _admission?.removeListener(_onAdmission);
+    _admission?.closeWindow();
     _discovery = null;
     _server = null;
     _session = null;
@@ -188,15 +247,53 @@ class LocalPairingController extends ChangeNotifier {
     _notify();
   }
 
+  /// A seat label's digit, kept so the confirmation card can name the other device ("Player two") even when the
+  /// grown-up's lobby hears the hello before this device has resolved the peer itself.
+  void _rememberSeat(LocalPeer peer) {
+    final String digit = peer.role.replaceFirst('seat', '');
+    if (parseSeat(digit) != null) _lastPeerSeatText = digit;
+  }
+
+  /// The admission changed. The grown-up said yes (or the lobby let a child's device in): a peer we already said hello
+  /// to is now playable. The grown-up said no: forget that peer, so the other device can try again.
+  void _onAdmission() {
+    final PlayAdmission? adm = _admission;
+    if (_disposed || adm == null || _phase == PairingPhase.error) return;
+    if (_peer != null && adm.admitted && _phase != PairingPhase.found) {
+      _phase = PairingPhase.found;
+    } else if (_peer != null && adm.state == PlayState.none) {
+      _peer = null;
+      _session = null;
+      _phase = PairingPhase.searching;
+    }
+    _notify();
+  }
+
   Future<void> _handlePeerFound(LocalPeer peer) async {
-    if (admission != null) {
+    _rememberSeat(peer);
+    final PlayAdmission? adm = _admission;
+    if (adm != null) {
       // Only a pinned, paired device may be played with. A lobby that does not answer our signed hello is a stranger.
-      final key = ownKey, pinned = peerKey, token = peer.token;
-      if (_peer != null || key == null || pinned == null || token == null) return;
-      final s = await PlaySession.hello(
-          own: key, peerKey: pinned, lobbyToken: token, post: LocalSessionClient(peer).postHello);
+      final key = _ownKey, pinned = _peerKeys, token = peer.token;
+      if (_peer != null || _helloing || key == null || pinned == null || pinned.isEmpty || token == null) return;
+      _helloing = true;
+      PlaySession? s;
+      try {
+        // A grown-up's device is paired with several children's devices; the lobby's signed answer says which.
+        for (final Uint8List k in pinned) {
+          s = await PlaySession.hello(own: key, peerKey: k, lobbyToken: token, post: LocalSessionClient(peer).postHello);
+          if (s != null || _disposed) break;
+        }
+      } finally {
+        _helloing = false;
+      }
       if (s == null || _disposed || _peer != null) return;
       _session = s;
+      // Found for play only once the lobby on THIS device let that device in (a grown-up's device waits for its yes).
+      _peer = peer;
+      _phase = adm.admitted ? PairingPhase.found : PairingPhase.searching;
+      _notify();
+      return;
     }
     // First real peer wins — a same-room session is exactly two people;
     // finding a second signal for the same peer (bonsoir can re-resolve)
@@ -258,7 +355,8 @@ class LocalPairingController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _guard?.detach();
-    admission?.closeWindow();
+    _admission?.removeListener(_onAdmission);
+    _admission?.closeWindow();
     unawaited(_peerSub?.cancel());
     unawaited(_lostSub?.cancel());
     unawaited(_discovery?.stop());
@@ -266,4 +364,26 @@ class LocalPairingController extends ChangeNotifier {
     unawaited(_incoming.close());
     super.dispose();
   }
+}
+
+/// Tests only. Lets two controllers in one process find each other over loopback: no mDNS, no LAN interface.
+class PlayNetworkSeams {
+  const PlayNetworkSeams({
+    this.ownAddress,
+    this.bindAddresses,
+    this.allowLoopback = false,
+    this.discoveryFactory,
+    this.lifecycleGuard = true,
+  });
+
+  /// A stand-in for this device's LAN address (any non-null text skips the interface lookup).
+  final String? ownAddress;
+  final List<InternetAddress>? bindAddresses;
+  final bool allowLoopback;
+
+  /// False in a plain (non-widget) test, where no WidgetsBinding exists to observe.
+  final bool lifecycleGuard;
+
+  /// Makes the discovery for a server on [port] with the lobby token of the admission in force.
+  final PeerDiscovery Function(int port, String? lobbyToken)? discoveryFactory;
 }
