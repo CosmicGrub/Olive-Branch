@@ -176,7 +176,8 @@ check('B deny', 'a frame over the transport cap closes 1009 before it is buffere
   const ctx = await start(); const t = await openTable(ctx);
   let closedWith = null; t.wsKid.on('close', (c, r) => { closedWith = `${c}/${r}`; });
   for (let i = 0; i < 20 && !closedWith; i++) { t.wsKid.send(frame(i)); await new Promise((r) => setTimeout(r, 5)); }
-  await new Promise((r) => setTimeout(r, 100));
+  // wait for the close frame to land (a loaded CI runner can take well over 100 ms), not a fixed sleep
+  for (let i = 0; i < 400 && !closedWith; i++) await new Promise((r) => setTimeout(r, 5));
   check('B deny', 'a flood is rate limited and the socket closed 1008', closedWith, '1008/rate_limited');
   t.wsDad.close(); await ctx.close();
 }
@@ -244,8 +245,13 @@ check('D token', '...and a missing header', tokenFromSubprotocol(undefined), 'nu
   const ws1 = new WebSocket(`ws://127.0.0.1:${ctx.port}${created.body.wsPath}`, [WS_SUBPROTOCOL, created.body.token]);
   const ws2 = new WebSocket(`ws://127.0.0.1:${ctx.port}${mine.body.wsPath}`, [WS_SUBPROTOCOL, mine.body.token]);
   await Promise.all([once(ws1, 'open'), once(ws2, 'open')]);
-  await new Promise((r) => setTimeout(r, 80));
-  const active = await post(ctx.port, `/v1/game-tables/${id}/join`, ctx.kid, {});
+  // the table turns active once the server has registered both sockets: poll for it, do not guess a delay
+  let active = null;
+  for (let i = 0; i < 400; i++) {
+    await new Promise((r) => setTimeout(r, 5));
+    active = await post(ctx.port, `/v1/game-tables/${id}/join`, ctx.kid, {});
+    if (JSON.stringify(active) === JSON.stringify(unknown)) break;
+  }
   check('E oracle', 'a no-longer-pending table is the same answer too', JSON.stringify(active), JSON.stringify(unknown));
   ws1.close(); ws2.close();
   // enumeration burns the prober's own budget before the lookup
