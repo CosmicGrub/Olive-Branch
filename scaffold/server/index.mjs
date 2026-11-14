@@ -28,6 +28,7 @@ import { createNetIdentity } from './netid.mjs';
 import { checkBootTransport, httpsRequired, securityHeaders } from './transport.mjs';
 import { errorLine } from './safe_log.mjs';
 import { checkBootSecrets } from './secrets.mjs';
+import { checkRuntimeRole } from './db_role.mjs';
 import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 
@@ -69,6 +70,13 @@ if (bootTransport.problems.length) {
 const netId = createNetIdentity();
 
 const pool = createPool(DATABASE_URL);
+// S-B11 -- refuse to run as a role that owns the schema / bypasses RLS (server/db_role.mjs).
+const bootRole = await checkRuntimeRole(pool, process.env);
+for (const w of bootRole.warnings) console.warn(`WARNING: ${w}`);
+if (bootRole.problems.length) {
+  for (const p of bootRole.problems) console.error(`database role check failed: ${p}`);
+  process.exit(2);
+}
 const secret = boot.sessionSecret;
 // S-B16 -- two-key rotation: SESSION_SECRET signs, SESSION_SECRET_PREVIOUS only verifies.
 const sessionKeys = { current: secret, previous: boot.previousSessionSecret };

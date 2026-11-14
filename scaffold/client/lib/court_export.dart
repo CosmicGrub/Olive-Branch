@@ -53,6 +53,7 @@ import 'package:path_provider/path_provider.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'form_factors.dart' as ff;
+import 'guardian_step_up.dart';
 import 'sha256.dart';
 
 // ===================================================== posture width rule =
@@ -877,7 +878,7 @@ class _FootNote extends StatelessWidget {
 // authorizeExport() saying no is an expected, correctly-functioning outcome
 // of this screen's own business rule — not a failure to render honestly
 // around.
-enum _LiveExportState { loading, error, denied, ready }
+enum _LiveExportState { needPin, loading, error, denied, ready }
 
 class LiveCourtExportScreen extends StatefulWidget {
   const LiveCourtExportScreen({
@@ -887,9 +888,14 @@ class LiveCourtExportScreen extends StatefulWidget {
     required this.childId,
     this.httpClient,
     this.documentsDirectory,
+    this.pinSource,
   });
 
   final String baseUrl;
+  /// Where the guardian's PIN comes from (S-B3 step-up: both exports need it, sent in the
+  /// `x-guardian-pin` header). Null in the app: the certified export asks on an in-page card
+  /// and the raw export in a dialog ([askGuardianPinDialog]). Tests inject a source.
+  final GuardianPinSource? pinSource;
   /// The app_user id logging in AS the requesting guardian — devLoginFor's
   /// `userId`, distinct from [childId] (whose export is being requested).
   final String guardianId;
@@ -984,14 +990,39 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
   // ethos — rather than inventing a second raw-export flow.
   bool _rawExporting = false;
 
+  // The PIN is never kept: every export asks again (S-B3). [_pinError] is the last refusal, in
+  // plain adult words, for the in-page card.
+  String? _pinError;
+  static const String _pinTitle = "Confirm it's you";
+  static const String _rawPinWhy =
+      "The raw export is the family's whole message log. Enter your PIN to prepare it.";
+  static const String _certifiedPinWhy =
+      "The certified export covers the whole handover log. Enter your PIN to prepare it.";
+
   Future<void> _prepareRawExport(BuildContext context) async {
     if (_rawExporting) return;
     setState(() => _rawExporting = true);
-    OliveApi? api;
     try {
-      api = await apiFor(widget.baseUrl,
-          userId: widget.guardianId, client: widget.httpClient);
-      final Map<String, dynamic> result = await api.fetchRawExport(widget.childId);
+      final Map<String, dynamic>? result = await runWithGuardianPin<Map<String, dynamic>>(
+        context,
+        title: _pinTitle,
+        why: _rawPinWhy,
+        source: widget.pinSource,
+        run: (String pin) async {
+          final OliveApi api = await apiFor(widget.baseUrl,
+              userId: widget.guardianId, client: widget.httpClient);
+          try {
+            return await api.fetchRawExport(widget.childId, pin: pin);
+          } finally {
+            if (widget.httpClient == null) api.close();
+          }
+        },
+      );
+      if (result == null) {
+        // Cancelled at the PIN: nothing was asked of the server, nothing to report.
+        if (mounted) setState(() => _rawExporting = false);
+        return;
+      }
       // Same "hash the exact string the server hashed" ethos as
       // deletion_screen.dart's own _export() — see that method's doc
       // comment for why this is bundleJson, not a re-encoding of `bundle`.
@@ -1032,11 +1063,15 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
         ),
       );
     } catch (e) {
-      if (widget.httpClient == null) api?.close();
       if (!context.mounted) return;
       setState(() => _rawExporting = false);
+      // A refused PIN that cannot be retried here (locked, never set) is said plainly; every other
+      // failure keeps the old honest line. Nothing is reported as saved.
+      final String message = isPinStepUpError(e)
+          ? guardianStepUpMessage((e as ApiException).error)
+          : 'Could not prepare the raw export: $e';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Could not prepare the raw export: $e'), duration: const Duration(seconds: 4)));
+        content: Text(message), duration: const Duration(seconds: 4)));
     }
   }
 
@@ -1046,12 +1081,29 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
     _load();
   }
 
+  /// Every (re)load starts at the PIN. With no injected source the page shows the PIN card and the
+  /// card calls [_loadWith]; with one (tests) the source answers straight away.
   Future<void> _load() async {
-    setState(() => _state = _LiveExportState.loading);
+    final GuardianPinSource? source = widget.pinSource;
+    if (source == null) {
+      if (mounted) setState(() => _state = _LiveExportState.needPin);
+      return;
+    }
+    final String? pin = await source(context, title: _pinTitle, why: _certifiedPinWhy);
+    if (!mounted) return;
+    if (pin == null) {
+      setState(() => _state = _LiveExportState.needPin);
+      return;
+    }
+    await _loadWith(pin);
+  }
+
+  Future<void> _loadWith(String pin) async {
+    setState(() { _state = _LiveExportState.loading; _pinError = null; });
     try {
       final api = await apiFor(widget.baseUrl,
           userId: widget.guardianId, client: widget.httpClient);
-      final result = await api.fetchCertifiedExport(widget.childId);
+      final result = await api.fetchCertifiedExport(widget.childId, pin: pin);
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
       final Map<String, dynamic> att = result['attestation'] as Map<String, dynamic>;
@@ -1076,7 +1128,14 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-      if (e.statusCode == 403) {
+      if (kPinStepUpErrors.contains(e.error)) {
+        // The step-up itself was refused (wrong, missing, locked or never-set PIN): back to the
+        // PIN card with the reason, not the "not authorized" denial (that is about the export).
+        setState(() {
+          _pinError = guardianStepUpMessage(e.error);
+          _state = _LiveExportState.needPin;
+        });
+      } else if (e.statusCode == 403) {
         // A real, specific denial from authorizeExport() (or the
         // guardianship check ahead of it) — honest, not a crash, not
         // treated the same as an unreachable server.
@@ -1129,6 +1188,14 @@ class _LiveCourtExportScreenState extends State<LiveCourtExportScreen> {
   Widget _buildBody(BuildContext context, ColorScheme scheme, TextTheme textTheme,
       double width, double textScale) {
     switch (_state) {
+      case _LiveExportState.needPin:
+        return GuardianPinCard(
+          title: _pinTitle,
+          why: _certifiedPinWhy,
+          actionLabel: 'Prepare certified export',
+          error: _pinError,
+          onSubmit: (String pin) => _loadWith(pin),
+        );
       case _LiveExportState.loading:
         return const Center(child: CircularProgressIndicator());
       case _LiveExportState.error:

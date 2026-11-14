@@ -29,11 +29,14 @@ set -euo pipefail
 
 : "${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD must be set — see scaffold/.env.prod.example}"
 : "${BACKUP_READER_PASSWORD:?BACKUP_READER_PASSWORD must be set — see scaffold/.env.prod.example}"
+: "${APP_RUNTIME_PASSWORD:?APP_RUNTIME_PASSWORD must be set — see scaffold/.env.prod.example}"
 : "${POSTGRES_DB_NAME:=olive_prod}"
 
 psql -v ON_ERROR_STOP=1 --username postgres --dbname postgres \
   --set app_owner_password="$APP_OWNER_PASSWORD" \
-  --set backup_reader_password="$BACKUP_READER_PASSWORD"   --set health_monitor_password="${HEALTH_MONITOR_PASSWORD:-}" \
+  --set backup_reader_password="$BACKUP_READER_PASSWORD" \
+  --set health_monitor_password="${HEALTH_MONITOR_PASSWORD:-}" \
+  --set app_runtime_password="$APP_RUNTIME_PASSWORD" \
   --set db_name="$POSTGRES_DB_NAME" <<'SQL'
 CREATE ROLE app_owner NOSUPERUSER NOBYPASSRLS LOGIN PASSWORD :'app_owner_password';
 CREATE DATABASE :"db_name" OWNER app_owner;
@@ -47,6 +50,10 @@ SELECT (:'health_monitor_password' <> '') AS hm_login \gset
 \if :hm_login
   ALTER ROLE health_monitor LOGIN PASSWORD :'health_monitor_password';
 \endif
+-- S-B11: the role the RUNNING server, scheduler and health tools connect as. It owns
+-- nothing and holds only DML (db/runtime_grants.sql, applied by tools/migrate.mjs).
+CREATE ROLE app_runtime NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT
+  LOGIN PASSWORD :'app_runtime_password';
 SQL
 
-echo "init-db.prod.sh: app_owner, backup_reader, health_monitor, and ${POSTGRES_DB_NAME} created"
+echo "init-db.prod.sh: app_owner, app_runtime, backup_reader, health_monitor, and ${POSTGRES_DB_NAME} created"

@@ -63,6 +63,11 @@ function fakeQuery(sql, params = []) {
     return [{ seq: securityEventInserts.length }];
   }
 
+  // The first-PIN passkey check lists the caller's passkeys; no account in this fake holds one, so
+  // the first PIN here is the bootstrap case (no proof). The passkey path is held by
+  // security_follow_ups_route.test.mjs against real Postgres.
+  if (/SELECT id, created_at, sign_count FROM webauthn_credential/i.test(sql)) return [];
+
   // pin_credential — same shapes as kiosk_pin_route.test.mjs's fake.
   if (/SELECT pin_hash, failed_attempts, locked_until\s+FROM pin_credential WHERE user_id = \$1/i.test(sql)) {
     const c = credentials.get(params[0]);

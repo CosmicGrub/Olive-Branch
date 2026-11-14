@@ -686,7 +686,7 @@ export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 /** Generates via auth.ts's own newChallenge() (CSPRNG, 32 bytes) — this file
  * never invents its own randomness for a security token. */
 export async function createChallenge(
-  pool: pg.Pool, userId: string, purpose: 'register' | 'login',
+  pool: pg.Pool, userId: string, purpose: 'register' | 'login' | 'stepup',
 ): Promise<string> {
   const challenge = newChallenge();
   await withSystemSession(pool, async (q) => {
@@ -736,7 +736,7 @@ export async function purgeExpiredChallenges(
  * this function is written to not reintroduce it.
  */
 export async function consumeChallenge(
-  pool: pg.Pool, userId: string, purpose: 'register' | 'login', challenge: string,
+  pool: pg.Pool, userId: string, purpose: 'register' | 'login' | 'stepup', challenge: string,
 ): Promise<boolean> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(

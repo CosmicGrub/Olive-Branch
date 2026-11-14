@@ -304,6 +304,24 @@ if [ $? -ne 0 ]; then
   echo "  ABORT: could not provision backup_reader before migrations"
   exit 2
 fi
+# S-B11: the least-privilege RUNTIME role the server, scheduler and health tools connect as.
+# Created before migrations like backup_reader (CREATE ROLE needs superuser); the runner's
+# db/runtime_grants.sql then grants it DML, and the suites below prove it is enough.
+APP_RUNTIME_PW="verify_run_app_runtime_pw"
+$PSQL -d "$DB" -q -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    CREATE ROLE app_runtime LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+END
+\$\$;
+ALTER ROLE app_runtime NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT LOGIN PASSWORD '$APP_RUNTIME_PW';
+SQL
+if [ $? -ne 0 ]; then
+  echo "  ABORT: could not provision app_runtime before migrations"
+  exit 2
+fi
 # Applied through the runner, so ordering, checksums, and idempotency are
 # exercised on every verification rather than only when someone remembers.
 PSQL_CMD="$PSQL -d $DB" node tools/migrate.mjs >/tmp/mig.out 2>&1 \
@@ -441,7 +459,9 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "migrate as the NON-superuser app_owner: full set, trusted extensions, no custom-GUC proconfig (real DB)|tools/test/migrate_nonsuper.test.mjs" \
             "db health views under FORCE RLS, app_owner-migrated: true counts for every caller, monitor reads no rows (0047, real DB)|packages/db/test/health_views_force_rls.test.mjs" \
             "db domain constraints: day-parts, time zones, enums (0042, real DB)|packages/db/test/domain_constraints.test.mjs" \
-            "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs"             "snoop hardening routes: relay IDOR tripwire, uniform answers, revocation, live-schema sweep (real DB)|server/test/snoop_api_route.test.mjs"             "snoop hardening e2e: booted server refuses bad deploys, https-only, headers, CORS closed, no leakage (real DB)|server/test/snoop_boot_e2e.test.mjs" ; do
+            "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs" \
+            "security follow-ups routes: first-PIN passkey check, PIN step-up (real DB)|server/test/security_follow_ups_route.test.mjs" \
+            "runtime role split: grants, no DDL, boot guard (S-B11, real DB)|tools/test/runtime_role.test.mjs"             "snoop hardening routes: relay IDOR tripwire, uniform answers, revocation, live-schema sweep (real DB)|server/test/snoop_api_route.test.mjs"             "snoop hardening e2e: booted server refuses bad deploys, https-only, headers, CORS closed, no leakage (real DB)|server/test/snoop_boot_e2e.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   # MASTERFILE §16.2 #6 REVERSED AGAIN — server/test/calls_route.test.mjs
   # imports routes.mjs directly, which now reads LIVEKIT_URL/LIVEKIT_
@@ -464,10 +484,33 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
   # APP_OWNER_PASSWORD: migrate_nonsuper.test.mjs sets app_owner's password for its own
   # connections; handing it the one provisioned above keeps every sibling suite connectable.
   out=$(DATABASE_URL="$DB_URL" ADMIN_DATABASE_URL="$ADMIN_URL" APP_OWNER_PASSWORD="$APP_OWNER_PW" \
-        PGBIN="$PGBIN" PG_DUMP_BIN="$PGBIN/pg_dump" \
+        APP_RUNTIME_PASSWORD="$APP_RUNTIME_PW" PGBIN="$PGBIN" PG_DUMP_BIN="$PGBIN/pg_dump" \
         LIVEKIT_URL="wss://verify-sh.invalid" LIVEKIT_API_KEY="devkey" \
         LIVEKIT_API_SECRET="devsecret_at_least_32_chars_long_xx" \
         node "$file" 2>&1 || true)
+  p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
+  f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
+  record "$name" "${p:-0}" "${f:-0}"
+  if [ "${f:-0}" != "0" ] || [ -z "$p" ]; then printf '%s\n' "$out" | tail -40 | sed 's/^/    /'; fi
+done
+
+echo ""
+echo "── Server suites AS the least-privilege runtime role (S-B11) ─────"
+# The same real-RLS route suites, with the server's own pool connecting as app_runtime
+# (owns nothing, DML only) instead of app_owner. They seed through ADMIN_URL. A route that
+# quietly needed DDL or table ownership would fail here and nowhere else.
+RUNTIME_URL="postgresql://app_runtime:${APP_RUNTIME_PW}@localhost:${PORT}/${DB}"
+for spec in "as app_runtime: security round 2 routes|server/test/security_round2_route.test.mjs" \
+            "as app_runtime: security follow-ups routes|server/test/security_follow_ups_route.test.mjs" \
+            "as app_runtime: expenses route|server/test/expenses_route.test.mjs" \
+            "as app_runtime: medications route|server/test/medications_route.test.mjs" \
+            "as app_runtime: exchange route|server/test/exchange_route.test.mjs" \
+            "as app_runtime: inbox route|server/test/inbox_route.test.mjs" \
+            "as app_runtime: letters route|server/test/letters_route.test.mjs" \
+            "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
+            "as app_runtime: snoop hardening routes|server/test/snoop_api_route.test.mjs" ; do
+  name="${spec%%|*}"; file="${spec##*|}"
+  out=$(DATABASE_URL="$RUNTIME_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
   f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
   record "$name" "${p:-0}" "${f:-0}"

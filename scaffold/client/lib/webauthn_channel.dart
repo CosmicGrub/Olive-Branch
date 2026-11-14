@@ -129,6 +129,57 @@ class WebAuthnChannel {
   }
 }
 
+/// The real [PasskeyAssertionProvider]: the fresh passkey assertion the server asks for when the
+/// FIRST PIN is set on an account that already holds a passkey (the stolen-session-sets-the-
+/// first-PIN hole, MASTERFILE section 7.12). Asks the server for a single-use challenge
+/// ([OliveApi.requestPinPasskeyChallenge]), runs the platform authentication ceremony over it
+/// ([WebAuthnChannel.authenticate], the same one the kiosk escalation uses) and returns the four
+/// base64url fields exactly as the server's `assertion` body expects them.
+///
+/// Throws, on purpose: [WebAuthnException] when the grown-up cancels or the ceremony fails,
+/// [WebAuthnUnavailable] when this platform has no passkey support, [ApiException] when the
+/// server refuses. [OliveApi.setGuardianPin] passes those on unchanged, and
+/// [guardianPinSetupMessage] turns each into plain adult words; nothing is faked into success.
+Future<Map<String, String>> platformPasskeyAssertion(OliveApi api, {WebAuthnChannel? channel}) async {
+  final ch = channel ?? WebAuthnChannel();
+  final challengeBody = await api.requestPinPasskeyChallenge();
+  final assertion = await ch.authenticate(
+    challenge: challengeBody['challenge'] as String,
+    rpId: challengeBody['rpId'] as String,
+  );
+  return <String, String>{
+    'credentialId': assertion.credentialId,
+    'clientDataJSON': assertion.clientDataJSON,
+    'authenticatorData': assertion.authenticatorData,
+    'signature': assertion.signature,
+  };
+}
+
+/// Plain adult words for why a first PIN could not be set, for the failures
+/// [platformPasskeyAssertion] adds to the ordinary PIN ones. Null for anything else (the caller
+/// has its own wording). Adult-side only: a child never sets a PIN.
+String? guardianPinSetupMessage(Object e) {
+  if (e is WebAuthnUnavailable) {
+    return "This device can't confirm with a passkey, so it can't set your PIN. "
+        'Open Olive on a phone or tablet that has your passkey.';
+  }
+  if (e is WebAuthnException) {
+    return e.code == 'user_cancelled'
+        ? 'Setting your PIN needs you to confirm with your passkey. Nothing was changed.'
+        : "Your passkey couldn't be checked, so your PIN was not set. Try again.";
+  }
+  if (e is ApiException) {
+    if (e.error == 'passkey_assertion_required') {
+      return 'Setting your PIN needs you to confirm with your passkey first.';
+    }
+    if (e.error == 'passkey_assertion_failed') {
+      return "That passkey confirmation didn't work, so your PIN was not set. Try again.";
+    }
+    if (e.error == 'no_passkey') return 'This account has no passkey to confirm with.';
+  }
+  return null;
+}
+
 /// Builds a real [GuardianSetupScreen.registerPasskey] callback: the full
 /// challenge -> native ceremony -> verify round trip against the real
 /// backend. This is the exact integration point guardian_setup.dart's own
@@ -142,14 +193,26 @@ class WebAuthnChannel {
 /// — cancellation, no authenticator, a network error reaching the server, a
 /// malformed response — resolves to a [PasskeyOutcome] instead of an
 /// unhandled exception reaching the widget.
+///
+/// [pinProvider] answers the server's step-up (S-B3): adding a passkey to an account that
+/// already has a PIN or a passkey needs the guardian's OWN PIN. It is asked BEFORE the device's
+/// passkey prompt, so a grown-up is not made to confirm a fingerprint for nothing. Return null to
+/// cancel (resolves to [PasskeyOutcome.declined]). Leave it null only for the very first
+/// credential of a brand-new account (invite bootstrap), which the server waives.
 Future<PasskeyOutcome> Function() buildRegisterPasskeyCallback({
   required OliveApi api,
   required String userName,
   WebAuthnChannel? channel,
+  Future<String?> Function()? pinProvider,
 }) {
   final ch = channel ?? WebAuthnChannel();
   return () async {
     try {
+      String? pin;
+      if (pinProvider != null) {
+        pin = await pinProvider();
+        if (pin == null) return PasskeyOutcome.declined;
+      }
       final challengeBody = await api.requestWebauthnRegisterChallenge();
       final challenge = challengeBody['challenge'] as String;
       final rpId = challengeBody['rpId'] as String;
@@ -157,7 +220,7 @@ Future<PasskeyOutcome> Function() buildRegisterPasskeyCallback({
       final reg = await ch.register(
         challenge: challenge, rpId: rpId, userId: userId, userName: userName);
       await api.submitWebauthnRegisterVerify(
-        clientDataJSON: reg.clientDataJSON, attestationObject: reg.attestationObject);
+        clientDataJSON: reg.clientDataJSON, attestationObject: reg.attestationObject, pin: pin);
       return PasskeyOutcome.success;
     } on WebAuthnUnavailable {
       return PasskeyOutcome.unavailable;

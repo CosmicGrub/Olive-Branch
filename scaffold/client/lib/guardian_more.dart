@@ -9,6 +9,7 @@
 // guardian side, family setup) that don't have their own top-level tile, so
 // "every new screen must be reachable" holds without crowding that home
 // screen the way child_more.dart does for the child side.
+import 'guardian_pin_recovery_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'app_lock_screen.dart';
@@ -758,6 +759,11 @@ class GuardianMoreScreen extends StatelessWidget {
         SettingsRow(id: 'pin', icon: Icons.key_outlined, title: 'Change PIN',
           subtitle: 'Needs the current PIN. Five wrong tries pause it for 15 minutes',
           onTap: () => _openChangePin(context)),
+        if (local?.services.recovery != null)
+          SettingsRow(id: 'phones', icon: Icons.phonelink_lock_outlined, title: "Other grown-ups' phones",
+            subtitle: 'Link a second phone so it can reset a forgotten PIN. Works with no internet',
+            onTap: () => _open(context, GuardianPhonesScreen(pin: local!.services.pin,
+              recovery: local.services.recovery!, myLabel: 'A grown-up'))),
         SettingsRow(id: 'controls', icon: Icons.shield_outlined, title: 'Parental controls',
           subtitle: live ? 'Hide or pace anything $childName sees. Messages are always on' : 'Needs a live session',
           onTap: () => live

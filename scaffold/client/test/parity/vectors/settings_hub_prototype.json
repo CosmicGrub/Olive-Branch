@@ -27,5 +27,5 @@
     {"proto": "grd.s.session", "group": "Account", "order": 89, "title": "Session", "flutter": null, "why": "The prototype's sign-in state row; Flutter's Sign out row covers it."},
     {"proto": "sh.session", "group": "Account", "order": 90, "title": "Sign out", "flutter": "signout"}
   ],
-  "flutterOnly": ["growing", "rhythm", "voice", "village", "compass", "care", "applock", "connect", "deletion"]
+  "flutterOnly": ["growing", "rhythm", "voice", "village", "compass", "care", "applock", "connect", "deletion", "phones"]
 }

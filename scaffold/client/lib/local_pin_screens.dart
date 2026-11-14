@@ -13,7 +13,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter, TextInputFormatter;
 
+import 'guardian_local_scope.dart';
 import 'local_pin.dart';
+import 'guardian_pin_recovery_screens.dart';
 
 /// The two-field form. [onSaved] fires after the PIN is really stored; a store that cannot
 /// be written shows a message and does NOT call it (the PIN would not exist after a restart).
@@ -357,6 +359,17 @@ class _AskDialogState extends State<_AskDialog> {
     }
   }
 
+  bool _isDevicePin(BuildContext context) =>
+      identical(GuardianLocalScope.maybeOf(context)?.services.pin, widget.service);
+
+  Future<void> _forgot(BuildContext context) async {
+    final GuardianLocalController scope = GuardianLocalScope.maybeOf(context)!;
+    final bool? reset = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
+        builder: (BuildContext _) => ForgotPinScreen(pin: widget.service, recovery: scope.services.recovery)));
+    // A new PIN now exists, but the thing this dialog guards is NOT approved by it: type the new PIN to go on.
+    if (reset == true && mounted) setState(() => _message = 'Your new PIN is saved. Enter it to continue.');
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: Text(widget.title),
@@ -382,6 +395,14 @@ class _AskDialogState extends State<_AskDialog> {
             ),
         ]),
         actions: <Widget>[
+          // Forgot it: only for THIS device's own PIN, and only where the guardian shell supplied the local services.
+          // With no linked phone the screen it opens says plainly that clearing the app is the only reset.
+          if (_isDevicePin(context))
+            TextButton(
+              key: const Key('localPinForgot'),
+              onPressed: _working ? null : () => _forgot(context),
+              child: const Text('Forgot your PIN?'),
+            ),
           TextButton(
             key: const Key('localPinCancel'),
             onPressed: () => Navigator.of(context).pop(false),

@@ -97,7 +97,7 @@ void main() {
       }), 403));
       final api = OliveApi('http://api.test', 'tok-123', client: mock);
       await expectLater(
-        () => api.fetchCertifiedExport('child-a'),
+        () => api.fetchCertifiedExport('child-a', pin: '5193'),
         throwsA(isA<ApiException>()
             .having((e) => e.error, 'error', 'chain_broken')
             .having((e) => e.faults, 'faults', hasLength(2))
@@ -111,7 +111,7 @@ void main() {
           http.Response(jsonEncode({'error': 'annual_allowance_used'}), 403));
       final api = OliveApi('http://api.test', 'tok-123', client: mock);
       await expectLater(
-        () => api.fetchCertifiedExport('child-a'),
+        () => api.fetchCertifiedExport('child-a', pin: '5193'),
         throwsA(isA<ApiException>().having((e) => e.faults, 'faults', isNull)),
       );
     });
@@ -212,12 +212,12 @@ void main() {
         expect(req.method, 'POST');
         expect(req.url.toString(), 'http://api.test/v1/children/child-a/guardianships');
         expect(jsonDecode(req.body),
-          {'role': 'step_parent', 'label': 'Baba', 'invitedEmail': 'baba@example.com'});
+          {'role': 'step_parent', 'label': 'Baba', 'invitedEmail': 'baba@example.com', 'pin': '5193'});
         return http.Response(jsonEncode({'ok': true, 'invite': {'id': 'inv-1'}}), 201);
       });
       final api = OliveApi('http://api.test', 'tok-123', client: mock);
       final body = await api.createGuardianInvite('child-a',
-        role: 'step_parent', label: 'Baba', invitedEmail: 'baba@example.com');
+        role: 'step_parent', label: 'Baba', invitedEmail: 'baba@example.com', pin: '5193');
       expect((body['invite'] as Map)['id'], 'inv-1');
     });
 
@@ -227,7 +227,7 @@ void main() {
           http.Response(jsonEncode({'error': 'not_a_guardian_of_child'}), 403));
       final api = OliveApi('http://api.test', 'tok-123', client: mock);
       await expectLater(
-        () => api.createGuardianInvite('child-a', role: 'guardian', label: 'X', invitedEmail: 'x@x.com'),
+        () => api.createGuardianInvite('child-a', role: 'guardian', label: 'X', invitedEmail: 'x@x.com', pin: '5193'),
         throwsA(isA<ApiException>()
           .having((e) => e.statusCode, 'statusCode', 403)
           .having((e) => e.error, 'error', 'not_a_guardian_of_child')),
