@@ -281,7 +281,7 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '
           'the date), so one can be forgotten later. Sealed on the device.'),
   LocalDataEntry(
-      area: 'familyledger', scope: LocalScope.guardian, encrypted: true, maxBytes: 512 * 1024,
+      area: 'familyledger', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'On a grown-up\'s device: the family\'s signed record of which grown-ups and which child devices '
           'belong (public keys and the names a grown-up typed, no PIN), the votes on pending changes, and '
           'the two family keys that device holds. Nothing in it is shown to a child, and a child\'s device '

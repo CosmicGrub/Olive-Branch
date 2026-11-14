@@ -697,6 +697,7 @@ class _Reducer {
   /// and no second vote on the same proposal (village design 5.1). A yes that arrives after the expiry is ignored.
   void _applyVotes(_Node n, _Gate g) {
     final List<LedgerVote> vs = votesByTarget[n.h] ?? const <LedgerVote>[];
+    final List<LedgerVote> refusals = <LedgerVote>[];
     for (final LedgerVote v in vs) {
       final String? role = v.voterHex == g.acceptKey
           ? '*'
@@ -708,17 +709,40 @@ class _Reducer {
       if (exp != null && v.atMs >= exp) continue; // silence ran out: a late answer is not an answer
       if (role == g.proposerGid) {
         // The proposer's yes is implied by signing. Only a withdrawal (or a no) means anything.
-        if (v.answer == 'withdraw' || v.answer == 'no') g.declined = true;
+        if (v.answer == 'withdraw' || v.answer == 'no') refusals.add(v);
         continue;
       }
       if (v.answer == 'withdraw') continue; // only the proposer withdraws
       if (v.answer == 'no') {
-        g.declined = true;
+        refusals.add(v);
       } else {
         final int? cur = g.yesAt[role];
         if (cur == null || v.atMs < cur) g.yesAt[role] = v.atMs;
       }
     }
+    // A completed approval is final. Once the last yes is in, a later no or withdrawal changes nothing: it is not a
+    // way to undo a grown-up or a device that was already let in (that is guardian.remove or device.revoke, which
+    // have their own rules). Only a refusal dated BEFORE the gate was satisfied ends the proposal.
+    final int? done = _completedAt(n, g);
+    for (final LedgerVote v in refusals) {
+      if (done == null || v.atMs < done) g.declined = true;
+    }
+  }
+
+  /// When every required yes (and the candidate's own) was in, ignoring refusals; null while one is missing.
+  int? _completedAt(_Node n, _Gate g) {
+    int t = n.e.issuedAtMs;
+    for (final String r in g.required) {
+      final int? at = g.yesAt[r];
+      if (at == null) return null;
+      if (at > t) t = at;
+    }
+    if (g.acceptKey != null) {
+      final int? at = g.yesAt['*'];
+      if (at == null) return null;
+      if (at > t) t = at;
+    }
+    return t;
   }
 
   /// When a gated entry became effective, or null if it is not (yet) effective as of [asOf].
@@ -745,17 +769,55 @@ class _Reducer {
   // The fold
   // ------------------------------------------------------------------------------------------------------------
 
+  /// The device keys whose revocation is in force at [asOf] (the same entries the fold itself accepts).
+  Set<String> _revokedKeys(Set<String>? include, int asOf, bool useVoid) {
+    final List<_Node> revokes = <_Node>[];
+    final Set<String> cancelled = <String>{};
+    for (final _Node n in order) {
+      if (include != null && n.topo != 0 && !include.contains(n.h)) continue;
+      if (n.reject != null || (useVoid && n.voided)) continue;
+      if (n.type != EntryType.deviceRevoke && n.type != EntryType.deviceRevokeCancel) continue;
+      if (_activation(n, asOf) == null) continue;
+      if (n.type == EntryType.deviceRevoke) {
+        revokes.add(n);
+      } else {
+        cancelled.add(hexOf(n.e.body['revoke']! as Uint8List));
+      }
+    }
+    return <String>{
+      for (final _Node r in revokes)
+        if (!cancelled.contains(r.h) && (r.e.body['eff']! as int) <= asOf) hexOf(r.e.body['key']! as Uint8List),
+    };
+  }
+
   _St _fold(Set<String>? include, int asOf, {required bool useVoid}) {
     final _St st = _St();
     final List<_Node> policyNodes = <_Node>[];
     final List<_Node> revokes = <_Node>[];
     final Set<String> cancelled = <String>{};
+    final Set<String> revokedByNow = _revokedKeys(include, asOf, useVoid);
     for (final _Node n in order) {
       if (include != null && n.topo != 0 && !include.contains(n.h)) continue; // the genesis is in every fold
       if (n.reject != null || (useVoid && n.voided)) continue;
       final int? act = _activation(n, asOf);
       if (act == null) continue;
       final Map<String, Object?> b = n.e.body;
+      // The size limits are applied where an entry TAKES EFFECT, in the one canonical order, not where it was
+      // written: a grown-up who proposes fifteen devices before any is accepted still ends with at most twelve.
+      if (n.type == EntryType.memberAdd) {
+        final String k = b['kind']! as String;
+        final int have = st.members.values.where((_Mem m) => m.kind == k && !st.deadGids.contains(m.gidHex)).length;
+        if (have >= (k == 'guardian' ? kMaxGuardians : kMaxCarers)) continue;
+      } else if (n.type == EntryType.deviceAdd) {
+        final Iterable<LedgerDevice> live = st.devices.values.where((LedgerDevice d) =>
+            !revokedByNow.contains(d.keyHex) && !(d.gidHex != null && st.deadGids.contains(d.gidHex)));
+        if (b['kind'] == 'guardian') {
+          final String gid = hexOf(b['gid']! as Uint8List);
+          if (live.where((LedgerDevice d) => d.gidHex == gid).length >= kMaxDevicesPerGuardian) continue;
+        } else if (live.where((LedgerDevice d) => d.kind == 'child').length >= kMaxChildDevices) {
+          continue;
+        }
+      }
       switch (n.type) {
         case EntryType.genesis:
           final DeviceRecord dev = DeviceRecord.fromValue(b['dev'])!;

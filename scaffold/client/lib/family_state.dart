@@ -41,6 +41,10 @@ class FamilySnapshot {
 abstract class FamilyRepository {
   Future<FamilySnapshot?> load();
 
+  /// True when something is stored under the family record, usable or not. [load] answers null for both "nothing
+  /// stored" and "stored but unreadable"; only the first may ever lead to founding a new family.
+  Future<bool> hasRecord();
+
   /// Throws [StateError] if [snapshot] would put a guardian-only key on a device that is not a grown-up's.
   Future<void> save(FamilySnapshot snapshot);
   Future<void> clear();
@@ -54,6 +58,8 @@ class MemoryFamilyRepository implements FamilyRepository {
   FamilySnapshot? _s;
   @override
   Future<FamilySnapshot?> load() async => _s;
+  @override
+  Future<bool> hasRecord() async => _s != null;
   @override
   Future<void> save(FamilySnapshot snapshot) async {
     _refuseGkOnChild(snapshot);
@@ -69,6 +75,9 @@ class LocalStoreFamilyRepository implements FamilyRepository {
   LocalStoreFamilyRepository(this._ns);
   final LocalNamespace _ns;
   static const String _key = 'family';
+
+  @override
+  Future<bool> hasRecord() async => await _ns.get(_key) != null;
 
   @override
   Future<FamilySnapshot?> load() async {
@@ -177,6 +186,12 @@ class FamilyContext {
 /// The `local-<fingerprint>` string the live pairing code computes today for a family (connect_child_screen.dart).
 String legacyFamilyId(DeviceKey adult) => 'local-${b64(adult.fingerprint)}';
 
+/// A family record is stored on this device but cannot be used (damaged, cut short, or a ledger that no longer
+/// reduces). It is never replaced by a new random family: that would destroy the old ledger and both keys.
+class FamilyRecordUnusable extends StateError {
+  FamilyRecordUnusable() : super('a family record is stored but cannot be read; not replacing it');
+}
+
 class FoundingResult {
   FoundingResult(this.context, this.skippedCertIds);
   final FamilyContext context;
@@ -232,7 +247,8 @@ class FamilyFounder {
       );
 
   /// Idempotent: returns the family this device already holds, or founds one. Safe to call on every launch once it is
-  /// wired. A device that already has a family is never re-founded, so its family id never changes.
+  /// wired. A device that already has a family is never re-founded, so its family id never changes. If a record is
+  /// stored but unusable this throws [FamilyRecordUnusable] and leaves the record exactly as it is.
   static Future<FamilyContext> ensure({
     required DeviceKey device,
     required String guardianName,
@@ -243,6 +259,7 @@ class FamilyFounder {
   }) async {
     final FamilyContext? have = await FamilyContext.load(repo, device, nowMs: nowMs);
     if (have != null) return have;
+    if (await repo.hasRecord()) throw FamilyRecordUnusable();
     return (await foundFromLegacy(
             adult: device, adultName: guardianName, kids: kids, nowMs: nowMs, repo: repo, random: random))
         .context;

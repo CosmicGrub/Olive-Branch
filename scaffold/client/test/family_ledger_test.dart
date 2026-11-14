@@ -433,6 +433,27 @@ void main() {
       expect(s.holdsAnything(stranger.key.publicKey), isFalse);
     });
 
+    test('a withdraw or a no AFTER everything was approved changes nothing: a grown-up who is in stays in', () async {
+      final Fam f = await Fam.found(mom);
+      final LedgerEntry add = await f.welcomeParent(mom, dad, others: <P>[]);
+      f.clock += 2 * day;
+      await f.vote(mom, add, 'withdraw'); // the proposer changes their mind after dad accepted
+      await f.vote(dad, add, 'no'); // and the candidate too
+      final LedgerState s = await f.state();
+      expect(s.guardians.length, 2, reason: 'a completed approval is final; removing someone is guardian.remove');
+      expect(s.pending.where((PendingItem x) => x.hashHex == add.hashHex), isEmpty);
+      expect(s.holdsAnything(dad.key.publicKey), isTrue);
+    });
+
+    test('a late no cannot undo an approved child device either', () async {
+      final Fam f = await Fam.found(mom);
+      final LedgerEntry c = await f.addChild(mom, kid);
+      f.clock += 3 * day;
+      await f.vote(mom, c, 'withdraw');
+      await f.vote(kid, c, 'no');
+      expect((await f.state()).childDeviceKeys.length, 1);
+    });
+
     test('the proposer can withdraw before activation; the candidate\'s no also ends it', () async {
       final Fam f = await Fam.found(mom);
       await f.welcomeParent(mom, dad, others: <P>[]);
@@ -826,6 +847,59 @@ void main() {
       final LedgerState s = await f.state();
       expect(s.childDeviceKeys.length, kMaxChildDevices);
       expect(s.rejected[extra.hashHex], 'family-full');
+    });
+  });
+
+  group('limits on size, with many proposals pending at once', () {
+    test('14 child devices proposed first and accepted after: only 12 take effect', () async {
+      final Fam f = await Fam.found(mom);
+      final List<LedgerEntry> es = <LedgerEntry>[];
+      final List<P> devs = <P>[];
+      for (int i = 0; i < kMaxChildDevices + 2; i++) {
+        final P d = await P.make(100 + i);
+        devs.add(d);
+        es.add(await f.add(mom, EntryType.deviceAdd, f.childBody(d, childId: 'k$i')));
+      }
+      for (int i = 0; i < es.length; i++) {
+        await f.vote(devs[i], es[i], 'yes');
+      }
+      final LedgerState s = await f.state();
+      expect(s.childDeviceKeys.length, kMaxChildDevices);
+    });
+
+    test('a grown-up cannot end up with more than 4 phones by proposing them all before any is accepted', () async {
+      final Fam f = await Fam.found(mom);
+      final List<LedgerEntry> es = <LedgerEntry>[];
+      final List<P> devs = <P>[];
+      for (int i = 0; i < kMaxDevicesPerGuardian + 2; i++) {
+        final P d = await P.make(200 + i, person: 1);
+        devs.add(d);
+        es.add(await f.add(mom, EntryType.deviceAdd, <String, Object?>{
+          'kind': 'guardian', 'gid': mom.gid, 'childId': null, 'name': 'Phone $i', 'dev': d.recValue, 'legacy': false, 'orig': null,
+        }));
+      }
+      for (int i = 0; i < es.length; i++) {
+        await f.vote(devs[i], es[i], 'yes');
+      }
+      final LedgerState s = await f.state(f.clock + 30 * day);
+      expect(s.guardianDeviceKeys.length, kMaxDevicesPerGuardian);
+    });
+
+    test('a revoked child device frees its place for a new one', () async {
+      final Fam f = await Fam.found(mom);
+      final List<P> devs = <P>[];
+      for (int i = 0; i < kMaxChildDevices; i++) {
+        final P d = await P.make(300 + i);
+        devs.add(d);
+        await f.addChild(mom, d, childId: 'k$i');
+      }
+      await f.add(mom, EntryType.deviceRevoke, f.revokeBody(devs.first));
+      final P fresh = await P.make(400);
+      await f.addChild(mom, fresh, childId: 'k99');
+      final LedgerState s = await f.state();
+      expect(s.childDeviceKeys.length, kMaxChildDevices);
+      expect(s.holdsAnything(fresh.key.publicKey), isTrue);
+      expect(s.holdsAnything(devs.first.key.publicKey), isFalse);
     });
   });
 

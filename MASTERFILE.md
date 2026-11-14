@@ -5307,7 +5307,9 @@ pairing behaves.** Every client file keeps the UNVERIFIED header; nothing here h
   `standing.ok`.
 - **Approvals are separate signed votes** that name one entry by its hash, so a yes cannot be replayed onto another entry,
   position or proposal. Silence is never yes: an unanswered request lapses at its expiry and a late yes is ignored. Any
-  no from a required person (or the candidate, or the proposer's withdrawal) ends the proposal for good.
+  no from a required person (or the candidate, or the proposer's withdrawal) ends the proposal for good, **but only if it
+  is dated before the last required yes: once an approval is complete it is final, and a later no or withdrawal changes
+  nothing** (taking a grown-up out is `guardian.remove`, which needs that grown-up's own yes).
 - **The rules, tested on hostile input:** a forked ledger is reported and never silently resolved; removal beats a
   concurrent add (what a revoked phone did on another branch is void, a mutual revoke voids both, a device key claimed twice
   goes to the earlier claim); a wrong signer, a child key or a carer key can never sign an entry; a pending person holds
@@ -5347,9 +5349,14 @@ pairing behaves.** Every client file keeps the UNVERIFIED header; nothing here h
   migration was needed or written. Question 5 (who decides who is a guardian in server mode) is still open.
 - **The merge rule is provisional** (design section 11): a first model, hostile-tested, not fuzzed or mutation-tested at
   scale. Times are the signers' own claims checked against the verifying device's clock; a stolen phone can claim a time
-  inside a notice window.
-- **Sizes and defaults are recommendations awaiting the owner:** 6 grown-ups, 12 child devices, 8 carers, a 72 hour notice,
-  a 24 hour settle-in, "all" as the default for carers who can act.
+  inside a notice window. **Known limit: a revoke is not final against someone who still holds the revoked key.** That
+  key can sign with a claimed time between the revoke and its effective time, naming the revoke as its parent, and the
+  reducer cannot tell it from an honest entry (it has no record of when an entry reached the device). Closing it needs a
+  receipt time or a witness, which is not built; until then, treat a lost phone as compromised for the notice period.
+- **Sizes and defaults are recommendations awaiting the owner:** 6 grown-ups, 12 child devices, 8 carers, 4 phones per
+  grown-up, a 72 hour notice, a 24 hour settle-in, "all" as the default for carers who can act. The limits are applied
+  where an entry takes effect (in the one canonical order), so proposing many before any is accepted cannot pass them.
+  Where several entries race for the last place on different branches, the later one in canonical order is the one skipped.
 - **NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT** (decision D2, now covering the ledger, the wraps and
   channel v2). No device, network or real two-phone behaviour has been checked.
 
@@ -6633,7 +6640,7 @@ drift. Nothing is written that is not in it.
 | `device.childpairing` | On a child's device: the certificate a grown-up's device signed (which child, which family), that grown-up's public key and first name, and the child's first name. No PIN. | **Yes** |
 | `device.adultunlock` | On a child's device: a salted slow hash of the grown-up's PIN (so a grown-up can type it there) and the count toward a 15 minute lock. Never the PIN; a child cannot create or change it. | **Yes** |
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
-| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.11). | **Yes** |
+| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |

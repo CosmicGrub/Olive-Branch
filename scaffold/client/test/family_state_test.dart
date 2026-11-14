@@ -212,6 +212,25 @@ void main() {
       expect(await FamilyContext.load(repo, adult, nowMs: t0 + hour), isNull);
     });
 
+    test('ensure() never replaces a stored-but-unusable family with a new random one', () async {
+      final LocalServices svc = LocalServices.memory(isLive: true, demoSeeds: false, childId: 'c1');
+      final LocalNamespace ns = svc.area('familyledger', ownerId: kLocalGuardianScope);
+      final LocalStoreFamilyRepository repo = LocalStoreFamilyRepository(ns);
+      expect(await repo.hasRecord(), isFalse);
+      await FamilyFounder.found(device: adult, guardianName: 'Mom', nowMs: t0, repo: repo, random: Random(15));
+      final Map<String, Object?> raw = Map<String, Object?>.from((await ns.get('family'))! as Map);
+      final List<Object?> es = List<Object?>.from(raw['e']! as List);
+      final Map<String, Object?> g = Map<String, Object?>.from(es.first! as Map);
+      final Uint8List bytes = unb64(g['b']! as String)..[40] ^= 1;
+      es[0] = <String, Object?>{'b': b64(bytes), 's': g['s']};
+      final Map<String, Object?> damaged = <String, Object?>{...raw, 'e': es};
+      await ns.put('family', damaged);
+      await expectLater(
+          FamilyFounder.ensure(device: adult, guardianName: 'Mom', kids: const <PairedKid>[], nowMs: t0 + hour, repo: repo, random: Random(99)),
+          throwsA(isA<FamilyRecordUnusable>()));
+      expect(await ns.get('family'), damaged, reason: 'the old record is left exactly as it was');
+    });
+
     test('a child device\'s store refuses a guardian-only key, and drops one it finds on load', () async {
       final FamilyContext c = await FamilyFounder.found(device: adult, guardianName: 'Mom', nowMs: t0, repo: MemoryFamilyRepository(), random: Random(16));
       final FamilySnapshot s = c.snapshot();
