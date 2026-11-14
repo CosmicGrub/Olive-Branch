@@ -154,9 +154,9 @@ void main() {
 
   group('Draw & colour', () {
     testWidgets('the third row, My saved pictures, opens what she kept', (WidgetTester t) async {
-      await _show(t, DrawChoiceScreen(
-          title: 'Draw & colour', doodle: const Text('doodle page'), colouring: const Text('colour page'),
-          pictures: const Text('pictures page')));
+      await _show(t, const DrawChoiceScreen(
+          title: 'Draw & colour', doodle: Text('doodle page'), colouring: Text('colour page'),
+          pictures: Text('pictures page')));
       expect(find.byKey(const Key('drawPictures')), findsOneWidget);
       await t.tap(find.byKey(const Key('drawPictures')));
       await t.pumpAndSettle();
