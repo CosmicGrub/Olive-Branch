@@ -3,16 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Adding a Device Safely</title>
+<title>Welcoming People Safely</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
 <style>
 :root{
   --page:#F4F7F4; --page-ink:#142417; --page-ink2:#4A5E4D; --page-line:#D3DED5; --card:#FFFFFF; --accent:#427049; --accent-soft:#DDEEE0;
-  /* the app (olive palette, light) */
   --bg:#F6F9F6; --surface:#FFFFFF; --surface2:#EDF3EE; --outline:#D3DED5; --ink:#142417; --ink2:#4A5E4D; --pri:#427049; --priD:#2B4A30; --priC:#DDEEE0; --onPriC:#26402A;
-  --warn:#8A5A00; --warnBg:#FFF3D6; --bad:#8F2D2D; --badBg:#FBE4E4;
-  /* the child shell (dark) */
+  --warn:#8A5A00; --warnBg:#FFF3D6; --bad:#8F2D2D; --badBg:#FBE4E4; --blue:#1F4E79; --blueBg:#E3EEF8;
   --kbg:#131729; --kink:#FFFFFF; --kink2:#A9AEC4; --ksurf:#1E2340;
   --font:'Atkinson Hyperlegible',system-ui,-apple-system,'Segoe UI',sans-serif;
 }
@@ -20,87 +18,228 @@
 :root[data-theme="dark"]{--page:#0F1711;--page-ink:#E6EEE7;--page-ink2:#A8B8AB;--page-line:#2A3A2D;--card:#18241B;--accent:#8CC796;--accent-soft:#223528}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--page-ink);font:16px/1.5 var(--font)}
-main{max-width:1180px;margin:0 auto;padding:40px 16px 72px}
-h1{font-size:2rem;line-height:1.15;margin:0 0 8px;text-wrap:balance}
-h2{font-size:1.25rem;margin:48px 0 6px;text-wrap:balance}
-p.lede{max-width:65ch;color:var(--page-ink2);margin:0 0 8px}
-.layers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:24px 0 0;padding:0;list-style:none}
+main{max-width:1240px;margin:0 auto;padding:40px 16px 80px}
+h1{font-size:2.1rem;line-height:1.15;margin:0 0 8px;text-wrap:balance}
+h2{font-size:1.4rem;margin:56px 0 4px;text-wrap:balance}
+h3{font-size:1.05rem;margin:28px 0 2px;color:var(--accent)}
+p.lede{max-width:68ch;color:var(--page-ink2);margin:0 0 8px}
+nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 0}
+nav.toc a{font-size:.88rem;text-decoration:none;color:var(--page-ink);background:var(--card);border:1px solid var(--page-line);border-radius:99px;padding:4px 12px}
+nav.toc a:hover{background:var(--accent-soft)}
+.layers{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:22px 0 0;padding:0;list-style:none}
 .layers li{background:var(--card);border:1px solid var(--page-line);border-radius:12px;padding:12px 14px}
-.layers b{display:block;color:var(--accent);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase}
-.layers span{font-size:.92rem;color:var(--page-ink2)}
-.row{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:28px 24px;margin-top:20px}
+.layers b{display:block;color:var(--accent);font-size:.78rem;letter-spacing:.06em;text-transform:uppercase}
+.layers span{font-size:.9rem;color:var(--page-ink2)}
+.layers li.v{background:var(--accent-soft)}
+.row{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:30px 24px;margin-top:18px}
+.row.wide{grid-template-columns:repeat(auto-fill,minmax(560px,1fr))}
 figure{margin:0;display:flex;flex-direction:column;gap:10px;align-items:center}
 figcaption{max-width:300px;font-size:.9rem;color:var(--page-ink2)}
+.wide figcaption{max-width:560px}
 figcaption b{color:var(--page-ink);display:block}
-/* phone */
-.phone{width:300px;height:600px;border-radius:30px;border:8px solid #101410;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.flow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:.85rem;color:var(--page-ink2);margin-top:12px}
+.flow b{background:var(--card);border:1px solid var(--page-line);border-radius:99px;padding:3px 12px;color:var(--page-ink)}
+/* app map */
+.map{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px}
+.node{background:var(--card);border:1px solid var(--page-line);border-radius:14px;padding:12px 14px}
+.node h4{margin:0 0 6px;font-size:.95rem}
+.node ul{margin:0;padding-left:18px;font-size:.88rem;color:var(--page-ink2)}
+.node.hot{border-color:var(--accent);background:var(--accent-soft)}
+/* phone, tablet, fold cover */
+.phone{width:300px;height:600px;border-radius:30px;border:8px solid #101410;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 6px 24px rgba(0,0,0,.18)}
 .phone.kid{background:var(--kbg);color:var(--kink)}
+.phone.cover{width:230px;height:560px}
+.tablet{width:556px;height:380px;border-radius:22px;border:8px solid #101410;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 6px 24px rgba(0,0,0,.18)}
 .sb{height:26px;display:flex;justify-content:space-between;align-items:center;padding:0 16px;font-size:11px;color:var(--ink2);flex:none}
 .kid .sb{color:var(--kink2)}
-.app{flex:1;overflow:hidden;padding:6px 16px 16px;display:flex;flex-direction:column;gap:12px;color:var(--ink)}
+.app{flex:1;overflow:hidden;padding:6px 16px 16px;display:flex;flex-direction:column;gap:11px;color:var(--ink)}
 .kid .app{color:var(--kink);align-items:center;justify-content:center;text-align:center}
+.split{flex:1;display:grid;grid-template-columns:200px 1fr;overflow:hidden}
+.split .pane{padding:8px 14px 14px;display:flex;flex-direction:column;gap:9px;overflow:hidden;color:var(--ink)}
+.split .pane.l{background:var(--surface2);border-right:1px solid var(--outline)}
 .top{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px}
 .top .back{font-weight:400;color:var(--pri)}
-.card{background:var(--surface);border:1px solid var(--outline);border-radius:16px;padding:14px}
+.card{background:var(--surface);border:1px solid var(--outline);border-radius:16px;padding:13px}
 .card.tint{background:var(--priC);border-color:transparent;color:var(--onPriC)}
 .card.warn{background:var(--warnBg);border-color:#EBD08A;color:#4D3300}
 .card.bad{background:var(--badBg);border-color:#E5B5B5;color:#5A1B1B}
+.card.blue{background:var(--blueBg);border-color:#B7CFE6;color:#12304D}
 .t{font-weight:700;font-size:15px}
 .s{font-size:13px;color:var(--ink2)}
-.card.tint .s,.card.warn .s,.card.bad .s{color:inherit;opacity:.85}
-.btn{display:flex;align-items:center;justify-content:center;border-radius:14px;padding:13px 16px;font-weight:700;font-size:15px;border:0;width:100%;font-family:inherit}
+.card.tint .s,.card.warn .s,.card.bad .s,.card.blue .s{color:inherit;opacity:.88}
+.btn{display:flex;align-items:center;justify-content:center;border-radius:14px;padding:12px 16px;font-weight:700;font-size:15px;border:0;width:100%;font-family:inherit}
 .btn.p{background:var(--pri);color:#fff}
 .btn.q{background:var(--surface2);color:var(--priD)}
 .btn.d{background:transparent;color:var(--bad);border:1px solid #E5B5B5}
+.btn.sm{padding:8px 10px;font-size:13px}
+.two{display:flex;gap:8px}
 .opt{display:flex;gap:12px;align-items:center}
-.ico{width:44px;height:44px;border-radius:12px;background:var(--priC);display:grid;place-items:center;font-size:22px;flex:none}
-.qr{width:168px;height:168px;margin:2px auto;background:#fff;border:1px solid var(--outline);border-radius:12px;padding:10px;display:grid;grid-template-columns:repeat(21,1fr);grid-auto-rows:1fr;gap:0}
+.ico{width:42px;height:42px;border-radius:12px;background:var(--priC);display:grid;place-items:center;font-size:21px;flex:none}
+.ico.round{border-radius:50%}
+.qr{width:150px;height:150px;margin:2px auto;background:#fff;border:1px solid var(--outline);border-radius:12px;padding:9px;display:grid;grid-template-columns:repeat(21,1fr);grid-auto-rows:1fr}
 .qr i{background:#142417}.qr i.o{background:transparent}
-.pill{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:2px 9px;background:var(--priC);color:var(--onPriC)}
+.pill{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:2px 9px;background:var(--priC);color:var(--onPriC);white-space:nowrap}
 .pill.new{background:var(--warnBg);color:#6B4500}
 .pill.off{background:var(--surface2);color:var(--ink2)}
-.pics{display:flex;gap:10px;justify-content:center;margin:6px 0}
-.pics span{width:64px;height:64px;border-radius:16px;background:var(--surface2);display:grid;place-items:center;font-size:34px}
+.pill.b{background:var(--blueBg);color:var(--blue)}
+.pics{display:flex;gap:9px;justify-content:center;margin:4px 0}
+.pics span{width:58px;height:58px;border-radius:15px;background:var(--surface2);display:grid;place-items:center;font-size:31px}
 .kid .pics span{background:var(--ksurf)}
-.dots{display:flex;gap:10px;justify-content:center;margin:6px 0}
-.dots i{width:16px;height:16px;border-radius:50%;background:var(--outline)}
+.dots{display:flex;gap:10px;justify-content:center;margin:4px 0}
+.dots i{width:15px;height:15px;border-radius:50%;background:var(--outline)}
 .dots i.f{background:var(--pri)}
 .list{display:flex;flex-direction:column;gap:10px}
-.rowi{display:flex;align-items:center;gap:12px}
+.rowi{display:flex;align-items:center;gap:11px}
 .rowi .grow{flex:1;min-width:0}
-.sw{width:46px;height:28px;border-radius:99px;background:var(--outline);position:relative;flex:none}
-.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff}
+.sw{width:44px;height:26px;border-radius:99px;background:var(--outline);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff}
 .sw.on{background:var(--pri)}.sw.on::after{left:21px}
-.kbig{font-size:64px;line-height:1}
-.ktxt{font-size:22px;font-weight:700}
+.steps{display:flex;flex-direction:column;gap:7px}
+.step{display:flex;gap:9px;align-items:center;font-size:13px}
+.step .d{width:20px;height:20px;border-radius:50%;background:var(--outline);display:grid;place-items:center;font-size:11px;color:#fff;flex:none}
+.step .d.ok{background:var(--pri)}.step .d.wait{background:#C58A00}
+.kbig{font-size:60px;line-height:1}
+.ktxt{font-size:21px;font-weight:700}
 .ksub{color:var(--kink2);font-size:15px}
-.kbtn{margin-top:6px;border:2px solid var(--kink2);border-radius:99px;padding:8px 18px;color:var(--kink2);font-size:13px}
-.flow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:.85rem;color:var(--page-ink2);margin-top:14px}
-.flow b{background:var(--card);border:1px solid var(--page-line);border-radius:99px;padding:3px 12px;color:var(--page-ink)}
-table{border-collapse:collapse;width:100%;font-size:.92rem;background:var(--card);border:1px solid var(--page-line);border-radius:12px;overflow:hidden}
-th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--page-line);vertical-align:top}
+.kcard{background:var(--ksurf);border-radius:18px;padding:14px;width:100%;display:flex;gap:12px;align-items:center;text-align:left}
+.tabs{display:flex;gap:6px;font-size:12px}
+.tabs span{padding:5px 10px;border-radius:99px;background:var(--surface2);color:var(--ink2)}
+.tabs span.on{background:var(--pri);color:#fff}
+.bar{margin-top:auto;display:flex;justify-content:space-around;border-top:1px solid var(--outline);padding-top:8px;font-size:11px;color:var(--ink2);text-align:center}
+.bar b{color:var(--pri)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;background:var(--card);border:1px solid var(--page-line);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--page-line);vertical-align:top}
 th{background:var(--accent-soft);color:var(--page-ink)}
 .tw{overflow-x:auto;margin-top:14px}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-@media (max-width:860px){.layers{grid-template-columns:1fr 1fr}}
+@media (max-width:900px){.layers{grid-template-columns:1fr 1fr}.row.wide{grid-template-columns:1fr}.tablet{width:100%;max-width:556px}}
 </style>
 </head>
 <body>
 <main>
-<h1>Adding a device safely</h1>
-<p class="lede">A scan is an introduction, never a key. It can only ask a grown-up "may this device join?" Everything that grants trust happens afterwards, in the adult's hands. Screens below are drafts of what could appear in the app: adult phone in the olive theme, child tablet in the child shell.</p>
+<h1>Welcoming people safely</h1>
+<p class="lede">Two welcomes follow one rule. A scan is an introduction, never a key. And welcoming a person is a decision the family makes together, never something a newcomer can do to themselves. These are drafts of what could appear in the app: grown-ups in the olive theme, the child tablet in the child shell.</p>
+<nav class="toc" aria-label="Sections">
+  <a href="#map">Where it lives</a><a href="#first">First run paths</a><a href="#device">Adding a device</a><a href="#person">Welcoming a person</a><a href="#after">After the welcome</a><a href="#child">The child's view</a><a href="#layouts">Tablet and Fold</a><a href="#tables">The rules</a>
+</nav>
 
-<ol class="layers" aria-label="The five layers of trust">
-  <li><b>1 Meet</b><span>Same place, same family. Automatic.</span></li>
-  <li><b>2 Match</b><span>The adult compares a picture on both screens.</span></li>
-  <li><b>3 Approve</b><span>The adult types their own PIN and says who it is.</span></li>
-  <li><b>4 Settle in</b><span>A new device is "New" for a day.</span></li>
-  <li><b>5 Keep watch</b><span>Still the approved device? One tap to stop it.</span></li>
+<ol class="layers" aria-label="The layers of trust">
+  <li><b>1 Meet</b><span>Same place, same family.</span></li>
+  <li><b>2 Match</b><span>Compare a picture on both screens.</span></li>
+  <li><b>3 Approve</b><span>A grown-up's own PIN.</span></li>
+  <li><b>4 Settle in</b><span>New for a day or more.</span></li>
+  <li><b>5 Keep watch</b><span>Still the approved one. Stop in one tap.</span></li>
+  <li class="v"><b>V Welcome</b><span>The grown-ups already here agree.</span></li>
 </ol>
 
-<h2>Adult shows a code, child device scans</h2>
-<p class="lede">The PIN way is still the main way. The code is optional, for two devices in the same room.</p>
-<div class="flow" aria-hidden="true"><b>Add a device</b> → <b>Show my code</b> → <b>Child scans</b> → <b>Match</b> → <b>Approve with PIN</b> → <b>Settle in</b></div>
+<h2 id="map">Where it lives in the app</h2>
+<p class="lede">One home for all of it: the Village. Nothing is hidden in settings, and nothing reaches a child.</p>
+<div class="map">
+  <div class="node"><h4>Home (grown-ups)</h4><ul><li>Quiet card: "A welcome request is waiting"</li><li>Quiet card: "Someone tried to join"</li></ul></div>
+  <div class="node hot"><h4>More → Adults and helpers (the Village)</h4><ul><li>People and their limits</li><li>Welcome someone</li><li>Requests</li><li>Add a device</li><li>Helpers (screen-only pages)</li><li>Safety for new people</li><li>History</li></ul></div>
+  <div class="node"><h4>Settings hub</h4><ul><li>"People and devices" row, same place</li><li>App lock, hide in recents</li></ul></div>
+  <div class="node"><h4>First run</h4><ul><li>Who is using this device?</li><li>Grown-up · Child · <b>I was invited</b></li></ul></div>
+  <div class="node"><h4>Child device</h4><ul><li>No pairing words, ever</li><li>A new grown-up appears only after the family welcomes them, under the child's own name for them</li></ul></div>
+</div>
+
+<h2 id="first">First run paths</h2>
+<p class="lede">Every way a person or a device starts. The first screen asks one question; the rest follows from the answer.</p>
+<div class="flow" aria-hidden="true"><b>Who is using this device?</b> → <b>Grown-up</b> (start a family) · <b>I was invited</b> (join one) · <b>Child</b> (a grown-up helps)</div>
+<div class="row">
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Who is using this device?</div>
+  <div class="card opt"><div class="ico">🧑</div><div><div class="t">I'm a grown-up</div><div class="s">Start a new family</div></div></div>
+  <div class="card opt"><div class="ico">💌</div><div><div class="t">I was invited</div><div class="s">Join a family I've been asked to join</div></div></div>
+  <div class="card opt"><div class="ico">🧒</div><div><div class="t">This is a child's device</div><div class="s">A grown-up will help you set it up</div></div></div>
+  <div class="s" style="margin-top:auto;text-align:center">You can always change this later with your PIN.</div>
+</div></div>
+<figcaption><b>P0. First screen</b>One question. "I was invited" is new.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Start your family</div>
+  <div class="card"><div class="s">Family name</div><div class="t">The Okafors</div></div>
+  <div class="card"><div class="s">Your name</div><div class="t">Sam</div></div>
+  <div class="card tint"><div class="t">Choose your own PIN</div><div class="s">Only you know it. It opens the grown-up side of this app.</div>
+    <div class="dots" style="margin-top:8px"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></div></div>
+  <div class="card warn"><div class="s">Nobody else, including the app's makers, can see or reset this PIN.</div></div>
+  <button class="btn p" style="margin-top:auto">Start</button>
+</div></div>
+<figcaption><b>P1. First parent</b>The family and its key are created invisibly. Nothing to explain, nothing to export.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> You've been invited</div>
+  <div class="card"><div class="s">A grown-up in the family gave you a code. Enter it, or scan their picture.</div>
+    <div class="dots" style="margin:10px 0"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><i></i></div></div>
+  <div class="card tint"><div class="t">Be in the same room</div><div class="s">They'll check a picture on both of your screens. Nothing is shared until they say yes.</div></div>
+  <button class="btn q">Scan their picture instead</button>
+  <button class="btn p" style="margin-top:auto">Continue</button>
+</div></div>
+<figcaption><b>P3. Invited (newcomer's phone)</b>A code in person, or the picture. The invitation expires on its own.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Check the pictures</div>
+  <div class="card"><div class="s">Sam is looking at their phone too. Tell them what you see.</div>
+    <div class="pics"><span>🐘</span><span>🪁</span><span>🌙</span></div>
+    <div style="text-align:center"><span class="pill">Blue</span></div></div>
+  <div class="card tint"><div class="s">If it isn't Sam, or you didn't expect this, stop here.</div></div>
+  <button class="btn d" style="margin-top:auto">This isn't right</button>
+</div></div>
+<figcaption><b>P3. Match (newcomer)</b>The same pictures Sam sees. The newcomer can stop at any point.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Choose your own PIN</div>
+  <div class="card tint"><div class="s">Your PIN is yours alone. Sam and Alex never see it and can't set it for you.</div>
+    <div class="dots" style="margin-top:10px"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></div></div>
+  <div class="card"><div class="t">Then the family decides</div><div class="s">Everyone in the family will be asked to welcome you.</div></div>
+  <button class="btn p" style="margin-top:auto">Ask the family</button>
+</div></div>
+<figcaption><b>P3. Newcomer's own PIN</b>Each grown-up sets their own. It is never shared or reset by anyone else.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Waiting to be welcomed</div>
+  <div class="card"><div class="steps">
+    <div class="step"><span class="d ok">✓</span>Sam said yes</div>
+    <div class="step"><span class="d wait">…</span>Alex hasn't answered yet</div>
+    <div class="step"><span class="d">·</span>Settling in</div></div></div>
+  <div class="card blue"><div class="s">This can take a little while. You'll see a message here when the family has decided. Nothing in the app is open to you yet.</div></div>
+  <button class="btn q" style="margin-top:auto">Close the app, I'll come back</button>
+</div></div>
+<figcaption><b>P3. Newcomer waits</b>No pressure on the others, no way to hurry them. Silence is never yes.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Welcome</div>
+  <div class="card tint"><div class="t">You're in. Here's what that means.</div></div>
+  <div class="card list">
+    <div class="rowi"><span class="pill">✓</span><div class="s">See the schedule and the emergency card</div></div>
+    <div class="rowi"><span class="pill">✓</span><div class="s">Message the family</div></div>
+    <div class="rowi"><span class="pill off">✕</span><div class="s">Change settings or PINs</div></div>
+    <div class="rowi"><span class="pill off">✕</span><div class="s">Welcome other people</div></div>
+  </div>
+  <div class="card warn"><div class="s">You're settling in for 24 hours. Until Sunday evening, then access ends unless the family extends it.</div></div>
+  <button class="btn p" style="margin-top:auto">OK</button>
+</div></div>
+<figcaption><b>P5. Welcomed with limits (a carer)</b>The newcomer is told plainly what they can and can't do, and for how long.</figcaption>
+</figure>
+
+</div>
+
+<h2 id="device">Adding a device</h2>
+<p class="lede">The PIN way is still the main way. The code is optional, for two devices in the same room. Both directions share the same Match, Approve and Settle-in steps.</p>
+<div class="flow" aria-hidden="true"><b>Add a device</b> → <b>My family code</b> → <b>Child device scans</b> → <b>Match</b> → <b>Approve with PIN</b> → <b>Settle in</b></div>
 <div class="row">
 
 <figure>
@@ -108,11 +247,11 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   <div class="top"><span class="back">‹</span> Add a device</div>
   <div class="s">Only you can add devices. Nothing is shared until you say yes.</div>
   <div class="card opt"><div class="ico">🧒</div><div><div class="t">A child's device</div><div class="s">A tablet or phone for one of your children</div></div></div>
-  <div class="card opt"><div class="ico">🧑</div><div><div class="t">Another grown-up's phone</div><div class="s">Another parent or carer in your family</div></div></div>
+  <div class="card opt"><div class="ico">🧑</div><div><div class="t">Another grown-up's phone</div><div class="s">Goes through the family. See Welcome someone</div></div></div>
   <div class="card tint"><div class="t">Same room only</div><div class="s">Both devices need to be here with you, on your home Wi-Fi.</div></div>
-  <div style="margin-top:auto"><button class="btn q">Add with my PIN instead</button></div>
+  <button class="btn q" style="margin-top:auto">Add with my PIN instead</button>
 </div></div>
-<figcaption><b>1. Start (adult)</b>Two plain choices. The PIN way is one tap away and is the main way.</figcaption>
+<figcaption><b>D1. Add a device (adult)</b>A grown-up's phone is a person, so it takes the village path instead.</figcaption>
 </figure>
 
 <figure>
@@ -121,24 +260,18 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   <div class="card" style="text-align:center">
     <div class="qr" id="qr1" role="img" aria-label="Example code"></div>
     <div class="t" style="margin-top:8px">Hold this up to the child's device</div>
-    <div class="s">Adding is on for 9:42 more minutes, then it switches off.</div>
-  </div>
-  <div class="card warn"><div class="s"><b>Keep it to yourself.</b> Don't post or send this picture. Scanning it only sends you a request. It can never add a device by itself.</div></div>
-  <div class="list">
-    <button class="btn q">Make a new code</button>
-    <button class="btn d">Stop adding now</button>
-  </div>
+    <div class="s">Adding is on for 9:42 more minutes, then it switches off.</div></div>
+  <div class="card warn"><div class="s"><b>Keep it to yourself.</b> Scanning it only sends you a request. It can never add a device by itself.</div></div>
+  <div class="two"><button class="btn q sm">Make a new code</button><button class="btn d sm">Stop adding</button></div>
 </div></div>
-<figcaption><b>2. My family code (adult)</b>Shown only after the adult's PIN. Switches itself off after 10 minutes. "Make a new code" cancels every old copy.</figcaption>
+<figcaption><b>D2. My family code (adult)</b>Shown only after the PIN. Switches itself off after 10 minutes.</figcaption>
 </figure>
 
 <figure>
 <div class="phone kid"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="kbig">📷</div>
-  <div class="ktxt">Hold up to the grown-up's picture</div>
-  <div class="ksub">A grown-up is helping.</div>
+  <div class="kbig">📷</div><div class="ktxt">Hold up to the grown-up's picture</div><div class="ksub">A grown-up is helping.</div>
 </div></div>
-<figcaption><b>3. Child device scans</b>Appears only because a grown-up put this device in "being added" mode. No PIN, no settings, no words about pairing.</figcaption>
+<figcaption><b>D3. Child device scans</b>Only because a grown-up put it in "being added". No PIN, no settings, no pairing words.</figcaption>
 </figure>
 
 <figure>
@@ -146,24 +279,11 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   <div class="top">A device wants to join</div>
   <div class="card"><div class="s">Look at the child's device too. Do the pictures match?</div>
     <div class="pics"><span>🐘</span><span>🪁</span><span>🌙</span></div>
-    <div style="text-align:center"><span class="pill">Blue</span></div>
-  </div>
+    <div style="text-align:center"><span class="pill">Blue</span></div></div>
   <div class="card tint"><div class="s">If they don't match, or you don't recognise the device, say so. Nothing has been shared.</div></div>
-  <div class="list" style="margin-top:auto">
-    <button class="btn p">They match</button>
-    <button class="btn d">That's not mine</button>
-  </div>
+  <div class="list" style="margin-top:auto"><button class="btn p">They match</button><button class="btn d">That's not mine</button></div>
 </div></div>
-<figcaption><b>4. Match (adult)</b>Pictures, not numbers, so no reading is needed. Stops a copied or relayed code. One request at a time; it expires in 5 minutes.</figcaption>
-</figure>
-
-<figure>
-<div class="phone kid"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="pics"><span>🐘</span><span>🪁</span><span>🌙</span></div>
-  <div class="ktxt">Almost there</div>
-  <div class="ksub">Your grown-up is checking.</div>
-</div></div>
-<figcaption><b>5. Match (child device)</b>The same pictures, shown calmly. The child isn't asked to do anything and sees no errors.</figcaption>
+<figcaption><b>D4. Match (adult)</b>Stops a copied or relayed code. One request at a time; it expires in 5 minutes.</figcaption>
 </figure>
 
 <figure>
@@ -171,147 +291,300 @@ th{background:var(--accent-soft);color:var(--page-ink)}
   <div class="top">Who is this?</div>
   <div class="card opt"><div class="ico">🧒</div><div class="grow"><div class="t">Mia's tablet</div><div class="s">Child device</div></div><span class="pill">✓</span></div>
   <div class="card opt"><div class="ico">🧒</div><div class="grow"><div class="t">Leo's tablet</div><div class="s">Child device</div></div></div>
-  <div class="card opt"><div class="ico">🧑</div><div class="grow"><div class="t">Another grown-up</div><div class="s">Needs the other parent to agree too</div></div></div>
   <div class="s">Enter your PIN to say yes.</div>
   <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i></div>
   <button class="btn p" style="margin-top:auto">Add Mia's tablet</button>
 </div></div>
-<figcaption><b>6. Approve (adult)</b>The adult chooses who it is. The device can't claim a role. The adult's own PIN completes the pairing, so a code alone is never enough.</figcaption>
-</figure>
-
-</div>
-
-<h2>Child device shows a hello card, adult scans</h2>
-<p class="lede">The "vice versa" direction. The card appears only while a grown-up has opened "being added" on that device.</p>
-<div class="row">
-<figure>
-<div class="phone kid"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="qr" style="width:150px;height:150px" id="qr2" role="img" aria-label="Example hello card"></div>
-  <div class="ktxt">Hello!</div>
-  <div class="ksub">A grown-up will say hi.</div>
-</div></div>
-<figcaption><b>7. Hello card (child device)</b>Looks like a friendly picture. It stops showing by itself after 10 minutes. If no grown-up has opened adding, there's no card at all.</figcaption>
-</figure>
-
-<figure>
-<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="top"><span class="back">‹</span> Add a child's device</div>
-  <div class="card" style="text-align:center"><div class="kbig" style="font-size:44px">📷</div><div class="t">Scan the card on the child's device</div><div class="s">Then you'll check the pictures and enter your PIN, the same as the other way.</div></div>
-  <div class="card warn"><div class="s">If someone you don't know shows you a card, don't scan it.</div></div>
-  <button class="btn q" style="margin-top:auto">Cancel</button>
-</div></div>
-<figcaption><b>8. Scan (adult)</b>The same Match, Approve and Settle-in steps follow. The adult is always the one who decides.</figcaption>
-</figure>
-</div>
-
-<h2>After it is connected</h2>
-<div class="row">
-<figure>
-<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="top"><span class="back">‹</span> Connected devices</div>
-  <div class="card list">
-    <div class="rowi"><div class="ico">📱</div><div class="grow"><div class="t">Your phone</div><div class="s">This device</div></div></div>
-    <div class="rowi"><div class="ico">🧒</div><div class="grow"><div class="t">Mia's tablet <span class="pill new">New</span></div><div class="s">Added today by you. Settling in for 23 hours.</div></div></div>
-    <div class="rowi"><div class="ico">🧒</div><div class="grow"><div class="t">Leo's tablet</div><div class="s">Added 3 Oct. Seen today.</div></div></div>
-    <div class="rowi"><div class="ico">🧑</div><div class="grow"><div class="t">Sam's phone</div><div class="s">Added 12 Sep. Not seen for 61 days.</div></div></div>
-  </div>
-  <div class="card warn"><div class="t">Is Sam's phone still yours?</div><div class="s">It hasn't been seen for a while.</div><div style="display:flex;gap:8px;margin-top:8px"><button class="btn q" style="padding:9px">Keep it</button><button class="btn d" style="padding:9px">Remove it</button></div></div>
-  <button class="btn q" style="margin-top:auto">History</button>
-</div></div>
-<figcaption><b>9. Connected devices (adult)</b>Every device, who added it and when. "New" for the first day. A gentle "still yours?" after 60 days. Everything is behind the adult PIN.</figcaption>
-</figure>
-
-<figure>
-<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="top"><span class="back">‹</span> Mia's tablet</div>
-  <div class="card tint"><div class="t">Settling in</div><div class="s">For 23 more hours this tablet can't change settings or add devices. You can end this early.</div></div>
-  <div class="card list">
-    <div class="rowi"><div class="grow"><div class="t">Added by</div><div class="s">You, 14 Nov, 9:43</div></div></div>
-    <div class="rowi"><div class="grow"><div class="t">Connection check</div><div class="s">Same device as when you approved it</div></div><span class="pill">✓</span></div>
-  </div>
-  <div class="list" style="margin-top:auto">
-    <button class="btn q">End settling in now</button>
-    <button class="btn d">Stop this connection</button>
-  </div>
-</div></div>
-<figcaption><b>10. One device (adult)</b>"Stop this connection" is one tap behind the PIN. If the device's key ever changes, this card turns amber and the connection pauses until the adult approves again.</figcaption>
-</figure>
-
-<figure>
-<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="top"><span class="back">‹</span> Safety for new devices</div>
-  <div class="card list">
-    <div class="rowi"><div class="grow"><div class="t">Allow adding devices</div><div class="s">Off. Turns on for 10 minutes when you choose.</div></div><div class="sw"></div></div>
-    <div class="rowi"><div class="grow"><div class="t">Both parents must agree</div><div class="s">When adding another grown-up's phone</div></div><div class="sw on"></div></div>
-    <div class="rowi"><div class="grow"><div class="t">New devices settle in for</div><div class="s">24 hours</div></div><span class="s">›</span></div>
-    <div class="rowi"><div class="grow"><div class="t">Tell all grown-ups</div><div class="s">When a device is added or removed</div></div><div class="sw on"></div></div>
-  </div>
-  <button class="btn q">Make a new code</button>
-</div></div>
-<figcaption><b>11. Safety settings (adult)</b>Plain switches with plain sentences. Safe defaults: adding is off, both parents agree for grown-up phones, a day of settling in.</figcaption>
-</figure>
-</div>
-
-<h2>When someone else is involved</h2>
-<div class="row">
-<figure>
-<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="top">Different family</div>
-  <div class="card bad"><div class="t">This code belongs to a different family.</div><div class="s">Nothing was shared. You may have scanned someone else's code.</div></div>
-  <button class="btn q" style="margin-top:auto">OK</button>
-</div></div>
-<figcaption><b>12. Another family's app scans our code</b>This is what the neighbour's adult sees. It tells them nothing about us. Our adult gets only a quiet "someone tried" note.</figcaption>
+<figcaption><b>D5. Approve (adult)</b>The adult says who it is. The device can't claim a role.</figcaption>
 </figure>
 
 <figure>
 <div class="phone kid"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="kbig">🌿</div>
-  <div class="ktxt">Let's ask a grown-up</div>
-  <div class="ksub">Nothing for you to do.</div>
+  <div class="qr" style="width:140px;height:140px" id="qr2" role="img" aria-label="Example hello card"></div>
+  <div class="ktxt">Hello!</div><div class="ksub">A grown-up will say hi.</div>
 </div></div>
-<figcaption><b>13. Anything that doesn't work (child)</b>The child never sees an error, a code, a PIN or a reason. Every failure looks like this one calm screen.</figcaption>
+<figcaption><b>D6. Hello card (child device)</b>The other direction. Appears only while a grown-up has opened adding; stops after 10 minutes.</figcaption>
+</figure>
+
+</div>
+
+<h2 id="person">Welcoming a person</h2>
+<p class="lede">The extra layer. A new grown-up joins the village only when the grown-ups already there agree. Parents are equals; nobody can be brought in to push someone out.</p>
+<div class="flow" aria-hidden="true"><b>Welcome someone</b> → <b>Pick who</b> → <b>Set limits</b> → <b>They join</b> → <b>The family votes</b> → <b>Welcomed, settling in</b></div>
+<div class="row">
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> The Village</div>
+  <div class="tabs"><span class="on">People</span><span>Requests <b>1</b></span><span>History</span></div>
+  <div class="card list">
+    <div class="rowi"><div class="ico round">S</div><div class="grow"><div class="t">Sam (you)</div><div class="s">Parent</div></div></div>
+    <div class="rowi"><div class="ico round">A</div><div class="grow"><div class="t">Alex</div><div class="s">Parent · joined 3 Sep</div></div></div>
+    <div class="rowi"><div class="ico round">R</div><div class="grow"><div class="t">Grandma Rose <span class="pill b">Carer</span></div><div class="s">Until Sunday evening</div></div></div>
+  </div>
+  <button class="btn p">Welcome someone</button>
+  <div class="card opt"><div class="ico">📄</div><div class="grow"><div class="t">Helpers</div><div class="s">Sitter pass, grandparent page. Screen only</div></div></div>
+</div></div>
+<figcaption><b>V1. The Village (replaces today's preview)</b>Everyone, their tier and limits in one place. "Welcome someone" is the only way in.</figcaption>
 </figure>
 
 <figure>
 <div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
-  <div class="top">Quiet note</div>
-  <div class="card warn"><div class="t">Someone tried to join</div><div class="s">At 9:47 a device that isn't yours asked to join. It was turned away. Nothing was shared.</div></div>
-  <div class="card tint"><div class="t">Your code is now new</div><div class="s">Copies of the old one don't work any more.</div></div>
+  <div class="top"><span class="back">‹</span> Welcome someone</div>
+  <div class="s">Who are you welcoming?</div>
+  <div class="card opt"><div class="ico">🧑</div><div><div class="t">A parent</div><div class="s">A co-parent or second guardian. All parents must agree</div></div></div>
+  <div class="card opt"><div class="ico">👵</div><div><div class="t">A carer</div><div class="s">A grandparent, aunt or regular sitter with their own phone</div></div></div>
+  <div class="card opt"><div class="ico">📄</div><div><div class="t">A helper, no account</div><div class="s">A one-off sitter or teacher. You write a pass and show it</div></div></div>
+</div></div>
+<figcaption><b>V2. Pick who</b>Plain choices; the tier decides who must agree, which the screen says in words.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Rose's limits</div>
+  <div class="card list">
+    <div class="rowi"><div class="grow"><div class="t">See the schedule</div></div><div class="sw on"></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Emergency card</div></div><div class="sw on"></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Message the family</div></div><div class="sw on"></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Change settings</div></div><div class="sw"></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Welcome other people</div></div><div class="sw"></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Only Mia, not Leo</div></div><div class="sw on"></div></div>
+  </div>
+  <div class="card blue"><div class="t">Until</div><div class="s">Sunday 16 Nov, 6:00 pm. Then access ends unless you extend it.</div></div>
+  <button class="btn p" style="margin-top:auto">Next</button>
+</div></div>
+<figcaption><b>V3. Limits and a time box</b>Plain switches. Defaults are safe; nothing is on that isn't needed.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Show this to Rose</div>
+  <div class="card" style="text-align:center">
+    <div class="qr" id="qr3" role="img" aria-label="Example invitation picture"></div>
+    <div class="t" style="margin-top:6px">or give her this code</div>
+    <div class="t" style="font-size:26px;letter-spacing:.15em">4 8 2 9 1 7</div>
+    <div class="s">Works once, in this room, for the next 10 minutes.</div></div>
+  <div class="card warn"><div class="s">It starts a request only. The family decides after.</div></div>
+  <button class="btn d" style="margin-top:auto">Cancel invitation</button>
+</div></div>
+<figcaption><b>V4. Invitation</b>A one-time picture and code, in person. Never sent by message.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Waiting for the family</div>
+  <div class="card"><div class="t">Welcoming Grandma Rose as a carer</div>
+    <div class="steps" style="margin-top:8px">
+      <div class="step"><span class="d ok">✓</span>Pictures matched</div>
+      <div class="step"><span class="d ok">✓</span>Rose chose her own PIN</div>
+      <div class="step"><span class="d ok">✓</span>Sam said yes</div>
+      <div class="step"><span class="d wait">…</span>Alex hasn't answered yet</div></div></div>
+  <div class="card tint"><div class="s">A carer needs one other grown-up to agree. We'll remind Alex. No answer isn't a yes, and this expires in 7 days.</div></div>
+  <button class="btn d" style="margin-top:auto">Withdraw request</button>
+</div></div>
+<figcaption><b>V5. Waiting for the family</b>The inviting grown-up sees exactly where it stands.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">A welcome request</div>
+  <div class="card"><div class="opt"><div class="ico round">R</div><div><div class="t">Grandma Rose</div><div class="s">Asked by Sam, as a carer</div></div></div></div>
+  <div class="card list">
+    <div class="s"><b>She could:</b> see the schedule and emergency card, message the family.</div>
+    <div class="s"><b>She couldn't:</b> change settings, welcome others, see Leo.</div>
+    <div class="s"><b>Until:</b> Sunday 6:00 pm.</div></div>
+  <div class="list" style="margin-top:auto"><button class="btn p">Yes, welcome her</button><div class="two"><button class="btn q sm">Ask me later</button><button class="btn d sm">No</button></div></div>
+</div></div>
+<figcaption><b>V6. Request (an existing grown-up)</b>What she could and couldn't do, who asked, until when. "No" never tells Rose why.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">An agreement for you both</div>
+  <div class="card warn"><div class="t">Limits on a parent</div><div class="s">Sam asked that Alex's access be limited to the schedule and messages while a plan is agreed. A parent can be limited only if they accept.</div></div>
+  <div class="card list"><div class="s">• Alex keeps full access to Leo's emergency card.</div><div class="s">• Changing this later needs you both, or a court order.</div><div class="s">• Alex can say no, and nothing changes.</div></div>
+  <div class="list" style="margin-top:auto"><button class="btn p">I accept</button><button class="btn d">I don't accept</button></div>
+</div></div>
+<figcaption><b>V7. Restricted co-parent agreement</b>A parent can be restricted only by their own acceptance. Neither parent can impose limits on the other alone.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Welcomed</div>
+  <div class="card tint"><div class="t">Grandma Rose is welcomed as a carer.</div><div class="s">She's settling in for 24 hours.</div></div>
+  <div class="card list"><div class="rowi"><div class="ico round">R</div><div class="grow"><div class="t">Grandma Rose <span class="pill new">New</span></div><div class="s">Carer · until Sun 6:00 pm · welcomed by Sam, Alex</div></div></div></div>
+  <div class="card blue"><div class="s">Everyone in the family has been told. You can see this in History.</div></div>
   <button class="btn q" style="margin-top:auto">OK</button>
 </div></div>
-<figcaption><b>14. After a refused request (adult)</b>After "That's not mine" or too many wrong tries, the code is replaced and every grown-up is told in plain words.</figcaption>
+<figcaption><b>V8. Welcomed (adult)</b>The family sees who agreed. "New" is shown for the settle-in period.</figcaption>
+</figure>
+
+</div>
+
+<h2 id="after">After the welcome</h2>
+<div class="row">
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Grandma Rose</div>
+  <div class="card list">
+    <div class="rowi"><div class="grow"><div class="t">Carer</div><div class="s">Welcomed 14 Nov by Sam and Alex</div></div><span class="pill b">Limits</span></div>
+    <div class="rowi"><div class="grow"><div class="t">Access ends</div><div class="s">Sunday 6:00 pm</div></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Connection check</div><div class="s">Same phone as when welcomed</div></div><span class="pill">✓</span></div>
+  </div>
+  <div class="card warn"><div class="s">Giving her more access needs the same agreement as welcoming her.</div></div>
+  <div class="list" style="margin-top:auto"><button class="btn q">Change limits</button><button class="btn d">Remove from the village</button></div>
+</div></div>
+<figcaption><b>A1. One person</b>Loosening limits asks the family again. Tightening is instant. Removal gives notice.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Removal notice</div>
+  <div class="card warn"><div class="t">Sam wants to remove Alex's phone.</div><div class="s">Nothing changes for 72 hours. Everyone can see this. It can be cancelled.</div></div>
+  <div class="card blue"><div class="s">Two parents can't remove each other on their own. This needs both parents to agree, or a court order. If you're Alex and didn't expect this, choose "Stop this".</div></div>
+  <div class="list" style="margin-top:auto"><button class="btn p">Stop this</button><button class="btn q">Not now</button></div>
+</div></div>
+<figcaption><b>A2. Removal notice</b>Visible, cancellable, and impossible between two parents without agreement.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Safety for new people</div>
+  <div class="card list">
+    <div class="rowi"><div class="grow"><div class="t">Adding people</div><div class="s">Off. Turns on for 10 minutes when you choose.</div></div><div class="sw"></div></div>
+    <div class="rowi"><div class="grow"><div class="t">A new parent needs</div><div class="s">All parents (can't be lowered)</div></div><span class="pill off">Locked</span></div>
+    <div class="rowi"><div class="grow"><div class="t">A new carer needs</div><div class="s">One other grown-up</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="grow"><div class="t">New people settle in for</div><div class="s">24 hours</div></div><span class="s">›</span></div>
+    <div class="rowi"><div class="grow"><div class="t">Tell all grown-ups</div><div class="s">When anyone is added or removed</div></div><div class="sw on"></div></div>
+  </div>
+</div></div>
+<figcaption><b>A3. Safety for new people</b>Safe defaults. The new-parent rule is shown as locked, on purpose.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> History</div>
+  <div class="card list">
+    <div class="rowi"><div class="grow"><div class="t">Rose welcomed as a carer</div><div class="s">Sam and Alex agreed · 14 Nov 9:43</div></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Rose's limits changed</div><div class="s">Sam, with Alex's agreement · 14 Nov 9:50</div></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Someone tried to join</div><div class="s">Turned away · 12 Nov 7:02</div></div></div>
+    <div class="rowi"><div class="grow"><div class="t">Mia's tablet added</div><div class="s">By Sam · 3 Oct</div></div></div>
+  </div>
+  <div class="s" style="margin-top:auto">This list can't be edited or deleted. If anyone tampers with it, the app says so.</div>
+</div></div>
+<figcaption><b>A4. History</b>Append-only and tamper-evident. Plain sentences, who agreed, and when.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top">Home</div>
+  <div class="card blue"><div class="t">A welcome request is waiting</div><div class="s">Sam would like to welcome Grandma Rose.</div><button class="btn p sm" style="margin-top:8px">Look</button></div>
+  <div class="card warn"><div class="t">Someone tried to join</div><div class="s">A device that isn't yours was turned away. Nothing was shared.</div></div>
+  <div class="card"><div class="t">Today</div><div class="s">Mia: school, then Dad's at 4:30</div></div>
+  <div class="bar"><span><b>Home</b></span><span>Messages</span><span>Calendar</span><span>More</span></div>
+</div></div>
+<figcaption><b>A5. Home (adult)</b>Requests and notices are quiet cards, never alarms and never shown to a child.</figcaption>
+</figure>
+
+</div>
+
+<h2 id="child">The child's view</h2>
+<div class="row">
+<figure>
+<div class="phone kid"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="ktxt">Your people</div>
+  <div class="kcard"><div class="kbig" style="font-size:34px">👵</div><div><div class="t" style="font-size:18px">Nana Rose</div><div class="ksub" style="font-size:13px">Says hello on Saturday</div></div></div>
+  <div class="kcard"><div class="kbig" style="font-size:34px">🧔</div><div><div class="t" style="font-size:18px">Dad</div></div></div>
+</div></div>
+<figcaption><b>C1. A new grown-up appears</b>Only after the family has welcomed them, under the name this child already uses for them. No votes, limits or reasons.</figcaption>
+</figure>
+
+<figure>
+<div class="phone kid"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="kbig">🌿</div><div class="ktxt">Let's ask a grown-up</div><div class="ksub">Nothing for you to do.</div>
+</div></div>
+<figcaption><b>C2. Anything that doesn't work</b>Every failure on a child device looks like this one calm screen.</figcaption>
+</figure>
+
+<figure>
+<div class="phone"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="app">
+  <div class="top"><span class="back">‹</span> Sitter pass (no account)</div>
+  <div class="card"><div class="t">For Jo, tonight</div><div class="s">Bedtime 8:00 · Mia likes the green cup · Emergency card shown on this screen</div></div>
+  <div class="card tint"><div class="s">Nothing is sent. Jo reads this on your phone. Close it when you're done.</div></div>
+  <button class="btn q" style="margin-top:auto">Done</button>
+</div></div>
+<figcaption><b>C3. A helper with no account</b>The existing screen-only pass. No sign-in, nothing stored by the helper.</figcaption>
 </figure>
 </div>
 
-<h2>What a stranger can and can't do</h2>
+<h2 id="layouts">Tablet and Fold</h2>
+<p class="lede">The same screens adapt to the app's postures: the tablet gets a two-pane Village; the Fold's cover screen gets a narrow single column.</p>
+<div class="row wide">
+<figure>
+<div class="tablet"><div class="sb"><span>9:41</span><span>●●●</span></div><div class="split">
+  <div class="pane l"><div class="top" style="font-size:16px">The Village</div>
+    <div class="rowi"><div class="ico round" style="width:34px;height:34px">S</div><div class="s"><b>Sam</b> · Parent</div></div>
+    <div class="rowi"><div class="ico round" style="width:34px;height:34px">A</div><div class="s"><b>Alex</b> · Parent</div></div>
+    <div class="rowi"><div class="ico round" style="width:34px;height:34px;background:var(--blueBg)">R</div><div class="s"><b>Rose</b> · Carer</div></div>
+    <button class="btn p sm" style="margin-top:auto">Welcome someone</button></div>
+  <div class="pane"><div class="top" style="font-size:16px">Grandma Rose <span class="pill b">Carer</span></div>
+    <div class="card"><div class="s"><b>Can:</b> schedule, emergency card, message. <b>Can't:</b> settings, welcome others, see Leo.</div></div>
+    <div class="card blue"><div class="s">Access ends Sunday 6:00 pm. Giving more access asks the family again.</div></div>
+    <div class="two"><button class="btn q sm">Change limits</button><button class="btn d sm">Remove</button></div></div>
+</div></div>
+<figcaption><b>L1. Tablet, two panes</b>People on the left, the person on the right. Same rules, more at once.</figcaption>
+</figure>
+
+<figure>
+<div class="phone cover"><div class="sb"><span>9:41</span><span>●</span></div><div class="app" style="padding:4px 12px 12px">
+  <div class="top" style="font-size:16px">Welcome request</div>
+  <div class="card"><div class="t" style="font-size:14px">Grandma Rose</div><div class="s">Carer · asked by Sam</div></div>
+  <div class="s">She could see the schedule and message the family. She couldn't change settings.</div>
+  <div class="list" style="margin-top:auto"><button class="btn p sm">Yes</button><button class="btn q sm">Ask me later</button><button class="btn d sm">No</button></div>
+</div></div>
+<figcaption><b>L2. Fold cover</b>A request can be answered from the narrow cover screen without opening the phone.</figcaption>
+</figure>
+</div>
+
+<h2 id="tables">The rules, at a glance</h2>
+<h3>Who must agree</h3>
+<div class="tw"><table>
+<thead><tr><th>Welcoming a…</th><th>Who must agree</th><th>If someone doesn't answer</th></tr></thead>
+<tbody>
+<tr><td>Helper (no account)</td><td>The grown-up who writes the pass</td><td>n/a</td></tr>
+<tr><td>Carer</td><td>One other grown-up (the inviter if alone)</td><td>Waits. Silence is never yes. Expires after 7 days</td></tr>
+<tr><td>Parent</td><td><b>All parents</b>, never lower</td><td>Waits and reminds. Expires after 7 days</td></tr>
+<tr><td>Giving more access</td><td>Same as welcoming that tier</td><td>Same</td></tr>
+<tr><td>Giving less access</td><td>Any grown-up for a carer; a parent only for themselves</td><td>n/a</td></tr>
+</tbody></table></div>
+<h3>What a stranger can and can't do</h3>
 <div class="tw"><table>
 <thead><tr><th>Attempt</th><th>What happens</th></tr></thead>
 <tbody>
-<tr><td>Photographs the adult's code and scans it from somewhere else</td><td>Not on the same network, so nothing happens.</td></tr>
-<tr><td>Is in the room and scans it</td><td>A request appears. The pictures won't match and the adult says "That's not mine". The code is made new.</td></tr>
-<tr><td>Scans the child's hello card</td><td>Nothing is revealed. No request unless a grown-up opened adding on that device.</td></tr>
+<tr><td>Photographs a code and scans it from somewhere else</td><td>Not on the same network, so nothing happens.</td></tr>
+<tr><td>Is in the room and scans it</td><td>A request appears. The pictures won't match; "That's not mine"; the code is made new.</td></tr>
+<tr><td>Scans a child's hello card</td><td>Nothing is revealed. No request unless a grown-up opened adding.</td></tr>
 <tr><td>Another family's app scans our code</td><td>"This code belongs to a different family." Nothing is shared.</td></tr>
-<tr><td>Passes our code to a remote helper</td><td>The pictures differ between the two screens, so the adult doesn't confirm.</td></tr>
-<tr><td>Uses an old copy of a retired code</td><td>Refused. It looks the same as a code that never existed.</td></tr>
+<tr><td>Uses an old invitation code</td><td>Refused, the same as a code that never existed.</td></tr>
+<tr><td>Wins over one grown-up against the others' wishes</td><td>A new parent needs all parents. A carer can be welcomed by one but is limited, settling in and logged.</td></tr>
+<tr><td>Tries to bring in a new adult to push out another</td><td>Cannot: new parents need every parent, and removal needs a visible notice and agreement.</td></tr>
 </tbody></table></div>
 </main>
 <script>
 (function(){
-  // decorative pseudo-code only: a fixed pattern, not a real code
   function draw(id){
     var el=document.getElementById(id); if(!el) return;
     var n=21,s=7,h="";
     for(var r=0;r<n;r++)for(var c=0;c<n;c++){
-      var finder=(r<7&&c<7)||(r<7&&c>=n-7)||(r>=n-7&&c<7);
-      var on;
-      if(finder){var rr=r%14>6?r-14:r,cc=c>=n-7?c-(n-7):c,rr2=r>=n-7?r-(n-7):r;
-        var ur=Math.min(rr2,6-rr2),uc=Math.min(cc,6-cc),m=Math.min(ur,uc);on=(m===0||m>=2);}
+      var finder=(r<7&&c<7)||(r<7&&c>=n-7)||(r>=n-7&&c<7),on;
+      if(finder){var cc=c>=n-7?c-(n-7):c,rr=r>=n-7?r-(n-7):r;var m=Math.min(Math.min(rr,6-rr),Math.min(cc,6-cc));on=(m===0||m>=2);}
       else {s=(s*1103515245+12345)&0x7fffffff;on=(s>>16)%2===0;}
       h+='<i class="'+(on?'':'o')+'"></i>';
     }
     el.innerHTML=h;
   }
-  draw('qr1');draw('qr2');
+  draw('qr1');draw('qr2');draw('qr3');
 })();
 </script>
 </body>
