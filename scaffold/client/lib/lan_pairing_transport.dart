@@ -1,13 +1,14 @@
 // OLIVE BRANCH — the same-network transport for the on-device pairing protocol: the adult device serves its open
 // window over a tiny HTTP endpoint and advertises it on mDNS; the child device lists the open windows nearby BY
-// THE ADULT'S NAME, and talks to the one a grown-up picks. UNVERIFIED on a device (bonsoir/mDNS needs two real
+// A PICTURE (a nameless glyph, or a scanned pairing picture), and talks to the one a grown-up picks. UNVERIFIED on a device (bonsoir/mDNS needs two real
 // devices; the HTTP half is tested over loopback in test/lan_pairing_transport_test.dart).
 // Spec: docs/superpowers/specs/2026-11-08-adult-gate-and-simple-pairing-design.md section 6.4.
 //
 // PROXIMITY IS ENFORCED HERE, NOT HOPED FOR. The adult device answers only requests from a private, link-local
 // or unique-local source address (a LAN), never from a routable one. The service exists only while the adult's
-// window is open (it is stopped when the window closes), and it advertises nothing but the adult's name and the
-// window's session id (neither grants anything: the PIN-or-QR key exchange does). A person on the same Wi-Fi who
+// window is open (it is stopped when the window closes), and it advertises nothing but a seat label ("Player one"
+// or "Player two"), a version, the window's session id and a recognition tag (none of it grants anything: the
+// PIN key exchange does; no name, key, fingerprint or address is advertised). A person on the same Wi-Fi who
 // sends garbage can burn the window's five attempts (a denial of service the adult cures by opening a new window
 // in the same room); they cannot pair a device. Written down in the spec's threat model.
 //
@@ -21,6 +22,8 @@ import 'dart:typed_data';
 import 'package:bonsoir/bonsoir.dart';
 
 import 'device_keys.dart' show b64, unb64;
+import 'pairing_limits.dart';
+import 'pairing_picture.dart' show kPictureTagBytes;
 import 'pairing_protocol.dart';
 
 const String kPairServiceType = '_olivepair._tcp';
@@ -48,33 +51,61 @@ bool isLanAddress(InternetAddress a, {bool allowLoopback = false}) {
   return false;
 }
 
+/// The instance name a window advertises: a seat label, never a name and never derived from the session id's text.
+String pairingSeatLabel(List<int> sid) => (sid[2] & 1) == 0 ? 'Player one' : 'Player two';
+
+/// The TXT record of an open window: protocol version, the window's public session id and the recognition tag.
+/// Nothing else: no adult name, no key, no fingerprint, no address, no family. The tag is random unless a pairing
+/// picture addresses the window (see pairing_picture.dart), so it identifies nobody to a bystander.
+Map<String, String> pairingTxt(List<int> sid, List<int> tag) =>
+    <String, String>{'v': '1', 'w': b64(sid), 't': b64(tag)};
+
 class LanPairingHost {
-  LanPairingHost(this.window, {this.allowLoopback = false});
+  LanPairingHost(this.window, {this.allowLoopback = false, SourceBucket? bucket}) : _bucket = bucket ?? SourceBucket();
   final AdultWindow window;
   final bool allowLoopback;
+  final SourceBucket _bucket;
   HttpServer? _server;
   BonsoirBroadcast? _broadcast;
+  bool _advertise = true;
 
   int? get port => _server?.port;
 
   Future<void> start({bool advertise = true}) async {
     final HttpServer s = await HttpServer.bind(InternetAddress.anyIPv6, 0, v6Only: false);
     _server = s;
+    _advertise = advertise;
     unawaited(s.forEach(_serve));
     window.addListener(_closeWithWindow);
-    if (advertise) {
-      final BonsoirBroadcast b = BonsoirBroadcast(
-        service: BonsoirService(
-          name: 'olive-pair-${b64(window.sid).substring(0, 6)}',
-          type: kPairServiceType,
-          port: s.port,
-          attributes: <String, String>{'s': b64(window.sid), 'n': window.adultName},
-        ),
-      );
-      _broadcast = b;
-      await b.ready;
-      await b.start();
-    }
+    if (advertise) await _startBroadcast();
+  }
+
+  Future<void> _startBroadcast() async {
+    final HttpServer? s = _server;
+    if (s == null) return;
+    final BonsoirBroadcast b = BonsoirBroadcast(
+      service: BonsoirService(
+        name: pairingSeatLabel(window.sid),
+        type: kPairServiceType,
+        port: s.port,
+        attributes: pairingTxt(window.sid, await window.windowTag()),
+      ),
+    );
+    _broadcast = b;
+    await b.ready;
+    await b.start();
+  }
+
+  /// Advertises again with the window's current tag: called after the adult scans a child's picture or shows
+  /// their own, so the TXT record carries the tag that picture can recognise.
+  Future<void> readvertise() async {
+    if (!_advertise || _server == null) return;
+    final BonsoirBroadcast? old = _broadcast;
+    _broadcast = null;
+    try {
+      await old?.stop();
+    } catch (_) {}
+    await _startBroadcast();
   }
 
   void _closeWithWindow() {
@@ -106,6 +137,12 @@ class LanPairingHost {
       }
       final String body = utf8.decode(bytes.takeBytes());
       final Object? decoded = jsonDecode(body);
+      // A flood of key-exchange starts from one source is dropped before it reaches the window (pairing_limits.dart).
+      if (decoded is Map && decoded['t'] == 'pake1' && !_bucket.allow(from.address)) {
+        r.response.statusCode = HttpStatus.noContent;
+        await r.response.close();
+        return;
+      }
       final Map<String, dynamic>? answer =
           decoded is Map<String, dynamic> ? await window.handle(decoded) : null;
       if (answer == null) {
@@ -165,13 +202,16 @@ class LanPairingTransport implements PairingTransport {
   }
 }
 
-/// An adult's open window seen on the network: a name to show and where to talk to it.
+/// An adult's open window seen on the network: its public session id, the recognition tag and where to talk to
+/// it. No name travels: the child tells windows apart by picture (pairing_picture.dart).
 class NearbyWindow {
-  const NearbyWindow({required this.adultName, required this.sid, required this.host, required this.port});
-  final String adultName;
+  const NearbyWindow({required this.sid, required this.host, required this.port, this.tag});
   final Uint8List sid;
   final String host;
   final int port;
+
+  /// The 8-byte recognition tag from the advertisement; null in tests that skip it.
+  final Uint8List? tag;
   String get key => b64(sid);
 }
 
@@ -197,14 +237,16 @@ class LanPairingBrowser {
         case BonsoirDiscoveryEventType.discoveryServiceResolved:
           final BonsoirService? s = e.service;
           if (s is ResolvedBonsoirService && s.host != null) {
-            final String? sid = s.attributes['s'], name = s.attributes['n'];
-            if (sid == null || name == null) return;
+            final String? sid = s.attributes['w'], tag = s.attributes['t'];
+            if (s.attributes['v'] != '1' || sid == null || tag == null) return;
             try {
-              if (!_found.isClosed) _found.add(NearbyWindow(adultName: name, sid: unb64(sid), host: s.host!, port: s.port));
+              final Uint8List sidBytes = unb64(sid), tagBytes = unb64(tag);
+              if (sidBytes.length != 16 || tagBytes.length != kPictureTagBytes) return;
+              if (!_found.isClosed) _found.add(NearbyWindow(sid: sidBytes, host: s.host!, port: s.port, tag: tagBytes));
             } catch (_) {}
           }
         case BonsoirDiscoveryEventType.discoveryServiceLost:
-          final String? sid = e.service?.attributes['s'];
+          final String? sid = e.service?.attributes['w'];
           if (sid != null && !_gone.isClosed) _gone.add(sid);
         default:
           return;

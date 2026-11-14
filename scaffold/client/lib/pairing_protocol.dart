@@ -23,6 +23,7 @@ import 'package:flutter/foundation.dart';
 import 'cpace.dart';
 import 'device_keys.dart';
 import 'local_pin.dart' show LocalPinRecord, constantTimeEquals, kLocalPinIterations;
+import 'pairing_picture.dart';
 
 const Duration kWindowTtl = Duration(minutes: 10);
 const int kWindowMaxAttempts = 5;
@@ -135,6 +136,43 @@ class AdultWindow extends ChangeNotifier {
   Uint8List? _tagC;
   Uint8List? _sealed;
 
+  // The pairing picture (docs/planning/PERSISTENT-QR-PAIRING.md). None of this authorizes anything: it only decides
+  // which devices this window recognises and answers. The PIN-PAKE and the adult's "Yes" are unchanged.
+  Uint8List? _allowedChildKey, _childSalt, _adultSalt;
+  Uint8List? _helloCpk;
+  late final Uint8List _randomTag = Uint8List.fromList(List<int>.generate(kPictureTagBytes, (_) => Random.secure().nextInt(256)));
+
+  /// The child device whose picture the adult scanned (Mode B). Null = any child may try (the PIN path).
+  Uint8List? get allowedChildKey => _allowedChildKey;
+
+  /// Mode B: the adult scanned the child's picture. From now on only a hello that carries that device's key AND a
+  /// valid proof-of-possession signature is answered, and anything else is dropped BEFORE an attempt is counted.
+  /// The window's tag is then made from the child's salt, which only that child can recognise.
+  void allowChild({required Uint8List childKey, required Uint8List childSalt}) {
+    if (state != WindowState.open) return;
+    _allowedChildKey = Uint8List.fromList(childKey);
+    _childSalt = Uint8List.fromList(childSalt);
+    notifyListeners();
+  }
+
+  /// Mode A: the adult is showing their own picture, so a child that scanned it can recognise this window.
+  void showAdultPicture(Uint8List adultSalt) {
+    if (state != WindowState.open) return;
+    _adultSalt = Uint8List.fromList(adultSalt);
+    notifyListeners();
+  }
+
+  /// True once a picture (the child's, or this adult's own) addresses this window; false = Mode N, random tag.
+  bool get hasPicture => _childSalt != null || _adultSalt != null;
+
+  /// The 8-byte recognition tag for the mDNS TXT record. The child's salt wins over the adult's when both are
+  /// known (Mode A+B). Random per window when no picture addresses it, so a nameless window cannot be told apart
+  /// from a picture-addressed one by anyone without the salt.
+  Future<Uint8List> windowTag() async {
+    final Uint8List? salt = _childSalt ?? _adultSalt;
+    return salt == null ? _randomTag : rendezvousTag(salt, sid);
+  }
+
   /// Set once a child device passed key confirmation: what the adult is asked to approve.
   String? get pendingDeviceName => state == WindowState.awaitingApproval ? _deviceName : null;
   Sas? sas;
@@ -199,6 +237,10 @@ class AdultWindow extends ChangeNotifier {
     qrSecret = null;
     _pending = null;
     _key = null;
+    _allowedChildKey = null;
+    _childSalt = null;
+    _adultSalt = null;
+    _helloCpk = null;
     notifyListeners();
   }
 
@@ -232,12 +274,29 @@ class AdultWindow extends ChangeNotifier {
     switch (m['t']) {
       case 'hello':
         if (state != WindowState.open) return null;
+        if (_allowedChildKey != null) {
+          // Mode B: only the scanned child, and only with proof it holds that key for THIS window. Silent drop.
+          final Object? cpkRaw = m['cpk'], hsRaw = m['hs'];
+          if (cpkRaw is! String || hsRaw is! String) return null;
+          final Uint8List cpk = unb64(cpkRaw);
+          if (!constantTimeEquals(cpk, _allowedChildKey!) || !await verifyHello(cpk, sid, unb64(hsRaw))) return null;
+          _helloCpk = cpk;
+        }
         return <String, dynamic>{
           't': 'hello-ok', 'afp': b64(adultKey.fingerprint), 'apk': b64(adultKey.publicKey),
           'an': adultName, 'fid': familyId,
         };
       case 'pake1':
-        if (state != WindowState.open || ++_pake1Count > _kMaxPake1PerWindow) return null;
+        if (state != WindowState.open) return null;
+        // Mode B: a pake1 from anyone but the scanned, hello-verified child is dropped WITHOUT being counted, so a
+        // device that merely photographed the child's picture cannot use up the window's budget.
+        if (_allowedChildKey != null) {
+          final Object? c = m['cpk'];
+          if (c is! String || _helloCpk == null) return null;
+          final Uint8List got = unb64(c);
+          if (!constantTimeEquals(got, _allowedChildKey!) || !constantTimeEquals(got, _helloCpk!)) return null;
+        }
+        if (++_pake1Count > _kMaxPake1PerWindow) return null;
         final Uint8List cpk = unb64(m['cpk'] as String), yc = unb64(m['Yc'] as String);
         if (cpk.length != 32 || yc.length != 32) return null;
         final bool qr = m['m'] == 'qr';
@@ -383,6 +442,9 @@ class ChildPairingClient {
     try {
       final Map<String, dynamic>? hello = await transport.send(<String, dynamic>{
         't': 'hello', 'sid': b64(sid), 'cpk': b64(childKey.publicKey), 'dn': deviceName,
+        // Proof this device holds the key it presents, for this window only (checked by a window that scanned
+        // this device's picture; ignored by every other).
+        'hs': b64(await signHello(childKey, sid)),
       });
       if (hello == null || hello['t'] != 'hello-ok') return const PairingResult.failed(PairingFailure.unreachable);
       final Uint8List apk = unb64(hello['apk'] as String), afp = unb64(hello['afp'] as String);
