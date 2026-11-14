@@ -252,7 +252,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       area: 'localpin', scope: LocalScope.guardian, encrypted: true, maxBytes: 4 * 1024,
       what: 'The PIN a grown-up chose for this device only, as a salted slow hash (the PIN itself is never '
           'kept), and the count of wrong tries toward a 15 minute lock. It gates changing her locked '
-          'age, clearing data and the settings here. It is not the account PIN and is never sent '
+          'age, clearing data and the settings here. It also holds the app-lock choices (lock on leaving, '
+          'how long, hide in recent apps). It is not the account PIN and is never sent '
           'anywhere. Sealed on the device.'),
   LocalDataEntry(
       area: 'devicekey', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
