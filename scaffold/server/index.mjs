@@ -29,6 +29,7 @@ import { checkBootTransport, httpsRequired, securityHeaders } from './transport.
 import { errorLine } from './safe_log.mjs';
 import { checkBootSecrets } from './secrets.mjs';
 import { checkRuntimeRole } from './db_role.mjs';
+import { resolveCallConfig, describeCallConfig } from './call_config.mjs';
 import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 
@@ -57,6 +58,16 @@ if (boot.problems.length) {
   for (const p of boot.problems) console.error(`secret check failed: ${p}`);
   process.exit(2);
 }
+
+// MASTERFILE §16.2 #6 (third reversal): CALL_PROVIDER=jitsi|livekit and the Jitsi
+// env are validated here like the secrets above. Unset is fine (the calls route
+// then says the provider is unavailable); set-but-malformed is not.
+const bootCalls = resolveCallConfig(process.env);
+if (bootCalls.problems.length) {
+  for (const p of bootCalls.problems) console.error(`call provider check failed: ${p}`);
+  process.exit(2);
+}
+console.log(`calls: ${JSON.stringify(describeCallConfig(bootCalls))}`);
 
 // Server-snoop hardening: a production process must be configured as the HTTPS
 // back end of a TLS-terminating proxy (PUBLIC_BASE_URL, TRUST_PROXY and
