@@ -1,0 +1,54 @@
+# Olive VPS kit: the TLS front door. Caddy gets and renews a real certificate
+# for {$PUBLIC_HOST} (Let's Encrypt, HTTP-01 on port 80) with no further setup.
+# Contract: docs/operators/proxy-and-tls.md. TRUST_PROXY_HOPS=1 matches this
+# single hop. Caddy overwrites any client-supplied X-Forwarded-* header
+# because no trusted_proxies are configured.
+{
+	# Optional single-token globals, empty by default. The local test sets
+	# CADDY_LOCAL_CERTS=local_certs to use Caddy's internal CA on localhost.
+	{$CADDY_LOCAL_CERTS}
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$PUBLIC_HOST} {
+	encode zstd gzip
+
+	# /internal/* (metrics) is never public. Case-insensitive match.
+	@internal path /internal /internal/*
+	respond @internal 404
+
+	# No server banner.
+	header -Server
+	# Only set if the app did not already (so HSTS is never doubled).
+	header ?Strict-Transport-Security "max-age=63072000; includeSubDomains"
+	header ?X-Content-Type-Options "nosniff"
+
+	# Server caps uploads near 40 MB; refuse bigger bodies at the edge.
+	request_body {
+		max_size 41MB
+	}
+
+	# WebSocket upgrades (game-table relay, co-view) pass through
+	# reverse_proxy automatically. Long-lived sockets are not cut on reload.
+	reverse_proxy {$UPSTREAM:server:8123} {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+		header_up -X-Real-IP
+		stream_close_delay 5m
+	}
+
+	# Access log WITHOUT query string (the legacy WS join token rides in
+	# ?token=), request headers, or client address.
+	log {
+		output stdout
+		format filter {
+			request>uri delete
+			request>headers delete
+			request>remote_ip delete
+			request>remote_port delete
+			request>client_ip delete
+		}
+	}
+}

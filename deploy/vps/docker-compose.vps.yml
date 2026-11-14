@@ -1,0 +1,161 @@
+# Olive VPS kit: single-host production stack (Postgres, migrate, server,
+# scheduler, Caddy). Always run through deploy.sh / lib.sh, which pass
+# `-p olive --env-file /opt/olive/.env`. Derived from
+# scaffold/docker-compose.prod.yml; same role split (init-db.prod.sh creates
+# app_owner + backup_reader, migrations run as the unprivileged app_owner).
+#
+# Differences from the prod file, on purpose:
+#   - nothing but Caddy publishes a port (no 127.0.0.1 ports either)
+#   - Postgres lives on an `internal` network with no route to the internet
+#   - read-only root filesystems, all capabilities dropped, no-new-privileges
+#   - DEV_LOGIN and ALLOW_INSECURE_TRANSPORT are simply absent (default off)
+#   - LiveKit / FCM / APNs are NOT configured: calls, push and delivery to
+#     devices report unavailable instead of pretending. The callroom service
+#     is omitted.
+# Images are built on the host (linux/amd64 or linux/arm64) by deploy.sh.
+
+x-logging: &logging
+  driver: local
+  options: { max-size: "10m", max-file: "5" }
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  restart: unless-stopped
+  logging: *logging
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://app_owner:${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD missing, see env.example}@db:5432/${POSTGRES_DB_NAME:-olive}
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    logging: *logging
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD missing}
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD missing}
+      BACKUP_READER_PASSWORD: ${BACKUP_READER_PASSWORD:?BACKUP_READER_PASSWORD missing}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-olive}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../scaffold/tools/docker-dev/init-db.prod.sh:/docker-entrypoint-initdb.d/init-db.prod.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits: { memory: 1g, cpus: "1.0" }
+
+  migrate:
+    image: olive-server:${OLIVE_TAG:?OLIVE_TAG is set by deploy.sh}
+    <<: *hardening
+    restart: "no"
+    depends_on:
+      db: { condition: service_healthy }
+    environment: *app-env
+    command: ["node", "tools/migrate.mjs"]
+    networks: [backend]
+
+  server:
+    image: olive-server:${OLIVE_TAG:?OLIVE_TAG is set by deploy.sh}
+    build:
+      context: ../../scaffold
+    <<: *hardening
+    stop_grace_period: 15s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+      NODE_ENV: production
+      PORT: "8123"
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET missing}
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET missing}
+      MEDIA_STORAGE_ROOT: /app/data/media
+      PUBLIC_BASE_URL: https://${PUBLIC_HOST:?PUBLIC_HOST missing}
+      TRUST_PROXY: "1"
+      TRUST_PROXY_HOPS: "1"
+    volumes:
+      - media:/app/data/media
+    networks: [backend, edge]
+    command: ["node", "server/index.mjs"]
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    pids_limit: 256
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "1.0" }
+
+  scheduler:
+    image: olive-server:${OLIVE_TAG:?OLIVE_TAG is set by deploy.sh}
+    <<: *hardening
+    stop_grace_period: 60s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+      SCHEDULER_HOUR_UTC: "3"
+      MEDIA_STORAGE_ROOT: /app/data/media
+    volumes:
+      - media:/app/data/media
+    networks: [backend]
+    command: ["node", "tools/scheduler.mjs", "loop"]
+    pids_limit: 128
+    deploy:
+      resources:
+        limits: { memory: 256m, cpus: "0.5" }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    logging: *logging
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=16m"]
+    depends_on:
+      server: { condition: service_healthy }
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?PUBLIC_HOST missing}
+      CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
+      UPSTREAM: ${UPSTREAM:-server:8123}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { memory: 128m, cpus: "0.5" }
+
+networks:
+  backend:
+    internal: true
+  edge: {}
+
+volumes:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:
