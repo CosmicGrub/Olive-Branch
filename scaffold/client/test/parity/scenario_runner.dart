@@ -423,7 +423,8 @@ final Map<String, _Checker> _checkers = <String, _Checker>{
   'band': (ParityWorld w, Object? e, Map<String, Object?> s) async {
     final String got = bandForYears(w.age.age);
     final bool clock = (s['ops']! as List<Object?>).any((Object? o) => (o! as Map<String, Object?>)['op'] == 'clock');
-    if (e == 't1317' && got == 't13') return const Res.differs('same boundary (13) but the band id is t13, and the 18+ handover band is an open owner decision');
+    // One stored band 't13' IS the prototype's t1317 (protoBand); the split at 18 is by age, not by band id (wave 2b).
+    if (e == 't1317' && got == 't13') return const Res.ok();
     if (clock && got != e) return const Res.pending('the band does not follow the birthday because the age does not (see child.age)');
     return _eq(got, e, 'band');
   },

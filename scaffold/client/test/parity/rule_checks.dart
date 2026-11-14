@@ -60,7 +60,7 @@ final List<RuleCheck> ruleChecks = <RuleCheck>[
     final String got = ContactLabels.forGuardian(_mom, childName: 'Ivy', nicknames: <String, String>{'mom': 'Dada'});
     return got == 'Ivy calls you Dada' ? const Res.ok() : Res.differs('Flutter shows "$got", the prototype "Ivy calls you Dada"');
   }),
-  RuleCheck('bands.boundaries', <String>['sub:age bands bandOf'], UnitStatus.differs, (Map<String, Object?> r) async {
+  RuleCheck('bands.boundaries', <String>['sub:age bands bandOf'], UnitStatus.implemented, (Map<String, Object?> r) async {
     final Map<String, Object?> first = _m(_m(r['bands'])['firstAgeOfBand']);
     final Map<String, int> flutter = <String, int>{};
     for (int a = 3; a <= 17; a++) {
@@ -68,7 +68,8 @@ final List<RuleCheck> ruleChecks = <RuleCheck>[
     }
     final Map<String, int> proto = <String, int>{for (final MapEntry<String, Object?> e in first.entries) (e.key == 't1317' ? 't13' : e.key): e.value! as int};
     if (flutter.toString() != proto.toString()) return Res.differs('band starts differ: Flutter $flutter, prototype $proto');
-    return const Res.differs('same boundaries (3, 5, 8, 13); the id is t13 where the prototype says t1317, and the 18+ handover band is an open owner decision');
+    // The stored id 't13' is the prototype's t1317 (protoBand); the 18 handover is by age, not a fifth band (wave 2b).
+    return const Res.ok();
   }),
   RuleCheck('ageLock.pickerRange', <String>['action:ob.kid.pickAge / askLock / lockAge'], UnitStatus.differs, (Map<String, Object?> r) async {
     // LIVE-API.md: the kid picker is 5 to 15; a guardian sets 3 to 17.

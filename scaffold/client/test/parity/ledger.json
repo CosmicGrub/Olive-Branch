@@ -1,19 +1,19 @@
 {
  "note": "Written by test/parity/scenario_parity_test.dart. Do not edit. ledger_baseline.json is the committed ratchet.",
  "totals": {
-  "implemented": 65,
+  "implemented": 67,
   "pending": 128,
-  "differs": 6
+  "differs": 4
  },
  "groups": {
   "birthday": {
-   "implemented": 4,
+   "implemented": 5,
    "pending": 0,
-   "differs": 1,
+   "differs": 0,
    "steps": {
-    "implemented": 1,
+    "implemented": 2,
     "pending": 0,
-    "differs": 1
+    "differs": 0
    }
   },
   "call": {
@@ -77,9 +77,9 @@
    }
   },
   "rules": {
-   "implemented": 12,
+   "implemented": 13,
    "pending": 4,
-   "differs": 5
+   "differs": 4
   }
  },
  "units": {
@@ -115,12 +115,11 @@
    "group": "birthday",
    "kind": "assert",
    "label": "band = t1317",
-   "status": "differs",
+   "status": "implemented",
    "rows": [
     "action:ob.kid.pickAge / askLock / lockAge",
     "sub:age bands bandOf"
-   ],
-   "note": "same boundary (13) but the band id is t13, and the 18+ handover band is an open owner decision"
+   ]
   },
   "birthday.02#e:child.age": {
    "group": "birthday",
@@ -1958,11 +1957,10 @@
    "group": "rules",
    "kind": "rule",
    "label": "bands.boundaries",
-   "status": "differs",
+   "status": "implemented",
    "rows": [
     "sub:age bands bandOf"
-   ],
-   "note": "same boundaries (3, 5, 8, 13); the id is t13 where the prototype says t1317, and the 18+ handover band is an open owner decision"
+   ]
   },
   "rules#calls.onlyGuardiansRingOnlyChildKnocks": {
    "group": "rules",

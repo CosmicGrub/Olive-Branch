@@ -25,7 +25,7 @@ void main() {
       const TeenEvent mine = TeenEvent(id: 'a', year: 2026, month: 11, day: 12, title: 'Dentist');
       expect(mine.share.isPrivate, isTrue);
       expect(eventsSharedWith(<TeenEvent>[mine], 'mom'), isEmpty);
-      final TeenEvent shared = TeenEvent(id: 'b', year: 2026, month: 11, day: 12, title: 'Lesson', share: const EventShare.with_(<String>{'dad'}));
+      final TeenEvent shared = const TeenEvent(id: 'b', year: 2026, month: 11, day: 12, title: 'Lesson', share: EventShare.with_(<String>{'dad'}));
       expect(eventsSharedWith(<TeenEvent>[mine, shared], 'dad').map((TeenEvent e) => e.id), <String>['b']);
       expect(eventsSharedWith(<TeenEvent>[mine, shared], 'mom'), isEmpty, reason: 'the other grown-up is not shown it');
     });
@@ -40,7 +40,7 @@ void main() {
     });
 
     test('an event survives JSON and a damaged one is dropped, never fatal', () {
-      final TeenEvent e = TeenEvent(id: 'x', year: 2026, month: 3, day: 4, title: 'Test', share: const EventShare.with_(<String>{'mom', 'dad'}));
+      final TeenEvent e = const TeenEvent(id: 'x', year: 2026, month: 3, day: 4, title: 'Test', share: EventShare.with_(<String>{'mom', 'dad'}));
       final TeenEvent? back = TeenEvent.fromJson(e.toJson());
       expect(back!.title, 'Test');
       expect(back.share.sees('mom') && back.share.sees('dad'), isTrue);

@@ -32,7 +32,7 @@ void main() {
     });
 
     test('events: add, read back in order, remove', () async {
-      await repo.addEvent(TeenEvent(id: 'e2', year: 2026, month: 11, day: 12, title: 'Second', share: const EventShare.with_(<String>{'dad'})));
+      await repo.addEvent(const TeenEvent(id: 'e2', year: 2026, month: 11, day: 12, title: 'Second', share: EventShare.with_(<String>{'dad'})));
       await repo.addEvent(const TeenEvent(id: 'e1', year: 2026, month: 11, day: 11, title: 'First'));
       final List<TeenEvent> all = await repo.events();
       expect(all.map((TeenEvent e) => e.id), <String>['e1', 'e2']);

@@ -1,15 +1,15 @@
 {
  "note": "The parity ratchet. A unit that is implemented here may never regress; pending and differs counts may never rise. When progress lowers them, regenerate with PARITY_UPDATE_BASELINE=1 flutter test test/parity/scenario_parity_test.dart and commit.",
  "totals": {
-  "implemented": 65,
+  "implemented": 67,
   "pending": 128,
-  "differs": 6
+  "differs": 4
  },
  "units": {
   "birthday.01#a0": "implemented",
   "birthday.01#e:child.age": "implemented",
   "birthday.02#a0": "implemented",
-  "birthday.02#e:band": "differs",
+  "birthday.02#e:band": "implemented",
   "birthday.02#e:child.age": "implemented",
   "call.01#a0": "pending",
   "call.01#e:call.state": "pending",
@@ -186,7 +186,7 @@
   "play.07#e:play.state": "implemented",
   "rules#ageLock.lockedStaysLocked": "implemented",
   "rules#ageLock.pickerRange": "differs",
-  "rules#bands.boundaries": "differs",
+  "rules#bands.boundaries": "implemented",
   "rules#calls.onlyGuardiansRingOnlyChildKnocks": "pending",
   "rules#controls.messagesNotHideable": "implemented",
   "rules#deletion.recoveryWindow": "pending",
