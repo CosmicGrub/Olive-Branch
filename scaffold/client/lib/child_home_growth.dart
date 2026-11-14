@@ -3,8 +3,9 @@
 // kid.growLater / kid.birthday; parity scenario `birthday`.
 //
 // THE RULES (all from the prototype):
-//   - Her age moves by itself at LOCAL MIDNIGHT on her birthday ([ageAtLocalDay]); never past 17 here (the
-//     18 handover is wave 2b). A Feb 29 birthday falls on Mar 1 in a common year, as birthdayInfo does.
+//   - Her age moves by itself at LOCAL MIDNIGHT on her birthday ([ageAtLocalDay]). It no longer stops at 17: the
+//     18 handover (wave 2b, child_home_t13.dart) is the page her 18th birthday readies, and her age keeps counting
+//     after it. A Feb 29 birthday falls on Mar 1 in a common year, as birthdayInfo does.
 //   - When the age she is SHOWN crosses one of [kGrowKeys] (5, 8, 10, 13..18), a 'your home grows' page is
 //     READY. When the crossing also changes her band the page is a 'band' page, otherwise a 'rung' page.
 //     Several keys crossed at once: the band key wins, else the last one.
@@ -24,8 +25,9 @@ import 'local_store.dart';
 /// The prototype's bandOf: 3-4, 5-7, 8-12, 13-17 (and over).
 String protoBandOfAge(int a) => a <= 4 ? 't34' : a <= 7 ? 't57' : a <= 12 ? 't812' : 't1317';
 
-/// The oldest age the home understands as a child's band; the 18 handover is wave 2b.
-const int kMaxHomeAge = 17;
+/// A sanity bound on the age the home will ever show (a damaged store cannot count a child up to 400). Not a band edge:
+/// her age is real past 18, and the 13 to 17 home carries the handover card from 18 (child_home_t13.dart).
+const int kMaxHomeAge = 120;
 
 /// Her age on [today] (a local date), given her age on [lastDay] and her birthday's month and day. One year is
 /// added for every birthday that fell after [lastDay] up to and including [today], never past [kMaxHomeAge], never going back.
