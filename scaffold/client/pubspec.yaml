@@ -128,6 +128,8 @@ dev_dependencies:
   # WebSocketChannel — declared explicitly rather than relying on it being a
   # transitive dependency of web_socket_channel.
   stream_channel: ^2.1.4
+  # jitsi_call_provider_test.dart fakes the SDK's platform interface.
+  plugin_platform_interface: ^2.1.8
 
 # See third_party/PATCH.md for the full account of each entry below — never
 # a change to a plugin's own Kotlin/Java source, only a stale build-metadata
