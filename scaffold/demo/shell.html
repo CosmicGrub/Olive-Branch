@@ -528,6 +528,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "auth/attestation", "dep": "node:crypto" },
     { "module": "session-runtime/rooms", "dep": "node:crypto" },
     { "module": "session-runtime/livekit-token", "dep": "livekit-server-sdk" },
+    { "module": "session-runtime/jitsi-token", "dep": "node:crypto" },
     { "module": "storage/storage", "dep": "node:crypto" },
     { "module": "game-sync/table", "dep": "node:crypto" },
     { "module": "game-sync/relay_envelope", "dep": "node:buffer" },
@@ -538,7 +539,7 @@ footer{border-top:1px solid var(--rule);margin-top:30px;padding-top:16px;
     { "module": "transport/apns", "dep": "node:http2" },
     { "module": "transport/notify", "dep": "pg" }
   ],
-  "assertions": 16097,
+  "assertions": 16345,
   "comment": "Coverage of MARKUP screens. Every MARKUP data-screen slug must appear exactly once here — either mapped to a demo screen, or listed with a reason it is not demoed. Enforced by tools/check-markup.mjs (D3).",
   "covers": {
     "childHome": "childHome", "inbox": "inbox", "homework": "homework",

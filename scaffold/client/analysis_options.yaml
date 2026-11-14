@@ -3,11 +3,10 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
-  # third_party/jitsi_meet_flutter_sdk_patched/ (and its analyzer exclude) was
-  # removed by the on-device performance pass: nothing in pubspec.yaml or the
-  # Gradle build referenced it since the LiveKit migration. It remains in git
-  # history (the commit before this one) if the kiosk-lock verification under
-  # MANUAL_VERIFY_call_lock_task.md ever needs the Kotlin it carried.
+  # The vendored third_party/jitsi_meet_flutter_sdk_patched/ is a third-party package:
+  # its own lints are not ours to fix.
+  exclude:
+    - third_party/**
   language:
     strict-casts: true
     strict-inference: true
