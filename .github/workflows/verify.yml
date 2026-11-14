@@ -23,7 +23,10 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest): latest became Ubuntu 26.04 in Nov 2026, whose apt installs postgresql-client 18, so
+    # tools/verify.sh's PGBIN=/usr/lib/postgresql/16/bin/psql vanished and every database suite aborted with
+    # 'Postgres unreachable'. Move this deliberately (and update PGBIN) when the repo is ready for 26.04.
+    runs-on: ubuntu-24.04
     # Measured: ~14-16 minutes. A hung step (a wedged livekit-server, a stuck
     # Postgres connection) otherwise holds the runner for GitHub's 6-hour
     # default; 45 minutes is ~3x the real duration.
@@ -203,7 +206,7 @@ jobs:
   # container that boots and exits 0 on SIGTERM within its stop grace period
   # (the end-to-end proof of the graceful-shutdown fix).
   image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
