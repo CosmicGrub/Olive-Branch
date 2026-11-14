@@ -293,15 +293,20 @@ class _AppLockGuardState extends State<AppLockGuard> {
               Positioned.fill(
                 child: Visibility(visible: !c.covered, maintainState: true, child: widget.child),
               ),
+              // The guard sits in MaterialApp.builder, ABOVE the Navigator and so above any Overlay. A TextField needs an
+              // Overlay for its selection handles (tapping the PIN field threw "Null check operator" on a real device), so
+              // each cover brings its own.
               if (c.hidden)
-                Positioned.fill(child: QuickHideCover(controller: c))
+                Positioned.fill(child: _ownOverlay(QuickHideCover(controller: c)))
               else if (c.locked)
-                Positioned.fill(child: AppLockScreen(controller: c)),
+                Positioned.fill(child: _ownOverlay(AppLockScreen(controller: c))),
             ]);
           },
         ),
       );
 }
+
+Widget _ownOverlay(Widget cover) => Overlay(initialEntries: <OverlayEntry>[OverlayEntry(builder: (BuildContext _) => cover)]);
 
 /// The PIN cover. Plain adult words; no child name, no family detail.
 class AppLockScreen extends StatefulWidget {
