@@ -146,14 +146,14 @@ void main() {
   });
 
   group('tiles appear only if their destination exists', () {
-    test('cal, privacy, feel, shelf and the grown-up door have none yet, so no home or More page draws them', () {
-      for (final String id in <String>['cal', 'privacy', 'feel', 'shelf', 'grownup']) {
+    test('cal, privacy, shelf and the grown-up door have none yet (Feelings has one since wave 6a, behind the Voice switch), so no home or More page draws them', () {
+      for (final String id in <String>['cal', 'privacy', 'shelf', 'grownup']) {
         expect(kTilesWithDestination.contains(id), isFalse, reason: id);
       }
       for (final String b in kBandSet.keys) {
         for (int age in <int>[5, 8, 13, 14]) {
           final List<String> shown = visibleHomeIds(b, age);
-          for (final String id in <String>['cal', 'privacy', 'feel', 'shelf', 'grownup']) {
+          for (final String id in <String>['cal', 'privacy', 'shelf', 'grownup']) {
             expect(shown, isNot(contains(id)), reason: '$id in $b');
           }
         }

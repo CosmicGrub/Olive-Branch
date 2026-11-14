@@ -15,6 +15,9 @@ import 'package:olive_client/family_structure_screens.dart';
 import 'package:olive_client/family_structure_store.dart';
 import 'package:olive_client/grownup_labels.dart';
 import 'package:olive_client/inbox_screen.dart';
+import 'package:olive_client/feelings_corner_screen.dart';
+import 'package:olive_client/my_marks.dart';
+import 'package:olive_client/rhythm_voice_repositories.dart';
 import 'package:olive_client/showcase_screen.dart';
 import 'package:olive_client/weeks_screen.dart';
 
@@ -213,7 +216,7 @@ void main() {
       expect(find.byKey(const Key('moreCaption')), findsOneWidget);
       expect(find.byKey(const Key('moreTile.draw')), findsOneWidget);
       expect(find.byKey(const Key('moreTile.jokes')), findsOneWidget);
-      // No destination yet: Feelings and My things are not drawn at all.
+      // No destination yet for My things; Feelings waits for a grown-up to switch Voice on.
       expect(find.text('Feelings'), findsNothing);
       expect(find.text('My things'), findsNothing);
       expect(find.byKey(const Key('moreEverything')), findsOneWidget);
@@ -241,6 +244,36 @@ void main() {
       expect(find.byType(ChildMoreScreen), findsOneWidget);
     });
 
+    testWidgets('Feelings is drawn only once a grown-up has switched Voice on, and opens the corner', (WidgetTester t) async {
+      await big(t);
+      await t.pumpWidget(app(kidHome(await snap())));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('bandTile.more')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('moreTile.feel')), findsNothing, reason: 'Voice is off until a grown-up turns it on');
+      await t.pumpWidget(const SizedBox());
+      await RhythmVoiceService.forChild(null).setVoiceSuite(guardian, true);
+      await t.pumpWidget(app(kidHome(await snap())));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('bandTile.more')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('moreTile.feel')));
+      await t.pumpAndSettle();
+      expect(find.byType(FeelingsCornerScreen), findsOneWidget);
+      expect(find.byKey(const Key('feelWorry')), findsOneWidget);
+    });
+
+    testWidgets('Growing marks is always hers: it opens the door she marks herself', (WidgetTester t) async {
+      await big(t);
+      await t.pumpWidget(app(kidHome(await snap())));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('bandTile.more')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('moreTile.growth')));
+      await t.pumpAndSettle();
+      expect(find.byType(MyDoorScreen), findsOneWidget);
+    });
+
     testWidgets('Draw & colour offers a doodle or a colouring page', (WidgetTester t) async {
       await big(t);
       await t.pumpWidget(app(kidHome(await snap())));
@@ -251,6 +284,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byKey(const Key('drawDoodle')), findsOneWidget);
       expect(find.byKey(const Key('drawColouring')), findsOneWidget);
+      expect(find.byKey(const Key('drawPictures')), findsOneWidget, reason: 'My saved pictures is the third row');
     });
   });
 

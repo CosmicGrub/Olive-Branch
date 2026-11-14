@@ -28,6 +28,12 @@
 // export, and there is still no guardian read path (P7): the repository below
 // has no reader argument at all and the screen still goes through
 // readJournal() as role 'child'.
+//
+// A LOCK, IF SHE WANTS ONE (journal_lock.dart): from 13 she may put a four-number
+// code on it; a locked journal shows only the keypad until she opens it. Every
+// place that builds this screen in the app passes `lock:` (a source test holds
+// that), so no door to the journal skips the code. A page can be taken out, after
+// a plain "it goes for good" check.
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'access_scope.dart' show motionDuration;
@@ -37,6 +43,7 @@ import 'local_store.dart';
 import 'access_settings.dart' show kChildTarget;
 import 'motion_rules.dart';
 import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels;
+import 'journal_lock.dart';
 import 'picture_bank.dart';
 
 // ================= ported from packages/agency/src/agency.ts (readJournal) =
@@ -111,6 +118,13 @@ class JournalRepository {
     return out;
   }
 
+  /// Takes one page out for good.
+  Future<void> remove(String id) => _ns.delete(_key(id));
+
+  /// Starts a new journal: every page goes, and so does the lock's record. Only her own "I forgot my code" path
+  /// calls this, after she has been told the pages go for good.
+  Future<void> clearAll() => _ns.clear();
+
   /// Throws [LocalStoreFull] (nothing written) when the journal is at its limit.
   Future<void> add(JournalEntry e) => _ns.put(_key(e.id), <String, Object?>{
         'id': e.id,
@@ -140,6 +154,8 @@ class JournalScreen extends StatefulWidget {
     this.childId,
     this.initialEntries = const [],
     this.repository,
+    this.lock,
+    this.childAge,
   });
 
   final String childName;
@@ -152,12 +168,24 @@ class JournalScreen extends StatefulWidget {
   /// Null means the app's sealed on-device journal for [childId].
   final JournalRepository? repository;
 
+  /// The journal's code. Null means no lock is consulted (the offline preview and tests); the app's own callers
+  /// always pass [JournalLock.forChild], so a locked journal can never be opened past its keypad.
+  final JournalLock? lock;
+
+  /// Her age in whole years; the lock row is offered from [kJournalLockAge].
+  final int? childAge;
+
   @override
   State<JournalScreen> createState() => _JournalScreenState();
 }
 
+enum _Gate { checking, locked, open }
+
 class _JournalScreenState extends State<JournalScreen> {
   late List<JournalEntry> _entries;
+  _Gate _gate = _Gate.open;
+  bool _lockOn = false;
+  bool _resting = false;
   final _controller = TextEditingController();
   String? _justAddedId;
   late final String _childId = widget.childId ?? LocalServices.current.childId;
@@ -173,7 +201,128 @@ class _JournalScreenState extends State<JournalScreen> {
     final result = readJournal(widget.initialEntries, 'child', _childId, _childId);
     _entries = List.of(result.entries ?? const <JournalEntry>[]);
     _controller.addListener(_onTextChanged);
-    unawaited(_hydrate());
+    if (widget.lock == null) {
+      unawaited(_hydrate());
+    } else {
+      // Nothing of the journal is read or drawn until the lock has been asked.
+      _gate = _Gate.checking;
+      unawaited(_checkLock());
+    }
+  }
+
+  Future<void> _checkLock() async {
+    bool on = false;
+    try {
+      on = await widget.lock!.isOn();
+    } catch (_) {
+      // An unreadable lock record behaves as no lock (the store quarantined it); the pages are sealed regardless.
+    }
+    if (!mounted) return;
+    setState(() {
+      _lockOn = on;
+      _gate = on ? _Gate.locked : _Gate.open;
+    });
+    if (!on) unawaited(_hydrate());
+  }
+
+  /// A try at the code. A wrong one does nothing visible (the dots just empty); a rest after five is said calmly.
+  Future<void> _tryCode(String code) async {
+    final JournalOpen r = await widget.lock!.tryOpen(code);
+    if (!mounted) return;
+    switch (r) {
+      case JournalOpen.opened:
+      case JournalOpen.notLocked:
+        setState(() {
+          _gate = _Gate.open;
+          _resting = false;
+        });
+        unawaited(_hydrate());
+      case JournalOpen.resting:
+        setState(() => _resting = true);
+      case JournalOpen.wrong:
+        break;
+    }
+  }
+
+  bool get _lockOffered => widget.lock != null && (widget.childAge ?? 0) >= kJournalLockAge;
+
+  Future<void> _setLock() async {
+    final bool? done = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
+        builder: (_) => _JournalLockSetupScreen(lock: widget.lock!)));
+    if (done == true && mounted) setState(() => _lockOn = true);
+  }
+
+  Future<void> _takeLockOff() async {
+    try {
+      await widget.lock!.turnOff();
+      if (mounted) setState(() => _lockOn = false);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("The lock couldn't come off just now. Try again in a moment."), duration: Duration(seconds: 4)));
+    }
+  }
+
+  /// "I forgot my code": the honest way out is a new journal. Nobody else can open this one, so nobody can reset it.
+  Future<void> _forgot() async {
+    final bool? startOver = await showModalBottomSheet<bool>(
+        context: context,
+        builder: (BuildContext c) => SafeArea(
+            child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+                  Text('Nobody else can open your journal, so nobody else can unlock it. Not even a grown-up.',
+                      style: Theme.of(c).textTheme.bodyLarge),
+                  const SizedBox(height: 8),
+                  Text('You can start a new journal. The pages in this one go for good.', style: Theme.of(c).textTheme.bodyLarge),
+                  const SizedBox(height: 16),
+                  SizedBox(height: kChildTarget, child: FilledButton(
+                      key: const Key('journalKeepTrying'), onPressed: () => Navigator.of(c).pop(false), child: const Text('Keep trying'))),
+                  const SizedBox(height: 8),
+                  SizedBox(height: kChildTarget, child: OutlinedButton(
+                      key: const Key('journalStartNew'), onPressed: () => Navigator.of(c).pop(true), child: const Text('Start a new journal'))),
+                ]))));
+    if (startOver != true) return;
+    try {
+      await _repo.clearAll();
+      await widget.lock!.turnOff();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("A new journal couldn't be started just now. Try again in a moment."), duration: Duration(seconds: 4)));
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _entries = <JournalEntry>[];
+      _lockOn = false;
+      _resting = false;
+      _gate = _Gate.open;
+    });
+  }
+
+  /// Takes a page out, after a plain check. It goes for good: there is no bin.
+  Future<void> _takeOut(JournalEntry e) async {
+    final bool? go = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext c) => AlertDialog(
+              title: const Text('Take this page out?'),
+              content: const Text('It goes for good.'),
+              actions: <Widget>[
+                TextButton(key: const Key('journalPageKeep'), onPressed: () => Navigator.of(c).pop(false), child: const Text('Keep it')),
+                FilledButton(key: const Key('journalPageTakeOut'), onPressed: () => Navigator.of(c).pop(true), child: const Text('Take it out')),
+              ],
+            ));
+    if (go != true) return;
+    try {
+      await _repo.remove(e.id);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("That page couldn't be taken out just now."), duration: Duration(seconds: 4)));
+      return;
+    }
+    if (mounted) setState(() => _entries.removeWhere((JournalEntry x) => x.id == e.id));
   }
 
   /// Reads what was kept on this device. Anything this session already added
@@ -248,6 +397,34 @@ class _JournalScreenState extends State<JournalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_gate == _Gate.checking) {
+      return Scaffold(appBar: AppBar(title: const Text('My journal')), body: const SizedBox.shrink());
+    }
+    if (_gate == _Gate.locked) return _lockedView(context);
+    return _openView(context);
+  }
+
+  Widget _lockedView(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('My journal')),
+        body: SafeArea(
+            child: Center(
+                child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                      JournalCodePad(
+                          title: 'Enter your code',
+                          sub: _resting ? "Let's try again in a little while." : 'This journal is locked.',
+                          onCode: _tryCode),
+                      const SizedBox(height: 12),
+                      TextButton(
+                          key: const Key('journalForgot'),
+                          style: TextButton.styleFrom(minimumSize: const Size(kChildTarget, kChildTarget)),
+                          onPressed: _forgot,
+                          child: const Text('I forgot my code')),
+                    ])))),
+      );
+
+  Widget _openView(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('My journal')),
@@ -334,9 +511,25 @@ class _JournalScreenState extends State<JournalScreen> {
                   return Align(
                     key: ValueKey<String>(e.id),
                     alignment: AlignmentDirectional.centerStart,
-                    child: _JournalTile(entry: e, justAdded: e.id == _justAddedId),
+                    child: _JournalTile(entry: e, justAdded: e.id == _justAddedId, onTakeOut: () => _takeOut(e)),
                   );
                 },
+              ),
+            ),
+          if (_lockOffered)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              sliver: SliverToBoxAdapter(
+                child: Card(
+                  child: ListTile(
+                    key: const Key('journalLockRow'),
+                    minVerticalPadding: 12,
+                    leading: const Icon(Icons.lock_outline),
+                    title: Text(_lockOn ? 'Locked with my code' : 'Add a lock'),
+                    subtitle: Text(_lockOn ? 'Tap to take the lock off' : 'Only if I want one'),
+                    onTap: _lockOn ? _takeLockOff : _setLock,
+                  ),
+                ),
               ),
             ),
         ]);
@@ -386,9 +579,10 @@ class _PrivacyBanner extends StatelessWidget {
 }
 
 class _JournalTile extends StatelessWidget {
-  const _JournalTile({required this.entry, required this.justAdded});
+  const _JournalTile({required this.entry, required this.justAdded, required this.onTakeOut});
   final JournalEntry entry;
   final bool justAdded;
+  final VoidCallback onTakeOut;
 
   @override
   Widget build(BuildContext context) {
@@ -400,6 +594,11 @@ class _JournalTile extends StatelessWidget {
             ?.copyWith(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 8),
           Text(entry.body, style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35)),
+          const SizedBox(height: 4),
+          Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(
+            key: ValueKey<String>('takeOut-${entry.id}'),
+            style: TextButton.styleFrom(minimumSize: const Size(kChildTarget, kChildTarget)),
+            onPressed: onTakeOut, icon: const Icon(Icons.delete_outline), label: const Text('Take this page out'))),
         ]),
       ));
     if (!justAdded) return card;
@@ -417,4 +616,60 @@ class _JournalTile extends StatelessWidget {
       child: card,
     );
   }
+}
+
+
+/// Picking the code: four numbers, then the same four again. Pops `true` once the lock is kept; a second try that does
+/// not match simply starts over, in her own gentle words.
+class _JournalLockSetupScreen extends StatefulWidget {
+  const _JournalLockSetupScreen({required this.lock});
+  final JournalLock lock;
+
+  @override
+  State<_JournalLockSetupScreen> createState() => _JournalLockSetupScreenState();
+}
+
+class _JournalLockSetupScreenState extends State<_JournalLockSetupScreen> {
+  String? _first;
+  bool _again = false;
+
+  Future<void> _onCode(String code) async {
+    if (_first == null) {
+      setState(() {
+        _first = code;
+        _again = false;
+      });
+      return;
+    }
+    if (code != _first) {
+      setState(() {
+        _first = null;
+        _again = true;
+      });
+      return;
+    }
+    try {
+      await widget.lock.turnOn(code);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("The lock couldn't be kept just now. Your journal is not locked."), duration: Duration(seconds: 4)));
+      Navigator.of(context).pop(false);
+      return;
+    }
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('A lock for my journal')),
+        body: SafeArea(
+            child: Center(
+                child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: JournalCodePad(
+                        title: _first == null ? 'Pick a code' : 'Pick it again',
+                        sub: _first == null && _again ? "Let's try that again. Four numbers only you know." : 'Four numbers only you know.',
+                        onCode: _onCode)))),
+      );
 }

@@ -900,6 +900,10 @@ CREATE POLICY journal_owner_only ON child_journal_entry
   );
 ```
 
+#### 5.12.1 The journal lock (client, from 13)
+
+From her thirteenth birthday (the ladder's journal rung) a child may put a **four-number code** on her on-device journal. She picks it twice on her own device; it is kept only as a salted PBKDF2-HMAC-SHA256 hash inside the journal's own sealed area (never the numbers; the prototype kept them as plain text), with the same five wrong tries then fifteen minute rest as the local PIN. A locked journal shows only a keypad: no page, no privacy line, until the right code. A wrong code empties the four dots and says nothing (P1: no error text, no count); the rest is a calm "Let's try again in a little while." There is **no reset a grown-up can reach** (P7): *I forgot my code* offers a new journal, says plainly that nobody else can unlock the old one and that its pages go for good, and only then clears them. This is her diary's clasp, not a PIN flow: the standing rule that adults set all PINs on adult devices is about the grown-up's PIN, and nothing here is sent or shared. A page can be taken out after an "It goes for good." check. Every place the app builds the journal passes the lock (a source test holds that), and no guardian-side file imports the journal, its lock or her door marks.
+
 ### 5.13 Rituals
 
 ```sql
@@ -6293,7 +6297,7 @@ drift. Nothing is written that is not in it.
 
 | Area (namespace) | What it holds | Encrypted |
 |---|---|---|
-| `child.<id>.journal` | Her private journal entries (text, date). No guardian read path (P7). | **Yes** |
+| `child.<id>.journal` | Her private journal entries (text, date) and, if she chose a lock from 13 (§5.12.1), the code as a salted PBKDF2 hash with the count toward a 15 minute rest (never the four numbers). No guardian read or reset path (P7). | **Yes** |
 | `child.<id>.lists` | Wants and needs: the words she typed and whether she ticked them. No price (P4). | No |
 | `child.<id>.pictures` | Doodles and colourings she chose to keep (the strokes / region fills, not a raster) and bare photo-taps (where and when only). Never in the phone gallery, never uploaded. | No |
 | `child.<id>.stories` | Starred stories (code, title, date) and bookmarks. **No read counts.** | No |
@@ -6321,6 +6325,7 @@ drift. Nothing is written that is not in it.
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
 | `child.<id>.growing` | Time capsules (note, dates, optional thumbnail), first times, pencil-mark heights, which of the eight Growing and Care suites a guardian switched off. No counts, streaks or comparison. | **Yes** |
 | `child.<id>.memorybox` | What she chose to keep: copies of her doodles and colourings, or small photos. No totals. Under a different key prefix (`gift.`), marked as from them, the short notes or small photos a grown-up left for her (§8.24.5). | **Yes** |
+| `child.<id>.mymarks` | The pencil marks she made herself on her door (Wave 6a, §8.19.6): the day and how far up she tapped, as a fraction of the door. Hers: marks a guardian recorded live in `growing` and neither can change the other. No centimetres, total or comparison. | **Yes** |
 | `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
 | `child.<id>.emergencycard` | The local emergency card a guardian wrote (§8.24.4): allergies, conditions, medicines, doctor, contacts, every word typed by a guardian; the version counter; the append-only history (who, when, what it said before; never deleted); guardians' remembered names. Guardian-only. | **Yes** |
 | `child.<id>.coordination` | Care and coordination, grown-up side only (§8.24.7): the medicines a guardian wrote and their dose log (who gave it and when; never edited or deleted), the expenses a guardian recorded and each answer to them (append-only events, with the explicit self-accept marker), and the handover log (notes in a hash chain with the same framing as the server and the court export). Every word is a guardian's; the app adds no medical text and no amounts and moves no money. Never in her app. | **Yes** |
@@ -7822,7 +7827,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **41 areas, 21 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **42 areas, 22 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
@@ -8167,6 +8172,13 @@ image, so a thumbnail is kept, never a camera original), an item at most 192 KiB
 into the memory box at most 160 KiB, and a count per kind (40 capsules, 200 firsts, 60 marks,
 60 memories, 12 sections, 20 contacts, 20 appointment lists, 12 stories). A full namespace says
 "full" and evicts nothing. The device wipe and "forget this child" remove all four.
+
+### 8.19.6 Wave 6a: her own door, the Feelings corner, Draw & colour
+
+- **Growing marks (her door).** She makes the marks: tap where the top of her head is, a pencil line and the month appear; *Rub out the last mark* removes only the last one she made. Kept in the sealed `child.<id>.mymarks` area as a day and a fraction of the door (no centimetres, no total, no comparison); marks a grown-up recorded stay in `growing` and are listed by month under *From a grown-up* only while their Growing marks switch is on. Reached from More ("Growing marks", from age 5) and from the band More page; the older *My doorframe* picture of grown-up marks is unchanged.
+- **Feelings corner (prototype `k.feel`).** One page gathering The sky in me, Worry box, My helpers and Say it with pictures, offered on the band More page only when a grown-up has switched Voice on (it is off by default) and at least one tool is hers. The prototype's *Tell a grown-up* video-call buttons are **not built**: calls go over the network, which is parked, and a button that cannot place a call would be a fake success.
+- **Draw & colour / Studio.** The hub now has the prototype's third row, *My saved pictures*; it scrolls at 2.0x text.
+- **Not built in 6a, and why.** Several colouring pages and a page picker (the colouring screen is one vector scene; a second scene needs its own region map and a saved-picture shape), journal and weeks date formats (kept: she is never shown a calendar date she did not ask for), the memory box tabs and a child-sealed time capsule (the capsule opens by the device clock and is a larger change), and *Show a grown-up* on a saved picture (no transport).
 
 ### 8.19.5 Not built, and why
 
