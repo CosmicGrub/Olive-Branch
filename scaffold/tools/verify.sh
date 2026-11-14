@@ -424,6 +424,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "presence route: on-duty exclusion + tie-break (real DB)|server/test/presence_route.test.mjs" \
             "ribbon route: GuardianHome live data, real day-parts + windows (real DB)|server/test/ribbon_route.test.mjs" \
             "handover-notes route: real message_log writer (real DB)|server/test/handover_notes_route.test.mjs" \
+            "expiry-digests route: guardian-only reader of the scheduler records (real DB)|server/test/expiry_digest_route.test.mjs" \
             "expenses route: real expense ledger, real lateral-privilege guard (real DB)|server/test/expenses_route.test.mjs" \
             "medications + emergency card route (real DB)|server/test/medications_route.test.mjs" \
             "exchange route: bag manifest, running-late log, arrival event (real DB)|server/test/exchange_route.test.mjs" \

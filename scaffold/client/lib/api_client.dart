@@ -260,6 +260,9 @@ class OliveApi {
   // this as a real, honest gap, same as [childPresence] above; not
   // retrofitted to a stale declaration.
   static const handoverNotes = '/v1/children/:childId/handover-notes';
+  // --- the expiry digest (MASTERFILE 16.2 #5): GET, guardian only. The scheduler's
+  // `expiry-digest` job records it; this is the reader. Ids, kinds and dates only.
+  static const expiryDigests = '/v1/children/:childId/expiry-digests';
   // --- expenses (§9.6.5, P6) -- real for the first time as of this pass,
   // same audit/pass that closed [handoverNotes] above. `expense`
   // (db/migrations/0006_court_tier.sql) has had real FORCE RLS since it was
@@ -634,6 +637,13 @@ class OliveApi {
   /// explains ("Not the child's... it's the parents'").
   Future<Map<String, dynamic>> fetchHandoverNotes(String childId) =>
       _get(handoverNotes, childId: childId);
+
+  /// `{digests: [{id, generatedAt, leadDays, itemCount, earliestExpiry, latestExpiry,
+  /// items: [{artifactId, kind, expiresAt}]}]}` -- GET [expiryDigests], newest first. Never
+  /// captions. Throws [ApiException] on any non-2xx response, notably 403
+  /// `not_a_child_surface` for a child session (a child is never shown this).
+  Future<Map<String, dynamic>> fetchExpiryDigests(String childId) =>
+      _get(expiryDigests, childId: childId);
 
   /// Appends ONE new entry to [childId]'s real parent-to-parent handover
   /// log -- POST [handoverNotes], server/routes.mjs's real handler

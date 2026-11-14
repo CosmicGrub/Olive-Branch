@@ -415,6 +415,22 @@ class GuardianMoreScreen extends StatelessWidget {
     }
   }
 
+  /// The expiry digest reader's loader: the real GET .../expiry-digests when this hub has a live
+  /// session (baseUrl and guardianId, the same pair every live tile here uses), otherwise null so the
+  /// screen says plainly it is a later thing. A fresh session per call, like the PIN callbacks above.
+  ExpiryDigestLoader? _liveExpiryDigests() {
+    final url = baseUrl, gid = guardianId;
+    if (url == null || gid == null) return null;
+    return () async {
+      final api = await apiFor(url, userId: gid, client: availabilityHttpClient);
+      try {
+        return await api.fetchExpiryDigests(childId);
+      } finally {
+        if (availabilityHttpClient == null) api.close();
+      }
+    };
+  }
+
   /// Opens the real AvailabilityScreen when this hub has actually been given
   /// a live session to hand it (see the field doc comment above); otherwise
   /// gives honest feedback rather than a silent no-op or a screen built on
@@ -832,7 +848,7 @@ class GuardianMoreScreen extends StatelessWidget {
         HubSection(title: 'Archive', children: [
           HubTile(icon: Icons.hourglass_bottom, title: 'Expiry digest',
             subtitle: 'Preservation is the rule; this is just the 14-day reminder',
-            onTap: () => _open(context, const ExpiryDigestScreen())),
+            onTap: () => _open(context, ExpiryDigestScreen(load: _liveExpiryDigests()))),
           HubTile(icon: Icons.gavel_outlined, title: 'Court export',
             subtitle: 'Chunked under the transfer ceiling',
             onTap: () => _open(context,

@@ -4215,6 +4215,25 @@ is ever lost without the guardian having been given the chance to say otherwise,
 which is the whole of the user's instruction and the reason the posture is
 defensible rather than merely generous.
 
+### The reader (guardian More / Archive)
+
+The scheduler job `expiry-digest` (S-D2) records one `expiry_digest` row per child per
+distinct set (migration 0044; ids, kinds and dates only, never a caption). The reader is
+`GET /v1/children/:childId/expiry-digests` (`server/routes.mjs`; action `archive.preserve`,
+so exactly the roles that may keep an artifact may read the reminder; a child session is
+refused `403 not_a_child_surface`; at most five digests, newest first, only those whose last
+expiry is still ahead) and `ExpiryDigestScreen` (`expiry_digest.dart`, More / Archive /
+Expiry digest). It shows one plain list across the recorded digests (each artifact once,
+soonest date wins, soonest first, "Clears tomorrow" / "Clears in N days") under a plain
+headline, quiet by design: no badge, no count on the row, no push. It never invents a row:
+with no server session it says "Later" plainly (this device is not connected to one yet,
+nothing is lost by waiting, anything a grown-up sends is kept by default); when the server
+cannot be reached it says so and offers Try again, never an empty "All clear" that could be a
+lie. **Keeping one from here is NOT built:** it needs the network and an archive keep route,
+and the screen says so and shows no button (the former demo's local "Keep forever" button,
+which kept nothing real, is gone). Tests: `server/test/expiry_digest_route.test.mjs` (real
+Postgres, real RLS) and `expiry_digest_test.dart`.
+
 ### The digest is never shown to a child
 
 *"These memories are about to be deleted"* is a sentence no eight-year-old should
@@ -5201,10 +5220,36 @@ are open all day: the saved window is cleared), a 6 AM to 9 PM timeline, the ope
 rests pickers, the wind-down choice, "What she sees at <rest time>", a live line
 "On <her> tablet right now: games are open / winding down / resting", and **Daily time**
 (off, 1, 2 or 3 hours; reading and watching share one total across both homes). Daily
-time is kept on this device (`home_plan_store.dart`, area `plan`) and is honest about
-what it does: no screen counts her minutes (P2), so today it records the total a
-guardian chose and stops nothing, and a raise cannot yet be shown to the other guardian
-(network). The card says both in words.
+time is kept on this device (`home_plan_store.dart`, area `plan`) and, since the
+daily-time item, **is enforced on her device**.
+
+**Daily time enforcement** (`daily_time_gate.dart`, `daily_time_logic.dart`,
+`daily_time_store.dart`). `DailyTimeGate` wraps a reading or watching door (today: the
+storyteller; a watch-together session needs the network and is not built). While that
+surface is on screen, the app is in front and the total is not off, the device counts
+its own seconds against her LOCAL clock, kept in `child.<id>.daytime` (one day: the first
+tick of a new local day starts from nothing, and any extra time a grown-up added is gone
+too; there is no history and nothing is sent). Nothing counts while the app is in the
+background, while another door (a game, a call, a message) is in front, or across a long
+sleep (a jump in the clock adds at most a few ticks). The states: **open** (nothing is
+shown: no clock, no bar, no counter), **winding down** (the last five minutes: one calm
+line in kid words, "Almost time to rest our eyes. One more, then we are done for today.",
+over the surface she is reading, which she may finish), **done** (a rest card replaces the
+surface: "All done for today. Your eyes can rest now, and there is more tomorrow."). Her
+words carry no number, minutes, hours, limit, lock, timer or reward (P1 to P11; tests hold
+this), and the gate imports neither calls nor messages: **calls and family messages are
+never affected.** A grown-up can allow 30 more minutes for TODAY (never more than three
+hours extra in a day) two ways: on the rest card a quiet "I'm the grown-up" opens the adult
+gate through `GrownUpProofScope` (the kiosk shell supplies it with its own PIN check and
+phone unlock, so a child never sees a keypad flow here and a device with no way to prove it
+shows no button at all), then plain words ("Reading and watching time for Ivy is used up for
+today on this device. It starts again at midnight. Calls and family messages are not
+affected.") and "Allow 30 more minutes today"; or on the guardian's own Daily time card,
+which also shows "Used today on this device: 40 min" (minutes are fine for a grown-up, never
+for her). The total is **per device**: one shared total across both homes, and telling the
+other guardian about a raise, need the network and stay parked; the card says both in
+words. Tests: `daily_time_test.dart` (rules, store, gate, midnight, background, asleep,
+proof flow, the real storyteller door, 344/390/600/800 dp at 2.0x text, prohibitions).
 
 ### 8.6.7 The guardian Settings hub
 
@@ -6270,6 +6315,7 @@ drift. Nothing is written that is not in it.
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
 | `guardian.local-guardian.localpin` | The grown-up's PIN for this device only (§8.5.9): PBKDF2-HMAC-SHA256 hash, salt, round count and the count toward a 15 minute lock. Never the PIN itself; not the account PIN; never sent. | **Yes** |
 | `child.<id>.nicknames` | What she calls each grown-up if she renamed one (§8.5.7): a contact id and the word she chose. Hers: a grown-up can see it, not change it. No count or ranking. | No |
+| `child.<id>.daytime` | Today only: the date, the seconds of reading and watching this device has seen today, and any extra minutes a grown-up allowed for today (§8.6.6). Starts empty at local midnight; yesterday is not kept. Never shown to her as a number; no history, streak, score or total; never sent. | No |
 | `child.<id>.homegrowth` | The age her home last showed and, after a birthday, whether the 'your home grows' page is waiting, was seen, or was put off with Not now (§8.1.1). Nothing else: no count, streak or reward. | No |
 | `child.<id>.playsave` | A game in progress on the dealing phone only (Uno, Connect 4), so it carries on after the OS closes the app: the cards or the board and whose turn it is (§9.2). No winner, result or score; deleted when the game ends or a grown-up chooses Finish for now; the other phone keeps nothing. Written as plain JSON of at most 16 KiB and refused if it carries an outcome word. | **Yes** |
 | `child.<id>.outbox` | Things made offline, waiting to go. Never shown to her as a queue. Items whose payload is raw bytes cannot be written and are reported as skipped, not faked. | No |
@@ -7776,7 +7822,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **40 areas, 21 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **41 areas, 21 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 

@@ -43,6 +43,7 @@ import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
 import 'adult_gate.dart';
+import 'daily_time_gate.dart' show GrownUpProofScope;
 import 'local_pin.dart' show kLocalPinMaxDigits;
 import 'unlock_challenge.dart' show kPhoneProof;
 
@@ -156,6 +157,13 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
     setState(() => _state = lock.submitChildPin(_state, correct, DateTime.now()));
   }
 
+  /// True only after the adult gate returned a code or the phone's verified answer that [_proves] accepts.
+  Future<bool> _grownUpProves(BuildContext context) async {
+    final code = await askAdultPin(context, digits: _digits, confirmLabel: _confirm, phone: widget.phoneUnlock);
+    if (code == null || !mounted) return false;
+    return _proves(code);
+  }
+
   Future<void> _attemptBreakGlass() async {
     // The grown-up already tapped "I'm the grown-up" on the locked-out screen: straight to the keypad.
     final code = await askAdultPin(context, digits: _digits, startOpen: true, confirmLabel: _confirm, phone: widget.phoneUnlock);
@@ -208,7 +216,9 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
     final now = DateTime.now();
     if (lock.canRender(_state, lock.Surface.childHome, now)) {
       return Stack(children: [
-        widget.child,
+        // A grown-up proving who they are for a small thing on her screen (daily time) uses the same
+        // PIN check and phone unlock as every other adult step; the shell owns it, nothing else does.
+        GrownUpProofScope(verify: _grownUpProves, child: widget.child),
         _EscalationTrigger(onTap: _attemptEscalation),
       ]);
     }

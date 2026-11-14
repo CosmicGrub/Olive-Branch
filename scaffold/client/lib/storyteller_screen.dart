@@ -26,6 +26,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'access_scope.dart';
+import 'daily_time_gate.dart';
 import 'read_aloud.dart' show SpeakerButton;
 import 'form_factors.dart' as ff;
 import 'hub_widgets.dart';
@@ -206,8 +207,13 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
     _persist();
   }
 
+  /// Reading is one of the two things the grown-up's daily total covers (daily_time_gate.dart): a quiet
+  /// wind-down line near the end, then a rest card. Nothing shows a number.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      DailyTimeGate(childName: widget.childName, child: _scaffold(context));
+
+  Widget _scaffold(BuildContext context) {
     final accent = widget.colourSeed ?? Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(title: const Text('The storyteller')),

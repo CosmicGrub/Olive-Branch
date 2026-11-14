@@ -8,6 +8,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/daily_time_gate.dart';
+import 'package:olive_client/daily_time_logic.dart';
+import 'package:olive_client/daily_time_store.dart';
+import 'package:olive_client/home_plan_store.dart';
 import 'package:olive_client/guardian_escalation_screen.dart';
 import 'package:olive_client/kiosk_channel.dart';
 import 'package:olive_client/kiosk_shell.dart';
@@ -52,6 +56,53 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('child home'), findsOneWidget);
       expect(find.byKey(const Key('guardianEscalationTrigger')), findsOneWidget);
+    });
+  });
+
+  group('daily time: a grown-up proves it through the shell, a child sees no keypad flow', () {
+    testWidgets('the rest card button opens the adult gate card, then the keypad; the right PIN '
+        'reaches the plain adult words and allowing more brings the story back; a wrong PIN changes nothing', (t) async {
+      for (final bool right in <bool>[false, true]) {
+        final DateTime now = DateTime(2026, 11, 14, 10);
+        final MemoryDayUseRepository usage = MemoryDayUseRepository(const DayUse(day: '2026-11-14', seconds: 3600));
+        await t.pumpWidget(wrap(KioskShell(
+          key: UniqueKey(),
+          verifyPin: right ? alwaysTruePin : alwaysFalsePin, verifyBiometric: alwaysTrueBiometric, childName: 'Ivy',
+          child: DailyTimeGate(
+            childName: 'Ivy', clock: () => now, tick: const Duration(seconds: 10),
+            plan: MemoryHomePlanRepository(const HomePlan(dailyHours: 1)), usage: usage,
+            child: const Scaffold(body: Text('the story')),
+          ),
+        )));
+        await t.pumpAndSettle();
+        expect(find.byKey(const Key('dailyRestLine')), findsOneWidget);
+        expect(find.byType(PinGate), findsNothing, reason: 'a child never sees a keypad');
+
+        await t.tap(find.byKey(const Key('dailyGrownUp')));
+        await t.pumpAndSettle();
+        expect(find.byKey(const Key('adultGateCard')), findsOneWidget, reason: 'the calm card first');
+        expect(find.byType(PinGate), findsNothing);
+        await t.tap(find.byKey(const Key('adultGateGrownUp')));
+        await t.pumpAndSettle();
+        for (final d in const [1, 1, 1, 1]) {
+          await t.tap(find.text('$d').first);
+          await t.pump();
+        }
+        await t.tap(find.byKey(const Key('pinGateConfirm')));
+        await t.pumpAndSettle();
+
+        if (right) {
+          expect(find.byKey(const Key('dailyAdultLine')), findsOneWidget);
+          await t.tap(find.byKey(const Key('dailyAllowMore')));
+          await t.pumpAndSettle();
+          expect(find.text('the story'), findsOneWidget);
+          expect((await usage.load('2026-11-14')).bonusMinutes, kDailyBonusStepMinutes);
+        } else {
+          expect(find.byKey(const Key('dailyAdultLine')), findsNothing);
+          expect(find.byKey(const Key('dailyRestLine')), findsOneWidget);
+          expect((await usage.load('2026-11-14')).bonusMinutes, 0);
+        }
+      }
     });
   });
 

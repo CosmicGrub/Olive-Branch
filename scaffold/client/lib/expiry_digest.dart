@@ -7,6 +7,15 @@
 // ExpiringArtifact, ExpiryDigest, expiringSoon(), digestVisibleTo(),
 // keepForever().
 //
+// THE READER (daily-time lane): [ExpiryDigestScreen] shows what the server's scheduler job
+// (`expiry-digest`, migration 0044) recorded, read from GET /v1/children/:id/expiry-digests
+// (guardian only). A plain list: what it is and how long is left. It is quiet by design: no
+// badge, no count on the More row, no push. It never invents rows: with no server to ask it says
+// plainly that this is a later thing, and when the server cannot be reached it says that
+// instead and offers Try again, never an empty "All clear" that could be a lie. The records
+// hold ids, kinds and dates only (never a caption). Keeping one needs the network and the
+// archive's keep route, which are not built; the screen says so and offers no fake button.
+//
 // §10.1b: preservation is a standing rule, not an election — anything a
 // guardian sends is kept by default. This digest is the ONLY reminder
 // surface for the narrow category that is NOT covered by that rule
@@ -20,7 +29,6 @@
 // experiences only the outcome. This screen is never navigated to from any
 // child-facing widget in this codebase.
 import 'package:flutter/material.dart';
-import 'access_scope.dart' show motionDuration;
 
 // =========================================================== retention.ts ==
 const int digestLeadDays = 14;
@@ -98,98 +106,182 @@ List<String> keepForever(List<String> ids, List<ArtifactSeed> all) => all
   .where((ArtifactSeed a) => ids.contains(a.id) && !a.preserved)
   .map((ArtifactSeed a) => a.id).toList();
 
-// ============================================================== the demo ===
-final DateTime _now = DateTime.utc(2026, 8, 4);
-List<ArtifactSeed> _demoArtifacts() => <ArtifactSeed>[
-  ArtifactSeed(id: 'c1', kind: 'call_clip', caption: 'a laugh from Tuesday\'s call',
-    capturedAt: _now.subtract(const Duration(days: 20)), preserved: false,
-    expiresAt: _now.add(const Duration(days: 3))),
-  ArtifactSeed(id: 'c2', kind: 'screen_frame', caption: null,
-    capturedAt: _now.subtract(const Duration(days: 25)), preserved: false,
-    expiresAt: _now.add(const Duration(days: 9))),
-  ArtifactSeed(id: 'c3', kind: 'call_clip', caption: 'her show-and-tell moment',
-    capturedAt: _now.subtract(const Duration(days: 2)), preserved: false,
-    expiresAt: _now.add(const Duration(days: 27))), // outside the lead window
-  ArtifactSeed(id: 'c4', kind: 'session_media', caption: 'a doodle-desk snapshot',
-    capturedAt: _now.subtract(const Duration(days: 1)), preserved: true,
-    expiresAt: _now.add(const Duration(days: 5))), // preserved — never appears
-];
+// ============================================================ the reader ===
+/// One thing the server recorded as about to be cleared. Ids, kinds and dates only.
+class DigestEntry {
+  const DigestEntry({required this.artifactId, required this.kind, required this.expiresAt, required this.daysLeft});
+  final String artifactId;
+  final String kind;
+  final DateTime expiresAt;
+  final int daysLeft;
+}
+
+/// Reads the server's `{digests: [...]}` body into one plain list: every still-future item across the
+/// recorded digests, each artifact once (the soonest date wins), soonest first. Tolerant: a malformed
+/// row is skipped, never thrown. Already-passed items are dropped (offering to save what the reaper has
+/// taken would be a lie).
+List<DigestEntry> readExpiryDigests(Object? body, DateTime now) {
+  final Map<String, DigestEntry> byId = <String, DigestEntry>{};
+  final Object? digests = body is Map ? body['digests'] : null;
+  if (digests is! List) return <DigestEntry>[];
+  for (final Object? d in digests) {
+    final Object? items = d is Map ? d['items'] : null;
+    if (items is! List) continue;
+    for (final Object? i in items) {
+      if (i is! Map) continue;
+      final Object? id = i['artifactId'], kind = i['kind'], at = i['expiresAt'];
+      if (id is! String || kind is! String || at is! String) continue;
+      final DateTime? exp = DateTime.tryParse(at);
+      if (exp == null) continue;
+      final int left = (exp.difference(now).inHours / 24).ceil();
+      if (left <= 0) continue;
+      final DigestEntry? seen = byId[id];
+      if (seen == null || exp.isBefore(seen.expiresAt)) {
+        byId[id] = DigestEntry(artifactId: id, kind: kind, expiresAt: exp, daysLeft: left);
+      }
+    }
+  }
+  return byId.values.toList()
+    ..sort((DigestEntry a, DigestEntry b) => a.expiresAt.compareTo(b.expiresAt));
+}
+
+String digestHeadline(int n) => n == 0 ? 'Nothing is due to be cleared.'
+    : n == 1 ? 'One thing is due to be cleared soon.'
+    : '$n things are due to be cleared soon.';
+
+/// Asks the server for the recorded digests (OliveApi.fetchExpiryDigests). Throws when it cannot.
+typedef ExpiryDigestLoader = Future<Map<String, dynamic>> Function();
 
 class ExpiryDigestScreen extends StatefulWidget {
-  const ExpiryDigestScreen({super.key});
+  const ExpiryDigestScreen({super.key, this.load, this.clock});
+
+  /// Null means this device is not connected to a server: the screen says so, plainly.
+  final ExpiryDigestLoader? load;
+
+  /// Now (null = the device clock). Injected by tests.
+  final DateTime Function()? clock;
+
   @override
   State<ExpiryDigestScreen> createState() => _ExpiryDigestScreenState();
 }
 
-class _ExpiryDigestScreenState extends State<ExpiryDigestScreen> {
-  late List<ArtifactSeed> _artifacts = _demoArtifacts();
+enum _Phase { loading, later, offline, ready }
 
-  void _keep(String id) => setState(() {
-    final List<String> kept = keepForever(<String>[id], _artifacts);
-    _artifacts = _artifacts.map((ArtifactSeed a) =>
-      kept.contains(a.id)
-        ? ArtifactSeed(id: a.id, kind: a.kind, caption: a.caption, capturedAt: a.capturedAt,
-            preserved: true, expiresAt: a.expiresAt)
-        : a).toList();
-  });
+class _ExpiryDigestScreenState extends State<ExpiryDigestScreen> {
+  late _Phase _phase = widget.load == null ? _Phase.later : _Phase.loading;
+  List<DigestEntry> _items = <DigestEntry>[];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.load != null) _fetch();
+  }
+
+  Future<void> _fetch() async {
+    final ExpiryDigestLoader load = widget.load!;
+    setState(() => _phase = _Phase.loading);
+    try {
+      final Map<String, dynamic> body = await load();
+      final List<DigestEntry> items = readExpiryDigests(body, (widget.clock ?? DateTime.now)().toUtc());
+      if (!mounted) return;
+      setState(() { _items = items; _phase = _Phase.ready; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _phase = _Phase.offline);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final ExpiryDigest digest = expiringSoon(_artifacts, _now);
+    final ThemeData theme = Theme.of(context);
+    final Color quiet = theme.colorScheme.onSurfaceVariant;
+    final Widget body;
+    switch (_phase) {
+      case _Phase.loading:
+        body = const Center(child: CircularProgressIndicator());
+      case _Phase.later:
+        body = const _Note(
+          key: Key('digestLater'),
+          icon: Icons.cloud_off_outlined,
+          title: 'Later',
+          text: 'This list comes from your family’s server, and this device is not connected to one yet. '
+              'Nothing is lost by waiting: anything a grown-up sends is kept by default.',
+        );
+      case _Phase.offline:
+        body = _Note(
+          key: const Key('digestOffline'),
+          icon: Icons.cloud_off_outlined,
+          title: 'Could not reach the server',
+          text: 'Nothing was cleared by that. Try again when you are connected.',
+          action: FilledButton(
+            key: const Key('digestRetry'),
+            onPressed: _fetch,
+            child: const Text('Try again'),
+          ),
+        );
+      case _Phase.ready:
+        body = ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+          Text(digestHeadline(_items.length), key: const Key('digestHeadline'), style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text('For grown-ups only. Never shown to her.', style: theme.textTheme.bodySmall?.copyWith(color: quiet)),
+          const SizedBox(height: 12),
+          for (final DigestEntry e in _items)
+            Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                key: Key('digest-${e.artifactId}'),
+                title: Text(_kindLabel(e.kind)),
+                subtitle: Text(e.daysLeft == 1 ? 'Clears tomorrow' : 'Clears in ${e.daysLeft} days'),
+              ),
+            ),
+          if (_items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Column(children: <Widget>[
+                Icon(Icons.check_circle_outline, size: 40, color: quiet),
+                const SizedBox(height: 12),
+                Text('All clear.', style: theme.textTheme.bodyMedium?.copyWith(color: quiet)),
+              ]),
+            ),
+          const SizedBox(height: 12),
+          Text('Anything a grown-up sends is kept by default; this list is only for incidental capture that is not. '
+              'Keeping one from here needs the network, which is not built yet.',
+              key: const Key('digestKeepLater'), style: theme.textTheme.bodySmall?.copyWith(color: quiet)),
+        ]);
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Expiry digest')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text(digest.headline, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text('Guardian-only, always — never shown to her.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 12),
-        if (digest.byKind.isNotEmpty)
-          Wrap(spacing: 8, children: [
-            for (final ByKind bk in digest.byKind)
-              Chip(label: Text('${_kindLabel(bk.kind)} · ${bk.count}')),
-          ]),
-        const SizedBox(height: 12),
-        for (final ExpiringArtifact a in digest.items)
-          AnimatedSize(duration: motionDuration(context, 200),
-            child: _ExpiringTile(artifact: a, onKeep: () => _keep(a.artifactId))),
-        if (digest.items.isEmpty)
-          // 40/12 matches the house "nothing pending" empty-state idiom used
-          // throughout (journal_screen.dart, letters_screen.dart,
-          // teach_me.dart, weeks_screen.dart, inbox_screen.dart, etc.) — was
-          // 32/8, an unintentional one-off from before that idiom settled.
-          Padding(padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Column(children: [
-              Icon(Icons.check_circle_outline, size: 40,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 12),
-              Text('All clear.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            ])),
-      ])),
+      body: SafeArea(child: body),
     );
   }
 }
 
 String _kindLabel(String kind) => switch (kind) {
-  'call_clip' => 'Call clips',
-  'screen_frame' => 'Screenshare frames',
+  'call_clip' => 'Call clip',
+  'screen_frame' => 'Screenshare frame',
   'session_media' => 'Session media',
-  _ => kind,
+  _ => 'Other',
 };
 
-class _ExpiringTile extends StatelessWidget {
-  const _ExpiringTile({required this.artifact, required this.onKeep});
-  final ExpiringArtifact artifact;
-  final VoidCallback onKeep;
+class _Note extends StatelessWidget {
+  const _Note({super.key, required this.icon, required this.title, required this.text, this.action});
+  final IconData icon;
+  final String title;
+  final String text;
+  final Widget? action;
+
   @override
-  Widget build(BuildContext context) => Card(margin: const EdgeInsets.only(bottom: 8),
-    child: ListTile(
-      title: Text(artifact.caption ?? _kindLabel(artifact.kind)),
-      subtitle: Text('${artifact.daysLeft == 1 ? '1 day' : '${artifact.daysLeft} days'} left'),
-      // 48dp minimum tap target — was 40dp.
-      trailing: SizedBox(height: 48, child: OutlinedButton(
-        onPressed: onKeep, child: const Text('Keep forever'))),
-    ));
+  Widget build(BuildContext context) => Center(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        Icon(icon, size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant),
+        const SizedBox(height: 12),
+        Text(title, style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+        const SizedBox(height: 8),
+        Text(text, textAlign: TextAlign.center),
+        if (action != null) ...<Widget>[const SizedBox(height: 16), action!],
+      ]),
+    ),
+  );
 }

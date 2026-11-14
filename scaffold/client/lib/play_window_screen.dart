@@ -17,16 +17,19 @@
 // messages never pass through it, by construction: this file imports neither.
 // Local-first: the window lives behind [GuardianColourStore]/[ChildColourStore].
 //
-// DAILY TIME is the grown-up's chosen ceiling for reading and watching together
-// across both homes (off, 1, 2 or 3 hours). It is kept on this device
-// (home_plan_store.dart). Be honest about what it does: nothing in her app counts
-// minutes (P2 forbids showing her a count, and no screen keeps one), so today it
-// records the total a guardian chose and does not stop anything; the card says so
-// in words. A raise is something the other guardian will be told, which needs
-// the network that is not built yet, and the card says that too. It never fakes
-// either.
+// DAILY TIME is the grown-up's chosen total for reading and watching together
+// (off, 1, 2 or 3 hours). It is kept on this device (home_plan_store.dart) and is ENFORCED on her
+// device by daily_time_gate.dart: while a reading or watching door is open the device counts its
+// own seconds (daily_time_store.dart, one day, reset at her local midnight), shows her one calm
+// line near the end and a rest card at the end, and never shows her a number (P2). This card says
+// what it does in plain words, shows the grown-up today's use ON THIS DEVICE (minutes are fine for
+// a grown-up), and lets them allow 30 more minutes for today. The total is per device: families
+// sharing one total across both homes needs the network, which is not built yet, and so does telling
+// the other guardian about a raise. The card says both. It never fakes either.
 import 'package:flutter/material.dart';
 import 'colour_day_logic.dart';
+import 'daily_time_logic.dart';
+import 'daily_time_store.dart';
 import 'her_colour_store.dart';
 import 'home_plan_store.dart';
 import 'ui/olive_ui.dart';
@@ -42,13 +45,19 @@ String minuteLabel(int m) {
 const int kTimelineFrom = 6 * 60, kTimelineTo = 21 * 60;
 
 class PlayWindowScreen extends StatefulWidget {
-  const PlayWindowScreen({super.key, required this.childName, this.store, this.plan});
+  const PlayWindowScreen({super.key, required this.childName, this.store, this.plan, this.usage, this.clock});
 
   final String childName;
   final GuardianColourStore? store;
 
   /// Null uses the on-device plan for the shared child.
   final HomePlanRepository? plan;
+
+  /// Today's use on this device. Null uses the on-device one.
+  final DayUseRepository? usage;
+
+  /// The local clock (null = the device clock). Injected by tests.
+  final DateTime Function()? clock;
 
   @override
   State<PlayWindowScreen> createState() => _PlayWindowScreenState();
@@ -57,6 +66,8 @@ class PlayWindowScreen extends StatefulWidget {
 class _PlayWindowScreenState extends State<PlayWindowScreen> {
   late final GuardianColourStore _store = widget.store ?? sharedColourStore;
   late final HomePlanRepository _planRepo = widget.plan ?? LocalStoreHomePlanRepository.shared();
+  late final DayUseRepository _usageRepo = widget.usage ?? LocalStoreDayUseRepository.shared();
+  DayUse? _use;
   int _opens = 15 * 60 + 30, _rests = 19 * 60, _wind = 30;
   bool _on = true;
   bool _loaded = false;
@@ -74,8 +85,15 @@ class _PlayWindowScreenState extends State<PlayWindowScreen> {
   Future<void> _load() async {
     final i = await _store.playWindow();
     final p = await _planRepo.load();
+    DayUse? u;
+    try {
+      u = await _usageRepo.load(localDayKey((widget.clock ?? DateTime.now)()));
+    } catch (_) {
+      u = null;
+    }
     if (!mounted) return;
     setState(() {
+      _use = u;
       final w = i.window;
       _on = w != null;
       if (w != null) { _opens = w.opensMin; _rests = w.restsMin; _wind = w.windDownMin; }
@@ -125,6 +143,19 @@ class _PlayWindowScreenState extends State<PlayWindowScreen> {
       }
     } catch (_) {
       if (mounted) setState(() => _dailyMsg = 'Changed for now, but this device could not keep it.');
+    }
+  }
+
+  Future<void> _allowMore() async {
+    final u = _use;
+    if (u == null || !canAllowMore(u.bonusMinutes)) return;
+    final next = u.copyWith(bonusMinutes: nextBonusMinutes(u.bonusMinutes));
+    setState(() { _use = next; _dailyMsg = null; });
+    try {
+      await _usageRepo.save(next);
+      if (mounted) setState(() => _dailyMsg = 'Allowed $kDailyBonusStepMinutes more minutes for today on this device. It ends at midnight.');
+    } catch (_) {
+      if (mounted) setState(() => _dailyMsg = 'Allowed for now, but this device could not keep it.');
     }
   }
 
@@ -219,8 +250,19 @@ class _PlayWindowScreenState extends State<PlayWindowScreen> {
       Text(_plan.dailyNote ?? 'Lowering is free. A raise will be shown to the other guardian once families can connect.',
         key: const Key('dailyNote'), style: theme.textTheme.bodySmall),
       const SizedBox(height: 6),
-      Text('Kept on this device. $name’s screens do not count minutes yet, so nothing stops at this total today; '
-        'it records the total you chose.', key: const Key('dailyHonest'), style: theme.textTheme.bodySmall),
+      Text('Kept on this device. When the total is on, $name’s reading and watching on this device rest gently once '
+        'it is used up, and start again at midnight. She is never shown a number. Calls and family messages are '
+        'never affected. One shared total across both homes needs the network, which is not built yet.',
+        key: const Key('dailyHonest'), style: theme.textTheme.bodySmall),
+      if (_plan.dailyHours > 0 && _use != null) ...[
+        const SizedBox(height: 6),
+        Text(dailyUsedToday(_use!), key: const Key('dailyUsed'), style: theme.textTheme.bodySmall),
+        const SizedBox(height: 6),
+        Align(alignment: Alignment.centerLeft, child: OutlinedButton(
+          key: const Key('dailyAllowMoreHere'),
+          onPressed: canAllowMore(_use!.bonusMinutes) ? _allowMore : null,
+          child: const Text('Allow $kDailyBonusStepMinutes more minutes today'))),
+      ],
       if (_dailyMsg != null) Padding(padding: const EdgeInsets.only(top: 6),
         child: Text(_dailyMsg!, key: const Key('dailyMsg'))),
     ]),
