@@ -72,13 +72,13 @@ void main() {
   });
 
   group('the advertisement is neutral', () {
-    test('it carries a generic type, a random label and a random handle: no adult name, no session id, no fingerprint', () async {
+    test('it carries a generic type, a neutral seat name and a random handle: no adult name, no session id, no fingerprint', () async {
       final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
       final AdultWindow w = await AdultWindow.open(
           adultKey: ak, adultName: 'Margaret Okafor', familyId: 'the-okafor-family', childId: 'c', childName: 'Ivy',
           pin: '4829', makeUnlockVerifier: _cheap);
       final LanPairingHost host = LanPairingHost(w);
-      final s = host.advertisedService(4242);
+      final s = host.advertisedService(4242, await w.windowTag());
       final String everything = '${s.name}|${s.type}|${s.attributes.entries.map((e) => '${e.key}=${e.value}').join('|')}';
       expect(s.type, kPairServiceType);
       expect(s.type.length - '._tcp'.length - 1, lessThanOrEqualTo(15), reason: 'RFC 6763 service name length');
@@ -88,33 +88,47 @@ void main() {
       ]) {
         expect(everything, isNot(contains(leak)), reason: 'the advertisement must not contain "$leak"');
       }
-      expect(s.attributes.keys.toSet(), <String>{'h'}, reason: 'exactly one TXT entry');
+      expect(s.attributes.keys.toSet(), <String>{'v', 'h', 't'}, reason: 'version, handle and recognition tag only');
       expect(s.attributes['h'], b64(w.discoveryHandle));
+      expect(s.attributes['t'], b64(await w.windowTag()));
       expect(s.name, w.label);
+      expect(<String>['Player one', 'Player two'], contains(s.name), reason: 'a neutral seat name, never a word that identifies');
+      // The session id in any form (raw bytes, base64, hex) is nowhere in what goes on the network.
+      expect(everything, isNot(contains(b64(w.sid))));
+      expect(everything.toLowerCase(), isNot(contains(w.sid.map((int x) => x.toRadixString(16).padLeft(2, '0')).join())));
     });
 
     test('two windows for the same adult advertise nothing in common', () async {
       final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
       Future<AdultWindow> open() => AdultWindow.open(
           adultKey: ak, adultName: 'Mom', familyId: 'f', childId: 'c', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
-      final s1 = LanPairingHost(await open()).advertisedService(1);
-      final s2 = LanPairingHost(await open()).advertisedService(1);
+      final AdultWindow a = await open(), b = await open();
+      final s1 = LanPairingHost(a).advertisedService(1, await a.windowTag());
+      final s2 = LanPairingHost(b).advertisedService(1, await b.windowTag());
       expect(s1.attributes['h'], isNot(s2.attributes['h']));
+      expect(s1.attributes['t'], isNot(s2.attributes['t']), reason: 'with no picture the tag is random per window');
     });
 
-    test('the browser reads a label and a 16-byte handle, and nothing else', () {
+    test('the browser reads a version, a 16-byte handle and an 8-byte tag, and nothing else', () {
       final Uint8List h = Uint8List.fromList(List<int>.generate(16, (int i) => i));
-      final NearbyWindow? ok = parseNearbyService(name: 'KT7', host: '192.168.1.5', port: 9, attributes: <String, String>{'h': b64(h)});
-      expect(ok!.label, 'KT7');
+      final Uint8List tag = Uint8List.fromList(List<int>.generate(8, (int i) => 100 + i));
+      Map<String, String> txt({String v = '1', String? hh, String? t}) =>
+          <String, String>{'v': v, 'h': hh ?? b64(h), 't': t ?? b64(tag)};
+      final NearbyWindow? ok = parseNearbyService(name: 'Player one', host: '192.168.1.5', port: 9, attributes: txt());
+      expect(ok!.label, 'Player one');
       expect(ok.handle, h);
+      expect(ok.tag, tag);
       expect(ok.sid, isNull, reason: 'discovery never yields a session id');
       expect(ok.key, b64(h));
-      // The old shape (name and session id in clear) is not understood, a short handle is refused.
+      // The old shapes (name and session id in clear; the picture branch's session-id TXT) are not understood, and
+      // a short handle, a short tag, a wrong version or no host are refused.
       expect(parseNearbyService(name: 'olive-pair-abc', host: 'x', port: 1, attributes: <String, String>{'s': b64(h), 'n': 'Mom'}), isNull);
-      expect(parseNearbyService(name: 'KT7', host: 'x', port: 1, attributes: <String, String>{'h': b64(Uint8List(8))}), isNull);
-      expect(parseNearbyService(name: 'KT7', host: null, port: 1, attributes: <String, String>{'h': b64(h)}), isNull);
-      expect(parseNearbyService(name: '', host: 'x', port: 1, attributes: <String, String>{'h': b64(h)}), isNull);
-      expect(parseNearbyService(name: 'KT7', host: 'x', port: 1, attributes: <String, String>{'h': '!!!'}), isNull);
+      expect(parseNearbyService(name: 'Player one', host: 'x', port: 1, attributes: <String, String>{'v': '1', 'w': b64(h), 't': b64(tag)}), isNull);
+      expect(parseNearbyService(name: 'Player one', host: 'x', port: 1, attributes: txt(hh: b64(Uint8List(8)))), isNull);
+      expect(parseNearbyService(name: 'Player one', host: 'x', port: 1, attributes: txt(t: b64(Uint8List(3)))), isNull);
+      expect(parseNearbyService(name: 'Player one', host: 'x', port: 1, attributes: txt(v: '2')), isNull);
+      expect(parseNearbyService(name: 'Player one', host: null, port: 1, attributes: txt()), isNull);
+      expect(parseNearbyService(name: 'Player one', host: 'x', port: 1, attributes: txt(hh: '!!!')), isNull);
     });
 
     test('a full pairing over a real local HTTP hop that starts from the handle alone', () async {

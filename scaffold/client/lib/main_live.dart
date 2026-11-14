@@ -72,6 +72,7 @@ import 'live_common.dart';
 import 'local_family.dart';
 import 'local_pin.dart';
 import 'adult_gate.dart' show PhoneUnlock;
+import 'pairing_picture.dart' show LocalStorePairingPictureRepository, PairingPictureRepository;
 import 'pairing_protocol.dart' show ChildPairing;
 import 'unlock_challenge.dart' show ChildUnlockHost;
 import 'pairing_records.dart';
@@ -535,6 +536,7 @@ Future<void> _startKidFirstRun() async {
     roster: roster,
     nicknames: LocalNicknameRepository(s.area('nicknames', ownerId: kPendingDeviceScope)),
     deviceKeys: LocalStoreDeviceKeyRepository(s.area('devicekey')),
+    pictures: LocalStorePairingPictureRepository(s.area('devicekey')),
   ));
 }
 
@@ -563,9 +565,10 @@ Future<void> _completeRedeem(Map<String, dynamic> result) async {
 /// ([FirstRunFlow]). Same bare-MaterialApp shape as [_PairingBootApp].
 class _FirstRunApp extends StatelessWidget {
   const _FirstRunApp({
-    required this.baseUrl, required this.draftRepository, this.roster, this.nicknames, this.deviceKeys});
+    required this.baseUrl, required this.draftRepository, this.roster, this.nicknames, this.deviceKeys, this.pictures});
   final String baseUrl;
   final DeviceKeyRepository? deviceKeys;
+  final PairingPictureRepository? pictures;
   final OnboardingDraftRepository draftRepository;
   final KidRoster? roster;
   final NicknameRepository? nicknames;
@@ -581,6 +584,7 @@ class _FirstRunApp extends StatelessWidget {
       nicknames: nicknames,
       onRedeemed: (result) => unawaited(_completeRedeem(result)),
       deviceKeys: deviceKeys,
+      pictures: pictures,
       onPairedLocally: (p) => _completeLocalPair(p),
     ),
   );

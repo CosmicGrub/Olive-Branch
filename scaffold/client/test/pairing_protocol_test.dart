@@ -197,16 +197,21 @@ void main() {
     expect(w.qrPayload(), isNull, reason: 'the window closed and the secret is gone');
   });
 
-  test('a photographed QR is useless once used, and its secret burns on a failed use too', () async {
+  test('a QR is spent by a CONFIRMED use only; a wrong guess costs an attempt but cannot burn the QR shortcut', () async {
     final DeviceKey ak = await _key(), ck = await _key();
     final AdultWindow w = await _window(ak, qr: true);
+    w.addListener(() async {
+      if (w.state == WindowState.awaitingApproval) await w.approve();
+    });
     final Uri u = Uri.parse(w.qrPayload()!);
-    // Someone uses a WRONG secret in qr mode: the real one is burned (single use) and the failure counts.
+    final int before = w.attemptsLeft;
     await _client(ck, LoopbackPairingTransport(w)).pair(sid: w.sid, password: 'not-the-secret', viaQr: true);
-    expect(w.qrPayload(), isNull);
+    expect(w.attemptsLeft, before - 1, reason: 'the wrong guess is counted');
+    expect(w.qrPayload(), isNotNull, reason: 'a stranger cannot destroy the QR shortcut');
     final PairingResult r = await _client(ck, LoopbackPairingTransport(w)).pair(
         sid: w.sid, password: u.queryParameters['q']!, viaQr: true);
-    expect(r.ok, isFalse);
+    expect(r.ok, isTrue);
+    expect(w.qrPayload(), isNull, reason: 'spent by the confirmed use');
   });
 
   test('the PIN is not on the wire and not derivable from the transcript', () async {
@@ -242,13 +247,14 @@ void main() {
   });
 
   group('discovery handle: the child finds a window without the session id or the adult name in the advertisement', () {
-    test('the handle and the label are random per window and are not the session id or the adult name', () async {
+    test('the handle is random per window and is not the session id; the label is a neutral seat name, not the adult name', () async {
       final DeviceKey ak = await _key();
       final AdultWindow a = await _window(ak, name: 'Margaret'), b = await _window(ak, name: 'Margaret');
       expect(a.discoveryHandle.length, 16);
       expect(a.discoveryHandle, isNot(a.sid));
       expect(a.discoveryHandle, isNot(b.discoveryHandle));
-      expect(a.label, matches(RegExp(r'^[BCDFGHJKMNPRSTVWXZ]{2}[2-9]$')));
+      expect(a.label, isIn(<String>['Player one', 'Player two']));
+      expect(a.label, windowSeatLabel(a.discoveryHandle));
       expect(a.label.toLowerCase(), isNot(contains('mar')));
     });
 
@@ -349,8 +355,11 @@ void main() {
             't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin',
             'Yc': b64(Uint8List.fromList(List<int>.generate(32, (int i) => (i * 7 + 3) & 0xff))),
           }, source: src);
+      // Only one claim is in flight at a time (a second one is dropped without being counted), so the claim is
+      // cleared between tries the way "Make a new code" does; the budget then bounds how often one source may start.
       for (int i = 0; i < kSourceMaxPake1; i++) {
         expect(await pake1('p1'), isNotNull);
+        w.refreshAdultPicture(Uint8List(16));
       }
       expect(await pake1('p1'), isNull, reason: 'over its pake1 budget');
       expect(await pake1('p2'), isNotNull, reason: 'another source is not starved by it');

@@ -21,6 +21,8 @@ class _FakeHost implements WindowHost {
   int? get port => 4242;
   @override
   Future<void> stop() async {}
+  @override
+  Future<void> readvertise() async {}
 }
 
 class _FakeFinder implements NearbyFinder {
@@ -47,7 +49,7 @@ Future<void> _act(WidgetTester t, Future<void> Function() gesture) async {
   await t.pump();
 }
 
-String _textOf(WidgetTester t, Key k) => t.widget<Text>(find.byKey(k)).data!;
+
 
 Future<void> _settle(WidgetTester t) async {
   for (int i = 0; i < 40; i++) {
@@ -88,8 +90,8 @@ void main() {
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
     expect(find.byKey(const Key('connectWaiting')), findsOneWidget);
     expect(find.byKey(const Key('connectQr')), findsOneWidget, reason: 'the optional picture is offered');
-    expect(find.byKey(const Key('connectLabel')), findsOneWidget);
-    expect(_textOf(t, const Key('connectLabel')), opened!.label, reason: 'the grown-up reads this label off the screen');
+    expect(find.byKey(const Key('connectLabel')), findsNothing, reason: 'no letters to read out: the child picks a picture');
+    expect(opened!.label, isIn(<String>['Player one', 'Player two']));
     expect(opened!.qrPayload(), isNotNull);
 
     final DeviceKey ck = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
@@ -97,9 +99,14 @@ void main() {
             childKey: ck, transport: LoopbackPairingTransport(opened!), deviceName: 'Tablet', pollEvery: const Duration(milliseconds: 20))
         .pair(sid: opened!.sid, password: '4829');
     await _settle(t);
+    // Match first: four sets, the grown-up picks the one on the child's device. Approve is not even offered yet.
+    expect(find.byKey(const Key('connectMatchStep')), findsOneWidget);
+    expect(find.byKey(const Key('connectApprove')), findsNothing);
+    await t.tap(find.byKey(Key('connectMatch_${opened!.matchChoices!.correct}')));
+    await t.pump();
     expect(find.byKey(const Key('connectApproveTitle')), findsOneWidget);
     expect(find.textContaining("Is this Ivy's Tablet?"), findsOneWidget);
-    expect(find.byKey(const Key('connectSas')), findsOneWidget);
+    expect(find.byKey(const Key('connectRoleChild')), findsOneWidget);
 
     await _act(t, () => t.tap(find.byKey(const Key('connectApprove'))));
     await _settle(t);
@@ -129,7 +136,7 @@ void main() {
     await _settle(t);
     await t.tap(find.byKey(const Key('childConnectScan')));
     await t.pump();
-    final MobileScanner scanner = t.widget<MobileScanner>(find.byKey(const Key('childConnectScanner')));
+    final MobileScanner scanner = t.widget<MobileScanner>(find.byKey(const Key('pictureScanner')));
     expect(scanner.errorBuilder, isNotNull, reason: 'without one the plugin shows raw English error text');
     await t.pumpWidget(MaterialApp(
         home: Builder(builder: (BuildContext c) => scanner.errorBuilder!(
@@ -140,7 +147,7 @@ void main() {
     expect(find.textContaining('rror'), findsNothing);
   });
 
-  testWidgets('child screen end to end: pick the phone by its label, type the PIN, match shown, paired', (t) async {
+  testWidgets('child screen end to end: pick the nameless window, type the PIN, match shown, paired', (t) async {
     final DeviceKey ak = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
     final AdultWindow w = await t.runAsync(() => AdultWindow.open(
         adultKey: ak, adultName: 'Mom', familyId: 'fam', childId: 'kid', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap)) as AdultWindow;
@@ -162,10 +169,10 @@ void main() {
     expect(find.byKey(const Key('childConnectWhich')), findsOneWidget);
     finder.emit(NearbyWindow(label: w.label, handle: w.discoveryHandle, host: 'x', port: 1));
     await _settle(t);
-    // Nothing identifying is listed: the grown-up picks the short label shown on the phone, never a name.
+    // Nothing identifying is listed: a nameless picture tile, never a name, a label or a session id.
     expect(find.text('Mom'), findsNothing);
-    expect(find.text(w.label), findsOneWidget);
-    await t.tap(find.text(w.label));
+    expect(find.text(w.label), findsNothing);
+    await t.tap(find.byKey(Key('childConnectPick_${b64(w.discoveryHandle)}')));
     await t.pumpAndSettle();
     for (final String d in <String>['4', '8', '2', '9']) {
       await t.tap(find.text(d));
@@ -194,10 +201,9 @@ void main() {
     await _settle(t);
     finder.emit(NearbyWindow(label: w.label, handle: w.discoveryHandle, host: 'x', port: 1));
     await _settle(t);
-    // Nothing identifying is listed: the grown-up picks the short label shown on the phone, never a name.
     expect(find.text('Mom'), findsNothing);
-    expect(find.text(w.label), findsOneWidget);
-    await t.tap(find.text(w.label));
+    expect(find.text(w.label), findsNothing);
+    await t.tap(find.byKey(Key('childConnectPick_${b64(w.discoveryHandle)}')));
     await t.pumpAndSettle();
     for (final String d in <String>['1', '1', '1', '1']) {
       await t.tap(find.text(d));

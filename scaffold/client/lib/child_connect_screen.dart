@@ -1,29 +1,32 @@
 // OLIVE BRANCH — the CHILD device's "Connect this device": a calm card the child cannot do anything with, and
 // a grown-up path behind it. UNVERIFIED on a device; widget-tested headless
-// (client/test/child_connect_screen_test.dart). MASTERFILE §8.5.6, §8.13 (pairing).
-// Spec 2026-11-08-adult-gate-and-simple-pairing-design.md sections 3, 4.
+// (client/test/child_connect_screen_test.dart, pairing_picture_screens_test.dart). MASTERFILE §8.5.6, §8.13 (pairing).
+// Spec 2026-11-08-adult-gate-and-simple-pairing-design.md sections 3, 4; docs/planning/PERSISTENT-QR-PAIRING.md.
 //
 // The child sees the adult-gate card (a grown-up and a phone, "A grown-up does this") and nothing else: no
 // keypad, no code field, no counts, no error words. A grown-up taps "I'm the grown-up" and chooses, in order:
-//   1. their phone's short label from the open windows nearby (their phone has one open: "Connect a child's
-//      device", and shows the label, for example "KT7"; the network never carries a name), then types THEIR PIN
-//      on the adult-only keypad. The PIN is the key-exchange secret; it is never sent.
-//   2. optionally, scanning the picture that window can show (only works while the devices are together);
+//   1. one of the open windows nearby, shown as a nameless picture tile (the network carries no name, only a
+//      neutral "Player one/Player two" seat and a random handle), then types THEIR PIN on the adult-only keypad.
+//      The PIN is the key-exchange secret; it is never sent.
+//   2. or looks at the grown-up's lasting pairing picture with the camera, or shows this device's own picture for
+//      the grown-up's phone to scan. A scan is only an introduction: the PIN, the open window, the picture Match
+//      and the grown-up's Yes still decide everything.
 //   3. the older account code path, when a connection exists (the existing PairingRedeemScreen).
-// When the grown-up's phone has proved it knows the PIN, this screen shows that grown-up's NAME (learned only
-// now, from the phone that proved it knows the PIN, never from the network) and the same
-// word and picture the phone shows, then waits for the one-tap yes on the phone. A wrong PIN, a wrong
-// grown-up or a refusal all look the same to the child: a gentle "your grown-up can try again".
+// When the grown-up's phone has proved it knows the PIN, this screen shows three pictures and a colour (no words,
+// no name) for the grown-up to pick on the phone, then waits for the one-tap yes there. A wrong PIN, another
+// family's window or picture, a refusal, a timeout or a camera that will not start all end at the same calm card
+// (CalmTryAgainCard): no number, no count, no reason.
 import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'adult_gate.dart';
 import 'device_keys.dart';
 import 'kiosk_lock_colors.dart';
 import 'lan_pairing_transport.dart';
+import 'pairing_picture.dart';
+import 'pairing_picture_widgets.dart';
 import 'pairing_protocol.dart';
 import 'pairing_qr.dart';
 
@@ -56,7 +59,7 @@ const Map<String, IconData> kSasIcons = <String, IconData>{
   'bell': Icons.notifications_rounded,
 };
 
-enum _Stage { card, options, keypad, working, tryAgain, scanning }
+enum _Stage { card, options, keypad, working, tryAgain, scanning, hello }
 
 class ChildConnectScreen extends StatefulWidget {
   const ChildConnectScreen({
@@ -69,6 +72,10 @@ class ChildConnectScreen extends StatefulWidget {
     this.onAccountCode,
     this.scannerEnabled = true,
     this.pollEvery = const Duration(seconds: 2),
+    this.pictures,
+    this.scannerBuilder = defaultScannerBuilder,
+    this.claimedFamilyId,
+    this.helloFor = const Duration(minutes: 10),
   });
 
   final DeviceKeyRepository deviceKeys;
@@ -83,6 +90,18 @@ class ChildConnectScreen extends StatefulWidget {
   final VoidCallback? onAccountCode;
   final bool scannerEnabled;
   final Duration pollEvery;
+
+  /// This device's pairing-picture state (salt, epoch, family key). Null hides "show this device's picture".
+  final PairingPictureRepository? pictures;
+
+  /// The camera view. Injectable so tests need no camera.
+  final ScannerBuilder scannerBuilder;
+
+  /// Set when this device already belongs to a family: it then never starts an exchange with another family.
+  final String? claimedFamilyId;
+
+  /// How long the device's own picture stays up before the ordinary card returns.
+  final Duration helloFor;
 
   static PairingTransport _lan(String host, int port) => LanPairingTransport(host, port);
 
@@ -100,8 +119,15 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
   PairingMatch? _match;
   bool _scanHandled = false;
 
+  // The pictures involved in this attempt. Neither authorizes anything; they only decide which window is meant.
+  PairingPicture? _adultPic; // the grown-up's picture this device looked at (Mode A)
+  PairingPicture? _ownPic; // this device's own picture, on show (Mode B)
+  Uint8List? _pinnedFp;
+  Timer? _helloTimer;
+
   @override
   void dispose() {
+    _helloTimer?.cancel();
     _stopFinder();
     super.dispose();
   }
@@ -113,27 +139,105 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     _finder = null;
   }
 
-  Future<void> _openOptions() async {
-    setState(() => _stage = _Stage.options);
+  void _reset() {
+    _helloTimer?.cancel();
+    _adultPic = null;
+    _ownPic = null;
+    _pinnedFp = null;
+    _chosen = null;
+    _match = null;
+    _scanHandled = false;
+  }
+
+  /// One calm state for every kind of failure; nothing is explained to the child.
+  void _fail() {
+    if (!mounted) return;
+    setState(() {
+      _reset();
+      _stage = _Stage.tryAgain;
+    });
+  }
+
+  Future<void> _ensureFinder() async {
     if (_finder != null) return;
     final NearbyFinder f = widget.finderFactory();
     _finder = f;
     try {
       await f.start();
     } catch (_) {
-      return; // nothing nearby can be found; the option list simply stays short
+      return; // nothing nearby can be found; the list simply stays empty
     }
     _foundSub = f.found.listen((NearbyWindow w) {
-      if (mounted) setState(() => _nearby[w.key] = w);
+      if (!mounted) return;
+      setState(() => _nearby[w.key] = w);
+      unawaited(_maybeAutoPick(w));
     });
     _goneSub = f.gone.listen((String k) {
       if (mounted) setState(() => _nearby.remove(k));
     });
   }
 
+  Future<void> _openOptions() async {
+    setState(() => _stage = _Stage.options);
+    await _ensureFinder();
+  }
+
+  /// With a picture in play, the window whose tag that picture recognises is the one meant: the keypad opens for
+  /// it and for nothing else.
+  Future<void> _maybeAutoPick(NearbyWindow w) async {
+    final Uint8List? tag = w.tag;
+    final Uint8List? salt = _adultPic?.salt ?? _ownPic?.salt;
+    if (tag == null || salt == null || _chosen != null) return;
+    if (!await tagMatches(salt, (w.handle ?? w.sid)!, tag)) return;
+    if (!mounted || _chosen != null) return;
+    if (_adultPic != null) _pinnedFp = await _adultPic!.fingerprint();
+    if (!mounted) return;
+    setState(() {
+      _chosen = w;
+      _stage = _Stage.keypad;
+    });
+  }
+
+  Future<void> _recheckNearby() async {
+    for (final NearbyWindow w in _nearby.values.toList()) {
+      await _maybeAutoPick(w);
+    }
+  }
+
+  Future<void> _openHello() async {
+    final PairingPictureRepository? repo = widget.pictures;
+    if (repo == null) return;
+    final DeviceKey key = await DeviceKey.loadOrCreate(widget.deviceKeys);
+    final PairingPicture pic = await PairingPictureService(repo).own(key, PictureRole.child);
+    if (!mounted) return;
+    _helloTimer?.cancel();
+    setState(() {
+      _ownPic = pic;
+      _adultPic = null;
+      _chosen = null;
+      _stage = _Stage.hello;
+    });
+    _helloTimer = Timer(widget.helloFor, () {
+      if (!mounted) return;
+      setState(() {
+        _reset();
+        _stage = _Stage.card;
+      });
+    });
+    await _ensureFinder();
+    await _recheckNearby();
+  }
+
   Future<void> _run({required NearbyWindow target, required String password, bool viaQr = false, Uint8List? fp}) async {
     setState(() { _stage = _Stage.working; _match = null; });
-    final DeviceKey key = await DeviceKey.loadOrCreate(widget.deviceKeys);
+    final DeviceKey key;
+    try {
+      key = await DeviceKey.loadOrCreate(widget.deviceKeys);
+    } catch (_) {
+      // Key storage failed: the same calm picture as any other failure, never a spinner with no way out.
+      if (mounted) _fail();
+      return;
+    }
     final ChildPairingClient client = ChildPairingClient(
       childKey: key,
       transport: widget.transportFor(target.host, target.port),
@@ -145,7 +249,8 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       handle: target.handle,
       password: password,
       viaQr: viaQr,
-      expectedAdultFingerprint: fp,
+      expectedAdultFingerprint: fp ?? _pinnedFp,
+      expectedFamilyId: widget.claimedFamilyId,
       onMatched: (PairingMatch m) {
         if (mounted) setState(() => _match = m);
       },
@@ -153,26 +258,69 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     if (!mounted) return;
     if (r.ok) {
       _stopFinder();
+      final Uint8List? fk = r.pairing!.familyKey;
+      final PairingPictureRepository? repo = widget.pictures;
+      if (fk != null && repo != null) {
+        try {
+          await PairingPictureService(repo).adoptFamilyKey(fk);
+        } catch (_) {}
+      }
       await widget.onPaired(r.pairing!);
     } else {
-      setState(() { _stage = _Stage.tryAgain; _match = null; _scanHandled = false; });
+      _fail();
     }
   }
 
-  void _onScan(BarcodeCapture cap) {
+  /// A camera read. The lasting pairing picture (olive://id/1) is the main path; the older one-time picture
+  /// (olive://pair/1) still works while a grown-up offers it.
+  void _onRaw(String raw) {
     if (_scanHandled) return;
-    final String? raw = cap.barcodes.isNotEmpty ? cap.barcodes.first.rawValue : null;
-    final PairingQr? qr = raw == null ? null : parsePairingQr(raw);
+    final PairingPicture? pic = parsePairingPicture(raw);
+    if (pic != null) {
+      // Only a grown-up's picture is for this device to look at. A child's picture is ignored without a word.
+      if (pic.role != PictureRole.adult) return;
+      _scanHandled = true;
+      unawaited(_adopt(pic));
+      return;
+    }
+    final PairingQr? qr = parsePairingQr(raw);
     if (qr == null) return;
     final ({String host, int port})? hint = qr.hints.isEmpty ? null : splitHint(qr.hints.first);
     if (hint == null) return;
     _scanHandled = true;
     unawaited(_run(
-      target: NearbyWindow(label: '', sid: qr.sid, host: hint.host, port: hint.port),
+      target: NearbyWindow(sid: qr.sid, host: hint.host, port: hint.port),
       password: qr.secret,
       viaQr: true,
       fp: qr.adultFingerprint,
     ));
+  }
+
+  Future<void> _adopt(PairingPicture pic) async {
+    // A device that belongs to a family refuses another family's picture here, before anything is sent.
+    final PairingPictureRepository? repo = widget.pictures;
+    if (repo != null) {
+      Uint8List? fk;
+      try {
+        fk = (await PairingPictureService(repo).state()).familyKey;
+      } catch (_) {}
+      // A claimed device (it holds a family key) refuses another family's picture AND a picture with no tag at all:
+      // dropping the tag must not downgrade the check.
+      final FamilyCheck fc = await checkFamily(pic, fk);
+      if (fc == FamilyCheck.differentFamily || (fk != null && fc == FamilyCheck.noHint)) {
+        _fail();
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _adultPic = pic;
+      _ownPic = null;
+      _chosen = null;
+      _stage = _Stage.options;
+    });
+    await _ensureFinder();
+    await _recheckNearby();
   }
 
   @override
@@ -185,7 +333,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
           digits: 8,
           confirmLabel: 'OK',
           startOpen: true,
-          onClose: () => setState(() => _stage = _Stage.options),
+          onClose: () => setState(() { _reset(); _stage = _Stage.options; }),
           onPin: (String pin) {
             final NearbyWindow? t = _chosen;
             if (t != null) unawaited(_run(target: t, password: pin));
@@ -194,20 +342,23 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       case _Stage.scanning:
         return _frame(
           Column(children: <Widget>[
-            SizedBox(height: 300, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: MobileScanner(
-                key: const Key('childConnectScanner'),
-                onDetect: _onScan,
-                // Camera denied or missing: only the calm card, never the plugin's raw English error text.
-                errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() => _stage = _Stage.options)),
-              ))),
+            SizedBox(height: 300, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: widget.scannerBuilder(context, _onRaw))),
             const SizedBox(height: 12),
-            TextButton(onPressed: () => setState(() => _stage = _Stage.options), child: const Text('Back')),
+            IconButton(
+              key: const Key('childConnectScanBack'),
+              onPressed: () => setState(() { _scanHandled = false; _stage = _Stage.options; }),
+              icon: const Icon(Icons.arrow_back_rounded, color: KioskLockColors.tertiaryText),
+            ),
           ]),
         );
+      case _Stage.hello:
+        // Not inside _frame's scroll view: the picture must sit wholly below the hinge in tabletop posture.
+        return Scaffold(backgroundColor: KioskLockColors.background, body: SafeArea(child: _helloCard()));
       case _Stage.working:
         return _frame(_working());
       case _Stage.tryAgain:
-        return CalmTryAgainCard(onOk: () => setState(() => _stage = _Stage.card));
+        // One calm card for every failure (the shared CalmTryAgainCard): no number, no count, no reason.
+        return CalmTryAgainCard(onOk: () => setState(() { _reset(); _stage = _Stage.card; }));
       case _Stage.options:
         return _frame(_options());
     }
@@ -218,67 +369,87 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
         body: SafeArea(child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: child))),
       );
 
-  Widget _options() => Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        const Text('Which grown-up?', key: Key('childConnectWhich'),
-            style: TextStyle(color: KioskLockColors.primaryText, fontSize: 24, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 6),
-        const Text("Open \"Connect a child's device\" on your phone, then pick the letters it shows.",
-            textAlign: TextAlign.center, style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 14)),
-        const SizedBox(height: 16),
-        if (_nearby.isEmpty)
-          const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.4)))
-        else
+  /// The device's own picture on a white tile, for the grown-up's phone to scan. No words.
+  Widget _helloCard() {
+    final PairingPicture pic = _ownPic!;
+    return PictureLayout(
+      picture: (double side) => KeyedSubtree(key: const Key('childHelloCard'), child: PictureTile(data: pic.payload, size: side)),
+      steps: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+      const OliveBranchMark(size: 56),
+      const SizedBox(height: 16),
+      IconButton(
+        key: const Key('childHelloClose'),
+        iconSize: 32,
+        onPressed: () => setState(() { _reset(); _stage = _Stage.options; }),
+        icon: const Icon(Icons.close_rounded, color: KioskLockColors.tertiaryText),
+      ),
+      ]),
+    );
+  }
+
+  Widget _options() {
+    // A picture is in play: wait calmly for the window it recognises. Otherwise list open windows as nameless tiles.
+    final bool pictureMode = _adultPic != null;
+    return Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+      const Icon(Icons.phone_android_rounded, key: Key('childConnectWhich'), size: 56, color: KioskLockColors.secondaryText),
+      const SizedBox(height: 6),
+      const Text("Open \"Connect a child's device\" on your phone.",
+          textAlign: TextAlign.center, style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 14)),
+      const SizedBox(height: 16),
+      if (pictureMode || _nearby.isEmpty)
+        const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.4)))
+      else
+        Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: <Widget>[
           for (final NearbyWindow w in _nearby.values)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: SizedBox(
-                width: 260,
-                height: 56,
-                child: FilledButton(
-                  key: Key('childConnectPick_${w.key}'),
-                  onPressed: () => setState(() { _chosen = w; _stage = _Stage.keypad; }),
-                  child: Text(w.label, style: const TextStyle(fontSize: 18, letterSpacing: 2)),
-                ),
-              ),
+            InkResponse(
+              key: Key('childConnectPick_${w.key}'),
+              onTap: () => setState(() { _chosen = w; _pinnedFp = null; _stage = _Stage.keypad; }),
+              child: Padding(padding: const EdgeInsets.all(8), child: GlyphTile(glyph: windowGlyph((w.handle ?? w.sid)!), size: 88)),
             ),
-        const SizedBox(height: 12),
-        if (widget.scannerEnabled)
-          TextButton.icon(
-            key: const Key('childConnectScan'),
-            onPressed: () => setState(() => _stage = _Stage.scanning),
-            icon: const Icon(Icons.qr_code_scanner_rounded),
-            label: const Text('Scan the picture on the phone'),
-          ),
-        if (widget.onAccountCode != null)
-          TextButton(
-            key: const Key('childConnectAccountCode'),
-            onPressed: widget.onAccountCode,
-            child: const Text('Use a code from the account'),
-          ),
-        TextButton(
-          key: const Key('childConnectOptionsBack'),
-          onPressed: () => setState(() => _stage = _Stage.card),
-          child: const Text('Back', style: TextStyle(color: KioskLockColors.tertiaryText)),
+        ]),
+      const SizedBox(height: 12),
+      if (widget.scannerEnabled)
+        TextButton.icon(
+          key: const Key('childConnectScan'),
+          onPressed: () => setState(() { _scanHandled = false; _stage = _Stage.scanning; }),
+          icon: const Icon(Icons.qr_code_scanner_rounded),
+          label: const Text('Scan the picture on the phone'),
         ),
-      ]);
+      if (widget.pictures != null)
+        TextButton.icon(
+          key: const Key('childConnectShowPicture'),
+          onPressed: _openHello,
+          icon: const Icon(Icons.qr_code_2_rounded),
+          label: const Text("Show this device's picture"),
+        ),
+      if (widget.onAccountCode != null)
+        TextButton(
+          key: const Key('childConnectAccountCode'),
+          onPressed: widget.onAccountCode,
+          child: const Text('Use a code from the account'),
+        ),
+      TextButton(
+        key: const Key('childConnectOptionsBack'),
+        onPressed: () => setState(() { _reset(); _stage = _Stage.card; }),
+        child: const Text('Back', style: TextStyle(color: KioskLockColors.tertiaryText)),
+      ),
+    ]);
+  }
 
   Widget _working() {
     final PairingMatch? m = _match;
-    if (m == null) {
+    if (m == null || m.match == null) {
       return const Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
         SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3)),
         SizedBox(height: 16),
         Icon(Icons.phone_android_rounded, size: 56, color: KioskLockColors.secondaryText),
       ]);
     }
+    // Three pictures and a colour, big, no words, nothing to tap: the grown-up picks the same set on the phone.
+    final double w = MediaQuery.sizeOf(context).width;
+    final double icon = ((w - 96) / 3.6).clamp(40.0, 96.0);
     return Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-      Text(m.adultName, key: const Key('childConnectAdultName'),
-          style: const TextStyle(color: KioskLockColors.primaryText, fontSize: 28, fontWeight: FontWeight.w700)),
-      const SizedBox(height: 16),
-      Icon(kSasIcons[m.sas.picture] ?? Icons.star_rounded, key: const Key('childConnectSasPicture'), size: 96, color: KioskLockColors.primaryText),
-      const SizedBox(height: 8),
-      Text(m.sas.word, key: const Key('childConnectSasWord'),
-          style: const TextStyle(color: KioskLockColors.secondaryText, fontSize: 22)),
+      KeyedSubtree(key: const Key('childConnectMatch'), child: MatchCard(set: m.match!, iconSize: icon, forChild: true)),
       const SizedBox(height: 16),
       const Icon(Icons.phone_android_rounded, size: 40, color: KioskLockColors.tertiaryText),
     ]);

@@ -1,6 +1,6 @@
 // OLIVE BRANCH — the same-network transport for the on-device pairing protocol: the adult device serves its open
-// window over a tiny HTTP endpoint and advertises it on mDNS; the child device lists the open windows nearby BY A
-// SHORT NEUTRAL LABEL the grown-up reads off the adult's screen, and talks to the one a grown-up picks. UNVERIFIED
+// window over a tiny HTTP endpoint and advertises it on mDNS; the child device lists the open windows nearby BY
+// A PICTURE (a nameless glyph, or a scanned pairing picture), and talks to the one a grown-up picks. UNVERIFIED
 // on a device (bonsoir/mDNS needs two real devices; the HTTP half is tested over loopback in
 // test/lan_pairing_transport_test.dart).
 // Spec: docs/superpowers/specs/2026-11-08-adult-gate-and-simple-pairing-design.md section 6.4.
@@ -10,17 +10,19 @@
 // window is open (it is stopped when the window closes).
 //
 // WHAT THE ADVERTISEMENT CARRIES (nothing identifying, like the play stack in local_discovery.dart): a generic
-// service type, an instance name that is a random per-window label such as "KT7", and one TXT entry `h`, a random
-// per-window handle that is NOT the session id. No adult name, no family or device id, no session id, nothing the
-// same from one window to the next. The session id reaches the child only in the answer to its first message.
-// The price is plain: two grown-ups opening windows in range at once are told apart only by the label, which a
-// person reads off the adult's screen and picks on the other device.
+// service type, an instance name that is only a neutral seat label ("Player one" or "Player two", one random bit
+// of the handle), and three TXT entries: `v` (version), `h` (a random per-window handle that is NOT the session
+// id) and `t` (the recognition tag: random unless a pairing picture addresses the window). No adult name, no
+// family or device id, no key, no fingerprint, no address, no session id, nothing the same from one window to the
+// next. The session id reaches the child only in the answer to its first message. The child tells windows apart
+// by a nameless picture tile (pairing_picture.dart), or by the pairing picture it scanned.
 //
 // A person on the same Wi-Fi who sends garbage is held to a per-source budget by the window itself
 // (pairing_protocol.dart: kSourceMax*), so one address cannot burn the five confirmations; a crowd of addresses
 // still can (a denial of service the adult cures by opening a new window in the same room). They cannot pair a
 // device. The first hello still answers any same-LAN source holding the handle with the adult's name, family id
-// and public key (the key exchange binds them); moving those behind the key exchange is not done here.
+// and public key (the key exchange binds them), unless a pairing picture restricted the window to one proven
+// device (then only that device is answered); moving those behind the key exchange is not done here.
 //
 // What it never carries: a PIN, a QR secret, a certificate in the clear. Only PAKE shares, confirmation tags and
 // a credential sealed under the exchange's key.
@@ -32,6 +34,8 @@ import 'dart:typed_data';
 import 'package:bonsoir/bonsoir.dart';
 
 import 'device_keys.dart' show b64, unb64;
+import 'pairing_limits.dart';
+import 'pairing_picture.dart' show kPictureTagBytes;
 import 'pairing_protocol.dart';
 
 /// A generic type (RFC 6763: at most 15 characters): no app name, no word like "family" or "child". That some app
@@ -61,6 +65,16 @@ bool isLanAddress(InternetAddress a, {bool allowLoopback = false}) {
   return false;
 }
 
+/// The instance name a window advertises: a neutral seat label, never a name and never derived from the session id.
+/// It is the label of the window's discovery handle (see [windowSeatLabel]).
+String pairingSeatLabel(List<int> discoveryHandle) => windowSeatLabel(discoveryHandle);
+
+/// The TXT record of an open window: protocol version, the window's random discovery handle and the recognition
+/// tag. Nothing else: no adult name, no session id, no key, no fingerprint, no address, no family. The tag is random
+/// unless a pairing picture addresses the window (see pairing_picture.dart), so it identifies nobody to a bystander.
+Map<String, String> pairingTxt(List<int> discoveryHandle, List<int> tag) =>
+    <String, String>{'v': '1', 'h': b64(discoveryHandle), 't': b64(tag)};
+
 /// The key a window budgets a source by: its IPv4 address, or its FULL IPv6 address (16 raw bytes, so a scope id
 /// written after '%' plays no part); an IPv4-mapped IPv6 address counts as its IPv4. The remote port is never part
 /// of it.
@@ -86,33 +100,52 @@ String sourceKey(InternetAddress a) {
 }
 
 class LanPairingHost {
-  LanPairingHost(this.window, {this.allowLoopback = false});
+  LanPairingHost(this.window, {this.allowLoopback = false, SourceBucket? bucket}) : _bucket = bucket ?? SourceBucket();
   final AdultWindow window;
   final bool allowLoopback;
+  final SourceBucket _bucket;
   HttpServer? _server;
   BonsoirBroadcast? _broadcast;
+  bool _advertise = true;
 
   int? get port => _server?.port;
 
   /// Exactly what goes on the network. Its own method so a test can check it without any mDNS.
-  BonsoirService advertisedService(int port) => BonsoirService(
-        name: window.label,
+  BonsoirService advertisedService(int port, List<int> tag) => BonsoirService(
+        name: pairingSeatLabel(window.discoveryHandle),
         type: kPairServiceType,
         port: port,
-        attributes: <String, String>{'h': b64(window.discoveryHandle)},
+        attributes: pairingTxt(window.discoveryHandle, tag),
       );
 
   Future<void> start({bool advertise = true}) async {
     final HttpServer s = await HttpServer.bind(InternetAddress.anyIPv6, 0, v6Only: false);
     _server = s;
+    _advertise = advertise;
     unawaited(s.forEach(_serve));
     window.addListener(_closeWithWindow);
-    if (advertise) {
-      final BonsoirBroadcast b = BonsoirBroadcast(service: advertisedService(s.port));
-      _broadcast = b;
-      await b.ready;
-      await b.start();
-    }
+    if (advertise) await _startBroadcast();
+  }
+
+  Future<void> _startBroadcast() async {
+    final HttpServer? s = _server;
+    if (s == null) return;
+    final BonsoirBroadcast b = BonsoirBroadcast(service: advertisedService(s.port, await window.windowTag()));
+    _broadcast = b;
+    await b.ready;
+    await b.start();
+  }
+
+  /// Advertises again with the window's current tag: called after the adult scans a child's picture or shows
+  /// their own, so the TXT record carries the tag that picture can recognise.
+  Future<void> readvertise() async {
+    if (!_advertise || _server == null) return;
+    final BonsoirBroadcast? old = _broadcast;
+    _broadcast = null;
+    try {
+      await old?.stop();
+    } catch (_) {}
+    await _startBroadcast();
   }
 
   void _closeWithWindow() {
@@ -144,6 +177,12 @@ class LanPairingHost {
       }
       final String body = utf8.decode(bytes.takeBytes());
       final Object? decoded = jsonDecode(body);
+      // A flood of key-exchange starts from one source is dropped before it reaches the window (pairing_limits.dart).
+      if (decoded is Map && decoded['t'] == 'pake1' && !_bucket.allow(from.address)) {
+        r.response.statusCode = HttpStatus.noContent;
+        await r.response.close();
+        return;
+      }
       final Map<String, dynamic>? answer =
           decoded is Map<String, dynamic> ? await window.handle(decoded, source: sourceKey(from)) : null;
       if (answer == null) {
@@ -203,28 +242,32 @@ class LanPairingTransport implements PairingTransport {
   }
 }
 
-/// An adult's open window seen on the network: a neutral label to show, how to address it and where to talk to
-/// it. Found through discovery it has a [handle] (never the session id); from a QR it has the [sid].
+/// An adult's open window seen on the network: how to address it (the random [handle] from discovery, never the
+/// session id; from a QR it has the [sid]), the recognition tag and where to talk to it. No name travels: the child
+/// tells windows apart by picture (pairing_picture.dart). [label] is only the neutral seat name, if any.
 class NearbyWindow {
-  const NearbyWindow({required this.label, this.handle, this.sid, required this.host, required this.port})
+  const NearbyWindow({this.label = '', this.handle, this.sid, required this.host, required this.port, this.tag})
       : assert((handle == null) != (sid == null), 'exactly one of handle or sid');
   final String label;
   final Uint8List? handle;
   final Uint8List? sid;
   final String host;
   final int port;
+
+  /// The 8-byte recognition tag from the advertisement; null in tests that skip it.
+  final Uint8List? tag;
   String get key => b64((handle ?? sid)!);
 }
 
-/// Reads one resolved service into a window, or null when it is not one of ours (anything but a label and a
-/// 16-byte handle). The old name-and-session-id shape is deliberately not understood.
+/// Reads one resolved service into a window, or null when it is not one of ours (anything without version 1, a
+/// 16-byte handle and an 8-byte tag). The old name-and-session-id shapes are deliberately not understood.
 NearbyWindow? parseNearbyService({required String name, required String? host, required int port, required Map<String, String> attributes}) {
-  final String? h = attributes['h'];
-  if (host == null || h == null || name.isEmpty) return null;
+  final String? h = attributes['h'], tag = attributes['t'];
+  if (host == null || attributes['v'] != '1' || h == null || tag == null) return null;
   try {
-    final Uint8List handle = unb64(h);
-    if (handle.length != 16) return null;
-    return NearbyWindow(label: name, handle: handle, host: host, port: port);
+    final Uint8List handle = unb64(h), tagBytes = unb64(tag);
+    if (handle.length != 16 || tagBytes.length != kPictureTagBytes) return null;
+    return NearbyWindow(label: name, handle: handle, host: host, port: port, tag: tagBytes);
   } catch (_) {
     return null;
   }
@@ -260,7 +303,7 @@ class LanPairingBrowser {
             }
           }
         case BonsoirDiscoveryEventType.discoveryServiceLost:
-          // A lost service may carry no TXT record: the instance name (the label) is what identifies it.
+          // A lost service may carry no TXT record: the instance name identifies it.
           final String? name = e.service?.name;
           final String? key = name == null ? null : _keyByName.remove(name);
           if (key != null && !_gone.isClosed) _gone.add(key);

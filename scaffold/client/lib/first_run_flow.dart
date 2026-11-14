@@ -39,6 +39,7 @@ import 'onboarding_flow.dart';
 import 'onboarding_shared.dart' show ChildOnboardingScaffold;
 import 'child_connect_screen.dart';
 import 'device_keys.dart';
+import 'pairing_picture.dart' show PairingPictureRepository;
 import 'pairing_protocol.dart' show ChildPairing;
 import 'pairing_redeem_screen.dart';
 
@@ -54,6 +55,7 @@ class FirstRunFlow extends StatefulWidget {
     this.roster,
     this.nicknames,
     this.deviceKeys,
+    this.pictures,
     this.onPairedLocally,
   });
 
@@ -74,6 +76,9 @@ class FirstRunFlow extends StatefulWidget {
   /// connect (a calm card; a grown-up picks their name and types THEIR PIN, or scans). Null keeps the older
   /// account-code step as the only way (tests of the older shape).
   final DeviceKeyRepository? deviceKeys;
+
+  /// This device's pairing-picture state, so the connect step can show its own picture. Null hides that option.
+  final PairingPictureRepository? pictures;
   final Future<void> Function(ChildPairing pairing)? onPairedLocally;
 
   @override
@@ -138,6 +143,7 @@ class _FirstRunFlowState extends State<FirstRunFlow> {
       ),
     FirstRunStage.connect when widget.deviceKeys != null && widget.onPairedLocally != null => ChildConnectScreen(
         deviceKeys: widget.deviceKeys!,
+        pictures: widget.pictures,
         onPaired: widget.onPairedLocally!,
         onAccountCode: () => setState(() => _stage = FirstRunStage.accountCode),
       ),

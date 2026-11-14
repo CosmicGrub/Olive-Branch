@@ -28,7 +28,9 @@ import 'unlock_child_screen.dart';
 import 'device_keys.dart';
 import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_services.dart';
+import 'pairing_picture.dart';
 import 'pairing_records.dart';
+import 'pairing_trust.dart';
 import 'guardian_names_screen.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -1192,6 +1194,9 @@ class GuardianMoreScreen extends StatelessWidget {
             onTap: () => _open(context, ConnectedDevicesScreen(
               kids: LocalStorePairedKidsRepository(
                 LocalServices.current.area('pairedkids', ownerId: kLocalGuardianScope)),
+              trust: TrustBook(LocalStoreTrustRepository(
+                LocalServices.current.area('trust', ownerId: kLocalGuardianScope))),
+              pin: GuardianLocalScope.maybeOf(context)?.services.pin,
               childName: childName))),
           // Connect a child's device on the SAME network, no account or connection needed: you type your PIN here,
           // pick your name on her device and type it there (a key exchange; the PIN is never sent), then say yes.
@@ -1213,6 +1218,10 @@ class GuardianMoreScreen extends StatelessWidget {
                 kids: LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope)),
                 adultName: local.family?.guardianName ?? 'A grown-up',
                 childName: childName,
+                // The lasting pairing picture, who was added and the plain-language history
+                // (docs/planning/PERSISTENT-QR-PAIRING.md).
+                pictures: LocalStorePairingPictureRepository(services.area('devicekey')),
+                trust: TrustBook(LocalStoreTrustRepository(services.area('trust', ownerId: kLocalGuardianScope))),
               ));
             }),
         ]),
