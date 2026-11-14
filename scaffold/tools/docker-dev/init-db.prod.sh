@@ -33,12 +33,20 @@ set -euo pipefail
 
 psql -v ON_ERROR_STOP=1 --username postgres --dbname postgres \
   --set app_owner_password="$APP_OWNER_PASSWORD" \
-  --set backup_reader_password="$BACKUP_READER_PASSWORD" \
+  --set backup_reader_password="$BACKUP_READER_PASSWORD"   --set health_monitor_password="${HEALTH_MONITOR_PASSWORD:-}" \
   --set db_name="$POSTGRES_DB_NAME" <<'SQL'
 CREATE ROLE app_owner NOSUPERUSER NOBYPASSRLS LOGIN PASSWORD :'app_owner_password';
 CREATE DATABASE :"db_name" OWNER app_owner;
 CREATE ROLE backup_reader NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS
   LOGIN PASSWORD :'backup_reader_password';
+-- health_monitor (migration 0047): counts only, no table grants. LOGIN only when
+-- HEALTH_MONITOR_PASSWORD is set; otherwise it exists but cannot connect, and
+-- the operator enables it later with ALTER ROLE health_monitor LOGIN PASSWORD ...
+CREATE ROLE health_monitor NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOLOGIN;
+SELECT (:'health_monitor_password' <> '') AS hm_login \gset
+\if :hm_login
+  ALTER ROLE health_monitor LOGIN PASSWORD :'health_monitor_password';
+\endif
 SQL
 
-echo "init-db.prod.sh: app_owner, backup_reader, and ${POSTGRES_DB_NAME} created"
+echo "init-db.prod.sh: app_owner, backup_reader, health_monitor, and ${POSTGRES_DB_NAME} created"

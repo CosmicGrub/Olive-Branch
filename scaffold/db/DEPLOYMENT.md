@@ -95,3 +95,30 @@ prohibition and an enforced one.
       executed round-trip proof (`tools/backup-restore-verify.sh` for
       Postgres; a direct tar/diff round trip for media — see that document's
       own "how this was verified" section for exactly what each covers).
+
+## Monitoring login: `health_monitor` (migration 0047)
+
+`health_check` returns true counters to every caller under FORCE RLS by reading
+through `health_counts()`, an aggregate-only `SECURITY DEFINER` function (see
+MASTERFILE section 7.15). Hand an external monitor the `health_monitor` role, not
+`app_owner`: it is `NOSUPERUSER NOBYPASSRLS` and holds `SELECT` on `health_check`
+and `EXECUTE` on `health_counts()` only, so it can count breaches but cannot read
+a row of any table.
+
+New databases get the role from `tools/docker-dev/init-db.sql` (dev) and
+`init-db.prod.sh` (prod; `LOGIN` only when `HEALTH_MONITOR_PASSWORD` is set).
+For a database that already exists (the role is a cluster object; the unprivileged
+migrator cannot create it), as a superuser:
+
+```sql
+CREATE ROLE health_monitor NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE
+  LOGIN PASSWORD '<secret>';
+GRANT USAGE ON SCHEMA public TO health_monitor;
+GRANT SELECT ON health_check TO health_monitor;
+GRANT EXECUTE ON FUNCTION health_counts() TO health_monitor;
+```
+
+Then run the alert with `HEALTH_DATABASE_URL=postgres://health_monitor:...@host/db
+node tools/health-alert.mjs`. Do not grant it anything else; the test
+`packages/db/test/health_views_force_rls.test.mjs` fails if it holds any other
+table grant.

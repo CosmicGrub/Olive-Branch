@@ -25,10 +25,11 @@
  * packages/db/test/*.mjs (see pool.test.mjs, custody_order.test.mjs):
  * DATABASE_URL is meant to be a NOSUPERUSER NOBYPASSRLS role in a real
  * deployment, and none of health_check's underlying reads require anything
- * more — the RLS-protected tables it touches are edge-scoped since
- * migration 0040 (S-B4) and answer only to the `system` role, so this script
- * sets app.role = 'system' for its own session before reading the view (a
- * session with no role would see zero rows and go silently blind).
+ * more. Since migration 0047 the view reads through an aggregate-only
+ * SECURITY DEFINER function, so the counts are true for any caller under FORCE
+ * RLS and this script declares no app.role (before 0047 it had to claim
+ * `system`, a blanket read of every family's rows, or read zeros). Prefer the
+ * dedicated `health_monitor` login via HEALTH_DATABASE_URL.
  *
  * HONEST SCOPE — read this before wiring this into anything:
  *   This script DETECTS and REPORTS. It does not send an email, does not
@@ -44,9 +45,12 @@
 import pg from 'pg';
 import { staleBackupAlarm } from './backup_lib.mjs';
 
-const DATABASE_URL = process.env.DATABASE_URL || process.env.ADMIN_DATABASE_URL;
+// 0047: HEALTH_DATABASE_URL is the dedicated monitoring login (`health_monitor`:
+// SELECT on health_check and nothing else, so it can count but never read a row).
+// It wins when set; DATABASE_URL / ADMIN_DATABASE_URL remain valid fallbacks.
+const DATABASE_URL = process.env.HEALTH_DATABASE_URL || process.env.DATABASE_URL || process.env.ADMIN_DATABASE_URL;
 if (!DATABASE_URL) {
-  console.error('DATABASE_URL (or ADMIN_DATABASE_URL) required');
+  console.error('HEALTH_DATABASE_URL (or DATABASE_URL / ADMIN_DATABASE_URL) required');
   process.exit(2);
 }
 
@@ -54,11 +58,11 @@ const client = new pg.Client({ connectionString: DATABASE_URL });
 let rows;
 try {
   await client.connect();
-  // S-B4 (migration 0040): message_log and guardianship are edge-scoped, so a
-  // session with no role would silently read ZERO rows and the checks over
-  // them would go blind. The monitor reads as `system`, like every other
-  // background reader.
-  await client.query(`SELECT set_config('app.role', 'system', false)`);
+  // 0047: no app.role is needed (or wanted). health_check reads through
+  // health_counts(), an aggregate-only SECURITY DEFINER function, so the counts
+  // are true for ANY caller under FORCE RLS. Before 0047 this connection had to
+  // declare itself `system`, which is a blanket read of every family's rows just
+  // to count them; and a caller that forgot read zeros and never alerted.
   const res = await client.query(
     'SELECT check_name, severity, observed, threshold, meaning FROM health_check ORDER BY severity, check_name;'
   );
