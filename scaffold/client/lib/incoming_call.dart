@@ -140,7 +140,10 @@ class IncomingCallController {
   }
 
   /// A ring arrived (from the push or from the phone's notification). Returns what was decided, for tests.
-  RingDecision onRing(Object? ref, {int? postedAtMs}) {
+  RingDecision onRing(Object? rawRef, {int? postedAtMs}) {
+    // A session id is the same call whatever its letter case: the memory below is compared in lower case, so a
+    // forged or re-cased copy of a ring that was already shown, or already hung up, cannot knock a second time.
+    final Object? ref = rawRef is String ? rawRef.toLowerCase() : rawRef;
     final Duration? age = postedAtMs == null
         ? null
         : Duration(milliseconds: (_now().millisecondsSinceEpoch - postedAtMs).clamp(0, 1 << 40));
@@ -182,9 +185,9 @@ class IncomingCallController {
   }
 
   /// The caller hung up (or the call ended) before she answered. Quiet: the knock goes away, nothing is said.
-  void onCancel(Object? ref) {
-    if (!isCallSessionId(ref)) return;
-    final String id = ref! as String;
+  void onCancel(Object? rawRef) {
+    if (!isCallSessionId(rawRef)) return;
+    final String id = (rawRef! as String).toLowerCase();
     _note(_cancelled, id);
     if (_activeRef == id) {
       final Route<void>? r = _activeRoute;

@@ -281,6 +281,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     super.initState();
     // Registered before `_load()` resolves on purpose -- see file header.
     _wearSync.listenForCallDad(_handleWatchCallDad);
+    _attachCalls();
     _load();
   }
 
@@ -525,6 +526,35 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       builder: (_) => CallScreen(who: 'ivy', displayName: _childName)));
   }
 
+  // The knock, wired as soon as this screen opens and NOT behind the server load. A ring that opened the app from
+  // a closed state (the phone posted it natively) is waiting in IncomingCallBridge for exactly one "attach"; if
+  // that waited for fetchMe/inbox/presence to succeed, a slow or unreachable server would lose the ring (it ages
+  // past the knock's ninety seconds, or the load fails and attach never runs). Only the push-token registration
+  // (_initPush) needs a session. Same gates as before: a connected device (not a locally paired tablet), a build
+  // with push on, no injected test channel, and a navigator to knock on.
+  void _attachCalls() {
+    if (widget.localOnly || widget.pushChannel != null) return;
+    final GlobalKey<NavigatorState>? navKey = widget.navigatorKey;
+    if (navKey == null) return;
+    if (widget.pushService == null && FcmConfig.fromEnvironment() == null) return; // push is off in this build
+    Future<OliveApi> freshApi() => apiFor(widget.baseUrl, childId: widget.childId, client: widget.httpClient);
+    final IncomingCallController calls = IncomingCallController(
+      navigatorKey: navKey,
+      channel: widget.incomingCallChannel ?? IncomingCallChannel(),
+      childId: widget.childId,
+      apiProvider: freshApi,
+      // The caller's name is not in the push (it is content-free); a neutral phrase until the home knows who is free.
+      buildKnock: (String ref, void Function(KnockEnd) ended, Future<void> Function() callEnded) =>
+          CallKnockScreen(
+            from: _presence?.name ?? neutralGrownUp, who: 'ivy',
+            displayName: _childName.isEmpty ? 'there' : _childName,
+            sessionId: ref, childId: widget.childId,
+            apiProvider: freshApi, onEnded: ended, onCallEnded: callEnded),
+    );
+    _calls = calls;
+    unawaited(calls.attach());
+  }
+
   // Push and calls for a CONNECTED child device (§11, §7.18). Runs after this screen has a real session, and is
   // never allowed to fail this screen's own readiness or to show her anything:
   //  * a build with no Firebase settings does nothing here at all (push_service.dart, push_config.dart);
@@ -547,34 +577,14 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     }
     final PushService service = widget.pushService ?? PushService();
     if (widget.pushService == null && FcmConfig.fromEnvironment() == null) return; // push is off in this build
-    // A reload of this screen starts push again: put the earlier listeners away first, or one ring would knock twice.
+    // A reload of this screen starts push again: put the earlier listener away first. The knock controller is NOT
+    // recreated: it was attached when the screen opened (_attachCalls), so a reload cannot knock twice.
     _pushService?.dispose();
-    _calls?.dispose();
-    _calls = null;
     _pushService = service;
-    final GlobalKey<NavigatorState>? navKey = widget.navigatorKey;
-    IncomingCallController? calls;
-    if (navKey != null) {
-      Future<OliveApi> freshApi() => apiFor(widget.baseUrl, childId: widget.childId, client: widget.httpClient);
-      calls = IncomingCallController(
-        navigatorKey: navKey,
-        channel: widget.incomingCallChannel ?? IncomingCallChannel(),
-        childId: widget.childId,
-        apiProvider: freshApi,
-        // The caller's name is not in the push (it is content-free); a neutral phrase until the home knows who is free.
-        buildKnock: (String ref, void Function(KnockEnd) ended, Future<void> Function() callEnded) =>
-            CallKnockScreen(
-              from: _presence?.name ?? neutralGrownUp, who: 'ivy',
-              displayName: _childName.isEmpty ? 'there' : _childName,
-              sessionId: ref, childId: widget.childId,
-              apiProvider: freshApi, onEnded: ended, onCallEnded: callEnded),
-      );
-      _calls = calls;
-      unawaited(calls.attach());
-    }
+    final IncomingCallController? calls = _calls;
     final PushDispatcher dispatcher = PushDispatcher(
-      onCallIncoming: calls == null ? null : (String ref) => calls!.onRing(ref),
-      onCallCancelled: calls == null ? null : (String ref) => calls!.onCancel(ref),
+      onCallIncoming: calls == null ? null : (String ref) => calls.onRing(ref),
+      onCallCancelled: calls == null ? null : (String ref) => calls.onCancel(ref),
       onMessageReady: () => unawaited(_quietInboxRefresh()),
     );
     final OliveApi api = OliveApi(widget.baseUrl, token, client: widget.httpClient, session: AuthSession.current);

@@ -10,7 +10,9 @@ import android.content.Intent
 // unreliable road for something that must ring. The Firebase plugin itself is driven by the same broadcast
 // (com.google.android.c2dm.intent.RECEIVE), so this receiver sees every push the plugin sees, with no extra
 // dependency and nothing from the Firebase SDK on this module's compile path. Only Google Play services can send
-// that broadcast (the manifest requires the c2dm SEND permission), so another app cannot ring the tablet.
+// that broadcast (the manifest requires the c2dm SEND permission), so another app cannot make THIS receiver post
+// a ring. The launcher activity is exported, though, so an intent sent straight to it is a separate road: it is
+// only believed if this receiver recorded the ring first (OliveNotifications.recordPosted / takePosted).
 //
 // WHAT IT READS: the push's `kind` and `ref`, nothing else. A push is content-free by construction
 // (packages/transport/src/push.ts), and this file would not know what to do with a name if one were there.

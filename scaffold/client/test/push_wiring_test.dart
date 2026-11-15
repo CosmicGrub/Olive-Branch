@@ -33,6 +33,7 @@ class _World {
   _World(this.t) {
     t.binding.defaultBinaryMessenger.setMockMethodCallHandler(phone, (MethodCall c) async {
       phoneCalls.add(c.method);
+      if (c.method == IncomingCallChannel.mAttach) return pendingRing;
       return null;
     });
   }
@@ -44,12 +45,21 @@ class _World {
   final StreamController<String> refresh = StreamController<String>.broadcast();
   final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
   int unread = 0;
+  // The ring that opened the app from a closed state, as IncomingCallBridge hands it over on "attach".
+  Map<String, Object?>? pendingRing;
+  // When set, /v1/me answers only when this completes (a slow server); when meFails, it answers 500.
+  Completer<void>? holdMe;
+  bool meFails = false;
 
   late final MockClient server = MockClient((http.Request req) async {
     requests.add('${req.method} ${req.url.path}');
     final p = req.url.path;
     if (p == '/v1/auth/dev-login') return http.Response(jsonEncode(<String, Object?>{'token': 'tok'}), 200);
-    if (p == '/v1/me') return http.Response(jsonEncode(<String, Object?>{'displayName': 'Ivy'}), 200);
+    if (p == '/v1/me') {
+      if (holdMe != null) await holdMe!.future;
+      if (meFails) return http.Response('boom', 500);
+      return http.Response(jsonEncode(<String, Object?>{'displayName': 'Ivy'}), 200);
+    }
     if (p.endsWith('/inbox')) {
       return http.Response(jsonEncode(<String, Object?>{
         'entries': <Map<String, Object?>>[for (var i = 0; i < unread; i++) <String, Object?>{'id': '$i', 'state': 'delivered'}],
@@ -211,6 +221,60 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Answer'), findsNothing);
     expect(w.requests.length, before);
+  });
+
+  Map<String, Object?> ringThatOpenedTheApp(String ref) =>
+      <String, Object?>{'ref': ref, 'at': DateTime.now().millisecondsSinceEpoch - 1000};
+
+  testWidgets('a ring that opened the app knocks even when the server load FAILS (the knock never waits on the server)', (t) async {
+    final w = _World(t);
+    w.meFails = true;
+    w.pendingRing = ringThatOpenedTheApp(_session);
+    await w.pumpHome(pushService: w.service());
+    // The home is the quiet no-signal one, and the knock is on top of it: she sees a knock, nothing about a failure.
+    expect(find.text('Answer'), findsOneWidget);
+    expect(find.text('Just talking'), findsOneWidget);
+    expect(find.text('Not now'), findsOneWidget);
+    expect(find.textContaining('error', findRichText: true), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+    // No session was ever made, so no token was registered.
+    expect(w.requests.where((r) => r.contains('device-tokens')), isEmpty);
+  });
+
+  testWidgets('a ring that opened the app knocks while the server load is still SLOW, before it would have aged out', (t) async {
+    final w = _World(t);
+    w.holdMe = Completer<void>();
+    w.pendingRing = ringThatOpenedTheApp(_session);
+    await t.pumpWidget(MaterialApp(
+      navigatorKey: w.nav,
+      home: LiveChildHomeScreen(
+        baseUrl: 'http://api.test',
+        childId: 'child-a',
+        httpClient: w.server,
+        navigatorKey: w.nav,
+        pushService: w.service(),
+        incomingCallChannel: IncomingCallChannel(channel: w.phone),
+      ),
+    ));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 50));
+    expect(find.text('Answer'), findsOneWidget, reason: 'the knock must not wait for /v1/me');
+    w.holdMe!.complete();
+    await t.pumpAndSettle();
+  });
+
+  testWidgets('a reload of the home (the load running again) does not attach twice, and a ring still knocks once', (t) async {
+    final w = _World(t);
+    w.meFails = true;
+    await w.pumpHome(pushService: w.service());
+    expect(w.phoneCalls.where((c) => c == IncomingCallChannel.mAttach).length, 1);
+    w.meFails = false;
+    await t.tap(find.byKey(const Key('childOfflineRetry')));
+    await t.pumpAndSettle();
+    expect(w.phoneCalls.where((c) => c == IncomingCallChannel.mAttach).length, 1);
+    w.push(<String, dynamic>{'kind': 'call_incoming', 'ref': _session});
+    await t.pumpAndSettle();
+    expect(find.text('Answer'), findsOneWidget);
   });
 
   testWidgets('a build with no Firebase settings does nothing: no token, no listener, no change to the home', (t) async {

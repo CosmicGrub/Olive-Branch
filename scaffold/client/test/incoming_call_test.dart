@@ -287,6 +287,53 @@ void main() {
     });
   });
 
+  group('a session id is the same call in any letter case', () {
+    final upper = _a.toUpperCase();
+    testWidgets('a re-cased copy of a ring already shown is a duplicate, and the knock is keyed on the lower-case id', (t) async {
+      final r = _Rig(t);
+      await r.start();
+      expect(r.controller.onRing(upper), RingDecision.present);
+      await r.settle();
+      expect(r.controller.activeRef, _a);
+      expect(r.controller.onRing(_a), RingDecision.duplicate);
+      expect(r.controller.onRing(upper), RingDecision.duplicate);
+      r.nav.currentState!.pop();
+      await r.settle();
+      expect(r.controller.onRing(upper), RingDecision.duplicate, reason: 'a forged re-cased intent after the knock ended');
+    });
+
+    testWidgets('a hang-up in one case beats a ring in the other', (t) async {
+      final r = _Rig(t);
+      await r.start();
+      r.controller.onCancel(upper);
+      expect(r.controller.onRing(_a), RingDecision.cancelled);
+      r.controller.onCancel(_b);
+      expect(r.controller.onRing(_b.toUpperCase()), RingDecision.cancelled);
+      await r.settle();
+      expect(r.knocking, isFalse);
+    });
+
+    testWidgets('a hang-up in either case takes down the knock that is showing', (t) async {
+      final r = _Rig(t);
+      await r.start();
+      r.controller.onRing(_a);
+      await r.settle();
+      r.controller.onCancel(upper);
+      await r.settle();
+      expect(r.knocking, isFalse);
+    });
+
+    test('the channel hands Dart lower-case ids whatever case the phone sent', () {
+      expect(IncomingRing.tryParse(<String, Object?>{'ref': upper, 'at': 5})!.ref, _a);
+    });
+
+    test('a hostile id is still refused in any case', () {
+      for (final bad in <String>['$upper/end', ' $upper', '${upper}0', '../${upper.substring(3)}']) {
+        expect(IncomingRing.tryParse(<String, Object?>{'ref': bad}), isNull, reason: bad);
+      }
+    });
+  });
+
   group('how a knock ends', () {
     testWidgets('"Not now" closes the call\'s record on the server and puts the phone\'s ring away; she is told nothing', (t) async {
       final r = _Rig(t);

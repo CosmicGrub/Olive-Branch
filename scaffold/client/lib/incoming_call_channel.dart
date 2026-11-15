@@ -43,7 +43,7 @@ class IncomingRing {
     if (!isCallSessionId(ref)) return null;
     final Object? at = raw['at'];
     final int? ms = (at is int && at > 0) ? at : null;
-    return IncomingRing(ref! as String, ms);
+    return IncomingRing((ref! as String).toLowerCase(), ms);
   }
 }
 
@@ -93,7 +93,7 @@ class IncomingCallChannel {
         case eCancel:
           final Object? a = call.arguments;
           final Object? ref = a is Map ? a[kRef] : null;
-          if (isCallSessionId(ref)) onCancel(ref! as String);
+          if (isCallSessionId(ref)) onCancel((ref! as String).toLowerCase());
       }
       return null;
     });

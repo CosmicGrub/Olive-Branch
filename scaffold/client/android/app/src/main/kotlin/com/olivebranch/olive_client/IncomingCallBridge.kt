@@ -22,9 +22,10 @@ import io.flutter.plugin.common.MethodChannel
 //     screen is touched: it never dismisses the keyguard, so a PIN-locked phone stays PIN-locked.
 //  3. Answers two questions for the grown-up's "Alerts on this tablet" card (status) and performs the two
 //     taps that card offers (the one-time notifications permission box, the full-screen settings page).
-//  4. Refuses stale or malformed rings: an intent older than the knock's ninety seconds, or whose ref is not a
-//     canonical session id, is ignored. The intent is consumed when read, so an activity that is recreated
-//     with the same intent cannot ring twice.
+//  4. Refuses forged, stale or malformed rings: an intent whose ref is not a canonical session id, or that this
+//     app's own OlivePushReceiver did not post (the ring record in OliveNotifications), or that was posted more
+//     than the knock's ninety seconds ago, is ignored and wakes nothing. The intent is consumed when read, so an
+//     activity that is recreated with the same intent cannot ring twice.
 //
 // The kiosk rules are unchanged by it and are applied in Dart (incoming_call.dart): a ring never covers a
 // grown-up in Guardian mode, and calling never changes the lock.
@@ -82,13 +83,15 @@ object IncomingCallBridge {
     fun handleIntent(activity: Activity, intent: Intent?) {
         if (intent == null || intent.action != ACTION_RING) return
         val ref = intent.getStringExtra(OliveNotifications.EXTRA_REF)
-        val at = intent.getLongExtra(EXTRA_AT, 0L)
         // Consume it: a recreated activity, or a second delivery of this intent, must not ring again.
         intent.action = null
         if (!OliveNotifications.isSessionId(ref)) return
-        if (at <= 0L || System.currentTimeMillis() - at > OliveNotifications.RING_WINDOW_MS) return
+        // The intent itself proves nothing (this activity is exported, so any app can send this action with a
+        // well-formed ref). Only a ring that OlivePushReceiver really posted is believed: it is in the private ring
+        // record, once, and inside the knock's window. The time used is the recorded one, never the intent's.
+        val at = OliveNotifications.takePosted(activity, ref!!, System.currentTimeMillis()) ?: return
         showOverLockScreen(activity, true)
-        val ring = mapOf<String, Any>(K_REF to ref!!, K_AT to at)
+        val ring = mapOf<String, Any>(K_REF to OliveNotifications.canonicalRef(ref), K_AT to at)
         if (attached && channel != null) {
             channel!!.invokeMethod(E_RING, ring)
         } else {

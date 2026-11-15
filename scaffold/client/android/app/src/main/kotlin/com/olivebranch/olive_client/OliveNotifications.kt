@@ -44,6 +44,48 @@ object OliveNotifications {
     /** Only a canonical session id is believed (the server mints nothing else); anything else is dropped. */
     fun isSessionId(value: String?): Boolean = value != null && value.length == 36 && SESSION_ID.matches(value)
 
+    /** One spelling of a session id everywhere (notification tag, ring record, Dart memory): lower case. */
+    fun canonicalRef(value: String): String = value.lowercase()
+
+    // THE RING RECORD. MainActivity has to be exported (it is the launcher), so any app on the device, or
+    // `adb shell am start`, can send it an intent with the ring action and a well-formed ref. The intent
+    // therefore proves nothing. What proves a ring is real is that OlivePushReceiver posted it: postRing writes
+    // the ref and the time into this private file BEFORE it notifies, and IncomingCallBridge.handleIntent only
+    // rings for a ref it can take out of it (once, and only inside the knock's ninety seconds). A forged intent
+    // finds nothing, wakes nothing and knocks nothing. The file is private to this app, so another app cannot
+    // write to it either.
+    private const val RING_PREFS = "olive_rings"
+
+    private fun ringPrefs(context: Context) = context.getSharedPreferences(RING_PREFS, Context.MODE_PRIVATE)
+
+    /** Remember that this app itself posted a ring for [ref] at [at]; forget anything older than the knock's window. */
+    fun recordPosted(context: Context, ref: String, at: Long) {
+        val prefs = ringPrefs(context)
+        val edit = prefs.edit()
+        for ((key, value) in prefs.all) {
+            if (value !is Long || at - value > RING_WINDOW_MS || value > at) edit.remove(key)
+        }
+        edit.putLong(canonicalRef(ref), at).commit()
+    }
+
+    /**
+     * Takes [ref] out of the record: returns the time it was posted if this app posted it and it is still inside
+     * the knock's window, otherwise null. Taking it removes it, so a ring can open the app only once.
+     */
+    fun takePosted(context: Context, ref: String, now: Long): Long? {
+        val prefs = ringPrefs(context)
+        val key = canonicalRef(ref)
+        val at = prefs.getLong(key, 0L)
+        if (at <= 0L) return null
+        prefs.edit().remove(key).commit()
+        if (at > now || now - at > RING_WINDOW_MS) return null
+        return at
+    }
+
+    private fun forgetPosted(context: Context, ref: String) {
+        ringPrefs(context).edit().remove(canonicalRef(ref)).commit()
+    }
+
     fun ensureChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         val calls = NotificationChannel(
@@ -81,15 +123,18 @@ object OliveNotifications {
         }
     }
 
-    fun postRing(context: Context, ref: String) {
-        if (!isSessionId(ref)) return
+    fun postRing(context: Context, rawRef: String) {
+        if (!isSessionId(rawRef)) return
+        val ref = canonicalRef(rawRef)
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         if (!nm.areNotificationsEnabled()) return
         ensureChannels(context)
+        val postedAt = System.currentTimeMillis()
+        recordPosted(context, ref, postedAt)
         val open = Intent(context, MainActivity::class.java).apply {
             action = IncomingCallBridge.ACTION_RING
             putExtra(EXTRA_REF, ref)
-            putExtra(IncomingCallBridge.EXTRA_AT, System.currentTimeMillis())
+            putExtra(IncomingCallBridge.EXTRA_AT, postedAt)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         val pending = PendingIntent.getActivity(
@@ -119,7 +164,8 @@ object OliveNotifications {
     fun cancelRing(context: Context, ref: String?) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         if (ref != null && isSessionId(ref)) {
-            nm.cancel(ref, RING_ID)
+            forgetPosted(context, ref)
+            nm.cancel(canonicalRef(ref), RING_ID)
         } else {
             // "Whatever ring is up": remove every ring this app has posted.
             nm.activeNotifications

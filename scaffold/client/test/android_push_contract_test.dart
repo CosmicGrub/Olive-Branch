@@ -59,6 +59,65 @@ void main() {
     });
   });
 
+  group('a ring is believed only if this app\'s own receiver posted it (MainActivity is exported)', () {
+    String body(String source, String signature) {
+      final start = source.indexOf(signature);
+      expect(start, greaterThanOrEqualTo(0), reason: signature);
+      final open = source.indexOf('{', start);
+      var depth = 0;
+      for (var i = open; i < source.length; i++) {
+        if (source[i] == '{') depth++;
+        if (source[i] == '}' && --depth == 0) return source.substring(open, i + 1);
+      }
+      fail('unbalanced braces after $signature');
+    }
+
+    test('the launcher activity is exported, so the intent alone cannot be trusted', () {
+      expect(RegExp(r'<activity[^>]*android:name="\.MainActivity"[^>]*android:exported="true"', dotAll: true).hasMatch(manifest), isTrue);
+    });
+
+    test('handleIntent takes the ref out of the ring record before it wakes the screen or reaches Dart', () {
+      final h = body(bridge, 'fun handleIntent(');
+      final take = h.indexOf('takePosted(');
+      expect(take, greaterThanOrEqualTo(0));
+      expect(take, lessThan(h.indexOf('showOverLockScreen(activity, true)')));
+      expect(take, lessThan(h.indexOf('pendingRing =')));
+      expect(RegExp(r'takePosted\([^\n]*\)\s*\?:\s*return').hasMatch(h), isTrue, reason: 'no record means no ring');
+    });
+
+    test('the time a ring is judged on is the recorded one, never the intent extra', () {
+      final h = body(bridge, 'fun handleIntent(');
+      expect(h.contains('getLongExtra'), isFalse);
+      expect(h.contains('EXTRA_AT'), isFalse);
+    });
+
+    test('postRing records the ref before it notifies, and a hang-up forgets it', () {
+      final p = body(notifications, 'fun postRing(');
+      expect(p.indexOf('recordPosted('), greaterThanOrEqualTo(0));
+      expect(p.indexOf('recordPosted('), lessThan(p.indexOf('nm.notify(')));
+      final c = body(notifications, 'fun cancelRing(');
+      expect(c.contains('forgetPosted('), isTrue);
+    });
+
+    test('a record is one-shot, windowed, and the file is private to this app', () {
+      final t = body(notifications, 'fun takePosted(');
+      expect(t.contains('remove(key)'), isTrue);
+      expect(t.contains('RING_WINDOW_MS'), isTrue);
+      expect(notifications.contains('Context.MODE_PRIVATE'), isTrue);
+      expect(notifications.contains('MODE_WORLD'), isFalse);
+    });
+
+    test('refs are one spelling everywhere on the native side (lower case)', () {
+      expect(notifications.contains('fun canonicalRef(value: String): String = value.lowercase()'), isTrue);
+      expect(body(notifications, 'fun postRing(').contains('canonicalRef(rawRef)'), isTrue);
+      expect(body(bridge, 'fun handleIntent(').contains('canonicalRef(ref)'), isTrue);
+    });
+
+    test('the comments no longer claim another app cannot ring the tablet', () {
+      expect(receiver.contains('so another app cannot ring the tablet'), isFalse);
+    });
+  });
+
   group('the Dart and Kotlin ends of the bridge agree', () {
     test('channel name', () {
       expect(kotlinConst(bridge, 'METHOD_CHANNEL'), IncomingCallChannel.methodChannel.name);
@@ -186,7 +245,7 @@ void main() {
     });
     test('an old or malformed ring intent is refused', () {
       expect(bridge.contains('if (!OliveNotifications.isSessionId(ref)) return'), isTrue);
-      expect(bridge.contains('System.currentTimeMillis() - at > OliveNotifications.RING_WINDOW_MS'), isTrue);
+      expect(notifications.contains('now - at > RING_WINDOW_MS'), isTrue, reason: 'takePosted drops a ring older than the knock window');
     });
     test('the kiosk bridge is untouched by calling: no lock-task call anywhere in the new files', () {
       for (final src in <String>[notifications, receiver, bridge]) {
@@ -258,6 +317,13 @@ void main() {
         }
       }
       expect(hits, isEmpty);
+    });
+
+    test('the Docker build context leaves out the secrets folder and any Firebase config (.gitignore does not reach `docker build`)', () {
+      final ignore = _read('../.dockerignore');
+      for (final line in <String>['secrets/', '**/secrets/', '**/fcm.defines.json', '**/google-services.json', '**/GoogleService-Info.plist']) {
+        expect(RegExp('^${RegExp.escape(line)}\\s*\$', multiLine: true).hasMatch(ignore), isTrue, reason: line);
+      }
     });
 
     test('the Google services Gradle plugin is not applied (Firebase starts from run-time settings)', () {
