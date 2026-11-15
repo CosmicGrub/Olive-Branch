@@ -26,7 +26,7 @@
 // state machine of its own.
 library;
 
-enum OutboxKind { show, drawing, message, voice, colouring, journal, listItem, storyStar, ping }
+enum OutboxKind { show, drawing, message, voice, colouring, journal, listItem, storyStar, ping, receipt }
 
 /// The wire string offline.ts's own OutboxKind union uses — kept for the day
 /// a real caller needs to round-trip one of these server-side; unused today,
@@ -43,6 +43,7 @@ extension OutboxKindWire on OutboxKind {
         OutboxKind.listItem => 'list_item',
         OutboxKind.storyStar => 'story_star',
         OutboxKind.ping => 'ping',
+        OutboxKind.receipt => 'receipt',
       };
 }
 

@@ -99,11 +99,11 @@ void main() {
       expect(find.byKey(const Key('bandTile.colour')), findsOneWidget);
     });
 
-    testWidgets('news is a dot, never a number; there is no count anywhere on the home', (WidgetTester t) async {
+    testWidgets('there is no dot and no count anywhere on the home, even with unread news (MASTERFILE 7.19)', (WidgetTester t) async {
       await big(t);
       await t.pumpWidget(app(kidHome(await snap(), unread: 3)));
       await t.pumpAndSettle();
-      expect(find.byKey(const Key('newDot')), findsOneWidget);
+      expect(find.byKey(const Key('newDot')), findsNothing);
       for (final String s in allText(t)) {
         expect(RegExp(r'\d').hasMatch(s), isFalse, reason: 'no digit on the 5-7 home: "$s"');
       }
