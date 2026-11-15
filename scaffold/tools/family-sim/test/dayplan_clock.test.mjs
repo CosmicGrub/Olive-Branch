@@ -14,6 +14,10 @@ import { buildFamilies } from '../lib/families.mjs';
 
 let pass = 0, fail = 0; const bad = [];
 const check = (name, ok) => { ok ? pass++ : (fail++, bad.push(name)); };
+// the sweep is ~317k minute-level probes; each probe kind is rolled up to one assertion per zone and
+// day (failing minutes are still named) so the suite total stays readable
+const roll = new Map();
+const probe = (key, tag, ok) => { const r = roll.get(key) || { n: 0, bad: [] }; r.n++; if (!ok) r.bad.push(tag); roll.set(key, r); };
 
 const zones = [...new Set(buildFamilies(10).map((f) => f.tz))];
 // a plain winter day, both DST changes in the northern hemisphere, and the southern ones
@@ -27,8 +31,8 @@ for (const tz of zones) for (const [y, mo, d] of days) for (let minute = 0; minu
   const plan = dayPlan(t - 60000, 600000);        // exactly what isolation_ci.test.mjs uses
   const rows = dayPartRows(plan, tz);
   const tag = `${tz} ${y}-${mo}-${d} ${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}Z`;
-  check(`${tag}: all four parts are seeded`, KINDS.every((k) => rows.some((r) => r[0] === k)));
-  check(`${tag}: no empty range`, rows.every((r) => r[1] !== r[2]));
+  probe(`${tz} ${y}-${mo}-${d}: all four parts are seeded`, tag, KINDS.every((k) => rows.some((r) => r[0] === k)));
+  probe(`${tz} ${y}-${mo}-${d}: no empty range`, tag, rows.every((r) => r[1] !== r[2]));
   if (rows.some(wrapsMidnight)) {
     wrapped++;
     if (tz === 'Europe/Stockholm' && y === 2026 && mo === 11) stockholmWrapMinutes.push(minute);
@@ -39,17 +43,19 @@ for (const tz of zones) for (const [y, mo, d] of days) for (let minute = 0; minu
   const now = DateTime.fromMillis(t, { zone: 'utc' });
   const r = materialize({ id: 'p', childId: 'c', state: 'pending', policy: 'at_daypart', targetDaypart: 'bedtime',
     expiresAt: now.plus({ days: 97 }).toISO() }, { homeTz: tz, tzIntervals: [], dayParts: parts }, now);
-  check(`${tag}: bedtime can be banked (${r.ok ? '' : r.reason})`, r.ok);
+  probe(`${tz} ${y}-${mo}-${d}: bedtime can be banked`, `${tag} (${r.ok ? '' : r.reason})`, r.ok);
   // the bedtime of this plan starts ~54 minutes from now. On a DST-change day a wall clock inside the
   // repeated/skipped hour is legitimately resolved to another instant (rolled a day), so only the plain day is exact.
-  if (r.ok && plain) check(`${tag}: bedtime lands within the next two hours`,
+  if (r.ok && plain) probe(`${tz} ${y}-${mo}-${d}: bedtime lands within the next two hours`, tag,
     r.scheduledAt.toMillis() >= t && r.scheduledAt.toMillis() <= t + 2 * 3600000);
 }
 
+for (const [key, r] of roll) check(r.bad.length ? `${key} -> ${r.bad.slice(0, 3).join('; ')}` : key, r.bad.length === 0);
 check('the sweep really exercised the midnight-straddling case', wrapped > 0 && stockholmWrapMinutes.length > 0);
 // the exact CI failure: Stockholm, 21:56Z on a November day, is 22:56 local; bedtime is 23:50 -> 00:00
 check('CI repro (Stockholm 21:56Z) seeds a wrapped bedtime',
   stockholmWrapMinutes.includes(21 * 60 + 56));
 
-console.log(`family-sim day plan clock: ${pass} passed, ${fail} failed`);
+// verify.sh reads exactly "<n> passed, <n> failed" at the start of a line
+console.log(`${pass} passed, ${fail} failed`);
 if (fail) { console.log(bad.slice(0, 20).join('\n')); process.exit(1); }
