@@ -23,8 +23,10 @@
 // (games2.ts's own comment on HANGMAN_LIVES). That posture carries into the
 // copy here too: a loss reveals the word warmly, never scores it as a
 // defeat.
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'form_factors.dart' as ff;
+import 'game_solo_logic.dart' show WordEntry, pickWord;
 
 // =========================================================== games2.ts ====
 class Hangman {
@@ -161,9 +163,13 @@ class _HangmanSetupScreenState extends State<HangmanSetupScreen> {
 
 // =============================================================== PLAY (child)
 class HangmanScreen extends StatefulWidget {
-  const HangmanScreen({super.key, required this.game, this.childName = 'Ivy'});
+  const HangmanScreen({super.key, required this.game, this.childName = 'Ivy', this.onAnother});
   final Hangman game;
   final String childName;
+
+  /// Set only by the solo game ([GuessTheWordSolo]): once the word is found or revealed, a quiet "Another word"
+  /// button asks for the next one. Null (a grown-up's typed word) shows no button and the lives hearts as before.
+  final VoidCallback? onAnother;
 
   @override
   State<HangmanScreen> createState() => _HangmanScreenState();
@@ -203,7 +209,8 @@ class _HangmanScreenState extends State<HangmanScreen> {
             style: Theme.of(context).textTheme.headlineMedium
               ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 2))),
           const SizedBox(height: 16),
-          _LivesRow(livesLeft: _game.livesLeft),
+          if (widget.onAnother == null) _LivesRow(livesLeft: _game.livesLeft)
+          else Center(child: _FlowerLives(livesLeft: _game.livesLeft)),
           const SizedBox(height: 20),
           if (outcome == 'won') Container(
             key: const Key('hangmanWon'),
@@ -223,6 +230,11 @@ class _HangmanScreenState extends State<HangmanScreen> {
               borderRadius: BorderRadius.circular(16)),
             child: Text('So close — it was ${_game.word}.',
               style: const TextStyle(fontWeight: FontWeight.w600))),
+          if (outcome != null && widget.onAnother != null) Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: SizedBox(height: 48, child: FilledButton.icon(
+              key: const Key('hangmanAnother'), onPressed: widget.onAnother,
+              icon: const Icon(Icons.refresh), label: const Text('Another word')))),
           const SizedBox(height: 20),
           _Keyboard(guessed: _game.guessed, gameOver: outcome != null,
             wordLetters: _game.word.split('').toSet(), onTap: _tapLetter, scheme: scheme),
@@ -237,6 +249,19 @@ class _HangmanScreenState extends State<HangmanScreen> {
   }
 }
 
+/// One flower that fades a little with each miss: a picture of "still plenty", never a number of tries left.
+class _FlowerLives extends StatelessWidget {
+  const _FlowerLives({required this.livesLeft});
+  final int livesLeft;
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: livesLeft >= hangmanLives ? 'The flower is full' : livesLeft > 2 ? 'The flower is a little tired' : 'The flower needs a hand',
+    excludeSemantics: true,
+    child: Icon(Icons.local_florist_rounded, key: const Key('hangmanFlower'), size: 56,
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25 + 0.75 * (livesLeft.clamp(0, hangmanLives) / hangmanLives))),
+  );
+}
+
 class _LivesRow extends StatelessWidget {
   const _LivesRow({required this.livesLeft});
   final int livesLeft;
@@ -246,6 +271,36 @@ class _LivesRow extends StatelessWidget {
       Icon(i < livesLeft ? Icons.favorite : Icons.favorite_border,
         size: 22, color: Theme.of(context).colorScheme.primary),
   ]);
+}
+
+/// Guess the word on her own: a word from the built-in bank for her age band and its hint, no grown-up typing
+/// needed. Each "Another word" is a fresh word, never the same one twice in a row.
+class GuessTheWordSolo extends StatefulWidget {
+  const GuessTheWordSolo({super.key, this.childName = 'Ivy', this.childAge = 7, this.seed});
+  final String childName;
+  final int childAge;
+  final int? seed;
+  @override
+  State<GuessTheWordSolo> createState() => _GuessTheWordSoloState();
+}
+
+class _GuessTheWordSoloState extends State<GuessTheWordSolo> {
+  late final Random _rng = Random(widget.seed);
+  late WordEntry _entry = pickWord(widget.childAge, _rng);
+  int _round = 0;
+
+  void _another() => setState(() {
+    _entry = pickWord(widget.childAge, _rng, not: _entry.word);
+    _round++;
+  });
+
+  @override
+  Widget build(BuildContext context) => HangmanScreen(
+    key: ValueKey<String>('${_entry.word}#$_round'),
+    game: newHangman(_entry.word, hint: _entry.hint),
+    childName: widget.childName,
+    onAnother: _another,
+  );
 }
 
 const String _alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';

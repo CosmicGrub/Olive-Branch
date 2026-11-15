@@ -63,6 +63,7 @@
 // scaled up, mirroring game_picker.dart's own column breakpoint in spirit.
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'game_solo_logic.dart' show TttLevel, tttCpuPick;
 import 'access_scope.dart' show motionDuration;
 import 'form_factors.dart' as ff;
 import 'game_logic.dart';
@@ -224,6 +225,10 @@ class GameTicTacToe extends StatefulWidget {
     this.childName = 'Ivy',
     this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 550),
+    this.showSetup = false,
+    this.level = TttLevel.easy,
+    this.twoPlayer = false,
+    this.seed,
   });
 
   final String childName;
@@ -233,6 +238,20 @@ class GameTicTacToe extends StatefulWidget {
   /// there is none, anywhere in this file.
   final Duration botThinkDelay;
 
+  /// Wave 8 (prototype k.g.ttt): open on a calm "how shall we play" panel (Easy / Normal / Hard against the
+  /// game, or take turns with a friend on this screen) before the board. Off by default so a caller that wants
+  /// the board straight away keeps it.
+  final bool showSetup;
+
+  /// The game's level when [showSetup] is off. Easy is the original random opponent.
+  final TttLevel level;
+
+  /// Same-screen two-player when [showSetup] is off.
+  final bool twoPlayer;
+
+  /// Fixes the game's random choices for tests.
+  final int? seed;
+
   @override
   State<GameTicTacToe> createState() => _GameTicTacToeState();
 }
@@ -240,9 +259,30 @@ class GameTicTacToe extends StatefulWidget {
 class _GameTicTacToeState extends State<GameTicTacToe> {
   TttState _state = newTicTacToe();
   bool _parentThinking = false;
+  late final Random _rng = Random(widget.seed);
+  late TttLevel _level = widget.level;
+  late bool _friend = widget.twoPlayer;
+  late bool _chosen = !widget.showSetup;
+
+  void _choose({TttLevel? level, bool friend = false}) {
+    setState(() {
+      _friend = friend;
+      if (level != null) _level = level;
+      _chosen = true;
+      _state = newTicTacToe();
+      _parentThinking = false;
+    });
+  }
 
   void _tapCell(int i) {
-    if (_state.outcome != null || _parentThinking || _state.turn != Side.a) return;
+    if (_state.outcome != null || _parentThinking) return;
+    if (_friend) {
+      // Two players, one screen: whoever's turn it is plays. No handicap, no thinking pause.
+      final r = tttPlay(_state, _state.turn, i);
+      if (r.ok) setState(() => _state = r.state!);
+      return;
+    }
+    if (_state.turn != Side.a) return;
     final result = tttPlay(_state, Side.a, i);
     if (!result.ok) return;
     setState(() => _state = result.state!);
@@ -265,7 +305,7 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
         setState(() => _parentThinking = false);
         return;
       }
-      final pick = moves[Random().nextInt(moves.length)];
+      final pick = tttCpuPick(_state, _level, _rng) ?? moves[_rng.nextInt(moves.length)];
       final result = tttPlay(_state, Side.b, pick);
       setState(() {
         _parentThinking = false;
@@ -316,11 +356,17 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
     final finished = _state.outcome != null;
     final banner = handicapBanner(GameKind.tictactoe, _state.handicap,
         parentName: widget.parentName);
+    if (!_chosen) {
+      return Scaffold(
+        appBar: AppBar(title: Text(catalogueFor(GameKind.tictactoe).title)),
+        body: SafeArea(child: _TttSetup(onLevel: (l) => _choose(level: l), onFriend: () => _choose(friend: true))),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(catalogueFor(GameKind.tictactoe).title),
         actions: [
-          IconButton(
+          if (!_friend) IconButton(
             tooltip: 'Make it fair',
             icon: const Icon(Icons.balance_rounded),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -332,7 +378,7 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
               ),
             )),
           ),
-          IconButton(
+          if (!_friend) IconButton(
             tooltip: 'Add a voice note',
             icon: const Icon(Icons.mic_none),
             onPressed: () => _notBuiltYetTtt(context, 'Voice notes on moves'),
@@ -368,7 +414,7 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
               child: _CalloutBanner(text: banner)),
             _TurnBanner(finished: finished, parentThinking: _parentThinking,
               childName: widget.childName, parentName: widget.parentName,
-              isChildTurn: _state.turn == Side.a),
+              isChildTurn: _state.turn == Side.a, friend: _friend),
             if (finished) Padding(padding: const EdgeInsets.only(top: 8),
               child: _EndBanner(line: _state.outcome == TttOutcome.draw ? 'Draw. Good game.' : 'Good game.')),
             const SizedBox(height: 12),
@@ -404,7 +450,7 @@ class _GameTicTacToeState extends State<GameTicTacToe> {
                     child: _CalloutBanner(text: banner)),
                   _TurnBanner(finished: finished, parentThinking: _parentThinking,
                     childName: widget.childName, parentName: widget.parentName,
-                    isChildTurn: _state.turn == Side.a),
+                    isChildTurn: _state.turn == Side.a, friend: _friend),
                   if (finished) Padding(padding: const EdgeInsets.only(top: 8),
                     child: _EndBanner(
                       line: _state.outcome == TttOutcome.draw ? 'Draw. Good game.' : 'Good game.')),
@@ -428,13 +474,14 @@ void _notBuiltYetTtt(BuildContext context, String what) {
 
 class _TurnBanner extends StatelessWidget {
   const _TurnBanner({required this.finished, required this.parentThinking,
-    required this.childName, required this.parentName, required this.isChildTurn});
-  final bool finished, parentThinking, isChildTurn;
+    required this.childName, required this.parentName, required this.isChildTurn, this.friend = false});
+  final bool finished, parentThinking, isChildTurn, friend;
   final String childName, parentName;
   @override
   Widget build(BuildContext context) {
     final text = finished ? 'Good game.'
         : isChildTurn ? "$childName's move"
+        : friend ? "Your friend's move"
         : parentThinking ? "${asSubject(parentName)} is thinking…" : "${asSubject(parentName)}'s move";
     return Text(text, style: Theme.of(context).textTheme.titleLarge);
   }
@@ -449,7 +496,7 @@ class _EndBanner extends StatelessWidget {
     decoration: BoxDecoration(color: Theme.of(context).colorScheme.tertiaryContainer,
       borderRadius: BorderRadius.circular(16)),
     child: Row(children: [
-      const Icon(Icons.emoji_events_outlined),
+      const Icon(Icons.favorite_border_rounded),
       const SizedBox(width: 8),
       Expanded(child: Text(line, style: const TextStyle(fontWeight: FontWeight.w600))),
     ]),
@@ -522,6 +569,50 @@ class _ButtonsColumn extends StatelessWidget {
       )),
     ],
   ]);
+}
+
+/// "How shall we play": three levels against the game, or take turns with a friend on this screen. Plain words,
+/// no stars or numbers, nothing that ranks her.
+class _TttSetup extends StatelessWidget {
+  const _TttSetup({required this.onLevel, required this.onFriend});
+  final ValueChanged<TttLevel> onLevel;
+  final VoidCallback onFriend;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget tile(Key key, String label, String sub, IconData icon, VoidCallback onTap) => Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          key: key, borderRadius: BorderRadius.circular(16), onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
+            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), child: Row(children: [
+              Icon(icon, size: 28),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(label, style: theme.textTheme.titleMedium),
+                Text(sub, style: theme.textTheme.bodySmall),
+              ])),
+            ])),
+          ),
+        ),
+      ),
+    );
+    return Center(child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: ff.comfortableReadingWidth),
+      child: ListView(padding: const EdgeInsets.all(16), children: [
+        Text('How shall we play?', key: const Key('tttSetupTitle'), style: theme.textTheme.titleLarge),
+        const SizedBox(height: 14),
+        tile(const Key('tttLevel_easy'), 'Easy', 'The game goes gently', Icons.spa_outlined, () => onLevel(TttLevel.easy)),
+        tile(const Key('tttLevel_normal'), 'Normal', 'The game plays properly', Icons.balance_rounded, () => onLevel(TttLevel.normal)),
+        tile(const Key('tttLevel_hard'), 'Hard', 'The game thinks hard', Icons.psychology_outlined, () => onLevel(TttLevel.hard)),
+        tile(const Key('tttFriend'), 'Take turns with a friend', 'Both of you, on this screen', Icons.people_outline, onFriend),
+      ]),
+    ));
+  }
 }
 
 class _TttBoardView extends StatelessWidget {
