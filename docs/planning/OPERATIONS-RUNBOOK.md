@@ -57,3 +57,25 @@ Practical notes learned while building. Nothing here contains credentials.
 ## Releasing
 
 See `docs/RELEASING.md`. Versions are spec versions; the app version is `X.Y.Z+(major*10000+minor*100+patch)`. The release tool dry-runs by default. Preview cuts are debug-signed with no server address; the repository is public, so a published release is public.
+
+## Server lane: first family, delivery, push and calls (operator steps)
+
+Everything here is opt-in and degrades honestly: the app is offline-first and the server enables the live experience, it never gates the local one. Nothing in this section is needed to run the app on a device.
+
+**1. The first real family (no dev-login).** A production server has no dev-login, so the operator mints a single-use code and gives it to the family out of band:
+
+- `docker compose -p olive-fresh -f docker-compose.dev.yml exec server node tools/enrol-family.mjs create --label "name"` prints the code once (only its hash is stored; it expires in 7 days, `--days 1-90`). `list` shows state without codes; `revoke <id>` kills an unused code.
+- The family redeems it once in the app (or `POST /v1/families`): that creates the guardian, the child, the guardianship edge and a paired guardian device in one transaction and returns a session plus the device credential. She then sets her PIN and pairs the child's device with the ordinary pairing flow.
+- Switches on the server environment: `FAMILY_ENROLMENT=off` is a kill switch (403 `enrolment_closed`), `FAMILY_ENROLMENT_MAX=N` caps how many families it will ever enrol, `ENROL_MISS_BUDGET_PER_MIN` (default 10) caps unknown-code guesses per source address and `ENROL_MISS_BUDGET_GLOBAL_PER_MIN` (default 300) across all callers, so one caller cannot lock the others out. A new family starts with placeholder day-parts (bedtime 19:30, night not reachable); there is no guardian-facing editor for them yet.
+
+**2. Delivery.** A sent message is `pending`; the scheduler's fast lane (`rematerialize`, `deliver-due`, `end-stale-calls`, every `SCHEDULER_FAST_INTERVAL_MS`, default 60 000) moves it to `ready`, then `delivered` (visible in the child's inbox), then sends one content-free wake-up push per child. In the dev compose the scheduler is profile-gated: `docker compose -p olive-fresh -f docker-compose.dev.yml --profile scheduler up -d scheduler`. `SCHEDULER_FAST_LANE=off` returns the loop to its daily schedule; `DELIVERY_PUSH=off` keeps delivery and sends no push. A message that comes due inside the child's quiet hours is delivered silently.
+
+**3. Push (needs the owner's Firebase project).** The code is real and tested against an HTTP stand-in for Google; it has never run against Google because no Firebase project exists yet.
+
+1. In the Firebase console create a project, add an Android app with the app's package id, and download `google-services.json` for the app (see the client note below).
+2. Project settings, Service accounts, "Generate new private key". Save that JSON in `scaffold/secrets/` (git-ignored; never commit it, never paste it into chat).
+3. Put `FCM_SERVICE_ACCOUNT_FILE=/run/olive-secrets/<file name>` in `scaffold/.env` and recreate only the server and scheduler: `docker compose -p olive-fresh -f docker-compose.dev.yml up -d server scheduler` (the compose files mount `scaffold/secrets` read-only at `/run/olive-secrets`). A key in an environment variable shows in `docker inspect`; a file does not. `FCM_SERVICE_ACCOUNT_JSON` is still accepted.
+4. Check: the server logs `push: {"androidRing":"ready",...}` at boot and the loopback `GET /internal/metrics` carries `push.androidRing`. Names and booleans only, never the key.
+5. Client: `client/android` builds without `google-services.json` today (no Google plugin is applied). Adding the file and the Google services Gradle plugin is a client change that is not in this lane (no Gradle runs here); until then no device can obtain an FCM token, so the server has nothing to push to.
+
+**4. Calls.** `GET /v1/children/:id/calls/availability` tells the app whether calls are on and whether they only work on the home network. Turning calls on is still `tools/jitsi-selfhost/calls-on.sh`; the server reads its environment at start, so after changing the values recreate only the server: `docker compose -p olive-fresh -f docker-compose.dev.yml up -d --no-deps server`. Never touch the `olive-live-*` containers. A call session is joinable for `CALL_MAX_AGE_MINUTES` (default 240) at most.

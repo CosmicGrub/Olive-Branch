@@ -511,6 +511,17 @@ class OliveApi {
   // -call-migration-design.md, for the fuller account.
   static const callJoin = '/v1/children/:childId/calls/:sessionId/join';
 
+  // GET .../calls/availability -- whether a call can be placed at all and
+  // whether it only works on the server's own network. Booleans and the
+  // provider name only; never a secret or the server URL.
+  static const callAvailability = '/v1/children/:childId/calls/availability';
+
+  // POST /v1/families -- NO SESSION: how a production server gets its first
+  // family. An operator-minted single-use enrolment code is the credential;
+  // one redeem creates the guardian, child, guardianship edge and a paired
+  // device. A free function [enrolFamily] below (no identity to attach).
+  static const familyEnrol = '/v1/families';
+
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
           .replace(queryParameters: query);
@@ -1146,6 +1157,13 @@ class OliveApi {
   Future<Map<String, dynamic>> joinCall(String childId, String sessionId) => _post(
       callJoin.replaceFirst(':childId', childId).replaceFirst(':sessionId', sessionId),
       const {});
+
+  /// Whether calls are switched on for this server and whether they work only on
+  /// its own network -- GET [callAvailability]. `{provider, available,
+  /// sameNetworkOnly}`. The call button reads this up front instead of finding
+  /// out from a 503 after the guardian has already tapped it.
+  Future<Map<String, dynamic>> fetchCallAvailability(String childId) =>
+      _get(callAvailability, childId: childId);
 
   /// Marks call_log's own row for [sessionId] ended — POST [callEnd],
   /// server/routes.mjs's real handler (2026-08-23). Idempotent: returns
@@ -1895,6 +1913,40 @@ Future<Map<String, dynamic>> redeemDevicePairingCode(
     Uri.parse('$baseUrl${OliveApi.devicePairingRedeem}'),
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'code': code, 'role': role}),
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body;
+}
+
+/// Redeems an operator-minted enrolment code -- POST [OliveApi.familyEnrol],
+/// no session (see that constant). Returns `{sessionToken, expiresAt,
+/// deviceId, deviceCredential, role, targetId, childId}`. Throws
+/// [ApiException] on any non-2xx (400 invalid_code / invalid_birth_date /
+/// invalid_time_zone, 404 not_found, 409 already_redeemed / revoked, 410
+/// expired, 403 enrolment_closed, 429 enrolment_rate_limited).
+Future<Map<String, dynamic>> enrolFamily(
+  String baseUrl, {
+  required String enrolmentCode,
+  required String guardianName,
+  required String childName,
+  required String childBirthDate,
+  required String homeTz,
+  http.Client? client,
+}) async {
+  final c = client ?? OliveTransport.clientFor(baseUrl);
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.familyEnrol}'),
+    headers: {'content-type': 'application/json'},
+    body: jsonEncode({
+      'enrolmentCode': enrolmentCode,
+      'guardianName': guardianName,
+      'childName': childName,
+      'childBirthDate': childBirthDate,
+      'homeTz': homeTz,
+    }),
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {

@@ -134,6 +134,19 @@ services:
       # outstanding signed media URL on the next `docker compose up`/restart
       # — found by this project's own post-tier audit.
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
+      # PUSH (MASTERFILE §11). Optional: a server with no Firebase project runs
+      # fine (the app is offline-first), it just cannot wake a closed app.
+      # FCM_SERVICE_ACCOUNT_FILE is a path INSIDE the container to the
+      # service-account JSON, normally under the read-only mount below
+      # (put the file in scaffold/secrets/, which git ignores, and set
+      # FCM_SERVICE_ACCOUNT_FILE=/run/olive-secrets/<file> in the env file).
+      # A key in an env var shows up in `docker inspect`; a file does not.
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      # G1: operator switches for POST /v1/families (docs/OPERATIONS-RUNBOOK).
+      FAMILY_ENROLMENT: "${FAMILY_ENROLMENT:-on}"
+      FAMILY_ENROLMENT_MAX: "${FAMILY_ENROLMENT_MAX:-}"
+      # Longest a call session stays joinable (minutes).
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
     ports:
       # Loopback-only, not "8123:8123" (which publishes on every host
       # interface). Physical devices reach this exactly the same way they
@@ -150,6 +163,7 @@ services:
       # better one. See docker-compose.prod.yml's matching comment for the
       # full data-loss reasoning this mirrors.
       - olive-dev-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "server/index.mjs"]
     restart: unless-stopped
     healthcheck:
@@ -244,8 +258,18 @@ services:
       # container's own disconnected filesystem, never the volume below —
       # found by this project's own post-tier audit, not a hypothetical.
       MEDIA_STORAGE_ROOT: /app/data/media
+      # deliver-due sends the message_ready push from THIS process, so it needs
+      # the same push credential the server has. DELIVERY_PUSH=off keeps
+      # delivery and skips only the wake-up. SCHEDULER_FAST_LANE=off puts the
+      # whole loop back on the daily schedule.
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      DELIVERY_PUSH: "${DELIVERY_PUSH:-on}"
+      SCHEDULER_FAST_LANE: "${SCHEDULER_FAST_LANE:-on}"
+      SCHEDULER_FAST_INTERVAL_MS: "${SCHEDULER_FAST_INTERVAL_MS:-60000}"
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
     volumes:
       - olive-dev-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "loop"]
     restart: unless-stopped
 

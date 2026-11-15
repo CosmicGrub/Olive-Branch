@@ -27,14 +27,14 @@ rather than invented here:
 
 Read `tools/scheduler.mjs`'s own header for the full design writeup —
 locking choice, exact per-job semantics, and what this deliberately does
-**not** do (it does not call `claim_due_intents()`/`expire_stale_intents()`,
-and it does not resolve `on_event` targets — both real, separate, disclosed
-gaps, not silently folded in here). This page is the operator-facing "how do
+**not** do (the delivery worker, `claim_due_intents()`/`expire_stale_intents()`, was added later as the `deliver-due` job: see below;
+and it does not resolve `on_event` targets, a real, separate, disclosed
+gap). This page is the operator-facing "how do
 I turn it on" half.
 
 ## What it runs
 
-Six named jobs, run in this order (`rematerialize`, `reap-media`,
+Nine named jobs, run in this order (`rematerialize`, `reap-media`,
 `purge-challenges`, `expiry-digest`, `backup`, then `health-alert` — `JOB_NAMES` in
 `tools/scheduler.mjs`; `health-alert` is last so it sees the backup that just
 ran). This page said "two named jobs" from `reap-media`'s own real addition
@@ -185,23 +185,30 @@ from there instead and skip the `scheduler` Compose service entirely.
 | `SCHEDULER_INTERVAL_MS` | unset | `loop` mode only — if set, overrides the daily schedule with a fixed interval instead. Useful for a tighter cadence, or for exercising the loop itself quickly without waiting for a real UTC day boundary. |
 | `MEDIA_STORAGE_ROOT` | this file's own directory-relative default (see `server/routes.mjs`'s `DEFAULT_MEDIA_STORAGE_ROOT`) | `reap-media` only — where the real media volume is mounted. **Required in any real container deployment**, and must point at the SAME volume `server` itself writes to, not a private copy — found unset for the `scheduler` service in both Compose files by this project's own post-tier audit; `reap-media` silently deleted `media_artifact` rows while never touching the real blobs until that was fixed. |
 
+## The fast lane
+
+A once-a-day schedule is useless for delivery. Unless `SCHEDULER_FAST_LANE=off`
+(or `SCHEDULER_INTERVAL_MS` is set, which keeps its old meaning: everything on
+one interval), `loop` also ticks every `SCHEDULER_FAST_INTERVAL_MS` (default
+60000) and runs only `rematerialize`, `deliver-due` and `end-stale-calls`; the
+heavy jobs stay on the daily schedule.
+
+| Job | What it does |
+|---|---|
+| `deliver-due` | Claims due `ready` intents (`delivered`, one statement, no double delivery between concurrent workers), retires expired ones, then sends ONE content-free `message_ready` push per child. Quiet hours deliver silently. A failed push never un-delivers. Needs `FCM_SERVICE_ACCOUNT_FILE` for the push; `DELIVERY_PUSH=off` for none. |
+| `end-stale-calls` | Ends calls still live after `CALL_MAX_AGE_MINUTES` (default 240) with reason `stale`. |
+
 ## What this does not do (yet)
 
 Named here rather than left implicit, matching this repo's own disclosure
 discipline:
 
-- **No delivery worker.** `claim_due_intents()`
-  (`db/migrations/0002_delivery_sweep.sql`) — the function that actually
-  claims a `ready` intent and would hand it to a real push/notification
-  send — has no application-level caller anywhere in this repo, before or
-  after this file. This scheduler makes intents reach `ready`; something
-  else, not built here, still needs to actually deliver them.
-- **No `expire_stale_intents()` wiring.** The same migration's retention-
-  expiry sweep (COPPA §10.1) is real and tested at the SQL level
-  (`db/test/run_concurrency.sh`) but has no application-level caller either.
-  Not folded into this file's `rematerialize` job — that job's own scope is
-  exactly the disclosed gap it was asked to close (materializing `pending`
-  rows), not a second, undeclared one.
+- **(Closed.) The delivery worker.** `claim_due_intents()` and
+  `expire_stale_intents()` (`db/migrations/0002_delivery_sweep.sql`) now have a
+  caller: the `deliver-due` job (MASTERFILE §7.16). Until it existed a `ready`
+  intent never became `delivered`, so a parent's message never reached the
+  child's inbox. The push it sends is a wake-up only; delivery does not depend
+  on it, and `DELIVERY_PUSH=off` skips it.
 - **No `on_event` resolution.** `childCtxFor()`
   (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants` — no
   caller anywhere in this repo does. An `on_event` intent's `materialize()`

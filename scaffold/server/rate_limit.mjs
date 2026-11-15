@@ -158,6 +158,61 @@ export function createPairingMissBudget({ env = process.env, now } = {}) {
 }
 
 /**
+ * A miss budget with TWO ceilings: a small one per source key (so one caller
+ * guessing codes can only ever lock out itself) and a much larger one across all
+ * callers (so a distributed flood still cannot make the server do unbounded
+ * lookups). A single global budget alone would let any unauthenticated caller
+ * burn it and block every legitimate redeem; keyed, an attacker needs the
+ * global ceiling's worth of misses per window to do the same.
+ *
+ * `key` is netid's anonymised per-day source key, never a raw address. The key
+ * table is bounded (oldest evicted first), so a caller rotating keys cannot grow
+ * it without limit; an evicted key simply starts a fresh budget, which the
+ * global ceiling still bounds.
+ */
+export class KeyedMissBudget {
+  constructor({ perKeyLimit, globalLimit, windowMs = 60_000, maxKeys = 10_000, now = () => Date.now() }) {
+    this.perKeyLimit = perKeyLimit; this.windowMs = windowMs; this.maxKeys = maxKeys; this.now = now;
+    this.global = new MissBudget({ limit: globalLimit, windowMs, now });
+    this.keys = new Map();
+  }
+  _budgetFor(key) {
+    const k = String(key ?? 'unknown').slice(0, 64);
+    let b = this.keys.get(k);
+    if (!b) {
+      if (this.keys.size >= this.maxKeys) {
+        for (const old of this.keys.keys()) { this.keys.delete(old); if (this.keys.size < this.maxKeys) break; }
+      }
+      b = new MissBudget({ limit: this.perKeyLimit, windowMs: this.windowMs, now: this.now });
+      this.keys.set(k, b);
+    }
+    return b;
+  }
+  /** { blocked, retryAfterSec }: blocked if this source OR the whole server is over budget. */
+  check(key) {
+    const own = this._budgetFor(key).check();
+    const all = this.global.check();
+    if (!own.blocked && !all.blocked) return { blocked: false, retryAfterSec: 0 };
+    return { blocked: true, retryAfterSec: Math.max(own.retryAfterSec, all.retryAfterSec, 1) };
+  }
+  hit(key) { this._budgetFor(key).hit(); this.global.hit(); }
+  get size() { return this.keys.size; }
+}
+
+/**
+ * Budget for POST /v1/families (family enrolment). Env:
+ * ENROL_MISS_BUDGET_PER_MIN (per source, default 10) and
+ * ENROL_MISS_BUDGET_GLOBAL_PER_MIN (all sources, default 300). An enrolment code
+ * is 100 random bits so guessing is hopeless anyway; this caps the work an
+ * unauthenticated caller can make the server do (a hash and a lookup per miss).
+ */
+export function createEnrolMissBudget({ env = process.env, now } = {}) {
+  return new KeyedMissBudget({
+    perKeyLimit: posNum(env.ENROL_MISS_BUDGET_PER_MIN, 10),
+    globalLimit: posNum(env.ENROL_MISS_BUDGET_GLOBAL_PER_MIN, 300), now });
+}
+
+/**
  * Per-principal limiter for AUTHENTICATED WRITE routes (S-B6): a valid but
  * hostile or buggy session could otherwise issue unbounded POST/PUT/DELETEs.
  * Burst 60, then 60/min per principal by default; env WRITE_RATE_CAPACITY /

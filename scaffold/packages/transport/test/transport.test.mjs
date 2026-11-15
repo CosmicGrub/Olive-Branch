@@ -75,7 +75,7 @@ const REF = 'r_' + 'a'.repeat(20);
     'blocked');
   check('G push', 'sendGuard passes a clean payload', sendGuard(msg) === msg, 'true');
   check('G push', 'every kind is audit-clean',
-    ['message_ready','turn_ready','exchange_reminder','dose_due','call_incoming']
+    ['message_ready','turn_ready','exchange_reminder','dose_due','call_incoming','call_cancelled']
       .every(k => auditPush(buildPush({ kind:k, platform:'android', deviceToken:TOK,
         ref:REF, callRoomHandle:'h' })).ok), 'true');
   check('G push', 'forbidden key list is non-trivial', FORBIDDEN_DATA_KEYS.length > 15, 'true');

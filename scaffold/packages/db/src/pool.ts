@@ -1365,15 +1365,88 @@ export async function recordCallStart(pool: pg.Pool, input: {
  */
 export async function recordCallEnd(
   pool: pg.Pool, childId: string, sessionId: string,
+  /** Who is hanging up. Decides the reason when the call was never answered:
+   *  the caller ending it is 'cancelled', the child's device ending it is
+   *  'declined'. A call that WAS answered (answered_at set by the child's join)
+   *  is always 'answered'. Defaults to the caller. */
+  endedBy: 'caller' | 'callee' = 'caller',
+): Promise<{ ended: boolean; reason: 'answered' | 'cancelled' | 'declined' | null }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log
+          SET ended_at = now(),
+              ended_reason = CASE WHEN answered_at IS NOT NULL THEN 'answered'
+                                  WHEN $3 = 'callee' THEN 'declined'
+                                  ELSE 'cancelled' END
+        WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
+        RETURNING id, ended_reason`,
+      [sessionId, childId, endedBy],
+    );
+    return rows.length > 0
+      ? { ended: true, reason: rows[0].ended_reason } : { ended: false, reason: null };
+  });
+}
+
+/**
+ * Records, after the fact, whether the callee's device was actually rung. The
+ * call_log row is written BEFORE the ring (a ring for a call nobody can join
+ * is worse than no call), so `rang` is filled in once the push result is known.
+ */
+export async function recordCallRang(
+  pool: pg.Pool, childId: string, sessionId: string, rang: boolean,
+): Promise<void> {
+  await withSystemSession(pool, async (q) => {
+    await q(`UPDATE call_log SET rang = $3 WHERE id = $1 AND child_id = $2`,
+      [sessionId, childId, rang]);
+  });
+}
+
+/**
+ * Stamps `answered_at` the first time the CHILD (the callee) mints a join
+ * token for a live call -- the one moment the server genuinely sees an answer.
+ * Idempotent (COALESCE keeps the first instant). Returns whether the row
+ * exists, is this child's and is still live.
+ */
+export async function markCallAnswered(
+  pool: pg.Pool, childId: string, sessionId: string,
 ): Promise<boolean> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `UPDATE call_log SET ended_at = now()
+      `UPDATE call_log SET answered_at = COALESCE(answered_at, now())
         WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
         RETURNING id`,
       [sessionId, childId],
     );
     return rows.length > 0;
+  });
+}
+
+/** Default longest a call session may stay joinable: 4 hours. CALL_MAX_AGE_MINUTES overrides. */
+export const DEFAULT_CALL_MAX_AGE_MINUTES = 240;
+export function callMaxAgeMinutes(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.CALL_MAX_AGE_MINUTES);
+  return Number.isFinite(n) && n >= 1 && n <= 24 * 60 ? Math.floor(n) : DEFAULT_CALL_MAX_AGE_MINUTES;
+}
+
+/**
+ * Ends every call still live after `maxAgeMinutes` (a session whose clients
+ * crashed never calls /end, and a joinable room stays joinable forever
+ * otherwise). Reason 'stale'. A single UPDATE, so it is atomic against a
+ * concurrent /end: whichever commits first wins and the other updates zero
+ * rows. Returns how many calls were ended.
+ */
+export async function endStaleCalls(
+  pool: pg.Pool, maxAgeMinutes: number = callMaxAgeMinutes(),
+): Promise<number> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log SET ended_at = now(), ended_reason = 'stale'
+        WHERE ended_at IS NULL
+          AND started_at < now() - make_interval(mins => $1::int)
+        RETURNING id`,
+      [maxAgeMinutes],
+    );
+    return rows.length;
   });
 }
 
@@ -1400,13 +1473,16 @@ export async function callSessionFor(
 } | null> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at
+      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at,
+              (started_at < now() - make_interval(mins => $3::int)) AS too_old
          FROM call_log WHERE id = $1 AND child_id = $2`,
-      [sessionId, childId],
+      [sessionId, childId, callMaxAgeMinutes()],
     );
     if (!rows.length) return null;
     const row = rows[0];
-    if (row.ended_at) return null;
+    // An ended call, or one older than the maximum session age (a crashed
+    // client never ends its call), is no longer joinable.
+    if (row.ended_at || row.too_old) return null;
     return {
       id: row.id, childId: row.child_id, roomName: row.room_name, startedBy: row.started_by,
       authorizedUserIds: row.participant_ids, ladderStep: row.ladder_step,
@@ -4653,8 +4729,9 @@ export async function redeemDevicePairingCode(
 > {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT * FROM device_pairing_code WHERE id::text = $1 OR numeric_code = $1 FOR UPDATE`,
-      [code],
+      `SELECT * FROM device_pairing_code
+        WHERE (id::text = $1 OR numeric_code = $1) AND numeric_code <> $2 FOR UPDATE`,
+      [code, ENROLMENT_PAIRING_SENTINEL],
     );
     if (!rows.length) return { ok: false, reason: 'not_found' };
     const row = rows[0];
@@ -5200,6 +5277,203 @@ export async function houseRulesFor(
       mine: all.filter((r) => r.authorGuardianId === guardianId),
       others: all.filter((r) => r.authorGuardianId !== guardianId),
     };
+  });
+}
+
+// ===========================================================================
+// FAMILY ENROLMENT (migration 0049) -- how the first real family exists
+// without DEV_LOGIN. An operator mints a single-use code (tools/enrol-family
+// .mjs); the family redeems it once at POST /v1/families.
+// ===========================================================================
+
+/** Crockford base32: no I, L, O, U, so a code read aloud or typed from paper survives. */
+const ENROLMENT_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const ENROLMENT_CODE_LEN = 20; // 20 x 5 bits = 100 bits
+
+/** A fresh operator code, shown ONCE, formatted XXXX-XXXX-XXXX-XXXX-XXXX. */
+export function newEnrolmentCode(): string {
+  const bytes = randomBytes(ENROLMENT_CODE_LEN);
+  let raw = '';
+  for (let i = 0; i < ENROLMENT_CODE_LEN; i++) raw += ENROLMENT_ALPHABET[bytes[i] & 31];
+  return raw.match(/.{4}/g)!.join('-');
+}
+
+/**
+ * Canonical form of whatever a person typed: upper-cased, separators and
+ * whitespace dropped, Crockford's look-alike folding (O->0, I/L->1). Returns
+ * null for anything that cannot be a code, so garbage never reaches the DB.
+ */
+export function normaliseEnrolmentCode(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length > 64) return null;
+  const s = raw.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+  return /^[0-9A-HJKMNP-TV-Z]{20}$/.test(s) ? s : null;
+}
+
+/** SHA-256 hex of the canonical code. A fast hash is right here: 100 random bits. */
+export function enrolmentCodeDigest(canonical: string): string {
+  return createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+/** Operator CLI: mint a code. Returns the plaintext code exactly once. */
+export async function createFamilyEnrolmentCode(
+  pool: pg.Pool, opts: { label?: string; ttlDays?: number } = {},
+): Promise<{ id: string; code: string; expiresAt: string }> {
+  const label = (opts.label ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 80);
+  const ttl = opts.ttlDays;
+  const ttlDays = typeof ttl === 'number' && Number.isFinite(ttl) && ttl >= 1 && ttl <= 90
+    ? Math.floor(ttl) : 7;
+  const code = newEnrolmentCode();
+  const rows = await withSystemSession(pool, (q) => q(
+    `INSERT INTO family_enrolment_code (code_hash, label, expires_at)
+     VALUES ($1, $2, now() + make_interval(days => $3::int))
+     RETURNING id, expires_at`,
+    [enrolmentCodeDigest(normaliseEnrolmentCode(code)!), label, ttlDays]));
+  return { id: rows[0].id, code, expiresAt: rows[0].expires_at };
+}
+
+/** Operator CLI: kill an unredeemed code. Returns whether one was revoked. */
+export async function revokeFamilyEnrolmentCode(pool: pg.Pool, id: string): Promise<boolean> {
+  const rows = await withSystemSession(pool, (q) => q(
+    `UPDATE family_enrolment_code SET revoked_at = now()
+      WHERE id::text = $1 AND redeemed_at IS NULL AND revoked_at IS NULL RETURNING id`, [id]));
+  return rows.length > 0;
+}
+
+/** Operator CLI: codes and their state. Never the code itself (only a hash is stored). */
+export async function listFamilyEnrolmentCodes(pool: pg.Pool): Promise<Array<{
+  id: string; label: string; createdAt: string; expiresAt: string;
+  status: 'open' | 'expired' | 'revoked' | 'redeemed';
+}>> {
+  const rows = await withSystemSession(pool, (q) => q(
+    `SELECT id, label, created_at, expires_at,
+            CASE WHEN redeemed_at IS NOT NULL THEN 'redeemed'
+                 WHEN revoked_at  IS NOT NULL THEN 'revoked'
+                 WHEN expires_at <= now()     THEN 'expired'
+                 ELSE 'open' END AS status
+       FROM family_enrolment_code ORDER BY created_at DESC LIMIT 200`));
+  return rows.map((r: any) => ({ id: r.id, label: r.label, createdAt: r.created_at,
+    expiresAt: r.expires_at, status: r.status }));
+}
+
+/**
+ * numeric_code of the already-redeemed device_pairing_code row enrolFamily()
+ * writes only so the first device's paired_via is well-formed. It is NOT six
+ * digits, so it can never equal a real typed pairing code, and
+ * redeemDevicePairingCode() additionally refuses to match it (a defence in
+ * depth: a stray row must never be answered as 'already_redeemed' in place of
+ * a real code, nor be row-locked by an unauthenticated guess).
+ */
+export const ENROLMENT_PAIRING_SENTINEL = 'enrolled';
+
+/** Transaction-scoped advisory-lock key serialising the FAMILY_ENROLMENT_MAX check. */
+const ENROLMENT_CAP_LOCK_KEY = '7243011001';
+
+/**
+ * The day-parts a brand-new child starts with. Without them a first family could
+ * enrol and send but nothing would ever deliver: materialize() answers
+ * 'daypart_undefined' for at_daypart and 'no_reachable_window' for
+ * when_reachable, so the message sits pending forever. Wall-clock, every day,
+ * open-ended. Placeholders until a guardian-facing editor exists: they only have
+ * to be real and reachable at the right hours (bedtime delivers at 19:30, the
+ * night is unreachable so a push does not wake her). No two share a kind, so the
+ * day_part_no_overlap constraint is satisfied by construction.
+ */
+export const DEFAULT_DAY_PARTS: ReadonlyArray<{
+  kind: string; startsLocal: string; endsLocal: string; reachable: boolean;
+}> = [
+  { kind: 'wake',    startsLocal: '06:30', endsLocal: '08:00', reachable: true },
+  { kind: 'free',    startsLocal: '08:00', endsLocal: '19:30', reachable: true },
+  { kind: 'bedtime', startsLocal: '19:30', endsLocal: '20:30', reachable: true },
+  { kind: 'asleep',  startsLocal: '20:30', endsLocal: '06:30', reachable: false },
+];
+
+export type EnrolFamilyError =
+  | 'invalid_code' | 'not_found' | 'expired' | 'revoked' | 'already_redeemed' | 'enrolment_closed';
+
+/** Free text that ends up on a lock screen or in a JWT: no control chars, collapsed, capped. */
+export function cleanDisplayName(raw: unknown, max = 40): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw
+    .replace(/[\u0000-\u001f\u007f-\u009f  ​-‏‪-‮⁦-⁩]/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ').trim().slice(0, max).trim();
+  return s.length ? s : null;
+}
+
+/**
+ * Redeems an enrolment code: in ONE system transaction creates the guardian
+ * (app_user), the child, the guardianship edge, the child's zone timeline, and
+ * a paired guardian device whose long-lived credential is returned once. The
+ * code row is locked FOR UPDATE first, so two concurrent redeems of one code
+ * can never both create a family. Field validation is the ROUTE's job; this
+ * function trusts nothing but canonical-form inputs.
+ */
+export async function enrolFamily(pool: pg.Pool, input: {
+  code: string; guardianName: string; childName: string;
+  childBirthDate: string; homeTz: string; maxFamilies?: number; now: Date;
+}): Promise<
+  | { ok: true; userId: string; childId: string; deviceId: string; deviceCredential: string }
+  | { ok: false; reason: EnrolFamilyError }
+> {
+  const canonical = normaliseEnrolmentCode(input.code);
+  if (!canonical) return { ok: false, reason: 'invalid_code' };
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, expires_at, revoked_at, redeemed_at FROM family_enrolment_code
+        WHERE code_hash = $1 FOR UPDATE`, [enrolmentCodeDigest(canonical)]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const row = rows[0];
+    if (row.redeemed_at) return { ok: false, reason: 'already_redeemed' };
+    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (new Date(row.expires_at) <= input.now) return { ok: false, reason: 'expired' };
+    if (input.maxFamilies !== undefined) {
+      // The row lock above is per CODE, so two different codes redeemed at once
+      // would both count N-1 under READ COMMITTED and both pass. A
+      // transaction-scoped advisory lock makes the cap check-then-insert
+      // atomic: the second waiter re-counts only after the first commits.
+      await q(`SELECT pg_advisory_xact_lock($1::bigint)`, [ENROLMENT_CAP_LOCK_KEY]);
+      const used = await q(
+        `SELECT count(*)::int AS n FROM family_enrolment_code WHERE redeemed_at IS NOT NULL`);
+      if (used[0].n >= input.maxFamilies) return { ok: false, reason: 'enrolment_closed' };
+    }
+    const user = await q(
+      `INSERT INTO app_user (display_name, home_tz) VALUES ($1, $2) RETURNING id`,
+      [input.guardianName, input.homeTz]);
+    const userId = user[0].id as string;
+    const child = await q(
+      `INSERT INTO child (display_name, birth_date, home_tz) VALUES ($1, $2::date, $3) RETURNING id`,
+      [input.childName, input.childBirthDate, input.homeTz]);
+    const childId = child[0].id as string;
+    await q(
+      `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+       VALUES ($1, $2, 'guardian', '{}', tstzrange(now(), null))`, [childId, userId]);
+    await q(
+      `INSERT INTO child_tz_interval (child_id, tz, valid, source)
+       VALUES ($1, $2, tstzrange(now(), null), 'manual')`, [childId, input.homeTz]);
+    // The child's day-parts, so a message sent to her can actually be scheduled.
+    for (const p of DEFAULT_DAY_PARTS) {
+      await q(
+        `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+         VALUES ($1, $2, $3::time, $4::time, '{0,1,2,3,4,5,6}', $5,
+                 daterange(((now() AT TIME ZONE $6)::date - 1), NULL))`,
+        [childId, p.kind, p.startsLocal, p.endsLocal, p.reachable, input.homeTz]);
+    }
+    // paired_device.paired_via references a pairing code; record the enrolment as an
+    // already-redeemed guardian-role code so the device row is well-formed. The
+    // numeric_code is a non-numeric sentinel, never a value a person could type.
+    const pairing = await q(
+      `INSERT INTO device_pairing_code (role, numeric_code, target_id, created_by, redeemed_at)
+       VALUES ('guardian', $2, $1, $1, now()) RETURNING id`, [userId, ENROLMENT_PAIRING_SENTINEL]);
+    const deviceCredential = newDeviceCredential();
+    const device = await q(
+      `INSERT INTO paired_device (role, target_id, label, paired_via, paired_at, credential_hash)
+       VALUES ('guardian', $1, $2, $3, now(), $4) RETURNING id`,
+      [userId, 'Enrolled device', pairing[0].id, deviceCredentialDigest(deviceCredential)]);
+    await q(
+      `UPDATE family_enrolment_code SET redeemed_at = now(), redeemed_user_id = $2 WHERE id = $1`,
+      [row.id, userId]);
+    await insertSecurityEvent(q, userId, 'device_paired', { childId, variant: 'guardian' });
+    return { ok: true, userId, childId, deviceId: device[0].id, deviceCredential };
   });
 }
 

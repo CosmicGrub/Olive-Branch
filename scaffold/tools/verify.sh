@@ -75,6 +75,7 @@ for spec in \
   "route contract: auth session (refresh, sign-out, PIN change)|server/test/auth_session_route_test.mjs" \
   "route contract: parental controls (visibility & pacing)|server/test/guardian_activity_override_route_test.mjs" \
   "device-tokens route contract|server/test/device_tokens_route.test.mjs" \
+  "push config, call helpers, call_cancelled, scheduler registry (no DB)|server/test/push_config.test.mjs" \
   "route contract: me/delete|server/test/me_delete_route.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "push: fcm sender (mocked)|packages/transport/test/fcm.test.mjs" \
@@ -437,6 +438,8 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "messages route (real DB)|packages/api/test/messages_route.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
+            "family enrolment: POST /v1/families, operator codes, RLS, brute force (0049, real DB)|server/test/family_enrol_route.test.mjs" \
+            "live chain e2e: real server, no dev-login, enrol, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \

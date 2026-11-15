@@ -46,12 +46,12 @@
  * own header:
  *   - Does not touch `materialize.ts`'s or `health-alert.mjs`'s own logic.
  *     Both are called exactly as they already exist.
- *   - Does not call `claim_due_intents()` or `expire_stale_intents()`
- *     (`db/migrations/0002_delivery_sweep.sql`) — those are a SEPARATE,
- *     still-open gap (a real delivery/send worker that actually pushes a
- *     `ready` intent to a device, and a retention-expiry sweep), not named by
- *     either of the two disclosed gaps this file was asked to close. Wiring
- *     either in is real, scoped future work, not silently folded in here.
+ *   - (CLOSED in 0.52.x) The delivery worker. `claim_due_intents()` and
+ *     `expire_stale_intents()` (`db/migrations/0002_delivery_sweep.sql`) used to
+ *     have no caller, so a `ready` intent never became `delivered` and a parent's
+ *     message never reached the child's inbox. They are now the `deliver-due`
+ *     job (see runDeliverDueSweep() below), which also sends the content-free
+ *     `message_ready` push. `end-stale-calls` ends abandoned call sessions.
  *   - Does not resolve `on_event` targets. `childCtxFor()`
  *     (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants`
  *     (no caller anywhere in this repo does), so an `on_event` intent's
@@ -103,10 +103,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
-import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges,
+import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges, endStaleCalls,
          adoptUntrackedBlobs, orphanedUploads, releaseMediaUpload, MEDIA_ORPHAN_AGE_HOURS }
   from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
+import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
 import { digestRecordFor, DIGEST_LEAD_DAYS } from '../packages/storage/src/retention.mjs';
 import { encryptFile, pruneBackups, DEFAULT_DAILY_KEEP, DEFAULT_WEEKLY_KEEP } from './backup_lib.mjs';
@@ -311,6 +312,87 @@ export async function runRematerializeSweep(pool, opts = {}) {
     scanned: pendingRows.length, materialized, expired, stillPending, skippedRows, errored,
     batchLimitHit: pendingRows.length === batchLimit,
   };
+}
+
+// ------------------------------------------------------------ deliver-due ---
+export const DEFAULT_DELIVER_BATCH = 200;
+
+/**
+ * The delivery worker: the half of the pipeline that was missing (G2). A sent
+ * message is persisted `pending`, `rematerialize` above moves it to `ready`
+ * with a `scheduled_at` inside an allowed day-part window, and NOTHING moved a
+ * `ready` intent to `delivered` -- the state GET /inbox and POST .../opened
+ * require -- so a parent could send and the child would never see it. This job
+ * is that mover.
+ *
+ *   1. `claim_due_intents(limit)` (db/migrations/0002) flips due `ready` rows to
+ *      `delivered` in ONE statement (FOR UPDATE SKIP LOCKED + a compare-and-swap
+ *      on state), so two workers can never both claim one row. The claim is
+ *      committed before any push is attempted: delivery is the durable fact, the
+ *      push is only a wake-up, and a push failure must never un-deliver a
+ *      message the child can already read in the app.
+ *   2. `expire_stale_intents()` retires anything whose retention window closed
+ *      before delivery (COPPA 10.1: an undeliverable intent does not linger).
+ *   3. One content-free `message_ready` push per CHILD (not per message: a child
+ *      who got five messages is woken once), `ref` = the newest claimed intent
+ *      id (opaque, resolves only for her own authenticated session). The
+ *      recipient-side asleep/school gate inside notifyDevices() still applies, so
+ *      a message that comes due inside quiet hours is delivered silently and
+ *      shows up when she opens the app. Each child's push is isolated: one
+ *      failure is counted and logged, never allowed to stop the others.
+ *
+ * DELIVERY_PUSH=off keeps steps 1 and 2 and skips step 3 (a server with no
+ * Firebase project still delivers; the child just finds the message when she
+ * opens the app). `opts.notify` is the injection seam the tests use.
+ */
+export async function runDeliverDueSweep(pool, opts = {}) {
+  const limit = opts.batchLimit ?? DEFAULT_DELIVER_BATCH;
+  const notify = opts.notify ?? notifyDevices;
+  const pushOn = (opts.env ?? process.env).DELIVERY_PUSH !== 'off';
+
+  const claimed = await withSystemSession(pool, (q) => q(
+    `SELECT id, child_id FROM claim_due_intents($1)`, [limit]));
+  const expired = (await withSystemSession(pool, (q) => q(
+    `SELECT expire_stale_intents() AS n`)))[0]?.n ?? 0;
+
+  // newest-claimed intent per child, in claim order (claim_due_intents orders by scheduled_at)
+  const lastByChild = new Map();
+  for (const row of claimed) lastByChild.set(row.child_id, row.id);
+
+  let pushed = 0, silent = 0, noDevice = 0, pushErrored = 0;
+  if (pushOn) {
+    for (const [childId, intentId] of lastByChild) {
+      try {
+        const results = await notify(pool, { childId }, {
+          kind: 'message_ready', ref: intentId, collapseKey: 'message_ready',
+        });
+        if (results.some((r) => r.ok)) pushed++;
+        else if (results.length === 0) noDevice++;
+        else silent++; // gated by quiet hours, or no push-capable device: delivered, not woken
+      } catch (e) {
+        pushErrored++;
+        errLine({ event: 'row_error', job: 'deliver-due', child_id: childId,
+          error: String(e?.message ?? e).slice(0, 300), at: DateTime.utc().toISO() });
+      }
+    }
+  }
+
+  return {
+    delivered: claimed.length, children: lastByChild.size, expired,
+    pushed, silent, noDevice, pushErrored, pushEnabled: pushOn,
+    batchLimitHit: claimed.length === limit,
+  };
+}
+
+// ------------------------------------------------------- end-stale-calls ---
+/**
+ * A call whose clients crashed never hits /end, and its room stayed joinable
+ * (every /join mints a fresh token) for ever. This ends every call still live
+ * past CALL_MAX_AGE_MINUTES (default 240) with reason 'stale'; callSessionFor()
+ * refuses to hand a join token for such a session even before this runs.
+ */
+export async function runEndStaleCallsJob(pool, opts = {}) {
+  return { ended: await endStaleCalls(pool, opts.maxAgeMinutes) };
 }
 
 // ------------------------------------------------------ sweep-orphan-media -
@@ -650,7 +732,9 @@ export async function runBackupJob(env = process.env, opts = {}) {
 }
 
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'deliver-due', 'end-stale-calls', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
+/** The jobs a family can feel within minutes: scheduling, delivery, call hygiene. The loop runs these on a short cadence. */
+export const FAST_JOBS = ['rematerialize', 'deliver-due', 'end-stale-calls'];
 
 // One real FilesystemStorage instance, constructed once — same convention
 // as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
@@ -674,6 +758,8 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
   try {
     lockResult = await withJobLock(pool, jobName, async () => {
       if (jobName === 'rematerialize') return runRematerializeSweep(pool, {});
+      if (jobName === 'deliver-due') return runDeliverDueSweep(pool, {});
+      if (jobName === 'end-stale-calls') return runEndStaleCallsJob(pool, {});
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
       if (jobName === 'sweep-orphan-media') return runOrphanMediaSweep(pool, storage, {});
       if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
@@ -711,6 +797,24 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     // A sweep that isolated one or more bad rows still did everything it
     // could, but it is not "ok": the exit code must say a row needs a human.
     return { ok: r.errored === 0, skipped: false };
+  }
+
+  if (jobName === 'deliver-due') {
+    const r = lockResult.result;
+    logLine({
+      event: 'end', job: jobName, status: r.pushErrored ? 'partial' : 'ok', duration_ms: durationMs,
+      delivered: r.delivered, children: r.children, expired: r.expired, pushed: r.pushed,
+      silent: r.silent, no_device: r.noDevice, push_errored: r.pushErrored,
+      push_enabled: r.pushEnabled, batch_limit_hit: r.batchLimitHit, at: DateTime.utc().toISO(),
+    });
+    // A failed push is not a failed delivery: the message is delivered and readable.
+    return { ok: true, skipped: false };
+  }
+
+  if (jobName === 'end-stale-calls') {
+    logLine({ event: 'end', job: jobName, status: 'ok', duration_ms: durationMs,
+      ended: lockResult.result.ended, at: DateTime.utc().toISO() });
+    return { ok: true, skipped: false };
   }
 
   if (jobName === 'reap-media') {
@@ -851,6 +955,13 @@ async function interruptibleSleep(totalMs, isStopping) {
  * inherit the container's environment by default — a well-known footgun),
  * one process, one set of logs `docker compose logs` already shows.
  *
+ * FAST LANE (G2): a once-a-day cadence is useless for delivery -- a message due
+ * at 7 pm must not wait until 03:00 UTC. Unless SCHEDULER_FAST_LANE=off, the loop
+ * ALSO ticks every SCHEDULER_FAST_INTERVAL_MS (default 60000) and runs only
+ * FAST_JOBS (rematerialize, deliver-due, end-stale-calls); the heavy/slow jobs
+ * (reaper, digest, backup, health) stay on the daily schedule. SCHEDULER_INTERVAL_MS,
+ * when set, still means "run everything on that one interval" exactly as before.
+ *
  * Default schedule: once daily at `SCHEDULER_HOUR_UTC` (default 3, i.e.
  * 03:00 UTC — late night in every US timezone this product's own MASTERFILE
  * day-part examples use). `SCHEDULER_INTERVAL_MS`, if set, overrides the
@@ -873,11 +984,27 @@ export async function loop(pool, databaseUrl) {
     schedule: intervalOverrideMs ? `every_${intervalOverrideMs}ms` : `daily_${hourUtc}:00_utc`,
   });
 
+  const fastLane = !intervalOverrideMs && process.env.SCHEDULER_FAST_LANE !== 'off';
+  const fastMs = positiveInt(process.env.SCHEDULER_FAST_INTERVAL_MS, 60_000);
+  if (fastLane) logLine({ event: 'fast_lane', jobs: FAST_JOBS.join(','), every_ms: fastMs });
+  let nextDailyAt = Date.now() + msUntilNextRun(hourUtc);
+
   while (!stopping) {
-    const sleepMs = intervalOverrideMs ?? msUntilNextRun(hourUtc);
-    await interruptibleSleep(sleepMs, () => stopping);
+    if (!fastLane) {
+      await interruptibleSleep(intervalOverrideMs ?? msUntilNextRun(hourUtc), () => stopping);
+      if (stopping) break;
+      await runAll(pool, databaseUrl);
+      continue;
+    }
+    // fast lane: tick every fastMs; the daily jobs run when their time arrives
+    await interruptibleSleep(Math.min(fastMs, Math.max(0, nextDailyAt - Date.now())), () => stopping);
     if (stopping) break;
-    await runAll(pool, databaseUrl);
+    if (Date.now() >= nextDailyAt) {
+      await runAll(pool, databaseUrl); // daily: everything, including the fast jobs
+      nextDailyAt = Date.now() + msUntilNextRun(hourUtc);
+    } else {
+      for (const name of FAST_JOBS) await runNamedJob(pool, databaseUrl, name);
+    }
   }
   logLine({ event: 'loop_stop' });
 }

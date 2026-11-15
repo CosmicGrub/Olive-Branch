@@ -30,6 +30,7 @@ import { errorLine } from './safe_log.mjs';
 import { checkBootSecrets } from './secrets.mjs';
 import { checkRuntimeRole } from './db_role.mjs';
 import { resolveCallConfig, describeCallConfig } from './call_config.mjs';
+import { resolvePushConfig, describePushConfig } from './push_config.mjs';
 import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 
@@ -68,6 +69,13 @@ if (bootCalls.problems.length) {
   process.exit(2);
 }
 console.log(`calls: ${JSON.stringify(describeCallConfig(bootCalls))}`);
+
+// Push is never a boot requirement (the app is offline-first, a server with no
+// Firebase project must still run); a broken credential is warned about and the
+// state is visible on /internal/metrics. Names and booleans only.
+const bootPush = resolvePushConfig(process.env);
+for (const p of bootPush.problems) console.warn(`WARNING: push: ${p}`);
+console.log(`push: ${JSON.stringify(describePushConfig(bootPush))}`);
 
 // Server-snoop hardening: a production process must be configured as the HTTPS
 // back end of a TLS-terminating proxy (PUBLIC_BASE_URL, TRUST_PROXY and
@@ -385,6 +393,7 @@ const server = createServer(async (req, res) => {
       return send({ status: 200, body: metrics.snapshot({
         pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount },
         game_tables_open: gameTables.size,
+        push: describePushConfig(resolvePushConfig(process.env)),
       }) });
     }
 
@@ -400,7 +409,8 @@ const server = createServer(async (req, res) => {
     // and DB-amplification surfaces of their own: same per-IP throttle.
     const isAuthPath = pathname.startsWith('/v1/auth/')
       || pathname.startsWith('/v1/device-pairing/')
-      || pathname.startsWith('/v1/guardian-invites/');
+      || pathname.startsWith('/v1/guardian-invites/')
+      || pathname === '/v1/families';
     if (isAuthPath) {
       const ip = authLimiter.checkIp(netId.anonKey(req));
       if (!ip.ok) {
@@ -444,7 +454,12 @@ const server = createServer(async (req, res) => {
       if (req.url === '/v1/auth/webauthn/login/challenge') return send(await webauthnLoginChallenge(raw));
       if (req.url === '/v1/auth/webauthn/login/verify') return send(await webauthnLoginVerify(raw));
     }
-    send(await api.handle(method, url, req.headers, raw));
+    // POST /v1/families draws on a per-source miss budget: hand the route the
+    // anonymised source key under an internal header, overwriting whatever the
+    // client sent (the key is derived here, never taken from the request).
+    const handlerHeaders = pathname === '/v1/families'
+      ? { ...req.headers, 'x-olive-peer-key': netId.anonKey(req) } : req.headers;
+    send(await api.handle(method, url, handlerHeaders, raw));
   } catch (e) {
     console.error(errorLine(e, { msg: 'request failed' }));
     if (!res.headersSent) send({ status: 500, body: { error: 'internal' } });
