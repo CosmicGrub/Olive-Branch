@@ -59,7 +59,7 @@ bool isRealIsoDate(String s) {
 
 /// A phone number is digits and dialling punctuation only (optionally several separated by a slash): prose, URLs and
 /// notes belong elsewhere, and a reviewer must rewrite any number that carries them.
-final RegExp _numberShape = RegExp(r'^[+(]*[0-9][0-9 ()./-]*(?:/\s*[+(]*[0-9][0-9 ()./-]*)*$');
+final RegExp _numberShape = RegExp(r'^[+\x28]*[0-9][0-9 ()./-]*(?:/\s*[+\x28]*[0-9][0-9 ()./-]*)*$');
 bool isPlainNumber(String s) => _numberShape.hasMatch(s.trim());
 
 /// Words a parent must never meet. The drafts use them to talk to the reviewer, not to a frightened parent.
